@@ -13,6 +13,41 @@ This repository includes agent guidance and skills installed by
 The linked template is the byte-identical Apache-2.0 distribution snapshot for the installed files.
 The Apache License 2.0 text is in [`LICENSE`](./LICENSE).
 
+## Convex hackathon skill
+
+This repository includes the Convex hackathon build-log skill.
+
+- Source:
+  [`get-convex/convex-hackathon-skill`](https://github.com/get-convex/convex-hackathon-skill/tree/adf0ebcd0ae743bc7cf36104c68fdf0325b6dfae)
+- License: MIT
+- Copyright: 2026 Wayne Sutton
+
+### MIT License
+
+```text
+MIT License
+
+Copyright (c) 2026 Wayne Sutton
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
 ## Heroicons
 
 The installed Convex skills include SVG icons from [Heroicons](https://heroicons.com/).
