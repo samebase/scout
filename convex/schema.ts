@@ -1,6 +1,11 @@
 import { authTables } from "@convex-dev/auth/server";
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import {
+  scoutBrowserStateValidator,
+  scoutRunEventValidator,
+  scoutRunStatusValidator,
+} from "./scout/model";
 
 export default defineSchema({
   ...authTables,
@@ -19,4 +24,19 @@ export default defineSchema({
   })
     .index("by_name", ["name"])
     .index("by_user", ["userId"]),
+  scoutRuns: defineTable({
+    scoutName: v.string(),
+    scoutEmail: v.string(),
+    targetUrl: v.string(),
+    mission: v.string(),
+    status: scoutRunStatusValidator,
+    browser: scoutBrowserStateValidator,
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_created_at", ["createdAt"]),
+  scoutRunEvents: defineTable({
+    runId: v.id("scoutRuns"),
+    event: scoutRunEventValidator,
+    createdAt: v.number(),
+  }).index("by_run_id_and_created_at", ["runId", "createdAt"]),
 });

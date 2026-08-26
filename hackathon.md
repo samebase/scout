@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** none
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-26T19:25:59Z
+- **Last updated:** 2026-08-26T23:34:55Z
 
 ## Log
 
@@ -38,8 +38,14 @@ Made successful production Cloudflare Workers deploys publish the same frontend 
 Static Hosting. Preview, dry-run, and local deploys leave the production Convex site unchanged
 (`scripts/deploy-cloudflare.ts`, `scripts/deploy-cloudflare.test.ts`).
 
-### 2026-08-26 - working tree
+### 2026-08-26 - a06fb1e
 
 Shared one prerender route map between Cloudflare and Convex Static Hosting. Added a local
 `rewritePath` patch so exact public routes serve their prerendered HTML while unknown routes keep
 the SPA fallback (`prerender.config.ts`, `convex/http.ts`, `patches/`).
+
+### 2026-08-26 - working tree
+
+Added a private run and event ledger for Scout missions, including explicit running, human-handoff,
+completion, failure, and browser-session states (`convex/schema.ts`, `convex/scout/model.ts`,
+`convex/scout/runs.ts`).
