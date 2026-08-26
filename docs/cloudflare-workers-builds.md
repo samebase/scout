@@ -2,7 +2,8 @@
 
 This app deploys through Cloudflare Workers Builds. The Cloudflare dashboard runs
 `pnpm run build`, then runs `pnpm run deploy` for the production branch or
-`pnpm run deploy:preview` for other branches.
+`pnpm run deploy:preview` for other branches. A successful production deploy also uploads the same
+frontend build to Convex Static Hosting.
 
 ## Build Variables
 
@@ -58,6 +59,19 @@ It is not an atomic compare-and-swap. A branch can still advance in the short
 interval between the Git check and Convex's internal push. Eliminating that
 residual race requires provider-side serialization or a Convex source-commit
 concurrency primitive.
+
+## Production Hosting Order
+
+For a `main` Workers Build, the deploy command:
+
+1. Publishes `dist/client` through the Cloudflare Worker.
+2. Waits for Wrangler to finish successfully.
+3. Uploads that existing `dist/client` directory to production Convex Static Hosting.
+
+The Convex upload does not rebuild the app or deploy the backend again. Preview, dry-run, and local
+deploy commands do not upload to the production `convex.site` app. If the Convex upload fails, the
+deploy command fails after Cloudflare has published successfully, and a later run can retry the
+upload.
 
 ## Local Checks
 

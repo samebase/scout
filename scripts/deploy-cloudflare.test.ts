@@ -10,6 +10,7 @@ describe("deploy-cloudflare", () => {
       }),
     ).toEqual({
       buildArgs: ["run", "build:app"],
+      convexStaticHostingArgs: null,
       wranglerArgs: ["deploy", "--name", "example-app", "--dry-run"],
     });
   });
@@ -21,6 +22,7 @@ describe("deploy-cloudflare", () => {
       }),
     ).toEqual({
       buildArgs: ["run", "build:app"],
+      convexStaticHostingArgs: null,
       wranglerArgs: ["deploy", "--name", "example-app", "--dry-run=true"],
     });
   });
@@ -29,9 +31,11 @@ describe("deploy-cloudflare", () => {
     expect(
       selectCloudflareDeployPlan(["deploy", "--dry-run=false"], {
         CLOUDFLARE_WORKER_NAME: "example-app",
+        WORKERS_CI_BRANCH: "main",
       }),
     ).toEqual({
       buildArgs: ["run", "build:cloudflare"],
+      convexStaticHostingArgs: null,
       wranglerArgs: ["deploy", "--name", "example-app", "--dry-run=false"],
     });
   });
@@ -43,19 +47,71 @@ describe("deploy-cloudflare", () => {
       }),
     ).toEqual({
       buildArgs: ["run", "build:cloudflare"],
+      convexStaticHostingArgs: null,
       wranglerArgs: ["versions", "upload", "--name", "example-app"],
     });
   });
 
-  it("does not repeat the build during Workers Builds", () => {
+  it("uploads the built production assets to Convex after a main Workers Build", () => {
     expect(
       selectCloudflareDeployPlan(["deploy"], {
         WORKERS_CI: "true",
+        WORKERS_CI_BRANCH: "main",
         WRANGLER_CI_OVERRIDE_NAME: "connected-worker",
       }),
     ).toEqual({
       buildArgs: null,
+      convexStaticHostingArgs: [
+        "exec",
+        "static-hosting",
+        "upload",
+        "--dist",
+        "./dist/client",
+        "--prod",
+      ],
       wranglerArgs: ["deploy", "--name", "connected-worker"],
+    });
+  });
+
+  it("does not upload preview assets to the production Convex site", () => {
+    expect(
+      selectCloudflareDeployPlan(["preview"], {
+        WORKERS_CI: "true",
+        WORKERS_CI_BRANCH: "main",
+        WRANGLER_CI_OVERRIDE_NAME: "connected-worker",
+      }),
+    ).toEqual({
+      buildArgs: null,
+      convexStaticHostingArgs: null,
+      wranglerArgs: ["versions", "upload", "--name", "connected-worker"],
+    });
+  });
+
+  it("does not upload a non-main deploy to the production Convex site", () => {
+    expect(
+      selectCloudflareDeployPlan(["deploy"], {
+        WORKERS_CI: "true",
+        WORKERS_CI_BRANCH: "feature-branch",
+        WRANGLER_CI_OVERRIDE_NAME: "connected-worker",
+      }),
+    ).toEqual({
+      buildArgs: null,
+      convexStaticHostingArgs: null,
+      wranglerArgs: ["deploy", "--name", "connected-worker"],
+    });
+  });
+
+  it("does not upload a production dry-run to Convex", () => {
+    expect(
+      selectCloudflareDeployPlan(["deploy", "--dry-run"], {
+        WORKERS_CI: "true",
+        WORKERS_CI_BRANCH: "main",
+        WRANGLER_CI_OVERRIDE_NAME: "connected-worker",
+      }),
+    ).toEqual({
+      buildArgs: null,
+      convexStaticHostingArgs: null,
+      wranglerArgs: ["deploy", "--name", "connected-worker", "--dry-run"],
     });
   });
 

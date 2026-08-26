@@ -63,6 +63,7 @@ function run(command: string, args: readonly string[]) {
 
 type CloudflareDeployPlan = {
   buildArgs: readonly string[] | null;
+  convexStaticHostingArgs: readonly string[] | null;
   wranglerArgs: readonly string[];
 };
 
@@ -91,9 +92,14 @@ export function selectCloudflareDeployPlan(
   const workerName = readWorkerName(env);
   const isWorkersBuild = env["WORKERS_CI"] === "1" || env["WORKERS_CI"] === "true";
   const isDryRun = extraArgs.some(isDryRunFlag);
+  const uploadsConvexSite =
+    isWorkersBuild && modeArg === "deploy" && env["WORKERS_CI_BRANCH"] === "main" && !isDryRun;
 
   return {
     buildArgs: isWorkersBuild ? null : ["run", isDryRun ? "build:app" : "build:cloudflare"],
+    convexStaticHostingArgs: uploadsConvexSite
+      ? ["exec", "static-hosting", "upload", "--dist", "./dist/client", "--prod"]
+      : null,
     wranglerArgs: [...modes[modeArg], "--name", workerName, ...extraArgs],
   };
 }
@@ -109,6 +115,10 @@ export async function main(
   }
 
   await run("wrangler", plan.wranglerArgs);
+
+  if (plan.convexStaticHostingArgs) {
+    await run("vp", plan.convexStaticHostingArgs);
+  }
 }
 
 const entrypoint = process.argv[1];

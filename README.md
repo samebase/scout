@@ -87,8 +87,9 @@ build from deploying backend code after a newer commit reaches the same branch. 
 --cmd` supplies `VITE_CONVEX_URL` to the frontend build, so it is not a Cloudflare build variable.
 
 `pnpm run deploy:convex` provides a separate manual production deployment to Convex Static Hosting.
-Cloudflare remains the automatic production and branch-preview path. Automatic synchronization
-between the two production hosts is not configured.
+For an automatic `main` deployment, the Cloudflare deploy command publishes the Worker first, then
+uploads the same `dist/client` files to Convex Static Hosting. Preview and dry-run deployments do
+not change the production `convex.site` app.
 
 See [`docs/cloudflare-workers-builds.md`](./docs/cloudflare-workers-builds.md) for the detailed build
 and deploy behavior. Use the
