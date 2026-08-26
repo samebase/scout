@@ -26,6 +26,11 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
 - Vite+ stays in `package.json` and supplies the dev, format, lint, test, and build tools behind the
   package scripts.
 
+## Hackathon log
+
+- Before each commit, run `$convex-hackathon-skill`. If it updates `hackathon.md`, include that file
+  in the commit.
+
 ## Cross-platform automation
 
 - The core workflow must run natively on macOS, Linux, and Windows.
