@@ -8,11 +8,11 @@
 - **Frontend:** Convex static hosting
 - **Convex deployment:** https://usable-spider-599.eu-west-1.convex.cloud
 - **Components:** @convex-dev/static-hosting
-- **Convex features:** schema, tables, indexes, queries, mutations, HTTP actions, realtime queries
+- **Convex features:** schema, tables, indexes, queries, mutations, actions, HTTP actions, realtime queries
 - **Auth:** Convex Auth
-- **AI models:** none
+- **AI models:** gpt-5.6-sol
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-26T23:34:55Z
+- **Last updated:** 2026-08-26T23:35:40Z
 
 ## Log
 
@@ -44,8 +44,14 @@ Shared one prerender route map between Cloudflare and Convex Static Hosting. Add
 `rewritePath` patch so exact public routes serve their prerendered HTML while unknown routes keep
 the SPA fallback (`prerender.config.ts`, `convex/http.ts`, `patches/`).
 
-### 2026-08-26 - working tree
+### 2026-08-26 - f0b0772
 
 Added a private run and event ledger for Scout missions, including explicit running, human-handoff,
 completion, failure, and browser-session states (`convex/schema.ts`, `convex/scout/model.ts`,
 `convex/scout/runs.ts`).
+
+### 2026-08-26 - working tree
+
+Added private Convex actions that create, drive, and stop Firecrawl browser sessions and read the
+Scout inbox through AgentMail. Verification links and codes can enter the browser without being
+returned to the operator (`convex/scout/browser.ts`, `convex/scout/mail.ts`, `convex/scout/lib/`).

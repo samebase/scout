@@ -11,6 +11,14 @@
 import type * as auth from "../auth.js";
 import type * as guests from "../guests.js";
 import type * as http from "../http.js";
+import type * as scout_browser from "../scout/browser.js";
+import type * as scout_lib_agentmail from "../scout/lib/agentmail.js";
+import type * as scout_lib_emailLinks from "../scout/lib/emailLinks.js";
+import type * as scout_lib_firecrawl from "../scout/lib/firecrawl.js";
+import type * as scout_lib_http from "../scout/lib/http.js";
+import type * as scout_mail from "../scout/mail.js";
+import type * as scout_model from "../scout/model.js";
+import type * as scout_runs from "../scout/runs.js";
 import type * as todos from "../todos.js";
 
 import type {
@@ -23,6 +31,14 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   guests: typeof guests;
   http: typeof http;
+  "scout/browser": typeof scout_browser;
+  "scout/lib/agentmail": typeof scout_lib_agentmail;
+  "scout/lib/emailLinks": typeof scout_lib_emailLinks;
+  "scout/lib/firecrawl": typeof scout_lib_firecrawl;
+  "scout/lib/http": typeof scout_lib_http;
+  "scout/mail": typeof scout_mail;
+  "scout/model": typeof scout_model;
+  "scout/runs": typeof scout_runs;
   todos: typeof todos;
 }>;
 
