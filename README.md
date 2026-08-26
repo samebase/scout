@@ -1,6 +1,7 @@
-# Samebase app
+# Scout
 
-This repository is the starter app that Samebase copies into a new GitHub repository.
+Scout will test web apps through fresh-user journeys and record whether their claims hold.
+This repository starts from the Samebase app template.
 
 It is a small, complete app base. It includes working authentication, real-time data, sharing, and
 deployment paths without adding product-specific services that a new app might not need.
