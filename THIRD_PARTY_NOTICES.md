@@ -13,6 +13,17 @@ This repository includes agent guidance and skills installed by
 The linked template is the byte-identical Apache-2.0 distribution snapshot for the installed files.
 The Apache License 2.0 text is in [`LICENSE`](./LICENSE).
 
+## Convex Static Hosting patch
+
+This repository patches `@convex-dev/static-hosting` 0.2.1 to add a request-path rewrite hook.
+
+- Source:
+  [`get-convex/static-hosting`](https://github.com/get-convex/static-hosting/tree/17461fe5693963def7b5c8ff94e93cb57b13f437)
+- License: Apache-2.0
+- Copyright: Convex, Inc.
+
+The Apache License 2.0 text is in [`LICENSE`](./LICENSE).
+
 ## Convex hackathon skill
 
 This repository includes the Convex hackathon build-log skill.

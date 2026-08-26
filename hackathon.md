@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** none
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-26T17:22:20Z
+- **Last updated:** 2026-08-26T19:25:59Z
 
 ## Log
 
@@ -32,8 +32,14 @@ Added a manual Convex Static Hosting deployment for the production SPA. Register
 Hosting component and kept the existing Convex Auth HTTP routes ahead of the static fallback
 (`convex/convex.config.ts`, `convex/http.ts`, `package.json`).
 
-### 2026-08-26 - working tree
+### 2026-08-26 - d23a2e3
 
 Made successful production Cloudflare Workers deploys publish the same frontend files to Convex
 Static Hosting. Preview, dry-run, and local deploys leave the production Convex site unchanged
 (`scripts/deploy-cloudflare.ts`, `scripts/deploy-cloudflare.test.ts`).
+
+### 2026-08-26 - working tree
+
+Shared one prerender route map between Cloudflare and Convex Static Hosting. Added a local
+`rewritePath` patch so exact public routes serve their prerendered HTML while unknown routes keep
+the SPA fallback (`prerender.config.ts`, `convex/http.ts`, `patches/`).

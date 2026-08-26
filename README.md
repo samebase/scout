@@ -98,6 +98,7 @@ and deploy behavior. Use the
 ## Important files
 
 - `package.json` defines the supported development, check, build, and deploy commands.
+- `prerender.config.ts` defines public prerenders and the exact aliases shared by both hosts.
 - `vite.config.ts` defines the TanStack Start SPA and prerender behavior.
 - `wrangler.jsonc` defines Cloudflare static assets, SPA fallback, and preview URLs.
 - `scripts/build-cloudflare.ts` owns the Cloudflare build and Convex deployment selection.
@@ -114,6 +115,8 @@ and deploy behavior. Use the
 - The marked Vite+ section in `AGENTS.md` is managed by `vp config`.
 - `scripts/generate-cloudflare-redirects.ts` owns only the marked generated block in
   `public/_redirects`. Custom redirect rules can stay outside that block.
+- `patches/@convex-dev__static-hosting@0.2.1.patch` adds the `rewritePath` hook used by
+  `convex/http.ts`. Remove it when the package ships an equivalent API.
 
 Do not hand-edit generated files when their source tool can update them.
 When a Convex AI-file update changes the installed source snapshot, confirm its distribution license
