@@ -14,7 +14,8 @@ inside the repository.
 
 - React 19 and TanStack Start in SPA mode
 - Convex for the real-time backend, database, and guest authentication
-- Cloudflare Workers Static Assets for delivery
+- Cloudflare Workers Static Assets for production delivery and branch previews
+- Convex Static Hosting for the hackathon `convex.site` deployment
 - shadcn/ui primitives for the user interface
 - Vite+ for development, formatting, linting, tests, and builds
 - Node.js 24 for application and automation code
@@ -53,6 +54,7 @@ The core workflow runs on macOS, Linux, and Windows. See
 | --------------------------------- | -------------------------------------------------------------- |
 | `pnpm run check`                  | Format, lint, type-check, test, and verify generated redirects |
 | `pnpm run build`                  | Run the complete Cloudflare build path                         |
+| `pnpm run deploy:convex`          | Build and deploy the production app to `convex.site`           |
 | `pnpm run deploy:dry-run`         | Validate a production upload without publishing it             |
 | `pnpm run deploy:preview:dry-run` | Validate a preview upload without publishing it                |
 
@@ -83,6 +85,10 @@ Cloudflare Workers Builds runs `pnpm run build` for all branches. It then uses:
 the branch identity is missing. `scripts/verify-current-branch-head.ts` prevents an older concurrent
 build from deploying backend code after a newer commit reaches the same branch. `convex deploy
 --cmd` supplies `VITE_CONVEX_URL` to the frontend build, so it is not a Cloudflare build variable.
+
+`pnpm run deploy:convex` provides a separate manual production deployment to Convex Static Hosting.
+Cloudflare remains the automatic production and branch-preview path. Automatic synchronization
+between the two production hosts is not configured.
 
 See [`docs/cloudflare-workers-builds.md`](./docs/cloudflare-workers-builds.md) for the detailed build
 and deploy behavior. Use the

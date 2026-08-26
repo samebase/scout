@@ -19,6 +19,7 @@
     "build:app": "vp run check && vp build",
     "build:cloudflare": "node ./scripts/build-cloudflare.ts",
     "deploy": "node ./scripts/deploy-cloudflare.ts deploy",
+    "deploy:convex": "static-hosting deploy --dist ./dist/client --build-command \"pnpm run build:app\"",
     "deploy:preview": "node ./scripts/deploy-cloudflare.ts preview",
     "deploy:dry-run": "node ./scripts/deploy-cloudflare.ts deploy --dry-run",
     "deploy:preview:dry-run": "node ./scripts/deploy-cloudflare.ts preview --dry-run",
@@ -38,6 +39,7 @@
   "dependencies": {
     "@auth/core": "0.41.3",
     "@convex-dev/auth": "^0.0.94",
+    "@convex-dev/static-hosting": "^0.2.1",
     "@tailwindcss/vite": "^4.3.0",
     "@tanstack/react-router": "^1.170.18",
     "@tanstack/react-start": "^1.168.34",
