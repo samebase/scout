@@ -61,27 +61,25 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
   referenced commit's total reachable commit count. Leave a `working tree` entry unversioned until
   it points to a commit. Do not backfill or otherwise rewrite earlier entries solely to add version
   prefixes.
-- After all substantive pull request changes and review fixes are committed, run the skill again on
-  the clean branch. If it replaces the final `working tree` entry with a commit SHA, commit only
-  `hackathon.md` with the exact unversioned subject `chore(hackathon): finalize log`.
-- Reserve `chore(hackathon): finalize log` for that mechanical commit. It may change only
-  `hackathon.md`, must be the final pull request commit, receives a `v<N>:` prefix during numbering,
-  and does not receive its own log entry.
-- If substantive work follows a finalizer, remove the obsolete finalizer during the next history
-  rewrite. Fold a correction commit into the substantive commit it fixes when they form one logical
-  change, then create one replacement finalizer after the last substantive commit.
-- Before publishing pull request history, verify that it contains exactly one reserved finalizer,
-  ignoring its `v<N>:` prefix, and that the finalizer is `HEAD`.
+- Keep at most one `working tree` entry in `hackathon.md`. The next substantive commit, whether it is
+  in the same pull request or a later one, must replace that entry with the short SHA and `v<N>` of
+  the commit whose evidence it records before the skill adds any new `working tree` evidence.
+- Do not create or require a commit solely to finalize the Hackathon log during ordinary pull
+  request work. Include the resolution in the next substantive commit. A pull request may merge
+  with one `working tree` entry; if it does not end with one, the next pull request has no prior log
+  entry to resolve.
+- Reserve the exact unversioned subject `chore(hackathon): finalize log` for final submission cleanup
+  when no later substantive commit is expected. That commit may change only `hackathon.md`, receives
+  a `v<N>:` prefix during numbering, and does not receive its own log entry.
 - After any rebase or commit-subject rewrite, run the skill again and replace every affected logged
   SHA with the corresponding reachable commit. Update an affected paragraph's existing `v<N> `
-  prefix to match that commit, preserve the existing log heading format, and amend the finalizer
-  with only these log repairs.
+  prefix to match that commit, preserve the existing log heading format, and fold the repairs into
+  the substantive commits being rewritten instead of adding a log-only repair commit.
 - Verify every committed SHA in `hackathon.md` with an ancestry check against `HEAD`. For each entry
   whose paragraph starts with `v<N> `, verify that the prefix matches the referenced commit. Do not
   require version prefixes on entries that predate this rule. Object existence alone is
   insufficient because obsolete pre-rebase commits can remain in Git's object database.
-- Do not merge while the latest hackathon entry says `working tree` or while the reserved finalizer
-  is missing, duplicated, or not the final pull request commit.
+- Do not merge while more than one `working tree` entry exists.
 
 ## Cross-platform automation
 

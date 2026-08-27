@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-27T22:26:39Z
+- **Last updated:** 2026-08-27T23:06:38Z
 
 ## Log
 
@@ -182,3 +182,9 @@ completed response. Kept the previous Lab API usable during staggered frontend/b
 v60 Replaced Qwen3.8 Flash with Qwen3.7 Flash for new Lab turns while retaining 3.8 as a historical
 generation value, so existing conversation metadata remains valid. New turns accept only Luna or
 Qwen3.7 Flash (`convex/scout/models.ts`, `convex/scout/lab.ts`, `src/routes/lab.tsx`).
+
+### 2026-08-27 - working tree
+
+Changed the Hackathon log workflow to carry at most one pending entry into the next substantive
+commit instead of ending every pull request with a log-only finalizer. Final submission keeps an
+explicit cleanup path (`AGENTS.md`).
