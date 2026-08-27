@@ -10,9 +10,9 @@
 - **Components:** @convex-dev/static-hosting
 - **Convex features:** schema, tables, indexes, queries, mutations, actions, HTTP actions, realtime queries
 - **Auth:** Convex Auth
-- **AI models:** gpt-5.6-sol
+- **AI models:** gpt-5.6-sol, gpt-5.6-luna
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-27T00:46:16Z
+- **Last updated:** 2026-08-27T14:21:31Z
 
 ## Log
 
@@ -63,9 +63,16 @@ measured code fallbacks, and explicitly stop to save browser state. The private 
 separates prompt outcomes from fallback reasons without storing signed browser URLs
 (`convex/scout/browser.ts`, `convex/scout/runs.ts`, `convex/scout/lib/firecrawl.ts`).
 
-### 2026-08-27 - working tree
+### 2026-08-27 - f164e8b
 
 Completed a profile-backed Tally benchmark and verified a published form submission. Added Bash
 code fallback support, preserved safe provider diagnostics, distinguished replay links from live
 views, and measured wall time across multiple fixed-lifetime browser sessions
 (`convex/scout/browser.ts`, `convex/scout/runs.ts`, `convex/scout/lib/firecrawl.ts`).
+
+### 2026-08-27 - working tree
+
+Defined the first production agent runtime as a Convex Agent and durable Workflow that use the
+existing Firecrawl and AgentMail controls. Recorded the Tally acceptance test, human handoff,
+debugging data, cost limits, and the reasons for deferring a separate container runner
+(`docs/agent-runtime.md`).

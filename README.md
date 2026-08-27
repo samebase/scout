@@ -103,6 +103,8 @@ and deploy behavior. Use the
 - `wrangler.jsonc` defines Cloudflare static assets, SPA fallback, and preview URLs.
 - `scripts/build-cloudflare.ts` owns the Cloudflare build and Convex deployment selection.
 - `scripts/deploy-cloudflare.ts` owns production, preview, and dry-run uploads.
+- `docs/agent-runtime.md` defines the planned Convex-native agent runtime and its first acceptance
+  test.
 - `convex/` contains the backend, schema, authentication, and generated Convex bindings.
 - `src/` contains the React application and routes.
 
