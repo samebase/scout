@@ -152,8 +152,8 @@ HTTP clients. Cloud development verification discovered all 52 tools and complet
 call from each provider with persisted tool activity, a finite tool loop, and client cleanup after
 stream consumption (`convex/scout/labGeneration.ts`, `package.json`).
 
-### 2026-08-27 - working tree
+### 2026-08-27 - d974573
 
-Defined forward-only Hackathon entry versions, versioned pull request publication, and one reserved
-log-only finalizer. Existing entries remain unchanged, and obsolete finalizers and related fixups
-are removed when pull request history is rewritten (`AGENTS.md`, `hackathon.md`).
+v49 Defined forward-only Hackathon entry versions, versioned pull request publication, and one
+reserved log-only finalizer. Existing entries remain unchanged, and obsolete finalizers and related
+fixups are removed when pull request history is rewritten (`AGENTS.md`, `hackathon.md`).
