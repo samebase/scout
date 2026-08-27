@@ -1,6 +1,5 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import { type FormEvent, useState } from "react";
-import { ADMIN_EMAIL, ADMIN_ONLY } from "../../convex/authConfig";
 import { Button } from "#components/ui/button";
 import { Input } from "#components/ui/input";
 
@@ -21,7 +20,7 @@ export function AuthPanel() {
   const [state, setState] = useState<AuthState>({
     kind: "credentials",
     flow: "signIn",
-    email: ADMIN_ONLY ? ADMIN_EMAIL : "",
+    email: "",
   });
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState("");
@@ -119,7 +118,6 @@ export function AuthPanel() {
               autoComplete="email"
               value={state.email}
               onChange={(event) => setState({ ...state, email: event.target.value })}
-              readOnly={ADMIN_ONLY}
               required
               autoFocus
             />
@@ -152,11 +150,7 @@ export function AuthPanel() {
                 })
               }
             >
-              {state.flow === "signIn"
-                ? ADMIN_ONLY
-                  ? "Create admin account"
-                  : "Create account"
-                : "Sign in instead"}
+              {state.flow === "signIn" ? "Create account" : "Sign in instead"}
             </Button>
             {state.flow === "signIn" ? (
               <Button
@@ -196,7 +190,6 @@ export function AuthPanel() {
               autoComplete="email"
               value={state.email}
               onChange={(event) => setState({ kind: "requestReset", email: event.target.value })}
-              readOnly={ADMIN_ONLY}
               required
               autoFocus
             />
@@ -260,17 +253,7 @@ export function AuthPanel() {
 
 function AuthHeading({ state }: { state: AuthState }) {
   if (state.kind === "credentials") {
-    return (
-      <h1 className="text-lg">
-        {state.flow === "signIn"
-          ? ADMIN_ONLY
-            ? "Admin sign in"
-            : "Sign in"
-          : ADMIN_ONLY
-            ? "Create admin account"
-            : "Create account"}
-      </h1>
-    );
+    return <h1 className="text-lg">{state.flow === "signIn" ? "Sign in" : "Create account"}</h1>;
   }
   if (state.kind === "verifyEmail") {
     return (
@@ -314,7 +297,7 @@ function CodeField({ id }: { id: string }) {
 
 function pendingLabel(flow: CredentialsFlow, isPending: boolean) {
   if (!isPending) {
-    return flow === "signIn" ? "Sign in" : ADMIN_ONLY ? "Create admin account" : "Create account";
+    return flow === "signIn" ? "Sign in" : "Create account";
   }
   return flow === "signIn" ? "Signing in" : "Creating account";
 }

@@ -113,3 +113,9 @@ Removed the template todo table, Convex functions, public list UI, and todo-only
 dependencies. Kept the shared server-side admin access helpers and admin authentication on a
 Scout-specific landing page (`convex/schema.ts`, `convex/access.ts`, `src/routes/index.tsx`,
 `src/lib/auth.test.ts`, `package.json`).
+
+### 2026-08-27 - 5422fab
+
+Removed the client import of the server auth policy and stopped pre-filling the allowlisted address.
+The sign-in form is now generic while Convex continues to enforce admin-only access
+(`src/components/auth-panel.tsx`).
