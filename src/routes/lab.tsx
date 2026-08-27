@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { type FormEvent, type KeyboardEvent, useState } from "react";
 import { api } from "../../convex/_generated/api";
-import type { ScoutModel } from "../../convex/scout/models";
+import type { SelectableScoutModel } from "../../convex/scout/models";
 import { Bubble, BubbleContent } from "#components/ui/bubble";
 import { Button } from "#components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "#components/ui/collapsible";
@@ -56,10 +56,10 @@ type LabMessageMetadata = NonNullable<LabMessage["metadata"]>;
 
 const MODEL_OPTIONS = [
   { value: "openai/gpt-5.6-luna", label: "Luna" },
-  { value: "qwen/qwen3.8-flash", label: "Qwen 3.8 Flash" },
-] satisfies readonly { value: ScoutModel; label: string }[];
+  { value: "qwen/qwen3.7-flash", label: "Qwen 3.7 Flash" },
+] satisfies readonly { value: SelectableScoutModel; label: string }[];
 
-const DEFAULT_MODEL: ScoutModel = "openai/gpt-5.6-luna";
+const DEFAULT_MODEL: SelectableScoutModel = "openai/gpt-5.6-luna";
 const tokenNumber = new Intl.NumberFormat();
 const threadDate = new Intl.DateTimeFormat(undefined, {
   dateStyle: "short",
@@ -98,7 +98,7 @@ function AgentLab() {
     optimisticallySendMessage(api.scout.lab.listMessages),
   );
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
-  const [selectedModel, setSelectedModel] = useState<ScoutModel>(DEFAULT_MODEL);
+  const [selectedModel, setSelectedModel] = useState<SelectableScoutModel>(DEFAULT_MODEL);
   const [draft, setDraft] = useState("");
   const [composerState, setComposerState] = useState<ComposerState>({ kind: "idle" });
   const threadId = selectedThreadId ?? threads?.[0]?.threadId ?? null;

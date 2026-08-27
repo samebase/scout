@@ -10,9 +10,9 @@
 - **Components:** @convex-dev/agent, @convex-dev/static-hosting
 - **Convex features:** schema, tables, indexes, queries, paginated queries, realtime queries, mutations, actions, scheduled functions, HTTP actions, AI Gateway
 - **Auth:** Convex Auth
-- **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.8-flash (Convex AI Gateway)
+- **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-27T22:05:20Z
+- **Last updated:** 2026-08-27T22:26:12Z
 
 ## Log
 
@@ -176,3 +176,9 @@ Turned the admin Lab into a model-comparison workbench with recent thread switch
 titles, Luna and Qwen selection, and persisted input/output usage plus real elapsed time for each
 completed response. Kept the previous Lab API usable during staggered frontend/backend deploys
 (`convex/scout/lab.ts`, `convex/scout/labGeneration.ts`, `convex/schema.ts`, `src/routes/lab.tsx`).
+
+### 2026-08-27 - working tree
+
+Replaced Qwen3.8 Flash with Qwen3.7 Flash for new Lab turns while retaining 3.8 as a historical
+generation value, so existing conversation metadata remains valid. New turns accept only Luna or
+Qwen3.7 Flash (`convex/scout/models.ts`, `convex/scout/lab.ts`, `src/routes/lab.tsx`).

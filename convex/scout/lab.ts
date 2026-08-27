@@ -7,7 +7,12 @@ import { internalMutation, mutation, query } from "../_generated/server";
 import { requireAppUser } from "../access";
 import { scoutAgent } from "./agent";
 import { requireOwnedAgentThread } from "./labAccess";
-import { DEFAULT_SCOUT_MODEL, scoutModelValidator, scoutTokenUsageValidator } from "./models";
+import {
+  DEFAULT_SCOUT_MODEL,
+  scoutModelValidator,
+  scoutTokenUsageValidator,
+  selectableScoutModelValidator,
+} from "./models";
 
 const MAX_PROMPT_LENGTH = 16_000;
 const MAX_RECENT_THREADS = 50;
@@ -121,7 +126,7 @@ export const sendMessage = mutation({
   args: {
     threadId: v.string(),
     prompt: v.string(),
-    model: v.optional(scoutModelValidator),
+    model: v.optional(selectableScoutModelValidator),
   },
   returns: v.null(),
   handler: async (ctx, args) => {

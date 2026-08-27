@@ -47,7 +47,7 @@ describe("Scout agent lab", () => {
     await admin.mutation(api.scout.lab.sendMessage, {
       threadId: created.threadId,
       prompt: "  Say hello.  ",
-      model: "qwen/qwen3.8-flash",
+      model: "qwen/qwen3.7-flash",
     });
     await expect(admin.query(api.scout.lab.listThreads, {})).resolves.toMatchObject([
       { threadId: created.threadId, title: "Say hello." },
@@ -61,7 +61,7 @@ describe("Scout agent lab", () => {
     );
     expect(generation).toMatchObject({
       threadId: created.threadId,
-      model: "qwen/qwen3.8-flash",
+      model: "qwen/qwen3.7-flash",
     });
     if (!generation) {
       throw new Error("Expected a lab generation record");
@@ -101,7 +101,7 @@ describe("Scout agent lab", () => {
       role: "assistant",
       text: "Hello.",
       metadata: {
-        model: "qwen/qwen3.8-flash",
+        model: "qwen/qwen3.7-flash",
         usage: {
           promptTokens: 123,
           completionTokens: 7,
@@ -123,7 +123,7 @@ describe("Scout agent lab", () => {
     ).rejects.toThrow("Thread not found");
   });
 
-  it("rejects a model outside the lab allowlist", async () => {
+  it("rejects the retired Qwen model", async () => {
     const backend = testBackend();
     const userId = await insertUser(backend, ADMIN_EMAIL);
     const admin = backend.withIdentity({ subject: `${userId}|test-session` });
@@ -132,9 +132,9 @@ describe("Scout agent lab", () => {
     await expect(
       admin.mutation(api.scout.lab.sendMessage, {
         threadId: created.threadId,
-        prompt: "Try an unapproved model.",
-        // @ts-expect-error Deliberately cross the generated API boundary with an invalid model.
-        model: "some-provider/unapproved-model",
+        prompt: "Try the retired model.",
+        // @ts-expect-error Deliberately cross the generated API boundary with a retired model.
+        model: "qwen/qwen3.8-flash",
       }),
     ).rejects.toThrow();
   });
