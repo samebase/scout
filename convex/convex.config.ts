@@ -1,5 +1,6 @@
 import { defineApp } from "convex/server";
 import { v } from "convex/values";
+import agent from "@convex-dev/agent/convex.config";
 import staticHosting from "@convex-dev/static-hosting/convex.config";
 
 // Keep existing app HTTP routes at their current root URLs.
@@ -12,6 +13,7 @@ const app = defineApp({
     SCOUT_AGENT_PASSWORD: v.optional(v.string()),
   },
 });
+app.use(agent);
 app.use(staticHosting);
 
 export default app;
