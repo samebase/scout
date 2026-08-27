@@ -10,9 +10,9 @@
 - **Components:** @convex-dev/agent, @convex-dev/static-hosting
 - **Convex features:** schema, tables, indexes, queries, paginated queries, realtime queries, mutations, actions, scheduled functions, HTTP actions, AI Gateway
 - **Auth:** Convex Auth
-- **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna (Convex AI Gateway)
+- **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.8-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-27T20:28:08Z
+- **Last updated:** 2026-08-27T22:04:44Z
 
 ## Log
 
@@ -169,3 +169,9 @@ and linked the Convex live app from the README (`src/routes/`, `prerender.config
 Made Firecrawl code interactions Scout's default browser control after the Tally benchmarks showed
 that provider prompt mode was slower, costlier, and harder to debug. Firecrawl still owns the remote
 browser, live view, session, and persistent profile (`docs/agent-runtime.md`).
+
+### 2026-08-27 - working tree
+
+Centralized the Scout Agent model allowlist and added Qwen 3.8 Flash beside Luna through Convex AI
+Gateway, preparing the Lab to switch models without changing agent construction
+(`convex/scout/models.ts`, `convex/scout/agent.ts`).
