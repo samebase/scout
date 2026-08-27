@@ -1,11 +1,13 @@
 "use node";
 
 import { createMCPClient, type MCPClient } from "@ai-sdk/mcp";
-import { isStepCount } from "ai";
+import { isStepCount, type LanguageModelUsage } from "ai";
 import { v } from "convex/values";
+import { internal } from "../_generated/api";
 import { env, internalAction } from "../_generated/server";
 import { scoutAgent } from "./agent";
 import { requireOwnedAgentThread } from "./labAccess";
+import { scoutLanguageModel, scoutModelValidator, type ScoutTokenUsage } from "./models";
 
 function requireSecret(value: string | undefined, name: string) {
   if (!value) {
@@ -14,11 +16,26 @@ function requireSecret(value: string | undefined, name: string) {
   return value;
 }
 
+function tokenUsage(usage: LanguageModelUsage): ScoutTokenUsage {
+  return {
+    ...(usage.inputTokens === undefined ? {} : { promptTokens: usage.inputTokens }),
+    ...(usage.outputTokens === undefined ? {} : { completionTokens: usage.outputTokens }),
+    ...(usage.totalTokens === undefined ? {} : { totalTokens: usage.totalTokens }),
+    ...(usage.outputTokenDetails.reasoningTokens === undefined
+      ? {}
+      : { reasoningTokens: usage.outputTokenDetails.reasoningTokens }),
+    ...(usage.inputTokenDetails.cacheReadTokens === undefined
+      ? {}
+      : { cachedInputTokens: usage.inputTokenDetails.cacheReadTokens }),
+  };
+}
+
 export const generateResponse = internalAction({
   args: {
     threadId: v.string(),
     userId: v.string(),
     promptMessageId: v.string(),
+    model: scoutModelValidator,
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -56,6 +73,7 @@ export const generateResponse = internalAction({
         { threadId: args.threadId, userId: args.userId },
         {
           promptMessageId: args.promptMessageId,
+          model: scoutLanguageModel(args.model),
           tools,
           stopWhen: isStepCount(12),
         },
@@ -68,6 +86,10 @@ export const generateResponse = internalAction({
         },
       );
       await result.consumeStream();
+      await ctx.runMutation(internal.scout.lab.completeGeneration, {
+        promptMessageId: args.promptMessageId,
+        usage: tokenUsage(await result.totalUsage),
+      });
       return null;
     } finally {
       const closePromises: Promise<void>[] = [];

@@ -1,14 +1,14 @@
 import { Agent } from "@convex-dev/agent";
-import { convexGateway } from "@convex-dev/ai-sdk-provider";
 import { v } from "convex/values";
 import { components } from "../_generated/api";
 import { internalAction } from "../_generated/server";
+import { DEFAULT_SCOUT_MODEL, scoutLanguageModel } from "./models";
 
 const smokeReply = "SCOUT_AGENT_SMOKE_OK";
 
 export const scoutAgent = new Agent(components.agent, {
   name: "Scout",
-  languageModel: convexGateway("openai/gpt-5.6-luna"),
+  languageModel: scoutLanguageModel(DEFAULT_SCOUT_MODEL),
   instructions:
     "You are Scout, a rigorous web-app evaluator. Report only evidence you can verify, and state clearly when evidence is missing.",
 });

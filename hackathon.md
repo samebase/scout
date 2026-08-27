@@ -10,9 +10,9 @@
 - **Components:** @convex-dev/agent, @convex-dev/static-hosting
 - **Convex features:** schema, tables, indexes, queries, paginated queries, realtime queries, mutations, actions, scheduled functions, HTTP actions, AI Gateway
 - **Auth:** Convex Auth
-- **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna (Convex AI Gateway)
+- **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-27T20:28:08Z
+- **Last updated:** 2026-08-27T22:26:39Z
 
 ## Log
 
@@ -169,3 +169,16 @@ and linked the Convex live app from the README (`src/routes/`, `prerender.config
 Made Firecrawl code interactions Scout's default browser control after the Tally benchmarks showed
 that provider prompt mode was slower, costlier, and harder to debug. Firecrawl still owns the remote
 browser, live view, session, and persistent profile (`docs/agent-runtime.md`).
+
+### 2026-08-27 - e0669c2
+
+v59 Turned the admin Lab into a model-comparison workbench with recent thread switching, first-prompt
+titles, Luna and Qwen selection, and persisted input/output usage plus real elapsed time for each
+completed response. Kept the previous Lab API usable during staggered frontend/backend deploys
+(`convex/scout/lab.ts`, `convex/scout/labGeneration.ts`, `convex/schema.ts`, `src/routes/lab.tsx`).
+
+### 2026-08-27 - 59ceb61
+
+v60 Replaced Qwen3.8 Flash with Qwen3.7 Flash for new Lab turns while retaining 3.8 as a historical
+generation value, so existing conversation metadata remains valid. New turns accept only Luna or
+Qwen3.7 Flash (`convex/scout/models.ts`, `convex/scout/lab.ts`, `src/routes/lab.tsx`).

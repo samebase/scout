@@ -29,6 +29,7 @@ import type * as scout_lib_firecrawl from "../scout/lib/firecrawl.js";
 import type * as scout_lib_http from "../scout/lib/http.js";
 import type * as scout_mail from "../scout/mail.js";
 import type * as scout_model from "../scout/model.js";
+import type * as scout_models from "../scout/models.js";
 import type * as scout_runs from "../scout/runs.js";
 
 import type {
@@ -59,6 +60,7 @@ declare const fullApi: ApiFromModules<{
   "scout/lib/http": typeof scout_lib_http;
   "scout/mail": typeof scout_mail;
   "scout/model": typeof scout_model;
+  "scout/models": typeof scout_models;
   "scout/runs": typeof scout_runs;
 }>;
 
