@@ -26,10 +26,33 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
 - Vite+ stays in `package.json` and supplies the dev, format, lint, test, and build tools behind the
   package scripts.
 
+## Main build labels
+
+- Use merge commits for pull requests into `main`. Do not squash or rebase PR commits because
+  `hackathon.md` records their SHAs.
+- Merge pull requests into `main` one at a time. Do not start concurrent merges.
+- If a pull request must incorporate newer `main` work, merge `origin/main` into its branch instead
+  of rebasing.
+- After branch commits or merges from `origin/main`, run `node ./scripts/pr-build-label.ts` to
+  refresh the pull request's `v<N>:` title.
+- Run the title script again immediately before merge. Another pull request may have changed
+  the projected number since the previous refresh.
+- Keep ordinary branch commit subjects unversioned. Merge with an explicit subject matching the
+  current versioned pull request title, for example
+  `gh pr merge <pr-number> --merge --subject "v<N>: <title>"`.
+- Prefix a direct commit to `main` with `v<N>:`, where `N` is the commit count including that commit.
+- CI rejects a `main` commit whose subject does not start with its expected `v<N>:` label.
+
 ## Hackathon log
 
 - Before each commit, run `$convex-hackathon-skill`. If it updates `hackathon.md`, include that file
   in the commit.
+- After all substantive pull request changes and review fixes are committed, run the skill again on
+  the clean branch. If it replaces the final `working tree` entry with a commit SHA, commit only
+  `hackathon.md` with the subject `docs: finalize hackathon log`.
+- Treat that finalizer as a mechanical commit and do not add a log entry for the finalizer itself.
+- Do not merge while the latest hackathon entry says `working tree`. If substantive changes follow
+  the finalizer, repeat the finalization step before merge.
 
 ## Cross-platform automation
 

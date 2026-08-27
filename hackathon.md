@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, gpt-5.6-luna
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-27T14:21:31Z
+- **Last updated:** 2026-08-27T14:59:58Z
 
 ## Log
 
@@ -70,9 +70,16 @@ code fallback support, preserved safe provider diagnostics, distinguished replay
 views, and measured wall time across multiple fixed-lifetime browser sessions
 (`convex/scout/browser.ts`, `convex/scout/runs.ts`, `convex/scout/lib/firecrawl.ts`).
 
-### 2026-08-27 - working tree
+### 2026-08-27 - 4bfb913
 
 Defined the first production agent runtime as a Convex Agent and durable Workflow that use the
 existing Firecrawl and AgentMail controls. Recorded the Tally acceptance test, human handoff,
 debugging data, cost limits, and the reasons for deferring a separate container runner
 (`docs/agent-runtime.md`).
+
+### 2026-08-27 - b12c006
+
+Added a merge-commit build label workflow that projects GitHub's total commit count, preserves pull
+request commit SHAs for this log, and rejects mislabeled `main` commits in CI. Pull requests now end
+with a mechanical log commit that replaces `working tree` with the final substantive commit SHA
+before merge (`AGENTS.md`, `.github/workflows/ci.yml`, `scripts/`).
