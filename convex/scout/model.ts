@@ -43,6 +43,22 @@ export const scoutBrowserStateValidator = v.union(
     sessionDurationMs: v.union(v.number(), v.null()),
     creditsBilled: v.union(v.number(), v.null()),
   }),
+  v.object({
+    kind: v.literal("scrape_active"),
+    scrapeId: v.string(),
+    profileName: v.string(),
+    startedAt: v.number(),
+    replayAvailable: v.boolean(),
+  }),
+  v.object({
+    kind: v.literal("scrape_closed"),
+    scrapeId: v.string(),
+    profileName: v.string(),
+    closedAt: v.number(),
+    sessionDurationMs: v.union(v.number(), v.null()),
+    creditsBilled: v.union(v.number(), v.null()),
+    replayAvailable: v.boolean(),
+  }),
 );
 
 export const scoutRunEventValidator = v.union(
@@ -57,6 +73,25 @@ export const scoutRunEventValidator = v.union(
     kind: v.literal("browser_step"),
     summary: v.string(),
     success: v.boolean(),
+    exitCode: v.union(v.number(), v.null()),
+    killed: v.boolean(),
+  }),
+  v.object({
+    kind: v.literal("scrape_browser_started"),
+    profileName: v.string(),
+  }),
+  v.object({
+    kind: v.literal("browser_prompt_step"),
+    summary: v.string(),
+    success: v.boolean(),
+    durationMs: v.number(),
+  }),
+  v.object({
+    kind: v.literal("browser_code_fallback"),
+    summary: v.string(),
+    fallbackReason: v.string(),
+    success: v.boolean(),
+    durationMs: v.number(),
     exitCode: v.union(v.number(), v.null()),
     killed: v.boolean(),
   }),
@@ -83,5 +118,11 @@ export const scoutRunEventValidator = v.union(
     kind: v.literal("browser_stopped"),
     sessionDurationMs: v.union(v.number(), v.null()),
     creditsBilled: v.union(v.number(), v.null()),
+  }),
+  v.object({
+    kind: v.literal("scrape_browser_stopped"),
+    sessionDurationMs: v.union(v.number(), v.null()),
+    creditsBilled: v.union(v.number(), v.null()),
+    replayAvailable: v.boolean(),
   }),
 );

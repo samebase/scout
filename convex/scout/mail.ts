@@ -4,7 +4,12 @@ import type { Doc } from "../_generated/dataModel";
 import { internalAction, type ActionCtx } from "../_generated/server";
 import { getInboxMessage, listInboxMessages } from "./lib/agentmail";
 import { extractEmailLinks } from "./lib/emailLinks";
-import { executeBrowserCode, type BrowserExecution } from "./lib/firecrawl";
+import {
+  executeBrowserCode,
+  executeScrapeInteractCode,
+  type BrowserExecution,
+  type ScrapeInteraction,
+} from "./lib/firecrawl";
 
 const executionValidator = v.object({
   success: v.boolean(),
@@ -17,7 +22,7 @@ const executionValidator = v.object({
 });
 
 function requireActiveBrowser(run: Doc<"scoutRuns">) {
-  if (run.browser.kind !== "active") {
+  if (run.browser.kind !== "active" && run.browser.kind !== "scrape_active") {
     throw new Error("Scout run has no active browser session");
   }
   return run.browser;
@@ -52,6 +57,44 @@ async function recordExecution(
     success: execution.success,
     exitCode: execution.exitCode,
     killed: execution.killed,
+  });
+}
+
+function browserExecution(interaction: ScrapeInteraction): BrowserExecution {
+  return {
+    success: interaction.success,
+    stdout: interaction.stdout,
+    result: interaction.result,
+    stderr: interaction.stderr,
+    exitCode: interaction.exitCode,
+    killed: interaction.killed,
+    error: interaction.error,
+  };
+}
+
+async function recordSecretExecution(
+  ctx: ActionCtx,
+  runId: Doc<"scoutRuns">["_id"],
+  browser: Extract<Doc<"scoutRuns">["browser"], { kind: "scrape_active" }>,
+  summary: string,
+  fallbackReason: string,
+  execution: BrowserExecution,
+  durationMs: number,
+  replayAvailable: boolean,
+) {
+  await ctx.runMutation(internal.scout.runs.scrapeInteractionRecorded, {
+    runId,
+    scrapeId: browser.scrapeId,
+    replayAvailable,
+    step: {
+      kind: "code_fallback",
+      summary,
+      fallbackReason,
+      success: execution.success,
+      durationMs,
+      exitCode: execution.exitCode,
+      killed: execution.killed,
+    },
   });
 }
 
@@ -138,17 +181,34 @@ export const openLink = internalAction({
       throw new Error("Email link not found");
     }
 
-    const execution = await executeBrowserCode(
-      browser.sessionId,
-      `agent-browser open ${shellQuote(link.url)} && agent-browser wait --load domcontentloaded && agent-browser snapshot -i`,
-      60,
-    );
-    await recordExecution(
-      ctx,
-      args.runId,
-      `Opened a link from “${redactVerificationMaterial(message.subject).slice(0, 160)}”`,
-      execution,
-    );
+    const summary = `Opened a link from “${redactVerificationMaterial(message.subject).slice(0, 160)}”`;
+    let execution: BrowserExecution;
+    if (browser.kind === "active") {
+      execution = await executeBrowserCode(
+        browser.sessionId,
+        `agent-browser open ${shellQuote(link.url)} && agent-browser wait --load domcontentloaded && agent-browser snapshot -i`,
+        60,
+      );
+      await recordExecution(ctx, args.runId, summary, execution);
+    } else {
+      const startedAt = Date.now();
+      const interaction = await executeScrapeInteractCode(
+        browser.scrapeId,
+        `await page.goto(${JSON.stringify(link.url)}); await page.waitForLoadState('domcontentloaded'); JSON.stringify({ opened: true, title: await page.title() });`,
+        60,
+      );
+      execution = browserExecution(interaction);
+      await recordSecretExecution(
+        ctx,
+        args.runId,
+        browser,
+        "Opened an emailed verification link",
+        "The verification link had to stay inside the Convex mail helper",
+        execution,
+        Date.now() - startedAt,
+        interaction.replayAvailable,
+      );
+    }
     return execution;
   },
 });
@@ -157,7 +217,7 @@ export const fillVerificationCode = internalAction({
   args: {
     runId: v.id("scoutRuns"),
     messageId: v.string(),
-    inputRef: v.string(),
+    inputRef: v.optional(v.string()),
   },
   returns: executionValidator,
   handler: async (ctx, args) => {
@@ -175,12 +235,36 @@ export const fillVerificationCode = internalAction({
       throw new Error(`Expected one verification code in the email; found ${codes.length}`);
     }
 
-    const execution = await executeBrowserCode(
-      browser.sessionId,
-      `agent-browser fill ${elementRef(args.inputRef)} ${shellQuote(codes[0])} && agent-browser snapshot -i`,
-      60,
-    );
-    await recordExecution(ctx, args.runId, "Filled an emailed verification code", execution);
+    let execution: BrowserExecution;
+    if (browser.kind === "active") {
+      if (!args.inputRef) {
+        throw new Error("Input ref is required for a standalone browser session");
+      }
+      execution = await executeBrowserCode(
+        browser.sessionId,
+        `agent-browser fill ${elementRef(args.inputRef)} ${shellQuote(codes[0])} && agent-browser snapshot -i`,
+        60,
+      );
+      await recordExecution(ctx, args.runId, "Filled an emailed verification code", execution);
+    } else {
+      const startedAt = Date.now();
+      const interaction = await executeScrapeInteractCode(
+        browser.scrapeId,
+        `const inputs = page.locator('input:visible'); const candidates = []; for (let index = 0; index < await inputs.count(); index += 1) { const input = inputs.nth(index); const description = [await input.getAttribute('autocomplete'), await input.getAttribute('name'), await input.getAttribute('placeholder'), await input.getAttribute('aria-label')].filter(Boolean).join(' ').toLowerCase(); if (description.includes('code') || description.includes('otp') || description.includes('verification')) candidates.push(index); } if (candidates.length !== 1) throw new Error('Expected one visible verification code field'); await inputs.nth(candidates[0]).fill(${JSON.stringify(codes[0])}); JSON.stringify({ filled: true });`,
+        60,
+      );
+      execution = browserExecution(interaction);
+      await recordSecretExecution(
+        ctx,
+        args.runId,
+        browser,
+        "Filled an emailed verification code",
+        "The emailed code had to stay inside the Convex mail helper",
+        execution,
+        Date.now() - startedAt,
+        interaction.replayAvailable,
+      );
+    }
     return execution;
   },
 });

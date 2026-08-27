@@ -1,7 +1,11 @@
+import { env } from "../../_generated/server";
+
 const MAX_PROVIDER_ERROR_LENGTH = 1_000;
 
-export function requireEnv(name: string) {
-  const value = process.env[name]?.trim();
+type ScoutEnvName = "AGENTMAIL_API_KEY" | "FIRECRAWL_API_KEY" | "SCOUT_AGENT_PASSWORD";
+
+export function requireEnv(name: ScoutEnvName) {
+  const value = env[name]?.trim();
   if (!value) {
     throw new Error(`${name} is not configured`);
   }

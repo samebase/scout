@@ -8,6 +8,10 @@ const MAX_EVENTS_PER_RUN = 500;
 const MAX_MISSION_LENGTH = 4_000;
 const MAX_NOTE_LENGTH = 2_000;
 const MAX_SCOUT_NAME_LENGTH = 100;
+const PUBLIC_NOTE_EMAIL = /\b[^\s@]+@[^\s@]+\.[^\s@]+\b/;
+const PUBLIC_NOTE_URL = /https?:\/\//i;
+const PUBLIC_NOTE_CODE = /\b\d{4,8}\b/;
+const PUBLIC_NOTE_SECRET_ASSIGNMENT = /\b(?:cookie|session|token)\s*[:=]\s*\S+/i;
 
 function requiredText(value: string, label: string, maximumLength: number) {
   const trimmed = value.trim();
@@ -27,6 +31,19 @@ function requiredUrl(value: string, label: string) {
     throw new Error(`${label} must use HTTPS`);
   }
   return url.toString();
+}
+
+function publicNote(value: string, label: string) {
+  const note = requiredText(value, label, MAX_NOTE_LENGTH);
+  if (
+    PUBLIC_NOTE_URL.test(note) ||
+    PUBLIC_NOTE_EMAIL.test(note) ||
+    PUBLIC_NOTE_CODE.test(note) ||
+    PUBLIC_NOTE_SECRET_ASSIGNMENT.test(note)
+  ) {
+    throw new Error(`${label} must not contain URLs, email addresses, or verification codes`);
+  }
+  return note;
 }
 
 type ScoutRunEvent = Infer<typeof scoutRunEventValidator>;
@@ -52,6 +69,26 @@ async function insertEvent(
   });
 }
 
+async function insertRun(
+  ctx: MutationCtx,
+  identity: { scoutName: string; scoutEmail: string },
+  target: { targetUrl: string; mission: string },
+) {
+  const now = Date.now();
+  const runId = await ctx.db.insert("scoutRuns", {
+    scoutName: requiredText(identity.scoutName, "Scout name", MAX_SCOUT_NAME_LENGTH),
+    scoutEmail: requiredText(identity.scoutEmail, "Scout email", 320),
+    targetUrl: requiredUrl(target.targetUrl, "Target URL"),
+    mission: requiredText(target.mission, "Mission", MAX_MISSION_LENGTH),
+    status: { kind: "pending" },
+    browser: { kind: "none" },
+    createdAt: now,
+    updatedAt: now,
+  });
+  await insertEvent(ctx, runId, { kind: "run_created" }, now);
+  return runId;
+}
+
 export const create = internalMutation({
   args: {
     scoutName: v.string(),
@@ -60,20 +97,21 @@ export const create = internalMutation({
     mission: v.string(),
   },
   returns: v.id("scoutRuns"),
+  handler: async (ctx, args) => await insertRun(ctx, args, args),
+});
+
+export const createWithLatestIdentity = internalMutation({
+  args: {
+    targetUrl: v.string(),
+    mission: v.string(),
+  },
+  returns: v.id("scoutRuns"),
   handler: async (ctx, args) => {
-    const now = Date.now();
-    const runId = await ctx.db.insert("scoutRuns", {
-      scoutName: requiredText(args.scoutName, "Scout name", MAX_SCOUT_NAME_LENGTH),
-      scoutEmail: requiredText(args.scoutEmail, "Scout email", 320),
-      targetUrl: requiredUrl(args.targetUrl, "Target URL"),
-      mission: requiredText(args.mission, "Mission", MAX_MISSION_LENGTH),
-      status: { kind: "pending" },
-      browser: { kind: "none" },
-      createdAt: now,
-      updatedAt: now,
-    });
-    await insertEvent(ctx, runId, { kind: "run_created" }, now);
-    return runId;
+    const latest = await ctx.db.query("scoutRuns").withIndex("by_created_at").order("desc").first();
+    if (!latest) {
+      throw new Error("Scout has no existing identity to reuse");
+    }
+    return await insertRun(ctx, latest, args);
   },
 });
 
@@ -162,6 +200,109 @@ export const browserStepRecorded = internalMutation({
   },
 });
 
+export const scrapeBrowserStarted = internalMutation({
+  args: {
+    runId: v.id("scoutRuns"),
+    scrapeId: v.string(),
+    profileName: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const run = await requireRun(ctx, args.runId);
+    if (run.browser.kind !== "none") {
+      throw new Error("Scout run already has a browser session");
+    }
+
+    const now = Date.now();
+    const profileName = requiredText(args.profileName, "Browser profile name", 100);
+    await ctx.db.patch(args.runId, {
+      status: { kind: "running" },
+      browser: {
+        kind: "scrape_active",
+        scrapeId: requiredText(args.scrapeId, "Scrape ID", 100),
+        profileName,
+        startedAt: now,
+        replayAvailable: false,
+      },
+      updatedAt: now,
+    });
+    await insertEvent(ctx, args.runId, { kind: "scrape_browser_started", profileName }, now);
+    return null;
+  },
+});
+
+export const scrapeInteractionRecorded = internalMutation({
+  args: {
+    runId: v.id("scoutRuns"),
+    scrapeId: v.string(),
+    replayAvailable: v.boolean(),
+    step: v.union(
+      v.object({
+        kind: v.literal("prompt"),
+        summary: v.string(),
+        success: v.boolean(),
+        durationMs: v.number(),
+      }),
+      v.object({
+        kind: v.literal("code_fallback"),
+        summary: v.string(),
+        fallbackReason: v.string(),
+        success: v.boolean(),
+        durationMs: v.number(),
+        exitCode: v.union(v.number(), v.null()),
+        killed: v.boolean(),
+      }),
+    ),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const run = await requireRun(ctx, args.runId);
+    if (run.browser.kind !== "scrape_active" || run.browser.scrapeId !== args.scrapeId) {
+      throw new Error("Scrape browser session does not belong to this Scout run");
+    }
+
+    const now = Date.now();
+    const summary = publicNote(args.step.summary, "Browser step summary");
+    if (args.step.kind === "prompt") {
+      await insertEvent(
+        ctx,
+        args.runId,
+        {
+          kind: "browser_prompt_step",
+          summary,
+          success: args.step.success,
+          durationMs: args.step.durationMs,
+        },
+        now,
+      );
+    } else {
+      await insertEvent(
+        ctx,
+        args.runId,
+        {
+          kind: "browser_code_fallback",
+          summary,
+          fallbackReason: publicNote(args.step.fallbackReason, "Code fallback reason"),
+          success: args.step.success,
+          durationMs: args.step.durationMs,
+          exitCode: args.step.exitCode,
+          killed: args.step.killed,
+        },
+        now,
+      );
+    }
+
+    await ctx.db.patch(args.runId, {
+      browser: {
+        ...run.browser,
+        replayAvailable: run.browser.replayAvailable || args.replayAvailable,
+      },
+      updatedAt: now,
+    });
+    return null;
+  },
+});
+
 export const mailCheckRecorded = internalMutation({
   args: {
     runId: v.id("scoutRuns"),
@@ -190,12 +331,12 @@ export const requestHuman = internalMutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const run = await requireRun(ctx, args.runId);
-    if (run.browser.kind !== "active") {
+    if (run.browser.kind !== "active" && run.browser.kind !== "scrape_active") {
       throw new Error("A human can take over only while the browser is active");
     }
 
     const now = Date.now();
-    const reason = requiredText(args.reason, "Human takeover reason", MAX_NOTE_LENGTH);
+    const reason = publicNote(args.reason, "Human takeover reason");
     await ctx.db.patch(args.runId, {
       status: { kind: "needs_human", reason, requestedAt: now },
       updatedAt: now,
@@ -212,7 +353,10 @@ export const resume = internalMutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const run = await requireRun(ctx, args.runId);
-    if (run.status.kind !== "needs_human" || run.browser.kind !== "active") {
+    if (
+      run.status.kind !== "needs_human" ||
+      (run.browser.kind !== "active" && run.browser.kind !== "scrape_active")
+    ) {
       throw new Error("Scout run is not waiting for human takeover");
     }
 
@@ -241,7 +385,7 @@ export const complete = internalMutation({
       status: {
         kind: "completed",
         resultUrl,
-        summary: requiredText(args.summary, "Run summary", MAX_NOTE_LENGTH),
+        summary: publicNote(args.summary, "Run summary"),
         completedAt: now,
       },
       updatedAt: now,
@@ -260,7 +404,7 @@ export const fail = internalMutation({
   handler: async (ctx, args) => {
     await requireRun(ctx, args.runId);
     const now = Date.now();
-    const error = requiredText(args.error, "Run error", MAX_NOTE_LENGTH);
+    const error = publicNote(args.error, "Run error");
     await ctx.db.patch(args.runId, {
       status: { kind: "failed", error, failedAt: now },
       updatedAt: now,
@@ -309,5 +453,142 @@ export const browserStopped = internalMutation({
       now,
     );
     return null;
+  },
+});
+
+export const scrapeBrowserStopped = internalMutation({
+  args: {
+    runId: v.id("scoutRuns"),
+    scrapeId: v.string(),
+    sessionDurationMs: v.union(v.number(), v.null()),
+    creditsBilled: v.union(v.number(), v.null()),
+    replayAvailable: v.boolean(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const run = await requireRun(ctx, args.runId);
+    if (run.browser.kind === "scrape_closed" && run.browser.scrapeId === args.scrapeId) {
+      return null;
+    }
+    if (run.browser.kind !== "scrape_active" || run.browser.scrapeId !== args.scrapeId) {
+      throw new Error("Scrape browser session does not belong to this Scout run");
+    }
+
+    const now = Date.now();
+    await ctx.db.patch(args.runId, {
+      browser: {
+        kind: "scrape_closed",
+        scrapeId: args.scrapeId,
+        profileName: run.browser.profileName,
+        closedAt: now,
+        sessionDurationMs: args.sessionDurationMs,
+        creditsBilled: args.creditsBilled,
+        replayAvailable: run.browser.replayAvailable || args.replayAvailable,
+      },
+      updatedAt: now,
+    });
+    await insertEvent(
+      ctx,
+      args.runId,
+      {
+        kind: "scrape_browser_stopped",
+        sessionDurationMs: args.sessionDurationMs,
+        creditsBilled: args.creditsBilled,
+        replayAvailable: run.browser.replayAvailable || args.replayAvailable,
+      },
+      now,
+    );
+    return null;
+  },
+});
+
+const benchmarkStatusValidator = v.union(
+  v.literal("pending"),
+  v.literal("running"),
+  v.literal("needs_human"),
+  v.literal("completed"),
+  v.literal("failed"),
+);
+
+const benchmarkReportValidator = v.object({
+  status: benchmarkStatusValidator,
+  success: v.boolean(),
+  wallTimeMs: v.number(),
+  browserDurationMs: v.union(v.number(), v.null()),
+  creditsBilled: v.union(v.number(), v.null()),
+  promptCalls: v.number(),
+  successfulPromptCalls: v.number(),
+  failedPromptCalls: v.number(),
+  codeFallbacks: v.number(),
+  successfulCodeFallbacks: v.number(),
+  failedCodeFallbacks: v.number(),
+  legacyBrowserSteps: v.number(),
+  humanInterventions: v.number(),
+  publishedUrl: v.union(v.string(), v.null()),
+  replayAvailable: v.boolean(),
+});
+
+export const benchmarkReport = internalQuery({
+  args: {
+    runId: v.id("scoutRuns"),
+  },
+  returns: benchmarkReportValidator,
+  handler: async (ctx, args) => {
+    const run = await ctx.db.get(args.runId);
+    if (!run) {
+      throw new Error("Scout run not found");
+    }
+    const events = await ctx.db
+      .query("scoutRunEvents")
+      .withIndex("by_run_id_and_created_at", (q) => q.eq("runId", args.runId))
+      .order("asc")
+      .take(MAX_EVENTS_PER_RUN);
+    let promptCalls = 0;
+    let successfulPromptCalls = 0;
+    let codeFallbacks = 0;
+    let successfulCodeFallbacks = 0;
+    let legacyBrowserSteps = 0;
+    let humanInterventions = 0;
+    for (const { event } of events) {
+      if (event.kind === "browser_prompt_step") {
+        promptCalls += 1;
+        successfulPromptCalls += Number(event.success);
+      } else if (event.kind === "browser_code_fallback") {
+        codeFallbacks += 1;
+        successfulCodeFallbacks += Number(event.success);
+      } else if (event.kind === "browser_step") {
+        legacyBrowserSteps += 1;
+      } else if (event.kind === "human_resumed") {
+        humanInterventions += 1;
+      }
+    }
+    const browserDurationMs =
+      run.browser.kind === "closed" || run.browser.kind === "scrape_closed"
+        ? run.browser.sessionDurationMs
+        : null;
+    const creditsBilled =
+      run.browser.kind === "closed" || run.browser.kind === "scrape_closed"
+        ? run.browser.creditsBilled
+        : null;
+
+    return {
+      status: run.status.kind,
+      success: run.status.kind === "completed",
+      wallTimeMs: run.updatedAt - run.createdAt,
+      browserDurationMs,
+      creditsBilled,
+      promptCalls,
+      successfulPromptCalls,
+      failedPromptCalls: promptCalls - successfulPromptCalls,
+      codeFallbacks,
+      successfulCodeFallbacks,
+      failedCodeFallbacks: codeFallbacks - successfulCodeFallbacks,
+      legacyBrowserSteps,
+      humanInterventions,
+      publishedUrl: run.status.kind === "completed" ? run.status.resultUrl : null,
+      replayAvailable:
+        (run.browser.kind === "scrape_active" || run.browser.kind === "scrape_closed") &&
+        run.browser.replayAvailable,
+    };
   },
 });

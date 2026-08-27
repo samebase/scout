@@ -2,6 +2,7 @@ import { fetchJson, requireEnv, requireRecord, requireString } from "./http";
 
 const FIRECRAWL_BASE_URL = "https://api.firecrawl.dev/v2";
 const MAX_OUTPUT_LENGTH = 40_000;
+const SCOUT_ORIGIN = "samebase-scout";
 
 export type BrowserExecution = {
   success: boolean;
@@ -11,6 +12,11 @@ export type BrowserExecution = {
   exitCode: number | null;
   killed: boolean;
   error: string | null;
+};
+
+export type ScrapeInteraction = BrowserExecution & {
+  output: string;
+  replayAvailable: boolean;
 };
 
 function headers() {
@@ -37,6 +43,35 @@ function printable(value: unknown) {
   } catch {
     return "[unprintable result]";
   }
+}
+
+function optionalNumber(record: Record<string, unknown>, field: string) {
+  const value = record[field];
+  return typeof value === "number" ? value : null;
+}
+
+function parseBrowserExecution(response: Record<string, unknown>): BrowserExecution {
+  return {
+    success: response["success"] === true,
+    stdout: optionalString(response, "stdout"),
+    result: printable(response["result"]),
+    stderr: optionalString(response, "stderr"),
+    exitCode: optionalNumber(response, "exitCode"),
+    killed: response["killed"] === true,
+    error: typeof response["error"] === "string" ? response["error"] : null,
+  };
+}
+
+function parseScrapeInteraction(response: Record<string, unknown>): ScrapeInteraction {
+  return {
+    ...parseBrowserExecution(response),
+    output: optionalString(response, "output"),
+    replayAvailable:
+      typeof response["liveViewUrl"] === "string" ||
+      typeof response["interactiveLiveViewUrl"] === "string" ||
+      typeof response["replayUrl"] === "string" ||
+      typeof response["signedReplayUrl"] === "string",
+  };
 }
 
 export async function createBrowserSession() {
@@ -83,15 +118,7 @@ export async function executeBrowserCode(
     "Firecrawl",
   );
 
-  return {
-    success: response["success"] === true,
-    stdout: optionalString(response, "stdout"),
-    result: printable(response["result"]),
-    stderr: optionalString(response, "stderr"),
-    exitCode: typeof response["exitCode"] === "number" ? response["exitCode"] : null,
-    killed: response["killed"] === true,
-    error: typeof response["error"] === "string" ? response["error"] : null,
-  };
+  return parseBrowserExecution(response);
 }
 
 export async function closeBrowserSession(sessionId: string) {
@@ -112,5 +139,92 @@ export async function closeBrowserSession(sessionId: string) {
     sessionDurationMs:
       typeof response["sessionDurationMs"] === "number" ? response["sessionDurationMs"] : null,
     creditsBilled: typeof response["creditsBilled"] === "number" ? response["creditsBilled"] : null,
+  };
+}
+
+export async function createScrapeInteractSession(url: string, profileName: string) {
+  const response = requireRecord(
+    await fetchJson("Firecrawl", `${FIRECRAWL_BASE_URL}/scrape`, {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify({
+        url,
+        formats: ["markdown"],
+        profile: { name: profileName, saveChanges: true },
+        storeInCache: false,
+      }),
+    }),
+    "Firecrawl",
+  );
+  if (response["success"] !== true) {
+    throw new Error("Firecrawl did not create a scrape session");
+  }
+
+  const data = requireRecord(response["data"], "Firecrawl scrape data");
+  const metadata = requireRecord(data["metadata"], "Firecrawl scrape metadata");
+  return { scrapeId: requireString(metadata, "scrapeId", "Firecrawl") };
+}
+
+async function executeScrapeInteraction(
+  scrapeId: string,
+  body: Record<string, unknown>,
+): Promise<ScrapeInteraction> {
+  const response = requireRecord(
+    await fetchJson(
+      "Firecrawl",
+      `${FIRECRAWL_BASE_URL}/scrape/${encodeURIComponent(scrapeId)}/interact`,
+      {
+        method: "POST",
+        headers: headers(),
+        body: JSON.stringify({ ...body, origin: SCOUT_ORIGIN }),
+      },
+    ),
+    "Firecrawl",
+  );
+  return parseScrapeInteraction(response);
+}
+
+export async function executeScrapeInteractPrompt(
+  scrapeId: string,
+  prompt: string,
+  timeoutSeconds: number,
+) {
+  return await executeScrapeInteraction(scrapeId, {
+    prompt,
+    timeout: timeoutSeconds,
+  });
+}
+
+export async function executeScrapeInteractCode(
+  scrapeId: string,
+  code: string,
+  timeoutSeconds: number,
+) {
+  return await executeScrapeInteraction(scrapeId, {
+    code,
+    language: "node",
+    timeout: timeoutSeconds,
+  });
+}
+
+export async function closeScrapeInteractSession(scrapeId: string) {
+  const response = requireRecord(
+    await fetchJson(
+      "Firecrawl",
+      `${FIRECRAWL_BASE_URL}/scrape/${encodeURIComponent(scrapeId)}/interact`,
+      {
+        method: "DELETE",
+        headers: headers(),
+      },
+    ),
+    "Firecrawl",
+  );
+
+  return {
+    success: response["success"] === true,
+    sessionDurationMs: optionalNumber(response, "sessionDurationMs"),
+    creditsBilled: optionalNumber(response, "creditsBilled"),
+    replayAvailable:
+      typeof response["replayUrl"] === "string" || typeof response["signedReplayUrl"] === "string",
   };
 }
