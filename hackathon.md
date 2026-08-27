@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-27T18:12:55Z
+- **Last updated:** 2026-08-27T18:13:30Z
 
 ## Log
 
@@ -158,8 +158,8 @@ v49 Defined forward-only Hackathon entry versions, versioned pull request public
 reserved log-only finalizer. Existing entries remain unchanged, and obsolete finalizers and related
 fixups are removed when pull request history is rewritten (`AGENTS.md`, `hackathon.md`).
 
-### 2026-08-27 - working tree
+### 2026-08-27 - 455a7ae
 
-Reduced the signed-out site to the Scout landing page and its one-sentence description. Removed the
+v52 Reduced the signed-out site to the Scout landing page and its one-sentence description. Removed the
 template About route, hid admin navigation until sign-in, redirected signed-out private routes home,
 and linked the Convex live app from the README (`src/routes/`, `prerender.config.ts`, `README.md`).
