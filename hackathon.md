@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, gpt-5.6-luna
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-27T14:59:58Z
+- **Last updated:** 2026-08-27T15:03:38Z
 
 ## Log
 
@@ -83,3 +83,10 @@ Added a merge-commit build label workflow that projects GitHub's total commit co
 request commit SHAs for this log, and rejects mislabeled `main` commits in CI. Pull requests now end
 with a mechanical log commit that replaces `working tree` with the final substantive commit SHA
 before merge (`AGENTS.md`, `.github/workflows/ci.yml`, `scripts/`).
+
+### 2026-08-27 - c9f4a03
+
+Replaced anonymous guest sessions with admin-only email and password Convex Auth. Added verification
+and reset codes delivered through Cloudflare Email Service, server-side access checks, and auth
+tests while keeping public reads open (`convex/auth.ts`, `convex/access.ts`, `convex/email.ts`,
+`src/components/auth-panel.tsx`).

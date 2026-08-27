@@ -17,13 +17,10 @@ export default defineSchema({
   })
     .index("by_created_at", ["createdAt"])
     .index("by_user_created_at", ["userId", "createdAt"]),
-  guestNames: defineTable({
-    name: v.string(),
-    userId: v.id("users"),
-    createdAt: v.number(),
-  })
-    .index("by_name", ["name"])
-    .index("by_user", ["userId"]),
+  authEmailRateLimits: defineTable({
+    key: v.string(),
+    lastSentAt: v.number(),
+  }).index("by_key", ["key"]),
   scoutRuns: defineTable({
     scoutName: v.string(),
     scoutEmail: v.string(),
