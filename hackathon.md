@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-27T15:23:13Z
+- **Last updated:** 2026-08-27T15:36:59Z
 
 ## Log
 
@@ -101,3 +101,8 @@ dependencies (`package.json`, `convex/convex.config.ts`, `convex/_generated/api.
 Defined the Scout Agent on `openai/gpt-5.6-luna` through Convex AI Gateway. Added a private smoke
 action that persists a thread and messages, then returns a deterministic reply proof
 (`convex/scout/agent.ts`).
+
+### 2026-08-27 - working tree
+
+Moved the Scout Agent and its private smoke action to the default Convex runtime while keeping the
+persisted AI Gateway exchange unchanged (`convex/scout/agent.ts`).

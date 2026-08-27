@@ -1,5 +1,3 @@
-"use node";
-
 import { Agent } from "@convex-dev/agent";
 import { convexGateway } from "@convex-dev/ai-sdk-provider";
 import { v } from "convex/values";
