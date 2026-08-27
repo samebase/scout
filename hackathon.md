@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, gpt-5.6-luna
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-27T14:54:03Z
+- **Last updated:** 2026-08-27T14:59:32Z
 
 ## Log
 
@@ -80,5 +80,6 @@ debugging data, cost limits, and the reasons for deferring a separate container 
 ### 2026-08-27 - working tree
 
 Added a merge-commit build label workflow that projects GitHub's total commit count, preserves pull
-request commit SHAs for this log, and rejects mislabeled `main` commits in CI (`AGENTS.md`,
-`.github/workflows/ci.yml`, `scripts/pr-build-label.ts`, `scripts/validate-main-build-label.ts`).
+request commit SHAs for this log, and rejects mislabeled `main` commits in CI. Pull requests now end
+with a mechanical log commit that replaces `working tree` with the final substantive commit SHA
+before merge (`AGENTS.md`, `.github/workflows/ci.yml`, `scripts/`).

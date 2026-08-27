@@ -47,6 +47,12 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
 
 - Before each commit, run `$convex-hackathon-skill`. If it updates `hackathon.md`, include that file
   in the commit.
+- After all substantive pull request changes and review fixes are committed, run the skill again on
+  the clean branch. If it replaces the final `working tree` entry with a commit SHA, commit only
+  `hackathon.md` with the subject `docs: finalize hackathon log`.
+- Treat that finalizer as a mechanical commit and do not add a log entry for the finalizer itself.
+- Do not merge while the latest hackathon entry says `working tree`. If substantive changes follow
+  the finalizer, repeat the finalization step before merge.
 
 ## Cross-platform automation
 
