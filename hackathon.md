@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-27T22:49:55Z
+- **Last updated:** 2026-08-27T22:50:08Z
 
 ## Log
 
@@ -183,7 +183,7 @@ v60 Replaced Qwen3.8 Flash with Qwen3.7 Flash for new Lab turns while retaining 
 generation value, so existing conversation metadata remains valid. New turns accept only Luna or
 Qwen3.7 Flash (`convex/scout/models.ts`, `convex/scout/lab.ts`, `src/routes/lab.tsx`).
 
-### 2026-08-27 - working tree
+### 2026-08-27 - 9b991bc
 
-Raised the Lab's bounded agent loop from 12 to 24 generation steps, giving browser missions more
+v63 Raised the Lab's bounded agent loop from 12 to 24 generation steps, giving browser missions more
 room while retaining a hard stop (`convex/scout/labGeneration.ts`).
