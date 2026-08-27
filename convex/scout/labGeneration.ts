@@ -9,6 +9,8 @@ import { scoutAgent } from "./agent";
 import { requireOwnedAgentThread } from "./labAccess";
 import { scoutLanguageModel, scoutModelValidator, type ScoutTokenUsage } from "./models";
 
+const MAX_GENERATION_STEPS = 24;
+
 function requireSecret(value: string | undefined, name: string) {
   if (!value) {
     throw new Error(`${name} is not configured`);
@@ -75,7 +77,7 @@ export const generateResponse = internalAction({
           promptMessageId: args.promptMessageId,
           model: scoutLanguageModel(args.model),
           tools,
-          stopWhen: isStepCount(12),
+          stopWhen: isStepCount(MAX_GENERATION_STEPS),
         },
         {
           saveStreamDeltas: {
