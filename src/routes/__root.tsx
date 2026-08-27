@@ -44,6 +44,9 @@ function RootComponent() {
           </Button>
           <Authenticated>
             <Button asChild variant="link">
+              <Link to="/lab">Lab</Link>
+            </Button>
+            <Button asChild variant="link">
               <Link to="/settings">Settings</Link>
             </Button>
           </Authenticated>
