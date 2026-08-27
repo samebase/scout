@@ -6,6 +6,8 @@ import staticHosting from "@convex-dev/static-hosting/convex.config";
 const app = defineApp({
   env: {
     AGENTMAIL_API_KEY: v.optional(v.string()),
+    CLOUDFLARE_EMAIL_ACCOUNT_ID: v.optional(v.string()),
+    CLOUDFLARE_EMAIL_API_TOKEN: v.optional(v.string()),
     FIRECRAWL_API_KEY: v.optional(v.string()),
     SCOUT_AGENT_PASSWORD: v.optional(v.string()),
   },

@@ -93,6 +93,9 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^6.0.1
         version: 6.0.1(@voidzero-dev/vite-plus-core@0.2.7(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(typescript@6.0.3))
+      convex-test:
+        specifier: ^0.0.56
+        version: 0.0.56(convex@1.44.0(react@19.2.6))
       shadcn:
         specifier: ^4.16.1
         version: 4.16.1(typescript@6.0.3)
@@ -2707,6 +2710,11 @@ packages:
 
   convert-source-map@2.0.0:
     resolution: {integrity: sha512-Kvp459HrV2FEJ1CAsi1Ku+MY3kasH19TFykTz2xWmMeq6bk2NU3XXvfJ+Q61m0xktWwt+1HSYf3JZsTms3aRJg==}
+
+  convex-test@0.0.56:
+    resolution: {integrity: sha512-dLYXlQjKFoGqvjAmPzyLgb2HsYI7iLo1iuNTU2DZmSrMRLWosYk94erjSU67GG5ovfP6+MjX8RJO+ebhmL6QYA==}
+    peerDependencies:
+      convex: ^1.43.0
 
   convex@1.44.0:
     resolution: {integrity: sha512-84bBa1ufSX4qohXdycXuQl2c2kAmfVpTCpypcmIgxpS5rUBgv5qjhArYugTkJVbljMs5SH2mW30bjJo+SQwe1w==}
@@ -6490,6 +6498,10 @@ snapshots:
   content-type@2.0.0: {}
 
   convert-source-map@2.0.0: {}
+
+  convex-test@0.0.56(convex@1.44.0(react@19.2.6)):
+    dependencies:
+      convex: 1.44.0(react@19.2.6)
 
   convex@1.44.0(react@19.2.6):
     dependencies:

@@ -1,7 +1,6 @@
-import { getAuthUserId } from "@convex-dev/auth/server";
-import type { Auth } from "convex/server";
 import type { Id } from "./_generated/dataModel";
 import { mutation, query } from "./_generated/server";
+import { getAppUserId, requireAppUser } from "./access";
 import { v } from "convex/values";
 
 const { array, boolean, id, number, object, string, union } = v;
@@ -25,14 +24,6 @@ const listResultValidator = object({
 const createResultValidator = v.null();
 const toggleResultValidator = v.null();
 
-async function getRequiredUserId(ctx: { auth: Auth }) {
-  const userId = await getAuthUserId(ctx);
-  if (!userId) {
-    throw new Error("Not authenticated");
-  }
-  return userId;
-}
-
 export const list = query({
   args: {},
   returns: listResultValidator,
@@ -42,7 +33,7 @@ export const list = query({
       .withIndex("by_created_at")
       .order("desc")
       .take(MAX_VISIBLE_TODOS);
-    const viewerUserId = await getAuthUserId(ctx);
+    const viewerUserId = await getAppUserId(ctx);
     const creatorNames = new Map<Id<"users">, string>();
     let viewerTodoCount: number | null = null;
 
@@ -52,7 +43,7 @@ export const list = query({
       }
 
       const user = await ctx.db.get(todo.userId);
-      creatorNames.set(todo.userId, user?.name ?? "Guest");
+      creatorNames.set(todo.userId, user?.name ?? user?.email ?? "User");
     }
 
     if (viewerUserId) {
@@ -67,7 +58,7 @@ export const list = query({
     return {
       todos: todos.map((todo) => ({
         _id: todo._id,
-        creatorName: creatorNames.get(todo.userId) ?? "Guest",
+        creatorName: creatorNames.get(todo.userId) ?? "User",
         text: todo.text,
         done: todo.done,
         viewerCanToggle: viewerUserId === todo.userId,
@@ -83,7 +74,7 @@ export const create = mutation({
   },
   returns: createResultValidator,
   handler: async (ctx, args) => {
-    const userId = await getRequiredUserId(ctx);
+    const userId = await requireAppUser(ctx);
     const text = args.text.trim();
     if (!text) {
       throw new Error("Todo text cannot be empty");
@@ -117,7 +108,7 @@ export const toggle = mutation({
   },
   returns: toggleResultValidator,
   handler: async (ctx, args) => {
-    const userId = await getRequiredUserId(ctx);
+    const userId = await requireAppUser(ctx);
     const todo = await ctx.db.get(args.id);
     if (!todo) {
       throw new Error("Todo not found");

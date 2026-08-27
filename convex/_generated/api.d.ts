@@ -8,8 +8,13 @@
  * @module
  */
 
+import type * as access from "../access.js";
 import type * as auth from "../auth.js";
-import type * as guests from "../guests.js";
+import type * as authConfig from "../authConfig.js";
+import type * as authEmail from "../authEmail.js";
+import type * as authEmailRateLimit from "../authEmailRateLimit.js";
+import type * as authEmails from "../authEmails.js";
+import type * as email from "../email.js";
 import type * as http from "../http.js";
 import type * as scout_browser from "../scout/browser.js";
 import type * as scout_lib_agentmail from "../scout/lib/agentmail.js";
@@ -28,8 +33,13 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  access: typeof access;
   auth: typeof auth;
-  guests: typeof guests;
+  authConfig: typeof authConfig;
+  authEmail: typeof authEmail;
+  authEmailRateLimit: typeof authEmailRateLimit;
+  authEmails: typeof authEmails;
+  email: typeof email;
   http: typeof http;
   "scout/browser": typeof scout_browser;
   "scout/lib/agentmail": typeof scout_lib_agentmail;
