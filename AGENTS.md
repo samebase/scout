@@ -30,18 +30,21 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
 
 - Use merge commits for pull requests into `main`. Do not squash.
 - Merge pull requests into `main` one at a time. Do not start concurrent merges.
-- Keep ordinary branch commit subjects unversioned while work is in progress.
-- Immediately before merge, fetch `origin/main` and rebase the pull request onto it. Do not merge
-  `origin/main` into the branch. Capture the old-to-new commit mapping so rewritten Hackathon
-  references can be repaired.
+- Keep ordinary branch commit subjects unversioned while work is in progress locally. Do not
+  publish a pull request branch with unversioned or stale commit subjects.
+- Before the first pull request push and before every later pull request push, fetch `origin/main`
+  and rebase the pull request onto it. Do not merge `origin/main` into the branch. Capture the
+  old-to-new commit mapping so rewritten Hackathon references can be repaired.
 - After rebasing, rewrite every pull request commit subject with `v<N>:`, where `N` is that commit's
-  total reachable commit count. Preserve the original subject after the prefix. The mechanical
-  Hackathon finalizer is part of the pull request and receives a version too.
+  total reachable commit count. Preserve the original subject after the prefix, replacing an
+  existing version prefix instead of adding a second one. The mechanical Hackathon finalizer is
+  part of the pull request and receives a version too.
 - Treat the rebase and subject rewrite as incomplete until `hackathon.md` has been updated and every
   committed SHA in its log headings resolves uniquely to a commit reachable from `HEAD`.
-- Push rewritten pull request history with `git push --force-with-lease`, then run
-  `node ./scripts/pr-build-label.ts` so the pull request title receives the next version reserved for
-  the merge commit.
+- Push rewritten pull request history with `git push --force-with-lease`. For a new pull request, run
+  `node ./scripts/pr-build-label.ts --print-only` and create the pull request with its projected
+  `v<N>:` title. After the pull request exists, run `node ./scripts/pr-build-label.ts` after every
+  push so its title receives the next version reserved for the merge commit.
 - Repeat the rebase, commit numbering, Hackathon repair, force-push, and title refresh immediately
   before merge if another pull request changed `main`.
 - Merge with an explicit subject matching the current versioned pull request title, for example
@@ -53,17 +56,29 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
 
 - Before each commit, run `$convex-hackathon-skill`. If it updates `hackathon.md`, include that file
   in the commit.
+- Keep each committed log heading in the `### YYYY-MM-DD - <short-sha>` format. Start its paragraph
+  with `v<N> `, where `N` is the referenced commit's total reachable commit count. Leave a
+  `working tree` entry unversioned until it points to a commit.
 - After all substantive pull request changes and review fixes are committed, run the skill again on
   the clean branch. If it replaces the final `working tree` entry with a commit SHA, commit only
-  `hackathon.md` with the subject `docs: finalize hackathon log`.
-- Treat that finalizer as a mechanical commit and do not add a log entry for the finalizer itself.
+  `hackathon.md` with the exact unversioned subject `chore(hackathon): finalize log`.
+- Reserve `chore(hackathon): finalize log` for that mechanical commit. It may change only
+  `hackathon.md`, must be the final pull request commit, receives a `v<N>:` prefix during numbering,
+  and does not receive its own log entry.
+- If substantive work follows a finalizer, remove the obsolete finalizer during the next history
+  rewrite. Fold a correction commit into the substantive commit it fixes when they form one logical
+  change, then create one replacement finalizer after the last substantive commit.
+- Before publishing pull request history, verify that it contains exactly one reserved finalizer,
+  ignoring its `v<N>:` prefix, and that the finalizer is `HEAD`.
 - After any rebase or commit-subject rewrite, run the skill again and replace every affected logged
-  SHA with the corresponding reachable commit. Preserve the existing log heading format and amend
-  the finalizer with only these log repairs.
-- Verify every committed SHA in `hackathon.md` with an ancestry check against `HEAD`; object existence
-  alone is insufficient because obsolete pre-rebase commits can remain in Git's object database.
-- Do not merge while the latest hackathon entry says `working tree`. If substantive changes follow
-  the finalizer, repeat the finalization step before merge.
+  SHA with the corresponding reachable commit. Update each affected paragraph's `v<N> ` prefix to
+  match that commit, preserve the existing log heading format, and amend the finalizer with only
+  these log repairs.
+- Verify every committed SHA in `hackathon.md` with an ancestry check against `HEAD`, and verify its
+  paragraph starts with the referenced commit's `v<N> `. Object existence alone is insufficient
+  because obsolete pre-rebase commits can remain in Git's object database.
+- Do not merge while the latest hackathon entry says `working tree` or while the reserved finalizer
+  is missing, duplicated, or not the final pull request commit.
 
 ## Cross-platform automation
 
