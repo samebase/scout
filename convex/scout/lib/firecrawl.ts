@@ -139,7 +139,7 @@ export async function closeBrowserSession(sessionId: string) {
   };
 }
 
-export async function createScrapeInteractSession(url: string, profileName: string) {
+export async function createScrapeInteractSession(url: string, profileName?: string) {
   const response = requireRecord(
     await fetchJson("Firecrawl", `${FIRECRAWL_BASE_URL}/scrape`, {
       method: "POST",
@@ -147,7 +147,7 @@ export async function createScrapeInteractSession(url: string, profileName: stri
       body: JSON.stringify({
         url,
         formats: ["markdown"],
-        profile: { name: profileName, saveChanges: true },
+        ...(profileName ? { profile: { name: profileName, saveChanges: true } } : {}),
         storeInCache: false,
       }),
     }),
