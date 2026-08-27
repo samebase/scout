@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as access from "../access.js";
 import type * as auth from "../auth.js";
 import type * as authConfig from "../authConfig.js";
 import type * as authEmail from "../authEmail.js";
@@ -31,6 +32,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  access: typeof access;
   auth: typeof auth;
   authConfig: typeof authConfig;
   authEmail: typeof authEmail;
