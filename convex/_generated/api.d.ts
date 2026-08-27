@@ -16,6 +16,7 @@ import type * as authEmailRateLimit from "../authEmailRateLimit.js";
 import type * as authEmails from "../authEmails.js";
 import type * as email from "../email.js";
 import type * as http from "../http.js";
+import type * as scout_agent from "../scout/agent.js";
 import type * as scout_browser from "../scout/browser.js";
 import type * as scout_lib_agentmail from "../scout/lib/agentmail.js";
 import type * as scout_lib_emailLinks from "../scout/lib/emailLinks.js";
@@ -40,6 +41,7 @@ declare const fullApi: ApiFromModules<{
   authEmails: typeof authEmails;
   email: typeof email;
   http: typeof http;
+  "scout/agent": typeof scout_agent;
   "scout/browser": typeof scout_browser;
   "scout/lib/agentmail": typeof scout_lib_agentmail;
   "scout/lib/emailLinks": typeof scout_lib_emailLinks;
@@ -77,5 +79,6 @@ export declare const internal: FilterApi<
 >;
 
 export declare const components: {
+  agent: import("@convex-dev/agent/_generated/component.js").ComponentApi<"agent">;
   staticHosting: import("@convex-dev/static-hosting/_generated/component.js").ComponentApi<"staticHosting">;
 };
