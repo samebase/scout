@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-27T17:12:56Z
+- **Last updated:** 2026-08-27T17:17:58Z
 
 ## Log
 
@@ -138,14 +138,14 @@ Added a repeat-safe password fixture account for preview deployments. Each succe
 deploy creates or refreshes one verified account, while the production build has no seed step and
 the backend rejects production seeding (`convex/devAuth.ts`, `scripts/build-cloudflare.ts`).
 
-### 2026-08-27 - bb37d24
+### 2026-08-27 - 05d946e
 
 Added an admin-only Agent lab with persistent per-user threads, asynchronous Luna replies, saved
 streaming deltas, paginated UI messages, and defensive tool-call rendering. The React client uses
 the Convex Agent hooks and shadcn chat components (`convex/scout/lab.ts`,
 `convex/scout/labGeneration.ts`, `src/routes/lab.tsx`, `src/components/ui/`).
 
-### 2026-08-27 - working tree
+### 2026-08-27 - 9a70087
 
 Connected each Luna turn to the raw hosted Firecrawl and AgentMail MCP catalogs through short-lived
 HTTP clients. Cloud development verification discovered all 52 tools and completed one read-only
