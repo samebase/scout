@@ -84,6 +84,7 @@ describe("scrape-bound Firecrawl Interact", () => {
       {
         success: true,
         interactiveLiveViewUrl: "https://signed.example/control",
+        signedReplayUrl: "https://signed.example/replay",
         result: '{"title":"Workspace"}',
         exitCode: 0,
         killed: false,
@@ -91,10 +92,15 @@ describe("scrape-bound Firecrawl Interact", () => {
     );
 
     const prompt = await executeScrapeInteractPrompt("scrape-1", "Find the login form", 60);
-    const code = await executeScrapeInteractCode("scrape-1", "await page.title()", 30);
+    const code = await executeScrapeInteractCode(
+      "scrape-1",
+      "agent-browser snapshot -i",
+      30,
+      "bash",
+    );
 
     expect(prompt.output).toBe("The login form is visible");
-    expect(prompt.replayAvailable).toBe(true);
+    expect(prompt.replayAvailable).toBe(false);
     expect(prompt).not.toHaveProperty("liveViewUrl");
     expect(prompt).not.toHaveProperty("interactiveLiveViewUrl");
     expect(code.result).toBe('{"title":"Workspace"}');
@@ -109,8 +115,8 @@ describe("scrape-bound Firecrawl Interact", () => {
       origin: "samebase-scout",
     });
     expect(requestBody(requests[1])).toEqual({
-      code: "await page.title()",
-      language: "node",
+      code: "agent-browser snapshot -i",
+      language: "bash",
       timeout: 30,
       origin: "samebase-scout",
     });

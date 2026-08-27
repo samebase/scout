@@ -117,7 +117,12 @@ async function recordExecution(
 }
 
 function sanitizedError(error: unknown) {
-  const message = error instanceof Error ? error.message : "Unknown browser error";
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === "string"
+        ? error
+        : "Unknown browser error";
   return message
     .replace(/https:\/\/\S+/gi, "[URL redacted]")
     .replace(/\b[^\s@]+@[^\s@]+\.[^\s@]+\b/g, "[email redacted]")
@@ -262,6 +267,7 @@ export const executeScrapeFallback = internalAction({
   args: {
     runId: v.id("scoutRuns"),
     code: v.string(),
+    language: v.optional(v.union(v.literal("node"), v.literal("bash"))),
     summary: v.string(),
     fallbackReason: v.string(),
     timeoutSeconds: v.number(),
@@ -285,7 +291,12 @@ export const executeScrapeFallback = internalAction({
 
     let result: ReturnType<typeof scrapeResult>;
     try {
-      const interaction = await executeScrapeInteractCode(browser.scrapeId, code, timeout);
+      const interaction = await executeScrapeInteractCode(
+        browser.scrapeId,
+        code,
+        timeout,
+        args.language,
+      );
       result = scrapeResult(
         interaction,
         Date.now() - startedAt,

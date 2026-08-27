@@ -67,10 +67,7 @@ function parseScrapeInteraction(response: Record<string, unknown>): ScrapeIntera
     ...parseBrowserExecution(response),
     output: optionalString(response, "output"),
     replayAvailable:
-      typeof response["liveViewUrl"] === "string" ||
-      typeof response["interactiveLiveViewUrl"] === "string" ||
-      typeof response["replayUrl"] === "string" ||
-      typeof response["signedReplayUrl"] === "string",
+      typeof response["replayUrl"] === "string" || typeof response["signedReplayUrl"] === "string",
   };
 }
 
@@ -199,10 +196,11 @@ export async function executeScrapeInteractCode(
   scrapeId: string,
   code: string,
   timeoutSeconds: number,
+  language: "node" | "bash" = "node",
 ) {
   return await executeScrapeInteraction(scrapeId, {
     code,
-    language: "node",
+    language,
     timeout: timeoutSeconds,
   });
 }

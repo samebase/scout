@@ -592,3 +592,25 @@ export const benchmarkReport = internalQuery({
     };
   },
 });
+
+export const benchmarkWindow = internalQuery({
+  args: {
+    runIds: v.array(v.id("scoutRuns")),
+  },
+  returns: v.object({ wallTimeMs: v.number() }),
+  handler: async (ctx, args) => {
+    if (args.runIds.length === 0 || args.runIds.length > 20) {
+      throw new Error("Benchmark window requires between 1 and 20 runs");
+    }
+    const runs = await Promise.all(args.runIds.map(async (runId) => await ctx.db.get(runId)));
+    if (runs.some((run) => run === null)) {
+      throw new Error("Scout run not found");
+    }
+    const existingRuns = runs.filter((run) => run !== null);
+    return {
+      wallTimeMs:
+        Math.max(...existingRuns.map((run) => run.updatedAt)) -
+        Math.min(...existingRuns.map((run) => run.createdAt)),
+    };
+  },
+});

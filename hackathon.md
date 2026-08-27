@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-27T00:07:35Z
+- **Last updated:** 2026-08-27T00:46:16Z
 
 ## Log
 
@@ -56,9 +56,16 @@ Added private Convex actions that create, drive, and stop Firecrawl browser sess
 Scout inbox through AgentMail. Verification links and codes can enter the browser without being
 returned to the operator (`convex/scout/browser.ts`, `convex/scout/mail.ts`, `convex/scout/lib/`).
 
-### 2026-08-27 - working tree
+### 2026-08-27 - dd46aef
 
 Added profile-backed Firecrawl Interact runs that start from a scrape, accept focused prompts or
 measured code fallbacks, and explicitly stop to save browser state. The private event ledger now
 separates prompt outcomes from fallback reasons without storing signed browser URLs
+(`convex/scout/browser.ts`, `convex/scout/runs.ts`, `convex/scout/lib/firecrawl.ts`).
+
+### 2026-08-27 - working tree
+
+Completed a profile-backed Tally benchmark and verified a published form submission. Added Bash
+code fallback support, preserved safe provider diagnostics, distinguished replay links from live
+views, and measured wall time across multiple fixed-lifetime browser sessions
 (`convex/scout/browser.ts`, `convex/scout/runs.ts`, `convex/scout/lib/firecrawl.ts`).
