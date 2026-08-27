@@ -8,11 +8,11 @@
 - **Frontend:** Convex static hosting
 - **Convex deployment:** https://usable-spider-599.eu-west-1.convex.cloud
 - **Components:** @convex-dev/agent, @convex-dev/static-hosting
-- **Convex features:** schema, tables, indexes, queries, mutations, actions, HTTP actions, AI Gateway
+- **Convex features:** schema, tables, indexes, queries, paginated queries, realtime queries, mutations, actions, scheduled functions, HTTP actions, AI Gateway
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-27T17:05:33Z
+- **Last updated:** 2026-08-27T17:17:58Z
 
 ## Log
 
@@ -137,3 +137,17 @@ logged SHA remains reachable (`AGENTS.md`).
 Added a repeat-safe password fixture account for preview deployments. Each successful preview
 deploy creates or refreshes one verified account, while the production build has no seed step and
 the backend rejects production seeding (`convex/devAuth.ts`, `scripts/build-cloudflare.ts`).
+
+### 2026-08-27 - 05d946e
+
+Added an admin-only Agent lab with persistent per-user threads, asynchronous Luna replies, saved
+streaming deltas, paginated UI messages, and defensive tool-call rendering. The React client uses
+the Convex Agent hooks and shadcn chat components (`convex/scout/lab.ts`,
+`convex/scout/labGeneration.ts`, `src/routes/lab.tsx`, `src/components/ui/`).
+
+### 2026-08-27 - 9a70087
+
+Connected each Luna turn to the raw hosted Firecrawl and AgentMail MCP catalogs through short-lived
+HTTP clients. Cloud development verification discovered all 52 tools and completed one read-only
+call from each provider with persisted tool activity, a finite tool loop, and client cleanup after
+stream consumption (`convex/scout/labGeneration.ts`, `package.json`).
