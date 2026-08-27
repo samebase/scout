@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-27T16:15:37Z
+- **Last updated:** 2026-08-27T16:17:34Z
 
 ## Log
 
@@ -120,7 +120,7 @@ Removed the client import of the server auth policy and stopped pre-filling the 
 The sign-in form is now generic while Convex continues to enforce admin-only access
 (`src/components/auth-panel.tsx`).
 
-### 2026-08-27 - working tree
+### 2026-08-27 - fc42bb3
 
 Added an account settings route and moved sign-out there. Account-aware navigation now works across
 routes, and signed-out visitors can return directly to the sign-in screen
