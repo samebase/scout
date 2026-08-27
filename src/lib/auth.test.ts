@@ -1,7 +1,7 @@
 import { generateKeyPairSync } from "node:crypto";
 import { convexTest, type TestConvex } from "convex-test";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
-import { api } from "../../convex/_generated/api";
+import { api, internal } from "../../convex/_generated/api";
 import { ADMIN_EMAIL } from "../../convex/authConfig";
 import schema from "../../convex/schema";
 
@@ -34,6 +34,105 @@ afterEach(() => {
 });
 
 describe("password authentication", () => {
+  it("seeds one verified development account idempotently", async () => {
+    const t = convexTest(schema, modules);
+    vi.stubEnv("DEV_SEED_AUTH_ENABLED", "true");
+    vi.stubEnv("DEV_SEED_AUTH_EMAIL", "preview@example.com");
+    vi.stubEnv("DEV_SEED_AUTH_PASSWORD", "preview-password-123");
+
+    await expect(t.action(internal.devAuth.seedPasswordAccount, {})).resolves.toEqual({
+      created: true,
+      email: "preview@example.com",
+    });
+    await t.run(async (ctx) => {
+      const account = await ctx.db.query("authAccounts").first();
+      expect(account?.secret).not.toBe("preview-password-123");
+    });
+
+    vi.stubEnv("DEV_SEED_AUTH_PASSWORD", "replacement-password-456");
+    await expect(t.action(internal.devAuth.seedPasswordAccount, {})).resolves.toEqual({
+      created: false,
+      email: "preview@example.com",
+    });
+    await expect(
+      t.action(api.auth.signIn, {
+        provider: "password",
+        params: {
+          email: "preview@example.com",
+          password: "preview-password-123",
+          flow: "signIn",
+        },
+      }),
+    ).rejects.toThrow();
+    await expect(
+      t.action(api.auth.signIn, {
+        provider: "password",
+        params: {
+          email: "preview@example.com",
+          password: "replacement-password-456",
+          flow: "signIn",
+        },
+      }),
+    ).resolves.toMatchObject({ tokens: expect.any(Object) });
+  });
+
+  it("does not seed or admit a development account unless seeding is enabled", async () => {
+    const t = convexTest(schema, modules);
+
+    await expect(t.action(internal.devAuth.seedPasswordAccount, {})).rejects.toThrow(
+      "Development password account seeding is disabled",
+    );
+    await expect(
+      t.action(api.auth.signIn, {
+        provider: "password",
+        params: {
+          email: "preview@example.com",
+          password: "preview-password-123",
+          flow: "signIn",
+        },
+      }),
+    ).rejects.toThrow("Scout is currently restricted to the administrator");
+  });
+
+  it("blocks seed account creation and recovery flows", async () => {
+    const t = convexTest(schema, modules);
+    vi.stubEnv("DEV_SEED_AUTH_ENABLED", "true");
+    vi.stubEnv("DEV_SEED_AUTH_EMAIL", "preview@example.com");
+    vi.stubEnv("DEV_SEED_AUTH_PASSWORD", "preview-password-123");
+
+    await expect(
+      t.action(api.auth.signIn, {
+        provider: "password",
+        params: {
+          email: "preview@example.com",
+          password: "another-password",
+          flow: "signUp",
+        },
+      }),
+    ).rejects.toThrow("The development seed account only allows password sign-in");
+    await expect(
+      t.action(api.auth.signIn, {
+        provider: "password",
+        params: {
+          email: "preview@example.com",
+          flow: "reset",
+        },
+      }),
+    ).rejects.toThrow("The development seed account only allows password sign-in");
+  });
+
+  it("refuses to seed a production deployment", async () => {
+    const t = convexTest(schema, modules);
+    vi.stubEnv("CONVEX_DEPLOYMENT", "prod:scout-production");
+    vi.stubEnv("DEV_SEED_AUTH_ENABLED", "true");
+    vi.stubEnv("DEV_SEED_AUTH_EMAIL", "preview@example.com");
+    vi.stubEnv("DEV_SEED_AUTH_PASSWORD", "preview-password-123");
+
+    await expect(t.action(internal.devAuth.seedPasswordAccount, {})).rejects.toThrow(
+      "Development password account seeding is disabled in production",
+    );
+  });
+
   it("normalizes the email and requires its code before creating a session", async () => {
     const t = convexTest(schema, modules);
     const signUp = await captureAuthCode(() =>

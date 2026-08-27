@@ -14,6 +14,8 @@ import type * as authConfig from "../authConfig.js";
 import type * as authEmail from "../authEmail.js";
 import type * as authEmailRateLimit from "../authEmailRateLimit.js";
 import type * as authEmails from "../authEmails.js";
+import type * as devAuth from "../devAuth.js";
+import type * as devAuthConfig from "../devAuthConfig.js";
 import type * as email from "../email.js";
 import type * as http from "../http.js";
 import type * as scout_agent from "../scout/agent.js";
@@ -39,6 +41,8 @@ declare const fullApi: ApiFromModules<{
   authEmail: typeof authEmail;
   authEmailRateLimit: typeof authEmailRateLimit;
   authEmails: typeof authEmails;
+  devAuth: typeof devAuth;
+  devAuthConfig: typeof devAuthConfig;
   email: typeof email;
   http: typeof http;
   "scout/agent": typeof scout_agent;

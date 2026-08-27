@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { selectConvexDeployPlan } from "./build-cloudflare.ts";
+import { main, selectConvexDeployPlan } from "./build-cloudflare.ts";
 
 describe("build-cloudflare", () => {
   it("requires the preview key for non-main branches with the production key present", () => {
@@ -43,6 +43,80 @@ describe("build-cloudflare", () => {
     });
   });
 
+  it("seeds after a successful preview deploy and auth setup", async () => {
+    const invocations: string[] = [];
+    const runCommand = (_command: string, args: readonly string[]) => {
+      invocations.push(args[2] === "deploy" ? "deploy" : (args[3] ?? "build"));
+      return Promise.resolve();
+    };
+    const ensureAuth = () => {
+      invocations.push("ensureAuth");
+      return Promise.resolve();
+    };
+
+    await main(
+      {
+        PREVIEW_CONVEX_DEPLOY_KEY: "preview-key",
+        WORKERS_CI: "1",
+        WORKERS_CI_BRANCH: "feature-branch",
+      },
+      runCommand,
+      ensureAuth,
+    );
+
+    expect(invocations).toEqual(["deploy", "ensureAuth", "devAuth:seedPasswordAccount"]);
+  });
+
+  it("does not seed when the preview deploy fails", async () => {
+    const invocations: string[] = [];
+    const runCommand = (_command: string, args: readonly string[]) => {
+      invocations.push(args[2] ?? "build");
+      return Promise.reject(new Error("deploy failed"));
+    };
+    const ensureAuth = () => {
+      invocations.push("ensureAuth");
+      return Promise.resolve();
+    };
+
+    await expect(
+      main(
+        {
+          PREVIEW_CONVEX_DEPLOY_KEY: "preview-key",
+          WORKERS_CI: "1",
+          WORKERS_CI_BRANCH: "feature-branch",
+        },
+        runCommand,
+        ensureAuth,
+      ),
+    ).rejects.toThrow("deploy failed");
+
+    expect(invocations).toEqual(["deploy"]);
+  });
+
+  it("does not seed production after auth setup", async () => {
+    const invocations: string[] = [];
+    const runCommand = (_command: string, args: readonly string[]) => {
+      invocations.push(args[2] ?? "build");
+      return Promise.resolve();
+    };
+    const ensureAuth = () => {
+      invocations.push("ensureAuth");
+      return Promise.resolve();
+    };
+
+    await main(
+      {
+        CONVEX_DEPLOY_KEY: "production-key",
+        WORKERS_CI: "1",
+        WORKERS_CI_BRANCH: "main",
+      },
+      runCommand,
+      ensureAuth,
+    );
+
+    expect(invocations).toEqual(["deploy", "ensureAuth"]);
+  });
+
   it("selects the preview key for non-main branches", () => {
     expect(
       selectConvexDeployPlan({
@@ -63,6 +137,14 @@ describe("build-cloudflare", () => {
         "feature-branch",
         "--cmd",
         "vp run build:app && node ./scripts/verify-current-branch-head.ts",
+      ],
+      seedArgs: [
+        "exec",
+        "convex",
+        "run",
+        "devAuth:seedPasswordAccount",
+        "--preview-name",
+        "feature-branch",
       ],
     });
   });
