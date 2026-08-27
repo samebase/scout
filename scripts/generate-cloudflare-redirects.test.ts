@@ -22,10 +22,6 @@ describe("generate-cloudflare-redirects", () => {
         "# public pages without catching hashed assets.",
         "",
         "/ /_landing.html 200",
-        "",
-        "/about /about/index.html 200",
-        "/about/ /about/index.html 200",
-        "/about/index.html /about/index.html 200",
       ].join("\n"),
     );
   });
@@ -52,10 +48,6 @@ describe("generate-cloudflare-redirects", () => {
         "# public pages without catching hashed assets.",
         "",
         "/ /_landing.html 200",
-        "",
-        "/about /about/index.html 200",
-        "/about/ /about/index.html 200",
-        "/about/index.html /about/index.html 200",
         generatedRedirectsEndTag,
         "/external https://example.com 302",
         "",
@@ -72,12 +64,8 @@ describe("generate-cloudflare-redirects", () => {
   it("uses the same aliases for Convex path rewrites", () => {
     expect(prerenderPathRewrites).toEqual({
       "/": "/_landing.html",
-      "/about": "/about/index.html",
-      "/about/": "/about/index.html",
-      "/about/index.html": "/about/index.html",
     });
     expect(rewritePrerenderPath("/")).toBe("/_landing.html");
-    expect(rewritePrerenderPath("/about/")).toBe("/about/index.html");
     expect(rewritePrerenderPath("/lists/abc")).toBe("/lists/abc");
   });
 

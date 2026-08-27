@@ -1,18 +1,12 @@
 import { useAuthActions } from "@convex-dev/auth/react";
-import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Navigate, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Authenticated, AuthLoading, Unauthenticated } from "convex/react";
 import { useState } from "react";
 import { Button } from "#components/ui/button";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
-    meta: [
-      { title: "Settings | Scout" },
-      {
-        name: "description",
-        content: "Manage your Scout account.",
-      },
-    ],
+    meta: [{ title: "Scout" }],
   }),
   component: SettingsPage,
 });
@@ -31,17 +25,7 @@ function SettingsPage() {
         <p className="text-muted-foreground text-sm">Loading account...</p>
       </AuthLoading>
       <Unauthenticated>
-        <section className="flex flex-col items-start gap-3 rounded-lg border p-4">
-          <div className="flex flex-col gap-1">
-            <h2 className="text-lg font-medium">Signed out</h2>
-            <p className="text-muted-foreground text-sm">
-              Sign in from the home page to manage your account.
-            </p>
-          </div>
-          <Button asChild variant="outline">
-            <Link to="/">Go to sign in</Link>
-          </Button>
-        </section>
+        <Navigate to="/" replace />
       </Unauthenticated>
       <Authenticated>
         <SessionSettings />

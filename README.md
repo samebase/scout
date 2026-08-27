@@ -1,6 +1,9 @@
 # Scout
 
-Scout will test web apps through fresh-user journeys and record whether their claims hold.
+Test web apps through fresh-user journeys and record whether their claims hold.
+
+Live app: [usable-spider-599.eu-west-1.convex.site](https://usable-spider-599.eu-west-1.convex.site)
+
 This repository starts from the Samebase app template.
 
 It is a small app base with working authentication, a real-time backend, and deployment paths.

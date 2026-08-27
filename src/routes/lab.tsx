@@ -1,5 +1,5 @@
 import { optimisticallySendMessage, type UIMessage, useUIMessages } from "@convex-dev/agent/react";
-import { createFileRoute } from "@tanstack/react-router";
+import { Navigate, createFileRoute } from "@tanstack/react-router";
 import { Authenticated, AuthLoading, Unauthenticated, useMutation, useQuery } from "convex/react";
 import {
   CheckCircle2Icon,
@@ -29,10 +29,7 @@ import { Textarea } from "#components/ui/textarea";
 
 export const Route = createFileRoute("/lab")({
   head: () => ({
-    meta: [
-      { title: "Agent lab | Scout" },
-      { name: "description", content: "Run and inspect Scout agent conversations." },
-    ],
+    meta: [{ title: "Scout" }],
   }),
   component: LabPage,
 });
@@ -55,15 +52,10 @@ function LabPage() {
   return (
     <main className="mx-auto flex h-[calc(100dvh-3.25rem)] w-full max-w-4xl flex-col gap-4 px-4 pb-4">
       <AuthLoading>
-        <p className="text-muted-foreground py-10 text-sm">Loading agent lab...</p>
+        <p className="text-muted-foreground py-10 text-sm">Loading...</p>
       </AuthLoading>
       <Unauthenticated>
-        <section className="my-auto rounded-xl border p-6">
-          <h1 className="text-lg font-medium">Admin access required</h1>
-          <p className="text-muted-foreground mt-1 text-sm">
-            Sign in from the home page to use the lab.
-          </p>
-        </section>
+        <Navigate to="/" replace />
       </Unauthenticated>
       <Authenticated>
         <AgentLab />

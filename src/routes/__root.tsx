@@ -18,6 +18,10 @@ export const Route = createRootRoute({
       {
         title: "Scout",
       },
+      {
+        name: "description",
+        content: "Test web apps through fresh-user journeys and record whether their claims hold.",
+      },
     ],
     links: [
       {
@@ -33,24 +37,21 @@ function RootComponent() {
   return (
     <RootDocument>
       <ConvexClientProvider>
-        <nav className="mx-auto flex w-full max-w-2xl pt-2" aria-label="Primary navigation">
-          <Button asChild variant="link">
-            <Link to="/" activeOptions={{ exact: true }}>
-              Home
-            </Link>
-          </Button>
-          <Button asChild variant="link">
-            <Link to="/about">About</Link>
-          </Button>
-          <Authenticated>
+        <Authenticated>
+          <nav className="mx-auto flex w-full max-w-2xl pt-2" aria-label="Primary navigation">
+            <Button asChild variant="link">
+              <Link to="/" activeOptions={{ exact: true }}>
+                Home
+              </Link>
+            </Button>
             <Button asChild variant="link">
               <Link to="/lab">Lab</Link>
             </Button>
             <Button asChild variant="link">
               <Link to="/settings">Settings</Link>
             </Button>
-          </Authenticated>
-        </nav>
+          </nav>
+        </Authenticated>
         <Outlet />
       </ConvexClientProvider>
     </RootDocument>
