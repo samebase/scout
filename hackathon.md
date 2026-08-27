@@ -8,11 +8,11 @@
 - **Frontend:** Convex static hosting
 - **Convex deployment:** https://usable-spider-599.eu-west-1.convex.cloud
 - **Components:** @convex-dev/agent, @convex-dev/static-hosting
-- **Convex features:** schema, tables, indexes, queries, mutations, actions, HTTP actions, realtime queries
+- **Convex features:** schema, tables, indexes, queries, mutations, actions, HTTP actions, realtime queries, AI Gateway
 - **Auth:** Convex Auth
-- **AI models:** gpt-5.6-sol, gpt-5.6-luna
+- **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-27T15:21:39Z
+- **Last updated:** 2026-08-27T15:23:04Z
 
 ## Log
 
@@ -91,7 +91,13 @@ and reset codes delivered through Cloudflare Email Service, server-side access c
 tests while keeping public reads open (`convex/auth.ts`, `convex/access.ts`, `convex/email.ts`,
 `src/components/auth-panel.tsx`).
 
-### 2026-08-27 - working tree
+### 2026-08-27 - 7924489
 
 Upgraded Convex to 1.45 and registered the Agent component with its current required AI SDK peer
 dependencies (`package.json`, `convex/convex.config.ts`, `convex/_generated/api.d.ts`).
+
+### 2026-08-27 - working tree
+
+Defined the Scout Agent on `openai/gpt-5.6-luna` through Convex AI Gateway. Added a private smoke
+action that persists a thread and messages, then returns a deterministic reply proof
+(`convex/scout/agent.ts`).
