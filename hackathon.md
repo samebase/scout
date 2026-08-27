@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, gpt-5.6-luna
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-27T15:36:50Z
+- **Last updated:** 2026-08-27T15:37:29Z
 
 ## Log
 
@@ -91,7 +91,7 @@ and reset codes delivered through Cloudflare Email Service, server-side access c
 tests while keeping public reads open (`convex/auth.ts`, `convex/access.ts`, `convex/email.ts`,
 `src/components/auth-panel.tsx`).
 
-### 2026-08-27 - working tree
+### 2026-08-27 - 1064c64
 
 Removed the template todo table, Convex functions, public list UI, and todo-only tests and
 dependencies. Kept the shared server-side admin access helpers and admin authentication on a
