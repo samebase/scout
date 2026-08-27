@@ -37,6 +37,7 @@
     "verify:dev-launcher-version": "node ./scripts/generate-dev-launcher-version.ts"
   },
   "dependencies": {
+    "@ai-sdk/mcp": "^2.0.39",
     "@ai-sdk/provider": "^4.0.8",
     "@ai-sdk/provider-utils": "^5.0.32",
     "@auth/core": "0.41.3",
