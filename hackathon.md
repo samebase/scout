@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-27T16:51:58Z
+- **Last updated:** 2026-08-27T17:04:53Z
 
 ## Log
 
@@ -131,3 +131,9 @@ routes, and signed-out visitors can return directly to the sign-in screen
 Changed the pull request workflow so agents rebase onto current `main`, number every pull request
 commit by its reachable commit count, repair rewritten Hackathon references, and verify that every
 logged SHA remains reachable (`AGENTS.md`).
+
+### 2026-08-27 - working tree
+
+Added a repeat-safe password fixture account for preview deployments. Each successful preview
+deploy creates or refreshes one verified account, while the production build has no seed step and
+the backend rejects production seeding (`convex/devAuth.ts`, `scripts/build-cloudflare.ts`).

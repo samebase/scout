@@ -20,6 +20,7 @@ type ConvexDeployPlan =
       deployKey: string;
       deployKeyName: typeof PREVIEW_CONVEX_DEPLOY_KEY;
       args: readonly string[];
+      seedArgs: readonly string[];
     }
   | {
       kind: "frontendOnly";
@@ -107,6 +108,7 @@ export function selectConvexDeployPlan(env: NodeJS.ProcessEnv): ConvexDeployPlan
         deployKeyName: PREVIEW_CONVEX_DEPLOY_KEY,
       }),
       args: ["exec", "convex", "deploy", "--preview-name", branch, "--cmd", WORKERS_BUILD_COMMAND],
+      seedArgs: ["exec", "convex", "run", "devAuth:seedPasswordAccount", "--preview-name", branch],
     };
   }
 
@@ -122,14 +124,18 @@ export function selectConvexDeployPlan(env: NodeJS.ProcessEnv): ConvexDeployPlan
   };
 }
 
-export async function main(env: NodeJS.ProcessEnv = process.env) {
+export async function main(
+  env: NodeJS.ProcessEnv = process.env,
+  runCommand = run,
+  ensureAuth = ensureConvexAuth,
+) {
   const plan = selectConvexDeployPlan(env);
 
   if (plan.kind === "frontendOnly") {
     console.warn(
       `${CONVEX_DEPLOY_KEY} and ${PREVIEW_CONVEX_DEPLOY_KEY} are not set; building static assets without deploying Convex.`,
     );
-    await run("vp", ["run", "build:app"]);
+    await runCommand("vp", ["run", "build:app"]);
     return;
   }
 
@@ -137,8 +143,11 @@ export async function main(env: NodeJS.ProcessEnv = process.env) {
     ...env,
     CONVEX_DEPLOY_KEY: plan.deployKey,
   };
-  await run("vp", plan.args, convexEnv);
-  await ensureConvexAuth(convexEnv);
+  await runCommand("vp", plan.args, convexEnv);
+  await ensureAuth(convexEnv);
+  if (plan.kind === "previewDeploy") {
+    await runCommand("vp", plan.seedArgs, convexEnv);
+  }
 }
 
 const entrypoint = process.argv[1];
