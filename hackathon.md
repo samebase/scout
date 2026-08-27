@@ -90,6 +90,7 @@ Replaced anonymous guest sessions with admin-only email and password Convex Auth
 and reset codes delivered through Cloudflare Email Service, server-side access checks, and auth
 tests while keeping public reads open (`convex/auth.ts`, `convex/access.ts`, `convex/email.ts`,
 `src/components/auth-panel.tsx`).
+
 ### 2026-08-27 - 7924489
 
 Upgraded Convex to 1.45 and registered the Agent component with its current required AI SDK peer
@@ -113,7 +114,7 @@ dependencies. Kept the shared server-side admin access helpers and admin authent
 Scout-specific landing page (`convex/schema.ts`, `convex/access.ts`, `src/routes/index.tsx`,
 `src/lib/auth.test.ts`, `package.json`).
 
-### 2026-08-27 - working tree
+### 2026-08-27 - 5422fab
 
 Removed the client import of the server auth policy and stopped pre-filling the allowlisted address.
 The sign-in form is now generic while Convex continues to enforce admin-only access
