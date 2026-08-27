@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-27T17:17:58Z
+- **Last updated:** 2026-08-27T18:07:13Z
 
 ## Log
 
@@ -151,3 +151,9 @@ Connected each Luna turn to the raw hosted Firecrawl and AgentMail MCP catalogs 
 HTTP clients. Cloud development verification discovered all 52 tools and completed one read-only
 call from each provider with persisted tool activity, a finite tool loop, and client cleanup after
 stream consumption (`convex/scout/labGeneration.ts`, `package.json`).
+
+### 2026-08-27 - working tree
+
+Defined forward-only Hackathon entry versions, versioned pull request publication, and one reserved
+log-only finalizer. Existing entries remain unchanged, and obsolete finalizers and related fixups
+are removed when pull request history is rewritten (`AGENTS.md`, `hackathon.md`).
