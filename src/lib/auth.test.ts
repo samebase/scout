@@ -244,37 +244,6 @@ describe("password authentication", () => {
   });
 });
 
-describe("admin-only application access", () => {
-  it("allows the administrator to write while keeping reads public", async () => {
-    const t = convexTest(schema, modules);
-    const userId = await t.run(async (ctx) =>
-      ctx.db.insert("users", {
-        email: ADMIN_EMAIL,
-      }),
-    );
-    const admin = t.withIdentity({ subject: `${userId}|test-session` });
-
-    await expect(admin.mutation(api.todos.create, { text: "Private write" })).resolves.toBeNull();
-    await expect(t.query(api.todos.list, {})).resolves.toMatchObject({
-      todos: [{ text: "Private write", creatorName: ADMIN_EMAIL }],
-    });
-  });
-
-  it("rejects a non-admin identity from protected mutations", async () => {
-    const t = convexTest(schema, modules);
-    const userId = await t.run(async (ctx) =>
-      ctx.db.insert("users", {
-        email: "someone@example.com",
-      }),
-    );
-    const nonAdmin = t.withIdentity({ subject: `${userId}|test-session` });
-
-    await expect(nonAdmin.mutation(api.todos.create, { text: "Blocked write" })).rejects.toThrow(
-      "Not authorized",
-    );
-  });
-});
-
 async function createVerifiedUser(t: ScoutTest, email: string, password: string) {
   const signUp = await captureAuthCode(() =>
     t.action(api.auth.signIn, {

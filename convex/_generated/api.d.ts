@@ -8,7 +8,6 @@
  * @module
  */
 
-import type * as access from "../access.js";
 import type * as auth from "../auth.js";
 import type * as authConfig from "../authConfig.js";
 import type * as authEmail from "../authEmail.js";
@@ -24,7 +23,6 @@ import type * as scout_lib_http from "../scout/lib/http.js";
 import type * as scout_mail from "../scout/mail.js";
 import type * as scout_model from "../scout/model.js";
 import type * as scout_runs from "../scout/runs.js";
-import type * as todos from "../todos.js";
 
 import type {
   ApiFromModules,
@@ -33,7 +31,6 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
-  access: typeof access;
   auth: typeof auth;
   authConfig: typeof authConfig;
   authEmail: typeof authEmail;
@@ -49,7 +46,6 @@ declare const fullApi: ApiFromModules<{
   "scout/mail": typeof scout_mail;
   "scout/model": typeof scout_model;
   "scout/runs": typeof scout_runs;
-  todos: typeof todos;
 }>;
 
 /**

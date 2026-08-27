@@ -3,8 +3,7 @@
 Scout will test web apps through fresh-user journeys and record whether their claims hold.
 This repository starts from the Samebase app template.
 
-It is a small, complete app base. It includes working authentication, real-time data, sharing, and
-deployment paths without adding product-specific services that a new app might not need.
+It is a small app base with working authentication, a real-time backend, and deployment paths.
 
 For the complete provider setup, use the
 [Samebase do-it-yourself guide](https://samebase.com/docs/do-it-yourself). This README covers work
@@ -13,15 +12,14 @@ inside the repository.
 ## Stack
 
 - React 19 and TanStack Start in SPA mode
-- Convex for the real-time backend, database, and guest authentication
+- Convex for the real-time backend, database, and password authentication
 - Cloudflare Workers Static Assets for production delivery and branch previews
 - Convex Static Hosting for the hackathon `convex.site` deployment
 - shadcn/ui primitives for the user interface
 - Vite+ for development, formatting, linting, tests, and builds
 - Node.js 24 for application and automation code
 
-The example app is a public todo list. Guests can sign in without an external identity provider,
-create todos, see real-time updates, and scan a QR code to open the same list on another device.
+Scout currently has admin-only email and password access plus a private Convex run and event ledger.
 
 ## Local development
 

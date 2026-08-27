@@ -8,11 +8,11 @@
 - **Frontend:** Convex static hosting
 - **Convex deployment:** https://usable-spider-599.eu-west-1.convex.cloud
 - **Components:** @convex-dev/static-hosting
-- **Convex features:** schema, tables, indexes, queries, mutations, actions, HTTP actions, realtime queries
+- **Convex features:** schema, tables, indexes, queries, mutations, actions, HTTP actions
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, gpt-5.6-luna
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-27T15:03:38Z
+- **Last updated:** 2026-08-27T15:32:26Z
 
 ## Log
 
@@ -90,3 +90,9 @@ Replaced anonymous guest sessions with admin-only email and password Convex Auth
 and reset codes delivered through Cloudflare Email Service, server-side access checks, and auth
 tests while keeping public reads open (`convex/auth.ts`, `convex/access.ts`, `convex/email.ts`,
 `src/components/auth-panel.tsx`).
+
+### 2026-08-27 - working tree
+
+Removed the template todo table, Convex functions, public list UI, and todo-only tests and
+dependencies. Kept admin authentication on a Scout-specific landing page (`convex/schema.ts`,
+`src/routes/index.tsx`, `src/lib/auth.test.ts`, `package.json`).
