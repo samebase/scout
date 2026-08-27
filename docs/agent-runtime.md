@@ -31,10 +31,16 @@ An admin starts a run with a target URL and a mission. Convex then:
    person.
 5. Stops the Firecrawl session and records the result and provider usage.
 
-Firecrawl prompt interactions are the primary browser tool. A code interaction remains available
-for a narrow deterministic fallback. AgentMail tools can inspect the assigned inbox and put a
-verification link or code into the browser without returning the secret to the model or the public
-timeline.
+Firecrawl code interactions are the primary browser tool. Luna reads the current page snapshot,
+chooses one short Playwright or `agent-browser` operation, asks Firecrawl to run it, and inspects the
+result before choosing the next operation. This keeps browser planning in Scout while Firecrawl
+owns the remote browser, live view, session, and persistent profile.
+
+Firecrawl prompt interactions remain available for isolated experiments, but they are not part of
+the default production loop. The Tally benchmarks made them slower, more expensive, and harder to
+debug than letting the Scout model control code interactions directly. AgentMail tools can inspect
+the assigned inbox and put a verification link or code into the browser without returning the
+secret to the model or the public timeline.
 
 If the run encounters a CAPTCHA or another blocked step, the Workflow waits without holding a
 running action. The admin UI exposes the protected Firecrawl live view. After the admin completes

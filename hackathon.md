@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-27T18:13:30Z
+- **Last updated:** 2026-08-27T20:28:08Z
 
 ## Log
 
@@ -163,3 +163,9 @@ fixups are removed when pull request history is rewritten (`AGENTS.md`, `hackath
 v52 Reduced the signed-out site to the Scout landing page and its one-sentence description. Removed the
 template About route, hid admin navigation until sign-in, redirected signed-out private routes home,
 and linked the Convex live app from the README (`src/routes/`, `prerender.config.ts`, `README.md`).
+
+### 2026-08-27 - bd04cf8
+
+Made Firecrawl code interactions Scout's default browser control after the Tally benchmarks showed
+that provider prompt mode was slower, costlier, and harder to debug. Firecrawl still owns the remote
+browser, live view, session, and persistent profile (`docs/agent-runtime.md`).
