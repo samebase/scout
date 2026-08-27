@@ -31,16 +31,38 @@ An admin starts a run with a target URL and a mission. Convex then:
    person.
 5. Stops the Firecrawl session and records the result and provider usage.
 
-Firecrawl code interactions are the primary browser tool. Luna reads the current page snapshot,
-chooses one short Playwright or `agent-browser` operation, asks Firecrawl to run it, and inspects the
-result before choosing the next operation. This keeps browser planning in Scout while Firecrawl
-owns the remote browser, live view, session, and persistent profile.
+Firecrawl code interactions are the primary browser tool. The model receives structured actions
+such as open, snapshot, click, fill, press, get, and wait. Scout turns each validated action into one
+shell-quoted `agent-browser` invocation and inspects the result before choosing the next action. The
+model never receives a shell/code tool, Firecrawl session identifier, or provider URL. Browser
+profile selection belongs to trusted run configuration rather than the model.
 
 Firecrawl prompt interactions remain available for isolated experiments, but they are not part of
 the default production loop. The Tally benchmarks made them slower, more expensive, and harder to
-debug than letting the Scout model control code interactions directly. AgentMail tools can inspect
-the assigned inbox and put a verification link or code into the browser without returning the
-secret to the model or the public timeline.
+debug than letting the Scout model control code interactions directly. Production AgentMail tools
+will bind an inbox to a run and put a verification link or code into the browser without returning
+the secret to the model or the public timeline.
+
+The private Lab deliberately precedes that production boundary. It exposes four read-only
+AgentMail MCP tools and retains their tool activity for debugging, so it must not inspect unrelated
+or production-sensitive mail. It also uses a fresh browser profile until the admin can explicitly
+select an identity outside the model prompt.
+
+## Harness evidence
+
+A read-only Tally login inspection compared the raw hosted MCP catalogs with the guarded browser
+tools on the same development deployment:
+
+| Model          | Harness               | Tool calls | Input tokens |   Time | Firecrawl credits | Result                        |
+| -------------- | --------------------- | ---------: | -----------: | -----: | ----------------: | ----------------------------- |
+| Qwen 3.7 Flash | Raw MCP catalogs      |         13 |      344,833 | 88.4 s |                 3 | Incorrect CAPTCHA claim       |
+| Qwen 3.7 Flash | Guarded browser tools |          4 |       17,143 | 19.7 s |                 2 | Correct                       |
+| Luna           | Raw MCP catalogs      |          4 |       72,003 | 30.5 s |                 2 | Correct after a command error |
+| Luna           | Guarded browser tools |          3 |        5,992 | 15.7 s |                 2 | Correct                       |
+
+This establishes the tool boundary, not the complete product. The published-form Tally acceptance
+test still requires the explicit authenticated-profile setting, opaque mail verification tools, and
+human approval for the external create/publish action.
 
 If the run encounters a CAPTCHA or another blocked step, the Workflow waits without holding a
 running action. The admin UI exposes the protected Firecrawl live view. After the admin completes
