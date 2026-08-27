@@ -25,7 +25,6 @@ import type * as scout_lib_http from "../scout/lib/http.js";
 import type * as scout_mail from "../scout/mail.js";
 import type * as scout_model from "../scout/model.js";
 import type * as scout_runs from "../scout/runs.js";
-import type * as todos from "../todos.js";
 
 import type {
   ApiFromModules,
@@ -51,7 +50,6 @@ declare const fullApi: ApiFromModules<{
   "scout/mail": typeof scout_mail;
   "scout/model": typeof scout_model;
   "scout/runs": typeof scout_runs;
-  todos: typeof todos;
 }>;
 
 /**

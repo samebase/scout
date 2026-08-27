@@ -8,11 +8,11 @@
 - **Frontend:** Convex static hosting
 - **Convex deployment:** https://usable-spider-599.eu-west-1.convex.cloud
 - **Components:** @convex-dev/agent, @convex-dev/static-hosting
-- **Convex features:** schema, tables, indexes, queries, mutations, actions, HTTP actions, realtime queries, AI Gateway
+- **Convex features:** schema, tables, indexes, queries, mutations, actions, HTTP actions, AI Gateway
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-27T15:37:10Z
+- **Last updated:** 2026-08-27T15:37:29Z
 
 ## Log
 
@@ -106,3 +106,10 @@ action that persists a thread and messages, then returns a deterministic reply p
 
 Moved the Scout Agent and its private smoke action to the default Convex runtime while keeping the
 persisted AI Gateway exchange unchanged (`convex/scout/agent.ts`).
+
+### 2026-08-27 - 1064c64
+
+Removed the template todo table, Convex functions, public list UI, and todo-only tests and
+dependencies. Kept the shared server-side admin access helpers and admin authentication on a
+Scout-specific landing page (`convex/schema.ts`, `convex/access.ts`, `src/routes/index.tsx`,
+`src/lib/auth.test.ts`, `package.json`).

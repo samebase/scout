@@ -9,14 +9,6 @@ import {
 
 export default defineSchema({
   ...authTables,
-  todos: defineTable({
-    userId: v.id("users"),
-    text: v.string(),
-    done: v.boolean(),
-    createdAt: v.number(),
-  })
-    .index("by_created_at", ["createdAt"])
-    .index("by_user_created_at", ["userId", "createdAt"]),
   authEmailRateLimits: defineTable({
     key: v.string(),
     lastSentAt: v.number(),
