@@ -36,7 +36,11 @@ export default defineSchema({
     model: scoutModelValidator,
     startedAt: v.number(),
     completedAt: v.optional(v.number()),
+    failedAt: v.optional(v.number()),
+    failure: v.optional(v.string()),
     usage: v.optional(scoutTokenUsageValidator),
+    firecrawlCredits: v.optional(v.number()),
+    firecrawlDurationMs: v.optional(v.number()),
   })
     .index("by_prompt_message_id", ["promptMessageId"])
     .index("by_thread_id_and_order", ["threadId", "order"]),

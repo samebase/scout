@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-27T23:38:11Z
+- **Last updated:** 2026-08-27T23:43:07Z
 
 ## Log
 
@@ -188,10 +188,19 @@ v63 Changed the Hackathon log workflow to carry at most one pending entry into t
 commit instead of ending every pull request with a log-only finalizer. Final submission keeps an
 explicit cleanup path (`AGENTS.md`).
 
-### 2026-08-27 - working tree
+### 2026-08-27 - 2ac5019
 
 Added a guarded browser harness that converts structured actions into shell-quoted Firecrawl
 `agent-browser` calls, keeps browser profile selection outside the model, and rejects failed session
 cleanup. Added a four-tool read-only AgentMail allowlist, provider URL and diagnostic redaction, and
 focused tests (`convex/scout/labTools.ts`, `convex/scout/lib/firecrawl.ts`,
 `convex/scout/lib/redaction.ts`).
+
+### 2026-08-27 - working tree
+
+Connected the guarded browser harness and read-only AgentMail allowlist to the private Convex Agent
+Lab. Persisted Firecrawl credits, browser duration, and sanitized terminal failures beside model
+usage, and surfaced that evidence in the chat UI even when a response fails before streaming.
+Read-only Tally checks completed correctly with both Luna and Qwen3.7 Flash
+(`convex/scout/labGeneration.ts`, `convex/scout/lab.ts`, `convex/schema.ts`,
+`src/routes/lab.tsx`).

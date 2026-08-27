@@ -85,6 +85,8 @@ describe("Scout agent lab", () => {
         totalTokens: 130,
         cachedInputTokens: 100,
       },
+      firecrawlCredits: 2,
+      firecrawlDurationMs: 1_500,
     });
 
     const messages = await admin.query(api.scout.lab.listMessages, {
@@ -108,6 +110,8 @@ describe("Scout agent lab", () => {
           totalTokens: 130,
           cachedInputTokens: 100,
         },
+        firecrawlCredits: 2,
+        firecrawlDurationMs: 1_500,
       },
     });
     expect(messages.page[1]?.metadata?.durationMs).toBeGreaterThanOrEqual(0);
@@ -121,6 +125,59 @@ describe("Scout agent lab", () => {
         paginationOpts: { cursor: null, numItems: 10 },
       }),
     ).rejects.toThrow("Thread not found");
+  });
+
+  it("records a sanitized terminal failure for the generation sidecar", async () => {
+    const backend = testBackend();
+    const userId = await insertUser(backend, ADMIN_EMAIL);
+    const admin = backend.withIdentity({ subject: `${userId}|test-session` });
+    const created = await admin.mutation(api.scout.lab.createThread, {});
+    await admin.mutation(api.scout.lab.sendMessage, {
+      threadId: created.threadId,
+      prompt: "Inspect a page.",
+    });
+    const generation = await backend.run(
+      async (ctx) =>
+        await ctx.db
+          .query("scoutLabGenerations")
+          .withIndex("by_thread_id_and_order", (q) => q.eq("threadId", created.threadId))
+          .unique(),
+    );
+    if (!generation) {
+      throw new Error("Expected a lab generation record");
+    }
+
+    await backend.mutation(internal.scout.lab.failGeneration, {
+      promptMessageId: generation.promptMessageId,
+      failure: "Provider request failed",
+      firecrawlCredits: 1,
+      firecrawlDurationMs: 800,
+    });
+
+    await expect(
+      backend.run(async (ctx) => await ctx.db.get("scoutLabGenerations", generation._id)),
+    ).resolves.toMatchObject({
+      failure: "Provider request failed",
+      firecrawlCredits: 1,
+      firecrawlDurationMs: 800,
+    });
+    await expect(
+      admin.query(api.scout.lab.listMessages, {
+        threadId: created.threadId,
+        paginationOpts: { cursor: null, numItems: 10 },
+      }),
+    ).resolves.toMatchObject({
+      page: [
+        {
+          role: "user",
+          metadata: {
+            failure: "Provider request failed",
+            firecrawlCredits: 1,
+            firecrawlDurationMs: 800,
+          },
+        },
+      ],
+    });
   });
 
   it("rejects the retired Qwen model", async () => {
