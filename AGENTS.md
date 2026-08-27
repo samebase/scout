@@ -28,17 +28,23 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
 
 ## Main build labels
 
-- Use merge commits for pull requests into `main`. Do not squash or rebase PR commits because
-  `hackathon.md` records their SHAs.
+- Use merge commits for pull requests into `main`. Do not squash.
 - Merge pull requests into `main` one at a time. Do not start concurrent merges.
-- If a pull request must incorporate newer `main` work, merge `origin/main` into its branch instead
-  of rebasing.
-- After branch commits or merges from `origin/main`, run `node ./scripts/pr-build-label.ts` to
-  refresh the pull request's `v<N>:` title.
-- Run the title script again immediately before merge. Another pull request may have changed
-  the projected number since the previous refresh.
-- Keep ordinary branch commit subjects unversioned. Merge with an explicit subject matching the
-  current versioned pull request title, for example
+- Keep ordinary branch commit subjects unversioned while work is in progress.
+- Immediately before merge, fetch `origin/main` and rebase the pull request onto it. Do not merge
+  `origin/main` into the branch. Capture the old-to-new commit mapping so rewritten Hackathon
+  references can be repaired.
+- After rebasing, rewrite every pull request commit subject with `v<N>:`, where `N` is that commit's
+  total reachable commit count. Preserve the original subject after the prefix. The mechanical
+  Hackathon finalizer is part of the pull request and receives a version too.
+- Treat the rebase and subject rewrite as incomplete until `hackathon.md` has been updated and every
+  committed SHA in its log headings resolves uniquely to a commit reachable from `HEAD`.
+- Push rewritten pull request history with `git push --force-with-lease`, then run
+  `node ./scripts/pr-build-label.ts` so the pull request title receives the next version reserved for
+  the merge commit.
+- Repeat the rebase, commit numbering, Hackathon repair, force-push, and title refresh immediately
+  before merge if another pull request changed `main`.
+- Merge with an explicit subject matching the current versioned pull request title, for example
   `gh pr merge <pr-number> --merge --subject "v<N>: <title>"`.
 - Prefix a direct commit to `main` with `v<N>:`, where `N` is the commit count including that commit.
 - CI rejects a `main` commit whose subject does not start with its expected `v<N>:` label.
@@ -51,6 +57,11 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
   the clean branch. If it replaces the final `working tree` entry with a commit SHA, commit only
   `hackathon.md` with the subject `docs: finalize hackathon log`.
 - Treat that finalizer as a mechanical commit and do not add a log entry for the finalizer itself.
+- After any rebase or commit-subject rewrite, run the skill again and replace every affected logged
+  SHA with the corresponding reachable commit. Preserve the existing log heading format and amend
+  the finalizer with only these log repairs.
+- Verify every committed SHA in `hackathon.md` with an ancestry check against `HEAD`; object existence
+  alone is insufficient because obsolete pre-rebase commits can remain in Git's object database.
 - Do not merge while the latest hackathon entry says `working tree`. If substantive changes follow
   the finalizer, repeat the finalization step before merge.
 
