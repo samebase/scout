@@ -6,6 +6,7 @@ import {
   scoutRunEventValidator,
   scoutRunStatusValidator,
 } from "./scout/model";
+import { scoutModelValidator, scoutTokenUsageValidator } from "./scout/models";
 
 export default defineSchema({
   ...authTables,
@@ -28,4 +29,15 @@ export default defineSchema({
     event: scoutRunEventValidator,
     createdAt: v.number(),
   }).index("by_run_id_and_created_at", ["runId", "createdAt"]),
+  scoutLabGenerations: defineTable({
+    threadId: v.string(),
+    order: v.number(),
+    promptMessageId: v.string(),
+    model: scoutModelValidator,
+    startedAt: v.number(),
+    completedAt: v.optional(v.number()),
+    usage: v.optional(scoutTokenUsageValidator),
+  })
+    .index("by_prompt_message_id", ["promptMessageId"])
+    .index("by_thread_id_and_order", ["threadId", "order"]),
 });

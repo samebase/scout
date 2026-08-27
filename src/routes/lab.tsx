@@ -1,6 +1,7 @@
-import { optimisticallySendMessage, type UIMessage, useUIMessages } from "@convex-dev/agent/react";
+import { optimisticallySendMessage, useUIMessages } from "@convex-dev/agent/react";
 import { Navigate, createFileRoute } from "@tanstack/react-router";
 import { Authenticated, AuthLoading, Unauthenticated, useMutation, useQuery } from "convex/react";
+import type { FunctionReturnType } from "convex/server";
 import {
   CheckCircle2Icon,
   ChevronRightIcon,
@@ -12,6 +13,7 @@ import {
 } from "lucide-react";
 import { type FormEvent, type KeyboardEvent, useState } from "react";
 import { api } from "../../convex/_generated/api";
+import type { ScoutModel } from "../../convex/scout/models";
 import { Bubble, BubbleContent } from "#components/ui/bubble";
 import { Button } from "#components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "#components/ui/collapsible";
@@ -48,6 +50,22 @@ type ToolSnapshot = {
   error?: unknown;
 };
 
+type LabThread = FunctionReturnType<typeof api.scout.lab.listThreads>[number];
+type LabMessage = FunctionReturnType<typeof api.scout.lab.listMessages>["page"][number];
+type LabMessageMetadata = NonNullable<LabMessage["metadata"]>;
+
+const MODEL_OPTIONS = [
+  { value: "openai/gpt-5.6-luna", label: "Luna" },
+  { value: "qwen/qwen3.8-flash", label: "Qwen 3.8 Flash" },
+] satisfies readonly { value: ScoutModel; label: string }[];
+
+const DEFAULT_MODEL: ScoutModel = "openai/gpt-5.6-luna";
+const tokenNumber = new Intl.NumberFormat();
+const threadDate = new Intl.DateTimeFormat(undefined, {
+  dateStyle: "short",
+  timeStyle: "short",
+});
+
 function LabPage() {
   return (
     <main className="mx-auto flex h-[calc(100dvh-3.25rem)] w-full max-w-4xl flex-col gap-4 px-4 pb-4">
@@ -64,16 +82,26 @@ function LabPage() {
   );
 }
 
+function modelLabel(model: string) {
+  return MODEL_OPTIONS.find((option) => option.value === model)?.label ?? model;
+}
+
+function threadLabel(thread: LabThread) {
+  const title = thread.title?.trim();
+  return title || "New thread";
+}
+
 function AgentLab() {
-  const latestThread = useQuery(api.scout.lab.latestThread);
+  const threads = useQuery(api.scout.lab.listThreads);
   const createThread = useMutation(api.scout.lab.createThread);
   const sendMessage = useMutation(api.scout.lab.sendMessage).withOptimisticUpdate(
     optimisticallySendMessage(api.scout.lab.listMessages),
   );
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
+  const [selectedModel, setSelectedModel] = useState<ScoutModel>(DEFAULT_MODEL);
   const [draft, setDraft] = useState("");
   const [composerState, setComposerState] = useState<ComposerState>({ kind: "idle" });
-  const threadId = selectedThreadId ?? latestThread?.threadId ?? null;
+  const threadId = selectedThreadId ?? threads?.[0]?.threadId ?? null;
   const messages = useUIMessages(api.scout.lab.listMessages, threadId ? { threadId } : "skip", {
     initialNumItems: 50,
     stream: true,
@@ -111,7 +139,7 @@ function AgentLab() {
         setSelectedThreadId(created.threadId);
       }
       setDraft("");
-      await sendMessage({ threadId: activeThreadId, prompt });
+      await sendMessage({ threadId: activeThreadId, prompt, model: selectedModel });
       setComposerState({ kind: "idle" });
     } catch {
       setDraft(prompt);
@@ -126,6 +154,15 @@ function AgentLab() {
     }
   };
 
+  const onModelChange = (value: string) => {
+    const option = MODEL_OPTIONS.find((candidate) => candidate.value === value);
+    if (option) {
+      setSelectedModel(option.value);
+    }
+  };
+
+  const selectedThreadIsListed = threads?.some((thread) => thread.threadId === threadId) ?? false;
+
   return (
     <>
       <header className="flex items-end justify-between gap-4 border-b py-4">
@@ -136,7 +173,7 @@ function AgentLab() {
           <div className="mt-1 flex items-center gap-2">
             <h1 className="text-xl font-medium tracking-tight">Scout</h1>
             <span className="bg-emerald-500 size-1.5 rounded-full" aria-hidden="true" />
-            <span className="text-muted-foreground text-xs">Luna</span>
+            <span className="text-muted-foreground text-xs">{modelLabel(selectedModel)}</span>
           </div>
         </div>
         <Button
@@ -159,8 +196,29 @@ function AgentLab() {
         className="bg-card flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border"
         aria-label="Scout conversation"
       >
-        <div className="border-b px-4 py-2 font-mono text-[0.6875rem] text-muted-foreground">
-          {threadId ? `thread ${threadId.slice(0, 12)}` : "no thread yet"}
+        <div className="flex items-center justify-between gap-3 border-b px-3 py-2">
+          <label className="min-w-0 flex-1">
+            <span className="sr-only">Current thread</span>
+            <select
+              value={threadId ?? ""}
+              disabled={threads === undefined || (threads.length === 0 && threadId === null)}
+              onChange={(event) => setSelectedThreadId(event.currentTarget.value || null)}
+              className="border-input bg-background h-8 w-full max-w-md rounded-md border px-2 text-xs"
+            >
+              {threadId !== null && !selectedThreadIsListed ? (
+                <option value={threadId}>Selected thread · {threadId.slice(0, 12)}</option>
+              ) : null}
+              {threads?.length ? null : <option value="">No thread yet</option>}
+              {threads?.map((thread) => (
+                <option key={thread.threadId} value={thread.threadId}>
+                  {threadLabel(thread)} · {threadDate.format(thread.creationTime)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <span className="hidden font-mono text-[0.6875rem] text-muted-foreground sm:inline">
+            {threadId ? `thread ${threadId.slice(0, 12)}` : "no thread yet"}
+          </span>
         </div>
         <div className="min-h-0 flex-1">
           <MessageScrollerProvider autoScroll scrollPreviousItemPeek={48}>
@@ -181,7 +239,7 @@ function AgentLab() {
                     </MessageScrollerItem>
                   ) : null}
                   {messages.results.length === 0 ? (
-                    <EmptyTranscript isLoading={latestThread === undefined} />
+                    <EmptyTranscript isLoading={threads === undefined} />
                   ) : null}
                   {messages.results.map((message) => (
                     <MessageScrollerItem
@@ -212,21 +270,41 @@ function AgentLab() {
               className="max-h-40 min-h-14 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0 dark:bg-transparent"
             />
             <div className="flex items-center justify-between gap-3 px-1 pt-1">
-              <p className="text-muted-foreground text-xs">
-                Enter to send. Shift+Enter for a new line.
-              </p>
-              <Button
-                type="submit"
-                size="icon-sm"
-                disabled={isBusy || !draft.trim()}
-                aria-label="Send message"
-              >
-                {composerState.kind === "sending" ? (
-                  <LoaderCircleIcon className="animate-spin" />
-                ) : (
-                  <SendIcon />
-                )}
-              </Button>
+              <div className="flex min-w-0 items-center gap-2">
+                <label className="text-muted-foreground text-xs" htmlFor="lab-model">
+                  Model
+                </label>
+                <select
+                  id="lab-model"
+                  value={selectedModel}
+                  disabled={isBusy}
+                  onChange={(event) => onModelChange(event.currentTarget.value)}
+                  className="border-input bg-background h-8 min-w-0 rounded-md border px-2 text-xs"
+                >
+                  {MODEL_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center gap-3">
+                <p className="text-muted-foreground hidden text-xs sm:block">
+                  Enter to send. Shift+Enter for a new line.
+                </p>
+                <Button
+                  type="submit"
+                  size="icon-sm"
+                  disabled={isBusy || !draft.trim()}
+                  aria-label="Send message"
+                >
+                  {composerState.kind === "sending" ? (
+                    <LoaderCircleIcon className="animate-spin" />
+                  ) : (
+                    <SendIcon />
+                  )}
+                </Button>
+              </div>
             </div>
           </div>
           {composerState.kind === "failed" ? (
@@ -257,9 +335,10 @@ function EmptyTranscript({ isLoading }: { isLoading: boolean }) {
   );
 }
 
-function LabMessage({ message }: { message: UIMessage }) {
+function LabMessage({ message }: { message: LabMessage }) {
   const isUser = message.role === "user";
   const label = isUser ? "You" : message.role === "system" ? "System" : "Scout";
+  const metadata = message.role === "assistant" ? message.metadata : undefined;
 
   return (
     <Message align={isUser ? "end" : "start"}>
@@ -281,13 +360,41 @@ function LabMessage({ message }: { message: UIMessage }) {
             <LoaderCircleIcon className="mr-1 size-3 animate-spin" />
             Scout is working
           </MessageFooter>
+        ) : metadata ? (
+          <MessageFooter>{formatRunMetadata(metadata)}</MessageFooter>
         ) : null}
       </MessageContent>
     </Message>
   );
 }
 
-function MessagePart({ part, role }: { part: unknown; role: UIMessage["role"] }) {
+function formatRunMetadata(metadata: LabMessageMetadata) {
+  const parts: string[] = [];
+  if (metadata.model) parts.push(modelLabel(metadata.model));
+  if (metadata.usage?.promptTokens !== undefined) {
+    parts.push(`${tokenNumber.format(metadata.usage.promptTokens)} input`);
+  }
+  if (metadata.usage?.completionTokens !== undefined) {
+    parts.push(`${tokenNumber.format(metadata.usage.completionTokens)} output`);
+  }
+  if (
+    metadata.usage?.promptTokens === undefined &&
+    metadata.usage?.completionTokens === undefined &&
+    metadata.usage?.totalTokens !== undefined
+  ) {
+    parts.push(`${tokenNumber.format(metadata.usage.totalTokens)} tokens`);
+  }
+  if (metadata.durationMs !== undefined) {
+    parts.push(formatDuration(metadata.durationMs));
+  }
+  return parts.join(" · ");
+}
+
+function formatDuration(durationMs: number) {
+  return durationMs < 1000 ? `${Math.round(durationMs)} ms` : `${(durationMs / 1000).toFixed(1)} s`;
+}
+
+function MessagePart({ part, role }: { part: unknown; role: LabMessage["role"] }) {
   const record = asRecord(part);
   const rawType = record ? field(record, "type") : undefined;
   const type = typeof rawType === "string" ? rawType : "unknown";

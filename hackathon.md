@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.8-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-27T22:04:44Z
+- **Last updated:** 2026-08-27T22:05:20Z
 
 ## Log
 
@@ -172,6 +172,7 @@ browser, live view, session, and persistent profile (`docs/agent-runtime.md`).
 
 ### 2026-08-27 - working tree
 
-Centralized the Scout Agent model allowlist and added Qwen 3.8 Flash beside Luna through Convex AI
-Gateway, preparing the Lab to switch models without changing agent construction
-(`convex/scout/models.ts`, `convex/scout/agent.ts`).
+Turned the admin Lab into a model-comparison workbench with recent thread switching, first-prompt
+titles, Luna and Qwen selection, and persisted input/output usage plus real elapsed time for each
+completed response. Kept the previous Lab API usable during staggered frontend/backend deploys
+(`convex/scout/lab.ts`, `convex/scout/labGeneration.ts`, `convex/schema.ts`, `src/routes/lab.tsx`).
