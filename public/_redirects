@@ -7,8 +7,4 @@
 # public pages without catching hashed assets.
 
 / /_landing.html 200
-
-/about /about/index.html 200
-/about/ /about/index.html 200
-/about/index.html /about/index.html 200
 # @samebase/app-prerender-redirects:end
