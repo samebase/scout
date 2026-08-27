@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-27T16:17:34Z
+- **Last updated:** 2026-08-27T16:51:00Z
 
 ## Log
 
@@ -125,3 +125,9 @@ The sign-in form is now generic while Convex continues to enforce admin-only acc
 Added an account settings route and moved sign-out there. Account-aware navigation now works across
 routes, and signed-out visitors can return directly to the sign-in screen
 (`src/routes/__root.tsx`, `src/routes/index.tsx`, `src/routes/settings.tsx`).
+
+### 2026-08-27 - working tree
+
+Changed the pull request workflow so agents rebase onto current `main`, number every pull request
+commit by its reachable commit count, repair rewritten Hackathon references, and verify that every
+logged SHA remains reachable (`AGENTS.md`).
