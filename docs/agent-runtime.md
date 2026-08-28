@@ -82,9 +82,10 @@ The current model replaces the earlier standalone Runs system. The cleanup remov
 - The Runs route and UI.
 - Unassigned Lab history and compatibility paths for threads without a Scout.
 
-Development data is disposable during this phase. The cleanup does not migrate old Runs or
-unassigned threads. It preserves configured Scouts, authentication data, and provider environment
-variables.
+That earlier cleanup treated development Runs as disposable and did not migrate them. The current
+experiment model is different: it preserves every bound Lab thread as grouped or ungrouped history
+until an admin explicitly assigns it. The earlier cleanup preserved configured Scouts,
+authentication data, and provider environment variables.
 
 Do not add mission, report, planner, execution-orchestration, or durable browser-session entities.
 Do not add an absent-account catalog or account-to-thread links until Lab experiments show which

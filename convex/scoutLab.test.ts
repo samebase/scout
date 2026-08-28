@@ -65,6 +65,17 @@ async function createLabThread(client: AuthenticatedTestBackend, scoutId: Id<"sc
   return { ...created, experimentId };
 }
 
+async function listLabThreadPage(
+  client: AuthenticatedTestBackend,
+  paginationOpts: { cursor: string | null; numItems: number } = { cursor: null, numItems: 50 },
+) {
+  return await client.query(api.scout.lab.listThreads, { paginationOpts });
+}
+
+async function listLabThreads(client: AuthenticatedTestBackend) {
+  return (await listLabThreadPage(client)).page;
+}
+
 async function insertLegacyLabThread(
   backend: TestBackend,
   args: {
@@ -97,7 +108,11 @@ describe("Scout agent lab", () => {
       slug: "conrad",
     });
 
-    await expect(backend.query(api.scout.lab.listThreads, {})).rejects.toThrow("Not authorized");
+    await expect(
+      backend.query(api.scout.lab.listThreads, {
+        paginationOpts: { cursor: null, numItems: 50 },
+      }),
+    ).rejects.toThrow("Not authorized");
 
     const userId = await insertUser(backend, "person@example.com");
     const nonAdmin = backend.withIdentity({ subject: `${userId}|test-session` });
@@ -110,7 +125,8 @@ describe("Scout agent lab", () => {
     );
 
     await backend.run(async (ctx) => await ctx.db.patch(scoutId, { status: "disabled" }));
-    await expect(admin.mutation(api.scout.lab.createThread, { experimentId })).rejects.toThrow(
+    const historicalExperiment = await createExperiment(admin, scoutId);
+    await expect(admin.mutation(api.scout.lab.createThread, historicalExperiment)).rejects.toThrow(
       "Active Scout not found",
     );
   });
@@ -196,7 +212,7 @@ describe("Scout agent lab", () => {
     await expect(admin.query(api.scout.lab.listExperiments, {})).resolves.toEqual([
       expect.objectContaining({ _id: experimentId, status: "completed" }),
     ]);
-    await expect(admin.query(api.scout.lab.listThreads, {})).resolves.toEqual([
+    await expect(listLabThreads(admin)).resolves.toEqual([
       expect.objectContaining({ threadId: thread.threadId, experimentId }),
     ]);
     await expect(admin.mutation(api.scout.lab.createThread, { experimentId })).rejects.toThrow();
@@ -222,7 +238,7 @@ describe("Scout agent lab", () => {
       title: "Verify the Tally response",
     });
 
-    const legacyThreads = await admin.query(api.scout.lab.listThreads, {});
+    const legacyThreads = await listLabThreads(admin);
     expect(legacyThreads).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ threadId: first.threadId, experimentId: null }),
@@ -244,13 +260,41 @@ describe("Scout agent lab", () => {
       }),
     ).resolves.toEqual({ assigned: 0 });
 
-    const assignedThreads = await admin.query(api.scout.lab.listThreads, {});
+    const assignedThreads = await listLabThreads(admin);
     expect(assignedThreads).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ threadId: first.threadId, experimentId }),
         expect.objectContaining({ threadId: second.threadId, experimentId }),
       ]),
     );
+  });
+
+  it("pages through Lab history beyond the first 50 threads", async () => {
+    const backend = testBackend();
+    const userId = await insertUser(backend, ADMIN_EMAIL);
+    const admin = backend.withIdentity({ subject: `${userId}|test-session` });
+    const scoutId = await insertScout(backend, {
+      firstName: "Conrad",
+      lastName: "Scout",
+      slug: "conrad",
+    });
+    for (let index = 0; index < 51; index += 1) {
+      await insertLegacyLabThread(backend, {
+        userId,
+        scoutId,
+        title: `Historical attempt ${index + 1}`,
+      });
+    }
+
+    const firstPage = await listLabThreadPage(admin);
+    expect(firstPage.page).toHaveLength(50);
+    expect(firstPage.isDone).toBe(false);
+    const secondPage = await listLabThreadPage(admin, {
+      cursor: firstPage.continueCursor,
+      numItems: 50,
+    });
+    expect(secondPage.page).toHaveLength(1);
+    expect(secondPage.isDone).toBe(true);
   });
 
   it("rejects cross-experiment moves and Scout mismatches", async () => {
@@ -275,6 +319,22 @@ describe("Scout agent lab", () => {
     const firstExperiment = await createExperiment(admin, conradId);
     const secondExperiment = await createExperiment(admin, conradId);
     const otherScoutExperiment = await createExperiment(admin, adaId);
+    const otherAdminId = await insertUser(backend, ADMIN_EMAIL);
+    const otherAdmin = backend.withIdentity({ subject: `${otherAdminId}|other-session` });
+    const otherAdminExperiment = await createExperiment(otherAdmin, conradId);
+
+    await expect(
+      otherAdmin.mutation(api.scout.lab.assignThreads, {
+        experimentId: otherAdminExperiment.experimentId,
+        threadIds: [thread.threadId],
+      }),
+    ).rejects.toThrow();
+    await expect(
+      admin.mutation(api.scout.lab.assignThreads, {
+        experimentId: otherAdminExperiment.experimentId,
+        threadIds: [thread.threadId],
+      }),
+    ).rejects.toThrow();
 
     await expect(
       admin.mutation(api.scout.lab.assignThreads, {
@@ -294,7 +354,7 @@ describe("Scout agent lab", () => {
         threadIds: [thread.threadId],
       }),
     ).rejects.toThrow();
-    await expect(admin.query(api.scout.lab.listThreads, {})).resolves.toEqual([
+    await expect(listLabThreads(admin)).resolves.toEqual([
       expect.objectContaining({
         threadId: thread.threadId,
         experimentId: firstExperiment.experimentId,
@@ -310,9 +370,7 @@ describe("Scout agent lab", () => {
       async (ctx) => await scoutAgent.createThread(ctx, { userId }),
     );
 
-    await expect(admin.query(api.scout.lab.listThreads, {})).rejects.toThrow(
-      "missing its Scout binding",
-    );
+    await expect(listLabThreads(admin)).rejects.toThrow("missing its Scout binding");
     await expect(
       admin.query(api.scout.lab.listMessages, {
         threadId: unbound.threadId,
@@ -338,7 +396,7 @@ describe("Scout agent lab", () => {
     });
 
     const created = await createLabThread(admin, scoutId);
-    await expect(admin.query(api.scout.lab.listThreads, {})).resolves.toEqual([
+    await expect(listLabThreads(admin)).resolves.toEqual([
       {
         threadId: created.threadId,
         creationTime: expect.any(Number),
@@ -418,7 +476,7 @@ describe("Scout agent lab", () => {
 
     const secondUserId = await insertUser(backend, ADMIN_EMAIL);
     const secondAdmin = backend.withIdentity({ subject: `${secondUserId}|other-session` });
-    await expect(secondAdmin.query(api.scout.lab.listThreads, {})).resolves.toEqual([]);
+    await expect(listLabThreads(secondAdmin)).resolves.toEqual([]);
     await expect(
       secondAdmin.query(api.scout.lab.listMessages, {
         threadId: created.threadId,

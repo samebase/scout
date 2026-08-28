@@ -29,8 +29,7 @@ const MAX_EXPERIMENT_NAME_LENGTH = 120;
 const MAX_TARGET_PRODUCT_LENGTH = 120;
 const MAX_TARGET_DOMAIN_LENGTH = 253;
 const MAX_OBJECTIVE_LENGTH = 2_000;
-const MAX_RECENT_THREADS = 50;
-const MAX_ASSIGNED_THREADS = MAX_RECENT_THREADS;
+const MAX_ASSIGNED_THREADS = 50;
 const MAX_THREAD_TITLE_LENGTH = 80;
 const GENERATION_START_TIMEOUT_MS = 5 * 60 * 1_000;
 const GENERATION_RUN_TIMEOUT_MS = 11 * 60 * 1_000;
@@ -149,9 +148,17 @@ function generationLeaseExpiresAt(generation: { leaseExpiresAt: number }) {
 }
 
 async function requireActiveScout(ctx: MutationCtx, scoutId: Id<"scouts">) {
-  const scout = await ctx.db.get(scoutId);
-  if (!scout || scout.status !== "active") {
+  const scout = await requireScout(ctx, scoutId);
+  if (scout.status !== "active") {
     throw new Error("Active Scout not found");
+  }
+  return scout;
+}
+
+async function requireScout(ctx: MutationCtx, scoutId: Id<"scouts">) {
+  const scout = await ctx.db.get(scoutId);
+  if (!scout) {
+    throw new Error("Scout not found");
   }
   return scout;
 }
@@ -182,34 +189,36 @@ async function requireThreadBinding(
 }
 
 export const listThreads = query({
-  args: {},
-  returns: v.array(recentThreadValidator),
-  handler: async (ctx) => {
+  args: { paginationOpts: paginationOptsValidator },
+  returns: paginationResultValidator(recentThreadValidator),
+  handler: async (ctx, args) => {
     const userId = await requireAppUser(ctx);
     const threads = await ctx.runQuery(components.agent.threads.listThreadsByUserId, {
       userId,
       order: "desc",
-      paginationOpts: { cursor: null, numItems: MAX_RECENT_THREADS },
+      paginationOpts: args.paginationOpts,
     });
-    const recentThreads = threads.page.slice(0, MAX_RECENT_THREADS);
     const bindings = await Promise.all(
-      recentThreads.map(
+      threads.page.map(
         async (thread) => await requireThreadBinding(ctx, { threadId: thread._id, userId }),
       ),
     );
-    return recentThreads.map((thread, index) => {
-      const binding = bindings[index];
-      if (!binding) {
-        throw new Error("Thread is missing its Scout binding");
-      }
-      return {
-        threadId: thread._id,
-        creationTime: thread._creationTime,
-        title: thread.title ?? null,
-        scoutId: binding.scoutId,
-        experimentId: binding.experimentId ?? null,
-      };
-    });
+    return {
+      ...threads,
+      page: threads.page.map((thread, index) => {
+        const binding = bindings[index];
+        if (!binding) {
+          throw new Error("Thread is missing its Scout binding");
+        }
+        return {
+          threadId: thread._id,
+          creationTime: thread._creationTime,
+          title: thread.title ?? null,
+          scoutId: binding.scoutId,
+          experimentId: binding.experimentId ?? null,
+        };
+      }),
+    };
   },
 });
 
@@ -238,7 +247,7 @@ export const createExperiment = mutation({
   returns: v.object({ experimentId: v.id("scoutLabExperiments") }),
   handler: async (ctx, args) => {
     const userId = await requireAppUser(ctx);
-    await requireActiveScout(ctx, args.scoutId);
+    await requireScout(ctx, args.scoutId);
     const experiments = await ctx.db
       .query("scoutLabExperiments")
       .withIndex("by_user_id", (q) => q.eq("userId", userId))
