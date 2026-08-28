@@ -14,16 +14,34 @@ export default defineSchema({
     key: v.string(),
     lastSentAt: v.number(),
   }).index("by_key", ["key"]),
+  scouts: defineTable({
+    displayName: v.string(),
+    slug: v.string(),
+    status: v.union(v.literal("active"), v.literal("disabled")),
+    agentMail: v.object({
+      inboxId: v.string(),
+      address: v.string(),
+    }),
+    firecrawl: v.object({
+      profileName: v.string(),
+    }),
+  })
+    .index("by_slug", ["slug"])
+    .index("by_agent_mail_address", ["agentMail.address"]),
   scoutRuns: defineTable({
     scoutName: v.string(),
     scoutEmail: v.string(),
+    scoutId: v.optional(v.id("scouts")),
     targetUrl: v.string(),
     mission: v.string(),
     status: scoutRunStatusValidator,
     browser: scoutBrowserStateValidator,
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index("by_created_at", ["createdAt"]),
+  })
+    .index("by_created_at", ["createdAt"])
+    .index("by_scout_id_and_created_at", ["scoutId", "createdAt"])
+    .index("by_scout_email_and_scout_id_and_created_at", ["scoutEmail", "scoutId", "createdAt"]),
   scoutRunEvents: defineTable({
     runId: v.id("scoutRuns"),
     event: scoutRunEventValidator,

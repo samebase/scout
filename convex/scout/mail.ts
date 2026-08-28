@@ -10,6 +10,7 @@ import {
   type BrowserExecution,
   type ScrapeInteraction,
 } from "./lib/firecrawl";
+import type { ScoutConnection } from "./scouts";
 
 const executionValidator = v.object({
   success: v.boolean(),
@@ -26,6 +27,13 @@ function requireActiveBrowser(run: Doc<"scoutRuns">) {
     throw new Error("Scout run has no active browser session");
   }
   return run.browser;
+}
+
+export function selectAgentMailInboxId(
+  run: Pick<Doc<"scoutRuns">, "scoutEmail">,
+  connection: ScoutConnection | null,
+) {
+  return connection?.agentMail.inboxId ?? run.scoutEmail;
 }
 
 function shellQuote(value: string) {
@@ -106,6 +114,13 @@ async function requireRun(ctx: ActionCtx, runId: Doc<"scoutRuns">["_id"]) {
   return run;
 }
 
+async function resolveAgentMailInboxId(ctx: ActionCtx, run: Doc<"scoutRuns">) {
+  const connection = run.scoutId
+    ? await ctx.runQuery(internal.scout.scouts.getConnections, { scoutId: run.scoutId })
+    : null;
+  return selectAgentMailInboxId(run, connection);
+}
+
 export const list = internalAction({
   args: {
     runId: v.id("scoutRuns"),
@@ -120,7 +135,8 @@ export const list = internalAction({
   ),
   handler: async (ctx, args) => {
     const run = await requireRun(ctx, args.runId);
-    const messages = await listInboxMessages(run.scoutEmail, new Date(run.createdAt).toISOString());
+    const inboxId = await resolveAgentMailInboxId(ctx, run);
+    const messages = await listInboxMessages(inboxId, new Date(run.createdAt).toISOString());
     await ctx.runMutation(internal.scout.runs.mailCheckRecorded, {
       runId: args.runId,
       messageCount: messages.length,
@@ -149,7 +165,8 @@ export const listLinks = internalAction({
   }),
   handler: async (ctx, args) => {
     const run = await requireRun(ctx, args.runId);
-    const message = await getInboxMessage(run.scoutEmail, args.messageId);
+    const inboxId = await resolveAgentMailInboxId(ctx, run);
+    const message = await getInboxMessage(inboxId, args.messageId);
     return {
       subject: redactVerificationMaterial(message.subject),
       links: extractEmailLinks(message).map((link, index) => ({
@@ -175,7 +192,8 @@ export const openLink = internalAction({
 
     const run = await requireRun(ctx, args.runId);
     const browser = requireActiveBrowser(run);
-    const message = await getInboxMessage(run.scoutEmail, args.messageId);
+    const inboxId = await resolveAgentMailInboxId(ctx, run);
+    const message = await getInboxMessage(inboxId, args.messageId);
     const link = extractEmailLinks(message)[args.linkIndex];
     if (!link) {
       throw new Error("Email link not found");
@@ -223,7 +241,8 @@ export const fillVerificationCode = internalAction({
   handler: async (ctx, args) => {
     const run = await requireRun(ctx, args.runId);
     const browser = requireActiveBrowser(run);
-    const message = await getInboxMessage(run.scoutEmail, args.messageId);
+    const inboxId = await resolveAgentMailInboxId(ctx, run);
+    const message = await getInboxMessage(inboxId, args.messageId);
     const codes = [
       ...new Set(
         [...`${message.subject}\n${message.text}`.matchAll(/\b\d{4,8}\b/g)].map(

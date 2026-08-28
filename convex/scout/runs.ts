@@ -1,17 +1,39 @@
 import { type Infer, v } from "convex/values";
-import type { Id } from "../_generated/dataModel";
-import { internalMutation, internalQuery, type MutationCtx } from "../_generated/server";
+import type { Doc, Id } from "../_generated/dataModel";
+import { internalMutation, internalQuery, query, type MutationCtx } from "../_generated/server";
+import { requireAppUser } from "../access";
 import schema from "../schema";
 import { scoutRunEventValidator } from "./model";
 
 const MAX_EVENTS_PER_RUN = 500;
+const MAX_RUNS = 100;
 const MAX_MISSION_LENGTH = 4_000;
 const MAX_NOTE_LENGTH = 2_000;
 const MAX_SCOUT_NAME_LENGTH = 100;
+const MAX_PUBLIC_SUMMARY_LENGTH = 240;
 const PUBLIC_NOTE_EMAIL = /\b[^\s@]+@[^\s@]+\.[^\s@]+\b/;
 const PUBLIC_NOTE_URL = /https?:\/\//i;
 const PUBLIC_NOTE_CODE = /\b\d{4,8}\b/;
 const PUBLIC_NOTE_SECRET_ASSIGNMENT = /\b(?:cookie|session|token)\s*[:=]\s*\S+/i;
+const MAX_EMAIL_LENGTH = 320;
+
+const scoutRunListItemValidator = v.object({
+  runId: v.id("scoutRuns"),
+  scoutId: v.optional(v.id("scouts")),
+  scoutName: v.string(),
+  targetUrl: v.string(),
+  mission: v.string(),
+  status: v.union(
+    v.literal("pending"),
+    v.literal("running"),
+    v.literal("needs_human"),
+    v.literal("completed"),
+    v.literal("failed"),
+  ),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+  summary: v.optional(v.string()),
+});
 
 function requiredText(value: string, label: string, maximumLength: number) {
   const trimmed = value.trim();
@@ -22,6 +44,10 @@ function requiredText(value: string, label: string, maximumLength: number) {
     throw new Error(`${label} must be ${maximumLength} characters or fewer`);
   }
   return trimmed;
+}
+
+function canonicalIdentityEmail(value: string) {
+  return requiredText(value, "Scout email", MAX_EMAIL_LENGTH).toLowerCase();
 }
 
 function requiredUrl(value: string, label: string) {
@@ -71,13 +97,27 @@ async function insertEvent(
 
 async function insertRun(
   ctx: MutationCtx,
-  identity: { scoutName: string; scoutEmail: string },
+  identity: {
+    scoutName: string;
+    scoutEmail: string;
+    scoutId?: Id<"scouts">;
+  },
   target: { targetUrl: string; mission: string },
 ) {
   const now = Date.now();
+  const scoutEmail = canonicalIdentityEmail(identity.scoutEmail);
+  const scoutId =
+    identity.scoutId ??
+    (
+      await ctx.db
+        .query("scouts")
+        .withIndex("by_agent_mail_address", (q) => q.eq("agentMail.address", scoutEmail))
+        .unique()
+    )?._id;
   const runId = await ctx.db.insert("scoutRuns", {
     scoutName: requiredText(identity.scoutName, "Scout name", MAX_SCOUT_NAME_LENGTH),
-    scoutEmail: requiredText(identity.scoutEmail, "Scout email", 320),
+    scoutEmail,
+    ...(scoutId ? { scoutId } : {}),
     targetUrl: requiredUrl(target.targetUrl, "Target URL"),
     mission: requiredText(target.mission, "Mission", MAX_MISSION_LENGTH),
     status: { kind: "pending" },
@@ -111,7 +151,50 @@ export const createWithLatestIdentity = internalMutation({
     if (!latest) {
       throw new Error("Scout has no existing identity to reuse");
     }
-    return await insertRun(ctx, latest, args);
+    const latestScout = latest.scoutId ? await ctx.db.get("scouts", latest.scoutId) : null;
+    return await insertRun(
+      ctx,
+      {
+        scoutName: latest.scoutName,
+        scoutEmail: latest.scoutEmail,
+        ...(latestScout ? { scoutId: latestScout._id } : {}),
+      },
+      args,
+    );
+  },
+});
+
+function projectRun(run: Doc<"scoutRuns">) {
+  return {
+    runId: run._id,
+    ...(run.scoutId ? { scoutId: run.scoutId } : {}),
+    scoutName: run.scoutName,
+    targetUrl: run.targetUrl,
+    mission: run.mission,
+    status: run.status.kind,
+    createdAt: run.createdAt,
+    updatedAt: run.updatedAt,
+    ...(run.status.kind === "completed"
+      ? { summary: run.status.summary.slice(0, MAX_PUBLIC_SUMMARY_LENGTH) }
+      : {}),
+  };
+}
+
+export const list = query({
+  args: {
+    scoutId: v.optional(v.id("scouts")),
+  },
+  returns: v.array(scoutRunListItemValidator),
+  handler: async (ctx, args) => {
+    await requireAppUser(ctx);
+    const runs = args.scoutId
+      ? await ctx.db
+          .query("scoutRuns")
+          .withIndex("by_scout_id_and_created_at", (q) => q.eq("scoutId", args.scoutId))
+          .order("desc")
+          .take(MAX_RUNS)
+      : await ctx.db.query("scoutRuns").withIndex("by_created_at").order("desc").take(MAX_RUNS);
+    return runs.map(projectRun);
   },
 });
 

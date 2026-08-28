@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-27T23:43:50Z
+- **Last updated:** 2026-08-28T02:53:28Z
 
 ## Log
 
@@ -207,8 +207,15 @@ and Qwen3.7 Flash
 (`convex/scout/labGeneration.ts`, `convex/scout/lab.ts`, `convex/schema.ts`,
 `src/routes/lab.tsx`).
 
-### 2026-08-27 - working tree
+### 2026-08-27 - 0025f55
 
-Recorded the final raw-MCP versus guarded-tool Tally benchmark and the current security boundary:
+v67 Recorded the final raw-MCP versus guarded-tool Tally benchmark and the current security boundary:
 the private Lab retains read-only mail activity and uses fresh browsers, while authenticated profile
 selection and opaque verification tools remain acceptance-test work (`docs/agent-runtime.md`).
+
+### 2026-08-28 - working tree
+
+Added reusable Scouts with AgentMail and Firecrawl connection metadata, safe authenticated projections,
+structured mission-run linkage and legacy backfill, and runtime provider resolution with legacy
+fallbacks plus focused tests (`convex/schema.ts`, `convex/scout/scouts.ts`, `convex/scout/runs.ts`,
+`convex/scout/browser.ts`, `convex/scout/mail.ts`, `convex/scout/*.test.ts`).
