@@ -53,16 +53,6 @@ describe("Scout service-account inventory", () => {
   it("rejects unauthenticated and non-admin access", async () => {
     const backend = testBackend();
     const scoutId = await insertScout(backend, "conrad");
-    const accountId = await backend.run(
-      async (ctx) =>
-        await ctx.db.insert("scoutServiceAccounts", {
-          scoutId,
-          serviceName: "Tally",
-          serviceDomain: "tally.so",
-          identifier: "conrad@example.test",
-          authenticationEvidence: { kind: "none" },
-        }),
-    );
     const registration = {
       scoutId,
       serviceName: "Tally",
@@ -74,12 +64,6 @@ describe("Scout service-account inventory", () => {
     await expect(backend.mutation(serviceAccountsApi["register"], registration)).rejects.toThrow(
       "Not authorized",
     );
-    await expect(
-      backend.mutation(serviceAccountsApi["recordAuthentication"], {
-        serviceAccountId: accountId,
-        outcome: "succeeded",
-      }),
-    ).rejects.toThrow("Not authorized");
 
     const nonAdminId = await insertUser(backend, "person@example.com");
     const nonAdmin = backend.withIdentity({ subject: `${nonAdminId}|test-session` });
@@ -87,12 +71,6 @@ describe("Scout service-account inventory", () => {
     await expect(nonAdmin.mutation(serviceAccountsApi["register"], registration)).rejects.toThrow(
       "Not authorized",
     );
-    await expect(
-      nonAdmin.mutation(serviceAccountsApi["recordAuthentication"], {
-        serviceAccountId: accountId,
-        outcome: "failed",
-      }),
-    ).rejects.toThrow("Not authorized");
   });
 
   it("normalizes registration fields and returns safe projections", async () => {
@@ -112,7 +90,7 @@ describe("Scout service-account inventory", () => {
         scoutId,
         serviceName: "Tally",
         serviceDomain: "tally.so",
-        identifier: "conrad@agentmail.to",
+        identifier: "CONRAD@AGENTMAIL.TO",
         authenticationEvidence: { kind: "none" },
       },
     ]);
@@ -133,7 +111,7 @@ describe("Scout service-account inventory", () => {
     ).rejects.toThrow("Scout not found");
   });
 
-  it("rejects canonical duplicates while allowing distinct accounts", async () => {
+  it("rejects canonical domain duplicates while preserving identifier case", async () => {
     const { backend, admin } = await authenticatedBackend();
     const scoutId = await insertScout(backend, "conrad");
     const first = {
@@ -149,15 +127,36 @@ describe("Scout service-account inventory", () => {
         ...first,
         serviceName: "Tally Forms",
         serviceDomain: "HTTPS://TALLY.SO/",
-        identifier: "CONRAD@EXAMPLE.TEST",
+        identifier: "  conrad@example.test  ",
       }),
     ).rejects.toThrow("already registered");
     await expect(
       admin.mutation(serviceAccountsApi["register"], {
         ...first,
-        identifier: "second@example.test",
+        identifier: "CONRAD@EXAMPLE.TEST",
       }),
     ).resolves.toEqual({ serviceAccountId: expect.any(String) });
+  });
+
+  it.each([
+    "foo..com",
+    "foo_bar.com",
+    "-foo.com",
+    "foo-.com",
+    `${"a".repeat(64)}.com`,
+    `${"a".repeat(63)}.${"b".repeat(63)}.${"c".repeat(63)}.${"d".repeat(62)}`,
+  ])("rejects an invalid service domain: %s", async (serviceDomain) => {
+    const { backend, admin } = await authenticatedBackend();
+    const scoutId = await insertScout(backend, "conrad");
+
+    await expect(
+      admin.mutation(serviceAccountsApi["register"], {
+        scoutId,
+        serviceName: "Example",
+        serviceDomain,
+        identifier: "conrad@example.test",
+      }),
+    ).rejects.toThrow("Service domain must be a valid hostname or URL");
   });
 
   it("filters accounts by Scout", async () => {
@@ -187,59 +186,57 @@ describe("Scout service-account inventory", () => {
     );
   });
 
-  it("records authentication evidence and preserves the last success", async () => {
+  it("rejects a fifty-first account before it can disappear from a Scout list", async () => {
     const { backend, admin } = await authenticatedBackend();
     const scoutId = await insertScout(backend, "conrad");
-    const { serviceAccountId } = await admin.mutation(serviceAccountsApi["register"], {
-      scoutId,
-      serviceName: "Tally",
-      serviceDomain: "tally.so",
-      identifier: "conrad@example.test",
+    await backend.run(async (ctx) => {
+      for (let index = 0; index < 50; index += 1) {
+        await ctx.db.insert("scoutServiceAccounts", {
+          scoutId,
+          serviceName: `Service ${index}`,
+          serviceDomain: `service-${index}.example`,
+          identifier: `account-${index}`,
+          authenticationEvidence: { kind: "none" },
+        });
+      }
     });
 
-    await admin.mutation(serviceAccountsApi["recordAuthentication"], {
-      serviceAccountId,
-      outcome: "failed",
-    });
-    let [account] = await admin.query(serviceAccountsApi["list"], { scoutId });
-    expect(account.authenticationEvidence).toEqual({
-      kind: "failed",
-      checkedAt: expect.any(Number),
+    await expect(admin.query(serviceAccountsApi["list"], { scoutId })).resolves.toHaveLength(50);
+    await expect(
+      admin.mutation(serviceAccountsApi["register"], {
+        scoutId,
+        serviceName: "Hidden service",
+        serviceDomain: "hidden.example",
+        identifier: "hidden-account",
+      }),
+    ).rejects.toThrow("A Scout can have at most 50 service accounts");
+  });
+
+  it("rejects a two-hundred-and-first account before it can disappear from the global list", async () => {
+    const { backend, admin } = await authenticatedBackend();
+    const scoutIds = await Promise.all(
+      Array.from({ length: 5 }, (_, index) => insertScout(backend, `scout-${index}`)),
+    );
+    await backend.run(async (ctx) => {
+      for (let index = 0; index < 200; index += 1) {
+        await ctx.db.insert("scoutServiceAccounts", {
+          scoutId: scoutIds[Math.floor(index / 50)],
+          serviceName: `Service ${index}`,
+          serviceDomain: `service-${index}.example`,
+          identifier: `account-${index}`,
+          authenticationEvidence: { kind: "none" },
+        });
+      }
     });
 
-    await admin.mutation(serviceAccountsApi["recordAuthentication"], {
-      serviceAccountId,
-      outcome: "succeeded",
-    });
-    [account] = await admin.query(serviceAccountsApi["list"], { scoutId });
-    expect(account.authenticationEvidence).toMatchObject({
-      kind: "succeeded",
-      checkedAt: expect.any(Number),
-    });
-    if (account.authenticationEvidence.kind !== "succeeded") {
-      throw new Error("Expected successful authentication evidence");
-    }
-    const lastSucceededAt = account.authenticationEvidence.checkedAt;
-
-    await admin.mutation(serviceAccountsApi["recordAuthentication"], {
-      serviceAccountId,
-      outcome: "failed",
-    });
-    [account] = await admin.query(serviceAccountsApi["list"], { scoutId });
-    expect(account.authenticationEvidence).toMatchObject({
-      kind: "failed",
-      checkedAt: expect.any(Number),
-      lastSucceededAt,
-    });
-
-    await admin.mutation(serviceAccountsApi["recordAuthentication"], {
-      serviceAccountId,
-      outcome: "failed",
-    });
-    [account] = await admin.query(serviceAccountsApi["list"], { scoutId });
-    expect(account.authenticationEvidence).toMatchObject({
-      kind: "failed",
-      lastSucceededAt,
-    });
+    await expect(admin.query(serviceAccountsApi["list"], {})).resolves.toHaveLength(200);
+    await expect(
+      admin.mutation(serviceAccountsApi["register"], {
+        scoutId: scoutIds[4],
+        serviceName: "Hidden service",
+        serviceDomain: "hidden.example",
+        identifier: "hidden-account",
+      }),
+    ).rejects.toThrow("Service account inventory can contain at most 200 accounts");
   });
 });

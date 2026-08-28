@@ -11,8 +11,9 @@ const MAX_ACCOUNTS = 200;
 const MAX_ACCOUNTS_PER_SCOUT = 50;
 const MAX_SERVICE_NAME_LENGTH = 100;
 const MAX_SERVICE_DOMAIN_LENGTH = 253;
+const MAX_SERVICE_DOMAIN_INPUT_LENGTH = 2_048;
 const MAX_IDENTIFIER_LENGTH = 320;
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const DNS_LABEL_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
 
 const serviceAccountPublicValidator = v.object({
   _id: v.id("scoutServiceAccounts"),
@@ -30,8 +31,6 @@ const serviceAccountIdResultValidator = v.object({
   serviceAccountId: v.id("scoutServiceAccounts"),
 });
 
-const authenticationOutcomeValidator = v.union(v.literal("succeeded"), v.literal("failed"));
-
 function requiredText(value: string, label: string, maximumLength: number) {
   const trimmed = value.trim();
   if (!trimmed) {
@@ -44,7 +43,7 @@ function requiredText(value: string, label: string, maximumLength: number) {
 }
 
 function canonicalServiceDomain(value: string) {
-  const input = requiredText(value, "Service domain", MAX_SERVICE_DOMAIN_LENGTH);
+  const input = requiredText(value, "Service domain", MAX_SERVICE_DOMAIN_INPUT_LENGTH);
   let parsed: URL;
   try {
     parsed = new URL(input.includes("://") ? input : `https://${input}`);
@@ -56,15 +55,18 @@ function canonicalServiceDomain(value: string) {
     throw new Error("Service domain must use HTTP or HTTPS");
   }
   const hostname = parsed.hostname.toLowerCase().replace(/\.$/, "");
-  if (!hostname || hostname.length > MAX_SERVICE_DOMAIN_LENGTH) {
+  const labels = hostname.split(".");
+  const hasValidDnsLabels = labels.every(
+    (label) => label.length <= 63 && DNS_LABEL_PATTERN.test(label),
+  );
+  if (!hostname || hostname.length > MAX_SERVICE_DOMAIN_LENGTH || !hasValidDnsLabels) {
     throw new Error("Service domain must be a valid hostname or URL");
   }
   return hostname;
 }
 
 function canonicalIdentifier(value: string) {
-  const identifier = requiredText(value, "Account identifier", MAX_IDENTIFIER_LENGTH);
-  return EMAIL_PATTERN.test(identifier) ? identifier.toLowerCase() : identifier;
+  return requiredText(value, "Account identifier", MAX_IDENTIFIER_LENGTH);
 }
 
 function projectServiceAccount(account: Doc<"scoutServiceAccounts">) {
@@ -122,6 +124,22 @@ export const register = mutation({
       throw new Error("Service account is already registered to this Scout");
     }
 
+    const scoutAccounts = await ctx.db
+      .query("scoutServiceAccounts")
+      .withIndex("by_scout_id", (q) => q.eq("scoutId", args.scoutId))
+      .take(MAX_ACCOUNTS_PER_SCOUT);
+    if (scoutAccounts.length >= MAX_ACCOUNTS_PER_SCOUT) {
+      throw new Error(`A Scout can have at most ${MAX_ACCOUNTS_PER_SCOUT} service accounts`);
+    }
+
+    const allAccounts = await ctx.db
+      .query("scoutServiceAccounts")
+      .withIndex("by_scout_id")
+      .take(MAX_ACCOUNTS);
+    if (allAccounts.length >= MAX_ACCOUNTS) {
+      throw new Error(`Service account inventory can contain at most ${MAX_ACCOUNTS} accounts`);
+    }
+
     return {
       serviceAccountId: await ctx.db.insert("scoutServiceAccounts", {
         scoutId: args.scoutId,
@@ -131,43 +149,5 @@ export const register = mutation({
         authenticationEvidence: { kind: "none" },
       }),
     };
-  },
-});
-
-export const recordAuthentication = mutation({
-  args: {
-    serviceAccountId: v.id("scoutServiceAccounts"),
-    outcome: authenticationOutcomeValidator,
-  },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    await requireAppUser(ctx);
-    const account = await ctx.db.get(args.serviceAccountId);
-    if (!account) {
-      throw new Error("Service account not found");
-    }
-
-    const checkedAt = Date.now();
-    if (args.outcome === "succeeded") {
-      await ctx.db.patch(args.serviceAccountId, {
-        authenticationEvidence: { kind: "succeeded", checkedAt },
-      });
-      return null;
-    }
-
-    const previousEvidence = account.authenticationEvidence;
-    const lastSucceededAt =
-      previousEvidence.kind === "succeeded"
-        ? previousEvidence.checkedAt
-        : previousEvidence.kind === "failed"
-          ? previousEvidence.lastSucceededAt
-          : undefined;
-    await ctx.db.patch(args.serviceAccountId, {
-      authenticationEvidence:
-        lastSucceededAt === undefined
-          ? { kind: "failed", checkedAt }
-          : { kind: "failed", checkedAt, lastSucceededAt },
-    });
-    return null;
   },
 });

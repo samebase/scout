@@ -44,7 +44,8 @@ function ScoutsIndexPage() {
   const [registrationOpen, setRegistrationOpen] = useState(false);
   const [registrationSubmitting, setRegistrationSubmitting] = useState(false);
   const registrationButton = useRef<HTMLButtonElement>(null);
-  const serviceNamesByScout = groupServiceNamesByScout(serviceAccounts ?? []);
+  const serviceNamesByScout =
+    serviceAccounts === undefined ? undefined : groupServiceNamesByScout(serviceAccounts);
 
   const closeRegistration = () => {
     if (registrationSubmitting) {
@@ -68,7 +69,9 @@ function ScoutsIndexPage() {
         </div>
         <div className="flex items-center gap-3">
           <p className="text-muted-foreground text-sm" aria-live="polite">
-            {scouts === undefined ? "Loading scouts..." : `Showing ${scouts.length}`}
+            {scouts === undefined || serviceAccounts === undefined
+              ? "Loading scouts..."
+              : `Showing ${scouts.length}`}
           </p>
           <Button
             ref={registrationButton}
@@ -92,7 +95,7 @@ function ScoutsIndexPage() {
         />
       ) : null}
 
-      {scouts === undefined ? (
+      {scouts === undefined || serviceNamesByScout === undefined ? (
         <p
           className="text-muted-foreground rounded-xl border px-4 py-10 text-center text-sm"
           role="status"

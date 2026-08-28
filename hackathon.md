@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-28T14:41:07Z
+- **Last updated:** 2026-08-28T14:59:05Z
 
 ## Log
 
@@ -286,10 +286,19 @@ and focused tests cover authorization, normalization, duplicates, filtering, and
 (`convex/schema.ts`, `convex/scout/model.ts`, `convex/scout/serviceAccounts.ts`,
 `convex/scout/serviceAccounts.test.ts`, `docs/agent-runtime.md`).
 
-### 2026-08-28 - working tree
+### 2026-08-28 - 85c692c - v81
 
 Added the admin account-inventory experience. Scout cards summarize only services with real
 accounts; Scout profiles separate runtime provider connections from service accounts and provide
 an inline registration form. Account rows show the domain, identifier, and honest timestamped
 authentication evidence without inventing missing-service placeholders
 (`src/routes/scouts.index.tsx`, `src/routes/scouts.$slug.tsx`).
+
+### 2026-08-28 - working tree
+
+Hardened the inventory after adversarial review: malformed hostnames are rejected, opaque account
+identifiers retain their exact case, write limits match every bounded list, and Scout cards wait for
+both data sources before rendering. Removed the manual authentication-result mutation so future
+evidence must come from a traceable browser journey (`convex/scout/serviceAccounts.ts`,
+`convex/scout/serviceAccounts.test.ts`, `src/routes/scouts.index.tsx`,
+`docs/agent-runtime.md`).

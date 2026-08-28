@@ -18,6 +18,9 @@ service accounts such as Tally or GitHub.
 service domain, account identifier, and timestamped authentication evidence. The evidence describes
 the last check. It does not claim that the login still works.
 
+New registrations start with unchecked evidence. The app must record a succeeded or failed check
+only when a browser journey can attach traceable provenance, not from a manual admin assertion.
+
 One Scout can have many service accounts. A future run or journey can use many accounts, and the same
 account can be reused across runs. Service accounts therefore do not belong to Lab threads.
 
