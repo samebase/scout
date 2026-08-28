@@ -233,4 +233,68 @@ describe("standalone Firecrawl Browser Sandbox", () => {
     });
     expect(requests).toHaveLength(1);
   });
+
+  test("confirms a timed-out close when the exact session is no longer active", async () => {
+    const timeoutError = new Error("The operation timed out");
+    timeoutError.name = "TimeoutError";
+    responses.push(
+      timeoutError,
+      jsonResponse({ success: true, sessions: [{ id: "session-other" }] }),
+    );
+
+    await expect(closeBrowserSession("session-1")).resolves.toEqual({
+      success: true,
+      sessionDurationMs: null,
+      creditsBilled: null,
+      replayAvailable: false,
+    });
+    expect(requests.map((request) => request.url)).toEqual([
+      "https://api.firecrawl.dev/v2/interact/session-1",
+      "https://api.firecrawl.dev/v2/interact?status=active",
+    ]);
+  });
+
+  test("bounds active-session confirmation after an uncertain close", async () => {
+    const signal = new AbortController().signal;
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(signal);
+    responses.push(
+      new Error("connection reset"),
+      jsonResponse({ success: true, sessions: [{ id: "session-other" }] }),
+    );
+
+    await closeBrowserSession("session-1");
+
+    expect(timeout).toHaveBeenCalledTimes(2);
+    expect(timeout).toHaveBeenNthCalledWith(1, 15_000);
+    expect(timeout).toHaveBeenNthCalledWith(2, 15_000);
+    expect(requests[1]?.init?.signal).toBe(signal);
+  });
+
+  test("preserves an uncertain close error while the exact session remains active", async () => {
+    const closeError = new Error("connection reset");
+    responses.push(closeError, jsonResponse({ success: true, sessions: [{ id: "session-1" }] }));
+
+    await expect(closeBrowserSession("session-1")).rejects.toBe(closeError);
+    expect(requests.map((request) => request.url)).toEqual([
+      "https://api.firecrawl.dev/v2/interact/session-1",
+      "https://api.firecrawl.dev/v2/interact?status=active",
+    ]);
+  });
+
+  test("does not confirm an uncertain close when listing active sessions fails", async () => {
+    responses.push(new Error("connection reset"), new Response("unauthorized", { status: 401 }));
+
+    await expect(closeBrowserSession("session-1")).rejects.toMatchObject({ status: 401 });
+    expect(requests.map((request) => request.url)).toEqual([
+      "https://api.firecrawl.dev/v2/interact/session-1",
+      "https://api.firecrawl.dev/v2/interact?status=active",
+    ]);
+  });
+
+  test("does not probe active sessions after a definitive provider close error", async () => {
+    responses.push(new Response("unauthorized", { status: 401 }));
+
+    await expect(closeBrowserSession("session-1")).rejects.toMatchObject({ status: 401 });
+    expect(requests).toHaveLength(1);
+  });
 });

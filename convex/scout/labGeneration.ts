@@ -17,9 +17,30 @@ const AGENT_MAIL_CLOSE_TIMEOUT_MS = 1_000;
 
 type LabBrowser = ReturnType<typeof createLabBrowserHarness>;
 type LabBrowserUsage = Awaited<ReturnType<LabBrowser["close"]>>;
-type GenerationOutcome =
+type GenerationResult =
   | { kind: "completed"; usage: ScoutTokenUsage }
   | { kind: "failed"; error: unknown };
+
+export function generationFailureDetails(
+  generationResult: GenerationResult,
+  cleanupFailure: unknown,
+  completionFailure: unknown,
+) {
+  const terminalError =
+    generationResult.kind === "failed"
+      ? generationResult.error
+      : (cleanupFailure ?? completionFailure);
+  const failure =
+    generationResult.kind === "failed" && cleanupFailure
+      ? `${diagnosticMessage(generationResult.error)}; browser cleanup: ${diagnosticMessage(cleanupFailure)}`
+      : cleanupFailure
+        ? `Browser cleanup failed: ${diagnosticMessage(cleanupFailure)}`
+        : diagnosticMessage(terminalError);
+
+  return generationResult.kind === "completed"
+    ? { failure, terminalError, usage: generationResult.usage }
+    : { failure, terminalError };
+}
 
 export async function closeGenerationBrowser(browser: Pick<LabBrowser, "close"> | undefined) {
   return browser ? await browser.close() : undefined;
@@ -92,7 +113,7 @@ export const generateResponse = internalAction({
 
     let agentMailClient: MCPClient | undefined;
     let browser: LabBrowser | undefined;
-    let outcome: GenerationOutcome;
+    let generationResult: GenerationResult;
 
     try {
       await requireOwnedAgentThread(ctx, args.threadId, args.userId);
@@ -124,7 +145,7 @@ export const generateResponse = internalAction({
         ...browser.tools,
         ...agentMailTools,
       };
-      const result = await scoutAgent.streamText(
+      const streamResult = await scoutAgent.streamText(
         ctx,
         { threadId: args.threadId, userId: args.userId },
         {
@@ -142,10 +163,13 @@ export const generateResponse = internalAction({
           },
         },
       );
-      await result.consumeStream();
-      outcome = { kind: "completed", usage: tokenUsage(await result.totalUsage) };
+      await streamResult.consumeStream();
+      generationResult = {
+        kind: "completed",
+        usage: tokenUsage(await streamResult.totalUsage),
+      };
     } catch (error) {
-      outcome = { kind: "failed", error };
+      generationResult = { kind: "failed", error };
     }
 
     let browserUsage: LabBrowserUsage = undefined;
@@ -155,12 +179,12 @@ export const generateResponse = internalAction({
     } catch (error) {
       cleanupFailure = error;
     }
-    if (outcome.kind === "completed" && !cleanupFailure) {
-      let persisted = false;
+    let completionFailure: unknown;
+    if (generationResult.kind === "completed" && !cleanupFailure) {
       try {
         await ctx.runMutation(internal.scout.lab.completeGeneration, {
           promptMessageId: args.promptMessageId,
-          usage: outcome.usage,
+          usage: generationResult.usage,
           ...(browserUsage?.creditsBilled === null || browserUsage?.creditsBilled === undefined
             ? {}
             : { firecrawlCredits: browserUsage.creditsBilled }),
@@ -169,28 +193,24 @@ export const generateResponse = internalAction({
             ? {}
             : { firecrawlDurationMs: browserUsage.sessionDurationMs }),
         });
-        persisted = true;
-      } catch (error) {
-        outcome = { kind: "failed", error };
-      }
-      if (persisted) {
         await closeAgentMailBestEffort(agentMailClient);
         return null;
+      } catch (error) {
+        completionFailure = error;
       }
     }
 
-    const primaryFailure = outcome.kind === "failed" ? outcome.error : cleanupFailure;
-    const failure =
-      outcome.kind === "failed" && cleanupFailure
-        ? `${diagnosticMessage(outcome.error)}; browser cleanup: ${diagnosticMessage(cleanupFailure)}`
-        : cleanupFailure
-          ? `Browser cleanup failed: ${diagnosticMessage(cleanupFailure)}`
-          : diagnosticMessage(primaryFailure);
-    let terminalError = primaryFailure;
+    const failureDetails = generationFailureDetails(
+      generationResult,
+      cleanupFailure,
+      completionFailure,
+    );
+    let terminalError = failureDetails.terminalError;
     try {
       await ctx.runMutation(internal.scout.lab.failGeneration, {
         promptMessageId: args.promptMessageId,
-        failure,
+        failure: failureDetails.failure,
+        ...("usage" in failureDetails ? { usage: failureDetails.usage } : {}),
         ...(browserUsage?.creditsBilled === null || browserUsage?.creditsBilled === undefined
           ? {}
           : { firecrawlCredits: browserUsage.creditsBilled }),
@@ -201,7 +221,7 @@ export const generateResponse = internalAction({
       });
     } catch (persistenceError) {
       terminalError = new AggregateError(
-        [primaryFailure, persistenceError],
+        [failureDetails.terminalError, persistenceError],
         "Generation failed and its failure state could not be recorded",
       );
     }
