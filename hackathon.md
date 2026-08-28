@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-28T17:30:34Z
+- **Last updated:** 2026-08-28T17:59:22Z
 
 ## Log
 
@@ -310,10 +310,22 @@ load each service's own HTTPS favicon, deduplicate services by domain, and fall 
 initial tile when a site has no root icon (`src/components/service-icon.tsx`,
 `src/routes/scouts.index.tsx`, `src/routes/scouts.$slug.tsx`).
 
-### 2026-08-28 - working tree
+### 2026-08-28 - f96635e - v85
 
 Moved Scout's Firecrawl adapter from scrape-bound Interact to standalone Browser Sandbox sessions
 with persistent profiles and provider billing metrics. Added typed rate-limit details, bounded
 explicit-429 retries, request deadlines for cleanup, and honest detection of failed browser commands
 (`convex/scout/lib/http.ts`, `convex/scout/lib/firecrawl.ts`,
 `convex/scout/lib/firecrawl.test.ts`).
+
+### 2026-08-28 - working tree
+
+Made the Convex Agent browser lifecycle deterministic under parallel tool calls and provider
+failures. Fixed waits now happen locally, open and close serialize safely, cleanup is idempotent and
+bounded, and each generation records its terminal state before best-effort AgentMail shutdown
+(`convex/scout/labTools.ts`, `convex/scout/labGeneration.ts`,
+`convex/scout/labTools.test.ts`, `convex/scout/labGeneration.test.ts`). A live development benchmark
+then ran Qwen 3.7 Flash and Luna for three 24-step generations each: all six browser sessions avoided
+the prior rate-limit failure and closed cleanly, but neither completed the publish-and-verify mission.
+Qwen used 15 Firecrawl credits and 1.91 million input tokens; Luna used 14 credits and 1.34 million,
+making useful work per model step and repeated browser history the next measured bottlenecks.

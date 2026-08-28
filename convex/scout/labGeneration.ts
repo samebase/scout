@@ -13,9 +13,39 @@ import { diagnosticMessage } from "./lib/redaction";
 import { scoutLanguageModel, scoutModelValidator, type ScoutTokenUsage } from "./models";
 
 const MAX_GENERATION_STEPS = 24;
+const AGENT_MAIL_CLOSE_TIMEOUT_MS = 1_000;
 
 type LabBrowser = ReturnType<typeof createLabBrowserHarness>;
 type LabBrowserUsage = Awaited<ReturnType<LabBrowser["close"]>>;
+type GenerationOutcome =
+  | { kind: "completed"; usage: ScoutTokenUsage }
+  | { kind: "failed"; error: unknown };
+
+export async function closeGenerationBrowser(browser: Pick<LabBrowser, "close"> | undefined) {
+  return browser ? await browser.close() : undefined;
+}
+
+export async function closeAgentMailBestEffort(
+  client: Pick<MCPClient, "close"> | undefined,
+  timeoutMs = AGENT_MAIL_CLOSE_TIMEOUT_MS,
+) {
+  if (!client) return;
+  await new Promise<void>((resolve) => {
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timeout);
+      resolve();
+    };
+    const timeout = setTimeout(finish, timeoutMs);
+    try {
+      void client.close().then(finish, finish);
+    } catch {
+      finish();
+    }
+  });
+}
 
 export function scoutWebsiteIdentityInstructions(
   scout: Pick<Doc<"scouts">, "displayName" | "websiteIdentity" | "agentMail">,
@@ -62,6 +92,7 @@ export const generateResponse = internalAction({
 
     let agentMailClient: MCPClient | undefined;
     let browser: LabBrowser | undefined;
+    let outcome: GenerationOutcome;
 
     try {
       await requireOwnedAgentThread(ctx, args.threadId, args.userId);
@@ -112,36 +143,24 @@ export const generateResponse = internalAction({
         },
       );
       await result.consumeStream();
-      const browserUsage = await browser.close();
-      await ctx.runMutation(internal.scout.lab.completeGeneration, {
-        promptMessageId: args.promptMessageId,
-        usage: tokenUsage(await result.totalUsage),
-        ...(browserUsage?.creditsBilled === null || browserUsage?.creditsBilled === undefined
-          ? {}
-          : { firecrawlCredits: browserUsage.creditsBilled }),
-        ...(browserUsage?.sessionDurationMs === null ||
-        browserUsage?.sessionDurationMs === undefined
-          ? {}
-          : { firecrawlDurationMs: browserUsage.sessionDurationMs }),
-      });
-      return null;
+      outcome = { kind: "completed", usage: tokenUsage(await result.totalUsage) };
     } catch (error) {
-      let browserUsage: LabBrowserUsage = undefined;
-      let cleanupFailure: unknown;
-      if (browser) {
-        try {
-          browserUsage = await browser.close();
-        } catch (closeError) {
-          cleanupFailure = closeError;
-        }
-      }
-      const failure = cleanupFailure
-        ? `${diagnosticMessage(error)}; browser cleanup: ${diagnosticMessage(cleanupFailure)}`
-        : diagnosticMessage(error);
+      outcome = { kind: "failed", error };
+    }
+
+    let browserUsage: LabBrowserUsage = undefined;
+    let cleanupFailure: unknown;
+    try {
+      browserUsage = await closeGenerationBrowser(browser);
+    } catch (error) {
+      cleanupFailure = error;
+    }
+    if (outcome.kind === "completed" && !cleanupFailure) {
+      let persisted = false;
       try {
-        await ctx.runMutation(internal.scout.lab.failGeneration, {
+        await ctx.runMutation(internal.scout.lab.completeGeneration, {
           promptMessageId: args.promptMessageId,
-          failure,
+          usage: outcome.usage,
           ...(browserUsage?.creditsBilled === null || browserUsage?.creditsBilled === undefined
             ? {}
             : { firecrawlCredits: browserUsage.creditsBilled }),
@@ -150,18 +169,43 @@ export const generateResponse = internalAction({
             ? {}
             : { firecrawlDurationMs: browserUsage.sessionDurationMs }),
         });
-      } catch (persistenceError) {
-        throw new AggregateError(
-          [error, persistenceError],
-          "Generation failed and its failure state could not be recorded",
-        );
+        persisted = true;
+      } catch (error) {
+        outcome = { kind: "failed", error };
       }
-      throw error;
-    } finally {
-      const closePromises: Promise<void>[] = [];
-      if (agentMailClient) closePromises.push(agentMailClient.close());
-      if (browser) closePromises.push(browser.close().then(() => undefined));
-      await Promise.allSettled(closePromises);
+      if (persisted) {
+        await closeAgentMailBestEffort(agentMailClient);
+        return null;
+      }
     }
+
+    const primaryFailure = outcome.kind === "failed" ? outcome.error : cleanupFailure;
+    const failure =
+      outcome.kind === "failed" && cleanupFailure
+        ? `${diagnosticMessage(outcome.error)}; browser cleanup: ${diagnosticMessage(cleanupFailure)}`
+        : cleanupFailure
+          ? `Browser cleanup failed: ${diagnosticMessage(cleanupFailure)}`
+          : diagnosticMessage(primaryFailure);
+    let terminalError = primaryFailure;
+    try {
+      await ctx.runMutation(internal.scout.lab.failGeneration, {
+        promptMessageId: args.promptMessageId,
+        failure,
+        ...(browserUsage?.creditsBilled === null || browserUsage?.creditsBilled === undefined
+          ? {}
+          : { firecrawlCredits: browserUsage.creditsBilled }),
+        ...(browserUsage?.sessionDurationMs === null ||
+        browserUsage?.sessionDurationMs === undefined
+          ? {}
+          : { firecrawlDurationMs: browserUsage.sessionDurationMs }),
+      });
+    } catch (persistenceError) {
+      terminalError = new AggregateError(
+        [primaryFailure, persistenceError],
+        "Generation failed and its failure state could not be recorded",
+      );
+    }
+    await closeAgentMailBestEffort(agentMailClient);
+    throw terminalError;
   },
 });
