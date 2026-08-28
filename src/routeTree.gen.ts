@@ -11,7 +11,6 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as LabRouteImport } from './routes/lab'
-import { Route as RunsRouteImport } from './routes/runs'
 import { Route as ScoutsRouteImport } from './routes/scouts'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ScoutsIndexRouteImport } from './routes/scouts.index'
@@ -25,11 +24,6 @@ const IndexRoute = IndexRouteImport.update({
 const LabRoute = LabRouteImport.update({
   id: '/lab',
   path: '/lab',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RunsRoute = RunsRouteImport.update({
-  id: '/runs',
-  path: '/runs',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ScoutsRoute = ScoutsRouteImport.update({
@@ -56,7 +50,6 @@ const ScoutsSlugRoute = ScoutsSlugRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/lab': typeof LabRoute
-  '/runs': typeof RunsRoute
   '/scouts': typeof ScoutsRouteWithChildren
   '/settings': typeof SettingsRoute
   '/scouts/$slug': typeof ScoutsSlugRoute
@@ -65,7 +58,6 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/lab': typeof LabRoute
-  '/runs': typeof RunsRoute
   '/settings': typeof SettingsRoute
   '/scouts/$slug': typeof ScoutsSlugRoute
   '/scouts': typeof ScoutsIndexRoute
@@ -74,7 +66,6 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/lab': typeof LabRoute
-  '/runs': typeof RunsRoute
   '/scouts': typeof ScoutsRouteWithChildren
   '/settings': typeof SettingsRoute
   '/scouts/$slug': typeof ScoutsSlugRoute
@@ -85,18 +76,16 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/lab'
-    | '/runs'
     | '/scouts'
     | '/settings'
     | '/scouts/$slug'
     | '/scouts/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/lab' | '/runs' | '/settings' | '/scouts/$slug' | '/scouts'
+  to: '/' | '/lab' | '/settings' | '/scouts/$slug' | '/scouts'
   id:
     | '__root__'
     | '/'
     | '/lab'
-    | '/runs'
     | '/scouts'
     | '/settings'
     | '/scouts/$slug'
@@ -106,7 +95,6 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LabRoute: typeof LabRoute
-  RunsRoute: typeof RunsRoute
   ScoutsRoute: typeof ScoutsRouteWithChildren
   SettingsRoute: typeof SettingsRoute
 }
@@ -125,13 +113,6 @@ declare module '@tanstack/react-router' {
       path: '/lab'
       fullPath: '/lab'
       preLoaderRoute: typeof LabRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/runs': {
-      id: '/runs'
-      path: '/runs'
-      fullPath: '/runs'
-      preLoaderRoute: typeof RunsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/scouts': {
@@ -181,7 +162,6 @@ const ScoutsRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LabRoute: LabRoute,
-  RunsRoute: RunsRoute,
   ScoutsRoute: ScoutsRouteWithChildren,
   SettingsRoute: SettingsRoute,
 }

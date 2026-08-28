@@ -37,7 +37,6 @@ type Env = {
   readonly DEV_SEED_AUTH_ENABLED: string | undefined;
   readonly DEV_SEED_AUTH_PASSWORD: string | undefined;
   readonly FIRECRAWL_API_KEY: string | undefined;
-  readonly SCOUT_AGENT_PASSWORD: string | undefined;
 };
 
 /**

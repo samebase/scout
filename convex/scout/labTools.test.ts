@@ -180,8 +180,10 @@ describe("Lab browser harness", () => {
 });
 
 describe("AgentMail Lab catalog", () => {
-  test("keeps only the four read tools", () => {
-    const readTool = tool({ inputSchema: z.object({}), execute: async () => null });
+  test("binds the read tools to one configured inbox", async () => {
+    const execute = vi.fn(async (input: unknown) => input);
+    const toModelOutput = vi.fn(() => ({ type: "text" as const, value: "converted" }));
+    const readTool = tool({ inputSchema: z.object({}), execute, toModelOutput });
     const allTools: ToolSet = {
       list_inboxes: readTool,
       list_messages: readTool,
@@ -190,20 +192,55 @@ describe("AgentMail Lab catalog", () => {
       send_message: readTool,
       delete_inbox: readTool,
     };
+    const selected = selectAgentMailTools(allTools, "conrad@agentmail.to");
+    const options = { toolCallId: "tool-1", messages: [], context: undefined };
 
-    expect(Object.keys(selectAgentMailTools(allTools))).toEqual([
-      "list_inboxes",
-      "list_messages",
-      "search_messages",
-      "get_thread",
-    ]);
+    expect(Object.keys(selected)).toEqual(["list_messages", "search_messages", "get_thread"]);
+    await selected.list_messages.execute({ limit: 5 }, options);
+    await selected.search_messages.execute({ q: "verification" }, options);
+    await selected.get_thread.execute({ threadId: "thread-1" }, options);
+    if (!selected.list_messages.toModelOutput) {
+      throw new Error("Expected the scoped tool to retain AgentMail's model-output adapter");
+    }
+    await expect(
+      selected.list_messages.toModelOutput({
+        toolCallId: "tool-1",
+        input: { limit: 5 },
+        output: { content: [{ type: "text", text: "message" }] },
+      }),
+    ).resolves.toEqual({ type: "text", value: "converted" });
+
+    expect(execute).toHaveBeenNthCalledWith(
+      1,
+      { limit: 5, inboxId: "conrad@agentmail.to" },
+      options,
+    );
+    expect(execute).toHaveBeenNthCalledWith(
+      2,
+      { q: "verification", inboxId: "conrad@agentmail.to" },
+      options,
+    );
+    expect(execute).toHaveBeenNthCalledWith(
+      3,
+      { threadId: "thread-1", inboxId: "conrad@agentmail.to" },
+      options,
+    );
+    expect(toModelOutput).toHaveBeenCalledWith({
+      toolCallId: "tool-1",
+      input: { limit: 5 },
+      output: { content: [{ type: "text", text: "message" }] },
+    });
   });
 
   test("fails closed when the hosted catalog loses a required tool", () => {
-    const readTool = tool({ inputSchema: z.object({}), execute: async () => null });
+    const readTool = tool({
+      inputSchema: z.object({}),
+      execute: async () => null,
+      toModelOutput: () => ({ type: "text", value: "converted" }),
+    });
 
-    expect(() => selectAgentMailTools({ list_inboxes: readTool })).toThrow(
-      "AgentMail MCP tool list_messages is unavailable",
+    expect(() => selectAgentMailTools({ list_messages: readTool }, "conrad@agentmail.to")).toThrow(
+      "AgentMail MCP tool search_messages is unavailable",
     );
   });
 });

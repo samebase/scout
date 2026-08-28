@@ -2,7 +2,7 @@ import { env } from "../../_generated/server";
 
 const MAX_PROVIDER_ERROR_LENGTH = 1_000;
 
-type ScoutEnvName = "AGENTMAIL_API_KEY" | "FIRECRAWL_API_KEY" | "SCOUT_AGENT_PASSWORD";
+type ScoutEnvName = "AGENTMAIL_API_KEY" | "FIRECRAWL_API_KEY";
 
 export function requireEnv(name: ScoutEnvName) {
   const value = env[name]?.trim();

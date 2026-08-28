@@ -2,7 +2,6 @@ import { Link, createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import { ArrowLeftIcon } from "lucide-react";
 import { api } from "../../convex/_generated/api";
-import { ScoutRunList } from "#components/scout-run-list";
 
 export const Route = createFileRoute("/scouts/$slug")({
   component: ScoutDetailPage,
@@ -11,7 +10,6 @@ export const Route = createFileRoute("/scouts/$slug")({
 function ScoutDetailPage() {
   const { slug } = Route.useParams();
   const scout = useQuery(api.scout.scouts.get, { slug });
-  const runs = useQuery(api.scout.runs.list, scout ? { scoutId: scout._id } : "skip");
 
   if (scout === undefined) {
     return (
@@ -79,6 +77,18 @@ function ScoutDetailPage() {
         </h2>
         <dl className="mt-3 grid gap-4 rounded-xl border p-4 text-sm sm:grid-cols-2 sm:p-5">
           <div className="min-w-0">
+            <dt className="text-muted-foreground text-xs">First name</dt>
+            <dd className="mt-1 wrap-break-word">
+              {scout.websiteIdentity?.firstName ?? "Not configured"}
+            </dd>
+          </div>
+          <div className="min-w-0">
+            <dt className="text-muted-foreground text-xs">Last name</dt>
+            <dd className="mt-1 wrap-break-word">
+              {scout.websiteIdentity?.lastName ?? "Not configured"}
+            </dd>
+          </div>
+          <div className="min-w-0">
             <dt className="text-muted-foreground text-xs">AgentMail inbox</dt>
             <dd className="mt-1 wrap-break-word font-mono text-xs">{scout.agentMail.inboxId}</dd>
           </div>
@@ -91,27 +101,6 @@ function ScoutDetailPage() {
             <dd className="mt-1 wrap-break-word">{scout.firecrawl.profileName}</dd>
           </div>
         </dl>
-      </section>
-
-      <section aria-labelledby="scout-runs-heading">
-        <div className="flex items-end justify-between gap-4">
-          <div>
-            <h2 id="scout-runs-heading" className="text-lg font-medium">
-              Recent runs
-            </h2>
-            <p className="text-muted-foreground mt-1 text-sm">
-              Structured missions associated with this Scout.
-            </p>
-          </div>
-          {runs !== undefined ? (
-            <p className="text-muted-foreground text-sm" aria-live="polite">
-              Showing {runs.length} recent runs
-            </p>
-          ) : null}
-        </div>
-        <div className="mt-3">
-          <ScoutRunList runs={runs} emptyMessage="No runs are recorded for this scout." />
-        </div>
       </section>
     </>
   );

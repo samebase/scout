@@ -22,7 +22,8 @@ inside the repository.
 - Vite+ for development, formatting, linting, tests, and builds
 - Node.js 24 for application and automation code
 
-Scout currently has admin-only email and password access plus a private Convex run and event ledger.
+Scout currently has an admin-only Lab for testing web apps. An admin configures persistent Scout
+identities, then starts model threads that use each Scout's AgentMail inbox and Firecrawl profile.
 
 ## Local development
 
@@ -104,8 +105,7 @@ and deploy behavior. Use the
 - `wrangler.jsonc` defines Cloudflare static assets, SPA fallback, and preview URLs.
 - `scripts/build-cloudflare.ts` owns the Cloudflare build and Convex deployment selection.
 - `scripts/deploy-cloudflare.ts` owns production, preview, and dry-run uploads.
-- `docs/agent-runtime.md` defines the planned Convex-native agent runtime and its first acceptance
-  test.
+- `docs/agent-runtime.md` describes the current Scout, Lab thread, and generation model.
 - `convex/` contains the backend, schema, authentication, and generated Convex bindings.
 - `src/` contains the React application and routes.
 

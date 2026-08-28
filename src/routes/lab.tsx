@@ -1,5 +1,5 @@
 import { optimisticallySendMessage, useUIMessages } from "@convex-dev/agent/react";
-import { Navigate, createFileRoute } from "@tanstack/react-router";
+import { Link, Navigate, createFileRoute } from "@tanstack/react-router";
 import { Authenticated, AuthLoading, Unauthenticated, useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import {
@@ -53,6 +53,14 @@ type ToolSnapshot = {
 type LabThread = FunctionReturnType<typeof api.scout.lab.listThreads>[number];
 type LabMessage = FunctionReturnType<typeof api.scout.lab.listMessages>["page"][number];
 type LabMessageMetadata = NonNullable<LabMessage["metadata"]>;
+type Scout = FunctionReturnType<typeof api.scout.scouts.list>[number];
+type ScoutId = Scout["_id"];
+
+type LabSelection =
+  | { kind: "automatic" }
+  | { kind: "scout"; scoutId: ScoutId }
+  | { kind: "thread"; threadId: string }
+  | { kind: "pendingThread"; threadId: string; scoutId: ScoutId };
 
 const MODEL_OPTIONS = [
   { value: "openai/gpt-5.6-luna", label: "Luna" },
@@ -93,30 +101,67 @@ function threadLabel(thread: LabThread) {
 
 function AgentLab() {
   const threads = useQuery(api.scout.lab.listThreads);
+  const scouts = useQuery(api.scout.scouts.list);
   const createThread = useMutation(api.scout.lab.createThread);
   const sendMessage = useMutation(api.scout.lab.sendMessage).withOptimisticUpdate(
     optimisticallySendMessage(api.scout.lab.listMessages),
   );
-  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
+  const [selection, setSelection] = useState<LabSelection>({ kind: "automatic" });
   const [selectedModel, setSelectedModel] = useState<SelectableScoutModel>(DEFAULT_MODEL);
   const [draft, setDraft] = useState("");
   const [composerState, setComposerState] = useState<ComposerState>({ kind: "idle" });
-  const threadId = selectedThreadId ?? threads?.[0]?.threadId ?? null;
+  const availableScouts = scouts ?? [];
+  const activeScouts = availableScouts.filter((scout) => scout.status === "active");
+  const automaticScout = activeScouts[0];
+  const automaticThread = threads?.[0];
+  const selectedThreadId =
+    selection.kind === "automatic"
+      ? automaticThread?.threadId
+      : selection.kind === "scout"
+        ? threads?.find((thread) => thread.scoutId === selection.scoutId)?.threadId
+        : selection.threadId;
+  const threadId = selectedThreadId ?? null;
+  const selectedThread = threads?.find((thread) => thread.threadId === threadId);
+  const selectedScoutId =
+    selectedThread?.scoutId ??
+    (selection.kind === "scout" || selection.kind === "pendingThread"
+      ? selection.scoutId
+      : selection.kind === "automatic" && !selectedThread
+        ? automaticScout?._id
+        : undefined);
+  const selectedScout = selectedScoutId
+    ? availableScouts.find((scout) => scout._id === selectedScoutId)
+    : undefined;
+  const selectedActiveScout = selectedScout?.status === "active" ? selectedScout : undefined;
+  const scoutActivity = useQuery(
+    api.scout.lab.getScoutActivity,
+    selectedScoutId ? { scoutId: selectedScoutId } : "skip",
+  );
+  const visibleThreads = selectedScoutId
+    ? (threads?.filter((thread) => thread.scoutId === selectedScoutId) ?? [])
+    : [];
   const messages = useUIMessages(api.scout.lab.listMessages, threadId ? { threadId } : "skip", {
     initialNumItems: 50,
     stream: true,
   });
   const isBusy = composerState.kind === "creating" || composerState.kind === "sending";
-  const isStreaming = messages.results.some((message) => message.status === "streaming");
+  const isActivityLoading = selectedScoutId !== undefined && scoutActivity === undefined;
+  const isWorking = isBusy || isActivityLoading || scoutActivity?.active === true;
+  const isSelectionLocked = isWorking;
+  const isLoading = threads === undefined || scouts === undefined;
 
   const onNewThread = async () => {
-    if (isBusy) {
+    if (isSelectionLocked || !selectedActiveScout) {
       return;
     }
     setComposerState({ kind: "creating" });
     try {
-      const created = await createThread({});
-      setSelectedThreadId(created.threadId);
+      const created = await createThread({ scoutId: selectedActiveScout._id });
+      setSelection({
+        kind: "pendingThread",
+        threadId: created.threadId,
+        scoutId: selectedActiveScout._id,
+      });
       setComposerState({ kind: "idle" });
     } catch {
       setComposerState({ kind: "failed", message: "Could not create a new thread." });
@@ -126,7 +171,7 @@ function AgentLab() {
   const submitPrompt = async (event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
     const prompt = draft.trim();
-    if (!prompt || isBusy) {
+    if (!prompt || isWorking || !selectedActiveScout) {
       return;
     }
 
@@ -134,12 +179,20 @@ function AgentLab() {
     let activeThreadId = threadId;
     try {
       if (!activeThreadId) {
-        const created = await createThread({});
+        const created = await createThread({ scoutId: selectedActiveScout._id });
         activeThreadId = created.threadId;
-        setSelectedThreadId(created.threadId);
+        setSelection({
+          kind: "pendingThread",
+          threadId: created.threadId,
+          scoutId: selectedActiveScout._id,
+        });
       }
       setDraft("");
-      await sendMessage({ threadId: activeThreadId, prompt, model: selectedModel });
+      await sendMessage({
+        threadId: activeThreadId,
+        prompt,
+        model: selectedModel,
+      });
       setComposerState({ kind: "idle" });
     } catch {
       setDraft(prompt);
@@ -161,7 +214,25 @@ function AgentLab() {
     }
   };
 
-  const selectedThreadIsListed = threads?.some((thread) => thread.threadId === threadId) ?? false;
+  const onScoutChange = (value: string) => {
+    setDraft("");
+    setComposerState({ kind: "idle" });
+    const scout = activeScouts.find((candidate) => candidate._id === value);
+    if (scout) {
+      setSelection({ kind: "scout", scoutId: scout._id });
+    }
+  };
+
+  const onThreadChange = (value: string) => {
+    setDraft("");
+    setComposerState({ kind: "idle" });
+    const thread = threads?.find((candidate) => candidate.threadId === value);
+    if (thread) {
+      setSelection({ kind: "thread", threadId: thread.threadId });
+    }
+  };
+
+  const selectedThreadIsListed = visibleThreads.some((thread) => thread.threadId === threadId);
 
   return (
     <>
@@ -180,7 +251,7 @@ function AgentLab() {
           type="button"
           variant="outline"
           size="sm"
-          disabled={isBusy}
+          disabled={isSelectionLocked || !selectedActiveScout}
           onClick={() => void onNewThread()}
         >
           {composerState.kind === "creating" ? (
@@ -196,26 +267,55 @@ function AgentLab() {
         className="bg-card flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border"
         aria-label="Scout conversation"
       >
-        <div className="flex items-center justify-between gap-3 border-b px-3 py-2">
-          <label className="min-w-0 flex-1">
-            <span className="sr-only">Current thread</span>
-            <select
-              value={threadId ?? ""}
-              disabled={threads === undefined || (threads.length === 0 && threadId === null)}
-              onChange={(event) => setSelectedThreadId(event.currentTarget.value || null)}
-              className="border-input bg-background h-8 w-full max-w-md rounded-md border px-2 text-xs"
-            >
-              {threadId !== null && !selectedThreadIsListed ? (
-                <option value={threadId}>Selected thread · {threadId.slice(0, 12)}</option>
-              ) : null}
-              {threads?.length ? null : <option value="">No thread yet</option>}
-              {threads?.map((thread) => (
-                <option key={thread.threadId} value={thread.threadId}>
-                  {threadLabel(thread)} · {threadDate.format(thread.creationTime)}
-                </option>
-              ))}
-            </select>
-          </label>
+        <div className="flex items-start justify-between gap-3 border-b px-3 py-2">
+          <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row">
+            <label className="flex min-w-0 items-center gap-2">
+              <span className="text-muted-foreground shrink-0 text-xs">Scout</span>
+              <select
+                value={selectedScoutId ?? ""}
+                disabled={isLoading || isSelectionLocked || activeScouts.length === 0}
+                onChange={(event) => onScoutChange(event.currentTarget.value)}
+                className="border-input bg-background h-8 min-w-0 rounded-md border px-2 text-xs sm:w-48"
+              >
+                {!selectedScoutId ? <option value="">No active Scouts</option> : null}
+                {activeScouts.map((scout) => (
+                  <option key={scout._id} value={scout._id}>
+                    {scout.displayName} /{scout.slug}
+                  </option>
+                ))}
+                {selectedScout && selectedScout.status !== "active" ? (
+                  <option value={selectedScout._id} disabled>
+                    {selectedScout.displayName} /{selectedScout.slug} (disabled)
+                  </option>
+                ) : null}
+              </select>
+            </label>
+            <label className="flex min-w-0 flex-1 items-center gap-2">
+              <span className="text-muted-foreground shrink-0 text-xs">Thread</span>
+              <select
+                value={threadId ?? ""}
+                disabled={
+                  isLoading ||
+                  isSelectionLocked ||
+                  (visibleThreads.length === 0 && threadId === null)
+                }
+                onChange={(event) => onThreadChange(event.currentTarget.value)}
+                className="border-input bg-background h-8 min-w-0 flex-1 rounded-md border px-2 text-xs"
+              >
+                {threadId !== null && !selectedThreadIsListed ? (
+                  <option value={threadId}>
+                    {selectedScout?.displayName ?? "Selected Scout"} · New thread
+                  </option>
+                ) : null}
+                {threadId === null ? <option value="">No thread yet</option> : null}
+                {visibleThreads.map((thread) => (
+                  <option key={thread.threadId} value={thread.threadId}>
+                    {threadLabel(thread)} · {threadDate.format(thread.creationTime)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
           <span className="hidden font-mono text-[0.6875rem] text-muted-foreground sm:inline">
             {threadId ? `thread ${threadId.slice(0, 12)}` : "no thread yet"}
           </span>
@@ -224,7 +324,7 @@ function AgentLab() {
           <MessageScrollerProvider autoScroll scrollPreviousItemPeek={48}>
             <MessageScroller>
               <MessageScrollerViewport>
-                <MessageScrollerContent className="px-4 py-6 sm:px-6" aria-busy={isStreaming}>
+                <MessageScrollerContent className="px-4 py-6 sm:px-6" aria-busy={isWorking}>
                   {messages.status === "CanLoadMore" ? (
                     <MessageScrollerItem>
                       <Button
@@ -238,9 +338,7 @@ function AgentLab() {
                       </Button>
                     </MessageScrollerItem>
                   ) : null}
-                  {messages.results.length === 0 ? (
-                    <EmptyTranscript isLoading={threads === undefined} />
-                  ) : null}
+                  {messages.results.length === 0 ? <EmptyTranscript isLoading={isLoading} /> : null}
                   {messages.results.map((message) => (
                     <MessageScrollerItem
                       key={message.key}
@@ -258,15 +356,31 @@ function AgentLab() {
         </div>
 
         <form className="border-t p-3 sm:p-4" onSubmit={(event) => void submitPrompt(event)}>
+          {activeScouts.length === 0 && scouts !== undefined ? (
+            <p className="text-muted-foreground mb-2 text-sm">
+              Register an active scout before starting a thread.{" "}
+              <Link to="/scouts" className="text-foreground underline underline-offset-4">
+                Register a scout
+              </Link>
+            </p>
+          ) : !selectedActiveScout && scouts !== undefined ? (
+            <p className="text-muted-foreground mb-2 text-sm">
+              Choose an active Scout to start or continue a thread.
+            </p>
+          ) : null}
           <div className="focus-within:border-ring focus-within:ring-ring/30 rounded-xl border bg-background p-2 transition-shadow focus-within:ring-3">
             <Textarea
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={onComposerKeyDown}
-              placeholder="Ask Scout to inspect, research, or explain..."
+              placeholder={
+                selectedActiveScout
+                  ? `Ask ${selectedActiveScout.displayName} to inspect, research, or explain...`
+                  : "Choose an active Scout to start a task."
+              }
               aria-label="Message Scout"
               rows={2}
-              disabled={isBusy}
+              disabled={isWorking || !selectedActiveScout}
               className="max-h-40 min-h-14 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0 dark:bg-transparent"
             />
             <div className="flex items-center justify-between gap-3 px-1 pt-1">
@@ -277,7 +391,7 @@ function AgentLab() {
                 <select
                   id="lab-model"
                   value={selectedModel}
-                  disabled={isBusy}
+                  disabled={isWorking}
                   onChange={(event) => onModelChange(event.currentTarget.value)}
                   className="border-input bg-background h-8 min-w-0 rounded-md border px-2 text-xs"
                 >
@@ -295,7 +409,7 @@ function AgentLab() {
                 <Button
                   type="submit"
                   size="icon-sm"
-                  disabled={isBusy || !draft.trim()}
+                  disabled={isWorking || !selectedActiveScout || !draft.trim()}
                   aria-label="Send message"
                 >
                   {composerState.kind === "sending" ? (
@@ -362,7 +476,7 @@ function LabMessage({ message }: { message: LabMessage }) {
             <MarkerContent>Generation failed: {metadata.failure}</MarkerContent>
           </Marker>
         ) : null}
-        {message.status === "streaming" ? (
+        {!metadata?.failure && (message.status === "pending" || message.status === "streaming") ? (
           <MessageFooter>
             <LoaderCircleIcon className="mr-1 size-3 animate-spin" />
             Scout is working
@@ -377,6 +491,7 @@ function LabMessage({ message }: { message: LabMessage }) {
 
 function formatRunMetadata(metadata: LabMessageMetadata) {
   const parts: string[] = [];
+  if (metadata.scout?.displayName) parts.push(metadata.scout.displayName);
   if (metadata.model) parts.push(modelLabel(metadata.model));
   if (metadata.usage?.promptTokens !== undefined) {
     parts.push(`${tokenNumber.format(metadata.usage.promptTokens)} input`);

@@ -19,20 +19,15 @@ import type * as devAuthConfig from "../devAuthConfig.js";
 import type * as email from "../email.js";
 import type * as http from "../http.js";
 import type * as scout_agent from "../scout/agent.js";
-import type * as scout_browser from "../scout/browser.js";
 import type * as scout_lab from "../scout/lab.js";
 import type * as scout_labAccess from "../scout/labAccess.js";
 import type * as scout_labGeneration from "../scout/labGeneration.js";
 import type * as scout_labTools from "../scout/labTools.js";
-import type * as scout_lib_agentmail from "../scout/lib/agentmail.js";
-import type * as scout_lib_emailLinks from "../scout/lib/emailLinks.js";
 import type * as scout_lib_firecrawl from "../scout/lib/firecrawl.js";
 import type * as scout_lib_http from "../scout/lib/http.js";
 import type * as scout_lib_redaction from "../scout/lib/redaction.js";
-import type * as scout_mail from "../scout/mail.js";
 import type * as scout_model from "../scout/model.js";
 import type * as scout_models from "../scout/models.js";
-import type * as scout_runs from "../scout/runs.js";
 import type * as scout_scouts from "../scout/scouts.js";
 
 import type {
@@ -53,20 +48,15 @@ declare const fullApi: ApiFromModules<{
   email: typeof email;
   http: typeof http;
   "scout/agent": typeof scout_agent;
-  "scout/browser": typeof scout_browser;
   "scout/lab": typeof scout_lab;
   "scout/labAccess": typeof scout_labAccess;
   "scout/labGeneration": typeof scout_labGeneration;
   "scout/labTools": typeof scout_labTools;
-  "scout/lib/agentmail": typeof scout_lib_agentmail;
-  "scout/lib/emailLinks": typeof scout_lib_emailLinks;
   "scout/lib/firecrawl": typeof scout_lib_firecrawl;
   "scout/lib/http": typeof scout_lib_http;
   "scout/lib/redaction": typeof scout_lib_redaction;
-  "scout/mail": typeof scout_mail;
   "scout/model": typeof scout_model;
   "scout/models": typeof scout_models;
-  "scout/runs": typeof scout_runs;
   "scout/scouts": typeof scout_scouts;
 }>;
 

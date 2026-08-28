@@ -3,7 +3,6 @@ import {
   closeScrapeInteractSession,
   createScrapeInteractSession,
   executeScrapeInteractCode,
-  executeScrapeInteractPrompt,
 } from "./firecrawl";
 
 type CapturedRequest = {
@@ -90,26 +89,16 @@ describe("scrape-bound Firecrawl Interact", () => {
     });
   });
 
-  test("uses prompt and code modes on the same scrape session", async () => {
-    responses.push(
-      {
-        success: true,
-        liveViewUrl: "https://signed.example/live",
-        output: "The login form is visible",
-        exitCode: 0,
-        killed: false,
-      },
-      {
-        success: true,
-        interactiveLiveViewUrl: "https://signed.example/control",
-        signedReplayUrl: "https://signed.example/replay",
-        result: '{"title":"Workspace"}',
-        exitCode: 0,
-        killed: false,
-      },
-    );
+  test("executes code against the scrape session", async () => {
+    responses.push({
+      success: true,
+      interactiveLiveViewUrl: "https://signed.example/control",
+      signedReplayUrl: "https://signed.example/replay",
+      result: '{"title":"Workspace"}',
+      exitCode: 0,
+      killed: false,
+    });
 
-    const prompt = await executeScrapeInteractPrompt("scrape-1", "Find the login form", 60);
     const code = await executeScrapeInteractCode(
       "scrape-1",
       "agent-browser snapshot -i",
@@ -117,22 +106,12 @@ describe("scrape-bound Firecrawl Interact", () => {
       "bash",
     );
 
-    expect(prompt.output).toBe("The login form is visible");
-    expect(prompt.replayAvailable).toBe(false);
-    expect(prompt).not.toHaveProperty("liveViewUrl");
-    expect(prompt).not.toHaveProperty("interactiveLiveViewUrl");
     expect(code.result).toBe('{"title":"Workspace"}');
     expect(code.replayAvailable).toBe(true);
     expect(requests.map((request) => request.url)).toEqual([
       "https://api.firecrawl.dev/v2/scrape/scrape-1/interact",
-      "https://api.firecrawl.dev/v2/scrape/scrape-1/interact",
     ]);
     expect(requestBody(requests[0])).toEqual({
-      prompt: "Find the login form",
-      timeout: 60,
-      origin: "samebase-scout",
-    });
-    expect(requestBody(requests[1])).toEqual({
       code: "agent-browser snapshot -i",
       language: "bash",
       timeout: 30,

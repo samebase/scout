@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-28T02:53:28Z
+- **Last updated:** 2026-08-28T13:44:25Z
 
 ## Log
 
@@ -220,9 +220,53 @@ structured mission-run linkage and legacy backfill, and runtime provider resolut
 fallbacks plus focused tests (`convex/schema.ts`, `convex/scout/scouts.ts`, `convex/scout/runs.ts`,
 `convex/scout/browser.ts`, `convex/scout/mail.ts`, `convex/scout/*.test.ts`).
 
-### 2026-08-28 - working tree
+### 2026-08-28 - 5f89fea
 
-Added authenticated Scouts list and detail views with provider connection metadata, recent structured
+v71 Added authenticated Scouts list and detail views with provider connection metadata, recent structured
 mission runs, an all-runs view, and top navigation; kept Lab experiments conceptually separate
 (`src/routes/scouts.index.tsx`, `src/routes/scouts.$slug.tsx`, `src/routes/runs.tsx`,
 `src/components/scout-run-list.tsx`, `src/routes/__root.tsx`).
+
+### 2026-08-28 - 38c1589
+
+v72 Added admin Scout registration and immutable Lab thread identity bindings. Trusted Convex runtime
+now selects each thread's Firecrawl profile and closes the read-only AgentMail tools over one inbox;
+disabled or missing linked identities fail closed, and generation metadata records the Scout
+(`convex/schema.ts`, `convex/scout/scouts.ts`, `convex/scout/lab.ts`,
+`convex/scout/labGeneration.ts`, `convex/scout/labTools.ts`, `convex/scout/browser.ts`,
+`convex/scout/mail.ts`, `convex/scout/*.test.ts`, `docs/agent-runtime.md`).
+
+### 2026-08-28 - 2fed78e
+
+v73 Added an inline admin Scout registration form and explicit Scout/thread controls in Lab. The UI
+disambiguates identities, keeps old experiments unassigned, blocks overlapping generations, and
+preserves mobile and accessible form behavior (`src/routes/scouts.index.tsx`,
+`src/routes/lab.tsx`).
+
+### 2026-08-28 - 8f81cb5
+
+v74 Prevented concurrent Lab generations from sharing one Scout browser profile. Convex now enforces a
+per-Scout pending lease, atomically claims scheduled actions, expires never-started or terminated
+actions through watchdogs, and lets the admin UI follow that durable state instead of orphaned Agent
+stream status (`convex/schema.ts`, `convex/scout/lab.ts`, `convex/scout/labGeneration.ts`,
+`convex/scoutLab.test.ts`, `src/routes/lab.tsx`, `docs/agent-runtime.md`).
+
+### 2026-08-28 - a3a6fe1
+
+v75 Added reusable first- and last-name website identities to Scouts while keeping legacy records and
+internal upserts compatible. New admin registrations require a complete identity, the Convex Agent
+receives explicit identity fields with escaped prompt values, and Scout detail pages expose the
+configuration. Verified the flow on the development deployment: the registered Scout appeared in
+Lab with its provider bindings and matching prior runs (`convex/schema.ts`, `convex/scout/model.ts`,
+`convex/scout/scouts.ts`, `convex/scout/labGeneration.ts`, `convex/scout/*.test.ts`,
+`src/routes/scouts.index.tsx`, `src/routes/scouts.$slug.tsx`).
+
+### 2026-08-28 - working tree
+
+Reset the experiment around one strict model: every Lab thread and generation belongs to one
+registered Scout. Removed the unused mission-run tables, backend, and UI, deleted compatibility
+paths for unassigned threads and incomplete identities, and kept Firecrawl code-mode plus scoped
+AgentMail MCP tools in the active Convex Agent flow. Cleared development experiment history while
+preserving authentication and the configured Scout (`convex/schema.ts`, `convex/scout/lab.ts`,
+`convex/scout/labGeneration.ts`, `convex/scout/scouts.ts`, `src/routes/lab.tsx`,
+`docs/agent-runtime.md`).

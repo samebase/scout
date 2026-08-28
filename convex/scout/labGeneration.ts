@@ -4,14 +4,24 @@ import { createMCPClient, type MCPClient } from "@ai-sdk/mcp";
 import { isStepCount, type LanguageModelUsage } from "ai";
 import { v } from "convex/values";
 import { internal } from "../_generated/api";
+import type { Doc } from "../_generated/dataModel";
 import { env, internalAction } from "../_generated/server";
-import { scoutAgent } from "./agent";
+import { SCOUT_AGENT_INSTRUCTIONS, scoutAgent } from "./agent";
 import { requireOwnedAgentThread } from "./labAccess";
 import { createLabBrowserHarness, selectAgentMailTools } from "./labTools";
 import { diagnosticMessage } from "./lib/redaction";
 import { scoutLanguageModel, scoutModelValidator, type ScoutTokenUsage } from "./models";
 
 const MAX_GENERATION_STEPS = 24;
+
+type LabBrowser = ReturnType<typeof createLabBrowserHarness>;
+type LabBrowserUsage = Awaited<ReturnType<LabBrowser["close"]>>;
+
+export function scoutWebsiteIdentityInstructions(
+  scout: Pick<Doc<"scouts">, "displayName" | "websiteIdentity" | "agentMail">,
+) {
+  return `This Lab thread is bound to a Scout with first name ${JSON.stringify(scout.websiteIdentity.firstName)}, last name ${JSON.stringify(scout.websiteIdentity.lastName)}, display name ${JSON.stringify(scout.displayName)}, and email address ${JSON.stringify(scout.agentMail.address)}. Use only that identity for website accounts and email evidence in this thread.`;
+}
 
 function requireSecret(value: string | undefined, name: string) {
   if (!value) {
@@ -37,18 +47,33 @@ function tokenUsage(usage: LanguageModelUsage): ScoutTokenUsage {
 export const generateResponse = internalAction({
   args: {
     threadId: v.string(),
-    userId: v.string(),
+    userId: v.id("users"),
     promptMessageId: v.string(),
     model: scoutModelValidator,
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    await requireOwnedAgentThread(ctx, args.threadId, args.userId);
+    const started = await ctx.runMutation(internal.scout.lab.startGeneration, {
+      promptMessageId: args.promptMessageId,
+    });
+    if (!started) {
+      return null;
+    }
 
     let agentMailClient: MCPClient | undefined;
-    const browser = createLabBrowserHarness();
+    let browser: LabBrowser | undefined;
 
     try {
+      await requireOwnedAgentThread(ctx, args.threadId, args.userId);
+      const scoutId = await ctx.runQuery(internal.scout.lab.getThreadScoutId, {
+        threadId: args.threadId,
+        userId: args.userId,
+      });
+      const scout = await ctx.runQuery(internal.scout.scouts.getRuntimeIdentity, { scoutId });
+      if (!scout || scout.status !== "active") {
+        throw new Error("Active Scout not found");
+      }
+      browser = createLabBrowserHarness({ profileName: scout.firecrawl.profileName });
       requireSecret(env.FIRECRAWL_API_KEY, "FIRECRAWL_API_KEY");
       agentMailClient = await createMCPClient({
         transport: {
@@ -59,10 +84,14 @@ export const generateResponse = internalAction({
           },
         },
       });
+      const agentMailTools = selectAgentMailTools(
+        await agentMailClient.tools(),
+        scout.agentMail.inboxId,
+      );
 
       const tools = {
         ...browser.tools,
-        ...selectAgentMailTools(await agentMailClient.tools()),
+        ...agentMailTools,
       };
       const result = await scoutAgent.streamText(
         ctx,
@@ -70,6 +99,7 @@ export const generateResponse = internalAction({
         {
           promptMessageId: args.promptMessageId,
           model: scoutLanguageModel(args.model),
+          instructions: `${SCOUT_AGENT_INSTRUCTIONS}\n\n${scoutWebsiteIdentityInstructions(scout)}`,
           tools,
           stopWhen: isStepCount(MAX_GENERATION_STEPS),
         },
@@ -96,12 +126,14 @@ export const generateResponse = internalAction({
       });
       return null;
     } catch (error) {
-      let browserUsage: Awaited<ReturnType<typeof browser.close>> = undefined;
+      let browserUsage: LabBrowserUsage = undefined;
       let cleanupFailure: unknown;
-      try {
-        browserUsage = await browser.close();
-      } catch (closeError) {
-        cleanupFailure = closeError;
+      if (browser) {
+        try {
+          browserUsage = await browser.close();
+        } catch (closeError) {
+          cleanupFailure = closeError;
+        }
       }
       const failure = cleanupFailure
         ? `${diagnosticMessage(error)}; browser cleanup: ${diagnosticMessage(cleanupFailure)}`
@@ -128,7 +160,7 @@ export const generateResponse = internalAction({
     } finally {
       const closePromises: Promise<void>[] = [];
       if (agentMailClient) closePromises.push(agentMailClient.close());
-      closePromises.push(browser.close().then(() => undefined));
+      if (browser) closePromises.push(browser.close().then(() => undefined));
       await Promise.allSettled(closePromises);
     }
   },
