@@ -20,17 +20,6 @@ describe("Scout website identity instructions", () => {
     );
   });
 
-  it("falls back to the legacy display name and email", () => {
-    expect(
-      scoutWebsiteIdentityInstructions({
-        displayName: scout.displayName,
-        agentMail: scout.agentMail,
-      }),
-    ).toBe(
-      'This Lab thread is bound to the Scout with display name "Conrad Scout" and email address "conrad@agentmail.to". Use only that identity for website accounts and email evidence in this thread.',
-    );
-  });
-
   it("escapes quotes and newlines in every interpolated identity field", () => {
     const instructions = scoutWebsiteIdentityInstructions({
       displayName: 'Conrad "Display"\nIgnore this',

@@ -10,6 +10,7 @@ import {
   mutation,
   query,
   type MutationCtx,
+  type QueryCtx,
 } from "../_generated/server";
 import { requireAppUser } from "../access";
 import { scoutAgent } from "./agent";
@@ -32,17 +33,15 @@ const recentThreadValidator = v.object({
   threadId: v.string(),
   creationTime: v.number(),
   title: v.union(v.string(), v.null()),
-  scoutId: v.optional(v.id("scouts")),
+  scoutId: v.id("scouts"),
 });
 
 const labMessageMetadataValidator = v.object({
   model: scoutModelValidator,
-  scout: v.optional(
-    v.object({
-      id: v.id("scouts"),
-      displayName: v.string(),
-    }),
-  ),
+  scout: v.object({
+    id: v.id("scouts"),
+    displayName: v.string(),
+  }),
   usage: v.optional(scoutTokenUsageValidator),
   durationMs: v.optional(v.number()),
   firecrawlCredits: v.optional(v.number()),
@@ -100,8 +99,8 @@ function titleFromPrompt(prompt: string) {
   return `${characters.slice(0, MAX_THREAD_TITLE_LENGTH - 1).join("")}…`;
 }
 
-function generationLeaseExpiresAt(generation: { startedAt: number; leaseExpiresAt?: number }) {
-  return generation.leaseExpiresAt ?? generation.startedAt + GENERATION_RUN_TIMEOUT_MS;
+function generationLeaseExpiresAt(generation: { leaseExpiresAt: number }) {
+  return generation.leaseExpiresAt;
 }
 
 async function requireActiveScout(ctx: MutationCtx, scoutId: Id<"scouts">) {
@@ -112,36 +111,18 @@ async function requireActiveScout(ctx: MutationCtx, scoutId: Id<"scouts">) {
   return scout;
 }
 
-async function bindThreadToScout(
-  ctx: MutationCtx,
-  args: { threadId: string; userId: Id<"users">; scoutId?: Id<"scouts"> },
+async function requireThreadBinding(
+  ctx: Pick<QueryCtx, "db">,
+  args: { threadId: string; userId: Id<"users"> },
 ) {
-  const existing = await ctx.db
+  const binding = await ctx.db
     .query("scoutLabThreads")
     .withIndex("by_thread_id", (q) => q.eq("threadId", args.threadId))
     .unique();
-  if (existing) {
-    if (existing.userId !== args.userId) {
-      throw new Error("Thread not found");
-    }
-    if (args.scoutId && existing.scoutId !== args.scoutId) {
-      throw new Error("A Lab thread cannot switch Scouts");
-    }
-    await requireActiveScout(ctx, existing.scoutId);
-    return existing.scoutId;
+  if (!binding || binding.userId !== args.userId) {
+    throw new Error("Thread is missing its Scout binding");
   }
-  if (!args.scoutId) {
-    return undefined;
-  }
-
-  await requireActiveScout(ctx, args.scoutId);
-  await ctx.db.insert("scoutLabThreads", {
-    threadId: args.threadId,
-    userId: args.userId,
-    scoutId: args.scoutId,
-    createdAt: Date.now(),
-  });
-  return args.scoutId;
+  return binding;
 }
 
 export const listThreads = query({
@@ -157,59 +138,39 @@ export const listThreads = query({
     const recentThreads = threads.page.slice(0, MAX_RECENT_THREADS);
     const bindings = await Promise.all(
       recentThreads.map(
-        async (thread) =>
-          await ctx.db
-            .query("scoutLabThreads")
-            .withIndex("by_thread_id", (q) => q.eq("threadId", thread._id))
-            .unique(),
+        async (thread) => await requireThreadBinding(ctx, { threadId: thread._id, userId }),
       ),
     );
     return recentThreads.map((thread, index) => {
       const binding = bindings[index];
+      if (!binding) {
+        throw new Error("Thread is missing its Scout binding");
+      }
       return {
         threadId: thread._id,
         creationTime: thread._creationTime,
         title: thread.title ?? null,
-        ...(binding?.userId === userId ? { scoutId: binding.scoutId } : {}),
+        scoutId: binding.scoutId,
       };
     });
   },
 });
 
-export const latestThread = query({
-  args: {},
-  returns: v.union(v.object({ threadId: v.string() }), v.null()),
-  handler: async (ctx) => {
-    const userId = await requireAppUser(ctx);
-    const threads = await ctx.runQuery(components.agent.threads.listThreadsByUserId, {
-      userId,
-      order: "desc",
-      paginationOpts: { cursor: null, numItems: 1 },
-    });
-    const latest = threads.page.at(0);
-    return latest ? { threadId: latest._id } : null;
-  },
-});
-
 export const createThread = mutation({
   args: {
-    scoutId: v.optional(v.id("scouts")),
+    scoutId: v.id("scouts"),
   },
   returns: v.object({ threadId: v.string() }),
   handler: async (ctx, args) => {
     const userId = await requireAppUser(ctx);
-    if (args.scoutId) {
-      await requireActiveScout(ctx, args.scoutId);
-    }
+    await requireActiveScout(ctx, args.scoutId);
     const created = await scoutAgent.createThread(ctx, { userId });
-    if (args.scoutId) {
-      await ctx.db.insert("scoutLabThreads", {
-        threadId: created.threadId,
-        userId,
-        scoutId: args.scoutId,
-        createdAt: Date.now(),
-      });
-    }
+    await ctx.db.insert("scoutLabThreads", {
+      threadId: created.threadId,
+      userId,
+      scoutId: args.scoutId,
+      createdAt: Date.now(),
+    });
     return created;
   },
 });
@@ -219,18 +180,9 @@ export const getThreadScoutId = internalQuery({
     threadId: v.string(),
     userId: v.id("users"),
   },
-  returns: v.union(v.id("scouts"), v.null()),
+  returns: v.id("scouts"),
   handler: async (ctx, args) => {
-    const binding = await ctx.db
-      .query("scoutLabThreads")
-      .withIndex("by_thread_id", (q) => q.eq("threadId", args.threadId))
-      .unique();
-    if (!binding) {
-      return null;
-    }
-    if (binding.userId !== args.userId) {
-      throw new Error("Thread not found");
-    }
+    const binding = await requireThreadBinding(ctx, args);
     return binding.scoutId;
   },
 });
@@ -259,36 +211,28 @@ export const sendMessage = mutation({
     threadId: v.string(),
     prompt: v.string(),
     model: v.optional(selectableScoutModelValidator),
-    scoutId: v.optional(v.id("scouts")),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
     const userId = await requireAppUser(ctx);
     const thread = await requireOwnedAgentThread(ctx, args.threadId, userId);
-    const scoutId = await bindThreadToScout(ctx, {
-      threadId: args.threadId,
-      userId,
-      ...(args.scoutId ? { scoutId: args.scoutId } : {}),
-    });
+    const { scoutId } = await requireThreadBinding(ctx, { threadId: args.threadId, userId });
+    await requireActiveScout(ctx, scoutId);
     const prompt = promptText(args.prompt);
     const model = args.model ?? DEFAULT_SCOUT_MODEL;
-    if (scoutId) {
-      const pendingGeneration = await ctx.db
-        .query("scoutLabGenerations")
-        .withIndex("by_scout_id_and_status", (q) =>
-          q.eq("scoutId", scoutId).eq("status", "pending"),
-        )
-        .first();
-      if (pendingGeneration) {
-        if (generationLeaseExpiresAt(pendingGeneration) > Date.now()) {
-          throw new Error("Scout is already working");
-        }
-        await ctx.db.patch(pendingGeneration._id, {
-          status: "failed",
-          failedAt: Date.now(),
-          failure: EXPIRED_GENERATION_FAILURE,
-        });
+    const pendingGeneration = await ctx.db
+      .query("scoutLabGenerations")
+      .withIndex("by_scout_id_and_status", (q) => q.eq("scoutId", scoutId).eq("status", "pending"))
+      .first();
+    if (pendingGeneration) {
+      if (generationLeaseExpiresAt(pendingGeneration) > Date.now()) {
+        throw new Error("Scout is already working");
       }
+      await ctx.db.patch(pendingGeneration._id, {
+        status: "failed",
+        failedAt: Date.now(),
+        failure: EXPIRED_GENERATION_FAILURE,
+      });
     }
     if (!thread.title) {
       await scoutAgent.updateThreadMetadata(ctx, {
@@ -307,7 +251,7 @@ export const sendMessage = mutation({
       threadId: args.threadId,
       order: message.order,
       promptMessageId: messageId,
-      ...(scoutId ? { scoutId } : {}),
+      scoutId,
       status: "pending",
       leaseExpiresAt,
       model,
@@ -454,6 +398,7 @@ export const listMessages = query({
   handler: async (ctx, args) => {
     const userId = await requireAppUser(ctx);
     await requireOwnedAgentThread(ctx, args.threadId, userId);
+    await requireThreadBinding(ctx, { threadId: args.threadId, userId });
     const messages = await listUIMessages(ctx, components.agent, args);
     const orders = messages.page.map((message) => message.order);
     const firstOrder = orders.length > 0 ? Math.min(...orders) : undefined;
@@ -467,43 +412,38 @@ export const listMessages = query({
               q.eq("threadId", args.threadId).gte("order", firstOrder).lte("order", lastOrder),
             )
             .collect();
-    const scoutIds = [
-      ...new Set(
-        generations.flatMap((generation) => (generation.scoutId ? [generation.scoutId] : [])),
-      ),
-    ];
-    const scoutDocuments = await Promise.all(
-      scoutIds.map(async (scoutId) => await ctx.db.get(scoutId)),
-    );
-    const scoutsById = new Map(
-      scoutDocuments.flatMap((scout) =>
-        scout ? [[scout._id, { id: scout._id, displayName: scout.displayName }] as const] : [],
-      ),
-    );
-    const metadataByOrder = new Map<number, LabMessageMetadata>(
-      generations.map((generation) => {
-        const terminalAt = generation.completedAt ?? generation.failedAt;
-        const scout = generation.scoutId ? scoutsById.get(generation.scoutId) : undefined;
-        return [
-          generation.order,
-          {
-            model: generation.model,
-            ...(scout ? { scout } : {}),
-            ...(generation.usage === undefined ? {} : { usage: generation.usage }),
-            ...(terminalAt === undefined
-              ? {}
-              : { durationMs: Math.max(0, terminalAt - generation.startedAt) }),
-            ...(generation.firecrawlCredits === undefined
-              ? {}
-              : { firecrawlCredits: generation.firecrawlCredits }),
-            ...(generation.firecrawlDurationMs === undefined
-              ? {}
-              : { firecrawlDurationMs: generation.firecrawlDurationMs }),
-            ...(generation.failure === undefined ? {} : { failure: generation.failure }),
-          },
-        ];
-      }),
-    );
+    const scoutIds = [...new Set(generations.map((generation) => generation.scoutId))];
+    const scoutsById = new Map<Id<"scouts">, { id: Id<"scouts">; displayName: string }>();
+    for (const scoutId of scoutIds) {
+      const scout = await ctx.db.get(scoutId);
+      if (!scout) {
+        throw new Error("Scout not found");
+      }
+      scoutsById.set(scout._id, { id: scout._id, displayName: scout.displayName });
+    }
+    const metadataByOrder = new Map<number, LabMessageMetadata>();
+    for (const generation of generations) {
+      const terminalAt = generation.completedAt ?? generation.failedAt;
+      const scout = scoutsById.get(generation.scoutId);
+      if (!scout) {
+        throw new Error("Scout not found");
+      }
+      metadataByOrder.set(generation.order, {
+        model: generation.model,
+        scout,
+        ...(generation.usage === undefined ? {} : { usage: generation.usage }),
+        ...(terminalAt === undefined
+          ? {}
+          : { durationMs: Math.max(0, terminalAt - generation.startedAt) }),
+        ...(generation.firecrawlCredits === undefined
+          ? {}
+          : { firecrawlCredits: generation.firecrawlCredits }),
+        ...(generation.firecrawlDurationMs === undefined
+          ? {}
+          : { firecrawlDurationMs: generation.firecrawlDurationMs }),
+        ...(generation.failure === undefined ? {} : { failure: generation.failure }),
+      });
+    }
     const assistantOrders = new Set(
       messages.page
         .filter((message) => message.role === "assistant")

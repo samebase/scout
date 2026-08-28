@@ -13,7 +13,6 @@ const app = defineApp({
     DEV_SEED_AUTH_ENABLED: v.optional(v.string()),
     DEV_SEED_AUTH_PASSWORD: v.optional(v.string()),
     FIRECRAWL_API_KEY: v.optional(v.string()),
-    SCOUT_AGENT_PASSWORD: v.optional(v.string()),
   },
 });
 app.use(agent);

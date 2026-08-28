@@ -94,17 +94,9 @@ function modelLabel(model: string) {
   return MODEL_OPTIONS.find((option) => option.value === model)?.label ?? model;
 }
 
-function threadLabel(thread: LabThread, scouts: Scout[]) {
+function threadLabel(thread: LabThread) {
   const title = thread.title?.trim();
-  const scout = thread.scoutId
-    ? scouts.find((candidate) => candidate._id === thread.scoutId)
-    : undefined;
-  const scoutName = thread.scoutId
-    ? scout
-      ? `${scout.displayName} /${scout.slug}`
-      : "Unknown Scout"
-    : "Unassigned history";
-  return `${scoutName} · ${title || "New thread"}`;
+  return title || "New thread";
 }
 
 function AgentLab() {
@@ -120,7 +112,7 @@ function AgentLab() {
   const [composerState, setComposerState] = useState<ComposerState>({ kind: "idle" });
   const availableScouts = scouts ?? [];
   const activeScouts = availableScouts.filter((scout) => scout.status === "active");
-  const automaticScout = activeScouts.length === 1 ? activeScouts[0] : undefined;
+  const automaticScout = activeScouts[0];
   const automaticThread = threads?.[0];
   const selectedThreadId =
     selection.kind === "automatic"
@@ -145,10 +137,9 @@ function AgentLab() {
     api.scout.lab.getScoutActivity,
     selectedScoutId ? { scoutId: selectedScoutId } : "skip",
   );
-  const unassignedThreads = threads?.filter((thread) => !thread.scoutId) ?? [];
   const visibleThreads = selectedScoutId
     ? (threads?.filter((thread) => thread.scoutId === selectedScoutId) ?? [])
-    : unassignedThreads;
+    : [];
   const messages = useUIMessages(api.scout.lab.listMessages, threadId ? { threadId } : "skip", {
     initialNumItems: 50,
     stream: true,
@@ -201,7 +192,6 @@ function AgentLab() {
         threadId: activeThreadId,
         prompt,
         model: selectedModel,
-        scoutId: selectedActiveScout._id,
       });
       setComposerState({ kind: "idle" });
     } catch {
@@ -227,13 +217,6 @@ function AgentLab() {
   const onScoutChange = (value: string) => {
     setDraft("");
     setComposerState({ kind: "idle" });
-    if (!value) {
-      const latestUnassignedThread = unassignedThreads[0];
-      if (latestUnassignedThread) {
-        setSelection({ kind: "thread", threadId: latestUnassignedThread.threadId });
-      }
-      return;
-    }
     const scout = activeScouts.find((candidate) => candidate._id === value);
     if (scout) {
       setSelection({ kind: "scout", scoutId: scout._id });
@@ -294,11 +277,7 @@ function AgentLab() {
                 onChange={(event) => onScoutChange(event.currentTarget.value)}
                 className="border-input bg-background h-8 min-w-0 rounded-md border px-2 text-xs sm:w-48"
               >
-                {unassignedThreads.length > 0 || !selectedScoutId ? (
-                  <option value="">
-                    {unassignedThreads.length > 0 ? "Unassigned history" : "Choose a Scout"}
-                  </option>
-                ) : null}
+                {!selectedScoutId ? <option value="">No active Scouts</option> : null}
                 {activeScouts.map((scout) => (
                   <option key={scout._id} value={scout._id}>
                     {scout.displayName} /{scout.slug}
@@ -307,11 +286,6 @@ function AgentLab() {
                 {selectedScout && selectedScout.status !== "active" ? (
                   <option value={selectedScout._id} disabled>
                     {selectedScout.displayName} /{selectedScout.slug} (disabled)
-                  </option>
-                ) : null}
-                {selectedScoutId && !selectedScout ? (
-                  <option value={selectedScoutId} disabled>
-                    Unknown Scout
                   </option>
                 ) : null}
               </select>
@@ -336,8 +310,7 @@ function AgentLab() {
                 {threadId === null ? <option value="">No thread yet</option> : null}
                 {visibleThreads.map((thread) => (
                   <option key={thread.threadId} value={thread.threadId}>
-                    {threadLabel(thread, availableScouts)} ·{" "}
-                    {threadDate.format(thread.creationTime)}
+                    {threadLabel(thread)} · {threadDate.format(thread.creationTime)}
                   </option>
                 ))}
               </select>

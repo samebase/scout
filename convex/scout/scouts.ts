@@ -1,17 +1,10 @@
-import { type Infer, v } from "convex/values";
-import type { Doc, Id } from "../_generated/dataModel";
-import {
-  internalMutation,
-  internalQuery,
-  mutation,
-  query,
-  type MutationCtx,
-} from "../_generated/server";
+import { v } from "convex/values";
+import type { Doc } from "../_generated/dataModel";
+import { internalQuery, mutation, query, type MutationCtx } from "../_generated/server";
 import { requireAppUser } from "../access";
 import { scoutWebsiteIdentityValidator } from "./model";
 
 const MAX_SCOUTS = 50;
-const MAX_RUN_LINKS = 100;
 const MAX_DISPLAY_NAME_LENGTH = 100;
 const MAX_PERSON_NAME_LENGTH = 100;
 const MAX_INBOX_ID_LENGTH = 200;
@@ -23,7 +16,7 @@ const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 const scoutFieldsValidator = v.object({
   displayName: v.string(),
-  websiteIdentity: v.optional(scoutWebsiteIdentityValidator),
+  websiteIdentity: scoutWebsiteIdentityValidator,
   slug: v.string(),
   agentMail: v.object({
     inboxId: v.string(),
@@ -35,14 +28,12 @@ const scoutFieldsValidator = v.object({
   status: v.union(v.literal("active"), v.literal("disabled")),
 });
 
-const scoutRegistrationFieldsValidator = scoutFieldsValidator
-  .omit("status", "websiteIdentity")
-  .extend({ websiteIdentity: scoutWebsiteIdentityValidator });
+const scoutRegistrationFieldsValidator = scoutFieldsValidator.omit("status");
 
 const scoutPublicValidator = v.object({
   _id: v.id("scouts"),
   displayName: v.string(),
-  websiteIdentity: v.optional(scoutWebsiteIdentityValidator),
+  websiteIdentity: scoutWebsiteIdentityValidator,
   slug: v.string(),
   status: v.union(v.literal("active"), v.literal("disabled")),
   agentMail: v.object({
@@ -54,25 +45,13 @@ const scoutPublicValidator = v.object({
   }),
 });
 
-const upsertResultValidator = v.object({
+const registrationResultValidator = v.object({
   scoutId: v.id("scouts"),
-  created: v.boolean(),
-  linkedRunCount: v.number(),
-  linkLimitReached: v.boolean(),
-});
-
-const scoutConnectionValidator = v.object({
-  agentMail: v.object({
-    inboxId: v.string(),
-  }),
-  firecrawl: v.object({
-    profileName: v.string(),
-  }),
 });
 
 const scoutRuntimeIdentityValidator = v.object({
   displayName: v.string(),
-  websiteIdentity: v.optional(scoutWebsiteIdentityValidator),
+  websiteIdentity: scoutWebsiteIdentityValidator,
   status: v.union(v.literal("active"), v.literal("disabled")),
   agentMail: v.object({
     inboxId: v.string(),
@@ -82,8 +61,6 @@ const scoutRuntimeIdentityValidator = v.object({
     profileName: v.string(),
   }),
 });
-
-export type ScoutConnection = Infer<typeof scoutConnectionValidator>;
 
 function requiredText(value: string, label: string, maximumLength: number) {
   const trimmed = value.trim();
@@ -113,24 +90,20 @@ function canonicalSlug(value: string) {
 }
 
 function normalizeScoutFields(args: typeof scoutFieldsValidator.type) {
-  const websiteIdentity = args.websiteIdentity
-    ? {
-        firstName: requiredText(
-          args.websiteIdentity.firstName,
-          "Scout first name",
-          MAX_PERSON_NAME_LENGTH,
-        ),
-        lastName: requiredText(
-          args.websiteIdentity.lastName,
-          "Scout last name",
-          MAX_PERSON_NAME_LENGTH,
-        ),
-      }
-    : undefined;
-
   return {
     displayName: requiredText(args.displayName, "Scout display name", MAX_DISPLAY_NAME_LENGTH),
-    ...(websiteIdentity ? { websiteIdentity } : {}),
+    websiteIdentity: {
+      firstName: requiredText(
+        args.websiteIdentity.firstName,
+        "Scout first name",
+        MAX_PERSON_NAME_LENGTH,
+      ),
+      lastName: requiredText(
+        args.websiteIdentity.lastName,
+        "Scout last name",
+        MAX_PERSON_NAME_LENGTH,
+      ),
+    },
     slug: canonicalSlug(args.slug),
     status: args.status,
     agentMail: {
@@ -151,7 +124,7 @@ function projectScout(scout: Doc<"scouts">) {
   return {
     _id: scout._id,
     displayName: scout.displayName,
-    ...(scout.websiteIdentity ? { websiteIdentity: scout.websiteIdentity } : {}),
+    websiteIdentity: scout.websiteIdentity,
     slug: scout.slug,
     status: scout.status,
     agentMail: scout.agentMail,
@@ -159,17 +132,13 @@ function projectScout(scout: Doc<"scouts">) {
   };
 }
 
-async function saveScout(
-  ctx: MutationCtx,
-  args: typeof scoutFieldsValidator.type,
-  options: { updateExisting: boolean },
-) {
+async function saveScout(ctx: MutationCtx, args: typeof scoutFieldsValidator.type) {
   const fields = normalizeScoutFields(args);
   const existing = await ctx.db
     .query("scouts")
     .withIndex("by_slug", (q) => q.eq("slug", fields.slug))
     .unique();
-  if (existing && !options.updateExisting) {
+  if (existing) {
     throw new Error("Scout slug is already registered");
   }
 
@@ -177,14 +146,14 @@ async function saveScout(
     .query("scouts")
     .withIndex("by_agent_mail_address", (q) => q.eq("agentMail.address", fields.agentMail.address))
     .unique();
-  if (addressOwner && addressOwner._id !== existing?._id) {
+  if (addressOwner) {
     throw new Error("AgentMail address is already registered to another Scout");
   }
   const inboxOwner = await ctx.db
     .query("scouts")
     .withIndex("by_agent_mail_inbox_id", (q) => q.eq("agentMail.inboxId", fields.agentMail.inboxId))
     .unique();
-  if (inboxOwner && inboxOwner._id !== existing?._id) {
+  if (inboxOwner) {
     throw new Error("AgentMail inbox is already registered to another Scout");
   }
   const profileOwner = await ctx.db
@@ -193,40 +162,11 @@ async function saveScout(
       q.eq("firecrawl.profileName", fields.firecrawl.profileName),
     )
     .unique();
-  if (profileOwner && profileOwner._id !== existing?._id) {
+  if (profileOwner) {
     throw new Error("Firecrawl profile is already registered to another Scout");
   }
 
-  let scoutId: Id<"scouts">;
-  let created: boolean;
-  if (existing) {
-    scoutId = existing._id;
-    created = false;
-    await ctx.db.patch(scoutId, fields);
-  } else {
-    scoutId = await ctx.db.insert("scouts", fields);
-    created = true;
-  }
-
-  const matchingRuns = await ctx.db
-    .query("scoutRuns")
-    .withIndex("by_scout_email_and_scout_id_and_created_at", (q) =>
-      q.eq("scoutEmail", fields.agentMail.address).eq("scoutId", undefined),
-    )
-    .order("desc")
-    .take(MAX_RUN_LINKS + 1);
-  const runsToLink = matchingRuns.slice(0, MAX_RUN_LINKS);
-
-  for (const run of runsToLink) {
-    await ctx.db.patch(run._id, { scoutId });
-  }
-
-  return {
-    scoutId,
-    created,
-    linkedRunCount: runsToLink.length,
-    linkLimitReached: matchingRuns.length > MAX_RUN_LINKS,
-  };
+  return { scoutId: await ctx.db.insert("scouts", fields) };
 }
 
 export const list = query({
@@ -254,26 +194,6 @@ export const get = query({
   },
 });
 
-export const getConnections = internalQuery({
-  args: {
-    scoutId: v.id("scouts"),
-  },
-  returns: v.union(scoutConnectionValidator, v.null()),
-  handler: async (ctx, args) => {
-    const scout = await ctx.db.get(args.scoutId);
-    return scout?.status === "active"
-      ? {
-          agentMail: {
-            inboxId: scout.agentMail.inboxId,
-          },
-          firecrawl: {
-            profileName: scout.firecrawl.profileName,
-          },
-        }
-      : null;
-  },
-});
-
 export const getRuntimeIdentity = internalQuery({
   args: {
     scoutId: v.id("scouts"),
@@ -284,7 +204,7 @@ export const getRuntimeIdentity = internalQuery({
     return scout
       ? {
           displayName: scout.displayName,
-          ...(scout.websiteIdentity ? { websiteIdentity: scout.websiteIdentity } : {}),
+          websiteIdentity: scout.websiteIdentity,
           status: scout.status,
           agentMail: scout.agentMail,
           firecrawl: scout.firecrawl,
@@ -295,15 +215,9 @@ export const getRuntimeIdentity = internalQuery({
 
 export const register = mutation({
   args: scoutRegistrationFieldsValidator.fields,
-  returns: upsertResultValidator,
+  returns: registrationResultValidator,
   handler: async (ctx, args) => {
     await requireAppUser(ctx);
-    return await saveScout(ctx, { ...args, status: "active" }, { updateExisting: false });
+    return await saveScout(ctx, { ...args, status: "active" });
   },
-});
-
-export const upsert = internalMutation({
-  args: scoutFieldsValidator.fields,
-  returns: upsertResultValidator,
-  handler: async (ctx, args) => await saveScout(ctx, args, { updateExisting: true }),
 });

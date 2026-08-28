@@ -21,37 +21,105 @@ async function insertUser(backend: ReturnType<typeof testBackend>, email: string
   return await backend.run(async (ctx) => await ctx.db.insert("users", { email }));
 }
 
+async function insertScout(
+  backend: ReturnType<typeof testBackend>,
+  identity: { firstName: string; lastName: string; slug: string },
+) {
+  const displayName = `${identity.firstName} ${identity.lastName}`;
+  return await backend.run(
+    async (ctx) =>
+      await ctx.db.insert("scouts", {
+        displayName,
+        websiteIdentity: {
+          firstName: identity.firstName,
+          lastName: identity.lastName,
+        },
+        slug: identity.slug,
+        status: "active",
+        agentMail: {
+          inboxId: `${identity.slug}@agentmail.to`,
+          address: `${identity.slug}@agentmail.to`,
+        },
+        firecrawl: { profileName: identity.slug },
+      }),
+  );
+}
+
 describe("Scout agent lab", () => {
-  it("rejects unauthenticated and non-admin access", async () => {
+  it("requires admin access and an active Scout when creating a thread", async () => {
     const backend = testBackend();
+    const scoutId = await insertScout(backend, {
+      firstName: "Conrad",
+      lastName: "Scout",
+      slug: "conrad",
+    });
 
     await expect(backend.query(api.scout.lab.listThreads, {})).rejects.toThrow("Not authorized");
 
     const userId = await insertUser(backend, "person@example.com");
     const nonAdmin = backend.withIdentity({ subject: `${userId}|test-session` });
-    await expect(nonAdmin.mutation(api.scout.lab.createThread, {})).rejects.toThrow(
+    await expect(nonAdmin.mutation(api.scout.lab.createThread, { scoutId })).rejects.toThrow(
       "Not authorized",
+    );
+
+    const adminId = await insertUser(backend, ADMIN_EMAIL);
+    const admin = backend.withIdentity({ subject: `${adminId}|test-session` });
+    await backend.run(async (ctx) => await ctx.db.patch(scoutId, { status: "disabled" }));
+    await expect(admin.mutation(api.scout.lab.createThread, { scoutId })).rejects.toThrow(
+      "Active Scout not found",
     );
   });
 
-  it("isolates threads and reports completed Qwen generation metadata", async () => {
+  it("rejects Agent threads without an application Scout binding", async () => {
     const backend = testBackend();
     const userId = await insertUser(backend, ADMIN_EMAIL);
     const admin = backend.withIdentity({ subject: `${userId}|test-session` });
+    const unbound = await backend.run(
+      async (ctx) => await scoutAgent.createThread(ctx, { userId }),
+    );
 
-    const created = await admin.mutation(api.scout.lab.createThread, {});
-    await expect(admin.query(api.scout.lab.listThreads, {})).resolves.toMatchObject([
-      { threadId: created.threadId, title: null },
+    await expect(admin.query(api.scout.lab.listThreads, {})).rejects.toThrow(
+      "missing its Scout binding",
+    );
+    await expect(
+      admin.query(api.scout.lab.listMessages, {
+        threadId: unbound.threadId,
+        paginationOpts: { cursor: null, numItems: 10 },
+      }),
+    ).rejects.toThrow("missing its Scout binding");
+    await expect(
+      backend.query(internal.scout.lab.getThreadScoutId, {
+        threadId: unbound.threadId,
+        userId,
+      }),
+    ).rejects.toThrow("missing its Scout binding");
+  });
+
+  it("isolates bound threads and reports completed generation metadata", async () => {
+    const backend = testBackend();
+    const userId = await insertUser(backend, ADMIN_EMAIL);
+    const admin = backend.withIdentity({ subject: `${userId}|test-session` });
+    const scoutId = await insertScout(backend, {
+      firstName: "Conrad",
+      lastName: "Scout",
+      slug: "conrad",
+    });
+
+    const created = await admin.mutation(api.scout.lab.createThread, { scoutId });
+    await expect(admin.query(api.scout.lab.listThreads, {})).resolves.toEqual([
+      {
+        threadId: created.threadId,
+        creationTime: expect.any(Number),
+        title: null,
+        scoutId,
+      },
     ]);
-
     await admin.mutation(api.scout.lab.sendMessage, {
       threadId: created.threadId,
       prompt: "  Say hello.  ",
       model: "qwen/qwen3.7-flash",
     });
-    await expect(admin.query(api.scout.lab.listThreads, {})).resolves.toMatchObject([
-      { threadId: created.threadId, title: "Say hello." },
-    ]);
+
     const generation = await backend.run(
       async (ctx) =>
         await ctx.db
@@ -61,6 +129,9 @@ describe("Scout agent lab", () => {
     );
     expect(generation).toMatchObject({
       threadId: created.threadId,
+      scoutId,
+      status: "pending",
+      leaseExpiresAt: expect.any(Number),
       model: "qwen/qwen3.7-flash",
     });
     if (!generation) {
@@ -94,16 +165,12 @@ describe("Scout agent lab", () => {
       paginationOpts: { cursor: null, numItems: 10 },
     });
     expect(messages.page).toHaveLength(2);
-    expect(messages.page[0]).toMatchObject({
-      role: "user",
-      text: "Say hello.",
-      parts: [{ type: "text", text: "Say hello." }],
-    });
     expect(messages.page[1]).toMatchObject({
       role: "assistant",
       text: "Hello.",
       metadata: {
         model: "qwen/qwen3.7-flash",
+        scout: { id: scoutId, displayName: "Conrad Scout" },
         usage: {
           promptTokens: 123,
           completionTokens: 7,
@@ -127,123 +194,71 @@ describe("Scout agent lab", () => {
     ).rejects.toThrow("Thread not found");
   });
 
-  it("binds a thread to one active Scout and cannot switch identities", async () => {
+  it("serializes work by the Scout bound to each thread", async () => {
     const backend = testBackend();
     const userId = await insertUser(backend, ADMIN_EMAIL);
     const admin = backend.withIdentity({ subject: `${userId}|test-session` });
-    const scoutIds = await backend.run(async (ctx) => {
-      const first = await ctx.db.insert("scouts", {
-        displayName: "Conrad",
-        slug: "conrad",
-        status: "active",
-        agentMail: { inboxId: "conrad@agentmail.to", address: "conrad@agentmail.to" },
-        firecrawl: { profileName: "conrad" },
-      });
-      const second = await ctx.db.insert("scouts", {
-        displayName: "Ada",
-        slug: "ada",
-        status: "active",
-        agentMail: { inboxId: "ada@agentmail.to", address: "ada@agentmail.to" },
-        firecrawl: { profileName: "ada" },
-      });
-      return { first, second };
+    const scoutId = await insertScout(backend, {
+      firstName: "Conrad",
+      lastName: "Scout",
+      slug: "conrad",
     });
+    const firstThread = await admin.mutation(api.scout.lab.createThread, { scoutId });
+    const secondThread = await admin.mutation(api.scout.lab.createThread, { scoutId });
 
-    const created = await admin.mutation(api.scout.lab.createThread, {
-      scoutId: scoutIds.first,
-    });
-    await expect(admin.query(api.scout.lab.listThreads, {})).resolves.toMatchObject([
-      { threadId: created.threadId, scoutId: scoutIds.first },
-    ]);
     await expect(
       backend.query(internal.scout.lab.getThreadScoutId, {
-        threadId: created.threadId,
+        threadId: firstThread.threadId,
         userId,
       }),
-    ).resolves.toBe(scoutIds.first);
+    ).resolves.toBe(scoutId);
     await admin.mutation(api.scout.lab.sendMessage, {
-      threadId: created.threadId,
+      threadId: firstThread.threadId,
       prompt: "Inspect the account page.",
-      scoutId: scoutIds.first,
-    });
-    await expect(
-      admin.query(api.scout.lab.getScoutActivity, { scoutId: scoutIds.first }),
-    ).resolves.toEqual({ active: true });
-    const secondThread = await admin.mutation(api.scout.lab.createThread, {
-      scoutId: scoutIds.first,
     });
     await expect(
       admin.mutation(api.scout.lab.sendMessage, {
         threadId: secondThread.threadId,
         prompt: "Start another browser session.",
-        scoutId: scoutIds.first,
       }),
     ).rejects.toThrow("Scout is already working");
+
     const generation = await backend.run(
       async (ctx) =>
         await ctx.db
           .query("scoutLabGenerations")
-          .withIndex("by_thread_id_and_order", (q) => q.eq("threadId", created.threadId))
+          .withIndex("by_thread_id_and_order", (q) => q.eq("threadId", firstThread.threadId))
           .unique(),
     );
-    expect(generation).toMatchObject({ scoutId: scoutIds.first, status: "pending" });
     if (!generation) {
       throw new Error("Expected a lab generation record");
     }
-    await expect(
-      backend.mutation(internal.scout.lab.startGeneration, {
-        promptMessageId: generation.promptMessageId,
-      }),
-    ).resolves.toBe(true);
-    await expect(
-      backend.run(async (ctx) => await ctx.db.get("scoutLabGenerations", generation._id)),
-    ).resolves.toMatchObject({ status: "pending" });
-
-    await expect(
-      admin.mutation(api.scout.lab.sendMessage, {
-        threadId: created.threadId,
-        prompt: "Switch identities.",
-        scoutId: scoutIds.second,
-      }),
-    ).rejects.toThrow("cannot switch Scouts");
-
     await backend.mutation(internal.scout.lab.completeGeneration, {
       promptMessageId: generation.promptMessageId,
       usage: {},
     });
-    await expect(
-      admin.query(api.scout.lab.getScoutActivity, { scoutId: scoutIds.first }),
-    ).resolves.toEqual({ active: false });
-
-    await backend.run(async (ctx) => await ctx.db.patch(scoutIds.first, { status: "disabled" }));
+    await backend.run(async (ctx) => await ctx.db.patch(scoutId, { status: "disabled" }));
     await expect(
       admin.mutation(api.scout.lab.sendMessage, {
-        threadId: created.threadId,
+        threadId: secondThread.threadId,
         prompt: "Continue as a disabled Scout.",
-        scoutId: scoutIds.first,
       }),
     ).rejects.toThrow("Active Scout not found");
   });
 
-  it("releases a Scout when a scheduled generation never starts", async () => {
+  it("expires abandoned work and records terminal failures", async () => {
     const backend = testBackend();
     const userId = await insertUser(backend, ADMIN_EMAIL);
     const admin = backend.withIdentity({ subject: `${userId}|test-session` });
-    const scoutId = await backend.run(
-      async (ctx) =>
-        await ctx.db.insert("scouts", {
-          displayName: "Conrad",
-          slug: "conrad",
-          status: "active",
-          agentMail: { inboxId: "conrad@agentmail.to", address: "conrad@agentmail.to" },
-          firecrawl: { profileName: "conrad" },
-        }),
-    );
+    const scoutId = await insertScout(backend, {
+      firstName: "Conrad",
+      lastName: "Scout",
+      slug: "conrad",
+    });
     const created = await admin.mutation(api.scout.lab.createThread, { scoutId });
     await admin.mutation(api.scout.lab.sendMessage, {
       threadId: created.threadId,
-      prompt: "Inspect the account page.",
-      scoutId,
+      prompt: "Inspect a page.",
     });
     const generation = await backend.run(
       async (ctx) =>
@@ -262,84 +277,54 @@ describe("Scout agent lab", () => {
     await backend.mutation(internal.scout.lab.expireGeneration, {
       generationId: generation._id,
     });
-
     await expect(
       backend.run(async (ctx) => await ctx.db.get("scoutLabGenerations", generation._id)),
     ).resolves.toMatchObject({
       status: "failed",
       failure: "Generation stopped before completion",
     });
-    await expect(admin.query(api.scout.lab.getScoutActivity, { scoutId })).resolves.toEqual({
-      active: false,
-    });
-    const nextThread = await admin.mutation(api.scout.lab.createThread, { scoutId });
-    await expect(
-      admin.mutation(api.scout.lab.sendMessage, {
-        threadId: nextThread.threadId,
-        prompt: "Retry after recovery.",
-        scoutId,
-      }),
-    ).resolves.toBeNull();
-  });
 
-  it("records a sanitized terminal failure for the generation sidecar", async () => {
-    const backend = testBackend();
-    const userId = await insertUser(backend, ADMIN_EMAIL);
-    const admin = backend.withIdentity({ subject: `${userId}|test-session` });
-    const created = await admin.mutation(api.scout.lab.createThread, {});
+    const nextThread = await admin.mutation(api.scout.lab.createThread, { scoutId });
     await admin.mutation(api.scout.lab.sendMessage, {
-      threadId: created.threadId,
-      prompt: "Inspect a page.",
+      threadId: nextThread.threadId,
+      prompt: "Retry after recovery.",
     });
-    const generation = await backend.run(
+    const nextGeneration = await backend.run(
       async (ctx) =>
         await ctx.db
           .query("scoutLabGenerations")
-          .withIndex("by_thread_id_and_order", (q) => q.eq("threadId", created.threadId))
+          .withIndex("by_thread_id_and_order", (q) => q.eq("threadId", nextThread.threadId))
           .unique(),
     );
-    if (!generation) {
-      throw new Error("Expected a lab generation record");
+    if (!nextGeneration) {
+      throw new Error("Expected a second lab generation record");
     }
-
     await backend.mutation(internal.scout.lab.failGeneration, {
-      promptMessageId: generation.promptMessageId,
-      failure: "Provider request failed",
-      firecrawlCredits: 1,
-      firecrawlDurationMs: 800,
-    });
-
-    await expect(
-      backend.run(async (ctx) => await ctx.db.get("scoutLabGenerations", generation._id)),
-    ).resolves.toMatchObject({
+      promptMessageId: nextGeneration.promptMessageId,
       failure: "Provider request failed",
       firecrawlCredits: 1,
       firecrawlDurationMs: 800,
     });
     await expect(
-      admin.query(api.scout.lab.listMessages, {
-        threadId: created.threadId,
-        paginationOpts: { cursor: null, numItems: 10 },
-      }),
+      backend.run(async (ctx) => await ctx.db.get("scoutLabGenerations", nextGeneration._id)),
     ).resolves.toMatchObject({
-      page: [
-        {
-          role: "user",
-          metadata: {
-            failure: "Provider request failed",
-            firecrawlCredits: 1,
-            firecrawlDurationMs: 800,
-          },
-        },
-      ],
+      status: "failed",
+      failure: "Provider request failed",
+      firecrawlCredits: 1,
+      firecrawlDurationMs: 800,
     });
   });
 
-  it("rejects the retired Qwen model", async () => {
+  it("uses the default model and rejects the retired model", async () => {
     const backend = testBackend();
     const userId = await insertUser(backend, ADMIN_EMAIL);
     const admin = backend.withIdentity({ subject: `${userId}|test-session` });
-    const created = await admin.mutation(api.scout.lab.createThread, {});
+    const scoutId = await insertScout(backend, {
+      firstName: "Conrad",
+      lastName: "Scout",
+      slug: "conrad",
+    });
+    const created = await admin.mutation(api.scout.lab.createThread, { scoutId });
 
     await expect(
       admin.mutation(api.scout.lab.sendMessage, {
@@ -349,15 +334,6 @@ describe("Scout agent lab", () => {
         model: "qwen/qwen3.8-flash",
       }),
     ).rejects.toThrow();
-  });
-
-  it("keeps the previous Lab client contract during deployment", async () => {
-    const backend = testBackend();
-    const userId = await insertUser(backend, ADMIN_EMAIL);
-    const admin = backend.withIdentity({ subject: `${userId}|test-session` });
-    const created = await admin.mutation(api.scout.lab.createThread, {});
-
-    await expect(admin.query(api.scout.lab.latestThread, {})).resolves.toEqual(created);
     await admin.mutation(api.scout.lab.sendMessage, {
       threadId: created.threadId,
       prompt: "Use the default model.",

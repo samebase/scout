@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-28T12:34:34Z
+- **Last updated:** 2026-08-28T13:44:25Z
 
 ## Log
 
@@ -251,12 +251,22 @@ actions through watchdogs, and lets the admin UI follow that durable state inste
 stream status (`convex/schema.ts`, `convex/scout/lab.ts`, `convex/scout/labGeneration.ts`,
 `convex/scoutLab.test.ts`, `src/routes/lab.tsx`, `docs/agent-runtime.md`).
 
-### 2026-08-28 - working tree
+### 2026-08-28 - a3a6fe1
 
-Added reusable first- and last-name website identities to Scouts while keeping legacy records and
+v75 Added reusable first- and last-name website identities to Scouts while keeping legacy records and
 internal upserts compatible. New admin registrations require a complete identity, the Convex Agent
 receives explicit identity fields with escaped prompt values, and Scout detail pages expose the
 configuration. Verified the flow on the development deployment: the registered Scout appeared in
 Lab with its provider bindings and matching prior runs (`convex/schema.ts`, `convex/scout/model.ts`,
 `convex/scout/scouts.ts`, `convex/scout/labGeneration.ts`, `convex/scout/*.test.ts`,
 `src/routes/scouts.index.tsx`, `src/routes/scouts.$slug.tsx`).
+
+### 2026-08-28 - working tree
+
+Reset the experiment around one strict model: every Lab thread and generation belongs to one
+registered Scout. Removed the unused mission-run tables, backend, and UI, deleted compatibility
+paths for unassigned threads and incomplete identities, and kept Firecrawl code-mode plus scoped
+AgentMail MCP tools in the active Convex Agent flow. Cleared development experiment history while
+preserving authentication and the configured Scout (`convex/schema.ts`, `convex/scout/lab.ts`,
+`convex/scout/labGeneration.ts`, `convex/scout/scouts.ts`, `src/routes/lab.tsx`,
+`docs/agent-runtime.md`).

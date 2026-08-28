@@ -20,10 +20,6 @@ type LabBrowserUsage = Awaited<ReturnType<LabBrowser["close"]>>;
 export function scoutWebsiteIdentityInstructions(
   scout: Pick<Doc<"scouts">, "displayName" | "websiteIdentity" | "agentMail">,
 ) {
-  if (!scout.websiteIdentity) {
-    return `This Lab thread is bound to the Scout with display name ${JSON.stringify(scout.displayName)} and email address ${JSON.stringify(scout.agentMail.address)}. Use only that identity for website accounts and email evidence in this thread.`;
-  }
-
   return `This Lab thread is bound to a Scout with first name ${JSON.stringify(scout.websiteIdentity.firstName)}, last name ${JSON.stringify(scout.websiteIdentity.lastName)}, display name ${JSON.stringify(scout.displayName)}, and email address ${JSON.stringify(scout.agentMail.address)}. Use only that identity for website accounts and email evidence in this thread.`;
 }
 
@@ -73,30 +69,25 @@ export const generateResponse = internalAction({
         threadId: args.threadId,
         userId: args.userId,
       });
-      const scout = scoutId
-        ? await ctx.runQuery(internal.scout.scouts.getRuntimeIdentity, { scoutId })
-        : null;
-      if (scoutId && (!scout || scout.status !== "active")) {
+      const scout = await ctx.runQuery(internal.scout.scouts.getRuntimeIdentity, { scoutId });
+      if (!scout || scout.status !== "active") {
         throw new Error("Active Scout not found");
       }
-      browser = createLabBrowserHarness(scout ? { profileName: scout.firecrawl.profileName } : {});
+      browser = createLabBrowserHarness({ profileName: scout.firecrawl.profileName });
       requireSecret(env.FIRECRAWL_API_KEY, "FIRECRAWL_API_KEY");
-      let agentMailTools = {};
-      if (scout) {
-        agentMailClient = await createMCPClient({
-          transport: {
-            type: "http",
-            url: "https://mcp.agentmail.to/mcp",
-            headers: {
-              "x-api-key": requireSecret(env.AGENTMAIL_API_KEY, "AGENTMAIL_API_KEY"),
-            },
+      agentMailClient = await createMCPClient({
+        transport: {
+          type: "http",
+          url: "https://mcp.agentmail.to/mcp",
+          headers: {
+            "x-api-key": requireSecret(env.AGENTMAIL_API_KEY, "AGENTMAIL_API_KEY"),
           },
-        });
-        agentMailTools = selectAgentMailTools(
-          await agentMailClient.tools(),
-          scout.agentMail.inboxId,
-        );
-      }
+        },
+      });
+      const agentMailTools = selectAgentMailTools(
+        await agentMailClient.tools(),
+        scout.agentMail.inboxId,
+      );
 
       const tools = {
         ...browser.tools,
@@ -108,11 +99,7 @@ export const generateResponse = internalAction({
         {
           promptMessageId: args.promptMessageId,
           model: scoutLanguageModel(args.model),
-          ...(scout
-            ? {
-                instructions: `${SCOUT_AGENT_INSTRUCTIONS}\n\n${scoutWebsiteIdentityInstructions(scout)}`,
-              }
-            : {}),
+          instructions: `${SCOUT_AGENT_INSTRUCTIONS}\n\n${scoutWebsiteIdentityInstructions(scout)}`,
           tools,
           stopWhen: isStepCount(MAX_GENERATION_STEPS),
         },

@@ -71,74 +71,6 @@ function parseScrapeInteraction(response: Record<string, unknown>): ScrapeIntera
   };
 }
 
-export async function createBrowserSession() {
-  const response = requireRecord(
-    await fetchJson("Firecrawl", `${FIRECRAWL_BASE_URL}/interact`, {
-      method: "POST",
-      headers: headers(),
-      body: JSON.stringify({
-        ttl: 1_800,
-        activityTtl: 600,
-        streamWebView: true,
-      }),
-    }),
-    "Firecrawl",
-  );
-
-  if (response["success"] !== true) {
-    throw new Error("Firecrawl did not create a browser session");
-  }
-
-  return {
-    sessionId: requireString(response, "id", "Firecrawl"),
-    liveViewUrl: requireString(response, "liveViewUrl", "Firecrawl"),
-    interactiveLiveViewUrl: requireString(response, "interactiveLiveViewUrl", "Firecrawl"),
-    expiresAt: requireString(response, "expiresAt", "Firecrawl"),
-  };
-}
-
-export async function executeBrowserCode(
-  sessionId: string,
-  code: string,
-  timeoutSeconds: number,
-): Promise<BrowserExecution> {
-  const response = requireRecord(
-    await fetchJson(
-      "Firecrawl",
-      `${FIRECRAWL_BASE_URL}/interact/${encodeURIComponent(sessionId)}/execute`,
-      {
-        method: "POST",
-        headers: headers(),
-        body: JSON.stringify({ code, language: "bash", timeout: timeoutSeconds }),
-      },
-    ),
-    "Firecrawl",
-  );
-
-  return parseBrowserExecution(response);
-}
-
-export async function closeBrowserSession(sessionId: string) {
-  const response = requireRecord(
-    await fetchJson(
-      "Firecrawl",
-      `${FIRECRAWL_BASE_URL}/interact/${encodeURIComponent(sessionId)}`,
-      {
-        method: "DELETE",
-        headers: headers(),
-      },
-    ),
-    "Firecrawl",
-  );
-
-  return {
-    success: response["success"] === true,
-    sessionDurationMs:
-      typeof response["sessionDurationMs"] === "number" ? response["sessionDurationMs"] : null,
-    creditsBilled: typeof response["creditsBilled"] === "number" ? response["creditsBilled"] : null,
-  };
-}
-
 export async function createScrapeInteractSession(url: string, profileName?: string) {
   const response = requireRecord(
     await fetchJson("Firecrawl", `${FIRECRAWL_BASE_URL}/scrape`, {
@@ -179,17 +111,6 @@ async function executeScrapeInteraction(
     "Firecrawl",
   );
   return parseScrapeInteraction(response);
-}
-
-export async function executeScrapeInteractPrompt(
-  scrapeId: string,
-  prompt: string,
-  timeoutSeconds: number,
-) {
-  return await executeScrapeInteraction(scrapeId, {
-    prompt,
-    timeout: timeoutSeconds,
-  });
 }
 
 export async function executeScrapeInteractCode(
