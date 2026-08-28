@@ -14,6 +14,7 @@ import {
   type ScrapeInteraction,
 } from "./lib/firecrawl";
 import { requireEnv } from "./lib/http";
+import type { ScoutConnection } from "./scouts";
 
 const MAX_BROWSER_CODE_LENGTH = 100_000;
 const MAX_BROWSER_PROMPT_LENGTH = 2_000;
@@ -21,7 +22,7 @@ const MAX_STEP_SUMMARY_LENGTH = 2_000;
 const MIN_TIMEOUT_SECONDS = 1;
 const MAX_TIMEOUT_SECONDS = 120;
 const MAX_SCRAPE_TIMEOUT_SECONDS = 300;
-const SCRAPE_PROFILE_NAME = "scout-conrad";
+const LEGACY_SCRAPE_PROFILE_NAME = "scout-conrad";
 
 const executionValidator = v.object({
   success: v.boolean(),
@@ -88,6 +89,10 @@ function requireScrapeBrowser(run: Doc<"scoutRuns">) {
     throw new Error("Scout run has no active scrape browser session");
   }
   return run.browser;
+}
+
+export function selectScrapeProfileName(connection: ScoutConnection | null) {
+  return connection?.firecrawl.profileName ?? LEGACY_SCRAPE_PROFILE_NAME;
 }
 
 function shellQuote(value: string) {
@@ -207,12 +212,16 @@ export const startScrapeInteract = internalAction({
       throw new Error("Scout run already has a browser session");
     }
 
-    const session = await createScrapeInteractSession(run.targetUrl, SCRAPE_PROFILE_NAME);
+    const connection = run.scoutId
+      ? await ctx.runQuery(internal.scout.scouts.getConnections, { scoutId: run.scoutId })
+      : null;
+    const profileName = selectScrapeProfileName(connection);
+    const session = await createScrapeInteractSession(run.targetUrl, profileName);
     try {
       await ctx.runMutation(internal.scout.runs.scrapeBrowserStarted, {
         runId: args.runId,
         scrapeId: session.scrapeId,
-        profileName: SCRAPE_PROFILE_NAME,
+        profileName,
       });
     } catch (error) {
       await closeScrapeInteractSession(session.scrapeId).catch(() => undefined);
