@@ -34,10 +34,20 @@ export default defineSchema({
       "serviceDomain",
       "identifier",
     ]),
+  scoutLabExperiments: defineTable({
+    userId: v.id("users"),
+    scoutId: v.id("scouts"),
+    name: v.string(),
+    targetProduct: v.string(),
+    targetDomain: v.string(),
+    objective: v.string(),
+    status: v.union(v.literal("active"), v.literal("completed")),
+  }).index("by_user_id", ["userId"]),
   scoutLabThreads: defineTable({
     threadId: v.string(),
     userId: v.id("users"),
     scoutId: v.id("scouts"),
+    experimentId: v.optional(v.id("scoutLabExperiments")),
     createdAt: v.number(),
   }).index("by_thread_id", ["threadId"]),
   scoutLabGenerations: defineTable({
