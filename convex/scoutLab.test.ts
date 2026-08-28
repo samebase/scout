@@ -127,6 +127,73 @@ describe("Scout agent lab", () => {
     ).rejects.toThrow("Thread not found");
   });
 
+  it("binds a thread to one active Scout and cannot switch identities", async () => {
+    const backend = testBackend();
+    const userId = await insertUser(backend, ADMIN_EMAIL);
+    const admin = backend.withIdentity({ subject: `${userId}|test-session` });
+    const scoutIds = await backend.run(async (ctx) => {
+      const first = await ctx.db.insert("scouts", {
+        displayName: "Conrad",
+        slug: "conrad",
+        status: "active",
+        agentMail: { inboxId: "conrad@agentmail.to", address: "conrad@agentmail.to" },
+        firecrawl: { profileName: "conrad" },
+      });
+      const second = await ctx.db.insert("scouts", {
+        displayName: "Ada",
+        slug: "ada",
+        status: "active",
+        agentMail: { inboxId: "ada@agentmail.to", address: "ada@agentmail.to" },
+        firecrawl: { profileName: "ada" },
+      });
+      return { first, second };
+    });
+
+    const created = await admin.mutation(api.scout.lab.createThread, {
+      scoutId: scoutIds.first,
+    });
+    await expect(admin.query(api.scout.lab.listThreads, {})).resolves.toMatchObject([
+      { threadId: created.threadId, scoutId: scoutIds.first },
+    ]);
+    await expect(
+      backend.query(internal.scout.lab.getThreadScoutId, {
+        threadId: created.threadId,
+        userId,
+      }),
+    ).resolves.toBe(scoutIds.first);
+    await admin.mutation(api.scout.lab.sendMessage, {
+      threadId: created.threadId,
+      prompt: "Inspect the account page.",
+      scoutId: scoutIds.first,
+    });
+    await expect(
+      backend.run(
+        async (ctx) =>
+          await ctx.db
+            .query("scoutLabGenerations")
+            .withIndex("by_thread_id_and_order", (q) => q.eq("threadId", created.threadId))
+            .unique(),
+      ),
+    ).resolves.toMatchObject({ scoutId: scoutIds.first });
+
+    await expect(
+      admin.mutation(api.scout.lab.sendMessage, {
+        threadId: created.threadId,
+        prompt: "Switch identities.",
+        scoutId: scoutIds.second,
+      }),
+    ).rejects.toThrow("cannot switch Scouts");
+
+    await backend.run(async (ctx) => await ctx.db.patch(scoutIds.first, { status: "disabled" }));
+    await expect(
+      admin.mutation(api.scout.lab.sendMessage, {
+        threadId: created.threadId,
+        prompt: "Continue as a disabled Scout.",
+        scoutId: scoutIds.first,
+      }),
+    ).rejects.toThrow("Active Scout not found");
+  });
+
   it("records a sanitized terminal failure for the generation sidecar", async () => {
     const backend = testBackend();
     const userId = await insertUser(backend, ADMIN_EMAIL);

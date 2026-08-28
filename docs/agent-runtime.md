@@ -43,10 +43,12 @@ debug than letting the Scout model control code interactions directly. Productio
 will bind an inbox to a run and put a verification link or code into the browser without returning
 the secret to the model or the public timeline.
 
-The private Lab deliberately precedes that production boundary. It exposes four read-only
-AgentMail MCP tools and retains their tool activity for debugging, so it must not inspect unrelated
-or production-sensitive mail. It also uses a fresh browser profile until the admin can explicitly
-select an identity outside the model prompt.
+The private Lab deliberately precedes that production boundary. An app-owned mapping binds each new
+Lab thread to one registered Scout, and that binding cannot change after the thread is created. The
+trusted runtime selects the Scout's Firecrawl profile and closes the read-only AgentMail tools over
+that Scout's inbox; neither provider identity is a model-selectable argument. Older experiments
+remain visible as unassigned history, but the admin UI will not continue them under a newly selected
+identity.
 
 ## Harness evidence
 

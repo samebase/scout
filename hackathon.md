@@ -220,9 +220,18 @@ structured mission-run linkage and legacy backfill, and runtime provider resolut
 fallbacks plus focused tests (`convex/schema.ts`, `convex/scout/scouts.ts`, `convex/scout/runs.ts`,
 `convex/scout/browser.ts`, `convex/scout/mail.ts`, `convex/scout/*.test.ts`).
 
-### 2026-08-28 - working tree
+### 2026-08-28 - 5f89fea
 
-Added authenticated Scouts list and detail views with provider connection metadata, recent structured
+v71 Added authenticated Scouts list and detail views with provider connection metadata, recent structured
 mission runs, an all-runs view, and top navigation; kept Lab experiments conceptually separate
 (`src/routes/scouts.index.tsx`, `src/routes/scouts.$slug.tsx`, `src/routes/runs.tsx`,
 `src/components/scout-run-list.tsx`, `src/routes/__root.tsx`).
+
+### 2026-08-28 - working tree
+
+Added admin Scout registration and immutable Lab thread identity bindings. Trusted Convex runtime
+now selects each thread's Firecrawl profile and closes the read-only AgentMail tools over one inbox;
+disabled or missing linked identities fail closed, and generation metadata records the Scout
+(`convex/schema.ts`, `convex/scout/scouts.ts`, `convex/scout/lab.ts`,
+`convex/scout/labGeneration.ts`, `convex/scout/labTools.ts`, `convex/scout/browser.ts`,
+`convex/scout/mail.ts`, `convex/scout/*.test.ts`, `docs/agent-runtime.md`).

@@ -36,6 +36,13 @@ const scoutFields = {
   },
 };
 
+const scoutRegistrationFields = {
+  displayName: scoutFields.displayName,
+  slug: scoutFields.slug,
+  agentMail: scoutFields.agentMail,
+  firecrawl: scoutFields.firecrawl,
+};
+
 describe("Scout registry", () => {
   it("rejects unauthenticated list and get reads", async () => {
     const backend = testBackend();
@@ -44,6 +51,47 @@ describe("Scout registry", () => {
     await expect(backend.query(scoutsApi["list"], {})).rejects.toThrow("Not authorized");
     await expect(backend.query(scoutsApi["get"], { slug: "conrad" })).rejects.toThrow(
       "Not authorized",
+    );
+  });
+
+  it("lets the admin register a Scout without exposing update semantics", async () => {
+    const backend = testBackend();
+
+    await expect(backend.mutation(scoutsApi["register"], scoutRegistrationFields)).rejects.toThrow(
+      "Not authorized",
+    );
+    const nonAdminId = await insertUser(backend, "person@example.com");
+    const nonAdmin = backend.withIdentity({ subject: `${nonAdminId}|test-session` });
+    await expect(nonAdmin.mutation(scoutsApi["register"], scoutRegistrationFields)).rejects.toThrow(
+      "Not authorized",
+    );
+
+    const adminId = await insertUser(backend, ADMIN_EMAIL);
+    const admin = backend.withIdentity({ subject: `${adminId}|test-session` });
+    await expect(
+      admin.mutation(scoutsApi["register"], {
+        ...scoutRegistrationFields,
+        displayName: "  Test Scout  ",
+        slug: "  CONRAD  ",
+        agentMail: {
+          inboxId: "  test-inbox-scout  ",
+          address: "  TEST-SCOUT@EXAMPLE.TEST  ",
+        },
+      }),
+    ).resolves.toMatchObject({ created: true, linkedRunCount: 0, linkLimitReached: false });
+    await expect(admin.query(scoutsApi["list"], {})).resolves.toMatchObject([
+      {
+        displayName: "Test Scout",
+        slug: "conrad",
+        agentMail: {
+          inboxId: "test-inbox-scout",
+          address: "test-scout@example.test",
+        },
+      },
+    ]);
+
+    await expect(admin.mutation(scoutsApi["register"], scoutRegistrationFields)).rejects.toThrow(
+      "slug is already registered",
     );
   });
 
@@ -97,6 +145,9 @@ describe("Scout registry", () => {
       firecrawl: { profileName: "test-scout-profile" },
     });
 
+    await backend.run(async (ctx) => await ctx.db.patch(scoutId, { status: "disabled" }));
+    await expect(backend.query(scoutsApi["getConnections"], { scoutId })).resolves.toBeNull();
+    await backend.run(async (ctx) => await ctx.db.patch(scoutId, { status: "active" }));
     await backend.run(async (ctx) => await ctx.db.delete(scoutId));
     await expect(backend.query(scoutsApi["getConnections"], { scoutId })).resolves.toBeNull();
   });
@@ -112,6 +163,21 @@ describe("Scout registry", () => {
         agentMail: { ...scoutFields.agentMail, address: " TEST-SCOUT@EXAMPLE.TEST " },
       }),
     ).rejects.toThrow("already registered");
+    await expect(
+      backend.mutation(scoutsApi["upsert"], {
+        ...scoutFields,
+        slug: "other",
+        agentMail: { ...scoutFields.agentMail, address: "other@example.test" },
+        firecrawl: { profileName: "other-profile" },
+      }),
+    ).rejects.toThrow("AgentMail inbox is already registered");
+    await expect(
+      backend.mutation(scoutsApi["upsert"], {
+        ...scoutFields,
+        slug: "other",
+        agentMail: { inboxId: "other-inbox", address: "other@example.test" },
+      }),
+    ).rejects.toThrow("Firecrawl profile is already registered");
     await expect(
       backend.mutation(scoutsApi["upsert"], {
         ...scoutFields,
@@ -136,7 +202,8 @@ describe("Scout registry", () => {
         await ctx.db.insert("scouts", {
           ...scoutFields,
           slug: "other",
-          agentMail: { ...scoutFields.agentMail, address: "other@example.test" },
+          agentMail: { inboxId: "other-inbox", address: "other@example.test" },
+          firecrawl: { profileName: "other-profile" },
         }),
     );
     const runIds = await backend.run(async (ctx) => {

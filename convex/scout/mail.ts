@@ -118,6 +118,9 @@ async function resolveAgentMailInboxId(ctx: ActionCtx, run: Doc<"scoutRuns">) {
   const connection = run.scoutId
     ? await ctx.runQuery(internal.scout.scouts.getConnections, { scoutId: run.scoutId })
     : null;
+  if (run.scoutId && !connection) {
+    throw new Error("Scout connection is unavailable");
+  }
   return selectAgentMailInboxId(run, connection);
 }
 

@@ -215,6 +215,9 @@ export const startScrapeInteract = internalAction({
     const connection = run.scoutId
       ? await ctx.runQuery(internal.scout.scouts.getConnections, { scoutId: run.scoutId })
       : null;
+    if (run.scoutId && !connection) {
+      throw new Error("Scout connection is unavailable");
+    }
     const profileName = selectScrapeProfileName(connection);
     const session = await createScrapeInteractSession(run.targetUrl, profileName);
     try {

@@ -3,7 +3,14 @@ import { vStreamDelta, vStreamMessage } from "@convex-dev/agent/validators";
 import { paginationOptsValidator, paginationResultValidator } from "convex/server";
 import { type Infer, v } from "convex/values";
 import { components, internal } from "../_generated/api";
-import { internalMutation, mutation, query } from "../_generated/server";
+import type { Id } from "../_generated/dataModel";
+import {
+  internalMutation,
+  internalQuery,
+  mutation,
+  query,
+  type MutationCtx,
+} from "../_generated/server";
 import { requireAppUser } from "../access";
 import { scoutAgent } from "./agent";
 import { requireOwnedAgentThread } from "./labAccess";
@@ -22,10 +29,17 @@ const recentThreadValidator = v.object({
   threadId: v.string(),
   creationTime: v.number(),
   title: v.union(v.string(), v.null()),
+  scoutId: v.optional(v.id("scouts")),
 });
 
 const labMessageMetadataValidator = v.object({
   model: scoutModelValidator,
+  scout: v.optional(
+    v.object({
+      id: v.id("scouts"),
+      displayName: v.string(),
+    }),
+  ),
   usage: v.optional(scoutTokenUsageValidator),
   durationMs: v.optional(v.number()),
   firecrawlCredits: v.optional(v.number()),
@@ -83,6 +97,46 @@ function titleFromPrompt(prompt: string) {
   return `${characters.slice(0, MAX_THREAD_TITLE_LENGTH - 1).join("")}…`;
 }
 
+async function requireActiveScout(ctx: MutationCtx, scoutId: Id<"scouts">) {
+  const scout = await ctx.db.get(scoutId);
+  if (!scout || scout.status !== "active") {
+    throw new Error("Active Scout not found");
+  }
+  return scout;
+}
+
+async function bindThreadToScout(
+  ctx: MutationCtx,
+  args: { threadId: string; userId: Id<"users">; scoutId?: Id<"scouts"> },
+) {
+  const existing = await ctx.db
+    .query("scoutLabThreads")
+    .withIndex("by_thread_id", (q) => q.eq("threadId", args.threadId))
+    .unique();
+  if (existing) {
+    if (existing.userId !== args.userId) {
+      throw new Error("Thread not found");
+    }
+    if (args.scoutId && existing.scoutId !== args.scoutId) {
+      throw new Error("A Lab thread cannot switch Scouts");
+    }
+    await requireActiveScout(ctx, existing.scoutId);
+    return existing.scoutId;
+  }
+  if (!args.scoutId) {
+    return undefined;
+  }
+
+  await requireActiveScout(ctx, args.scoutId);
+  await ctx.db.insert("scoutLabThreads", {
+    threadId: args.threadId,
+    userId: args.userId,
+    scoutId: args.scoutId,
+    createdAt: Date.now(),
+  });
+  return args.scoutId;
+}
+
 export const listThreads = query({
   args: {},
   returns: v.array(recentThreadValidator),
@@ -93,11 +147,25 @@ export const listThreads = query({
       order: "desc",
       paginationOpts: { cursor: null, numItems: MAX_RECENT_THREADS },
     });
-    return threads.page.slice(0, MAX_RECENT_THREADS).map((thread) => ({
-      threadId: thread._id,
-      creationTime: thread._creationTime,
-      title: thread.title ?? null,
-    }));
+    const recentThreads = threads.page.slice(0, MAX_RECENT_THREADS);
+    const bindings = await Promise.all(
+      recentThreads.map(
+        async (thread) =>
+          await ctx.db
+            .query("scoutLabThreads")
+            .withIndex("by_thread_id", (q) => q.eq("threadId", thread._id))
+            .unique(),
+      ),
+    );
+    return recentThreads.map((thread, index) => {
+      const binding = bindings[index];
+      return {
+        threadId: thread._id,
+        creationTime: thread._creationTime,
+        title: thread.title ?? null,
+        ...(binding?.userId === userId ? { scoutId: binding.scoutId } : {}),
+      };
+    });
   },
 });
 
@@ -117,11 +185,46 @@ export const latestThread = query({
 });
 
 export const createThread = mutation({
-  args: {},
+  args: {
+    scoutId: v.optional(v.id("scouts")),
+  },
   returns: v.object({ threadId: v.string() }),
-  handler: async (ctx) => {
+  handler: async (ctx, args) => {
     const userId = await requireAppUser(ctx);
-    return await scoutAgent.createThread(ctx, { userId });
+    if (args.scoutId) {
+      await requireActiveScout(ctx, args.scoutId);
+    }
+    const created = await scoutAgent.createThread(ctx, { userId });
+    if (args.scoutId) {
+      await ctx.db.insert("scoutLabThreads", {
+        threadId: created.threadId,
+        userId,
+        scoutId: args.scoutId,
+        createdAt: Date.now(),
+      });
+    }
+    return created;
+  },
+});
+
+export const getThreadScoutId = internalQuery({
+  args: {
+    threadId: v.string(),
+    userId: v.id("users"),
+  },
+  returns: v.union(v.id("scouts"), v.null()),
+  handler: async (ctx, args) => {
+    const binding = await ctx.db
+      .query("scoutLabThreads")
+      .withIndex("by_thread_id", (q) => q.eq("threadId", args.threadId))
+      .unique();
+    if (!binding) {
+      return null;
+    }
+    if (binding.userId !== args.userId) {
+      throw new Error("Thread not found");
+    }
+    return binding.scoutId;
   },
 });
 
@@ -130,11 +233,17 @@ export const sendMessage = mutation({
     threadId: v.string(),
     prompt: v.string(),
     model: v.optional(selectableScoutModelValidator),
+    scoutId: v.optional(v.id("scouts")),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
     const userId = await requireAppUser(ctx);
     const thread = await requireOwnedAgentThread(ctx, args.threadId, userId);
+    const scoutId = await bindThreadToScout(ctx, {
+      threadId: args.threadId,
+      userId,
+      ...(args.scoutId ? { scoutId: args.scoutId } : {}),
+    });
     const prompt = promptText(args.prompt);
     const model = args.model ?? DEFAULT_SCOUT_MODEL;
     if (!thread.title) {
@@ -153,6 +262,7 @@ export const sendMessage = mutation({
       threadId: args.threadId,
       order: message.order,
       promptMessageId: messageId,
+      ...(scoutId ? { scoutId } : {}),
       model,
       startedAt: Date.now(),
     });
@@ -245,13 +355,28 @@ export const listMessages = query({
               q.eq("threadId", args.threadId).gte("order", firstOrder).lte("order", lastOrder),
             )
             .collect();
+    const scoutIds = [
+      ...new Set(
+        generations.flatMap((generation) => (generation.scoutId ? [generation.scoutId] : [])),
+      ),
+    ];
+    const scoutDocuments = await Promise.all(
+      scoutIds.map(async (scoutId) => await ctx.db.get(scoutId)),
+    );
+    const scoutsById = new Map(
+      scoutDocuments.flatMap((scout) =>
+        scout ? [[scout._id, { id: scout._id, displayName: scout.displayName }] as const] : [],
+      ),
+    );
     const metadataByOrder = new Map<number, LabMessageMetadata>(
       generations.map((generation) => {
         const terminalAt = generation.completedAt ?? generation.failedAt;
+        const scout = generation.scoutId ? scoutsById.get(generation.scoutId) : undefined;
         return [
           generation.order,
           {
             model: generation.model,
+            ...(scout ? { scout } : {}),
             ...(generation.usage === undefined ? {} : { usage: generation.usage }),
             ...(terminalAt === undefined
               ? {}

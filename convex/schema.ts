@@ -27,7 +27,9 @@ export default defineSchema({
     }),
   })
     .index("by_slug", ["slug"])
-    .index("by_agent_mail_address", ["agentMail.address"]),
+    .index("by_agent_mail_address", ["agentMail.address"])
+    .index("by_agent_mail_inbox_id", ["agentMail.inboxId"])
+    .index("by_firecrawl_profile_name", ["firecrawl.profileName"]),
   scoutRuns: defineTable({
     scoutName: v.string(),
     scoutEmail: v.string(),
@@ -47,10 +49,17 @@ export default defineSchema({
     event: scoutRunEventValidator,
     createdAt: v.number(),
   }).index("by_run_id_and_created_at", ["runId", "createdAt"]),
+  scoutLabThreads: defineTable({
+    threadId: v.string(),
+    userId: v.id("users"),
+    scoutId: v.id("scouts"),
+    createdAt: v.number(),
+  }).index("by_thread_id", ["threadId"]),
   scoutLabGenerations: defineTable({
     threadId: v.string(),
     order: v.number(),
     promptMessageId: v.string(),
+    scoutId: v.optional(v.id("scouts")),
     model: scoutModelValidator,
     startedAt: v.number(),
     completedAt: v.optional(v.number()),
