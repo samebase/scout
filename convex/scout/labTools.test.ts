@@ -2,9 +2,9 @@ import { tool, type ToolSet } from "ai";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { createLabBrowserHarness, selectAgentMailTools } from "./labTools";
-import type { ScrapeInteraction } from "./lib/firecrawl";
+import type { BrowserInteraction } from "./lib/firecrawl";
 
-function interaction(overrides: Partial<ScrapeInteraction> = {}): ScrapeInteraction {
+function interaction(overrides: Partial<BrowserInteraction> = {}): BrowserInteraction {
   return {
     success: true,
     stdout: '- textbox "Email" [ref=e1]',
@@ -21,7 +21,7 @@ function interaction(overrides: Partial<ScrapeInteraction> = {}): ScrapeInteract
 
 function dependencies() {
   return {
-    createSession: vi.fn(async () => ({ scrapeId: "scrape-1" })),
+    createSession: vi.fn(async () => ({ sessionId: "session-1" })),
     executeCode: vi.fn(async () => interaction()),
     closeSession: vi.fn(async () => ({
       success: true,
@@ -29,6 +29,7 @@ function dependencies() {
       creditsBilled: 2,
       replayAvailable: true,
     })),
+    sleep: vi.fn(async () => undefined),
   };
 }
 
@@ -45,12 +46,13 @@ describe("Lab browser harness", () => {
       killed: false,
       replayAvailable: false,
     });
-    expect(deps.createSession).toHaveBeenCalledWith("https://example.com/login", undefined);
+    expect(deps.createSession).toHaveBeenCalledWith(undefined);
     expect(deps.executeCode).toHaveBeenCalledWith(
-      "scrape-1",
-      "agent-browser snapshot -i",
+      "session-1",
+      "'agent-browser' 'open' 'https://example.com/login' && 'agent-browser' 'snapshot' '-i'",
       60,
       "bash",
+      "mutate",
     );
   });
 
@@ -60,7 +62,7 @@ describe("Lab browser harness", () => {
 
     await browser.open("https://example.com");
 
-    expect(deps.createSession).toHaveBeenCalledWith("https://example.com/", "scout-conrad");
+    expect(deps.createSession).toHaveBeenCalledWith("scout-conrad");
   });
 
   test("constructs shell-quoted commands from structured actions", async () => {
@@ -71,11 +73,27 @@ describe("Lab browser harness", () => {
     await browser.actions.fill("@e1", "hello & env; $(whoami) 'quoted'");
 
     expect(deps.executeCode).toHaveBeenLastCalledWith(
-      "scrape-1",
+      "session-1",
       `'agent-browser' 'fill' '@e1' 'hello & env; $(whoami) '"'"'quoted'"'"''`,
       60,
       "bash",
+      "mutate",
     );
+  });
+
+  test("waits for fixed durations locally without executing provider code", async () => {
+    const deps = dependencies();
+    const browser = createLabBrowserHarness({}, deps);
+    await browser.open("https://example.com");
+    deps.executeCode.mockClear();
+
+    await expect(browser.actions.waitForMilliseconds(2_500)).resolves.toMatchObject({
+      success: true,
+      output: "Waited 2500ms locally",
+    });
+
+    expect(deps.sleep).toHaveBeenCalledWith(2_500);
+    expect(deps.executeCode).not.toHaveBeenCalled();
   });
 
   test("rejects invalid refs and non-HTTPS navigation before contacting Firecrawl", async () => {
@@ -142,27 +160,87 @@ describe("Lab browser harness", () => {
     expect(deps.closeSession).toHaveBeenCalledTimes(1);
   });
 
-  test("keeps the session active when Firecrawl refuses to close it", async () => {
+  test("a close before open does not prevent later session cleanup", async () => {
     const deps = dependencies();
-    deps.closeSession
-      .mockResolvedValueOnce({
-        success: false,
-        sessionDurationMs: 0,
-        creditsBilled: 0,
-        replayAvailable: false,
-      })
-      .mockResolvedValueOnce({
+    const browser = createLabBrowserHarness({}, deps);
+
+    await expect(browser.close()).resolves.toBeUndefined();
+    await browser.open("https://example.com");
+    await expect(browser.close()).resolves.toMatchObject({ success: true });
+
+    expect(deps.closeSession).toHaveBeenCalledTimes(1);
+  });
+
+  test("serializes a same-tick close behind the open it follows", async () => {
+    const deps = dependencies();
+    const browser = createLabBrowserHarness({}, deps);
+
+    const opening = browser.open("https://example.com");
+    const closing = browser.close();
+    await Promise.all([opening, closing]);
+
+    expect(deps.createSession).toHaveBeenCalledTimes(1);
+    expect(deps.closeSession).toHaveBeenCalledTimes(1);
+  });
+
+  test("shares one in-flight DELETE between concurrent close callers", async () => {
+    const deps = dependencies();
+    let releaseClose: (() => void) | undefined;
+    const closeGate = new Promise<void>((resolve) => {
+      releaseClose = resolve;
+    });
+    deps.closeSession.mockImplementationOnce(async () => {
+      await closeGate;
+      return {
         success: true,
-        sessionDurationMs: 2_000,
+        sessionDurationMs: 1_500,
         creditsBilled: 2,
         replayAvailable: false,
-      });
+      };
+    });
     const browser = createLabBrowserHarness({}, deps);
     await browser.open("https://example.com");
 
-    await expect(browser.close()).rejects.toThrow("did not stop");
-    await expect(browser.actions.snapshot()).resolves.toMatchObject({ success: true });
+    const firstClose = browser.close();
+    const secondClose = browser.close();
+    await vi.waitFor(() => expect(deps.closeSession).toHaveBeenCalledTimes(1));
+    releaseClose?.();
+
+    await expect(Promise.all([firstClose, secondClose])).resolves.toHaveLength(2);
+    expect(deps.closeSession).toHaveBeenCalledTimes(1);
+  });
+
+  test("allows one later cleanup retry after a failed in-flight DELETE", async () => {
+    const deps = dependencies();
+    deps.closeSession.mockRejectedValueOnce(new Error("connection reset after DELETE"));
+    const browser = createLabBrowserHarness({}, deps);
+    await browser.open("https://example.com");
+
+    const firstClose = browser.close();
+    const concurrentClose = browser.close();
+    await Promise.all([
+      expect(firstClose).rejects.toThrow("connection reset after DELETE"),
+      expect(concurrentClose).rejects.toThrow("connection reset after DELETE"),
+    ]);
+    expect(deps.closeSession).toHaveBeenCalledTimes(1);
+
     await expect(browser.close()).resolves.toMatchObject({ success: true });
+    expect(deps.closeSession).toHaveBeenCalledTimes(2);
+  });
+
+  test("caches the second close failure as terminal", async () => {
+    const deps = dependencies();
+    deps.closeSession
+      .mockRejectedValueOnce(new Error("first ambiguous DELETE failure"))
+      .mockRejectedValueOnce(new Error("second ambiguous DELETE failure"));
+    const browser = createLabBrowserHarness({}, deps);
+    await browser.open("https://example.com");
+
+    await expect(browser.close()).rejects.toThrow("first ambiguous DELETE failure");
+    await expect(browser.close()).rejects.toThrow("second ambiguous DELETE failure");
+    await expect(browser.close()).rejects.toThrow("second ambiguous DELETE failure");
+    await expect(browser.close()).rejects.toThrow("second ambiguous DELETE failure");
+
     expect(deps.closeSession).toHaveBeenCalledTimes(2);
   });
 

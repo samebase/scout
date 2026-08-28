@@ -1,14 +1,16 @@
 import { tool, type ToolExecutionOptions, type ToolSet } from "ai";
 import { z } from "zod";
 import {
-  closeScrapeInteractSession,
-  createScrapeInteractSession,
-  executeScrapeInteractCode,
-  type ScrapeInteraction,
+  closeBrowserSession,
+  createBrowserSession,
+  executeBrowserCode,
+  type BrowserInteraction,
+  type BrowserOperation,
 } from "./lib/firecrawl";
 
 const MAX_TOOL_TEXT_LENGTH = 20_000;
 const MAX_TOOL_OUTPUT_LENGTH = 20_000;
+const MAX_BROWSER_CLOSE_ATTEMPTS = 2;
 
 const agentMailToolNames = ["list_messages", "search_messages", "get_thread"] as const;
 
@@ -20,9 +22,10 @@ type BrowserStopResult = {
 };
 
 type BrowserDependencies = {
-  createSession: typeof createScrapeInteractSession;
-  executeCode: typeof executeScrapeInteractCode;
-  closeSession: typeof closeScrapeInteractSession;
+  createSession: typeof createBrowserSession;
+  executeCode: typeof executeBrowserCode;
+  closeSession: typeof closeBrowserSession;
+  sleep: (milliseconds: number) => Promise<void>;
 };
 
 type LabBrowserHarnessOptions = {
@@ -30,9 +33,11 @@ type LabBrowserHarnessOptions = {
 };
 
 const defaultBrowserDependencies: BrowserDependencies = {
-  createSession: createScrapeInteractSession,
-  executeCode: executeScrapeInteractCode,
-  closeSession: closeScrapeInteractSession,
+  createSession: createBrowserSession,
+  executeCode: executeBrowserCode,
+  closeSession: closeBrowserSession,
+  sleep: async (milliseconds) =>
+    await new Promise<void>((resolve) => setTimeout(resolve, milliseconds)),
 };
 
 function boundedText(value: string, label: string) {
@@ -78,7 +83,7 @@ function redactProviderUrls(value: string) {
   });
 }
 
-function browserOutput(interaction: ScrapeInteraction) {
+function browserOutput(interaction: BrowserInteraction) {
   const output = interaction.stdout || interaction.result || interaction.output;
   return {
     success: interaction.success,
@@ -189,9 +194,12 @@ export function createLabBrowserHarness(
   options: LabBrowserHarnessOptions = {},
   dependencies: BrowserDependencies = defaultBrowserDependencies,
 ) {
-  let scrapeId: string | undefined;
-  let closePromise: Promise<BrowserStopResult> | undefined;
+  let sessionId: string | undefined;
+  let closePromise: Promise<BrowserStopResult | undefined> | undefined;
   let stopResult: BrowserStopResult | undefined;
+  let terminalCloseFailure: { error: unknown } | undefined;
+  let closeAttempts = 0;
+  let pendingOpenCount = 0;
   let operationTail: Promise<void> = Promise.resolve();
 
   function serialized<T>(operation: () => Promise<T>) {
@@ -203,89 +211,145 @@ export function createLabBrowserHarness(
     return result;
   }
 
-  function execute(parts: readonly string[], timeoutSeconds = 60) {
+  function execute(parts: readonly string[], operation: BrowserOperation, timeoutSeconds = 60) {
     return serialized(async () => {
-      if (!scrapeId) {
+      if (!sessionId) {
         throw new Error("Open a browser session before using it");
       }
       const command = parts.map(shellQuote).join(" ");
-      const interaction = await dependencies.executeCode(scrapeId, command, timeoutSeconds, "bash");
+      const interaction = await dependencies.executeCode(
+        sessionId,
+        command,
+        timeoutSeconds,
+        "bash",
+        operation,
+      );
       return browserOutput(interaction);
     });
   }
 
   function open(url: string) {
-    return serialized(async () => {
-      if (scrapeId) {
+    pendingOpenCount += 1;
+    const opening = serialized(async () => {
+      if (sessionId) {
         throw new Error("A browser session is already open");
       }
       if (stopResult) {
         throw new Error("This response already used and closed its browser session");
       }
 
-      const session = await dependencies.createSession(httpsUrl(url), options.profileName);
-      scrapeId = session.scrapeId;
+      const targetUrl = httpsUrl(url);
+      const session = await dependencies.createSession(options.profileName);
+      sessionId = session.sessionId;
       const snapshot = await dependencies.executeCode(
-        scrapeId,
-        "agent-browser snapshot -i",
+        sessionId,
+        `${["agent-browser", "open", targetUrl].map(shellQuote).join(" ")} && ${[
+          "agent-browser",
+          "snapshot",
+          "-i",
+        ]
+          .map(shellQuote)
+          .join(" ")}`,
         60,
         "bash",
+        "mutate",
       );
       return browserOutput(snapshot);
     });
+    void opening.then(
+      () => {
+        pendingOpenCount -= 1;
+      },
+      () => {
+        pendingOpenCount -= 1;
+      },
+    );
+    return opening;
   }
 
   function close(): Promise<BrowserStopResult | undefined> {
-    return serialized(async () => {
-      if (stopResult) {
-        return stopResult;
-      }
-      if (closePromise) {
-        return await closePromise;
-      }
-      if (!scrapeId) {
+    if (stopResult) {
+      return Promise.resolve(stopResult);
+    }
+    if (terminalCloseFailure) {
+      return Promise.reject(terminalCloseFailure.error);
+    }
+    if (closePromise) {
+      return closePromise;
+    }
+    if (!sessionId && pendingOpenCount === 0) {
+      return Promise.resolve(undefined);
+    }
+    const pendingClose = serialized(async () => {
+      if (!sessionId) {
         return undefined;
       }
-      const sessionToClose = scrapeId;
-      closePromise = dependencies.closeSession(sessionToClose).then((result) => {
+      closeAttempts += 1;
+      const sessionToClose = sessionId;
+      try {
+        const result = await dependencies.closeSession(sessionToClose);
         if (!result.success) {
           throw new Error("Firecrawl did not stop the browser session");
         }
-        scrapeId = undefined;
+        sessionId = undefined;
         stopResult = result;
         return result;
-      });
-      try {
-        return await closePromise;
-      } finally {
-        closePromise = undefined;
+      } catch (error) {
+        if (closeAttempts >= MAX_BROWSER_CLOSE_ATTEMPTS) {
+          terminalCloseFailure = { error };
+        }
+        throw error;
       }
     });
+    closePromise = pendingClose;
+    void pendingClose.then(
+      () => {
+        if (closePromise === pendingClose) closePromise = undefined;
+      },
+      () => {
+        if (closePromise === pendingClose) closePromise = undefined;
+      },
+    );
+    return pendingClose;
   }
 
   const actions = {
-    snapshot: async () => await execute(["agent-browser", "snapshot", "-i"]),
-    navigate: async (url: string) => await execute(["agent-browser", "open", httpsUrl(url)]),
-    click: async (ref: string) => await execute(["agent-browser", "click", elementRef(ref)]),
+    snapshot: async () => await execute(["agent-browser", "snapshot", "-i"], "read"),
+    navigate: async (url: string) =>
+      await execute(["agent-browser", "open", httpsUrl(url)], "mutate"),
+    click: async (ref: string) =>
+      await execute(["agent-browser", "click", elementRef(ref)], "mutate"),
     fill: async (ref: string, text: string) =>
-      await execute(["agent-browser", "fill", elementRef(ref), text]),
+      await execute(["agent-browser", "fill", elementRef(ref), text], "mutate"),
     type: async (ref: string, text: string) =>
-      await execute(["agent-browser", "type", elementRef(ref), text]),
+      await execute(["agent-browser", "type", elementRef(ref), text], "mutate"),
     press: async (key: string) =>
-      await execute(["agent-browser", "press", boundedText(key, "Key")]),
+      await execute(["agent-browser", "press", boundedText(key, "Key")], "mutate"),
     select: async (ref: string, value: string) =>
-      await execute(["agent-browser", "select", elementRef(ref), value]),
-    check: async (ref: string) => await execute(["agent-browser", "check", elementRef(ref)]),
-    getPage: async (kind: "url" | "title") => await execute(["agent-browser", "get", kind]),
+      await execute(["agent-browser", "select", elementRef(ref), value], "mutate"),
+    check: async (ref: string) =>
+      await execute(["agent-browser", "check", elementRef(ref)], "mutate"),
+    getPage: async (kind: "url" | "title") => await execute(["agent-browser", "get", kind], "read"),
     getElement: async (kind: "text" | "value", ref: string) =>
-      await execute(["agent-browser", "get", kind, elementRef(ref)]),
-    waitForText: async (text: string) => await execute(["agent-browser", "wait", "--text", text]),
+      await execute(["agent-browser", "get", kind, elementRef(ref)], "read"),
+    waitForText: async (text: string) =>
+      await execute(["agent-browser", "wait", "--text", text], "read"),
     waitForLoad: async (state: "domcontentloaded" | "networkidle") =>
-      await execute(["agent-browser", "wait", "--load", state]),
+      await execute(["agent-browser", "wait", "--load", state], "read"),
     waitForMilliseconds: async (duration: number) =>
-      await execute(["agent-browser", "wait", String(duration)]),
-    back: async () => await execute(["agent-browser", "back"]),
-    reload: async () => await execute(["agent-browser", "reload"]),
+      await serialized(async () => {
+        await dependencies.sleep(duration);
+        return {
+          success: true,
+          output: `Waited ${duration}ms locally`,
+          error: null,
+          exitCode: 0,
+          killed: false,
+          replayAvailable: false,
+        };
+      }),
+    back: async () => await execute(["agent-browser", "back"], "mutate"),
+    reload: async () => await execute(["agent-browser", "reload"], "mutate"),
   };
 
   const tools = {
