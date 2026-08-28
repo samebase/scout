@@ -12,6 +12,7 @@ export const Route = createFileRoute("/scouts/")({
 });
 
 type Scout = FunctionReturnType<typeof api.scout.scouts.list>[number];
+type ServiceAccount = FunctionReturnType<typeof api.scout.serviceAccounts.list>[number];
 type ScoutStatus = Scout["status"];
 
 type RegistrationFields = {
@@ -39,9 +40,11 @@ const EMPTY_REGISTRATION: RegistrationFields = {
 
 function ScoutsIndexPage() {
   const scouts = useQuery(api.scout.scouts.list);
+  const serviceAccounts = useQuery(api.scout.serviceAccounts.list, {});
   const [registrationOpen, setRegistrationOpen] = useState(false);
   const [registrationSubmitting, setRegistrationSubmitting] = useState(false);
   const registrationButton = useRef<HTMLButtonElement>(null);
+  const serviceNamesByScout = groupServiceNamesByScout(serviceAccounts ?? []);
 
   const closeRegistration = () => {
     if (registrationSubmitting) {
@@ -105,40 +108,67 @@ function ScoutsIndexPage() {
         </div>
       ) : (
         <ul className="divide-y rounded-xl border" aria-label="Scouts">
-          {scouts.map((scout) => (
-            <li key={scout._id}>
-              <Link
-                to="/scouts/$slug"
-                params={{ slug: scout.slug }}
-                className="group block rounded-xl p-4 outline-none transition-colors hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/50 sm:p-5"
-              >
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
-                  <div className="min-w-0">
-                    <h2 className="wrap-break-word text-base font-medium group-hover:underline group-hover:underline-offset-4">
-                      {scout.displayName}
-                    </h2>
-                    <p className="text-muted-foreground mt-1 font-mono text-xs">/{scout.slug}</p>
-                  </div>
-                  <ScoutStatus status={scout.status} />
-                </div>
+          {scouts.map((scout) => {
+            const serviceNames = serviceNamesByScout.get(scout._id) ?? [];
 
-                <dl className="mt-5 grid gap-4 text-sm sm:grid-cols-2">
-                  <div className="min-w-0">
-                    <dt className="text-muted-foreground text-xs">AgentMail address</dt>
-                    <dd className="mt-1 wrap-break-word">{scout.agentMail.address}</dd>
+            return (
+              <li key={scout._id}>
+                <Link
+                  to="/scouts/$slug"
+                  params={{ slug: scout.slug }}
+                  className="group block rounded-xl p-4 outline-none transition-colors hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/50 sm:p-5"
+                >
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
+                    <div className="min-w-0">
+                      <h2 className="wrap-break-word text-base font-medium group-hover:underline group-hover:underline-offset-4">
+                        {scout.displayName}
+                      </h2>
+                      <p className="text-muted-foreground mt-1 font-mono text-xs">/{scout.slug}</p>
+                    </div>
+                    <ScoutStatus status={scout.status} />
                   </div>
-                  <div className="min-w-0">
-                    <dt className="text-muted-foreground text-xs">Firecrawl profile</dt>
-                    <dd className="mt-1 wrap-break-word">{scout.firecrawl.profileName}</dd>
-                  </div>
-                </dl>
-              </Link>
-            </li>
-          ))}
+
+                  <dl className="mt-5 grid gap-4 text-sm sm:grid-cols-2">
+                    <div className="min-w-0">
+                      <dt className="text-muted-foreground text-xs">AgentMail address</dt>
+                      <dd className="mt-1 wrap-break-word">{scout.agentMail.address}</dd>
+                    </div>
+                    <div className="min-w-0">
+                      <dt className="text-muted-foreground text-xs">Firecrawl profile</dt>
+                      <dd className="mt-1 wrap-break-word">{scout.firecrawl.profileName}</dd>
+                    </div>
+                    {serviceNames.length > 0 ? (
+                      <div className="min-w-0 sm:col-span-2">
+                        <dt className="text-muted-foreground text-xs">Accounts</dt>
+                        <dd className="mt-1 wrap-break-word">{serviceNames.join(", ")}</dd>
+                      </div>
+                    ) : null}
+                  </dl>
+                </Link>
+              </li>
+            );
+          })}
         </ul>
       )}
     </>
   );
+}
+
+function groupServiceNamesByScout(accounts: readonly ServiceAccount[]) {
+  const serviceNamesByScout = new Map<Scout["_id"], string[]>();
+
+  for (const account of accounts) {
+    const serviceNames = serviceNamesByScout.get(account.scoutId);
+    if (serviceNames === undefined) {
+      serviceNamesByScout.set(account.scoutId, [account.serviceName]);
+      continue;
+    }
+    if (!serviceNames.includes(account.serviceName)) {
+      serviceNames.push(account.serviceName);
+    }
+  }
+
+  return serviceNamesByScout;
 }
 
 function ScoutRegistrationForm({
