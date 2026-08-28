@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-28T13:44:25Z
+- **Last updated:** 2026-08-28T14:10:12Z
 
 ## Log
 
@@ -261,7 +261,7 @@ Lab with its provider bindings and matching prior runs (`convex/schema.ts`, `con
 `convex/scout/scouts.ts`, `convex/scout/labGeneration.ts`, `convex/scout/*.test.ts`,
 `src/routes/scouts.index.tsx`, `src/routes/scouts.$slug.tsx`).
 
-### 2026-08-28 - working tree
+### 2026-08-28 - c157750 - v76
 
 Reset the experiment around one strict model: every Lab thread and generation belongs to one
 registered Scout. Removed the unused mission-run tables, backend, and UI, deleted compatibility
@@ -270,3 +270,9 @@ AgentMail MCP tools in the active Convex Agent flow. Cleared development experim
 preserving authentication and the configured Scout (`convex/schema.ts`, `convex/scout/lab.ts`,
 `convex/scout/labGeneration.ts`, `convex/scout/scouts.ts`, `src/routes/lab.tsx`,
 `docs/agent-runtime.md`).
+
+### 2026-08-28 - working tree
+
+Added a repository-level override for the generic Hackathon skill. New committed log entries append
+the build version after the short SHA while preserving the skill's date-and-SHA prefix. Historical
+committed entries remain unchanged (`AGENTS.md`).
