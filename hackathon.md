@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-28T15:30:04Z
+- **Last updated:** 2026-08-28T17:30:34Z
 
 ## Log
 
@@ -303,9 +303,17 @@ evidence must come from a traceable browser journey (`convex/scout/serviceAccoun
 `convex/scout/serviceAccounts.test.ts`, `src/routes/scouts.index.tsx`,
 `docs/agent-runtime.md`).
 
-### 2026-08-28 - working tree
+### 2026-08-28 - f670327 - v83
 
 Made service accounts visually recognizable without manual branding data. Scout lists and profiles
 load each service's own HTTPS favicon, deduplicate services by domain, and fall back to a local
 initial tile when a site has no root icon (`src/components/service-icon.tsx`,
 `src/routes/scouts.index.tsx`, `src/routes/scouts.$slug.tsx`).
+
+### 2026-08-28 - working tree
+
+Moved Scout's Firecrawl adapter from scrape-bound Interact to standalone Browser Sandbox sessions
+with persistent profiles and provider billing metrics. Added typed rate-limit details, bounded
+explicit-429 retries, request deadlines for cleanup, and honest detection of failed browser commands
+(`convex/scout/lib/http.ts`, `convex/scout/lib/firecrawl.ts`,
+`convex/scout/lib/firecrawl.test.ts`).
