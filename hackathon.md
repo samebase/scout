@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-28T17:59:22Z
+- **Last updated:** 2026-08-28T19:46:33Z
 
 ## Log
 
@@ -318,7 +318,7 @@ explicit-429 retries, request deadlines for cleanup, and honest detection of fai
 (`convex/scout/lib/http.ts`, `convex/scout/lib/firecrawl.ts`,
 `convex/scout/lib/firecrawl.test.ts`).
 
-### 2026-08-28 - working tree
+### 2026-08-28 - 9afeb2f - v86
 
 Made the Convex Agent browser lifecycle deterministic under parallel tool calls and provider
 failures. Fixed waits now happen locally, open and close serialize safely, cleanup is idempotent and
@@ -329,3 +329,12 @@ then ran Qwen 3.7 Flash and Luna for three 24-step generations each: all six bro
 the prior rate-limit failure and closed cleanly, but neither completed the publish-and-verify mission.
 Qwen used 15 Firecrawl credits and 1.91 million input tokens; Luna used 14 credits and 1.34 million,
 making useful work per model step and repeated browser history the next measured bottlenecks.
+
+### 2026-08-28 - working tree
+
+Stopped successful model work from being reported as a failure when Firecrawl's close response
+times out after the session has already disappeared. Cleanup now confirms uncertain deletes against
+the active-session list, and a generation that later fails cleanup retains its known model usage
+without being marked successful (`convex/scout/labGeneration.ts`, `convex/scout/lab.ts`,
+`convex/scout/lib/firecrawl.ts`, `convex/scoutLab.test.ts`,
+`convex/scout/lib/firecrawl.test.ts`).

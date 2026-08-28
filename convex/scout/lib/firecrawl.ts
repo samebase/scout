@@ -5,6 +5,7 @@ const MAX_OUTPUT_LENGTH = 40_000;
 const MAX_RETRY_DELAY_MS = 65_000;
 const DEFAULT_RETRY_DELAY_MS = 1_000;
 const DELETE_TIMEOUT_MS = 15_000;
+const CLOSE_CONFIRMATION_TIMEOUT_MS = 15_000;
 
 export type BrowserOperation = "read" | "mutate";
 
@@ -169,6 +170,35 @@ export async function executeBrowserCode(
   );
 }
 
+function closedSessionWithoutMetrics() {
+  return {
+    success: true,
+    sessionDurationMs: null,
+    creditsBilled: null,
+    replayAvailable: false,
+  };
+}
+
+async function listActiveBrowserSessionIds() {
+  const response = requireRecord(
+    await withBoundedRetry(
+      "read",
+      async () =>
+        await fetchJson("Firecrawl", `${FIRECRAWL_BASE_URL}/interact?status=active`, {
+          headers: headers(),
+          signal: AbortSignal.timeout(CLOSE_CONFIRMATION_TIMEOUT_MS),
+        }),
+    ),
+    "Firecrawl",
+  );
+  if (response["success"] !== true || !Array.isArray(response["sessions"])) {
+    throw new Error("Firecrawl returned an invalid browser session list");
+  }
+  return response["sessions"].map((session) =>
+    requireString(requireRecord(session, "Firecrawl browser session"), "id", "Firecrawl"),
+  );
+}
+
 export async function closeBrowserSession(sessionId: string) {
   let response: Record<string, unknown>;
   try {
@@ -189,13 +219,15 @@ export async function closeBrowserSession(sessionId: string) {
       "Firecrawl",
     );
   } catch (error) {
-    if (error instanceof ProviderHttpError && (error.status === 404 || error.status === 410)) {
-      return {
-        success: true,
-        sessionDurationMs: null,
-        creditsBilled: null,
-        replayAvailable: false,
-      };
+    if (error instanceof ProviderHttpError) {
+      if (error.status === 404 || error.status === 410) {
+        return closedSessionWithoutMetrics();
+      }
+      throw error;
+    }
+    const activeSessionIds = await listActiveBrowserSessionIds();
+    if (!activeSessionIds.includes(sessionId)) {
+      return closedSessionWithoutMetrics();
     }
     throw error;
   }

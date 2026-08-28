@@ -277,12 +277,14 @@ describe("Scout agent lab", () => {
     await backend.mutation(internal.scout.lab.expireGeneration, {
       generationId: generation._id,
     });
-    await expect(
-      backend.run(async (ctx) => await ctx.db.get("scoutLabGenerations", generation._id)),
-    ).resolves.toMatchObject({
+    const expiredGeneration = await backend.run(
+      async (ctx) => await ctx.db.get("scoutLabGenerations", generation._id),
+    );
+    expect(expiredGeneration).toMatchObject({
       status: "failed",
       failure: "Generation stopped before completion",
     });
+    expect(expiredGeneration).not.toHaveProperty("usage");
 
     const nextThread = await admin.mutation(api.scout.lab.createThread, { scoutId });
     await admin.mutation(api.scout.lab.sendMessage, {
@@ -302,17 +304,31 @@ describe("Scout agent lab", () => {
     await backend.mutation(internal.scout.lab.failGeneration, {
       promptMessageId: nextGeneration.promptMessageId,
       failure: "Provider request failed",
+      usage: {
+        promptTokens: 123,
+        completionTokens: 7,
+        totalTokens: 130,
+        cachedInputTokens: 100,
+      },
       firecrawlCredits: 1,
       firecrawlDurationMs: 800,
     });
-    await expect(
-      backend.run(async (ctx) => await ctx.db.get("scoutLabGenerations", nextGeneration._id)),
-    ).resolves.toMatchObject({
+    const failedGeneration = await backend.run(
+      async (ctx) => await ctx.db.get("scoutLabGenerations", nextGeneration._id),
+    );
+    expect(failedGeneration).toMatchObject({
       status: "failed",
       failure: "Provider request failed",
+      usage: {
+        promptTokens: 123,
+        completionTokens: 7,
+        totalTokens: 130,
+        cachedInputTokens: 100,
+      },
       firecrawlCredits: 1,
       firecrawlDurationMs: 800,
     });
+    expect(failedGeneration).not.toHaveProperty("completedAt");
   });
 
   it("uses the default model and rejects the retired model", async () => {

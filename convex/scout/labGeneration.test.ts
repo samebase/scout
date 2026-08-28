@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import {
   closeAgentMailBestEffort,
   closeGenerationBrowser,
+  generationFailureDetails,
   scoutWebsiteIdentityInstructions,
 } from "./labGeneration";
 
@@ -56,6 +57,28 @@ describe("generation browser cleanup", () => {
 
     await expect(closeGenerationBrowser({ close })).resolves.toMatchObject({ success: true });
     expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it("retains completed model usage when browser cleanup fails", () => {
+    const usage = {
+      promptTokens: 123,
+      completionTokens: 7,
+      totalTokens: 130,
+      cachedInputTokens: 100,
+    };
+    const cleanupFailure = new Error("close timed out");
+
+    const details = generationFailureDetails(
+      { kind: "completed", usage },
+      cleanupFailure,
+      undefined,
+    );
+
+    expect(details).toMatchObject({
+      failure: "Browser cleanup failed: close timed out",
+      usage,
+    });
+    expect(details.terminalError).toBe(cleanupFailure);
   });
 });
 

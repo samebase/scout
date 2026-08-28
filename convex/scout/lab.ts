@@ -360,6 +360,7 @@ export const failGeneration = internalMutation({
   args: {
     promptMessageId: v.string(),
     failure: v.string(),
+    usage: v.optional(scoutTokenUsageValidator),
     firecrawlCredits: v.optional(v.number()),
     firecrawlDurationMs: v.optional(v.number()),
   },
@@ -379,6 +380,7 @@ export const failGeneration = internalMutation({
       status: "failed",
       failedAt: Date.now(),
       failure: args.failure,
+      ...(args.usage === undefined ? {} : { usage: args.usage }),
       ...(args.firecrawlCredits === undefined ? {} : { firecrawlCredits: args.firecrawlCredits }),
       ...(args.firecrawlDurationMs === undefined
         ? {}
