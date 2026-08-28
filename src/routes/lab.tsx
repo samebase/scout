@@ -338,7 +338,7 @@ function EmptyTranscript({ isLoading }: { isLoading: boolean }) {
 function LabMessage({ message }: { message: LabMessage }) {
   const isUser = message.role === "user";
   const label = isUser ? "You" : message.role === "system" ? "System" : "Scout";
-  const metadata = message.role === "assistant" ? message.metadata : undefined;
+  const metadata = message.metadata;
 
   return (
     <Message align={isUser ? "end" : "start"}>
@@ -353,6 +353,13 @@ function LabMessage({ message }: { message: LabMessage }) {
               <CircleAlertIcon />
             </MarkerIcon>
             <MarkerContent>Generation failed.</MarkerContent>
+          </Marker>
+        ) : metadata?.failure ? (
+          <Marker className="text-destructive" role="status">
+            <MarkerIcon>
+              <CircleAlertIcon />
+            </MarkerIcon>
+            <MarkerContent>Generation failed: {metadata.failure}</MarkerContent>
           </Marker>
         ) : null}
         {message.status === "streaming" ? (
@@ -386,6 +393,12 @@ function formatRunMetadata(metadata: LabMessageMetadata) {
   }
   if (metadata.durationMs !== undefined) {
     parts.push(formatDuration(metadata.durationMs));
+  }
+  if (metadata.firecrawlCredits !== undefined) {
+    parts.push(`${tokenNumber.format(metadata.firecrawlCredits)} Firecrawl credits`);
+  }
+  if (metadata.firecrawlDurationMs !== undefined) {
+    parts.push(`${formatDuration(metadata.firecrawlDurationMs)} browser`);
   }
   return parts.join(" · ");
 }

@@ -49,6 +49,24 @@ afterEach(() => {
 });
 
 describe("scrape-bound Firecrawl Interact", () => {
+  test("starts a disposable session without a profile", async () => {
+    responses.push({
+      success: true,
+      data: {
+        metadata: { scrapeId: "scrape-fresh" },
+      },
+    });
+
+    await expect(createScrapeInteractSession("https://example.com")).resolves.toEqual({
+      scrapeId: "scrape-fresh",
+    });
+    expect(requestBody(requests[0])).toEqual({
+      url: "https://example.com",
+      formats: ["markdown"],
+      storeInCache: false,
+    });
+  });
+
   test("starts a writable named profile without exposing scrape content", async () => {
     responses.push({
       success: true,

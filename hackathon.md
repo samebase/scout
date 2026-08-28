@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-27T23:06:38Z
+- **Last updated:** 2026-08-27T23:43:50Z
 
 ## Log
 
@@ -183,8 +183,32 @@ v60 Replaced Qwen3.8 Flash with Qwen3.7 Flash for new Lab turns while retaining 
 generation value, so existing conversation metadata remains valid. New turns accept only Luna or
 Qwen3.7 Flash (`convex/scout/models.ts`, `convex/scout/lab.ts`, `src/routes/lab.tsx`).
 
-### 2026-08-27 - working tree
+### 2026-08-27 - a0d11c5
 
-Changed the Hackathon log workflow to carry at most one pending entry into the next substantive
+v63 Changed the Hackathon log workflow to carry at most one pending entry into the next substantive
 commit instead of ending every pull request with a log-only finalizer. Final submission keeps an
 explicit cleanup path (`AGENTS.md`).
+
+### 2026-08-27 - 3ea46ca
+
+v65 Added a guarded browser harness that converts structured actions into shell-quoted Firecrawl
+`agent-browser` calls, keeps browser profile selection outside the model, and rejects failed session
+cleanup. Added a four-tool read-only AgentMail allowlist, provider URL and diagnostic redaction, and
+focused tests (`convex/scout/labTools.ts`, `convex/scout/lib/firecrawl.ts`,
+`convex/scout/lib/redaction.ts`).
+
+### 2026-08-27 - 40fc9c1
+
+v66 Connected the guarded browser harness and read-only AgentMail allowlist to the private Convex Agent
+Lab. Persisted Firecrawl credits, browser duration, and sanitized terminal failures beside model
+usage, surfaced that evidence in the chat UI even when a response fails before streaming, and raised
+the bounded tool loop from 12 to 24 steps. Read-only Tally checks completed correctly with both Luna
+and Qwen3.7 Flash
+(`convex/scout/labGeneration.ts`, `convex/scout/lab.ts`, `convex/schema.ts`,
+`src/routes/lab.tsx`).
+
+### 2026-08-27 - working tree
+
+Recorded the final raw-MCP versus guarded-tool Tally benchmark and the current security boundary:
+the private Lab retains read-only mail activity and uses fresh browsers, while authenticated profile
+selection and opaque verification tools remain acceptance-test work (`docs/agent-runtime.md`).

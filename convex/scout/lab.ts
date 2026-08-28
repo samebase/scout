@@ -28,6 +28,9 @@ const labMessageMetadataValidator = v.object({
   model: scoutModelValidator,
   usage: v.optional(scoutTokenUsageValidator),
   durationMs: v.optional(v.number()),
+  firecrawlCredits: v.optional(v.number()),
+  firecrawlDurationMs: v.optional(v.number()),
+  failure: v.optional(v.string()),
 });
 
 type LabMessageMetadata = Infer<typeof labMessageMetadataValidator>;
@@ -167,6 +170,8 @@ export const completeGeneration = internalMutation({
   args: {
     promptMessageId: v.string(),
     usage: scoutTokenUsageValidator,
+    firecrawlCredits: v.optional(v.number()),
+    firecrawlDurationMs: v.optional(v.number()),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -180,6 +185,38 @@ export const completeGeneration = internalMutation({
     await ctx.db.patch(generation._id, {
       completedAt: Date.now(),
       usage: args.usage,
+      ...(args.firecrawlCredits === undefined ? {} : { firecrawlCredits: args.firecrawlCredits }),
+      ...(args.firecrawlDurationMs === undefined
+        ? {}
+        : { firecrawlDurationMs: args.firecrawlDurationMs }),
+    });
+    return null;
+  },
+});
+
+export const failGeneration = internalMutation({
+  args: {
+    promptMessageId: v.string(),
+    failure: v.string(),
+    firecrawlCredits: v.optional(v.number()),
+    firecrawlDurationMs: v.optional(v.number()),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const generation = await ctx.db
+      .query("scoutLabGenerations")
+      .withIndex("by_prompt_message_id", (q) => q.eq("promptMessageId", args.promptMessageId))
+      .unique();
+    if (!generation) {
+      throw new Error("Lab generation not found");
+    }
+    await ctx.db.patch(generation._id, {
+      failedAt: Date.now(),
+      failure: args.failure,
+      ...(args.firecrawlCredits === undefined ? {} : { firecrawlCredits: args.firecrawlCredits }),
+      ...(args.firecrawlDurationMs === undefined
+        ? {}
+        : { firecrawlDurationMs: args.firecrawlDurationMs }),
     });
     return null;
   },
@@ -209,21 +246,45 @@ export const listMessages = query({
             )
             .collect();
     const metadataByOrder = new Map<number, LabMessageMetadata>(
-      generations.map((generation) => [
-        generation.order,
-        {
-          model: generation.model,
-          ...(generation.usage === undefined ? {} : { usage: generation.usage }),
-          ...(generation.completedAt === undefined
-            ? {}
-            : { durationMs: Math.max(0, generation.completedAt - generation.startedAt) }),
-        },
-      ]),
+      generations.map((generation) => {
+        const terminalAt = generation.completedAt ?? generation.failedAt;
+        return [
+          generation.order,
+          {
+            model: generation.model,
+            ...(generation.usage === undefined ? {} : { usage: generation.usage }),
+            ...(terminalAt === undefined
+              ? {}
+              : { durationMs: Math.max(0, terminalAt - generation.startedAt) }),
+            ...(generation.firecrawlCredits === undefined
+              ? {}
+              : { firecrawlCredits: generation.firecrawlCredits }),
+            ...(generation.firecrawlDurationMs === undefined
+              ? {}
+              : { firecrawlDurationMs: generation.firecrawlDurationMs }),
+            ...(generation.failure === undefined ? {} : { failure: generation.failure }),
+          },
+        ];
+      }),
+    );
+    const assistantOrders = new Set(
+      messages.page
+        .filter((message) => message.role === "assistant")
+        .map((message) => message.order),
     );
     const page = messages.page.map<Infer<typeof uiMessageValidator>>(
       ({ metadata: _metadata, ...message }) => {
         const metadata = metadataByOrder.get(message.order);
-        return message.role === "assistant" && metadata ? { ...message, metadata } : message;
+        if (!metadata) {
+          return message;
+        }
+        if (
+          message.role === "assistant" ||
+          (message.role === "user" && metadata.failure && !assistantOrders.has(message.order))
+        ) {
+          return { ...message, metadata };
+        }
+        return message;
       },
     );
     const streams = await syncStreams(ctx, components.agent, args);

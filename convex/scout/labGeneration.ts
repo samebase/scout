@@ -7,7 +7,11 @@ import { internal } from "../_generated/api";
 import { env, internalAction } from "../_generated/server";
 import { scoutAgent } from "./agent";
 import { requireOwnedAgentThread } from "./labAccess";
+import { createLabBrowserHarness, selectAgentMailTools } from "./labTools";
+import { diagnosticMessage } from "./lib/redaction";
 import { scoutLanguageModel, scoutModelValidator, type ScoutTokenUsage } from "./models";
+
+const MAX_GENERATION_STEPS = 24;
 
 function requireSecret(value: string | undefined, name: string) {
   if (!value) {
@@ -41,19 +45,11 @@ export const generateResponse = internalAction({
   handler: async (ctx, args) => {
     await requireOwnedAgentThread(ctx, args.threadId, args.userId);
 
-    let firecrawlClient: MCPClient | undefined;
     let agentMailClient: MCPClient | undefined;
+    const browser = createLabBrowserHarness();
 
     try {
-      firecrawlClient = await createMCPClient({
-        transport: {
-          type: "http",
-          url: "https://mcp.firecrawl.dev/v2/mcp",
-          headers: {
-            Authorization: `Bearer ${requireSecret(env.FIRECRAWL_API_KEY, "FIRECRAWL_API_KEY")}`,
-          },
-        },
-      });
+      requireSecret(env.FIRECRAWL_API_KEY, "FIRECRAWL_API_KEY");
       agentMailClient = await createMCPClient({
         transport: {
           type: "http",
@@ -65,8 +61,8 @@ export const generateResponse = internalAction({
       });
 
       const tools = {
-        ...(await firecrawlClient.tools()),
-        ...(await agentMailClient.tools()),
+        ...browser.tools,
+        ...selectAgentMailTools(await agentMailClient.tools()),
       };
       const result = await scoutAgent.streamText(
         ctx,
@@ -75,7 +71,7 @@ export const generateResponse = internalAction({
           promptMessageId: args.promptMessageId,
           model: scoutLanguageModel(args.model),
           tools,
-          stopWhen: isStepCount(12),
+          stopWhen: isStepCount(MAX_GENERATION_STEPS),
         },
         {
           saveStreamDeltas: {
@@ -86,15 +82,53 @@ export const generateResponse = internalAction({
         },
       );
       await result.consumeStream();
+      const browserUsage = await browser.close();
       await ctx.runMutation(internal.scout.lab.completeGeneration, {
         promptMessageId: args.promptMessageId,
         usage: tokenUsage(await result.totalUsage),
+        ...(browserUsage?.creditsBilled === null || browserUsage?.creditsBilled === undefined
+          ? {}
+          : { firecrawlCredits: browserUsage.creditsBilled }),
+        ...(browserUsage?.sessionDurationMs === null ||
+        browserUsage?.sessionDurationMs === undefined
+          ? {}
+          : { firecrawlDurationMs: browserUsage.sessionDurationMs }),
       });
       return null;
+    } catch (error) {
+      let browserUsage: Awaited<ReturnType<typeof browser.close>> = undefined;
+      let cleanupFailure: unknown;
+      try {
+        browserUsage = await browser.close();
+      } catch (closeError) {
+        cleanupFailure = closeError;
+      }
+      const failure = cleanupFailure
+        ? `${diagnosticMessage(error)}; browser cleanup: ${diagnosticMessage(cleanupFailure)}`
+        : diagnosticMessage(error);
+      try {
+        await ctx.runMutation(internal.scout.lab.failGeneration, {
+          promptMessageId: args.promptMessageId,
+          failure,
+          ...(browserUsage?.creditsBilled === null || browserUsage?.creditsBilled === undefined
+            ? {}
+            : { firecrawlCredits: browserUsage.creditsBilled }),
+          ...(browserUsage?.sessionDurationMs === null ||
+          browserUsage?.sessionDurationMs === undefined
+            ? {}
+            : { firecrawlDurationMs: browserUsage.sessionDurationMs }),
+        });
+      } catch (persistenceError) {
+        throw new AggregateError(
+          [error, persistenceError],
+          "Generation failed and its failure state could not be recorded",
+        );
+      }
+      throw error;
     } finally {
       const closePromises: Promise<void>[] = [];
-      if (firecrawlClient) closePromises.push(firecrawlClient.close());
       if (agentMailClient) closePromises.push(agentMailClient.close());
+      closePromises.push(browser.close().then(() => undefined));
       await Promise.allSettled(closePromises);
     }
   },
