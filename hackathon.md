@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-28T14:59:05Z
+- **Last updated:** 2026-08-28T15:30:04Z
 
 ## Log
 
@@ -294,7 +294,7 @@ an inline registration form. Account rows show the domain, identifier, and hones
 authentication evidence without inventing missing-service placeholders
 (`src/routes/scouts.index.tsx`, `src/routes/scouts.$slug.tsx`).
 
-### 2026-08-28 - working tree
+### 2026-08-28 - 62ac7c8 - v82
 
 Hardened the inventory after adversarial review: malformed hostnames are rejected, opaque account
 identifiers retain their exact case, write limits match every bounded list, and Scout cards wait for
@@ -302,3 +302,10 @@ both data sources before rendering. Removed the manual authentication-result mut
 evidence must come from a traceable browser journey (`convex/scout/serviceAccounts.ts`,
 `convex/scout/serviceAccounts.test.ts`, `src/routes/scouts.index.tsx`,
 `docs/agent-runtime.md`).
+
+### 2026-08-28 - working tree
+
+Made service accounts visually recognizable without manual branding data. Scout lists and profiles
+load each service's own HTTPS favicon, deduplicate services by domain, and fall back to a local
+initial tile when a site has no root icon (`src/components/service-icon.tsx`,
+`src/routes/scouts.index.tsx`, `src/routes/scouts.$slug.tsx`).

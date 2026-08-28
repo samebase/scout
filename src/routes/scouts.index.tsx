@@ -4,6 +4,7 @@ import type { FunctionReturnType } from "convex/server";
 import { LoaderCircleIcon, PlusIcon, XIcon } from "lucide-react";
 import { type FormEvent, type ReactNode, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
+import { ServiceIcon } from "#components/service-icon";
 import { Button } from "#components/ui/button";
 import { Input } from "#components/ui/input";
 
@@ -13,6 +14,7 @@ export const Route = createFileRoute("/scouts/")({
 
 type Scout = FunctionReturnType<typeof api.scout.scouts.list>[number];
 type ServiceAccount = FunctionReturnType<typeof api.scout.serviceAccounts.list>[number];
+type ServiceSummary = Pick<ServiceAccount, "serviceName" | "serviceDomain">;
 type ScoutStatus = Scout["status"];
 
 type RegistrationFields = {
@@ -44,8 +46,8 @@ function ScoutsIndexPage() {
   const [registrationOpen, setRegistrationOpen] = useState(false);
   const [registrationSubmitting, setRegistrationSubmitting] = useState(false);
   const registrationButton = useRef<HTMLButtonElement>(null);
-  const serviceNamesByScout =
-    serviceAccounts === undefined ? undefined : groupServiceNamesByScout(serviceAccounts);
+  const servicesByScout =
+    serviceAccounts === undefined ? undefined : groupServicesByScout(serviceAccounts);
 
   const closeRegistration = () => {
     if (registrationSubmitting) {
@@ -95,7 +97,7 @@ function ScoutsIndexPage() {
         />
       ) : null}
 
-      {scouts === undefined || serviceNamesByScout === undefined ? (
+      {scouts === undefined || servicesByScout === undefined ? (
         <p
           className="text-muted-foreground rounded-xl border px-4 py-10 text-center text-sm"
           role="status"
@@ -112,7 +114,7 @@ function ScoutsIndexPage() {
       ) : (
         <ul className="divide-y rounded-xl border" aria-label="Scouts">
           {scouts.map((scout) => {
-            const serviceNames = serviceNamesByScout.get(scout._id) ?? [];
+            const services = servicesByScout.get(scout._id) ?? [];
 
             return (
               <li key={scout._id}>
@@ -140,10 +142,30 @@ function ScoutsIndexPage() {
                       <dt className="text-muted-foreground text-xs">Firecrawl profile</dt>
                       <dd className="mt-1 wrap-break-word">{scout.firecrawl.profileName}</dd>
                     </div>
-                    {serviceNames.length > 0 ? (
+                    {services.length > 0 ? (
                       <div className="min-w-0 sm:col-span-2">
                         <dt className="text-muted-foreground text-xs">Accounts</dt>
-                        <dd className="mt-1 wrap-break-word">{serviceNames.join(", ")}</dd>
+                        <dd className="mt-2 flex flex-wrap gap-2">
+                          {services.map((service) => (
+                            <span
+                              key={service.serviceDomain}
+                              className="bg-background inline-flex min-w-0 items-center gap-2 rounded-lg border px-2 py-1.5"
+                            >
+                              <ServiceIcon
+                                serviceName={service.serviceName}
+                                serviceDomain={service.serviceDomain}
+                              />
+                              <span className="min-w-0 leading-tight">
+                                <span className="block wrap-break-word text-xs font-medium">
+                                  {service.serviceName}
+                                </span>
+                                <span className="text-muted-foreground block wrap-break-word font-mono text-[0.625rem]">
+                                  {service.serviceDomain}
+                                </span>
+                              </span>
+                            </span>
+                          ))}
+                        </dd>
                       </div>
                     ) : null}
                   </dl>
@@ -157,21 +179,26 @@ function ScoutsIndexPage() {
   );
 }
 
-function groupServiceNamesByScout(accounts: readonly ServiceAccount[]) {
-  const serviceNamesByScout = new Map<Scout["_id"], string[]>();
+function groupServicesByScout(accounts: readonly ServiceAccount[]) {
+  const servicesByScout = new Map<Scout["_id"], Map<string, ServiceSummary>>();
 
   for (const account of accounts) {
-    const serviceNames = serviceNamesByScout.get(account.scoutId);
-    if (serviceNames === undefined) {
-      serviceNamesByScout.set(account.scoutId, [account.serviceName]);
-      continue;
+    let services = servicesByScout.get(account.scoutId);
+    if (services === undefined) {
+      services = new Map<string, ServiceSummary>();
+      servicesByScout.set(account.scoutId, services);
     }
-    if (!serviceNames.includes(account.serviceName)) {
-      serviceNames.push(account.serviceName);
+    if (!services.has(account.serviceDomain)) {
+      services.set(account.serviceDomain, {
+        serviceName: account.serviceName,
+        serviceDomain: account.serviceDomain,
+      });
     }
   }
 
-  return serviceNamesByScout;
+  return new Map(
+    Array.from(servicesByScout, ([scoutId, services]) => [scoutId, Array.from(services.values())]),
+  );
 }
 
 function ScoutRegistrationForm({

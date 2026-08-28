@@ -4,6 +4,7 @@ import type { FunctionReturnType } from "convex/server";
 import { ArrowLeftIcon, LoaderCircleIcon, PlusIcon, XIcon } from "lucide-react";
 import { type FormEvent, type ReactNode, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
+import { ServiceIcon } from "#components/service-icon";
 import { Button } from "#components/ui/button";
 import { Input } from "#components/ui/input";
 
@@ -211,11 +212,18 @@ function ServiceAccountsSection({
         <ul className="mt-3 divide-y rounded-xl border" aria-label="Service accounts">
           {accounts.map((account) => (
             <li key={account._id} className="grid gap-4 p-4 text-sm sm:grid-cols-2 sm:p-5">
-              <div className="min-w-0">
-                <p className="wrap-break-word font-medium">{account.serviceName}</p>
-                <p className="text-muted-foreground mt-1 wrap-break-word text-xs">
-                  {account.serviceDomain}
-                </p>
+              <div className="flex min-w-0 items-start gap-3">
+                <ServiceIcon
+                  serviceName={account.serviceName}
+                  serviceDomain={account.serviceDomain}
+                  className="size-8 rounded-lg"
+                />
+                <div className="min-w-0">
+                  <p className="wrap-break-word font-medium">{account.serviceName}</p>
+                  <p className="text-muted-foreground mt-1 wrap-break-word text-xs">
+                    {account.serviceDomain}
+                  </p>
+                </div>
               </div>
               <dl className="grid min-w-0 gap-4 sm:grid-cols-2">
                 <div className="min-w-0">
