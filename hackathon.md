@@ -227,11 +227,18 @@ mission runs, an all-runs view, and top navigation; kept Lab experiments concept
 (`src/routes/scouts.index.tsx`, `src/routes/scouts.$slug.tsx`, `src/routes/runs.tsx`,
 `src/components/scout-run-list.tsx`, `src/routes/__root.tsx`).
 
-### 2026-08-28 - working tree
+### 2026-08-28 - 38c1589
 
-Added admin Scout registration and immutable Lab thread identity bindings. Trusted Convex runtime
+v72 Added admin Scout registration and immutable Lab thread identity bindings. Trusted Convex runtime
 now selects each thread's Firecrawl profile and closes the read-only AgentMail tools over one inbox;
 disabled or missing linked identities fail closed, and generation metadata records the Scout
 (`convex/schema.ts`, `convex/scout/scouts.ts`, `convex/scout/lab.ts`,
 `convex/scout/labGeneration.ts`, `convex/scout/labTools.ts`, `convex/scout/browser.ts`,
 `convex/scout/mail.ts`, `convex/scout/*.test.ts`, `docs/agent-runtime.md`).
+
+### 2026-08-28 - working tree
+
+Added an inline admin Scout registration form and explicit Scout/thread controls in Lab. The UI
+disambiguates identities, keeps old experiments unassigned, blocks overlapping generations, and
+preserves mobile and accessible form behavior (`src/routes/scouts.index.tsx`,
+`src/routes/lab.tsx`).
