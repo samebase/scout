@@ -38,6 +38,10 @@ const scoutFields = {
 
 const scoutRegistrationFields = {
   displayName: scoutFields.displayName,
+  websiteIdentity: {
+    firstName: "Conrad",
+    lastName: "Scout",
+  },
   slug: scoutFields.slug,
   agentMail: scoutFields.agentMail,
   firecrawl: scoutFields.firecrawl,
@@ -72,6 +76,10 @@ describe("Scout registry", () => {
       admin.mutation(scoutsApi["register"], {
         ...scoutRegistrationFields,
         displayName: "  Test Scout  ",
+        websiteIdentity: {
+          firstName: "  Conrad  ",
+          lastName: "  Scout  ",
+        },
         slug: "  CONRAD  ",
         agentMail: {
           inboxId: "  test-inbox-scout  ",
@@ -82,6 +90,10 @@ describe("Scout registry", () => {
     await expect(admin.query(scoutsApi["list"], {})).resolves.toMatchObject([
       {
         displayName: "Test Scout",
+        websiteIdentity: {
+          firstName: "Conrad",
+          lastName: "Scout",
+        },
         slug: "conrad",
         agentMail: {
           inboxId: "test-inbox-scout",
@@ -95,11 +107,33 @@ describe("Scout registry", () => {
     );
   });
 
+  it("requires a complete website identity for public registration", async () => {
+    const backend = testBackend();
+    const adminId = await insertUser(backend, ADMIN_EMAIL);
+    const admin = backend.withIdentity({ subject: `${adminId}|test-session` });
+    const { websiteIdentity: _websiteIdentity, ...legacyRegistrationFields } =
+      scoutRegistrationFields;
+
+    await expect(admin.mutation(scoutsApi["register"], legacyRegistrationFields)).rejects.toThrow(
+      "websiteIdentity",
+    );
+    await expect(
+      admin.mutation(scoutsApi["register"], {
+        ...legacyRegistrationFields,
+        websiteIdentity: { firstName: "Conrad" },
+      }),
+    ).rejects.toThrow("lastName");
+  });
+
   it("canonicalizes scout input and returns an exact safe public projection", async () => {
     const backend = testBackend();
     const first = await backend.mutation(scoutsApi["upsert"], {
       ...scoutFields,
       displayName: "  Test Scout Updated  ",
+      websiteIdentity: {
+        firstName: "  Conrad  ",
+        lastName: "  Scout  ",
+      },
       slug: "  ConRad ",
       agentMail: {
         inboxId: "  test-inbox-scout  ",
@@ -114,6 +148,10 @@ describe("Scout registry", () => {
     const expectedScout = {
       _id: first.scoutId,
       displayName: "Test Scout Updated",
+      websiteIdentity: {
+        firstName: "Conrad",
+        lastName: "Scout",
+      },
       slug: "conrad",
       status: "active" as const,
       agentMail: {
@@ -130,10 +168,66 @@ describe("Scout registry", () => {
     await expect(admin.query(scoutsApi["get"], { slug: "  CONRAD  " })).resolves.toEqual(
       expectedScout,
     );
+    await expect(
+      backend.query(scoutsApi["getRuntimeIdentity"], { scoutId: first.scoutId }),
+    ).resolves.toMatchObject({
+      displayName: "Test Scout Updated",
+      websiteIdentity: {
+        firstName: "Conrad",
+        lastName: "Scout",
+      },
+      agentMail: {
+        address: "test-scout@example.test",
+      },
+    });
     await expect(admin.query(scoutsApi["get"], { slug: "missing" })).resolves.toBeNull();
     await expect(admin.query(scoutsApi["get"], { slug: "not a slug" })).rejects.toThrow(
       "Scout slug",
     );
+  });
+
+  it("keeps website identity optional for legacy storage and internal upserts", async () => {
+    const backend = testBackend();
+    const { scoutId } = await backend.mutation(scoutsApi["upsert"], scoutFields);
+    const adminId = await insertUser(backend, ADMIN_EMAIL);
+    const admin = backend.withIdentity({ subject: `${adminId}|test-session` });
+
+    await expect(admin.query(scoutsApi["get"], { slug: scoutFields.slug })).resolves.toEqual({
+      _id: scoutId,
+      ...scoutFields,
+    });
+    await expect(backend.query(scoutsApi["getRuntimeIdentity"], { scoutId })).resolves.toEqual({
+      displayName: scoutFields.displayName,
+      status: scoutFields.status,
+      agentMail: scoutFields.agentMail,
+      firecrawl: scoutFields.firecrawl,
+    });
+  });
+
+  it("preserves website identity when an upsert omits it", async () => {
+    const backend = testBackend();
+    const created = await backend.mutation(scoutsApi["upsert"], {
+      ...scoutFields,
+      websiteIdentity: {
+        firstName: "Conrad",
+        lastName: "Scout",
+      },
+    });
+
+    await backend.mutation(scoutsApi["upsert"], {
+      ...scoutFields,
+      displayName: "Updated display name",
+    });
+
+    await expect(
+      backend.run(async (ctx) => await ctx.db.get("scouts", created.scoutId)),
+    ).resolves.toMatchObject({
+      displayName: "Updated display name",
+      websiteIdentity: {
+        firstName: "Conrad",
+        lastName: "Scout",
+      },
+    });
   });
 
   it("projects only provider connection fields and returns null for a deleted Scout", async () => {
@@ -193,6 +287,18 @@ describe("Scout registry", () => {
         displayName: "x".repeat(101),
       }),
     ).rejects.toThrow("display name");
+    await expect(
+      backend.mutation(scoutsApi["upsert"], {
+        ...scoutFields,
+        websiteIdentity: { firstName: "  ", lastName: "Scout" },
+      }),
+    ).rejects.toThrow("first name");
+    await expect(
+      backend.mutation(scoutsApi["upsert"], {
+        ...scoutFields,
+        websiteIdentity: { firstName: "Conrad", lastName: "x".repeat(101) },
+      }),
+    ).rejects.toThrow("last name");
   });
 
   it("does not steal runs owned by another Scout", async () => {

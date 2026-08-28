@@ -15,7 +15,8 @@ type Scout = FunctionReturnType<typeof api.scout.scouts.list>[number];
 type ScoutStatus = Scout["status"];
 
 type RegistrationFields = {
-  displayName: string;
+  firstName: string;
+  lastName: string;
   slug: string;
   address: string;
   inboxId: string;
@@ -28,7 +29,8 @@ type RegistrationState =
   | { kind: "failed"; message: string };
 
 const EMPTY_REGISTRATION: RegistrationFields = {
-  displayName: "",
+  firstName: "",
+  lastName: "",
   slug: "",
   address: "",
   inboxId: "",
@@ -163,11 +165,11 @@ function ScoutRegistrationForm({
     }
   };
 
-  const onDisplayNameChange = (displayName: string) => {
+  const onFirstNameChange = (firstName: string) => {
     setFields((current) => ({
       ...current,
-      displayName,
-      ...(slugEdited ? {} : { slug: slugFromDisplayName(displayName) }),
+      firstName,
+      ...(slugEdited ? {} : { slug: slugFromName(firstName) }),
     }));
     if (state.kind === "failed") {
       setState({ kind: "idle" });
@@ -180,14 +182,30 @@ function ScoutRegistrationForm({
       return;
     }
 
+    const firstName = fields.firstName.trim();
+    const lastName = fields.lastName.trim();
+    const displayName = `${firstName} ${lastName}`;
+    if (!firstName || !lastName) {
+      setState({ kind: "failed", message: "Enter both a first and last name." });
+      return;
+    }
+    if (displayName.length > 100) {
+      setState({
+        kind: "failed",
+        message: "First and last name together must be 100 characters or fewer.",
+      });
+      return;
+    }
+
+    const slug = fields.slug.trim().toLowerCase();
+    const address = fields.address.trim().toLowerCase();
     setState({ kind: "submitting" });
     onSubmittingChange(true);
     try {
-      const slug = fields.slug.trim().toLowerCase();
-      const address = fields.address.trim();
       await registerScout({
-        displayName: fields.displayName,
+        displayName,
         slug,
+        websiteIdentity: { firstName, lastName },
         agentMail: {
           address,
           inboxId: fields.inboxId.trim() || address,
@@ -217,21 +235,34 @@ function ScoutRegistrationForm({
       </div>
 
       <form className="mt-5 grid gap-4 sm:grid-cols-2" onSubmit={(event) => void submit(event)}>
-        <FormField label="Display name" htmlFor="scout-display-name">
+        <FormField label="First name" htmlFor="scout-first-name">
           <Input
-            id="scout-display-name"
-            name="displayName"
-            value={fields.displayName}
+            id="scout-first-name"
+            name="firstName"
+            value={fields.firstName}
             autoComplete="off"
             placeholder="Conrad"
             autoFocus
             required
             maxLength={100}
             disabled={submitting}
-            onChange={(event) => onDisplayNameChange(event.currentTarget.value)}
+            onChange={(event) => onFirstNameChange(event.currentTarget.value)}
           />
         </FormField>
-        <FormField label="Slug" htmlFor="scout-slug" hint="Lowercase letters, numbers, hyphens">
+        <FormField label="Last name" htmlFor="scout-last-name">
+          <Input
+            id="scout-last-name"
+            name="lastName"
+            value={fields.lastName}
+            autoComplete="off"
+            placeholder="Scout"
+            required
+            maxLength={100}
+            disabled={submitting}
+            onChange={(event) => updateField("lastName", event.currentTarget.value)}
+          />
+        </FormField>
+        <FormField label="Slug" htmlFor="scout-slug" hint="Suggested from the first name">
           <Input
             id="scout-slug"
             aria-describedby="scout-slug-hint"
@@ -284,7 +315,6 @@ function ScoutRegistrationForm({
           label="Firecrawl profile"
           htmlFor="scout-firecrawl-profile"
           hint="The saved profile name, not a session ID"
-          className="sm:col-span-2"
         >
           <Input
             id="scout-firecrawl-profile"
@@ -323,17 +353,15 @@ function FormField({
   label,
   htmlFor,
   hint,
-  className,
   children,
 }: {
   label: string;
   htmlFor: string;
   hint?: string;
-  className?: string;
   children: ReactNode;
 }) {
   return (
-    <div className={className}>
+    <div>
       <label className="text-sm font-medium" htmlFor={htmlFor}>
         {label}
       </label>
@@ -347,7 +375,7 @@ function FormField({
   );
 }
 
-function slugFromDisplayName(value: string) {
+function slugFromName(value: string) {
   return value
     .normalize("NFKD")
     .replaceAll(/[\u0300-\u036f]/g, "")

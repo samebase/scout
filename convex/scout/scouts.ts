@@ -8,10 +8,12 @@ import {
   type MutationCtx,
 } from "../_generated/server";
 import { requireAppUser } from "../access";
+import { scoutWebsiteIdentityValidator } from "./model";
 
 const MAX_SCOUTS = 50;
 const MAX_RUN_LINKS = 100;
 const MAX_DISPLAY_NAME_LENGTH = 100;
+const MAX_PERSON_NAME_LENGTH = 100;
 const MAX_INBOX_ID_LENGTH = 200;
 const MAX_PROFILE_NAME_LENGTH = 100;
 const MAX_EMAIL_LENGTH = 320;
@@ -19,8 +21,9 @@ const MAX_SLUG_LENGTH = 100;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-const scoutRegistrationFields = {
+const scoutFieldsValidator = v.object({
   displayName: v.string(),
+  websiteIdentity: v.optional(scoutWebsiteIdentityValidator),
   slug: v.string(),
   agentMail: v.object({
     inboxId: v.string(),
@@ -29,18 +32,17 @@ const scoutRegistrationFields = {
   firecrawl: v.object({
     profileName: v.string(),
   }),
-};
-
-const scoutFieldsValidator = v.object({
-  ...scoutRegistrationFields,
   status: v.union(v.literal("active"), v.literal("disabled")),
 });
 
-const scoutRegistrationFieldsValidator = v.object(scoutRegistrationFields);
+const scoutRegistrationFieldsValidator = scoutFieldsValidator
+  .omit("status", "websiteIdentity")
+  .extend({ websiteIdentity: scoutWebsiteIdentityValidator });
 
 const scoutPublicValidator = v.object({
   _id: v.id("scouts"),
   displayName: v.string(),
+  websiteIdentity: v.optional(scoutWebsiteIdentityValidator),
   slug: v.string(),
   status: v.union(v.literal("active"), v.literal("disabled")),
   agentMail: v.object({
@@ -70,6 +72,7 @@ const scoutConnectionValidator = v.object({
 
 const scoutRuntimeIdentityValidator = v.object({
   displayName: v.string(),
+  websiteIdentity: v.optional(scoutWebsiteIdentityValidator),
   status: v.union(v.literal("active"), v.literal("disabled")),
   agentMail: v.object({
     inboxId: v.string(),
@@ -110,8 +113,24 @@ function canonicalSlug(value: string) {
 }
 
 function normalizeScoutFields(args: typeof scoutFieldsValidator.type) {
+  const websiteIdentity = args.websiteIdentity
+    ? {
+        firstName: requiredText(
+          args.websiteIdentity.firstName,
+          "Scout first name",
+          MAX_PERSON_NAME_LENGTH,
+        ),
+        lastName: requiredText(
+          args.websiteIdentity.lastName,
+          "Scout last name",
+          MAX_PERSON_NAME_LENGTH,
+        ),
+      }
+    : undefined;
+
   return {
     displayName: requiredText(args.displayName, "Scout display name", MAX_DISPLAY_NAME_LENGTH),
+    ...(websiteIdentity ? { websiteIdentity } : {}),
     slug: canonicalSlug(args.slug),
     status: args.status,
     agentMail: {
@@ -132,6 +151,7 @@ function projectScout(scout: Doc<"scouts">) {
   return {
     _id: scout._id,
     displayName: scout.displayName,
+    ...(scout.websiteIdentity ? { websiteIdentity: scout.websiteIdentity } : {}),
     slug: scout.slug,
     status: scout.status,
     agentMail: scout.agentMail,
@@ -264,6 +284,7 @@ export const getRuntimeIdentity = internalQuery({
     return scout
       ? {
           displayName: scout.displayName,
+          ...(scout.websiteIdentity ? { websiteIdentity: scout.websiteIdentity } : {}),
           status: scout.status,
           agentMail: scout.agentMail,
           firecrawl: scout.firecrawl,

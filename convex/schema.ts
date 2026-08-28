@@ -5,6 +5,7 @@ import {
   scoutBrowserStateValidator,
   scoutRunEventValidator,
   scoutRunStatusValidator,
+  scoutWebsiteIdentityValidator,
 } from "./scout/model";
 import { scoutModelValidator, scoutTokenUsageValidator } from "./scout/models";
 
@@ -16,6 +17,7 @@ export default defineSchema({
   }).index("by_key", ["key"]),
   scouts: defineTable({
     displayName: v.string(),
+    websiteIdentity: v.optional(scoutWebsiteIdentityValidator),
     slug: v.string(),
     status: v.union(v.literal("active"), v.literal("disabled")),
     agentMail: v.object({

@@ -1,5 +1,10 @@
 import { v } from "convex/values";
 
+export const scoutWebsiteIdentityValidator = v.object({
+  firstName: v.string(),
+  lastName: v.string(),
+});
+
 export const scoutRunStatusValidator = v.union(
   v.object({
     kind: v.literal("pending"),

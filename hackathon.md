@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-28T02:53:28Z
+- **Last updated:** 2026-08-28T12:34:34Z
 
 ## Log
 
@@ -243,10 +243,20 @@ disambiguates identities, keeps old experiments unassigned, blocks overlapping g
 preserves mobile and accessible form behavior (`src/routes/scouts.index.tsx`,
 `src/routes/lab.tsx`).
 
-### 2026-08-28 - working tree
+### 2026-08-28 - 8f81cb5
 
-Prevented concurrent Lab generations from sharing one Scout browser profile. Convex now enforces a
+v74 Prevented concurrent Lab generations from sharing one Scout browser profile. Convex now enforces a
 per-Scout pending lease, atomically claims scheduled actions, expires never-started or terminated
 actions through watchdogs, and lets the admin UI follow that durable state instead of orphaned Agent
 stream status (`convex/schema.ts`, `convex/scout/lab.ts`, `convex/scout/labGeneration.ts`,
 `convex/scoutLab.test.ts`, `src/routes/lab.tsx`, `docs/agent-runtime.md`).
+
+### 2026-08-28 - working tree
+
+Added reusable first- and last-name website identities to Scouts while keeping legacy records and
+internal upserts compatible. New admin registrations require a complete identity, the Convex Agent
+receives explicit identity fields with escaped prompt values, and Scout detail pages expose the
+configuration. Verified the flow on the development deployment: the registered Scout appeared in
+Lab with its provider bindings and matching prior runs (`convex/schema.ts`, `convex/scout/model.ts`,
+`convex/scout/scouts.ts`, `convex/scout/labGeneration.ts`, `convex/scout/*.test.ts`,
+`src/routes/scouts.index.tsx`, `src/routes/scouts.$slug.tsx`).

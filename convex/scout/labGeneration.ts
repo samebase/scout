@@ -4,6 +4,7 @@ import { createMCPClient, type MCPClient } from "@ai-sdk/mcp";
 import { isStepCount, type LanguageModelUsage } from "ai";
 import { v } from "convex/values";
 import { internal } from "../_generated/api";
+import type { Doc } from "../_generated/dataModel";
 import { env, internalAction } from "../_generated/server";
 import { SCOUT_AGENT_INSTRUCTIONS, scoutAgent } from "./agent";
 import { requireOwnedAgentThread } from "./labAccess";
@@ -15,6 +16,16 @@ const MAX_GENERATION_STEPS = 24;
 
 type LabBrowser = ReturnType<typeof createLabBrowserHarness>;
 type LabBrowserUsage = Awaited<ReturnType<LabBrowser["close"]>>;
+
+export function scoutWebsiteIdentityInstructions(
+  scout: Pick<Doc<"scouts">, "displayName" | "websiteIdentity" | "agentMail">,
+) {
+  if (!scout.websiteIdentity) {
+    return `This Lab thread is bound to the Scout with display name ${JSON.stringify(scout.displayName)} and email address ${JSON.stringify(scout.agentMail.address)}. Use only that identity for website accounts and email evidence in this thread.`;
+  }
+
+  return `This Lab thread is bound to a Scout with first name ${JSON.stringify(scout.websiteIdentity.firstName)}, last name ${JSON.stringify(scout.websiteIdentity.lastName)}, display name ${JSON.stringify(scout.displayName)}, and email address ${JSON.stringify(scout.agentMail.address)}. Use only that identity for website accounts and email evidence in this thread.`;
+}
 
 function requireSecret(value: string | undefined, name: string) {
   if (!value) {
@@ -99,7 +110,7 @@ export const generateResponse = internalAction({
           model: scoutLanguageModel(args.model),
           ...(scout
             ? {
-                instructions: `${SCOUT_AGENT_INSTRUCTIONS}\n\nThis Lab thread is bound to the Scout named ${JSON.stringify(scout.displayName)} with the email address ${JSON.stringify(scout.agentMail.address)}. Use only that identity for website accounts and email evidence in this thread.`,
+                instructions: `${SCOUT_AGENT_INSTRUCTIONS}\n\n${scoutWebsiteIdentityInstructions(scout)}`,
               }
             : {}),
           tools,

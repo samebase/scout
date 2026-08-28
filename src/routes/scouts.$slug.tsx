@@ -79,6 +79,18 @@ function ScoutDetailPage() {
         </h2>
         <dl className="mt-3 grid gap-4 rounded-xl border p-4 text-sm sm:grid-cols-2 sm:p-5">
           <div className="min-w-0">
+            <dt className="text-muted-foreground text-xs">First name</dt>
+            <dd className="mt-1 wrap-break-word">
+              {scout.websiteIdentity?.firstName ?? "Not configured"}
+            </dd>
+          </div>
+          <div className="min-w-0">
+            <dt className="text-muted-foreground text-xs">Last name</dt>
+            <dd className="mt-1 wrap-break-word">
+              {scout.websiteIdentity?.lastName ?? "Not configured"}
+            </dd>
+          </div>
+          <div className="min-w-0">
             <dt className="text-muted-foreground text-xs">AgentMail inbox</dt>
             <dd className="mt-1 wrap-break-word font-mono text-xs">{scout.agentMail.inboxId}</dd>
           </div>
