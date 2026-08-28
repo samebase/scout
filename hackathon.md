@@ -236,9 +236,17 @@ disabled or missing linked identities fail closed, and generation metadata recor
 `convex/scout/labGeneration.ts`, `convex/scout/labTools.ts`, `convex/scout/browser.ts`,
 `convex/scout/mail.ts`, `convex/scout/*.test.ts`, `docs/agent-runtime.md`).
 
-### 2026-08-28 - working tree
+### 2026-08-28 - 2fed78e
 
-Added an inline admin Scout registration form and explicit Scout/thread controls in Lab. The UI
+v73 Added an inline admin Scout registration form and explicit Scout/thread controls in Lab. The UI
 disambiguates identities, keeps old experiments unassigned, blocks overlapping generations, and
 preserves mobile and accessible form behavior (`src/routes/scouts.index.tsx`,
 `src/routes/lab.tsx`).
+
+### 2026-08-28 - working tree
+
+Prevented concurrent Lab generations from sharing one Scout browser profile. Convex now enforces a
+per-Scout pending lease, atomically claims scheduled actions, expires never-started or terminated
+actions through watchdogs, and lets the admin UI follow that durable state instead of orphaned Agent
+stream status (`convex/schema.ts`, `convex/scout/lab.ts`, `convex/scout/labGeneration.ts`,
+`convex/scoutLab.test.ts`, `src/routes/lab.tsx`, `docs/agent-runtime.md`).

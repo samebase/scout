@@ -48,7 +48,8 @@ Lab thread to one registered Scout, and that binding cannot change after the thr
 trusted runtime selects the Scout's Firecrawl profile and closes the read-only AgentMail tools over
 that Scout's inbox; neither provider identity is a model-selectable argument. Older experiments
 remain visible as unassigned history, but the admin UI will not continue them under a newly selected
-identity.
+identity. A leased generation record permits one active Lab turn per Scout, and scheduled watchdogs
+release the identity if its Node action never starts or reaches Convex's execution limit.
 
 ## Harness evidence
 

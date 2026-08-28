@@ -24,6 +24,9 @@ import {
 const MAX_PROMPT_LENGTH = 16_000;
 const MAX_RECENT_THREADS = 50;
 const MAX_THREAD_TITLE_LENGTH = 80;
+const GENERATION_START_TIMEOUT_MS = 5 * 60 * 1_000;
+const GENERATION_RUN_TIMEOUT_MS = 11 * 60 * 1_000;
+const EXPIRED_GENERATION_FAILURE = "Generation stopped before completion";
 
 const recentThreadValidator = v.object({
   threadId: v.string(),
@@ -95,6 +98,10 @@ function titleFromPrompt(prompt: string) {
     return normalized;
   }
   return `${characters.slice(0, MAX_THREAD_TITLE_LENGTH - 1).join("")}…`;
+}
+
+function generationLeaseExpiresAt(generation: { startedAt: number; leaseExpiresAt?: number }) {
+  return generation.leaseExpiresAt ?? generation.startedAt + GENERATION_RUN_TIMEOUT_MS;
 }
 
 async function requireActiveScout(ctx: MutationCtx, scoutId: Id<"scouts">) {
@@ -228,6 +235,25 @@ export const getThreadScoutId = internalQuery({
   },
 });
 
+export const getScoutActivity = query({
+  args: {
+    scoutId: v.id("scouts"),
+  },
+  returns: v.object({ active: v.boolean() }),
+  handler: async (ctx, args) => {
+    await requireAppUser(ctx);
+    const generation = await ctx.db
+      .query("scoutLabGenerations")
+      .withIndex("by_scout_id_and_status", (q) =>
+        q.eq("scoutId", args.scoutId).eq("status", "pending"),
+      )
+      .first();
+    return {
+      active: generation !== null && generationLeaseExpiresAt(generation) > Date.now(),
+    };
+  },
+});
+
 export const sendMessage = mutation({
   args: {
     threadId: v.string(),
@@ -246,6 +272,24 @@ export const sendMessage = mutation({
     });
     const prompt = promptText(args.prompt);
     const model = args.model ?? DEFAULT_SCOUT_MODEL;
+    if (scoutId) {
+      const pendingGeneration = await ctx.db
+        .query("scoutLabGenerations")
+        .withIndex("by_scout_id_and_status", (q) =>
+          q.eq("scoutId", scoutId).eq("status", "pending"),
+        )
+        .first();
+      if (pendingGeneration) {
+        if (generationLeaseExpiresAt(pendingGeneration) > Date.now()) {
+          throw new Error("Scout is already working");
+        }
+        await ctx.db.patch(pendingGeneration._id, {
+          status: "failed",
+          failedAt: Date.now(),
+          failure: EXPIRED_GENERATION_FAILURE,
+        });
+      }
+    }
     if (!thread.title) {
       await scoutAgent.updateThreadMetadata(ctx, {
         threadId: args.threadId,
@@ -258,11 +302,14 @@ export const sendMessage = mutation({
       prompt,
       skipEmbeddings: true,
     });
-    await ctx.db.insert("scoutLabGenerations", {
+    const leaseExpiresAt = Date.now() + GENERATION_START_TIMEOUT_MS;
+    const generationId = await ctx.db.insert("scoutLabGenerations", {
       threadId: args.threadId,
       order: message.order,
       promptMessageId: messageId,
       ...(scoutId ? { scoutId } : {}),
+      status: "pending",
+      leaseExpiresAt,
       model,
       startedAt: Date.now(),
     });
@@ -271,6 +318,63 @@ export const sendMessage = mutation({
       userId,
       promptMessageId: messageId,
       model,
+    });
+    await ctx.scheduler.runAt(leaseExpiresAt, internal.scout.lab.expireGeneration, {
+      generationId,
+    });
+    return null;
+  },
+});
+
+export const startGeneration = internalMutation({
+  args: {
+    promptMessageId: v.string(),
+  },
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    const generation = await ctx.db
+      .query("scoutLabGenerations")
+      .withIndex("by_prompt_message_id", (q) => q.eq("promptMessageId", args.promptMessageId))
+      .unique();
+    if (!generation || generation.status !== "pending") {
+      return false;
+    }
+    if (generationLeaseExpiresAt(generation) <= Date.now()) {
+      await ctx.db.patch(generation._id, {
+        status: "failed",
+        failedAt: Date.now(),
+        failure: EXPIRED_GENERATION_FAILURE,
+      });
+      return false;
+    }
+
+    const leaseExpiresAt = Date.now() + GENERATION_RUN_TIMEOUT_MS;
+    await ctx.db.patch(generation._id, { leaseExpiresAt });
+    await ctx.scheduler.runAt(leaseExpiresAt, internal.scout.lab.expireGeneration, {
+      generationId: generation._id,
+    });
+    return true;
+  },
+});
+
+export const expireGeneration = internalMutation({
+  args: {
+    generationId: v.id("scoutLabGenerations"),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const generation = await ctx.db.get(args.generationId);
+    if (
+      !generation ||
+      generation.status !== "pending" ||
+      generationLeaseExpiresAt(generation) > Date.now()
+    ) {
+      return null;
+    }
+    await ctx.db.patch(generation._id, {
+      status: "failed",
+      failedAt: Date.now(),
+      failure: EXPIRED_GENERATION_FAILURE,
     });
     return null;
   },
@@ -292,7 +396,11 @@ export const completeGeneration = internalMutation({
     if (!generation) {
       throw new Error("Lab generation not found");
     }
+    if (generation.status === "completed" || generation.status === "failed") {
+      return null;
+    }
     await ctx.db.patch(generation._id, {
+      status: "completed",
       completedAt: Date.now(),
       usage: args.usage,
       ...(args.firecrawlCredits === undefined ? {} : { firecrawlCredits: args.firecrawlCredits }),
@@ -320,7 +428,11 @@ export const failGeneration = internalMutation({
     if (!generation) {
       throw new Error("Lab generation not found");
     }
+    if (generation.status === "completed" || generation.status === "failed") {
+      return null;
+    }
     await ctx.db.patch(generation._id, {
+      status: "failed",
       failedAt: Date.now(),
       failure: args.failure,
       ...(args.firecrawlCredits === undefined ? {} : { firecrawlCredits: args.firecrawlCredits }),

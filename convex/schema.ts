@@ -60,6 +60,8 @@ export default defineSchema({
     order: v.number(),
     promptMessageId: v.string(),
     scoutId: v.optional(v.id("scouts")),
+    status: v.optional(v.union(v.literal("pending"), v.literal("completed"), v.literal("failed"))),
+    leaseExpiresAt: v.optional(v.number()),
     model: scoutModelValidator,
     startedAt: v.number(),
     completedAt: v.optional(v.number()),
@@ -70,5 +72,6 @@ export default defineSchema({
     firecrawlDurationMs: v.optional(v.number()),
   })
     .index("by_prompt_message_id", ["promptMessageId"])
-    .index("by_thread_id_and_order", ["threadId", "order"]),
+    .index("by_thread_id_and_order", ["threadId", "order"])
+    .index("by_scout_id_and_status", ["scoutId", "status"]),
 });

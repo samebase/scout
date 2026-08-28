@@ -141,6 +141,10 @@ function AgentLab() {
     ? availableScouts.find((scout) => scout._id === selectedScoutId)
     : undefined;
   const selectedActiveScout = selectedScout?.status === "active" ? selectedScout : undefined;
+  const scoutActivity = useQuery(
+    api.scout.lab.getScoutActivity,
+    selectedScoutId ? { scoutId: selectedScoutId } : "skip",
+  );
   const unassignedThreads = threads?.filter((thread) => !thread.scoutId) ?? [];
   const visibleThreads = selectedScoutId
     ? (threads?.filter((thread) => thread.scoutId === selectedScoutId) ?? [])
@@ -150,8 +154,8 @@ function AgentLab() {
     stream: true,
   });
   const isBusy = composerState.kind === "creating" || composerState.kind === "sending";
-  const isStreaming = messages.results.some((message) => message.status === "streaming");
-  const isWorking = isBusy || isStreaming;
+  const isActivityLoading = selectedScoutId !== undefined && scoutActivity === undefined;
+  const isWorking = isBusy || isActivityLoading || scoutActivity?.active === true;
   const isSelectionLocked = isWorking;
   const isLoading = threads === undefined || scouts === undefined;
 
@@ -347,7 +351,7 @@ function AgentLab() {
           <MessageScrollerProvider autoScroll scrollPreviousItemPeek={48}>
             <MessageScroller>
               <MessageScrollerViewport>
-                <MessageScrollerContent className="px-4 py-6 sm:px-6" aria-busy={isStreaming}>
+                <MessageScrollerContent className="px-4 py-6 sm:px-6" aria-busy={isWorking}>
                   {messages.status === "CanLoadMore" ? (
                     <MessageScrollerItem>
                       <Button
@@ -499,7 +503,7 @@ function LabMessage({ message }: { message: LabMessage }) {
             <MarkerContent>Generation failed: {metadata.failure}</MarkerContent>
           </Marker>
         ) : null}
-        {message.status === "streaming" ? (
+        {!metadata?.failure && (message.status === "pending" || message.status === "streaming") ? (
           <MessageFooter>
             <LoaderCircleIcon className="mr-1 size-3 animate-spin" />
             Scout is working

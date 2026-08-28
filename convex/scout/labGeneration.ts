@@ -46,12 +46,18 @@ export const generateResponse = internalAction({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    await requireOwnedAgentThread(ctx, args.threadId, args.userId);
+    const started = await ctx.runMutation(internal.scout.lab.startGeneration, {
+      promptMessageId: args.promptMessageId,
+    });
+    if (!started) {
+      return null;
+    }
 
     let agentMailClient: MCPClient | undefined;
     let browser: LabBrowser | undefined;
 
     try {
+      await requireOwnedAgentThread(ctx, args.threadId, args.userId);
       const scoutId = await ctx.runQuery(internal.scout.lab.getThreadScoutId, {
         threadId: args.threadId,
         userId: args.userId,

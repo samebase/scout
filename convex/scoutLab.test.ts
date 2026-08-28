@@ -167,14 +167,37 @@ describe("Scout agent lab", () => {
       scoutId: scoutIds.first,
     });
     await expect(
-      backend.run(
-        async (ctx) =>
-          await ctx.db
-            .query("scoutLabGenerations")
-            .withIndex("by_thread_id_and_order", (q) => q.eq("threadId", created.threadId))
-            .unique(),
-      ),
-    ).resolves.toMatchObject({ scoutId: scoutIds.first });
+      admin.query(api.scout.lab.getScoutActivity, { scoutId: scoutIds.first }),
+    ).resolves.toEqual({ active: true });
+    const secondThread = await admin.mutation(api.scout.lab.createThread, {
+      scoutId: scoutIds.first,
+    });
+    await expect(
+      admin.mutation(api.scout.lab.sendMessage, {
+        threadId: secondThread.threadId,
+        prompt: "Start another browser session.",
+        scoutId: scoutIds.first,
+      }),
+    ).rejects.toThrow("Scout is already working");
+    const generation = await backend.run(
+      async (ctx) =>
+        await ctx.db
+          .query("scoutLabGenerations")
+          .withIndex("by_thread_id_and_order", (q) => q.eq("threadId", created.threadId))
+          .unique(),
+    );
+    expect(generation).toMatchObject({ scoutId: scoutIds.first, status: "pending" });
+    if (!generation) {
+      throw new Error("Expected a lab generation record");
+    }
+    await expect(
+      backend.mutation(internal.scout.lab.startGeneration, {
+        promptMessageId: generation.promptMessageId,
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      backend.run(async (ctx) => await ctx.db.get("scoutLabGenerations", generation._id)),
+    ).resolves.toMatchObject({ status: "pending" });
 
     await expect(
       admin.mutation(api.scout.lab.sendMessage, {
@@ -184,6 +207,14 @@ describe("Scout agent lab", () => {
       }),
     ).rejects.toThrow("cannot switch Scouts");
 
+    await backend.mutation(internal.scout.lab.completeGeneration, {
+      promptMessageId: generation.promptMessageId,
+      usage: {},
+    });
+    await expect(
+      admin.query(api.scout.lab.getScoutActivity, { scoutId: scoutIds.first }),
+    ).resolves.toEqual({ active: false });
+
     await backend.run(async (ctx) => await ctx.db.patch(scoutIds.first, { status: "disabled" }));
     await expect(
       admin.mutation(api.scout.lab.sendMessage, {
@@ -192,6 +223,63 @@ describe("Scout agent lab", () => {
         scoutId: scoutIds.first,
       }),
     ).rejects.toThrow("Active Scout not found");
+  });
+
+  it("releases a Scout when a scheduled generation never starts", async () => {
+    const backend = testBackend();
+    const userId = await insertUser(backend, ADMIN_EMAIL);
+    const admin = backend.withIdentity({ subject: `${userId}|test-session` });
+    const scoutId = await backend.run(
+      async (ctx) =>
+        await ctx.db.insert("scouts", {
+          displayName: "Conrad",
+          slug: "conrad",
+          status: "active",
+          agentMail: { inboxId: "conrad@agentmail.to", address: "conrad@agentmail.to" },
+          firecrawl: { profileName: "conrad" },
+        }),
+    );
+    const created = await admin.mutation(api.scout.lab.createThread, { scoutId });
+    await admin.mutation(api.scout.lab.sendMessage, {
+      threadId: created.threadId,
+      prompt: "Inspect the account page.",
+      scoutId,
+    });
+    const generation = await backend.run(
+      async (ctx) =>
+        await ctx.db
+          .query("scoutLabGenerations")
+          .withIndex("by_thread_id_and_order", (q) => q.eq("threadId", created.threadId))
+          .unique(),
+    );
+    if (!generation) {
+      throw new Error("Expected a lab generation record");
+    }
+
+    await backend.run(
+      async (ctx) => await ctx.db.patch(generation._id, { leaseExpiresAt: Date.now() - 1 }),
+    );
+    await backend.mutation(internal.scout.lab.expireGeneration, {
+      generationId: generation._id,
+    });
+
+    await expect(
+      backend.run(async (ctx) => await ctx.db.get("scoutLabGenerations", generation._id)),
+    ).resolves.toMatchObject({
+      status: "failed",
+      failure: "Generation stopped before completion",
+    });
+    await expect(admin.query(api.scout.lab.getScoutActivity, { scoutId })).resolves.toEqual({
+      active: false,
+    });
+    const nextThread = await admin.mutation(api.scout.lab.createThread, { scoutId });
+    await expect(
+      admin.mutation(api.scout.lab.sendMessage, {
+        threadId: nextThread.threadId,
+        prompt: "Retry after recovery.",
+        scoutId,
+      }),
+    ).resolves.toBeNull();
   });
 
   it("records a sanitized terminal failure for the generation sidecar", async () => {
