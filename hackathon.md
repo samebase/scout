@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-28T14:10:12Z
+- **Last updated:** 2026-08-28T14:37:19Z
 
 ## Log
 
@@ -271,8 +271,17 @@ preserving authentication and the configured Scout (`convex/schema.ts`, `convex/
 `convex/scout/labGeneration.ts`, `convex/scout/scouts.ts`, `src/routes/lab.tsx`,
 `docs/agent-runtime.md`).
 
-### 2026-08-28 - working tree
+### 2026-08-28 - af5df4c - v78
 
 Added a repository-level override for the generic Hackathon skill. New committed log entries append
 the build version after the short SHA while preserving the skill's date-and-SHA prefix. Historical
 committed entries remain unchanged (`AGENTS.md`).
+
+### 2026-08-28 - working tree
+
+Added a separate admin-only inventory for real third-party service accounts. Accounts retain their
+Scout, service identity, and timestamped authentication evidence without storing credentials or
+pretending that an earlier login still works. Provider bindings and Lab threads remain separate,
+and focused tests cover authorization, normalization, duplicates, filtering, and evidence changes
+(`convex/schema.ts`, `convex/scout/model.ts`, `convex/scout/serviceAccounts.ts`,
+`convex/scout/serviceAccounts.test.ts`, `docs/agent-runtime.md`).
