@@ -10,7 +10,10 @@ import {
 
 const MAX_TOOL_TEXT_LENGTH = 20_000;
 const MAX_TOOL_OUTPUT_LENGTH = 20_000;
+const MAX_CSS_SELECTOR_LENGTH = 1_000;
 const MAX_BROWSER_CLOSE_ATTEMPTS = 2;
+const SNAPSHOT_FAILED_AFTER_MUTATION = "__SCOUT_SNAPSHOT_FAILED_AFTER_MUTATION__";
+const SNAPSHOT_FAILED_AFTER_MUTATION_EXIT_CODE = 86;
 
 const agentMailToolNames = ["list_messages", "search_messages", "get_thread"] as const;
 
@@ -40,13 +43,13 @@ const defaultBrowserDependencies: BrowserDependencies = {
     await new Promise<void>((resolve) => setTimeout(resolve, milliseconds)),
 };
 
-function boundedText(value: string, label: string) {
+function boundedText(value: string, label: string, maxLength = MAX_TOOL_TEXT_LENGTH) {
   const text = value.trim();
   if (!text) {
     throw new Error(`${label} cannot be empty`);
   }
-  if (text.length > MAX_TOOL_TEXT_LENGTH) {
-    throw new Error(`${label} must be ${MAX_TOOL_TEXT_LENGTH} characters or fewer`);
+  if (text.length > maxLength) {
+    throw new Error(`${label} must be ${maxLength} characters or fewer`);
   }
   return text;
 }
@@ -94,6 +97,28 @@ function browserOutput(interaction: BrowserInteraction) {
     exitCode: interaction.exitCode,
     killed: interaction.killed,
     replayAvailable: interaction.replayAvailable,
+  };
+}
+
+function browserMutationOutput(interaction: BrowserInteraction) {
+  const base = browserOutput(interaction);
+  if (
+    interaction.exitCode !== SNAPSHOT_FAILED_AFTER_MUTATION_EXIT_CODE ||
+    !interaction.stderr.includes(SNAPSHOT_FAILED_AFTER_MUTATION)
+  ) {
+    return base;
+  }
+  return {
+    ...base,
+    success: false,
+    output:
+      "Mutation applied, but the compact post-action snapshot failed. Inspect the current page before continuing and do not retry the mutation.",
+    stderr: redactProviderUrls(
+      interaction.stderr.replaceAll(SNAPSHOT_FAILED_AFTER_MUTATION, "").trim(),
+    ).slice(0, MAX_TOOL_OUTPUT_LENGTH),
+    error: "PostActionSnapshotFailed",
+    mutationApplied: true,
+    doNotRetry: true,
   };
 }
 
@@ -228,6 +253,20 @@ export function createLabBrowserHarness(
     });
   }
 
+  function executeMutation(parts: readonly string[]) {
+    const mutation = parts.map(shellQuote).join(" ");
+    const snapshot = ["agent-browser", "snapshot", "-i", "-c"].map(shellQuote).join(" ");
+    const sentinel = ["printf", "%s\\n", SNAPSHOT_FAILED_AFTER_MUTATION].map(shellQuote).join(" ");
+    const code = `${mutation} && { ${snapshot} || { ${sentinel} >&2; exit ${SNAPSHOT_FAILED_AFTER_MUTATION_EXIT_CODE}; }; }`;
+    return serialized(async () => {
+      if (!sessionId) {
+        throw new Error("Open a browser session before using it");
+      }
+      const interaction = await dependencies.executeCode(sessionId, code, 60, "bash", "mutate");
+      return browserMutationOutput(interaction);
+    });
+  }
+
   function open(url: string) {
     pendingOpenCount += 1;
     const opening = serialized(async () => {
@@ -316,22 +355,32 @@ export function createLabBrowserHarness(
   const actions = {
     snapshot: async () => await execute(["agent-browser", "snapshot", "-i"], "read"),
     navigate: async (url: string) =>
-      await execute(["agent-browser", "open", httpsUrl(url)], "mutate"),
+      await executeMutation(["agent-browser", "open", httpsUrl(url)]),
     click: async (ref: string) =>
-      await execute(["agent-browser", "click", elementRef(ref)], "mutate"),
+      await executeMutation(["agent-browser", "click", elementRef(ref)]),
     fill: async (ref: string, text: string) =>
-      await execute(["agent-browser", "fill", elementRef(ref), text], "mutate"),
+      await executeMutation(["agent-browser", "fill", elementRef(ref), text]),
     type: async (ref: string, text: string) =>
-      await execute(["agent-browser", "type", elementRef(ref), text], "mutate"),
+      await executeMutation(["agent-browser", "type", elementRef(ref), text]),
     press: async (key: string) =>
-      await execute(["agent-browser", "press", boundedText(key, "Key")], "mutate"),
+      await executeMutation(["agent-browser", "press", boundedText(key, "Key")]),
     select: async (ref: string, value: string) =>
-      await execute(["agent-browser", "select", elementRef(ref), value], "mutate"),
+      await executeMutation(["agent-browser", "select", elementRef(ref), value]),
     check: async (ref: string) =>
-      await execute(["agent-browser", "check", elementRef(ref)], "mutate"),
+      await executeMutation(["agent-browser", "check", elementRef(ref)]),
     getPage: async (kind: "url" | "title") => await execute(["agent-browser", "get", kind], "read"),
     getElement: async (kind: "text" | "value", ref: string) =>
       await execute(["agent-browser", "get", kind, elementRef(ref)], "read"),
+    getCount: async (selector: string) =>
+      await execute(
+        [
+          "agent-browser",
+          "get",
+          "count",
+          boundedText(selector, "CSS selector", MAX_CSS_SELECTOR_LENGTH),
+        ],
+        "read",
+      ),
     waitForText: async (text: string) =>
       await execute(["agent-browser", "wait", "--text", text], "read"),
     waitForLoad: async (state: "domcontentloaded" | "networkidle") =>
@@ -348,8 +397,8 @@ export function createLabBrowserHarness(
           replayAvailable: false,
         };
       }),
-    back: async () => await execute(["agent-browser", "back"], "mutate"),
-    reload: async () => await execute(["agent-browser", "reload"], "mutate"),
+    back: async () => await executeMutation(["agent-browser", "back"]),
+    reload: async () => await executeMutation(["agent-browser", "reload"]),
   };
 
   const tools = {
@@ -363,7 +412,7 @@ export function createLabBrowserHarness(
     }),
     browser_snapshot: tool({
       description:
-        "Inspect the current page and return interactive elements with stable refs such as @e1.",
+        "Explicitly recover the current page state when prior output failed, was missing, or still showed loading. Successful atomic mutations already return a compact interactive snapshot.",
       inputSchema: z.object({}),
       execute: actions.snapshot,
     }),
@@ -412,12 +461,23 @@ export function createLabBrowserHarness(
       execute: async ({ ref }) => await actions.check(ref),
     }),
     browser_get: tool({
-      description: "Read the current URL/title or the text/value of one element ref.",
+      description:
+        "Read the current URL/title or the text/value of one element ref. Use kind count narrowly to count elements matching one precise CSS selector when accessibility output omits repeated visual semantics.",
       inputSchema: z.discriminatedUnion("kind", [
         z.object({ kind: z.literal("url") }),
         z.object({ kind: z.literal("title") }),
         z.object({ kind: z.literal("text"), ref: z.string() }),
         z.object({ kind: z.literal("value"), ref: z.string() }),
+        z.object({
+          kind: z.literal("count"),
+          selector: z
+            .string()
+            .min(1)
+            .max(MAX_CSS_SELECTOR_LENGTH)
+            .describe(
+              "Precise CSS selector for repeated visual semantics absent from accessibility output",
+            ),
+        }),
       ]),
       execute: async (input) => {
         switch (input.kind) {
@@ -427,6 +487,8 @@ export function createLabBrowserHarness(
           case "text":
           case "value":
             return await actions.getElement(input.kind, input.ref);
+          case "count":
+            return await actions.getCount(input.selector);
         }
       },
     }),

@@ -44,6 +44,27 @@ Service-account inventory stores no passwords, tokens, cookies, or browser sessi
 systems own credentials and browser state. A missing account is not an inventory record. Future
 mission preflight will compare mission requirements with the accounts that exist.
 
+## 2026-08-28 browser-agent experiment
+
+A monolithic 24-step Qwen Tally creation run reached the editor but failed. A monolithic Luna run
+created and published the requested two-question form, but did not submit a response or verify the
+result. A staged Qwen run submitted the response and confirmed the dashboard count. It used 226,318
+input tokens, 3,650 output tokens, 142.1 seconds, and 5 Firecrawl credits, but did not verify the
+visual rating.
+
+The first read-only Qwen verifier confirmed the count and marker, but not the rating. It used 303,096
+input tokens, 10,255 output tokens, 152.6 seconds, and 5 credits. A raw HTML fallback then failed and
+was rejected because it exposed broad hidden-data and resource risks. A safe CSS count verifier
+independently confirmed one response, the exact marker, and 3 filled stars. It used 82,096 input
+tokens, 4,215 output tokens, 89.2 seconds, and 3 credits. Cleanup left zero active Firecrawl sessions.
+
+Default to bounded Qwen stages. Carry profile-backed provider state between fresh sessions with an
+explicit artifact URL and checkpoint. Use stronger-model recovery only after evidence of no
+progress, and keep verification separate. Retain compact post-mutation snapshots and failed-run
+usage, use the safe CSS count fallback when needed, and confirm session cleanup. Do not add mission
+or stage tables, durable session handles, or mirrored provider records yet; keep experiment evidence
+in the existing Lab threads.
+
 ## Experimental cleanup
 
 The current model replaces the earlier standalone Runs system. The cleanup removes:

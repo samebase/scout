@@ -4,6 +4,9 @@ import { z } from "zod";
 import { createLabBrowserHarness, selectAgentMailTools } from "./labTools";
 import type { BrowserInteraction } from "./lib/firecrawl";
 
+const atomicSnapshotSuffix =
+  " && { 'agent-browser' 'snapshot' '-i' '-c' || { 'printf' '%s\\n' '__SCOUT_SNAPSHOT_FAILED_AFTER_MUTATION__' >&2; exit 86; }; }";
+
 function interaction(overrides: Partial<BrowserInteraction> = {}): BrowserInteraction {
   return {
     success: true,
@@ -74,11 +77,182 @@ describe("Lab browser harness", () => {
 
     expect(deps.executeCode).toHaveBeenLastCalledWith(
       "session-1",
-      `'agent-browser' 'fill' '@e1' 'hello & env; $(whoami) '"'"'quoted'"'"''`,
+      `'agent-browser' 'fill' '@e1' 'hello & env; $(whoami) '"'"'quoted'"'"''${atomicSnapshotSuffix}`,
       60,
       "bash",
       "mutate",
     );
+  });
+
+  test("shell-quotes count selectors and dispatches them as a read", async () => {
+    const deps = dependencies();
+    const browser = createLabBrowserHarness({}, deps);
+    await browser.open("https://example.com");
+
+    await browser.actions.getCount(`div[data-note="$(whoami); 'quoted'"]`);
+
+    expect(deps.executeCode).toHaveBeenLastCalledWith(
+      "session-1",
+      `'agent-browser' 'get' 'count' 'div[data-note="$(whoami); '"'"'quoted'"'"'"]'`,
+      60,
+      "bash",
+      "read",
+    );
+  });
+
+  test("dispatches browser_get count through the narrow read action", async () => {
+    const deps = dependencies();
+    const browser = createLabBrowserHarness({}, deps);
+    await browser.open("https://example.com");
+    deps.executeCode.mockResolvedValueOnce(interaction({ stdout: "3" }));
+
+    const result = await browser.tools.browser_get.execute(
+      { kind: "count", selector: ".summary-card > svg" },
+      { toolCallId: "tool-1", messages: [], context: undefined },
+    );
+
+    expect(result).toMatchObject({ output: "3" });
+    expect(deps.executeCode).toHaveBeenLastCalledWith(
+      "session-1",
+      "'agent-browser' 'get' 'count' '.summary-card > svg'",
+      60,
+      "bash",
+      "read",
+    );
+  });
+
+  test("bounds count selectors before contacting the provider", async () => {
+    const deps = dependencies();
+    const browser = createLabBrowserHarness({}, deps);
+    await browser.open("https://example.com");
+
+    await expect(browser.actions.getCount("x".repeat(1_001))).rejects.toThrow(
+      "CSS selector must be 1000 characters or fewer",
+    );
+    expect(deps.executeCode).toHaveBeenCalledTimes(1);
+  });
+
+  test.each([
+    "navigate",
+    "click",
+    "fill",
+    "type",
+    "press",
+    "select",
+    "check",
+    "back",
+    "reload",
+  ] as const)("returns a compact post-action snapshot after atomic %s", async (kind) => {
+    const deps = dependencies();
+    const browser = createLabBrowserHarness({}, deps);
+    await browser.open("https://example.com");
+    deps.executeCode.mockClear();
+    const compactSnapshot = '- button "Continue" [ref=e2]';
+    deps.executeCode.mockResolvedValueOnce(interaction({ stdout: compactSnapshot }));
+
+    let command: string;
+    let output: string;
+    switch (kind) {
+      case "navigate":
+        output = (await browser.actions.navigate("https://example.com/next")).output;
+        command = "'agent-browser' 'open' 'https://example.com/next'";
+        break;
+      case "click":
+        output = (await browser.actions.click("@e1")).output;
+        command = "'agent-browser' 'click' '@e1'";
+        break;
+      case "fill":
+        output = (await browser.actions.fill("@e1", "Ada")).output;
+        command = "'agent-browser' 'fill' '@e1' 'Ada'";
+        break;
+      case "type":
+        output = (await browser.actions.type("@e1", "Ada")).output;
+        command = "'agent-browser' 'type' '@e1' 'Ada'";
+        break;
+      case "press":
+        output = (await browser.actions.press("Enter")).output;
+        command = "'agent-browser' 'press' 'Enter'";
+        break;
+      case "select":
+        output = (await browser.actions.select("@e1", "one")).output;
+        command = "'agent-browser' 'select' '@e1' 'one'";
+        break;
+      case "check":
+        output = (await browser.actions.check("@e1")).output;
+        command = "'agent-browser' 'check' '@e1'";
+        break;
+      case "back":
+        output = (await browser.actions.back()).output;
+        command = "'agent-browser' 'back'";
+        break;
+      case "reload":
+        output = (await browser.actions.reload()).output;
+        command = "'agent-browser' 'reload'";
+        break;
+    }
+
+    expect(output).toBe(compactSnapshot);
+    expect(deps.executeCode).toHaveBeenCalledOnce();
+    expect(deps.executeCode).toHaveBeenCalledWith(
+      "session-1",
+      `${command}${atomicSnapshotSuffix}`,
+      60,
+      "bash",
+      "mutate",
+    );
+  });
+
+  test("marks a successful mutation with a failed post-action snapshot as non-retryable", async () => {
+    const deps = dependencies();
+    const browser = createLabBrowserHarness({}, deps);
+    await browser.open("https://example.com");
+    deps.executeCode.mockResolvedValueOnce(
+      interaction({
+        success: false,
+        stdout: "",
+        stderr: "snapshot error\n__SCOUT_SNAPSHOT_FAILED_AFTER_MUTATION__\n",
+        exitCode: 86,
+        error: "command failed",
+      }),
+    );
+
+    const result = await browser.actions.click("@e1");
+
+    expect(result).toMatchObject({
+      success: false,
+      error: "PostActionSnapshotFailed",
+      stderr: "snapshot error",
+      mutationApplied: true,
+      doNotRetry: true,
+    });
+    expect(deps.executeCode).toHaveBeenLastCalledWith(
+      "session-1",
+      "'agent-browser' 'click' '@e1' && { 'agent-browser' 'snapshot' '-i' '-c' || { 'printf' '%s\\n' '__SCOUT_SNAPSHOT_FAILED_AFTER_MUTATION__' >&2; exit 86; }; }",
+      60,
+      "bash",
+      "mutate",
+    );
+  });
+
+  test("does not claim a failed atomic mutation was applied", async () => {
+    const deps = dependencies();
+    const browser = createLabBrowserHarness({}, deps);
+    await browser.open("https://example.com");
+    deps.executeCode.mockResolvedValueOnce(
+      interaction({
+        success: false,
+        stdout: "",
+        stderr: "mutation failed\n__SCOUT_SNAPSHOT_FAILED_AFTER_MUTATION__",
+        exitCode: 1,
+        error: "command failed",
+      }),
+    );
+
+    const result = await browser.actions.click("@e1");
+
+    expect(result).toMatchObject({ success: false, error: "command failed" });
+    expect(result).not.toHaveProperty("mutationApplied");
+    expect(result).not.toHaveProperty("doNotRetry");
   });
 
   test("waits for fixed durations locally without executing provider code", async () => {
