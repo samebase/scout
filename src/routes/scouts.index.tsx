@@ -4,6 +4,7 @@ import type { FunctionReturnType } from "convex/server";
 import { LoaderCircleIcon, PlusIcon, XIcon } from "lucide-react";
 import { type FormEvent, type ReactNode, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
+import { ServiceIcon } from "#components/service-icon";
 import { Button } from "#components/ui/button";
 import { Input } from "#components/ui/input";
 
@@ -12,6 +13,8 @@ export const Route = createFileRoute("/scouts/")({
 });
 
 type Scout = FunctionReturnType<typeof api.scout.scouts.list>[number];
+type ServiceAccount = FunctionReturnType<typeof api.scout.serviceAccounts.list>[number];
+type ServiceSummary = Pick<ServiceAccount, "serviceName" | "serviceDomain">;
 type ScoutStatus = Scout["status"];
 
 type RegistrationFields = {
@@ -39,9 +42,12 @@ const EMPTY_REGISTRATION: RegistrationFields = {
 
 function ScoutsIndexPage() {
   const scouts = useQuery(api.scout.scouts.list);
+  const serviceAccounts = useQuery(api.scout.serviceAccounts.list, {});
   const [registrationOpen, setRegistrationOpen] = useState(false);
   const [registrationSubmitting, setRegistrationSubmitting] = useState(false);
   const registrationButton = useRef<HTMLButtonElement>(null);
+  const servicesByScout =
+    serviceAccounts === undefined ? undefined : groupServicesByScout(serviceAccounts);
 
   const closeRegistration = () => {
     if (registrationSubmitting) {
@@ -65,7 +71,9 @@ function ScoutsIndexPage() {
         </div>
         <div className="flex items-center gap-3">
           <p className="text-muted-foreground text-sm" aria-live="polite">
-            {scouts === undefined ? "Loading scouts..." : `Showing ${scouts.length}`}
+            {scouts === undefined || serviceAccounts === undefined
+              ? "Loading scouts..."
+              : `Showing ${scouts.length}`}
           </p>
           <Button
             ref={registrationButton}
@@ -89,7 +97,7 @@ function ScoutsIndexPage() {
         />
       ) : null}
 
-      {scouts === undefined ? (
+      {scouts === undefined || servicesByScout === undefined ? (
         <p
           className="text-muted-foreground rounded-xl border px-4 py-10 text-center text-sm"
           role="status"
@@ -105,39 +113,91 @@ function ScoutsIndexPage() {
         </div>
       ) : (
         <ul className="divide-y rounded-xl border" aria-label="Scouts">
-          {scouts.map((scout) => (
-            <li key={scout._id}>
-              <Link
-                to="/scouts/$slug"
-                params={{ slug: scout.slug }}
-                className="group block rounded-xl p-4 outline-none transition-colors hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/50 sm:p-5"
-              >
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
-                  <div className="min-w-0">
-                    <h2 className="wrap-break-word text-base font-medium group-hover:underline group-hover:underline-offset-4">
-                      {scout.displayName}
-                    </h2>
-                    <p className="text-muted-foreground mt-1 font-mono text-xs">/{scout.slug}</p>
-                  </div>
-                  <ScoutStatus status={scout.status} />
-                </div>
+          {scouts.map((scout) => {
+            const services = servicesByScout.get(scout._id) ?? [];
 
-                <dl className="mt-5 grid gap-4 text-sm sm:grid-cols-2">
-                  <div className="min-w-0">
-                    <dt className="text-muted-foreground text-xs">AgentMail address</dt>
-                    <dd className="mt-1 wrap-break-word">{scout.agentMail.address}</dd>
+            return (
+              <li key={scout._id}>
+                <Link
+                  to="/scouts/$slug"
+                  params={{ slug: scout.slug }}
+                  className="group block rounded-xl p-4 outline-none transition-colors hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/50 sm:p-5"
+                >
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
+                    <div className="min-w-0">
+                      <h2 className="wrap-break-word text-base font-medium group-hover:underline group-hover:underline-offset-4">
+                        {scout.displayName}
+                      </h2>
+                      <p className="text-muted-foreground mt-1 font-mono text-xs">/{scout.slug}</p>
+                    </div>
+                    <ScoutStatus status={scout.status} />
                   </div>
-                  <div className="min-w-0">
-                    <dt className="text-muted-foreground text-xs">Firecrawl profile</dt>
-                    <dd className="mt-1 wrap-break-word">{scout.firecrawl.profileName}</dd>
-                  </div>
-                </dl>
-              </Link>
-            </li>
-          ))}
+
+                  <dl className="mt-5 grid gap-4 text-sm sm:grid-cols-2">
+                    <div className="min-w-0">
+                      <dt className="text-muted-foreground text-xs">AgentMail address</dt>
+                      <dd className="mt-1 wrap-break-word">{scout.agentMail.address}</dd>
+                    </div>
+                    <div className="min-w-0">
+                      <dt className="text-muted-foreground text-xs">Firecrawl profile</dt>
+                      <dd className="mt-1 wrap-break-word">{scout.firecrawl.profileName}</dd>
+                    </div>
+                    {services.length > 0 ? (
+                      <div className="min-w-0 sm:col-span-2">
+                        <dt className="text-muted-foreground text-xs">Accounts</dt>
+                        <dd className="mt-2 flex flex-wrap gap-2">
+                          {services.map((service) => (
+                            <span
+                              key={service.serviceDomain}
+                              className="bg-background inline-flex min-w-0 items-center gap-2 rounded-lg border px-2 py-1.5"
+                            >
+                              <ServiceIcon
+                                serviceName={service.serviceName}
+                                serviceDomain={service.serviceDomain}
+                              />
+                              <span className="min-w-0 leading-tight">
+                                <span className="block wrap-break-word text-xs font-medium">
+                                  {service.serviceName}
+                                </span>
+                                <span className="text-muted-foreground block wrap-break-word font-mono text-[0.625rem]">
+                                  {service.serviceDomain}
+                                </span>
+                              </span>
+                            </span>
+                          ))}
+                        </dd>
+                      </div>
+                    ) : null}
+                  </dl>
+                </Link>
+              </li>
+            );
+          })}
         </ul>
       )}
     </>
+  );
+}
+
+function groupServicesByScout(accounts: readonly ServiceAccount[]) {
+  const servicesByScout = new Map<Scout["_id"], Map<string, ServiceSummary>>();
+
+  for (const account of accounts) {
+    let services = servicesByScout.get(account.scoutId);
+    if (services === undefined) {
+      services = new Map<string, ServiceSummary>();
+      servicesByScout.set(account.scoutId, services);
+    }
+    if (!services.has(account.serviceDomain)) {
+      services.set(account.serviceDomain, {
+        serviceName: account.serviceName,
+        serviceDomain: account.serviceDomain,
+      });
+    }
+  }
+
+  return new Map(
+    Array.from(servicesByScout, ([scoutId, services]) => [scoutId, Array.from(services.values())]),
   );
 }
 

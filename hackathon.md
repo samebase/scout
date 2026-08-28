@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-28T14:10:12Z
+- **Last updated:** 2026-08-28T15:30:04Z
 
 ## Log
 
@@ -271,8 +271,41 @@ preserving authentication and the configured Scout (`convex/schema.ts`, `convex/
 `convex/scout/labGeneration.ts`, `convex/scout/scouts.ts`, `src/routes/lab.tsx`,
 `docs/agent-runtime.md`).
 
-### 2026-08-28 - working tree
+### 2026-08-28 - af5df4c - v78
 
 Added a repository-level override for the generic Hackathon skill. New committed log entries append
 the build version after the short SHA while preserving the skill's date-and-SHA prefix. Historical
 committed entries remain unchanged (`AGENTS.md`).
+
+### 2026-08-28 - 8777e15 - v80
+
+Added a separate admin-only inventory for real third-party service accounts. Accounts retain their
+Scout, service identity, and timestamped authentication evidence without storing credentials or
+pretending that an earlier login still works. Provider bindings and Lab threads remain separate,
+and focused tests cover authorization, normalization, duplicates, filtering, and evidence changes
+(`convex/schema.ts`, `convex/scout/model.ts`, `convex/scout/serviceAccounts.ts`,
+`convex/scout/serviceAccounts.test.ts`, `docs/agent-runtime.md`).
+
+### 2026-08-28 - 85c692c - v81
+
+Added the admin account-inventory experience. Scout cards summarize only services with real
+accounts; Scout profiles separate runtime provider connections from service accounts and provide
+an inline registration form. Account rows show the domain, identifier, and honest timestamped
+authentication evidence without inventing missing-service placeholders
+(`src/routes/scouts.index.tsx`, `src/routes/scouts.$slug.tsx`).
+
+### 2026-08-28 - 62ac7c8 - v82
+
+Hardened the inventory after adversarial review: malformed hostnames are rejected, opaque account
+identifiers retain their exact case, write limits match every bounded list, and Scout cards wait for
+both data sources before rendering. Removed the manual authentication-result mutation so future
+evidence must come from a traceable browser journey (`convex/scout/serviceAccounts.ts`,
+`convex/scout/serviceAccounts.test.ts`, `src/routes/scouts.index.tsx`,
+`docs/agent-runtime.md`).
+
+### 2026-08-28 - working tree
+
+Made service accounts visually recognizable without manual branding data. Scout lists and profiles
+load each service's own HTTPS favicon, deduplicate services by domain, and fall back to a local
+initial tile when a site has no root icon (`src/components/service-icon.tsx`,
+`src/routes/scouts.index.tsx`, `src/routes/scouts.$slug.tsx`).

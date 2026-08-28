@@ -29,6 +29,7 @@ import type * as scout_lib_redaction from "../scout/lib/redaction.js";
 import type * as scout_model from "../scout/model.js";
 import type * as scout_models from "../scout/models.js";
 import type * as scout_scouts from "../scout/scouts.js";
+import type * as scout_serviceAccounts from "../scout/serviceAccounts.js";
 
 import type {
   ApiFromModules,
@@ -58,6 +59,7 @@ declare const fullApi: ApiFromModules<{
   "scout/model": typeof scout_model;
   "scout/models": typeof scout_models;
   "scout/scouts": typeof scout_scouts;
+  "scout/serviceAccounts": typeof scout_serviceAccounts;
 }>;
 
 /**

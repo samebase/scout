@@ -1,7 +1,7 @@
 import { authTables } from "@convex-dev/auth/server";
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
-import { scoutWebsiteIdentityValidator } from "./scout/model";
+import { scoutServiceAccountFieldsValidator, scoutWebsiteIdentityValidator } from "./scout/model";
 import { scoutModelValidator, scoutTokenUsageValidator } from "./scout/models";
 
 export default defineSchema({
@@ -27,6 +27,13 @@ export default defineSchema({
     .index("by_agent_mail_address", ["agentMail.address"])
     .index("by_agent_mail_inbox_id", ["agentMail.inboxId"])
     .index("by_firecrawl_profile_name", ["firecrawl.profileName"]),
+  scoutServiceAccounts: defineTable(scoutServiceAccountFieldsValidator.fields)
+    .index("by_scout_id", ["scoutId"])
+    .index("by_scout_id_and_service_domain_and_identifier", [
+      "scoutId",
+      "serviceDomain",
+      "identifier",
+    ]),
   scoutLabThreads: defineTable({
     threadId: v.string(),
     userId: v.id("users"),

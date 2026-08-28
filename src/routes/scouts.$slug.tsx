@@ -1,15 +1,44 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "convex/react";
-import { ArrowLeftIcon } from "lucide-react";
+import { useMutation, useQuery } from "convex/react";
+import type { FunctionReturnType } from "convex/server";
+import { ArrowLeftIcon, LoaderCircleIcon, PlusIcon, XIcon } from "lucide-react";
+import { type FormEvent, type ReactNode, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
+import { ServiceIcon } from "#components/service-icon";
+import { Button } from "#components/ui/button";
+import { Input } from "#components/ui/input";
 
 export const Route = createFileRoute("/scouts/$slug")({
   component: ScoutDetailPage,
 });
 
+type Scout = NonNullable<FunctionReturnType<typeof api.scout.scouts.get>>;
+type ServiceAccount = FunctionReturnType<typeof api.scout.serviceAccounts.list>[number];
+type AuthenticationEvidence = ServiceAccount["authenticationEvidence"];
+
+type AccountFields = {
+  serviceName: string;
+  serviceDomain: string;
+  identifier: string;
+};
+
+type RegistrationState =
+  | { kind: "idle" }
+  | { kind: "submitting" }
+  | { kind: "failed"; message: string };
+
+const evidenceDate = new Intl.DateTimeFormat(undefined, {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
+
 function ScoutDetailPage() {
   const { slug } = Route.useParams();
   const scout = useQuery(api.scout.scouts.get, { slug });
+  const serviceAccounts = useQuery(
+    api.scout.serviceAccounts.list,
+    scout === undefined || scout === null ? "skip" : { scoutId: scout._id },
+  );
 
   if (scout === undefined) {
     return (
@@ -71,9 +100,9 @@ function ScoutDetailPage() {
         </div>
       </header>
 
-      <section aria-labelledby="scout-configuration-heading">
-        <h2 id="scout-configuration-heading" className="text-lg font-medium">
-          Configuration
+      <section aria-labelledby="scout-identity-heading">
+        <h2 id="scout-identity-heading" className="text-lg font-medium">
+          Website identity
         </h2>
         <dl className="mt-3 grid gap-4 rounded-xl border p-4 text-sm sm:grid-cols-2 sm:p-5">
           <div className="min-w-0">
@@ -88,6 +117,14 @@ function ScoutDetailPage() {
               {scout.websiteIdentity?.lastName ?? "Not configured"}
             </dd>
           </div>
+        </dl>
+      </section>
+
+      <section aria-labelledby="scout-provider-connections-heading">
+        <h2 id="scout-provider-connections-heading" className="text-lg font-medium">
+          Provider connections
+        </h2>
+        <dl className="mt-3 grid gap-4 rounded-xl border p-4 text-sm sm:grid-cols-2 sm:p-5">
           <div className="min-w-0">
             <dt className="text-muted-foreground text-xs">AgentMail inbox</dt>
             <dd className="mt-1 wrap-break-word font-mono text-xs">{scout.agentMail.inboxId}</dd>
@@ -102,6 +139,310 @@ function ScoutDetailPage() {
           </div>
         </dl>
       </section>
+
+      <ServiceAccountsSection scout={scout} accounts={serviceAccounts} />
     </>
   );
+}
+
+function ServiceAccountsSection({
+  scout,
+  accounts,
+}: {
+  scout: Scout;
+  accounts: ServiceAccount[] | undefined;
+}) {
+  const [registrationOpen, setRegistrationOpen] = useState(false);
+  const [registrationSubmitting, setRegistrationSubmitting] = useState(false);
+  const registrationButton = useRef<HTMLButtonElement>(null);
+
+  const closeRegistration = () => {
+    if (registrationSubmitting) {
+      return;
+    }
+    setRegistrationOpen(false);
+    requestAnimationFrame(() => registrationButton.current?.focus());
+  };
+
+  const finishRegistration = () => {
+    setRegistrationSubmitting(false);
+    setRegistrationOpen(false);
+    requestAnimationFrame(() => registrationButton.current?.focus());
+  };
+
+  return (
+    <section aria-labelledby="scout-service-accounts-heading">
+      <div className="flex items-center justify-between gap-4">
+        <h2 id="scout-service-accounts-heading" className="text-lg font-medium">
+          Service accounts
+        </h2>
+        <Button
+          ref={registrationButton}
+          type="button"
+          size="sm"
+          variant={registrationOpen ? "outline" : "default"}
+          aria-expanded={registrationOpen}
+          aria-controls="register-service-account-panel"
+          disabled={registrationSubmitting}
+          onClick={() => setRegistrationOpen((open) => !open)}
+        >
+          {registrationOpen ? <XIcon /> : <PlusIcon />}
+          {registrationOpen ? "Close" : "Add account"}
+        </Button>
+      </div>
+
+      {registrationOpen ? (
+        <AccountRegistrationForm
+          scout={scout}
+          onRegistered={finishRegistration}
+          onCancel={closeRegistration}
+          onSubmittingChange={setRegistrationSubmitting}
+        />
+      ) : null}
+
+      {accounts === undefined ? (
+        <p className="text-muted-foreground mt-3 rounded-xl border px-4 py-8 text-sm" role="status">
+          Loading service accounts...
+        </p>
+      ) : accounts.length === 0 ? (
+        <p className="text-muted-foreground mt-3 rounded-xl border px-4 py-8 text-sm">
+          No service accounts registered.
+        </p>
+      ) : (
+        <ul className="mt-3 divide-y rounded-xl border" aria-label="Service accounts">
+          {accounts.map((account) => (
+            <li key={account._id} className="grid gap-4 p-4 text-sm sm:grid-cols-2 sm:p-5">
+              <div className="flex min-w-0 items-start gap-3">
+                <ServiceIcon
+                  serviceName={account.serviceName}
+                  serviceDomain={account.serviceDomain}
+                  className="size-8 rounded-lg"
+                />
+                <div className="min-w-0">
+                  <p className="wrap-break-word font-medium">{account.serviceName}</p>
+                  <p className="text-muted-foreground mt-1 wrap-break-word text-xs">
+                    {account.serviceDomain}
+                  </p>
+                </div>
+              </div>
+              <dl className="grid min-w-0 gap-4 sm:grid-cols-2">
+                <div className="min-w-0">
+                  <dt className="text-muted-foreground text-xs">Identifier</dt>
+                  <dd className="mt-1 wrap-break-word">{account.identifier}</dd>
+                </div>
+                <div className="min-w-0">
+                  <dt className="text-muted-foreground text-xs">Authentication</dt>
+                  <dd className="mt-1">
+                    <AuthenticationEvidence evidence={account.authenticationEvidence} />
+                  </dd>
+                </div>
+              </dl>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function AccountRegistrationForm({
+  scout,
+  onRegistered,
+  onCancel,
+  onSubmittingChange,
+}: {
+  scout: Scout;
+  onRegistered: () => void;
+  onCancel: () => void;
+  onSubmittingChange: (submitting: boolean) => void;
+}) {
+  const registerAccount = useMutation(api.scout.serviceAccounts.register);
+  const [fields, setFields] = useState<AccountFields>({
+    serviceName: "",
+    serviceDomain: "",
+    identifier: scout.agentMail.address,
+  });
+  const [state, setState] = useState<RegistrationState>({ kind: "idle" });
+  const submitting = state.kind === "submitting";
+
+  const updateField = <Key extends keyof AccountFields>(key: Key, value: AccountFields[Key]) => {
+    setFields((current) => ({ ...current, [key]: value }));
+    if (state.kind === "failed") {
+      setState({ kind: "idle" });
+    }
+  };
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (submitting) {
+      return;
+    }
+
+    const serviceName = fields.serviceName.trim();
+    const serviceDomain = fields.serviceDomain.trim().toLowerCase();
+    const identifier = fields.identifier.trim();
+    if (!serviceName || !serviceDomain || !identifier) {
+      setState({ kind: "failed", message: "Enter a service, domain, and account identifier." });
+      return;
+    }
+    if (
+      serviceDomain.includes("://") ||
+      serviceDomain.includes("/") ||
+      serviceDomain.includes(":") ||
+      serviceDomain.includes("@")
+    ) {
+      setState({
+        kind: "failed",
+        message: "Enter only the service domain, such as tally.so.",
+      });
+      return;
+    }
+
+    setState({ kind: "submitting" });
+    onSubmittingChange(true);
+    try {
+      await registerAccount({
+        scoutId: scout._id,
+        serviceName,
+        serviceDomain,
+        identifier,
+      });
+      setFields({
+        serviceName: "",
+        serviceDomain: "",
+        identifier: scout.agentMail.address,
+      });
+      setState({ kind: "idle" });
+      onRegistered();
+    } catch (error) {
+      onSubmittingChange(false);
+      setState({ kind: "failed", message: accountRegistrationError(error) });
+    }
+  };
+
+  return (
+    <div id="register-service-account-panel" className="bg-card mt-3 rounded-xl border p-4 sm:p-5">
+      <form className="grid gap-4 sm:grid-cols-3" onSubmit={(event) => void submit(event)}>
+        <FormField label="Service name" htmlFor="service-account-name">
+          <Input
+            id="service-account-name"
+            name="serviceName"
+            value={fields.serviceName}
+            autoComplete="off"
+            placeholder="Tally"
+            autoFocus
+            required
+            maxLength={100}
+            disabled={submitting}
+            onChange={(event) => updateField("serviceName", event.currentTarget.value)}
+          />
+        </FormField>
+        <FormField label="Domain" htmlFor="service-account-domain">
+          <Input
+            id="service-account-domain"
+            name="serviceDomain"
+            value={fields.serviceDomain}
+            autoComplete="off"
+            inputMode="url"
+            placeholder="tally.so"
+            required
+            maxLength={253}
+            disabled={submitting}
+            onChange={(event) => updateField("serviceDomain", event.currentTarget.value)}
+          />
+        </FormField>
+        <FormField label="Account identifier" htmlFor="service-account-identifier">
+          <Input
+            id="service-account-identifier"
+            name="identifier"
+            value={fields.identifier}
+            autoComplete="off"
+            placeholder="Email address or username"
+            required
+            maxLength={320}
+            disabled={submitting}
+            onChange={(event) => updateField("identifier", event.currentTarget.value)}
+          />
+        </FormField>
+
+        <div className="flex items-center justify-end gap-2 sm:col-span-3">
+          <Button type="button" variant="ghost" disabled={submitting} onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={submitting}>
+            {submitting ? <LoaderCircleIcon className="animate-spin" /> : <PlusIcon />}
+            {submitting ? "Adding" : "Add account"}
+          </Button>
+        </div>
+        {state.kind === "failed" ? (
+          <p className="text-destructive text-sm sm:col-span-3" role="alert">
+            {state.message}
+          </p>
+        ) : null}
+      </form>
+    </div>
+  );
+}
+
+function AuthenticationEvidence({ evidence }: { evidence: AuthenticationEvidence }) {
+  switch (evidence.kind) {
+    case "none":
+      return <span className="text-muted-foreground">Not checked</span>;
+    case "succeeded":
+      return (
+        <span>
+          Succeeded <EvidenceTime timestamp={evidence.checkedAt} />
+        </span>
+      );
+    case "failed":
+      return (
+        <span>
+          Failed <EvidenceTime timestamp={evidence.checkedAt} />
+          {evidence.lastSucceededAt === undefined ? null : (
+            <span className="text-muted-foreground block text-xs">
+              Last succeeded <EvidenceTime timestamp={evidence.lastSucceededAt} />
+            </span>
+          )}
+        </span>
+      );
+    default: {
+      const exhaustive: never = evidence;
+      return exhaustive;
+    }
+  }
+}
+
+function EvidenceTime({ timestamp }: { timestamp: number }) {
+  const date = new Date(timestamp);
+  return <time dateTime={date.toISOString()}>{evidenceDate.format(date)}</time>;
+}
+
+function FormField({
+  label,
+  htmlFor,
+  children,
+}: {
+  label: string;
+  htmlFor: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="min-w-0">
+      <label className="text-sm font-medium" htmlFor={htmlFor}>
+        {label}
+      </label>
+      <div className="mt-1.5">{children}</div>
+    </div>
+  );
+}
+
+function accountRegistrationError(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  if (message.includes("Service account is already registered")) {
+    return "That account is already registered for this scout.";
+  }
+  if (message.includes("service domain") || message.includes("Service domain")) {
+    return "Enter a valid service domain, such as tally.so.";
+  }
+  return "Could not add the account. Check the values and try again.";
 }
