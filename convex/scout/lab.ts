@@ -13,6 +13,7 @@ import {
   type QueryCtx,
 } from "../_generated/server";
 import { requireAppUser } from "../access";
+import schema from "../schema";
 import { scoutAgent } from "./agent";
 import { requireOwnedAgentThread } from "./labAccess";
 import {
@@ -23,17 +24,27 @@ import {
 } from "./models";
 
 const MAX_PROMPT_LENGTH = 16_000;
-const MAX_RECENT_THREADS = 50;
+const MAX_EXPERIMENTS_PER_USER = 100;
+const MAX_EXPERIMENT_NAME_LENGTH = 120;
+const MAX_TARGET_PRODUCT_LENGTH = 120;
+const MAX_TARGET_DOMAIN_LENGTH = 253;
+const MAX_OBJECTIVE_LENGTH = 2_000;
+const MAX_ASSIGNED_THREADS = 50;
 const MAX_THREAD_TITLE_LENGTH = 80;
 const GENERATION_START_TIMEOUT_MS = 5 * 60 * 1_000;
 const GENERATION_RUN_TIMEOUT_MS = 11 * 60 * 1_000;
 const EXPIRED_GENERATION_FAILURE = "Generation stopped before completion";
+const DNS_LABEL_PATTERN = /^(?!-)[a-z0-9-]+(?<!-)$/;
+
+const experimentStatusValidator = v.union(v.literal("active"), v.literal("completed"));
+const labExperimentValidator = schema.doc("scoutLabExperiments").omit("userId");
 
 const recentThreadValidator = v.object({
   threadId: v.string(),
   creationTime: v.number(),
   title: v.union(v.string(), v.null()),
   scoutId: v.id("scouts"),
+  experimentId: v.union(v.id("scoutLabExperiments"), v.null()),
 });
 
 const labMessageMetadataValidator = v.object({
@@ -99,16 +110,68 @@ function titleFromPrompt(prompt: string) {
   return `${characters.slice(0, MAX_THREAD_TITLE_LENGTH - 1).join("")}…`;
 }
 
+function requiredText(value: string, label: string, maximumLength: number) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new Error(`${label} cannot be empty`);
+  }
+  if (trimmed.length > maximumLength) {
+    throw new Error(`${label} must be ${maximumLength} characters or fewer`);
+  }
+  return trimmed;
+}
+
+function canonicalTargetDomain(value: string) {
+  const input = requiredText(value, "Target domain", MAX_TARGET_DOMAIN_LENGTH + 8);
+  let parsed: URL;
+  try {
+    parsed = new URL(input.includes("://") ? input : `https://${input}`);
+  } catch {
+    throw new Error("Target domain must be a valid hostname or URL");
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("Target domain must use HTTP or HTTPS");
+  }
+  const hostname = parsed.hostname.toLowerCase().replace(/\.$/, "");
+  const labels = hostname.split(".");
+  const hasValidDnsLabels = labels.every(
+    (label) => label.length > 0 && label.length <= 63 && DNS_LABEL_PATTERN.test(label),
+  );
+  if (!hostname || hostname.length > MAX_TARGET_DOMAIN_LENGTH || !hasValidDnsLabels) {
+    throw new Error("Target domain must be a valid hostname or URL");
+  }
+  return hostname;
+}
+
 function generationLeaseExpiresAt(generation: { leaseExpiresAt: number }) {
   return generation.leaseExpiresAt;
 }
 
 async function requireActiveScout(ctx: MutationCtx, scoutId: Id<"scouts">) {
-  const scout = await ctx.db.get(scoutId);
-  if (!scout || scout.status !== "active") {
+  const scout = await requireScout(ctx, scoutId);
+  if (scout.status !== "active") {
     throw new Error("Active Scout not found");
   }
   return scout;
+}
+
+async function requireScout(ctx: MutationCtx, scoutId: Id<"scouts">) {
+  const scout = await ctx.db.get(scoutId);
+  if (!scout) {
+    throw new Error("Scout not found");
+  }
+  return scout;
+}
+
+async function requireOwnedExperiment(
+  ctx: Pick<QueryCtx, "db">,
+  args: { experimentId: Id<"scoutLabExperiments">; userId: Id<"users"> },
+) {
+  const experiment = await ctx.db.get(args.experimentId);
+  if (!experiment || experiment.userId !== args.userId) {
+    throw new Error("Experiment not found");
+  }
+  return experiment;
 }
 
 async function requireThreadBinding(
@@ -126,49 +189,173 @@ async function requireThreadBinding(
 }
 
 export const listThreads = query({
-  args: {},
-  returns: v.array(recentThreadValidator),
-  handler: async (ctx) => {
+  args: { paginationOpts: paginationOptsValidator },
+  returns: paginationResultValidator(recentThreadValidator),
+  handler: async (ctx, args) => {
     const userId = await requireAppUser(ctx);
     const threads = await ctx.runQuery(components.agent.threads.listThreadsByUserId, {
       userId,
       order: "desc",
-      paginationOpts: { cursor: null, numItems: MAX_RECENT_THREADS },
+      paginationOpts: args.paginationOpts,
     });
-    const recentThreads = threads.page.slice(0, MAX_RECENT_THREADS);
     const bindings = await Promise.all(
-      recentThreads.map(
+      threads.page.map(
         async (thread) => await requireThreadBinding(ctx, { threadId: thread._id, userId }),
       ),
     );
-    return recentThreads.map((thread, index) => {
-      const binding = bindings[index];
-      if (!binding) {
-        throw new Error("Thread is missing its Scout binding");
-      }
-      return {
-        threadId: thread._id,
-        creationTime: thread._creationTime,
-        title: thread.title ?? null,
-        scoutId: binding.scoutId,
-      };
+    return {
+      ...threads,
+      page: threads.page.map((thread, index) => {
+        const binding = bindings[index];
+        if (!binding) {
+          throw new Error("Thread is missing its Scout binding");
+        }
+        return {
+          threadId: thread._id,
+          creationTime: thread._creationTime,
+          title: thread.title ?? null,
+          scoutId: binding.scoutId,
+          experimentId: binding.experimentId ?? null,
+        };
+      }),
+    };
+  },
+});
+
+export const listExperiments = query({
+  args: {},
+  returns: v.array(labExperimentValidator),
+  handler: async (ctx) => {
+    const userId = await requireAppUser(ctx);
+    const experiments = await ctx.db
+      .query("scoutLabExperiments")
+      .withIndex("by_user_id", (q) => q.eq("userId", userId))
+      .order("desc")
+      .take(MAX_EXPERIMENTS_PER_USER);
+    return experiments.map(({ userId: _userId, ...experiment }) => experiment);
+  },
+});
+
+export const createExperiment = mutation({
+  args: {
+    name: v.string(),
+    scoutId: v.id("scouts"),
+    targetProduct: v.string(),
+    targetDomain: v.string(),
+    objective: v.string(),
+  },
+  returns: v.object({ experimentId: v.id("scoutLabExperiments") }),
+  handler: async (ctx, args) => {
+    const userId = await requireAppUser(ctx);
+    await requireScout(ctx, args.scoutId);
+    const experiments = await ctx.db
+      .query("scoutLabExperiments")
+      .withIndex("by_user_id", (q) => q.eq("userId", userId))
+      .take(MAX_EXPERIMENTS_PER_USER);
+    if (experiments.length >= MAX_EXPERIMENTS_PER_USER) {
+      throw new Error(`The Lab can contain at most ${MAX_EXPERIMENTS_PER_USER} experiments`);
+    }
+    return {
+      experimentId: await ctx.db.insert("scoutLabExperiments", {
+        userId,
+        scoutId: args.scoutId,
+        name: requiredText(args.name, "Experiment name", MAX_EXPERIMENT_NAME_LENGTH),
+        targetProduct: requiredText(
+          args.targetProduct,
+          "Target product",
+          MAX_TARGET_PRODUCT_LENGTH,
+        ),
+        targetDomain: canonicalTargetDomain(args.targetDomain),
+        objective: requiredText(args.objective, "Objective", MAX_OBJECTIVE_LENGTH),
+        status: "active",
+      }),
+    };
+  },
+});
+
+export const setExperimentStatus = mutation({
+  args: {
+    experimentId: v.id("scoutLabExperiments"),
+    status: experimentStatusValidator,
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const userId = await requireAppUser(ctx);
+    const experiment = await requireOwnedExperiment(ctx, {
+      experimentId: args.experimentId,
+      userId,
     });
+    if (args.status === "active") {
+      await requireActiveScout(ctx, experiment.scoutId);
+    }
+    await ctx.db.patch(experiment._id, { status: args.status });
+    return null;
+  },
+});
+
+export const assignThreads = mutation({
+  args: {
+    experimentId: v.id("scoutLabExperiments"),
+    threadIds: v.array(v.string()),
+  },
+  returns: v.object({ assigned: v.number() }),
+  handler: async (ctx, args) => {
+    const userId = await requireAppUser(ctx);
+    const experiment = await requireOwnedExperiment(ctx, {
+      experimentId: args.experimentId,
+      userId,
+    });
+    const threadIds = [...new Set(args.threadIds)];
+    if (threadIds.length === 0) {
+      throw new Error("Select at least one thread");
+    }
+    if (threadIds.length > MAX_ASSIGNED_THREADS) {
+      throw new Error(`Assign at most ${MAX_ASSIGNED_THREADS} threads at a time`);
+    }
+
+    const bindings = await Promise.all(
+      threadIds.map(async (threadId) => await requireThreadBinding(ctx, { threadId, userId })),
+    );
+    for (const binding of bindings) {
+      if (binding.scoutId !== experiment.scoutId) {
+        throw new Error("Thread and experiment must use the same Scout");
+      }
+      if (binding.experimentId && binding.experimentId !== experiment._id) {
+        throw new Error("Thread already belongs to another experiment");
+      }
+    }
+
+    const unassigned = bindings.filter((binding) => binding.experimentId === undefined);
+    await Promise.all(
+      unassigned.map(
+        async (binding) => await ctx.db.patch(binding._id, { experimentId: experiment._id }),
+      ),
+    );
+    return { assigned: unassigned.length };
   },
 });
 
 export const createThread = mutation({
   args: {
-    scoutId: v.id("scouts"),
+    experimentId: v.id("scoutLabExperiments"),
   },
   returns: v.object({ threadId: v.string() }),
   handler: async (ctx, args) => {
     const userId = await requireAppUser(ctx);
-    await requireActiveScout(ctx, args.scoutId);
+    const experiment = await requireOwnedExperiment(ctx, {
+      experimentId: args.experimentId,
+      userId,
+    });
+    if (experiment.status !== "active") {
+      throw new Error("Experiment is completed");
+    }
+    await requireActiveScout(ctx, experiment.scoutId);
     const created = await scoutAgent.createThread(ctx, { userId });
     await ctx.db.insert("scoutLabThreads", {
       threadId: created.threadId,
       userId,
-      scoutId: args.scoutId,
+      scoutId: experiment.scoutId,
+      experimentId: experiment._id,
       createdAt: Date.now(),
     });
     return created;

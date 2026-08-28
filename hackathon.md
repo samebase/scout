@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-28T19:47:45Z
+- **Last updated:** 2026-08-28T22:15:12Z
 
 ## Log
 
@@ -339,7 +339,7 @@ without being marked successful (`convex/scout/labGeneration.ts`, `convex/scout/
 `convex/scout/lib/firecrawl.ts`, `convex/scoutLab.test.ts`,
 `convex/scout/lib/firecrawl.test.ts`).
 
-### 2026-08-28 - working tree
+### 2026-08-28 - 41ec4ab - v89
 
 Turned the failed monolithic browser mission into bounded, observable stages. Atomic mutations now
 return their new compact page state, while a numeric CSS count can verify repeated visual semantics
@@ -348,3 +348,23 @@ Qwen verifier independently confirmed one completed response, the exact marker, 
 stars in 89.2 seconds using 3 Firecrawl credits. Raw HTML and the unproven batch runner were rejected
 before commit (`convex/scout/agent.ts`, `convex/scout/labTools.ts`,
 `convex/scout/labTools.test.ts`, `docs/agent-runtime.md`).
+
+### 2026-08-28 - f170b24 - v91
+
+Added admin-only Lab experiments that group technical threads by Scout, target product and domain,
+objective, and active or completed status. New threads now derive their Scout from the selected
+experiment. Existing threads remain visible as ungrouped history and can be assigned explicitly in
+one bounded batch without changing messages, generations, or tool activity. The Lab now provides
+linkable experiment and thread navigation, creation and status controls, and tested migration safety
+(`convex/schema.ts`, `convex/scout/lab.ts`, `convex/scoutLab.test.ts`, `src/routes/lab.tsx`,
+`docs/agent-runtime.md`).
+
+### 2026-08-28 - working tree
+
+Hardened Lab experiments after adversarial review. Thread history is paginated instead of silently
+ending at 50, explicit URLs never fall through to another experiment or thread, browser navigation
+cannot carry a stale draft into a different attempt, and the assignment flow owns the constrained
+mobile workspace. Disabled Scouts remain available for historical organization without regaining
+execution access. Cross-user assignment, disabled-Scout organization, and multi-page history are
+covered by focused tests (`convex/scout/lab.ts`, `convex/scoutLab.test.ts`, `src/routes/lab.tsx`,
+`docs/agent-runtime.md`).
