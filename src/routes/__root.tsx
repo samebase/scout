@@ -48,6 +48,12 @@ function RootComponent() {
               <Link to="/lab">Lab</Link>
             </Button>
             <Button asChild variant="link">
+              <Link to="/scouts">Scouts</Link>
+            </Button>
+            <Button asChild variant="link">
+              <Link to="/runs">Runs</Link>
+            </Button>
+            <Button asChild variant="link">
               <Link to="/settings">Settings</Link>
             </Button>
           </nav>

@@ -11,7 +11,11 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as LabRouteImport } from './routes/lab'
+import { Route as RunsRouteImport } from './routes/runs'
+import { Route as ScoutsRouteImport } from './routes/scouts'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as ScoutsIndexRouteImport } from './routes/scouts.index'
+import { Route as ScoutsSlugRouteImport } from './routes/scouts.$slug'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -23,39 +27,87 @@ const LabRoute = LabRouteImport.update({
   path: '/lab',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RunsRoute = RunsRouteImport.update({
+  id: '/runs',
+  path: '/runs',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ScoutsRoute = ScoutsRouteImport.update({
+  id: '/scouts',
+  path: '/scouts',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ScoutsIndexRoute = ScoutsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ScoutsRoute,
+} as any)
+const ScoutsSlugRoute = ScoutsSlugRouteImport.update({
+  id: '/$slug',
+  path: '/$slug',
+  getParentRoute: () => ScoutsRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/lab': typeof LabRoute
+  '/runs': typeof RunsRoute
+  '/scouts': typeof ScoutsRouteWithChildren
   '/settings': typeof SettingsRoute
+  '/scouts/$slug': typeof ScoutsSlugRoute
+  '/scouts/': typeof ScoutsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/lab': typeof LabRoute
+  '/runs': typeof RunsRoute
   '/settings': typeof SettingsRoute
+  '/scouts/$slug': typeof ScoutsSlugRoute
+  '/scouts': typeof ScoutsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/lab': typeof LabRoute
+  '/runs': typeof RunsRoute
+  '/scouts': typeof ScoutsRouteWithChildren
   '/settings': typeof SettingsRoute
+  '/scouts/$slug': typeof ScoutsSlugRoute
+  '/scouts/': typeof ScoutsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/lab' | '/settings'
+  fullPaths:
+    | '/'
+    | '/lab'
+    | '/runs'
+    | '/scouts'
+    | '/settings'
+    | '/scouts/$slug'
+    | '/scouts/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/lab' | '/settings'
-  id: '__root__' | '/' | '/lab' | '/settings'
+  to: '/' | '/lab' | '/runs' | '/settings' | '/scouts/$slug' | '/scouts'
+  id:
+    | '__root__'
+    | '/'
+    | '/lab'
+    | '/runs'
+    | '/scouts'
+    | '/settings'
+    | '/scouts/$slug'
+    | '/scouts/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LabRoute: typeof LabRoute
+  RunsRoute: typeof RunsRoute
+  ScoutsRoute: typeof ScoutsRouteWithChildren
   SettingsRoute: typeof SettingsRoute
 }
 
@@ -75,6 +127,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LabRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/runs': {
+      id: '/runs'
+      path: '/runs'
+      fullPath: '/runs'
+      preLoaderRoute: typeof RunsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/scouts': {
+      id: '/scouts'
+      path: '/scouts'
+      fullPath: '/scouts'
+      preLoaderRoute: typeof ScoutsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/settings': {
       id: '/settings'
       path: '/settings'
@@ -82,12 +148,41 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/scouts/': {
+      id: '/scouts/'
+      path: '/'
+      fullPath: '/scouts/'
+      preLoaderRoute: typeof ScoutsIndexRouteImport
+      parentRoute: typeof ScoutsRoute
+    }
+    '/scouts/$slug': {
+      id: '/scouts/$slug'
+      path: '/$slug'
+      fullPath: '/scouts/$slug'
+      preLoaderRoute: typeof ScoutsSlugRouteImport
+      parentRoute: typeof ScoutsRoute
+    }
   }
 }
+
+interface ScoutsRouteChildren {
+  ScoutsSlugRoute: typeof ScoutsSlugRoute
+  ScoutsIndexRoute: typeof ScoutsIndexRoute
+}
+
+const ScoutsRouteChildren: ScoutsRouteChildren = {
+  ScoutsSlugRoute: ScoutsSlugRoute,
+  ScoutsIndexRoute: ScoutsIndexRoute,
+}
+
+const ScoutsRouteWithChildren =
+  ScoutsRoute._addFileChildren(ScoutsRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LabRoute: LabRoute,
+  RunsRoute: RunsRoute,
+  ScoutsRoute: ScoutsRouteWithChildren,
   SettingsRoute: SettingsRoute,
 }
 export const routeTree = rootRouteImport

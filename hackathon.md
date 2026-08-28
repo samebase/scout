@@ -213,9 +213,16 @@ v67 Recorded the final raw-MCP versus guarded-tool Tally benchmark and the curre
 the private Lab retains read-only mail activity and uses fresh browsers, while authenticated profile
 selection and opaque verification tools remain acceptance-test work (`docs/agent-runtime.md`).
 
-### 2026-08-28 - working tree
+### 2026-08-28 - e208997
 
-Added reusable Scouts with AgentMail and Firecrawl connection metadata, safe authenticated projections,
+v69 Added reusable Scouts with AgentMail and Firecrawl connection metadata, safe authenticated projections,
 structured mission-run linkage and legacy backfill, and runtime provider resolution with legacy
 fallbacks plus focused tests (`convex/schema.ts`, `convex/scout/scouts.ts`, `convex/scout/runs.ts`,
 `convex/scout/browser.ts`, `convex/scout/mail.ts`, `convex/scout/*.test.ts`).
+
+### 2026-08-28 - working tree
+
+Added authenticated Scouts list and detail views with provider connection metadata, recent structured
+mission runs, an all-runs view, and top navigation; kept Lab experiments conceptually separate
+(`src/routes/scouts.index.tsx`, `src/routes/scouts.$slug.tsx`, `src/routes/runs.tsx`,
+`src/components/scout-run-list.tsx`, `src/routes/__root.tsx`).
