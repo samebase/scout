@@ -52,7 +52,7 @@ const creditCount = new Intl.NumberFormat(undefined, {
 function ProductsIndexPage() {
   const products = useQuery(api.products.list, {});
   const syncKnownProducts = useMutation(api.products.syncKnownProducts);
-  const syncStarted = useRef(false);
+  const syncPromise = useRef<Promise<void> | null>(null);
   const [syncState, setSyncState] = useState<RegistrySyncState>({ kind: "syncing" });
   const [addOpen, setAddOpen] = useState(false);
   const [addSubmitting, setAddSubmitting] = useState(false);
@@ -60,25 +60,30 @@ function ProductsIndexPage() {
   const addButton = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    if (syncStarted.current) {
-      return;
+    if (syncPromise.current === null) {
+      syncPromise.current = (async () => {
+        let continuation: { phase: "accounts" | "experiments"; cursor: string | null } | undefined;
+        do {
+          const result = await syncKnownProducts(
+            continuation === undefined ? {} : { continuation },
+          );
+          continuation = result.next ?? undefined;
+        } while (continuation !== undefined);
+      })();
     }
-    syncStarted.current = true;
+
     let active = true;
-    void (async () => {
-      let continuation: { phase: "accounts" | "experiments"; cursor: string | null } | undefined;
-      do {
-        const result = await syncKnownProducts(continuation === undefined ? {} : { continuation });
-        continuation = result.next ?? undefined;
-      } while (continuation !== undefined);
-      if (active) {
-        setSyncState({ kind: "done" });
-      }
-    })().catch(() => {
-      if (active) {
-        setSyncState({ kind: "failed" });
-      }
-    });
+    void syncPromise.current
+      .then(() => {
+        if (active) {
+          setSyncState({ kind: "done" });
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setSyncState({ kind: "failed" });
+        }
+      });
     return () => {
       active = false;
     };

@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-29T01:16:23Z
+- **Last updated:** 2026-08-29T10:18:42Z
 
 ## Log
 
@@ -369,7 +369,7 @@ execution access. Cross-user assignment, disabled-Scout organization, and multi-
 covered by focused tests (`convex/scout/lab.ts`, `convex/scoutLab.test.ts`, `src/routes/lab.tsx`,
 `docs/agent-runtime.md`).
 
-### 2026-08-29 - working tree
+### 2026-08-29 - f96073e - v94
 
 Added the authenticated Product registry that unifies explicit admin entries, Scout service
 accounts, and Lab experiment targets by canonical domain. The Products page adds and deduplicates
@@ -395,3 +395,11 @@ quotas, plus an unclear OCR dependency. The final check passed 160 tests and the
 Cloudflare build path passed. An independent cross-model review found no P0-P2 issues; its two P3
 findings were fixed by aligning the visible registry cap and making the page await every bounded
 legacy-sync cursor (`docs/agent-runtime.md`, `.audit/products-investigation.tsv`).
+
+### 2026-08-29 - working tree
+
+Fixed the Products page staying in its loading state after React's development effect remount. The
+page now shares one legacy-sync promise while each mounted effect attaches its own live completion
+handler, avoiding both an abandoned result and duplicate mutation runs. A full browser reload now
+reaches the Product list, and the complete check and Cloudflare build path pass 160 tests
+(`src/routes/products.index.tsx`).
