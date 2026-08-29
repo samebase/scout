@@ -7,9 +7,11 @@ export const Route = createFileRoute("/products")({
 
 function ProductsLayout() {
   return (
-    <main className="mx-auto flex w-full max-w-4xl flex-col gap-6 p-4">
+    <div className="flex h-[calc(100dvh-3.25rem)] min-h-0 w-full flex-col">
       <AuthLoading>
-        <p className="text-muted-foreground py-10 text-sm">Loading account...</p>
+        <main className="mx-auto w-full max-w-4xl p-4">
+          <p className="text-muted-foreground py-10 text-sm">Loading account...</p>
+        </main>
       </AuthLoading>
       <Unauthenticated>
         <Navigate to="/" replace />
@@ -17,6 +19,6 @@ function ProductsLayout() {
       <Authenticated>
         <Outlet />
       </Authenticated>
-    </main>
+    </div>
   );
 }

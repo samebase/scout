@@ -2,6 +2,7 @@ import { HeadContent, Link, Outlet, Scripts, createRootRoute } from "@tanstack/r
 import { Authenticated } from "convex/react";
 import type { ReactNode } from "react";
 import { ConvexClientProvider } from "../lib/convex";
+import { ScoutSidebarProvider } from "../sidebars/ScoutSidebarProvider";
 import appCss from "../style.css?url";
 import { Button } from "#components/ui/button";
 
@@ -36,33 +37,37 @@ export const Route = createRootRoute({
 function RootComponent() {
   return (
     <RootDocument>
-      <ConvexClientProvider>
-        <Authenticated>
-          <nav
-            className="mx-auto flex w-full max-w-2xl flex-wrap px-1 pt-2 [&_[data-slot=button]]:px-1.5 sm:px-2 sm:[&_[data-slot=button]]:px-2.5"
-            aria-label="Primary navigation"
-          >
-            <Button asChild variant="link">
-              <Link to="/" activeOptions={{ exact: true }}>
-                Home
-              </Link>
-            </Button>
-            <Button asChild variant="link">
-              <Link to="/lab">Lab</Link>
-            </Button>
-            <Button asChild variant="link">
-              <Link to="/scouts">Scouts</Link>
-            </Button>
-            <Button asChild variant="link">
-              <Link to="/products">Products</Link>
-            </Button>
-            <Button asChild variant="link">
-              <Link to="/settings">Settings</Link>
-            </Button>
-          </nav>
-        </Authenticated>
-        <Outlet />
-      </ConvexClientProvider>
+      <ScoutSidebarProvider>
+        <ConvexClientProvider>
+          <Authenticated>
+            <nav
+              className="mx-auto flex w-full max-w-2xl flex-wrap px-1 pt-2 [&_[data-slot=button]]:px-1.5 sm:px-2 sm:[&_[data-slot=button]]:px-2.5"
+              aria-label="Primary navigation"
+            >
+              <Button asChild variant="link">
+                <Link to="/" activeOptions={{ exact: true }}>
+                  Home
+                </Link>
+              </Button>
+              <Button asChild variant="link">
+                <Link to="/lab">Lab</Link>
+              </Button>
+              <Button asChild variant="link">
+                <Link to="/scouts">Scouts</Link>
+              </Button>
+              <Button asChild variant="link">
+                <Link to="/products" search={{ product: undefined }}>
+                  Products
+                </Link>
+              </Button>
+              <Button asChild variant="link">
+                <Link to="/settings">Settings</Link>
+              </Button>
+            </nav>
+          </Authenticated>
+          <Outlet />
+        </ConvexClientProvider>
+      </ScoutSidebarProvider>
     </RootDocument>
   );
 }
