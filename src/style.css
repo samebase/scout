@@ -51,11 +51,11 @@
 
 :root {
   color-scheme: light;
-  --background: oklch(0.982 0.007 248);
+  --background: oklch(0.985 0 0);
   --foreground: oklch(0.22 0.026 258);
-  --card: oklch(0.998 0.003 248);
+  --card: oklch(0.998 0 0);
   --card-foreground: oklch(0.22 0.026 258);
-  --popover: oklch(0.998 0.003 248);
+  --popover: oklch(0.998 0 0);
   --popover-foreground: oklch(0.22 0.026 258);
   --primary: oklch(0.48 0.19 255);
   --primary-foreground: oklch(0.985 0.006 248);
