@@ -16,6 +16,7 @@ import {
   PanelLeftIcon,
   PlusIcon,
   RefreshCwIcon,
+  RotateCcwIcon,
   SearchIcon,
   XIcon,
 } from "lucide-react";
@@ -50,6 +51,13 @@ type InvestigationRequestState =
   | { kind: "idle" }
   | { kind: "submitting" }
   | { kind: "failed"; message: string };
+
+type ResearchResetState =
+  | { kind: "idle" }
+  | { kind: "confirming" }
+  | { kind: "submitting" }
+  | { kind: "failed"; message: string }
+  | { kind: "done" };
 
 type PageNotice = { kind: "added" | "existing" } | null;
 
@@ -567,8 +575,13 @@ function AddProductForm({
 function ProductDetail({ product }: { product: Product }) {
   const [reportOpen, setReportOpen] = useState(true);
   const [requestState, setRequestState] = useState<InvestigationRequestState>({ kind: "idle" });
+  const [resetState, setResetState] = useState<ResearchResetState>({ kind: "idle" });
   const latest = product.latestInvestigation;
   const report = latest?.status === "completed" ? latest : product.latestCompletedInvestigation;
+  const resetAvailable =
+    (latest !== null || report !== null) &&
+    latest?.status !== "queued" &&
+    latest?.status !== "running";
 
   return (
     <article>
@@ -634,6 +647,17 @@ function ProductDetail({ product }: { product: Product }) {
             state={requestState}
             onStateChange={setRequestState}
           />
+          {resetAvailable && resetState.kind === "idle" ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => setResetState({ kind: "confirming" })}
+            >
+              <RotateCcwIcon />
+              Reset research
+            </Button>
+          ) : null}
         </div>
       </div>
 
@@ -655,6 +679,13 @@ function ProductDetail({ product }: { product: Product }) {
         </p>
       ) : null}
 
+      <ResearchReset
+        productId={product._id}
+        productName={product.name}
+        state={resetState}
+        onStateChange={setResetState}
+      />
+
       {report ? (
         <Collapsible open={reportOpen} onOpenChange={setReportOpen}>
           <CollapsibleContent id={`product-investigation-${product._id}`}>
@@ -663,6 +694,81 @@ function ProductDetail({ product }: { product: Product }) {
         </Collapsible>
       ) : null}
     </article>
+  );
+}
+
+function ResearchReset({
+  productId,
+  productName,
+  state,
+  onStateChange,
+}: {
+  productId: Product["_id"];
+  productName: string;
+  state: ResearchResetState;
+  onStateChange: (state: ResearchResetState) => void;
+}) {
+  const resetResearch = useMutation(api.products.resetResearch);
+
+  if (state.kind === "idle") {
+    return null;
+  }
+  if (state.kind === "done") {
+    return (
+      <p className="text-muted-foreground mt-4 text-sm" role="status">
+        Research reset. You can investigate {productName} again when ready.
+      </p>
+    );
+  }
+
+  const submitting = state.kind === "submitting";
+  const reset = async () => {
+    if (submitting) {
+      return;
+    }
+    onStateChange({ kind: "submitting" });
+    try {
+      await resetResearch({ productId });
+      onStateChange({ kind: "done" });
+    } catch (error) {
+      onStateChange({ kind: "failed", message: resetResearchError(error) });
+    }
+  };
+
+  return (
+    <section className="bg-muted/40 mt-4 rounded-lg border px-3 py-3" aria-label="Reset research">
+      <p className="text-sm font-medium">Reset research for {productName}?</p>
+      <p className="text-muted-foreground mt-1 text-sm">
+        This hides the current report and returns the product to Not investigated. The underlying
+        run history is kept.
+      </p>
+      {state.kind === "failed" ? (
+        <p className="text-destructive mt-2 text-sm" role="alert">
+          {state.message}
+        </p>
+      ) : null}
+      <div className="mt-3 flex justify-end gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          disabled={submitting}
+          onClick={() => onStateChange({ kind: "idle" })}
+        >
+          Cancel
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="destructive"
+          disabled={submitting}
+          onClick={() => void reset()}
+        >
+          {submitting ? <LoaderCircleIcon className="animate-spin" /> : <RotateCcwIcon />}
+          {submitting ? "Resetting" : "Reset research"}
+        </Button>
+      </div>
+    </section>
   );
 }
 
@@ -1148,6 +1254,17 @@ function addProductError(error: unknown) {
     }
   }
   return "Could not add the product. Check the URL and try again.";
+}
+
+function resetResearchError(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  if (message.includes("Wait for the active investigation to finish")) {
+    return "Wait for the active investigation to finish before resetting research.";
+  }
+  if (message.includes("Product not found")) {
+    return "This product no longer exists.";
+  }
+  return "Could not reset the research. Try again.";
 }
 
 function reportButtonLabel(investigation: Investigation | null) {
