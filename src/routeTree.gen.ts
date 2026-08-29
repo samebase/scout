@@ -11,8 +11,10 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as LabRouteImport } from './routes/lab'
+import { Route as ProductsRouteImport } from './routes/products'
 import { Route as ScoutsRouteImport } from './routes/scouts'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as ProductsIndexRouteImport } from './routes/products.index'
 import { Route as ScoutsIndexRouteImport } from './routes/scouts.index'
 import { Route as ScoutsSlugRouteImport } from './routes/scouts.$slug'
 
@@ -26,6 +28,11 @@ const LabRoute = LabRouteImport.update({
   path: '/lab',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProductsRoute = ProductsRouteImport.update({
+  id: '/products',
+  path: '/products',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ScoutsRoute = ScoutsRouteImport.update({
   id: '/scouts',
   path: '/scouts',
@@ -35,6 +42,11 @@ const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
   getParentRoute: () => rootRouteImport,
+} as any)
+const ProductsIndexRoute = ProductsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ProductsRoute,
 } as any)
 const ScoutsIndexRoute = ScoutsIndexRouteImport.update({
   id: '/',
@@ -50,9 +62,11 @@ const ScoutsSlugRoute = ScoutsSlugRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/lab': typeof LabRoute
+  '/products': typeof ProductsRouteWithChildren
   '/scouts': typeof ScoutsRouteWithChildren
   '/settings': typeof SettingsRoute
   '/scouts/$slug': typeof ScoutsSlugRoute
+  '/products/': typeof ProductsIndexRoute
   '/scouts/': typeof ScoutsIndexRoute
 }
 export interface FileRoutesByTo {
@@ -60,15 +74,18 @@ export interface FileRoutesByTo {
   '/lab': typeof LabRoute
   '/settings': typeof SettingsRoute
   '/scouts/$slug': typeof ScoutsSlugRoute
+  '/products': typeof ProductsIndexRoute
   '/scouts': typeof ScoutsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/lab': typeof LabRoute
+  '/products': typeof ProductsRouteWithChildren
   '/scouts': typeof ScoutsRouteWithChildren
   '/settings': typeof SettingsRoute
   '/scouts/$slug': typeof ScoutsSlugRoute
+  '/products/': typeof ProductsIndexRoute
   '/scouts/': typeof ScoutsIndexRoute
 }
 export interface FileRouteTypes {
@@ -76,25 +93,30 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/lab'
+    | '/products'
     | '/scouts'
     | '/settings'
     | '/scouts/$slug'
+    | '/products/'
     | '/scouts/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/lab' | '/settings' | '/scouts/$slug' | '/scouts'
+  to: '/' | '/lab' | '/settings' | '/scouts/$slug' | '/products' | '/scouts'
   id:
     | '__root__'
     | '/'
     | '/lab'
+    | '/products'
     | '/scouts'
     | '/settings'
     | '/scouts/$slug'
+    | '/products/'
     | '/scouts/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LabRoute: typeof LabRoute
+  ProductsRoute: typeof ProductsRouteWithChildren
   ScoutsRoute: typeof ScoutsRouteWithChildren
   SettingsRoute: typeof SettingsRoute
 }
@@ -115,6 +137,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LabRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/products': {
+      id: '/products'
+      path: '/products'
+      fullPath: '/products'
+      preLoaderRoute: typeof ProductsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/scouts': {
       id: '/scouts'
       path: '/scouts'
@@ -128,6 +157,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/products/': {
+      id: '/products/'
+      path: '/'
+      fullPath: '/products/'
+      preLoaderRoute: typeof ProductsIndexRouteImport
+      parentRoute: typeof ProductsRoute
     }
     '/scouts/': {
       id: '/scouts/'
@@ -146,6 +182,18 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface ProductsRouteChildren {
+  ProductsIndexRoute: typeof ProductsIndexRoute
+}
+
+const ProductsRouteChildren: ProductsRouteChildren = {
+  ProductsIndexRoute: ProductsIndexRoute,
+}
+
+const ProductsRouteWithChildren = ProductsRoute._addFileChildren(
+  ProductsRouteChildren,
+)
+
 interface ScoutsRouteChildren {
   ScoutsSlugRoute: typeof ScoutsSlugRoute
   ScoutsIndexRoute: typeof ScoutsIndexRoute
@@ -162,6 +210,7 @@ const ScoutsRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LabRoute: LabRoute,
+  ProductsRoute: ProductsRouteWithChildren,
   ScoutsRoute: ScoutsRouteWithChildren,
   SettingsRoute: SettingsRoute,
 }

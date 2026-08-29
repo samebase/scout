@@ -22,8 +22,9 @@ inside the repository.
 - Vite+ for development, formatting, linting, tests, and builds
 - Node.js 24 for application and automation code
 
-Scout currently has an admin-only Lab for testing web apps. An admin configures persistent Scout
-identities, then starts model threads that use each Scout's AgentMail inbox and Firecrawl profile.
+Scout currently has an authenticated Product registry and an admin-only Lab for testing web apps.
+An admin can collect sourced, explicitly unverified product claims, configure persistent Scout
+identities, and start model threads that use each Scout's AgentMail inbox and Firecrawl profile.
 
 ## Local development
 

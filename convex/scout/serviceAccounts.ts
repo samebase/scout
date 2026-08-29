@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 import { mutation, query } from "../_generated/server";
 import { requireAppUser } from "../access";
+import { canonicalProductDomain, ensureProduct } from "../productsDomain";
 import {
   scoutServiceAccountAuthenticationEvidenceValidator,
   scoutServiceAccountFieldsValidator,
@@ -10,10 +11,7 @@ import {
 const MAX_ACCOUNTS = 200;
 const MAX_ACCOUNTS_PER_SCOUT = 50;
 const MAX_SERVICE_NAME_LENGTH = 100;
-const MAX_SERVICE_DOMAIN_LENGTH = 253;
-const MAX_SERVICE_DOMAIN_INPUT_LENGTH = 2_048;
 const MAX_IDENTIFIER_LENGTH = 320;
-const DNS_LABEL_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
 
 const serviceAccountPublicValidator = v.object({
   _id: v.id("scoutServiceAccounts"),
@@ -40,29 +38,6 @@ function requiredText(value: string, label: string, maximumLength: number) {
     throw new Error(`${label} must be ${maximumLength} characters or fewer`);
   }
   return trimmed;
-}
-
-function canonicalServiceDomain(value: string) {
-  const input = requiredText(value, "Service domain", MAX_SERVICE_DOMAIN_INPUT_LENGTH);
-  let parsed: URL;
-  try {
-    parsed = new URL(input.includes("://") ? input : `https://${input}`);
-  } catch {
-    throw new Error("Service domain must be a valid hostname or URL");
-  }
-
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new Error("Service domain must use HTTP or HTTPS");
-  }
-  const hostname = parsed.hostname.toLowerCase().replace(/\.$/, "");
-  const labels = hostname.split(".");
-  const hasValidDnsLabels = labels.every(
-    (label) => label.length <= 63 && DNS_LABEL_PATTERN.test(label),
-  );
-  if (!hostname || hostname.length > MAX_SERVICE_DOMAIN_LENGTH || !hasValidDnsLabels) {
-    throw new Error("Service domain must be a valid hostname or URL");
-  }
-  return hostname;
 }
 
 function canonicalIdentifier(value: string) {
@@ -109,7 +84,7 @@ export const register = mutation({
     }
 
     const serviceName = requiredText(args.serviceName, "Service name", MAX_SERVICE_NAME_LENGTH);
-    const serviceDomain = canonicalServiceDomain(args.serviceDomain);
+    const serviceDomain = canonicalProductDomain(args.serviceDomain, "Service domain");
     const identifier = canonicalIdentifier(args.identifier);
     const duplicate = await ctx.db
       .query("scoutServiceAccounts")
@@ -139,10 +114,15 @@ export const register = mutation({
     if (allAccounts.length >= MAX_ACCOUNTS) {
       throw new Error(`Service account inventory can contain at most ${MAX_ACCOUNTS} accounts`);
     }
+    const product = await ensureProduct(ctx, {
+      name: serviceName,
+      domain: serviceDomain,
+    });
 
     return {
       serviceAccountId: await ctx.db.insert("scoutServiceAccounts", {
         scoutId: args.scoutId,
+        productId: product.productId,
         serviceName,
         serviceDomain,
         identifier,
