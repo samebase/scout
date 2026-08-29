@@ -31,6 +31,7 @@ import { ScoutRunMessageView, type ScoutRunMessage } from "#components/scout-run
 import { Button } from "#components/ui/button";
 
 export const Route = createFileRoute("/products/$domain/claims/$claimKey")({
+  head: () => ({ meta: [{ title: "Claim test | Scout" }] }),
   component: ProductClaimPage,
 });
 
@@ -171,7 +172,7 @@ function ClaimWorkspaceChrome({
   };
 
   return (
-    <div className="flex h-12 min-w-0 items-center gap-2 px-3">
+    <div className="flex h-12 min-w-0 items-center gap-2 px-3 sm:px-4">
       <Button
         type="button"
         size="icon-sm"
@@ -189,7 +190,7 @@ function ClaimWorkspaceChrome({
           className="size-6 shrink-0 rounded-md"
         />
       ) : null}
-      <h1 className="min-w-0 flex-1 truncate text-sm font-medium">
+      <h1 className="min-w-0 flex-1 truncate text-sm font-semibold">
         {loading ? "Loading..." : (product?.name ?? "Claim not found")}
       </h1>
       <Button
@@ -240,7 +241,7 @@ function ClaimNavigation({
   }
 
   return (
-    <nav className="p-2" aria-label="Product claims">
+    <nav className="p-2.5" aria-label="Product claims">
       <ol className="space-y-1">
         {claims.map((claim) => {
           const selected = claim.claimKey === selectedClaimKey;
@@ -249,12 +250,12 @@ function ClaimNavigation({
               <Link
                 to="/products/$domain/claims/$claimKey"
                 params={{ claimKey: claim.claimKey, domain }}
-                className="group block rounded-lg px-2.5 py-2.5 outline-none hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring data-[selected]:bg-sidebar-accent data-[selected]:text-sidebar-accent-foreground"
+                className="group block rounded-[0.625rem] border border-transparent px-3 py-3 outline-none transition-colors hover:bg-sidebar-accent/70 focus-visible:ring-2 focus-visible:ring-sidebar-ring data-[selected]:border-primary/15 data-[selected]:bg-sidebar-accent data-[selected]:text-sidebar-accent-foreground"
                 data-selected={selected ? "" : undefined}
                 aria-current={selected ? "page" : undefined}
                 onClick={() => setMobilePane("main")}
               >
-                <span className="text-muted-foreground font-mono text-[0.625rem] tracking-[0.08em] uppercase">
+                <span className="text-muted-foreground font-mono text-[0.625rem] font-medium">
                   {claim.category}
                 </span>
                 <span className="mt-1.5 block wrap-break-word text-sm font-medium leading-5">
@@ -317,13 +318,13 @@ function ClaimMain({
   const claim = resolvedClaim.claim;
 
   return (
-    <main className="mx-auto w-full max-w-4xl p-4 @md:p-6 @xl:p-8">
+    <main className="mx-auto w-full max-w-5xl p-4 @md:p-7 @xl:p-10">
       <article>
-        <header className="border-l-2 border-blue-500 pl-4">
-          <span className="text-muted-foreground font-mono text-[0.6875rem] tracking-[0.1em] uppercase">
+        <header className="rounded-[0.875rem] border border-l-4 border-l-primary bg-card p-5 shadow-[0_12px_34px_color-mix(in_oklch,var(--foreground)_4%,transparent)] @md:p-7">
+          <span className="text-muted-foreground font-mono text-xs font-medium">
             {claim.category}
           </span>
-          <h2 className="mt-3 max-w-3xl wrap-break-word text-xl font-medium tracking-tight @md:text-2xl @xl:text-3xl">
+          <h2 className="mt-3 max-w-3xl wrap-break-word text-2xl font-semibold tracking-[-0.04em] @md:text-3xl @xl:text-4xl">
             {claim.claim}
           </h2>
           <a
@@ -338,7 +339,7 @@ function ClaimMain({
         </header>
 
         {claim.evidenceExcerpt ? (
-          <blockquote className="text-muted-foreground mt-6 max-w-3xl border-l pl-4 text-sm leading-6">
+          <blockquote className="mt-6 max-w-3xl rounded-[0.75rem] bg-muted/55 px-4 py-3 text-sm leading-6 text-muted-foreground">
             {claim.evidenceExcerpt}
           </blockquote>
         ) : null}
@@ -402,12 +403,9 @@ function ClaimTest({
   };
 
   return (
-    <section className="mt-8 border-t pt-6" aria-labelledby="claim-test-heading">
-      <h3
-        id="claim-test-heading"
-        className="text-muted-foreground font-mono text-[0.6875rem] tracking-[0.1em] uppercase"
-      >
-        Test
+    <section className="mt-9 border-t pt-7" aria-labelledby="claim-test-heading">
+      <h3 id="claim-test-heading" className="text-xl font-semibold tracking-[-0.025em]">
+        Test this claim
       </h3>
       <p className="mt-3 max-w-3xl wrap-break-word text-sm leading-6">
         {claim.suggestedMysteryShop}
@@ -527,13 +525,13 @@ function RunMetadata({ run }: { run: ClaimRun }) {
   if (generation.firecrawlCredits !== null) {
     parts.push(`${generation.firecrawlCredits} Firecrawl credits`);
   }
-  return <p className="text-muted-foreground mt-4 text-xs">{parts.join(" · ")}</p>;
+  return <p className="text-muted-foreground mt-4 text-xs">{parts.join(", ")}</p>;
 }
 
 function ClaimRouteEmptyState({ domain, title }: { domain?: string; title: string }) {
   return (
     <main className="mx-auto w-full max-w-3xl p-4 @md:p-6">
-      <div className="py-16 text-center">
+      <div className="surface-panel border-dashed px-5 py-16 text-center">
         <p className="text-sm font-medium">{title}</p>
         <Button asChild size="sm" variant="outline" className="mt-4">
           {domain ? (
@@ -562,7 +560,7 @@ function CenteredStatus({ children }: { children: string }) {
 function ClaimActivityHeader({ latestRun }: { latestRun: ClaimRun | null | undefined }) {
   return (
     <div className="flex h-full min-w-0 items-center justify-between gap-3 px-3">
-      <span className="truncate text-sm font-medium">Test activity</span>
+      <span className="truncate text-sm font-semibold">Test activity</span>
       <span className="text-muted-foreground text-xs" aria-live="polite">
         {runStatus(latestRun)}
       </span>

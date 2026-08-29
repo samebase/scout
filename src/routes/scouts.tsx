@@ -2,12 +2,13 @@ import { Navigate, Outlet, createFileRoute } from "@tanstack/react-router";
 import { Authenticated, AuthLoading, Unauthenticated } from "convex/react";
 
 export const Route = createFileRoute("/scouts")({
+  head: () => ({ meta: [{ title: "Scouts | Scout" }] }),
   component: ScoutsLayout,
 });
 
 function ScoutsLayout() {
   return (
-    <main className="mx-auto flex w-full max-w-4xl flex-col gap-6 p-4">
+    <main className="route-page flex max-w-6xl flex-col gap-8">
       <AuthLoading>
         <p className="text-muted-foreground py-10 text-sm">Loading account...</p>
       </AuthLoading>

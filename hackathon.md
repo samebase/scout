@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-29T16:13:27Z
+- **Last updated:** 2026-08-29T17:03:32Z
 
 ## Log
 
@@ -461,7 +461,7 @@ direct-route development loads and prerender. The full check passed 164 tests an
 Cloudflare build path passed after adversarial route review and live browser verification
 (`vite.config.ts`, `convex/products.test.ts`).
 
-### 2026-08-29 - working tree
+### 2026-08-29 - b0544a9 - v107
 
 Connected each researched claim to an exact investigation snapshot and an automatically created
 Scout verification run. Starting a test now creates its Lab experiment, thread, prompt, scheduled
@@ -479,3 +479,17 @@ secondary research collapsed. The full check passed 168 tests and the complete C
 path passed; desktop pane resizing, the 390-pixel mobile flow, and exact raw-run navigation were
 verified in the browser (`convex/productsResearch.ts`, `convex/productsValidation.ts`,
 `src/components/products-workspace.tsx`).
+
+### 2026-08-29 - working tree
+
+Redesigned every Scout route around one compact, responsive application shell with clearer
+navigation, stronger information hierarchy, consistent controls, deliberate empty and loading
+states, and light and dark system themes. Home, authentication, Lab, Scouts, Products, claims, and
+Settings now share the same visual language across desktop and mobile
+(`src/components/app-navigation.tsx`, `src/routes/`, `src/style.css`).
+
+Added Taste Skill as a project-local, versioned design guide so future interface work can reuse the
+same standards. The full check passed 168 tests and the production Cloudflare build passed;
+browser coverage included every route plus populated, empty, signed-out, and 390-pixel mobile
+states. Production Lighthouse scored 97 performance, 100 accessibility, 96 best practices, and 100
+SEO (`.agents/skills/design-taste-frontend/SKILL.md`, `skills-lock.json`).
