@@ -253,6 +253,11 @@ export function activeTabAt(points: readonly ReplayTimelinePoint[], timeMs: numb
   return tabId;
 }
 
+export function activePageIdAt(timeline: ReplayTimeline, timeMs: number) {
+  const tabId = activeTabAt(timeline.points, timeMs);
+  return tabId ? (timeline.pageIdByTabId.get(tabId) ?? null) : null;
+}
+
 export function activeClickAt(
   events: readonly ReplayActionEvent[],
   tabId: string | null,

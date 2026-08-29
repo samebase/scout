@@ -31,7 +31,12 @@ import {
 import { ServiceIcon } from "#components/service-icon";
 import { ScoutRunMessageView, type ScoutRunMessage } from "#components/scout-run-message";
 import { Button } from "#components/ui/button";
-import { activeClickAt, activeTabAt, buildReplayTimeline } from "#lib/claimReplayTimeline";
+import {
+  activeClickAt,
+  activePageIdAt,
+  activeTabAt,
+  buildReplayTimeline,
+} from "#lib/claimReplayTimeline";
 
 export const Route = createFileRoute("/products/$domain/claims/$claimKey")({
   head: () => ({ meta: [{ title: "Claim test | Scout" }] }),
@@ -810,12 +815,7 @@ function ClaimReplayPlayer({
   };
 
   const activeTabId = activeTabAt(timeline.points, currentTimeMs);
-  const firstCorrelatedPageId = timeline.pages.find(
-    (page) => page.binding.kind === "correlated",
-  )?.pageId;
-  const automaticPageId = activeTabId
-    ? (timeline.pageIdByTabId.get(activeTabId) ?? null)
-    : (firstCorrelatedPageId ?? timeline.pages[0]?.pageId ?? null);
+  const automaticPageId = activePageIdAt(timeline, currentTimeMs);
   const activePageId = manualPageId ?? automaticPageId;
   const activePage = timeline.pages.find((page) => page.pageId === activePageId) ?? null;
   const pointer = activeClickAt(timeline.events, activeTabId, currentTimeMs);

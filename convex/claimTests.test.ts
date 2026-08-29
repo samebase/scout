@@ -196,11 +196,22 @@ describe("Claim tests", () => {
     });
     const prompt = messages.page.find((message) => message.role === "user")?.text;
     expect(prompt).toContain("It is not proof");
-    expect(prompt).toContain("Supported, Qualified, Refuted, or Inconclusive");
+    expect(prompt).toContain("Verdict: Supported");
     expect(prompt).toContain("exact visible wording");
     expect(prompt).toContain("configured Scout identity");
     expect(prompt).toContain("Never purchase anything");
+    expect(prompt).toContain("Begin the final response with exactly one line");
     expect(prompt).toContain("Close the browser");
+    await expect(
+      backend.query(internal.claimTests.isClaimTestGeneration, {
+        promptMessageId: stored.generation?.promptMessageId ?? "missing",
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      backend.query(internal.claimTests.isClaimTestGeneration, {
+        promptMessageId: "missing",
+      }),
+    ).resolves.toBe(false);
   });
 
   it("returns the same run while its exact claim generation is pending", async () => {

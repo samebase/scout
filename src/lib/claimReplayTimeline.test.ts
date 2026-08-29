@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 import {
   activeClickAt,
+  activePageIdAt,
   activeTabAt,
   buildReplayTimeline,
   type ReplayOperation,
@@ -194,6 +195,8 @@ describe("claim replay timeline", () => {
     expect(timeline.pages.map((page) => page.pageId)).toEqual(["blank", "pricing"]);
     expect(timeline.pages[0]?.binding).toEqual({ kind: "unmatched" });
     expect(timeline.pageIdByTabId.get("t2")).toBe("pricing");
+    expect(activePageIdAt(timeline, 0)).toBeNull();
+    expect(activePageIdAt(timeline, 2_000)).toBe("pricing");
   });
 
   test("keeps a blank page when Scout activates it", () => {

@@ -27,7 +27,7 @@ export const scoutTokenUsageValidator = v.object({
 
 export type ScoutTokenUsage = Infer<typeof scoutTokenUsageValidator>;
 
-export const DEFAULT_SCOUT_MODEL: SelectableScoutModel = "openai/gpt-5.6-luna";
+export const DEFAULT_SCOUT_MODEL: SelectableScoutModel = "qwen/qwen3.7-flash";
 
 export function scoutLanguageModel(model: ScoutModel) {
   return convexGateway(model);

@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-29T23:10:23Z
+- **Last updated:** 2026-08-29T23:33:46Z
 
 ## Log
 
@@ -562,7 +562,7 @@ lazy-loads HLS support. A new Samebase run completed with Qwen 3.7 Flash in 138.
 Firecrawl credits; its 110-second recording loaded in the claim page and played to 17.5 seconds.
 All 178 tests and the complete Cloudflare build path passed.
 
-### 2026-08-29 - working tree
+### 2026-08-29 - 53d3c36 - v118
 
 Reconstructed each claim test as one replay timeline across Firecrawl's per-tab recordings. Every
 browser mutation now records its exact run, session, tool call, action sequence, before and after
@@ -577,3 +577,17 @@ closed in 93.3 browser seconds using four Firecrawl credits, and played its 80-s
 both the wide and three-pane layouts while retaining one unmatched blank provider recording. All
 189 tests and the complete Cloudflare build path passed
 (`src/lib/claimReplayTimeline.ts`, `src/routes/products.$domain.claims.$claimKey.tsx`).
+
+### 2026-08-29 - working tree
+
+Made Qwen 3.7 Flash the default for product research, Lab, and Scout, while keeping Luna available
+only when selected. Product synthesis now discards generated array items beyond the documented
+limits before validating retained claims, so Tally's malformed seventh claim no longer fails the
+workflow (`convex/productsResearch.ts`, `convex/productsModel.ts`, `convex/scout/models.ts`).
+
+Claim tests now start in a fresh Firecrawl browser, force a bounded close and final verdict, and do
+not display a later matched video at 0:00 when the initial tab is ambiguous. A clean Tally run
+created and edited a form anonymously, then observed both Preview and Publish open “Create your
+Tally account,” producing a Refuted verdict in 122.7 seconds with four Firecrawl credits. All 189
+tests and the complete Cloudflare build path passed (`convex/claimTests.ts`,
+`convex/scout/labGeneration.ts`, `src/lib/claimReplayTimeline.ts`).

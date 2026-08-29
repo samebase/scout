@@ -592,7 +592,7 @@ describe("Product investigations", () => {
       _id: first.investigationId,
       productId,
       provider: "firecrawl-convex",
-      requestedModel: "openai/gpt-5.6-luna",
+      requestedModel: "qwen/qwen3.7-flash",
       maxCredits: 9,
       agentThreadId: expect.any(String),
       workflowId: expect.any(String),
@@ -657,6 +657,7 @@ describe("Product investigations", () => {
     expect(inspector).toMatchObject({
       investigationId,
       state: "running",
+      model: { name: "qwen/qwen3.7-flash" },
       activities: [
         {
           key: "firecrawl_map",
@@ -806,7 +807,7 @@ describe("Product investigations", () => {
       latestInvestigation: {
         _id: first.investigationId,
         provider: "firecrawl-convex",
-        requestedModel: "openai/gpt-5.6-luna",
+        requestedModel: "qwen/qwen3.7-flash",
         status: "running",
         stage: "synthesizing",
         providerJobId: null,
@@ -976,7 +977,7 @@ describe("Product investigations", () => {
     expect(retry.created).toBe(true);
     expect(current).toMatchObject({
       provider: "firecrawl-convex",
-      requestedModel: "openai/gpt-5.6-luna",
+      requestedModel: "qwen/qwen3.7-flash",
       status: "queued",
       agentThreadId: expect.any(String),
     });
@@ -1442,20 +1443,23 @@ describe("Product research synthesis", () => {
     expect(fabricated.claims[0]?.evidenceExcerpt).toBeNull();
   });
 
-  it("validates then truncates harmless array overproduction", () => {
+  it("truncates model overproduction before validating bounded array contents", () => {
     const synthesis = validSynthesis();
     const claim = synthesis.claims[0];
     const parsed = parseProductResearchSynthesis({
       ...synthesis,
       audiences: Array.from({ length: 6 }, (_, index) => `Audience ${index + 1}`),
-      claims: Array.from({ length: 7 }, (_, index) => ({
-        ...claim,
-        claim: `Claim ${index + 1}`,
-        qualifiers: Array.from(
-          { length: 5 },
-          (_, qualifierIndex) => `Qualifier ${qualifierIndex + 1}`,
-        ),
-      })),
+      claims: [
+        ...Array.from({ length: 6 }, (_, index) => ({
+          ...claim,
+          claim: `Claim ${index + 1}`,
+          qualifiers: [
+            ...Array.from({ length: 4 }, (_, qualifierIndex) => `Qualifier ${qualifierIndex + 1}`),
+            null,
+          ],
+        })),
+        { category: "not-a-category" },
+      ],
       dependencies: Array.from({ length: 9 }, (_, index) => ({
         name: `Dependency ${index + 1}`,
         relationship: "The product names this dependency.",
@@ -1483,6 +1487,7 @@ describe("Product research synthesis", () => {
     expect(parsed.tensions.every((item) => item.evidence.length === 4)).toBe(true);
     expect(parsed.access.requirements).toHaveLength(5);
     expect(parsed.unknowns).toHaveLength(8);
+    expect(parsed.claims.at(-1)?.claim).toBe("Claim 6");
     expect(() =>
       hydrateProductResearchResult(parsed, [researchPage("S1")], "example.test"),
     ).not.toThrow();
@@ -1509,7 +1514,7 @@ describe("Product research synthesis", () => {
       parseProductResearchSynthesis({
         ...validSynthesis(),
         claims: [
-          ...Array.from({ length: 6 }, () => validSynthesis().claims[0]),
+          ...Array.from({ length: 5 }, () => validSynthesis().claims[0]),
           { ...validSynthesis().claims[0], category: "marketing" },
         ],
       }),
@@ -1517,7 +1522,7 @@ describe("Product research synthesis", () => {
     expect(() =>
       parseProductResearchSynthesis({
         ...validSynthesis(),
-        audiences: ["One", "Two", "Three", "Four", "Five", 6],
+        audiences: ["One", "Two", "Three", "Four", 5, "Ignored"],
       }),
     ).toThrow();
   });

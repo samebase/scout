@@ -79,7 +79,7 @@ const MODEL_OPTIONS = [
   { value: "qwen/qwen3.7-flash", label: "Qwen 3.7 Flash" },
 ] satisfies readonly { value: SelectableScoutModel; label: string }[];
 
-const DEFAULT_MODEL: SelectableScoutModel = "openai/gpt-5.6-luna";
+const DEFAULT_MODEL: SelectableScoutModel = "qwen/qwen3.7-flash";
 const UNGROUPED_SEARCH_VALUE = "ungrouped";
 const THREAD_PAGE_SIZE = 50;
 const MAX_THREADS_PER_ASSIGNMENT = 50;

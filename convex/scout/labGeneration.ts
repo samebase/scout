@@ -13,6 +13,8 @@ import { diagnosticMessage } from "./lib/redaction";
 import { scoutLanguageModel, scoutModelValidator, type ScoutTokenUsage } from "./models";
 
 const MAX_GENERATION_STEPS = 24;
+const CLAIM_TEST_CLOSE_STEP = 18;
+const CLAIM_TEST_FINAL_STEP = 19;
 const AGENT_MAIL_CLOSE_TIMEOUT_MS = 1_000;
 
 type LabBrowser = ReturnType<typeof createLabBrowserHarness>;
@@ -125,8 +127,12 @@ export const generateResponse = internalAction({
       if (!scout || scout.status !== "active") {
         throw new Error("Active Scout not found");
       }
+      const isClaimTestGeneration: boolean = await ctx.runQuery(
+        internal.claimTests.isClaimTestGeneration,
+        { promptMessageId: args.promptMessageId },
+      );
       browser = createLabBrowserHarness({
-        profileName: scout.firecrawl.profileName,
+        ...(isClaimTestGeneration ? {} : { profileName: scout.firecrawl.profileName }),
         onSessionAvailable: async (sessionId) => {
           return await ctx.runMutation(internal.claimTests.setBrowserSession, {
             promptMessageId: args.promptMessageId,
@@ -184,15 +190,40 @@ export const generateResponse = internalAction({
         ...browser.tools,
         ...agentMailTools,
       };
+      const instructions = `${SCOUT_AGENT_INSTRUCTIONS}\n\n${scoutWebsiteIdentityInstructions(scout)}${
+        isClaimTestGeneration
+          ? "\n\nThis claim test starts in a fresh browser profile with no saved website login. Treat that clean state as part of the evidence."
+          : ""
+      }`;
       const streamResult = await scoutAgent.streamText(
         ctx,
         { threadId: args.threadId, userId: args.userId },
         {
           promptMessageId: args.promptMessageId,
           model: scoutLanguageModel(args.model),
-          instructions: `${SCOUT_AGENT_INSTRUCTIONS}\n\n${scoutWebsiteIdentityInstructions(scout)}`,
+          instructions,
           tools,
           stopWhen: isStepCount(MAX_GENERATION_STEPS),
+          ...(isClaimTestGeneration
+            ? {
+                prepareStep: ({ stepNumber }: { stepNumber: number }) => {
+                  if (stepNumber === CLAIM_TEST_CLOSE_STEP) {
+                    return {
+                      activeTools: ["browser_close"] as const,
+                      toolChoice: { type: "tool", toolName: "browser_close" } as const,
+                    };
+                  }
+                  if (stepNumber >= CLAIM_TEST_FINAL_STEP) {
+                    return {
+                      activeTools: [] as const,
+                      toolChoice: "none" as const,
+                      instructions: `${instructions}\n\nThe bounded browser phase is over. Do not investigate further. Give the final claim verdict now, beginning with the required Verdict line.`,
+                    };
+                  }
+                  return undefined;
+                },
+              }
+            : {}),
         },
         {
           saveStreamDeltas: {

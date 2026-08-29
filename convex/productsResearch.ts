@@ -33,66 +33,73 @@ const claimCategorySchema = z.enum([
 
 const sourceIdSchema = z.string().regex(/^S[1-6]$/);
 
+function cappedGeneratedArray<Item extends z.ZodType>(
+  item: Item,
+  maximumLength: number,
+  minimumLength = 0,
+) {
+  return z.preprocess(
+    (value) => (Array.isArray(value) ? value.slice(0, maximumLength) : value),
+    z.array(item).min(minimumLength).max(maximumLength),
+  );
+}
+
 export const productResearchSynthesisSchema = z
   .object({
     summary: z.string().max(4_000),
-    audiences: z.array(z.string().max(300)).transform((items) => items.slice(0, 5)),
-    claims: z
-      .array(
-        z
-          .object({
-            claim: z.string().max(1_200),
-            category: claimCategorySchema,
-            sourceId: sourceIdSchema,
-            support: z.string().max(2_000),
-            suggestedMysteryShop: z.string().max(1_200),
-            qualifiers: z.array(z.string().max(400)).transform((items) => items.slice(0, 4)),
-            evidenceExcerpt: z.string().max(280).nullable(),
-          })
-          .strict(),
-      )
-      .min(1)
-      .transform((items) => items.slice(0, 6)),
-    dependencies: z
-      .array(
-        z
-          .object({
-            name: z.string().max(200),
-            relationship: z.string().max(1_000),
-            sourceId: sourceIdSchema,
-          })
-          .strict(),
-      )
-      .transform((items) => items.slice(0, 8)),
-    tensions: z
-      .array(
-        z
-          .object({
-            summary: z.string().max(1_200),
-            evidence: z
-              .array(
-                z
-                  .object({
-                    sourceId: sourceIdSchema,
-                    evidenceExcerpt: z.string().max(280).nullable(),
-                  })
-                  .strict(),
-              )
-              .min(2)
-              .transform((items) => items.slice(0, 4)),
-          })
-          .strict(),
-      )
-      .transform((items) => items.slice(0, 5)),
+    audiences: cappedGeneratedArray(z.string().max(300), 5),
+    claims: cappedGeneratedArray(
+      z
+        .object({
+          claim: z.string().max(1_200),
+          category: claimCategorySchema,
+          sourceId: sourceIdSchema,
+          support: z.string().max(2_000),
+          suggestedMysteryShop: z.string().max(1_200),
+          qualifiers: cappedGeneratedArray(z.string().max(400), 4),
+          evidenceExcerpt: z.string().max(280).nullable(),
+        })
+        .strict(),
+      6,
+      1,
+    ),
+    dependencies: cappedGeneratedArray(
+      z
+        .object({
+          name: z.string().max(200),
+          relationship: z.string().max(1_000),
+          sourceId: sourceIdSchema,
+        })
+        .strict(),
+      8,
+    ),
+    tensions: cappedGeneratedArray(
+      z
+        .object({
+          summary: z.string().max(1_200),
+          evidence: cappedGeneratedArray(
+            z
+              .object({
+                sourceId: sourceIdSchema,
+                evidenceExcerpt: z.string().max(280).nullable(),
+              })
+              .strict(),
+            4,
+            2,
+          ),
+        })
+        .strict(),
+      5,
+    ),
     access: z
       .object({
         signupState: z.enum(["open", "waitlist", "invite_only", "unknown"]),
         freeEntry: z.enum(["yes", "trial", "no", "unknown"]),
         paymentMethodRequired: z.enum(["yes", "no", "unknown"]),
-        requirements: z.array(z.string().max(600)).transform((items) => items.slice(0, 5)),
+        requirements: cappedGeneratedArray(z.string().max(600), 5),
       })
       .strict(),
-    unknowns: z.array(z.string().max(1_000)).transform((items) => items.slice(0, 8)),
+    unknowns: cappedGeneratedArray(z.string().max(1_000), 8),
   })
   .strict();
 

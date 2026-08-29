@@ -39,6 +39,7 @@ import {
   parseProductInvestigationResult,
   type ProductInvestigationResult,
 } from "./productsValidation";
+import type { SelectableScoutModel } from "./scout/models";
 
 const MAX_ACCOUNTS_PER_PRODUCT = 200;
 const MAX_EXPERIMENTS_PER_PRODUCT = 100;
@@ -93,10 +94,7 @@ function projectInvestigationResult(result: ProductInvestigationResult) {
 function isCurrentInvestigation(
   investigation: Doc<"productInvestigations">,
 ): investigation is CurrentInvestigation {
-  return (
-    investigation.provider === PRODUCT_INVESTIGATION_PROVIDER &&
-    investigation.requestedModel === PRODUCT_INVESTIGATION_MODEL
-  );
+  return investigation.provider === PRODUCT_INVESTIGATION_PROVIDER;
 }
 
 function currentInvestigationStage(
@@ -132,7 +130,7 @@ function currentInvestigationPublicBase(investigation: CurrentInvestigation): {
   _id: Id<"productInvestigations">;
   requestedAt: number;
   provider: typeof PRODUCT_INVESTIGATION_PROVIDER;
-  requestedModel: typeof PRODUCT_INVESTIGATION_MODEL;
+  requestedModel: SelectableScoutModel;
   effort: typeof PRODUCT_INVESTIGATION_EFFORT;
   maxCredits: number;
 } {
@@ -140,7 +138,7 @@ function currentInvestigationPublicBase(investigation: CurrentInvestigation): {
     _id: investigation._id,
     requestedAt: investigation.requestedAt,
     provider: PRODUCT_INVESTIGATION_PROVIDER,
-    requestedModel: PRODUCT_INVESTIGATION_MODEL,
+    requestedModel: investigation.requestedModel,
     effort: investigation.effort,
     maxCredits: investigation.maxCredits,
   };

@@ -254,10 +254,30 @@ Run one bounded verification:
 - If an account is needed, use only the configured Scout identity. You may sign in to its existing account or create a free, reversible account when necessary.
 - Never purchase anything, enter payment details, start a paid commitment, publish public content, contact or invite third parties, delete data, or make an irreversible external change. If the claim requires one of those actions, stop and return Inconclusive.
 - Do not infer success from this prompt, prior research, source code, or the name of a UI control. Verify the resulting visible state.
+- Keep the check bounded. Use no more browser actions than needed to answer this one claim; stop exploring once a precondition makes the proposed check invalid.
 - Close the browser before the final response, including after errors.
 
-Finish with exactly one verdict: Supported, Qualified, Refuted, or Inconclusive. Then list the evidence with exact visible text and URLs, what you directly observed, material qualifiers, and anything that could not be tested.`;
+Begin the final response with exactly one line in this form: "Verdict: Supported", "Verdict: Qualified", "Verdict: Refuted", or "Verdict: Inconclusive". Then list the evidence with exact visible text and URLs, what you directly observed, material qualifiers, and anything that could not be tested.`;
 }
+
+export const isClaimTestGeneration = internalQuery({
+  args: { promptMessageId: v.string() },
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    const generation = await ctx.db
+      .query("scoutLabGenerations")
+      .withIndex("by_prompt_message_id", (index) =>
+        index.eq("promptMessageId", args.promptMessageId),
+      )
+      .unique();
+    if (!generation) return false;
+    const run = await ctx.db
+      .query("claimTestRuns")
+      .withIndex("by_generation_id", (index) => index.eq("generationId", generation._id))
+      .unique();
+    return run !== null;
+  },
+});
 
 export const start = mutation({
   args: {
