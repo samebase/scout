@@ -1,4 +1,11 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { PaneFrame } from "@samebase/sidebars/PaneFrame";
+import {
+  SidebarLayout,
+  type SidebarLayoutResizeHandleLabels,
+  type SidebarLayoutResizeHandleValueTextFormatter,
+} from "@samebase/sidebars/SidebarLayout";
+import { useSidebarActions, useSidebarLayoutPresentation } from "@samebase/sidebars/SidebarRuntime";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import {
@@ -6,19 +13,27 @@ import {
   ChevronUpIcon,
   ExternalLinkIcon,
   LoaderCircleIcon,
+  PanelLeftIcon,
   PlusIcon,
   RefreshCwIcon,
   SearchIcon,
   XIcon,
 } from "lucide-react";
-import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
+import { type FormEvent, type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
+import {
+  scoutSidebarDesktopPrehydrationScript,
+  scoutSidebarMobilePrehydrationScript,
+} from "../sidebars/scoutSidebarState";
 import { ServiceIcon } from "#components/service-icon";
 import { Button } from "#components/ui/button";
 import { Collapsible, CollapsibleContent } from "#components/ui/collapsible";
 import { Input } from "#components/ui/input";
 
 export const Route = createFileRoute("/products/")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    product: typeof search["product"] === "string" ? search["product"] : undefined,
+  }),
   component: ProductsIndexPage,
 });
 
@@ -49,9 +64,20 @@ const creditCount = new Intl.NumberFormat(undefined, {
   maximumFractionDigits: 2,
 });
 
+const PRODUCT_RESIZE_HANDLE_LABELS = {
+  left: "Resize product list",
+  right: "Resize product details",
+} satisfies SidebarLayoutResizeHandleLabels;
+
+const formatResizeHandleValueText: SidebarLayoutResizeHandleValueTextFormatter = ({ widthPx }) =>
+  `${widthPx} pixels wide`;
+
 function ProductsIndexPage() {
+  const search = Route.useSearch();
+  const navigate = useNavigate();
   const products = useQuery(api.products.list, {});
   const syncKnownProducts = useMutation(api.products.syncKnownProducts);
+  const { setMobilePane } = useSidebarActions();
   const syncPromise = useRef<Promise<void> | null>(null);
   const [syncState, setSyncState] = useState<RegistrySyncState>({ kind: "syncing" });
   const [addOpen, setAddOpen] = useState(false);
@@ -91,6 +117,23 @@ function ProductsIndexPage() {
 
   const loading = products === undefined || syncState.kind === "syncing";
   const loadedProducts = products ?? [];
+  const selectedProduct =
+    search.product === undefined
+      ? loadedProducts[0]
+      : loadedProducts.find((product) => product._id === search.product);
+
+  useEffect(() => {
+    const firstProduct = loadedProducts[0];
+    if (loading || search.product !== undefined || firstProduct === undefined) {
+      return;
+    }
+
+    void navigate({
+      to: "/products",
+      replace: true,
+      search: { product: firstProduct._id },
+    });
+  }, [loadedProducts, loading, navigate, search.product]);
 
   const closeAdd = () => {
     if (addSubmitting) {
@@ -107,82 +150,299 @@ function ProductsIndexPage() {
     requestAnimationFrame(() => addButton.current?.focus());
   };
 
+  const selectProduct = (productId: Product["_id"]) => {
+    void navigate({
+      to: "/products",
+      search: { product: productId },
+    }).then(() => {
+      requestAnimationFrame(() => setMobilePane("main"));
+    });
+  };
+
+  const toggleAdd = () => {
+    setNotice(null);
+    setAddOpen((open) => !open);
+    setMobilePane("main");
+  };
+
   return (
     <>
-      <header className="flex flex-col gap-2 border-b pb-4 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
-        <div>
-          <p className="font-mono text-[0.6875rem] tracking-[0.16em] text-muted-foreground uppercase">
-            Registry
-          </p>
-          <h1 className="mt-1 text-2xl font-medium tracking-tight">Products</h1>
-          <p className="text-muted-foreground mt-1 text-sm">
-            Products known through direct entry, Scout access, or Lab experiments.
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <p className="text-muted-foreground text-sm" aria-live="polite">
-            {loading ? "Loading products..." : `Showing ${loadedProducts.length}`}
-          </p>
-          <Button
-            ref={addButton}
-            type="button"
-            size="sm"
-            aria-expanded={addOpen}
-            aria-controls="add-product-panel"
-            disabled={addSubmitting}
-            onClick={() => {
-              setNotice(null);
-              setAddOpen((open) => !open);
-            }}
-          >
-            {addOpen ? <XIcon /> : <PlusIcon />}
-            {addOpen ? "Close" : "Add product"}
-          </Button>
-        </div>
-      </header>
+      <SidebarLayout
+        addressChrome={
+          <ProductsChrome
+            addButton={addButton}
+            addOpen={addOpen}
+            addSubmitting={addSubmitting}
+            loading={loading}
+            productCount={loadedProducts.length}
+            onToggleAdd={toggleAdd}
+          />
+        }
+        formatResizeHandleValueText={formatResizeHandleValueText}
+        left={
+          <PaneFrame
+            content={
+              <ProductNavigation
+                loading={loading}
+                products={loadedProducts}
+                selectedProductId={selectedProduct?._id}
+                onSelect={selectProduct}
+              />
+            }
+            footer={
+              <div className="text-muted-foreground flex h-full items-center px-3 text-xs">
+                {loading
+                  ? "Loading products..."
+                  : `${loadedProducts.length} ${loadedProducts.length === 1 ? "product" : "products"}`}
+              </div>
+            }
+            header={
+              <div className="flex h-full items-center px-3 text-sm font-medium">Products</div>
+            }
+            scrollRestorationId="products-navigation"
+          />
+        }
+        main={
+          <PaneFrame
+            content={
+              <ProductsMain
+                addOpen={addOpen}
+                loading={loading}
+                notice={notice}
+                selectedProduct={selectedProduct}
+                selectionMissing={search.product !== undefined && selectedProduct === undefined}
+                syncState={syncState}
+                onAddCancel={closeAdd}
+                onAddFinished={finishAdd}
+                onAddSubmittingChange={setAddSubmitting}
+              />
+            }
+            scrollRestorationId="product-dossier"
+          />
+        }
+        resizeHandleLabels={PRODUCT_RESIZE_HANDLE_LABELS}
+      />
+      <script
+        suppressHydrationWarning
+        dangerouslySetInnerHTML={{ __html: scoutSidebarDesktopPrehydrationScript }}
+      />
+      <script
+        suppressHydrationWarning
+        dangerouslySetInnerHTML={{ __html: scoutSidebarMobilePrehydrationScript }}
+      />
+    </>
+  );
+}
 
+function ProductsChrome({
+  addButton,
+  addOpen,
+  addSubmitting,
+  loading,
+  productCount,
+  onToggleAdd,
+}: {
+  addButton: RefObject<HTMLButtonElement | null>;
+  addOpen: boolean;
+  addSubmitting: boolean;
+  loading: boolean;
+  productCount: number;
+  onToggleAdd: () => void;
+}) {
+  const { setMobilePane, toggleLeftPane } = useSidebarActions();
+  const { isMobile, leftDesktopOpen, mobilePane } = useSidebarLayoutPresentation();
+  const productsShown = isMobile ? mobilePane === "left" : leftDesktopOpen;
+
+  const toggleProducts = () => {
+    if (isMobile) {
+      setMobilePane(productsShown ? "main" : "left");
+      return;
+    }
+    toggleLeftPane();
+  };
+
+  return (
+    <div className="flex h-12 min-w-0 items-center gap-2 px-2 sm:px-3">
+      <Button
+        type="button"
+        size="icon-sm"
+        variant="ghost"
+        aria-label={productsShown ? "Hide products" : "Show products"}
+        aria-pressed={productsShown}
+        onClick={toggleProducts}
+      >
+        <PanelLeftIcon />
+      </Button>
+      <div className="min-w-0 flex-1">
+        <h1 className="truncate text-sm font-medium">Product registry</h1>
+        <p className="text-muted-foreground hidden truncate text-xs sm:block">
+          Claims gathered from first-party materials
+        </p>
+      </div>
+      <p className="text-muted-foreground hidden text-xs sm:block" aria-live="polite">
+        {loading ? "Loading..." : `${productCount} ${productCount === 1 ? "product" : "products"}`}
+      </p>
+      <Button
+        ref={addButton}
+        type="button"
+        size="sm"
+        aria-expanded={addOpen}
+        aria-controls="add-product-panel"
+        disabled={addSubmitting}
+        onClick={onToggleAdd}
+      >
+        {addOpen ? <XIcon /> : <PlusIcon />}
+        {addOpen ? "Close" : "Add product"}
+      </Button>
+    </div>
+  );
+}
+
+function ProductNavigation({
+  loading,
+  products,
+  selectedProductId,
+  onSelect,
+}: {
+  loading: boolean;
+  products: readonly Product[];
+  selectedProductId: Product["_id"] | undefined;
+  onSelect: (productId: Product["_id"]) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const visibleProducts = products.filter(
+    (product) =>
+      normalizedQuery.length === 0 ||
+      product.name.toLocaleLowerCase().includes(normalizedQuery) ||
+      product.domain.toLocaleLowerCase().includes(normalizedQuery),
+  );
+
+  return (
+    <div className="p-2">
+      <Input
+        aria-label="Filter products"
+        type="search"
+        value={query}
+        placeholder="Filter products"
+        onChange={(event) => setQuery(event.currentTarget.value)}
+      />
+      {loading ? (
+        <p className="text-muted-foreground px-2 py-8 text-center text-sm" role="status">
+          Loading products...
+        </p>
+      ) : visibleProducts.length === 0 ? (
+        <p className="text-muted-foreground px-2 py-8 text-center text-sm">
+          {products.length === 0 ? "No products yet." : "No matching products."}
+        </p>
+      ) : (
+        <ul className="mt-2 space-y-1" aria-label="Products">
+          {visibleProducts.map((product) => {
+            const selected = product._id === selectedProductId;
+            return (
+              <li key={product._id}>
+                <button
+                  type="button"
+                  className="hover:bg-sidebar-accent focus-visible:ring-sidebar-ring flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left outline-none focus-visible:ring-2 data-[selected]:bg-sidebar-accent data-[selected]:text-sidebar-accent-foreground"
+                  data-selected={selected ? "" : undefined}
+                  aria-current={selected ? "page" : undefined}
+                  onClick={() => onSelect(product._id)}
+                >
+                  <ServiceIcon
+                    serviceName={product.name}
+                    serviceDomain={product.domain}
+                    className="size-7 shrink-0 rounded-lg"
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium">{product.name}</span>
+                    <span className="text-muted-foreground block truncate font-mono text-[0.6875rem]">
+                      {product.domain}
+                    </span>
+                  </span>
+                  <span
+                    className={`size-2 shrink-0 rounded-full ${investigationDotClass(product.latestInvestigation?.status)}`}
+                    aria-hidden="true"
+                  />
+                  <span className="sr-only">
+                    {investigationShortLabel(product.latestInvestigation)}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function ProductsMain({
+  addOpen,
+  loading,
+  notice,
+  selectedProduct,
+  selectionMissing,
+  syncState,
+  onAddCancel,
+  onAddFinished,
+  onAddSubmittingChange,
+}: {
+  addOpen: boolean;
+  loading: boolean;
+  notice: PageNotice;
+  selectedProduct: Product | undefined;
+  selectionMissing: boolean;
+  syncState: RegistrySyncState;
+  onAddCancel: () => void;
+  onAddFinished: (created: boolean) => void;
+  onAddSubmittingChange: (submitting: boolean) => void;
+}) {
+  return (
+    <main className="mx-auto w-full max-w-4xl p-4 sm:p-6">
       {addOpen ? (
         <AddProductForm
-          onCancel={closeAdd}
-          onAdded={finishAdd}
-          onSubmittingChange={setAddSubmitting}
+          onCancel={onAddCancel}
+          onAdded={onAddFinished}
+          onSubmittingChange={onAddSubmittingChange}
         />
       ) : null}
 
       {notice ? (
-        <p className="text-muted-foreground text-sm" role="status">
+        <p className="text-muted-foreground mt-4 text-sm" role="status">
           {notice.kind === "added" ? "Product added." : "That product was already in the registry."}
         </p>
       ) : null}
 
       {syncState.kind === "failed" ? (
-        <p className="text-destructive text-sm" role="alert">
+        <p className="text-destructive mt-4 text-sm" role="alert">
           Existing Scout accounts and Lab experiments could not be synced. Reload to try again.
         </p>
       ) : null}
 
       {loading ? (
-        <p
-          className="text-muted-foreground rounded-xl border px-4 py-10 text-center text-sm"
-          role="status"
-        >
+        <p className="text-muted-foreground py-16 text-center text-sm" role="status">
           Loading products...
         </p>
-      ) : loadedProducts.length === 0 ? (
-        <div className="rounded-xl border px-4 py-10 text-center">
+      ) : selectionMissing ? (
+        <div className="py-16 text-center">
+          <p className="text-sm font-medium">Product not found.</p>
+          <p className="text-muted-foreground mt-1 text-sm">
+            Choose another product from the list.
+          </p>
+        </div>
+      ) : selectedProduct === undefined ? (
+        <div className="py-16 text-center">
           <p className="text-sm font-medium">No products yet.</p>
           <p className="text-muted-foreground mt-1 text-sm">
             Add a product to investigate what it promises customers.
           </p>
         </div>
       ) : (
-        <ul className="divide-y rounded-xl border" aria-label="Products">
-          {loadedProducts.map((product) => (
-            <ProductRow key={product._id} product={product} />
-          ))}
-        </ul>
+        <div className={addOpen || notice || syncState.kind === "failed" ? "mt-6" : undefined}>
+          <ProductDetail key={selectedProduct._id} product={selectedProduct} />
+        </div>
       )}
-    </>
+    </main>
   );
 }
 
@@ -304,15 +564,15 @@ function AddProductForm({
   );
 }
 
-function ProductRow({ product }: { product: Product }) {
-  const [reportOpen, setReportOpen] = useState(false);
+function ProductDetail({ product }: { product: Product }) {
+  const [reportOpen, setReportOpen] = useState(true);
   const [requestState, setRequestState] = useState<InvestigationRequestState>({ kind: "idle" });
   const latest = product.latestInvestigation;
   const report = latest?.status === "completed" ? latest : product.latestCompletedInvestigation;
 
   return (
-    <li className={`border-l-2 ${investigationBorderClass(latest?.status)}`}>
-      <article className="p-4 sm:p-5">
+    <article>
+      <header className={`border-l-2 pl-3 ${investigationBorderClass(latest?.status)}`}>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
           <div className="flex min-w-0 items-start gap-3">
             <ServiceIcon
@@ -335,74 +595,74 @@ function ProductRow({ product }: { product: Product }) {
           </div>
           <InvestigationStatus investigation={latest} />
         </div>
+      </header>
 
-        <div className="mt-5 grid gap-4 text-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-          <dl className="grid gap-4 sm:grid-cols-2">
-            <div className="min-w-0">
-              <dt className="text-muted-foreground text-xs">Scout access</dt>
-              <dd className="mt-1">
-                <ScoutAccess access={product.scoutAccess} />
-              </dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground text-xs">Lab experiments</dt>
-              <dd className="mt-1">
-                {product.experimentCount}{" "}
-                {product.experimentCount === 1 ? "experiment" : "experiments"}
-              </dd>
-            </div>
-          </dl>
-
-          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-            {report ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                aria-expanded={reportOpen}
-                aria-controls={`product-investigation-${product._id}`}
-                onClick={() => setReportOpen((open) => !open)}
-              >
-                {reportOpen ? <ChevronUpIcon /> : <ChevronDownIcon />}
-                {reportOpen ? "Hide investigation" : reportButtonLabel(latest)}
-              </Button>
-            ) : null}
-            <InvestigationAction
-              productId={product._id}
-              investigation={latest}
-              state={requestState}
-              onStateChange={setRequestState}
-            />
+      <div className="mt-6 grid gap-4 text-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+        <dl className="grid gap-4 sm:grid-cols-2">
+          <div className="min-w-0">
+            <dt className="text-muted-foreground text-xs">Scout access</dt>
+            <dd className="mt-1">
+              <ScoutAccess access={product.scoutAccess} />
+            </dd>
           </div>
+          <div>
+            <dt className="text-muted-foreground text-xs">Lab experiments</dt>
+            <dd className="mt-1">
+              {product.experimentCount}{" "}
+              {product.experimentCount === 1 ? "experiment" : "experiments"}
+            </dd>
+          </div>
+        </dl>
+
+        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+          {report ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              aria-expanded={reportOpen}
+              aria-controls={`product-investigation-${product._id}`}
+              onClick={() => setReportOpen((open) => !open)}
+            >
+              {reportOpen ? <ChevronUpIcon /> : <ChevronDownIcon />}
+              {reportOpen ? "Hide investigation" : reportButtonLabel(latest)}
+            </Button>
+          ) : null}
+          <InvestigationAction
+            productId={product._id}
+            investigation={latest}
+            state={requestState}
+            onStateChange={setRequestState}
+          />
         </div>
+      </div>
 
-        {latest?.status === "failed" ? (
-          <div className="mt-4 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5">
-            <p className="text-destructive text-sm font-medium">Investigation failed</p>
-            <p className="text-muted-foreground mt-1 wrap-break-word text-sm">{latest.failure}</p>
-            {report ? (
-              <p className="text-muted-foreground mt-1 text-xs">
-                The last completed investigation is still available.
-              </p>
-            ) : null}
-          </div>
-        ) : null}
+      {latest?.status === "failed" ? (
+        <div className="mt-4 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5">
+          <p className="text-destructive text-sm font-medium">Investigation failed</p>
+          <p className="text-muted-foreground mt-1 wrap-break-word text-sm">{latest.failure}</p>
+          {report ? (
+            <p className="text-muted-foreground mt-1 text-xs">
+              The last completed investigation is still available.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
-        {requestState.kind === "failed" ? (
-          <p className="text-destructive mt-3 text-sm" role="alert">
-            {requestState.message}
-          </p>
-        ) : null}
+      {requestState.kind === "failed" ? (
+        <p className="text-destructive mt-3 text-sm" role="alert">
+          {requestState.message}
+        </p>
+      ) : null}
 
-        {report ? (
-          <Collapsible open={reportOpen} onOpenChange={setReportOpen}>
-            <CollapsibleContent id={`product-investigation-${product._id}`}>
-              <InvestigationReport investigation={report} />
-            </CollapsibleContent>
-          </Collapsible>
-        ) : null}
-      </article>
-    </li>
+      {report ? (
+        <Collapsible open={reportOpen} onOpenChange={setReportOpen}>
+          <CollapsibleContent id={`product-investigation-${product._id}`}>
+            <InvestigationReport investigation={report} />
+          </CollapsibleContent>
+        </Collapsible>
+      ) : null}
+    </article>
   );
 }
 
@@ -921,6 +1181,46 @@ function investigationBorderClass(status: Investigation["status"] | undefined) {
       return "border-l-destructive";
     default: {
       const exhaustive: never = status;
+      return exhaustive;
+    }
+  }
+}
+
+function investigationDotClass(status: Investigation["status"] | undefined) {
+  switch (status) {
+    case undefined:
+      return "bg-muted-foreground";
+    case "queued":
+      return "bg-amber-500";
+    case "running":
+      return "bg-blue-500";
+    case "completed":
+      return "bg-emerald-500";
+    case "failed":
+      return "bg-destructive";
+    default: {
+      const exhaustive: never = status;
+      return exhaustive;
+    }
+  }
+}
+
+function investigationShortLabel(investigation: Investigation | null) {
+  if (investigation === null) {
+    return "Not investigated";
+  }
+
+  switch (investigation.status) {
+    case "queued":
+      return "Investigation queued";
+    case "running":
+      return "Investigation running";
+    case "completed":
+      return "Investigated";
+    case "failed":
+      return "Investigation failed";
+    default: {
+      const exhaustive: never = investigation;
       return exhaustive;
     }
   }

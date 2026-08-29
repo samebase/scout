@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-29T10:18:42Z
+- **Last updated:** 2026-08-29T10:46:56Z
 
 ## Log
 
@@ -396,10 +396,18 @@ Cloudflare build path passed. An independent cross-model review found no P0-P2 i
 findings were fixed by aligning the visible registry cap and making the page await every bounded
 legacy-sync cursor (`docs/agent-runtime.md`, `.audit/products-investigation.tsv`).
 
-### 2026-08-29 - working tree
+### 2026-08-29 - a8f662a - v96
 
 Fixed the Products page staying in its loading state after React's development effect remount. The
 page now shares one legacy-sync promise while each mounted effect attaches its own live completion
 handler, avoiding both an abandoned result and duplicate mutation runs. A full browser reload now
 reaches the Product list, and the complete check and Cloudflare build path pass 160 tests
 (`src/routes/products.index.tsx`).
+
+### 2026-08-29 - working tree
+
+Turned the Product registry into a resizable workspace using the published `@samebase/sidebars`
+package. A compact, filterable product index now drives a linkable dossier pane; desktop widths
+persist across reloads, keyboard resizing is accessible, and mobile selection returns to the main
+dossier without losing the product context (`src/sidebars/`, `src/routes/products*.tsx`,
+`src/style.css`).
