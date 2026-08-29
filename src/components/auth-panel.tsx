@@ -104,12 +104,12 @@ export function AuthPanel() {
   };
 
   return (
-    <section className="flex flex-col gap-4 rounded-lg border p-4">
+    <section className="surface-panel flex flex-col gap-6 p-5 sm:p-7" aria-label="Account access">
       <AuthHeading state={state} />
 
       {state.kind === "credentials" ? (
-        <form className="flex flex-col gap-3" onSubmit={submitCredentials}>
-          <label className="flex flex-col gap-1 text-sm" htmlFor="auth-email">
+        <form className="flex flex-col gap-4" onSubmit={submitCredentials}>
+          <label className="flex flex-col gap-2 text-sm font-medium" htmlFor="auth-email">
             Email
             <Input
               id="auth-email"
@@ -122,7 +122,7 @@ export function AuthPanel() {
               autoFocus
             />
           </label>
-          <label className="flex flex-col gap-1 text-sm" htmlFor="auth-password">
+          <label className="flex flex-col gap-2 text-sm font-medium" htmlFor="auth-password">
             Password
             <Input
               id="auth-password"
@@ -133,10 +133,10 @@ export function AuthPanel() {
               required
             />
           </label>
-          <Button type="submit" disabled={isPending}>
+          <Button type="submit" size="lg" className="mt-1 w-full" disabled={isPending}>
             {pendingLabel(state.flow, isPending)}
           </Button>
-          <div className="flex items-center justify-between gap-3 text-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
             <Button
               type="button"
               variant="link"
@@ -168,7 +168,7 @@ export function AuthPanel() {
       ) : null}
 
       {state.kind === "verifyEmail" ? (
-        <form className="flex flex-col gap-3" onSubmit={submitVerification}>
+        <form className="flex flex-col gap-4" onSubmit={submitVerification}>
           <CodeField id="verification-code" />
           <Button type="submit" disabled={isPending}>
             {isPending ? "Verifying" : "Verify email"}
@@ -180,8 +180,8 @@ export function AuthPanel() {
       ) : null}
 
       {state.kind === "requestReset" ? (
-        <form className="flex flex-col gap-3" onSubmit={submitResetRequest}>
-          <label className="flex flex-col gap-1 text-sm" htmlFor="reset-email">
+        <form className="flex flex-col gap-4" onSubmit={submitResetRequest}>
+          <label className="flex flex-col gap-2 text-sm font-medium" htmlFor="reset-email">
             Email
             <Input
               id="reset-email"
@@ -204,9 +204,9 @@ export function AuthPanel() {
       ) : null}
 
       {state.kind === "resetPassword" ? (
-        <form className="flex flex-col gap-3" onSubmit={submitPasswordReset}>
+        <form className="flex flex-col gap-4" onSubmit={submitPasswordReset}>
           <CodeField id="reset-code" />
-          <label className="flex flex-col gap-1 text-sm" htmlFor="new-password">
+          <label className="flex flex-col gap-2 text-sm font-medium" htmlFor="new-password">
             New password
             <Input
               id="new-password"
@@ -217,7 +217,7 @@ export function AuthPanel() {
               required
             />
           </label>
-          <label className="flex flex-col gap-1 text-sm" htmlFor="confirm-password">
+          <label className="flex flex-col gap-2 text-sm font-medium" htmlFor="confirm-password">
             Confirm password
             <Input
               id="confirm-password"
@@ -253,22 +253,33 @@ export function AuthPanel() {
 
 function AuthHeading({ state }: { state: AuthState }) {
   if (state.kind === "credentials") {
-    return <h1 className="text-lg">{state.flow === "signIn" ? "Sign in" : "Create account"}</h1>;
+    return (
+      <div>
+        <h2 className="text-2xl font-semibold tracking-[-0.035em]">
+          {state.flow === "signIn" ? "Welcome back" : "Create account"}
+        </h2>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {state.flow === "signIn"
+            ? "Sign in to continue your product research."
+            : "Set up access to the Scout workspace."}
+        </p>
+      </div>
+    );
   }
   if (state.kind === "verifyEmail") {
     return (
       <div className="flex flex-col gap-1">
-        <h1 className="text-lg">Check your email</h1>
+        <h2 className="text-2xl font-semibold tracking-[-0.035em]">Check your email</h2>
         <p className="text-muted-foreground text-sm">Enter the code sent to {state.email}.</p>
       </div>
     );
   }
   if (state.kind === "requestReset") {
-    return <h1 className="text-lg">Reset password</h1>;
+    return <h2 className="text-2xl font-semibold tracking-[-0.035em]">Reset password</h2>;
   }
   return (
     <div className="flex flex-col gap-1">
-      <h1 className="text-lg">Choose a new password</h1>
+      <h2 className="text-2xl font-semibold tracking-[-0.035em]">Choose a new password</h2>
       <p className="text-muted-foreground text-sm">Enter the code sent to {state.email}.</p>
     </div>
   );
@@ -276,7 +287,7 @@ function AuthHeading({ state }: { state: AuthState }) {
 
 function CodeField({ id }: { id: string }) {
   return (
-    <label className="flex flex-col gap-1 text-sm" htmlFor={id}>
+    <label className="flex flex-col gap-2 text-sm font-medium" htmlFor={id}>
       Verification code
       <Input
         id={id}

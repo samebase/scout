@@ -59,18 +59,15 @@ function ScoutsIndexPage() {
 
   return (
     <>
-      <header className="flex flex-col gap-2 border-b pb-4 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
+      <header className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between sm:gap-8">
         <div>
-          <p className="font-mono text-[0.6875rem] tracking-[0.16em] text-muted-foreground uppercase">
-            Registry
-          </p>
-          <h1 className="mt-1 text-2xl font-medium tracking-tight">Scouts</h1>
-          <p className="text-muted-foreground mt-1 text-sm">
-            Configured scouts and the services attached to them.
+          <h1 className="route-heading">Scouts</h1>
+          <p className="mt-3 max-w-2xl text-base leading-7 text-muted-foreground">
+            Persistent identities for repeatable product tests.
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <p className="text-muted-foreground text-sm" aria-live="polite">
+        <div className="flex items-center gap-3 sm:pb-1">
+          <p className="sr-only" aria-live="polite">
             {scouts === undefined || serviceAccounts === undefined
               ? "Loading scouts..."
               : `Showing ${scouts.length}`}
@@ -98,30 +95,27 @@ function ScoutsIndexPage() {
       ) : null}
 
       {scouts === undefined || servicesByScout === undefined ? (
-        <p
-          className="text-muted-foreground rounded-xl border px-4 py-10 text-center text-sm"
-          role="status"
-        >
+        <p className="surface-panel py-16 text-center text-sm text-muted-foreground" role="status">
           Loading scouts...
         </p>
       ) : scouts.length === 0 ? (
-        <div className="rounded-xl border px-4 py-10 text-center">
-          <p className="text-sm font-medium">No scouts are registered yet.</p>
-          <p className="text-muted-foreground mt-1 text-sm">
-            Register an AgentMail inbox and Firecrawl profile to give Lab a reusable identity.
+        <div className="surface-panel border-dashed px-5 py-16 text-center">
+          <p className="text-base font-semibold">No Scouts yet</p>
+          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">
+            Register an AgentMail inbox and Firecrawl profile to create a reusable identity.
           </p>
         </div>
       ) : (
-        <ul className="divide-y rounded-xl border" aria-label="Scouts">
+        <ul className="grid gap-4 md:grid-cols-2" aria-label="Scouts">
           {scouts.map((scout) => {
             const services = servicesByScout.get(scout._id) ?? [];
 
             return (
-              <li key={scout._id}>
+              <li key={scout._id} className="surface-panel overflow-hidden">
                 <Link
                   to="/scouts/$slug"
                   params={{ slug: scout.slug }}
-                  className="group block rounded-xl p-4 outline-none transition-colors hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/50 sm:p-5"
+                  className="group block h-full p-5 outline-none transition-colors hover:bg-muted/40 focus-visible:ring-3 focus-visible:ring-ring/40 sm:p-6"
                 >
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
                     <div className="min-w-0">
@@ -282,11 +276,11 @@ function ScoutRegistrationForm({
   return (
     <section
       id="register-scout-panel"
-      className="bg-card rounded-xl border p-4 sm:p-5"
+      className="surface-panel p-5 sm:p-6"
       aria-labelledby="register-scout-heading"
     >
       <div>
-        <h2 id="register-scout-heading" className="text-lg font-medium">
+        <h2 id="register-scout-heading" className="text-xl font-semibold tracking-[-0.025em]">
           Register scout
         </h2>
         <p className="text-muted-foreground mt-1 text-sm">
@@ -479,7 +473,7 @@ function ScoutStatus({ status }: { status: ScoutStatus }) {
   const dotClass = status === "active" ? "bg-emerald-500" : "bg-muted-foreground";
 
   return (
-    <span className="inline-flex shrink-0 items-center gap-2 text-sm">
+    <span className="inline-flex shrink-0 items-center gap-2 rounded-full bg-muted px-2.5 py-1 text-xs font-medium">
       <span className={`size-2 rounded-full ${dotClass}`} aria-hidden="true" />
       {label}
     </span>

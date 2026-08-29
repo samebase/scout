@@ -45,7 +45,7 @@ export const Route = createFileRoute("/lab")({
     ...(typeof search["thread"] === "string" ? { thread: search["thread"] } : {}),
   }),
   head: () => ({
-    meta: [{ title: "Scout" }],
+    meta: [{ title: "Lab | Scout" }],
   }),
   component: LabPage,
 });
@@ -90,7 +90,7 @@ const threadDate = new Intl.DateTimeFormat(undefined, {
 
 function LabPage() {
   return (
-    <main className="mx-auto flex h-[calc(100dvh-3.25rem)] w-full max-w-4xl flex-col gap-4 px-4 pb-4">
+    <main className="mx-auto flex h-[calc(100dvh-4rem)] w-full max-w-[96rem] flex-col gap-4 px-3 pb-3 sm:px-4 sm:pb-4">
       <AuthLoading>
         <p className="text-muted-foreground py-10 text-sm">Loading...</p>
       </AuthLoading>
@@ -433,16 +433,17 @@ function AgentLab() {
 
   return (
     <>
-      <header className="flex shrink-0 flex-col gap-3 border-b py-4 sm:flex-row sm:items-end sm:justify-between">
+      <header className="flex shrink-0 flex-col gap-3 py-5 sm:flex-row sm:items-end sm:justify-between sm:py-6">
         <div>
-          <p className="font-mono text-[0.6875rem] tracking-[0.16em] text-muted-foreground uppercase">
-            Admin agent lab
-          </p>
-          <div className="mt-1 flex items-center gap-2">
-            <h1 className="text-xl font-medium tracking-tight">Experiments</h1>
-            <span className="bg-emerald-500 size-1.5 rounded-full" aria-hidden="true" />
-            <span className="text-muted-foreground text-xs">{scoutModelLabel(selectedModel)}</span>
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-2xl font-semibold tracking-[-0.035em]">Lab</h1>
+            <span className="rounded-full border bg-card px-2.5 py-1 text-xs font-medium text-muted-foreground">
+              {scoutModelLabel(selectedModel)}
+            </span>
           </div>
+          <p className="mt-1.5 text-sm text-muted-foreground">
+            Experiments and durable Scout threads.
+          </p>
         </div>
         <Button
           ref={createExperimentButton}
@@ -470,7 +471,7 @@ function AgentLab() {
         />
       ) : (
         <section
-          className="bg-card grid min-h-0 flex-1 overflow-hidden rounded-xl border lg:grid-cols-[17rem_minmax(0,1fr)]"
+          className="surface-panel grid min-h-0 flex-1 overflow-hidden lg:grid-cols-[19rem_minmax(0,1fr)]"
           aria-label="Scout Lab workspace"
         >
           <LabNavigation
@@ -532,7 +533,7 @@ function AgentLab() {
                   <MessageScrollerProvider autoScroll scrollPreviousItemPeek={48}>
                     <MessageScroller>
                       <MessageScrollerViewport>
-                        <MessageScrollerContent className="px-4 py-6 sm:px-6" aria-busy={isWorking}>
+                        <MessageScrollerContent className="px-4 py-7 sm:px-7" aria-busy={isWorking}>
                           {messages.status === "CanLoadMore" ? (
                             <MessageScrollerItem>
                               <Button
@@ -569,7 +570,7 @@ function AgentLab() {
                 </div>
 
                 <form
-                  className="border-t p-3 sm:p-4"
+                  className="border-t bg-[color-mix(in_oklch,var(--card)_92%,var(--background))] p-3 sm:p-4"
                   onSubmit={(event) => void submitPrompt(event)}
                 >
                   {selectedScout && !selectedActiveScout ? (
@@ -592,7 +593,7 @@ function AgentLab() {
                       Create an experiment before starting a thread.
                     </p>
                   ) : null}
-                  <div className="focus-within:border-ring focus-within:ring-ring/30 rounded-xl border bg-background p-2 transition-shadow focus-within:ring-3">
+                  <div className="rounded-[0.875rem] border border-input bg-card p-2 shadow-[0_4px_18px_color-mix(in_oklch,var(--foreground)_5%,transparent)] transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/25">
                     <Textarea
                       value={draft}
                       onChange={(event) => setDraft(event.target.value)}
@@ -684,7 +685,7 @@ function LabNavigation({
   if (experiments === undefined || threads === undefined) {
     return (
       <nav
-        className="text-muted-foreground max-h-28 overflow-y-auto border-b p-4 text-sm lg:max-h-none lg:border-r lg:border-b-0"
+        className="max-h-28 overflow-y-auto border-b bg-sidebar p-4 text-sm text-muted-foreground lg:max-h-none lg:border-r lg:border-b-0"
         aria-label="Lab experiments"
         aria-busy="true"
       >
@@ -697,7 +698,7 @@ function LabNavigation({
 
   return (
     <nav
-      className="max-h-28 overflow-y-auto border-b lg:max-h-none lg:border-r lg:border-b-0"
+      className="max-h-28 overflow-y-auto border-b bg-sidebar lg:max-h-none lg:border-r lg:border-b-0"
       aria-label="Lab experiments"
     >
       <ul className="divide-y">
@@ -707,13 +708,13 @@ function LabNavigation({
           );
           const selected = experiment._id === selectedExperimentId;
           return (
-            <li key={experiment._id} className={selected ? "bg-muted/30" : undefined}>
+            <li key={experiment._id} className={selected ? "bg-sidebar-accent/70" : undefined}>
               <Link
                 to="/lab"
                 search={{ experiment: experiment._id }}
                 aria-current={selected ? "location" : undefined}
                 onClick={onNavigate}
-                className="group block px-3 py-2.5 outline-none transition-colors hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring/50"
+                className="group block px-4 py-3 outline-none transition-colors hover:bg-sidebar-accent/55 focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-sidebar-ring/40"
               >
                 <span className="flex items-start justify-between gap-3">
                   <span className="min-w-0 wrap-break-word text-sm font-medium group-hover:underline group-hover:underline-offset-4">
@@ -745,13 +746,13 @@ function LabNavigation({
             </li>
           );
         })}
-        <li className={showingUngrouped ? "bg-muted/30" : undefined}>
+        <li className={showingUngrouped ? "bg-sidebar-accent/70" : undefined}>
           <Link
             to="/lab"
             search={{ experiment: UNGROUPED_SEARCH_VALUE }}
             aria-current={showingUngrouped ? "location" : undefined}
             onClick={onNavigate}
-            className="group block px-3 py-2.5 outline-none transition-colors hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring/50"
+            className="group block px-4 py-3 outline-none transition-colors hover:bg-sidebar-accent/55 focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-sidebar-ring/40"
           >
             <span className="text-sm font-medium group-hover:underline group-hover:underline-offset-4">
               Ungrouped history
@@ -813,8 +814,10 @@ function ThreadNavigationLink({
         search={{ experiment: experimentSearch, thread: thread.threadId }}
         aria-current={selected ? "page" : undefined}
         onClick={onNavigate}
-        className={`block px-4 py-2 outline-none transition-colors hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring/50 ${
-          selected ? "text-foreground" : "text-muted-foreground"
+        className={`block border-l-2 px-4 py-2 outline-none transition-colors hover:bg-sidebar-accent/55 focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-sidebar-ring/40 ${
+          selected
+            ? "border-primary bg-sidebar-accent text-foreground"
+            : "border-transparent text-muted-foreground"
         }`}
       >
         <span className="block wrap-break-word text-xs leading-snug">{threadLabel(thread)}</span>
@@ -887,7 +890,7 @@ function ExperimentContextHeader({
       : null;
 
   return (
-    <div className="max-h-36 overflow-y-auto border-b px-4 py-3 lg:max-h-48">
+    <div className="max-h-40 overflow-y-auto border-b bg-card px-4 py-3.5 sm:px-5 lg:max-h-48">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <h2 ref={headingRef} tabIndex={-1} className="wrap-break-word font-medium outline-none">
@@ -909,7 +912,7 @@ function ExperimentContextHeader({
                   onStatusChange(status);
                 }
               }}
-              className="border-input bg-background h-8 rounded-md border px-2 text-xs"
+              className="border-input bg-card h-8 rounded-[0.5rem] border px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/25"
             >
               <option value="active">Active</option>
               <option value="completed">Completed</option>
@@ -942,7 +945,7 @@ function ExperimentContextHeader({
         <div className="flex min-w-0 gap-1.5">
           <dt>Target</dt>
           <dd className="text-foreground wrap-break-word">
-            {experiment.targetProduct} · {experiment.targetDomain}
+            {experiment.targetProduct} at {experiment.targetDomain}
           </dd>
         </div>
       </dl>
@@ -1049,10 +1052,10 @@ function ExperimentForm({
   return (
     <section
       id="create-experiment-panel"
-      className="bg-card min-h-0 flex-1 overflow-y-auto rounded-xl border p-4 sm:p-5"
+      className="surface-panel min-h-0 flex-1 overflow-y-auto p-5 sm:p-7"
       aria-labelledby="create-experiment-heading"
     >
-      <h2 id="create-experiment-heading" className="text-lg font-medium">
+      <h2 id="create-experiment-heading" className="text-xl font-semibold tracking-[-0.025em]">
         New experiment
       </h2>
       <form className="mt-5 grid gap-4 sm:grid-cols-2" onSubmit={(event) => void submit(event)}>
@@ -1081,7 +1084,7 @@ function ExperimentForm({
               updateField("scoutId", event.currentTarget.value);
               setSelectedThreadIds([]);
             }}
-            className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
+            className="border-input bg-card h-10 w-full rounded-[0.625rem] border px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/25"
           >
             <option value="">Choose a Scout</option>
             {scouts.map((scout) => (

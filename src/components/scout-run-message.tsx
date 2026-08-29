@@ -114,7 +114,7 @@ export function formatRunMetadata(metadata: ScoutRunMetadata) {
   if (metadata.firecrawlDurationMs !== undefined) {
     parts.push(`${formatDuration(metadata.firecrawlDurationMs)} browser`);
   }
-  return parts.join(" · ");
+  return parts.join(", ");
 }
 
 function formatDuration(durationMs: number) {
@@ -195,7 +195,7 @@ function ToolActivity({ tool }: { tool: ToolSnapshot }) {
   const isComplete = tool.state === "output-available";
 
   return (
-    <Collapsible className="bg-muted/40 rounded-lg border px-3 py-2">
+    <Collapsible className="rounded-[0.75rem] border bg-muted/35 px-3 py-2.5">
       <CollapsibleTrigger className="group/tool flex w-full items-center gap-2 text-left">
         <Marker className={isError ? "text-destructive" : "text-foreground"}>
           <MarkerIcon>

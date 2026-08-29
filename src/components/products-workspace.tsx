@@ -212,7 +212,7 @@ export function ProductsWorkspace({ domain }: { domain?: string }) {
               </div>
             }
             header={
-              <div className="flex h-full items-center px-3 text-sm font-medium">Products</div>
+              <div className="flex h-full items-center px-3 text-sm font-semibold">Registry</div>
             }
             scrollRestorationId="products-navigation"
           />
@@ -305,7 +305,7 @@ function ProductsChrome({
   };
 
   return (
-    <div className="flex h-12 min-w-0 items-center gap-2 px-2 sm:px-3">
+    <div className="flex h-12 min-w-0 items-center gap-2 px-2 sm:px-4">
       <Button
         type="button"
         size="icon-sm"
@@ -317,12 +317,12 @@ function ProductsChrome({
         <PanelLeftIcon />
       </Button>
       <div className="min-w-0 flex-1">
-        <h1 className="truncate text-sm font-medium">Product registry</h1>
+        <h1 className="truncate text-sm font-semibold">Products</h1>
         <p className="text-muted-foreground hidden truncate text-xs sm:block">
-          Claims gathered from first-party materials
+          First-party claims and investigations
         </p>
       </div>
-      <p className="text-muted-foreground hidden text-xs sm:block" aria-live="polite">
+      <p className="sr-only" aria-live="polite">
         {loading ? "Loading..." : `${productCount} ${productCount === 1 ? "product" : "products"}`}
       </p>
       <Button
@@ -370,7 +370,7 @@ function InvestigationActivityHeader({
 }) {
   return (
     <div className="flex h-full min-w-0 items-center justify-between gap-3 px-3">
-      <span className="truncate text-sm font-medium">Investigation activity</span>
+      <span className="truncate text-sm font-semibold">Activity</span>
       <span className="text-muted-foreground text-xs" aria-live="polite">
         {inspector === undefined
           ? ""
@@ -451,7 +451,10 @@ function InvestigationActivityPane({
 
   return (
     <div className="p-3">
-      <section className="bg-muted/35 rounded-lg border p-3" aria-label="Workflow run">
+      <section
+        className="rounded-[0.75rem] border bg-card p-3.5 shadow-[0_6px_20px_color-mix(in_oklch,var(--foreground)_4%,transparent)]"
+        aria-label="Workflow run"
+      >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-sm font-medium">{productName ?? "Product"} investigation</p>
@@ -469,7 +472,7 @@ function InvestigationActivityPane({
           <div>
             <dt className="text-muted-foreground">Claims model</dt>
             <dd className="mt-0.5 break-all font-mono">
-              {inspector.model.name} · {inspector.model.effort}
+              {inspector.model.name}, {inspector.model.effort}
             </dd>
           </div>
         </dl>
@@ -485,8 +488,8 @@ function InvestigationActivityPane({
         </div>
       )}
 
-      <div className="mt-4 flex items-center justify-between gap-3 px-1">
-        <h2 className="text-xs font-medium uppercase tracking-[0.12em]">Provider activity</h2>
+      <div className="mt-5 flex items-center justify-between gap-3 px-1">
+        <h2 className="text-sm font-semibold">Provider activity</h2>
         <span className="text-muted-foreground text-xs">{inspector.activities.length} records</span>
       </div>
       <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
@@ -522,7 +525,7 @@ function InvestigationActivityPane({
         </ol>
       )}
 
-      <details className="mt-4 rounded-lg border">
+      <details className="mt-4 rounded-[0.75rem] border bg-card">
         <summary className="cursor-pointer px-3 py-2.5 text-sm font-medium focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
           Durable Workflow steps ({inspector.workflowSteps.length})
         </summary>
@@ -547,7 +550,7 @@ function InvestigationActivityPane({
                     {activityLifecycleLabel(step.status)}
                     {step.completedAt === null
                       ? ""
-                      : " · " + formatDuration(step.completedAt - step.startedAt)}
+                      : ", " + formatDuration(step.completedAt - step.startedAt)}
                   </span>
                 </span>
               </li>
@@ -580,7 +583,7 @@ function InvestigationActivity({
 
   return (
     <details
-      className="group rounded-lg border bg-background"
+      className="group rounded-[0.75rem] border bg-card shadow-[0_2px_8px_color-mix(in_oklch,var(--foreground)_3%,transparent)]"
       open={current || status === "failed" ? true : undefined}
     >
       <summary
@@ -593,7 +596,7 @@ function InvestigationActivity({
             aria-hidden="true"
           />
           <span className="min-w-0 flex-1">
-            <span className="text-muted-foreground block text-[0.6875rem] font-medium uppercase tracking-[0.12em]">
+            <span className="text-muted-foreground block text-[0.6875rem] font-semibold">
               {activity.actor}
             </span>
             <span className="mt-0.5 block wrap-break-word font-mono text-xs">
@@ -601,8 +604,8 @@ function InvestigationActivity({
             </span>
             <span className="text-muted-foreground mt-1 block text-[0.6875rem]">
               {activityLifecycleLabel(status)}
-              {duration === null ? "" : " · " + formatDuration(duration)}
-              {status === "skipped" ? "" : " · attempt " + activity.lifecycle.attempt}
+              {duration === null ? "" : ", " + formatDuration(duration)}
+              {status === "skipped" ? "" : ", attempt " + activity.lifecycle.attempt}
             </span>
           </span>
           <ChevronDownIcon
@@ -614,9 +617,7 @@ function InvestigationActivity({
       <div className="border-t px-3 py-3">
         {activity.source.kind === "external" ? (
           <div>
-            <p className="text-muted-foreground text-[0.6875rem] font-medium uppercase tracking-[0.12em]">
-              Request
-            </p>
+            <p className="text-muted-foreground text-[0.6875rem] font-semibold">Request</p>
             {activity.source.request.url === null ? null : (
               <p className="mt-1 wrap-break-word font-mono text-xs">
                 {activity.source.request.method} {activity.source.request.url}
@@ -751,7 +752,7 @@ function ProductNavigation({
   );
 
   return (
-    <div className="p-2">
+    <div className="p-2.5">
       <Input
         aria-label="Filter products"
         type="search"
@@ -775,7 +776,7 @@ function ProductNavigation({
               <li key={product._id}>
                 <button
                   type="button"
-                  className="hover:bg-sidebar-accent focus-visible:ring-sidebar-ring flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left outline-none focus-visible:ring-2 data-[selected]:bg-sidebar-accent data-[selected]:text-sidebar-accent-foreground"
+                  className="flex w-full items-center gap-2.5 rounded-[0.625rem] border border-transparent px-2.5 py-2.5 text-left outline-none transition-colors hover:bg-sidebar-accent/70 focus-visible:ring-2 focus-visible:ring-sidebar-ring data-[selected]:border-primary/15 data-[selected]:bg-sidebar-accent data-[selected]:text-sidebar-accent-foreground"
                   data-selected={selected ? "" : undefined}
                   aria-current={selected ? "page" : undefined}
                   onClick={() => onSelect(product.domain)}
@@ -834,7 +835,7 @@ function ProductsMain({
   onAddSubmittingChange: (submitting: boolean) => void;
 }) {
   return (
-    <main className="mx-auto w-full max-w-4xl p-4 @md:p-6">
+    <main className="mx-auto w-full max-w-5xl p-4 @md:p-7 @xl:p-9">
       {addOpen ? (
         <AddProductForm
           onCancel={onAddCancel}
@@ -860,14 +861,14 @@ function ProductsMain({
           Loading products...
         </p>
       ) : selectionMissing ? (
-        <div className="py-16 text-center">
+        <div className="surface-panel border-dashed px-5 py-16 text-center">
           <p className="text-sm font-medium">Product not found.</p>
           <p className="text-muted-foreground mt-1 text-sm">
             Choose another product from the list.
           </p>
         </div>
       ) : selectedProduct === undefined ? (
-        <div className="py-16 text-center">
+        <div className="surface-panel border-dashed px-5 py-16 text-center">
           <p className="text-sm font-medium">
             {hasProducts ? "Choose a product." : "No products yet."}
           </p>
@@ -943,10 +944,10 @@ function AddProductForm({
   return (
     <section
       id="add-product-panel"
-      className="bg-card rounded-xl border p-4 @md:p-5"
+      className="surface-panel p-5 @md:p-6"
       aria-labelledby="add-product-heading"
     >
-      <h2 id="add-product-heading" className="text-lg font-medium">
+      <h2 id="add-product-heading" className="text-xl font-semibold tracking-[-0.025em]">
         Add product
       </h2>
       <form className="mt-5 grid gap-4 @xl:grid-cols-2" onSubmit={(event) => void submit(event)}>
@@ -1027,16 +1028,20 @@ function ProductDetail({
 
   return (
     <article>
-      <header className={`border-l-2 pl-3 ${investigationBorderClass(latest?.status)}`}>
+      <header
+        className={`rounded-[0.875rem] border border-l-4 bg-card p-5 shadow-[0_10px_32px_color-mix(in_oklch,var(--foreground)_4%,transparent)] @md:p-6 ${investigationBorderClass(latest?.status)}`}
+      >
         <div className="flex flex-col gap-3 @xl:flex-row @xl:items-start @xl:justify-between @xl:gap-6">
           <div className="flex min-w-0 items-start gap-3">
             <ServiceIcon
               serviceName={product.name}
               serviceDomain={product.domain}
-              className="mt-0.5 size-7 rounded-lg"
+              className="mt-0.5 size-10 rounded-[0.625rem]"
             />
             <div className="min-w-0">
-              <h2 className="wrap-break-word text-base font-medium">{product.name}</h2>
+              <h2 className="wrap-break-word text-xl font-semibold tracking-[-0.03em] @md:text-2xl">
+                {product.name}
+              </h2>
               <a
                 href={product.primaryUrl}
                 target="_blank"
@@ -1055,7 +1060,7 @@ function ProductDetail({
         </div>
       </header>
 
-      <div className="mt-6 grid gap-4 text-sm @2xl:grid-cols-[minmax(0,1fr)_auto] @2xl:items-end">
+      <div className="mt-5 grid gap-4 text-sm @2xl:grid-cols-[minmax(0,1fr)_auto] @2xl:items-end">
         <dl>
           <div className="min-w-0">
             <dt className="text-muted-foreground text-xs">Scout access</dt>
@@ -1174,7 +1179,10 @@ function ResearchReset({
   };
 
   return (
-    <section className="bg-muted/40 mt-4 rounded-lg border px-3 py-3" aria-label="Reset research">
+    <section
+      className="mt-4 rounded-[0.75rem] border bg-muted/45 px-4 py-4"
+      aria-label="Reset research"
+    >
       <p className="text-sm font-medium">Reset research for {productName}?</p>
       <p className="text-muted-foreground mt-1 text-sm">
         This hides the current report and returns the product to Not investigated. The underlying
@@ -1227,7 +1235,7 @@ function ScoutAccess({ access }: { access: Product["scoutAccess"] }) {
             {scout.displayName}, {scout.accountCount}{" "}
             {scout.accountCount === 1 ? "account" : "accounts"}
             <span className="text-muted-foreground">
-              {` · ${accessEvidenceLabel(scout.authenticationEvidence)}`}
+              {`, ${accessEvidenceLabel(scout.authenticationEvidence)}`}
             </span>
           </span>
         </span>
@@ -1337,7 +1345,7 @@ function StatusLabel({
           {investigationDate.format(detail)}
           {credits === undefined || credits === null
             ? null
-            : ` · ${creditCount.format(credits)} Firecrawl credits`}
+            : `, ${creditCount.format(credits)} Firecrawl credits`}
         </span>
       </span>
     </span>
@@ -1424,28 +1432,28 @@ function InvestigationReport({
   productDomain: string;
 }) {
   return (
-    <section className="mt-5 border-t pt-5" aria-label="Investigation result">
+    <section className="mt-6 border-t pt-6" aria-label="Investigation result">
       <p className="text-muted-foreground mb-4 text-xs">
-        {investigation.result.claims.length} unverified claims ·{" "}
-        {creditCount.format(investigation.creditsUsed)} Firecrawl credits ·{" "}
+        {investigation.result.claims.length} unverified claims,{" "}
+        {creditCount.format(investigation.creditsUsed)} Firecrawl credits,{" "}
         {investigationDate.format(investigation.completedAt)}
       </p>
 
       {investigation.result.claims.length === 0 ? (
         <EmptyReportValue />
       ) : (
-        <ul className="divide-y rounded-lg border" aria-label="Claims">
+        <ul className="surface-panel divide-y overflow-hidden" aria-label="Claims">
           {investigation.result.claims.map((claim) => (
             <li key={claim.claimKey}>
               <Link
                 to="/products/$domain/claims/$claimKey"
                 params={{ domain: productDomain, claimKey: claim.claimKey }}
-                className="group flex items-start gap-3 p-3 outline-none hover:bg-muted/40 focus-visible:ring-3 focus-visible:ring-ring/50 @md:p-4"
+                className="group flex items-start gap-3 p-4 outline-none transition-colors hover:bg-muted/40 focus-visible:ring-3 focus-visible:ring-ring/40 @md:p-5"
               >
                 <span className="min-w-0 flex-1 wrap-break-word text-sm font-medium leading-6">
                   {claim.claim}
                 </span>
-                <span className="text-muted-foreground mt-0.5 shrink-0 font-mono text-[0.625rem] uppercase">
+                <span className="text-muted-foreground mt-0.5 shrink-0 font-mono text-[0.625rem] font-medium">
                   {claim.category}
                 </span>
                 <ArrowRightIcon
@@ -1590,9 +1598,7 @@ function ReportSection({
 }) {
   return (
     <section className={className}>
-      <h3 className="text-muted-foreground mb-2 font-mono text-[0.6875rem] tracking-[0.12em] uppercase">
-        {title}
-      </h3>
+      <h3 className="mb-2 text-sm font-semibold tracking-[-0.01em] text-foreground">{title}</h3>
       {children}
     </section>
   );

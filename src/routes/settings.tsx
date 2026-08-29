@@ -1,12 +1,13 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import { Navigate, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Authenticated, AuthLoading, Unauthenticated } from "convex/react";
+import { LogOutIcon, ShieldCheckIcon } from "lucide-react";
 import { useState } from "react";
 import { Button } from "#components/ui/button";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
-    meta: [{ title: "Scout" }],
+    meta: [{ title: "Settings | Scout" }],
   }),
   component: SettingsPage,
 });
@@ -15,14 +16,14 @@ type SignOutState = { kind: "idle" } | { kind: "pending" } | { kind: "failed" };
 
 function SettingsPage() {
   return (
-    <main className="mx-auto flex max-w-xl flex-col gap-6 p-4">
-      <header className="flex flex-col gap-2">
-        <h1 className="text-2xl">Settings</h1>
-        <p className="text-muted-foreground">Manage your Scout account.</p>
+    <main className="route-page max-w-3xl">
+      <header>
+        <h1 className="route-heading">Settings</h1>
+        <p className="mt-3 text-base text-muted-foreground">Manage this browser session.</p>
       </header>
 
       <AuthLoading>
-        <p className="text-muted-foreground text-sm">Loading account...</p>
+        <p className="mt-8 text-muted-foreground text-sm">Loading account...</p>
       </AuthLoading>
       <Unauthenticated>
         <Navigate to="/" replace />
@@ -55,13 +56,18 @@ function SessionSettings() {
   };
 
   return (
-    <section className="rounded-lg border p-4" aria-labelledby="session-settings-heading">
-      <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
-        <div className="flex flex-col gap-1">
-          <h2 id="session-settings-heading" className="text-lg font-medium">
-            Session
-          </h2>
-          <p className="text-muted-foreground text-sm">Sign out of Scout on this browser.</p>
+    <section className="surface-panel mt-8 p-5 sm:p-6" aria-labelledby="session-settings-heading">
+      <div className="flex flex-col items-start justify-between gap-5 sm:flex-row sm:items-center">
+        <div className="flex items-start gap-4">
+          <span className="grid size-10 shrink-0 place-items-center rounded-[0.625rem] bg-accent text-accent-foreground">
+            <ShieldCheckIcon className="size-5" aria-hidden="true" />
+          </span>
+          <div>
+            <h2 id="session-settings-heading" className="text-base font-semibold">
+              Administrator session
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">You are signed in on this browser.</p>
+          </div>
         </div>
         <Button
           type="button"
@@ -69,6 +75,7 @@ function SessionSettings() {
           disabled={isPending}
           onClick={() => void onSignOut()}
         >
+          <LogOutIcon aria-hidden="true" />
           {isPending ? "Signing out" : "Sign out"}
         </Button>
       </div>

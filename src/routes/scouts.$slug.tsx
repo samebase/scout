@@ -75,7 +75,7 @@ function ScoutDetailPage() {
 
   return (
     <>
-      <header className="flex flex-col gap-4 border-b pb-4">
+      <header className="flex flex-col gap-5">
         <Link
           to="/scouts"
           className="text-muted-foreground inline-flex w-fit items-center gap-1.5 text-sm underline-offset-4 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
@@ -83,17 +83,12 @@ function ScoutDetailPage() {
           <ArrowLeftIcon aria-hidden="true" />
           Back to Scouts
         </Link>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between sm:gap-6">
           <div>
-            <p className="font-mono text-[0.6875rem] tracking-[0.16em] text-muted-foreground uppercase">
-              Scout profile
-            </p>
-            <h1 className="mt-1 wrap-break-word text-2xl font-medium tracking-tight">
-              {scout.displayName}
-            </h1>
+            <h1 className="route-heading wrap-break-word">{scout.displayName}</h1>
             <p className="text-muted-foreground mt-1 font-mono text-xs">/{scout.slug}</p>
           </div>
-          <span className="inline-flex shrink-0 items-center gap-2 text-sm">
+          <span className="inline-flex shrink-0 self-start items-center gap-2 rounded-full bg-muted px-2.5 py-1 text-xs font-medium">
             <span className={`size-2 rounded-full ${statusDotClass}`} aria-hidden="true" />
             {statusLabel}
           </span>
@@ -101,10 +96,10 @@ function ScoutDetailPage() {
       </header>
 
       <section aria-labelledby="scout-identity-heading">
-        <h2 id="scout-identity-heading" className="text-lg font-medium">
+        <h2 id="scout-identity-heading" className="text-lg font-semibold tracking-[-0.02em]">
           Website identity
         </h2>
-        <dl className="mt-3 grid gap-4 rounded-xl border p-4 text-sm sm:grid-cols-2 sm:p-5">
+        <dl className="surface-panel mt-3 grid gap-5 p-5 text-sm sm:grid-cols-2 sm:p-6">
           <div className="min-w-0">
             <dt className="text-muted-foreground text-xs">First name</dt>
             <dd className="mt-1 wrap-break-word">
@@ -121,10 +116,13 @@ function ScoutDetailPage() {
       </section>
 
       <section aria-labelledby="scout-provider-connections-heading">
-        <h2 id="scout-provider-connections-heading" className="text-lg font-medium">
+        <h2
+          id="scout-provider-connections-heading"
+          className="text-lg font-semibold tracking-[-0.02em]"
+        >
           Provider connections
         </h2>
-        <dl className="mt-3 grid gap-4 rounded-xl border p-4 text-sm sm:grid-cols-2 sm:p-5">
+        <dl className="surface-panel mt-3 grid gap-5 p-5 text-sm sm:grid-cols-2 sm:p-6">
           <div className="min-w-0">
             <dt className="text-muted-foreground text-xs">AgentMail inbox</dt>
             <dd className="mt-1 wrap-break-word font-mono text-xs">{scout.agentMail.inboxId}</dd>
@@ -173,7 +171,10 @@ function ServiceAccountsSection({
   return (
     <section aria-labelledby="scout-service-accounts-heading">
       <div className="flex items-center justify-between gap-4">
-        <h2 id="scout-service-accounts-heading" className="text-lg font-medium">
+        <h2
+          id="scout-service-accounts-heading"
+          className="text-lg font-semibold tracking-[-0.02em]"
+        >
           Service accounts
         </h2>
         <Button
@@ -201,15 +202,15 @@ function ServiceAccountsSection({
       ) : null}
 
       {accounts === undefined ? (
-        <p className="text-muted-foreground mt-3 rounded-xl border px-4 py-8 text-sm" role="status">
+        <p className="surface-panel mt-3 px-5 py-10 text-sm text-muted-foreground" role="status">
           Loading service accounts...
         </p>
       ) : accounts.length === 0 ? (
-        <p className="text-muted-foreground mt-3 rounded-xl border px-4 py-8 text-sm">
+        <p className="surface-panel mt-3 border-dashed px-5 py-10 text-sm text-muted-foreground">
           No service accounts registered.
         </p>
       ) : (
-        <ul className="mt-3 divide-y rounded-xl border" aria-label="Service accounts">
+        <ul className="surface-panel mt-3 divide-y overflow-hidden" aria-label="Service accounts">
           {accounts.map((account) => (
             <li key={account._id} className="grid gap-4 p-4 text-sm sm:grid-cols-2 sm:p-5">
               <div className="flex min-w-0 items-start gap-3">
@@ -321,7 +322,7 @@ function AccountRegistrationForm({
   };
 
   return (
-    <div id="register-service-account-panel" className="bg-card mt-3 rounded-xl border p-4 sm:p-5">
+    <div id="register-service-account-panel" className="surface-panel mt-4 p-5 sm:p-6">
       <form className="grid gap-4 sm:grid-cols-3" onSubmit={(event) => void submit(event)}>
         <FormField label="Service name" htmlFor="service-account-name">
           <Input
