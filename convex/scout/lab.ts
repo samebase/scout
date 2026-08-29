@@ -13,6 +13,7 @@ import {
   type QueryCtx,
 } from "../_generated/server";
 import { requireAppUser } from "../access";
+import { canonicalProductDomain, ensureProduct } from "../productsDomain";
 import schema from "../schema";
 import { scoutAgent } from "./agent";
 import { requireOwnedAgentThread } from "./labAccess";
@@ -27,17 +28,15 @@ const MAX_PROMPT_LENGTH = 16_000;
 const MAX_EXPERIMENTS_PER_USER = 100;
 const MAX_EXPERIMENT_NAME_LENGTH = 120;
 const MAX_TARGET_PRODUCT_LENGTH = 120;
-const MAX_TARGET_DOMAIN_LENGTH = 253;
 const MAX_OBJECTIVE_LENGTH = 2_000;
 const MAX_ASSIGNED_THREADS = 50;
 const MAX_THREAD_TITLE_LENGTH = 80;
 const GENERATION_START_TIMEOUT_MS = 5 * 60 * 1_000;
 const GENERATION_RUN_TIMEOUT_MS = 11 * 60 * 1_000;
 const EXPIRED_GENERATION_FAILURE = "Generation stopped before completion";
-const DNS_LABEL_PATTERN = /^(?!-)[a-z0-9-]+(?<!-)$/;
 
 const experimentStatusValidator = v.union(v.literal("active"), v.literal("completed"));
-const labExperimentValidator = schema.doc("scoutLabExperiments").omit("userId");
+const labExperimentValidator = schema.doc("scoutLabExperiments").omit("userId").omit("productId");
 
 const recentThreadValidator = v.object({
   threadId: v.string(),
@@ -119,28 +118,6 @@ function requiredText(value: string, label: string, maximumLength: number) {
     throw new Error(`${label} must be ${maximumLength} characters or fewer`);
   }
   return trimmed;
-}
-
-function canonicalTargetDomain(value: string) {
-  const input = requiredText(value, "Target domain", MAX_TARGET_DOMAIN_LENGTH + 8);
-  let parsed: URL;
-  try {
-    parsed = new URL(input.includes("://") ? input : `https://${input}`);
-  } catch {
-    throw new Error("Target domain must be a valid hostname or URL");
-  }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new Error("Target domain must use HTTP or HTTPS");
-  }
-  const hostname = parsed.hostname.toLowerCase().replace(/\.$/, "");
-  const labels = hostname.split(".");
-  const hasValidDnsLabels = labels.every(
-    (label) => label.length > 0 && label.length <= 63 && DNS_LABEL_PATTERN.test(label),
-  );
-  if (!hostname || hostname.length > MAX_TARGET_DOMAIN_LENGTH || !hasValidDnsLabels) {
-    throw new Error("Target domain must be a valid hostname or URL");
-  }
-  return hostname;
 }
 
 function generationLeaseExpiresAt(generation: { leaseExpiresAt: number }) {
@@ -232,7 +209,9 @@ export const listExperiments = query({
       .withIndex("by_user_id", (q) => q.eq("userId", userId))
       .order("desc")
       .take(MAX_EXPERIMENTS_PER_USER);
-    return experiments.map(({ userId: _userId, ...experiment }) => experiment);
+    return experiments.map(
+      ({ userId: _userId, productId: _productId, ...experiment }) => experiment,
+    );
   },
 });
 
@@ -255,17 +234,25 @@ export const createExperiment = mutation({
     if (experiments.length >= MAX_EXPERIMENTS_PER_USER) {
       throw new Error(`The Lab can contain at most ${MAX_EXPERIMENTS_PER_USER} experiments`);
     }
+    const name = requiredText(args.name, "Experiment name", MAX_EXPERIMENT_NAME_LENGTH);
+    const targetProduct = requiredText(
+      args.targetProduct,
+      "Target product",
+      MAX_TARGET_PRODUCT_LENGTH,
+    );
+    const targetDomain = canonicalProductDomain(args.targetDomain, "Target domain");
+    const product = await ensureProduct(ctx, {
+      name: targetProduct,
+      domain: targetDomain,
+    });
     return {
       experimentId: await ctx.db.insert("scoutLabExperiments", {
         userId,
         scoutId: args.scoutId,
-        name: requiredText(args.name, "Experiment name", MAX_EXPERIMENT_NAME_LENGTH),
-        targetProduct: requiredText(
-          args.targetProduct,
-          "Target product",
-          MAX_TARGET_PRODUCT_LENGTH,
-        ),
-        targetDomain: canonicalTargetDomain(args.targetDomain),
+        name,
+        targetProduct,
+        targetDomain,
+        productId: product.productId,
         objective: requiredText(args.objective, "Objective", MAX_OBJECTIVE_LENGTH),
         status: "active",
       }),

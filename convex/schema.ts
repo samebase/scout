@@ -1,6 +1,7 @@
 import { authTables } from "@convex-dev/auth/server";
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { productInvestigationValidator } from "./productsModel";
 import { scoutServiceAccountFieldsValidator, scoutWebsiteIdentityValidator } from "./scout/model";
 import { scoutModelValidator, scoutTokenUsageValidator } from "./scout/models";
 
@@ -27,8 +28,24 @@ export default defineSchema({
     .index("by_agent_mail_address", ["agentMail.address"])
     .index("by_agent_mail_inbox_id", ["agentMail.inboxId"])
     .index("by_firecrawl_profile_name", ["firecrawl.profileName"]),
-  scoutServiceAccounts: defineTable(scoutServiceAccountFieldsValidator.fields)
+  products: defineTable({
+    name: v.string(),
+    domain: v.string(),
+    primaryUrl: v.string(),
+    latestInvestigationId: v.optional(v.id("productInvestigations")),
+    latestCompletedInvestigationId: v.optional(v.id("productInvestigations")),
+    activeInvestigationId: v.optional(v.id("productInvestigations")),
+  }).index("by_domain", ["domain"]),
+  productInvestigations: defineTable(productInvestigationValidator)
+    .index("by_product_id", ["productId"])
+    .index("by_product_id_and_requested_at", ["productId", "requestedAt"]),
+  scoutServiceAccounts: defineTable(
+    scoutServiceAccountFieldsValidator.extend({
+      productId: v.optional(v.id("products")),
+    }).fields,
+  )
     .index("by_scout_id", ["scoutId"])
+    .index("by_product_id", ["productId"])
     .index("by_scout_id_and_service_domain_and_identifier", [
       "scoutId",
       "serviceDomain",
@@ -40,9 +57,12 @@ export default defineSchema({
     name: v.string(),
     targetProduct: v.string(),
     targetDomain: v.string(),
+    productId: v.optional(v.id("products")),
     objective: v.string(),
     status: v.union(v.literal("active"), v.literal("completed")),
-  }).index("by_user_id", ["userId"]),
+  })
+    .index("by_user_id", ["userId"])
+    .index("by_product_id_and_user_id", ["productId", "userId"]),
   scoutLabThreads: defineTable({
     threadId: v.string(),
     userId: v.id("users"),

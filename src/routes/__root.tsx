@@ -38,7 +38,10 @@ function RootComponent() {
     <RootDocument>
       <ConvexClientProvider>
         <Authenticated>
-          <nav className="mx-auto flex w-full max-w-2xl pt-2" aria-label="Primary navigation">
+          <nav
+            className="mx-auto flex w-full max-w-2xl flex-wrap px-1 pt-2 [&_[data-slot=button]]:px-1.5 sm:px-2 sm:[&_[data-slot=button]]:px-2.5"
+            aria-label="Primary navigation"
+          >
             <Button asChild variant="link">
               <Link to="/" activeOptions={{ exact: true }}>
                 Home
@@ -49,6 +52,9 @@ function RootComponent() {
             </Button>
             <Button asChild variant="link">
               <Link to="/scouts">Scouts</Link>
+            </Button>
+            <Button asChild variant="link">
+              <Link to="/products">Products</Link>
             </Button>
             <Button asChild variant="link">
               <Link to="/settings">Settings</Link>

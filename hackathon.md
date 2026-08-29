@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-28T22:15:12Z
+- **Last updated:** 2026-08-29T01:16:23Z
 
 ## Log
 
@@ -359,7 +359,7 @@ linkable experiment and thread navigation, creation and status controls, and tes
 (`convex/schema.ts`, `convex/scout/lab.ts`, `convex/scoutLab.test.ts`, `src/routes/lab.tsx`,
 `docs/agent-runtime.md`).
 
-### 2026-08-28 - working tree
+### 2026-08-28 - 11930c7 - v92
 
 Hardened Lab experiments after adversarial review. Thread history is paginated instead of silently
 ending at 50, explicit URLs never fall through to another experiment or thread, browser navigation
@@ -368,3 +368,30 @@ mobile workspace. Disabled Scouts remain available for historical organization w
 execution access. Cross-user assignment, disabled-Scout organization, and multi-page history are
 covered by focused tests (`convex/scout/lab.ts`, `convex/scoutLab.test.ts`, `src/routes/lab.tsx`,
 `docs/agent-runtime.md`).
+
+### 2026-08-29 - working tree
+
+Added the authenticated Product registry that unifies explicit admin entries, Scout service
+accounts, and Lab experiment targets by canonical domain. The Products page adds and deduplicates
+products, reports Scout access and experiment use, and keeps claim investigations inline with an
+explicit unverified-evidence boundary (`convex/schema.ts`, `convex/products*.ts`,
+`convex/scout/serviceAccounts.ts`, `convex/scout/lab.ts`, `src/routes/products*.tsx`).
+
+Product investigation now maps a first-party site, optionally performs one domain-constrained
+search, scrapes at most six validated pages, and gives at most 36,000 characters to one fresh,
+tool-free Luna Agent thread. Opaque source IDs are hydrated only to retrieved URLs, excerpts must
+occur on their cited page, Firecrawl use is conservatively capped at nine credits, and a four-minute
+watchdog rejects stale completion while retaining the previous completed report. A direct
+Firecrawl Agent baseline was rejected after a 15-minute Samebase timeout, and Convex Gateway
+structured output was rejected after a reproducible HTTP 400; the accepted single text generation
+uses bounded JSON and Zod validation (`convex/productResearchAgent.ts`,
+`convex/productsInvestigation.ts`, `convex/productsResearch.ts`, `convex/products.test.ts`).
+
+Live development investigations then completed for Samebase, Tally, and Otio at seven
+conservatively counted Firecrawl credits each. Their expanded reports cited five, four, and five
+actual first-party pages. Tally surfaced the qualification between unlimited free usage and
+unstated fair-use limits; Otio surfaced no-file-cap language against explicit upload and storage
+quotas, plus an unclear OCR dependency. The final check passed 160 tests and the complete
+Cloudflare build path passed. An independent cross-model review found no P0-P2 issues; its two P3
+findings were fixed by aligning the visible registry cap and making the page await every bounded
+legacy-sync cursor (`docs/agent-runtime.md`, `.audit/products-investigation.tsv`).
