@@ -7,8 +7,9 @@ import {
 } from "@samebase/sidebars/SidebarLayout";
 import { useSidebarActions, useSidebarLayoutPresentation } from "@samebase/sidebars/SidebarRuntime";
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { useMutation, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
+import type HlsType from "hls.js";
 import {
   ArrowLeftIcon,
   CircleAlertIcon,
@@ -20,7 +21,7 @@ import {
   RotateCcwIcon,
   TerminalSquareIcon,
 } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import {
   scoutSidebarDesktopPrehydrationScript,
@@ -39,6 +40,8 @@ type Product = NonNullable<FunctionReturnType<typeof api.products.getByDomain>>;
 type ResolvedClaim = NonNullable<FunctionReturnType<typeof api.products.getClaimByDomain>>;
 type Claim = ResolvedClaim["claim"];
 type ClaimRun = NonNullable<FunctionReturnType<typeof api.claimTests.latest>>;
+type ReplayPagesResult = FunctionReturnType<typeof api.claimTestReplay.listPages>;
+type ReplayPage = Extract<ReplayPagesResult, { status: "ready" }>["pages"][number];
 
 type StartState = { kind: "idle" } | { kind: "starting" } | { kind: "failed"; message: string };
 type ClaimVerdict = "Supported" | "Qualified" | "Refuted" | "Inconclusive";
@@ -47,6 +50,8 @@ const CLAIM_RESIZE_HANDLE_LABELS = {
   left: "Resize claim list",
   right: "Resize test activity",
 } satisfies SidebarLayoutResizeHandleLabels;
+const REPLAY_PREPARATION_RETRIES = 10;
+const REPLAY_RETRY_DELAY_MS = 2_000;
 
 const formatResizeHandleValueText: SidebarLayoutResizeHandleValueTextFormatter = ({ widthPx }) =>
   `${widthPx} pixels wide`;
@@ -446,16 +451,26 @@ function ClaimTest({
           {startState.message}
         </p>
       ) : null}
-      <ClaimRunResult latestRun={latestRun} liveViewUrl={liveViewUrl} resultText={resultText} />
+      <ClaimRunResult
+        claimKey={claimKey}
+        domain={domain}
+        latestRun={latestRun}
+        liveViewUrl={liveViewUrl}
+        resultText={resultText}
+      />
     </section>
   );
 }
 
 function ClaimRunResult({
+  claimKey,
+  domain,
   latestRun,
   liveViewUrl,
   resultText,
 }: {
+  claimKey: string;
+  domain: string;
   latestRun: ClaimRun | null | undefined;
   liveViewUrl: string | null;
   resultText: string | null;
@@ -479,13 +494,16 @@ function ClaimRunResult({
 
   if (latestRun.generation.status === "failed") {
     return (
-      <div className="mt-8 border-t pt-6">
-        <p className="text-destructive text-sm font-medium">Test failed</p>
-        <p className="text-muted-foreground mt-2 whitespace-pre-wrap text-sm leading-6">
-          {latestRun.generation.failure}
-        </p>
-        <RunMetadata run={latestRun} />
-      </div>
+      <>
+        <ClaimReplay claimKey={claimKey} domain={domain} runId={latestRun.runId} />
+        <div className="mt-8 border-t pt-6">
+          <p className="text-destructive text-sm font-medium">Test failed</p>
+          <p className="text-muted-foreground mt-2 whitespace-pre-wrap text-sm leading-6">
+            {latestRun.generation.failure}
+          </p>
+          <RunMetadata run={latestRun} />
+        </div>
+      </>
     );
   }
 
@@ -497,7 +515,10 @@ function ClaimRunResult({
 
   return (
     <>
-      {liveBrowser}
+      {liveBrowser ??
+        (latestRun.generation.status === "completed" ? (
+          <ClaimReplay claimKey={claimKey} domain={domain} runId={latestRun.runId} />
+        ) : null)}
       <div className="mt-8 border-t pt-6">
         {latestRun.generation.status === "pending" ? (
           <h3 className="text-sm font-medium">Live result</h3>
@@ -568,6 +589,294 @@ function ClaimLiveBrowser({ url }: { url: string }) {
       />
     </section>
   );
+}
+
+type ReplayLoadState =
+  | { kind: "loading" | "processing" }
+  | { kind: "ready"; pages: ReplayPage[]; selectedPageId: string }
+  | { kind: "unavailable" | "delayed" | "failed" };
+
+function ClaimReplay({
+  claimKey,
+  domain,
+  runId,
+}: {
+  claimKey: string;
+  domain: string;
+  runId: ClaimRun["runId"];
+}) {
+  const listPages = useAction(api.claimTestReplay.listPages);
+  const [requestVersion, setRequestVersion] = useState(0);
+  const [state, setState] = useState<ReplayLoadState>({ kind: "loading" });
+  const refresh = useCallback(() => setRequestVersion((version) => version + 1), []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let retryTimer: number | undefined;
+    let attempt = 0;
+    setState({ kind: "loading" });
+
+    const load = async () => {
+      try {
+        const replay = await listPages({ claimKey, domain });
+        if (cancelled) return;
+        if (replay.status === "ready") {
+          const firstPage = replay.pages.find((page) => page.pageUrl !== null) ?? replay.pages[0];
+          if (!firstPage) {
+            setState({ kind: "delayed" });
+            return;
+          }
+          setState({
+            kind: "ready",
+            pages: replay.pages,
+            selectedPageId: firstPage.pageId,
+          });
+          return;
+        }
+        if (replay.status === "unavailable") {
+          setState({ kind: "unavailable" });
+          return;
+        }
+        attempt += 1;
+        if (attempt >= REPLAY_PREPARATION_RETRIES) {
+          setState({ kind: "delayed" });
+          return;
+        }
+        setState({ kind: "processing" });
+        retryTimer = window.setTimeout(() => void load(), REPLAY_RETRY_DELAY_MS);
+      } catch {
+        if (!cancelled) setState({ kind: "failed" });
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+    };
+  }, [claimKey, domain, listPages, requestVersion, runId]);
+
+  const selectPage = (pageId: string) => {
+    setState((current) =>
+      current.kind === "ready" ? { ...current, selectedPageId: pageId } : current,
+    );
+  };
+
+  return (
+    <section className="surface-panel mt-8 overflow-hidden" aria-labelledby="claim-replay-heading">
+      <div className="flex min-w-0 items-center justify-between gap-3 border-b bg-muted/30 px-3 py-2.5 @md:px-4">
+        <div className="flex min-w-0 items-center gap-2">
+          <PlayIcon className="size-3.5 shrink-0 text-primary" aria-hidden="true" />
+          <h3 id="claim-replay-heading" className="truncate text-sm font-semibold">
+            Firecrawl replay
+          </h3>
+        </div>
+        <Button type="button" size="xs" variant="ghost" onClick={refresh}>
+          <RotateCcwIcon />
+          Refresh
+        </Button>
+      </div>
+      {state.kind === "ready" ? (
+        <div>
+          {state.pages.length > 1 ? (
+            <div className="border-b px-3 py-2.5 @md:px-4">
+              <label className="flex min-w-0 items-center gap-2 text-xs">
+                <span className="text-muted-foreground shrink-0">Browser tab</span>
+                <select
+                  value={state.selectedPageId}
+                  onChange={(event) => selectPage(event.currentTarget.value)}
+                  className="h-8 min-w-0 flex-1 rounded-md border bg-background px-2 text-xs outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                >
+                  {state.pages.map((page, index) => (
+                    <option key={page.pageId} value={page.pageId}>
+                      {replayPageLabel(page, index)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          ) : null}
+          <ClaimReplayPlaylist
+            claimKey={claimKey}
+            domain={domain}
+            pageId={state.selectedPageId}
+            requestVersion={requestVersion}
+          />
+        </div>
+      ) : (
+        <ReplayStatus state={state.kind} onRetry={refresh} />
+      )}
+    </section>
+  );
+}
+
+function ReplayStatus({
+  onRetry,
+  state,
+}: {
+  onRetry: () => void;
+  state: Exclude<ReplayLoadState["kind"], "ready">;
+}) {
+  const waiting = state === "loading" || state === "processing";
+  const message = waiting
+    ? "Preparing replay"
+    : state === "unavailable"
+      ? "This run has no saved replay."
+      : state === "delayed"
+        ? "The replay is taking longer than expected."
+        : "Could not load the replay.";
+  return (
+    <div className="flex min-h-40 flex-col items-center justify-center gap-3 px-4 py-8 text-center">
+      <p className="text-muted-foreground flex items-center gap-2 text-sm" role="status">
+        {waiting ? <LoaderCircleIcon className="size-4 animate-spin" aria-hidden="true" /> : null}
+        {message}
+      </p>
+      {!waiting && state !== "unavailable" ? (
+        <Button type="button" size="sm" variant="outline" onClick={onRetry}>
+          <RotateCcwIcon />
+          Retry
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+type ReplayPlaylistState =
+  | { kind: "loading" }
+  | { kind: "ready"; playlist: string }
+  | { kind: "failed" };
+
+function ClaimReplayPlaylist({
+  claimKey,
+  domain,
+  pageId,
+  requestVersion,
+}: {
+  claimKey: string;
+  domain: string;
+  pageId: string;
+  requestVersion: number;
+}) {
+  const loadPlaylist = useAction(api.claimTestReplay.loadPlaylist);
+  const [state, setState] = useState<ReplayPlaylistState>({ kind: "loading" });
+
+  useEffect(() => {
+    let cancelled = false;
+    let retryTimer: number | undefined;
+    let attempt = 0;
+    setState({ kind: "loading" });
+
+    const load = async () => {
+      try {
+        const replay = await loadPlaylist({ claimKey, domain, pageId });
+        if (cancelled) return;
+        if (replay.status === "ready") {
+          setState({ kind: "ready", playlist: replay.playlist });
+          return;
+        }
+        attempt += 1;
+        if (replay.status === "unavailable" || attempt >= REPLAY_PREPARATION_RETRIES) {
+          setState({ kind: "failed" });
+          return;
+        }
+        retryTimer = window.setTimeout(() => void load(), REPLAY_RETRY_DELAY_MS);
+      } catch {
+        if (!cancelled) setState({ kind: "failed" });
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+    };
+  }, [claimKey, domain, loadPlaylist, pageId, requestVersion]);
+
+  if (state.kind === "ready") {
+    return <ClaimReplayVideo playlist={state.playlist} />;
+  }
+  return (
+    <div className="flex aspect-video items-center justify-center bg-muted/20 px-4 text-center">
+      <p className="text-muted-foreground flex items-center gap-2 text-sm" role="status">
+        {state.kind === "loading" ? (
+          <LoaderCircleIcon className="size-4 animate-spin" aria-hidden="true" />
+        ) : null}
+        {state.kind === "loading" ? "Loading video" : "Video could not be loaded."}
+      </p>
+    </div>
+  );
+}
+
+function ClaimReplayVideo({ playlist }: { playlist: string }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    setFailed(false);
+    const playlistUrl = URL.createObjectURL(
+      new Blob([playlist], { type: "application/vnd.apple.mpegurl" }),
+    );
+    let cancelled = false;
+    let hls: HlsType | undefined;
+
+    const load = async () => {
+      try {
+        const { default: Hls } = await import("hls.js");
+        if (cancelled) return;
+        if (Hls.isSupported()) {
+          hls = new Hls();
+          hls.on(Hls.Events.ERROR, (_event, data) => {
+            if (data.fatal) setFailed(true);
+          });
+          hls.loadSource(playlistUrl);
+          hls.attachMedia(video);
+        } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+          video.src = playlistUrl;
+          video.load();
+        } else {
+          setFailed(true);
+        }
+      } catch {
+        if (!cancelled) setFailed(true);
+      }
+    };
+
+    void load();
+
+    return () => {
+      cancelled = true;
+      hls?.destroy();
+      video.removeAttribute("src");
+      video.load();
+      URL.revokeObjectURL(playlistUrl);
+    };
+  }, [playlist]);
+
+  return failed ? (
+    <div className="flex aspect-video items-center justify-center bg-muted/20 px-4 text-center">
+      <p className="text-muted-foreground text-sm" role="alert">
+        This browser cannot play the recording.
+      </p>
+    </div>
+  ) : (
+    <video
+      ref={videoRef}
+      controls
+      muted
+      playsInline
+      preload="metadata"
+      aria-label="Recorded Scout browser session"
+      className="block aspect-video w-full bg-neutral-950"
+    />
+  );
+}
+
+function replayPageLabel(page: ReplayPage, index: number) {
+  if (!page.pageUrl) return `Tab ${index + 1}`;
+  const url = new URL(page.pageUrl);
+  return `${url.hostname}${url.pathname === "/" ? "" : url.pathname}`;
 }
 
 function RunMetadata({ run }: { run: ClaimRun }) {

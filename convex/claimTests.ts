@@ -2,6 +2,7 @@ import { type Infer, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
+  internalQuery,
   internalMutation,
   mutation,
   query,
@@ -29,6 +30,7 @@ const GENERATION_START_TIMEOUT_MS = 5 * 60 * 1_000;
 const EXPIRED_GENERATION_FAILURE = "Generation stopped before completion";
 const CLAIM_KEY_PATTERN = /^claim-[a-z0-9]{10}(?:-[1-9][0-9]*)?$/;
 const MAX_CLAIM_KEY_LENGTH = 64;
+const MAX_BROWSER_SESSION_ID_LENGTH = 200;
 const CLAIM_TEST_MODEL = "qwen/qwen3.7-flash" satisfies SelectableScoutModel;
 
 type DatabaseContext = Pick<QueryCtx, "db">;
@@ -473,6 +475,66 @@ export const liveView = query({
       throw new Error("Claim test live view has an invalid ownership binding");
     }
     return { url: requireFirecrawlLiveViewUrl(liveView.liveViewUrl) };
+  },
+});
+
+export const replaySession = internalQuery({
+  args: {
+    domain: v.string(),
+    claimKey: v.string(),
+  },
+  returns: v.union(v.object({ sessionId: v.string() }), v.null()),
+  handler: async (ctx, args) => {
+    const userId = await requireAppUser(ctx);
+    const domain = routeProductDomain(args.domain);
+    const claimKey = routeClaimKey(args.claimKey);
+    if (domain === null || claimKey === null) return null;
+    const current = await findCurrentClaim(ctx, domain, claimKey);
+    if (!current) return null;
+
+    const run = await latestRunForClaim(ctx, {
+      userId,
+      productId: current.product._id,
+      investigationId: current.investigation._id,
+      claimKey: current.claim.claimKey,
+    });
+    return run?.firecrawlSessionId ? { sessionId: run.firecrawlSessionId } : null;
+  },
+});
+
+export const setBrowserSession = internalMutation({
+  args: {
+    promptMessageId: v.string(),
+    sessionId: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const sessionId = args.sessionId.trim();
+    if (!sessionId || sessionId.length > MAX_BROWSER_SESSION_ID_LENGTH) {
+      throw new Error("Firecrawl browser session ID is invalid");
+    }
+    const generation = await ctx.db
+      .query("scoutLabGenerations")
+      .withIndex("by_prompt_message_id", (index) =>
+        index.eq("promptMessageId", args.promptMessageId),
+      )
+      .unique();
+    if (!generation) {
+      throw new Error("Lab generation not found");
+    }
+    if (generation.status !== "pending") return null;
+    const run = await ctx.db
+      .query("claimTestRuns")
+      .withIndex("by_generation_id", (index) => index.eq("generationId", generation._id))
+      .unique();
+    if (!run) return null;
+    if (run.firecrawlSessionId && run.firecrawlSessionId !== sessionId) {
+      throw new Error("Claim test already has a different Firecrawl browser session");
+    }
+    if (!run.firecrawlSessionId) {
+      await ctx.db.patch("claimTestRuns", run._id, { firecrawlSessionId: sessionId });
+    }
+    return null;
   },
 });
 

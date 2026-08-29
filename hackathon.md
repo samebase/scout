@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-29T18:34:04Z
+- **Last updated:** 2026-08-29T20:51:59Z
 
 ## Log
 
@@ -534,7 +534,7 @@ production build passed, and desktop and 390-pixel mobile views passed browser v
 (`.agents/skills/design-taste-frontend/SKILL.md`, `docs/ui-design-contract.md`, `AGENTS.md`,
 `skills-lock.json`, `src/style.css`, `src/routes/index.tsx`).
 
-### 2026-08-29 - working tree
+### 2026-08-29 - 2180348 - v116
 
 Made the Product claim queue show each current claim's latest owner-scoped run state as Untested,
 Testing, Tested, or Test failed. The status is a realtime Convex query over the exact investigation
@@ -548,3 +548,16 @@ build path passed.
 New claim-test attempts now use Qwen 3.7 Flash through Convex AI Gateway. The choice is scoped to
 claim verification: product investigation and ordinary Lab runs keep their existing model defaults
 (`convex/claimTests.ts`, `convex/claimTests.test.ts`).
+
+### 2026-08-29 - working tree
+
+Saved each new claim test's Firecrawl browser session and added an authenticated replay surface to
+the completed run. Scout stores only the provider session ID; Convex actions fetch fresh replay
+metadata and HLS playlists when needed, keeping the Firecrawl key and signed recording links out of
+the database and public queries (`convex/claimTestReplay.ts`, `convex/claimTests.ts`,
+`convex/scout/lib/firecrawl.ts`, `src/routes/products.$domain.claims.$claimKey.tsx`).
+
+The player skips Firecrawl's blank bootstrap tab, lets the operator switch among recorded tabs, and
+lazy-loads HLS support. A new Samebase run completed with Qwen 3.7 Flash in 138.1 seconds using five
+Firecrawl credits; its 110-second recording loaded in the claim page and played to 17.5 seconds.
+All 178 tests and the complete Cloudflare build path passed.

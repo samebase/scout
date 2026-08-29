@@ -127,6 +127,12 @@ export const generateResponse = internalAction({
       }
       browser = createLabBrowserHarness({
         profileName: scout.firecrawl.profileName,
+        onSessionAvailable: async (sessionId) => {
+          await ctx.runMutation(internal.claimTests.setBrowserSession, {
+            promptMessageId: args.promptMessageId,
+            sessionId,
+          });
+        },
         onLiveViewAvailable: async (liveViewUrl) => {
           await ctx.runMutation(internal.claimTests.setLiveView, {
             promptMessageId: args.promptMessageId,

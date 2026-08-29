@@ -77,11 +77,11 @@ export function requireEnv(name: ScoutEnvName) {
   return value;
 }
 
-export async function fetchJson(
+export async function fetchText(
   provider: string,
   input: string,
   init: RequestInit,
-): Promise<unknown> {
+): Promise<string> {
   const response = await fetch(input, init);
   const body = await response.text();
 
@@ -103,6 +103,16 @@ export async function fetchJson(
       resetAtMs,
     });
   }
+
+  return body;
+}
+
+export async function fetchJson(
+  provider: string,
+  input: string,
+  init: RequestInit,
+): Promise<unknown> {
+  const body = await fetchText(provider, input, init);
 
   if (!body) {
     return null;

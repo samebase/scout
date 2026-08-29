@@ -381,6 +381,67 @@ describe("Claim tests", () => {
     ).resolves.toBeNull();
   });
 
+  it("keeps the Firecrawl replay session private and bound to the owning run", async () => {
+    const { backend, userId, admin } = await authenticatedBackend();
+    await insertScout(backend);
+    const snapshot = await insertCompletedInvestigation(backend, {
+      userId,
+      claims: [claim("a recorded browser session")],
+    });
+    const claimKey = snapshot.claimKeys[0];
+    if (!claimKey) throw new Error("Expected a claim key");
+    const started = await admin.mutation(api.claimTests.start, {
+      domain: "example.test",
+      claimKey,
+    });
+    const generation = await backend.run(async (ctx) => {
+      const run = await ctx.db.get("claimTestRuns", started.runId);
+      return run ? await ctx.db.get("scoutLabGenerations", run.generationId) : null;
+    });
+    if (!generation) throw new Error("Expected a generation");
+
+    await backend.mutation(internal.claimTests.setBrowserSession, {
+      promptMessageId: generation.promptMessageId,
+      sessionId: "firecrawl-session-1",
+    });
+    await backend.mutation(internal.claimTests.setBrowserSession, {
+      promptMessageId: generation.promptMessageId,
+      sessionId: "firecrawl-session-1",
+    });
+    await expect(
+      admin.query(internal.claimTests.replaySession, {
+        domain: "example.test",
+        claimKey,
+      }),
+    ).resolves.toEqual({ sessionId: "firecrawl-session-1" });
+    await expect(
+      admin.query(api.claimTests.latest, { domain: "example.test", claimKey }),
+    ).resolves.not.toHaveProperty("firecrawlSessionId");
+
+    const otherUserId = await backend.run(
+      async (ctx) => await ctx.db.insert("users", { email: ADMIN_EMAIL }),
+    );
+    const otherAdmin = backend.withIdentity({ subject: `${otherUserId}|other-session` });
+    await expect(
+      otherAdmin.query(internal.claimTests.replaySession, {
+        domain: "example.test",
+        claimKey,
+      }),
+    ).resolves.toBeNull();
+    await expect(
+      backend.query(internal.claimTests.replaySession, {
+        domain: "example.test",
+        claimKey,
+      }),
+    ).rejects.toThrow("Not authorized");
+    await expect(
+      backend.mutation(internal.claimTests.setBrowserSession, {
+        promptMessageId: generation.promptMessageId,
+        sessionId: "different-session",
+      }),
+    ).rejects.toThrow("different Firecrawl browser session");
+  });
+
   it("exposes a pending live view only to its owner and removes it on close or terminal state", async () => {
     const { backend, userId, admin } = await authenticatedBackend();
     await insertScout(backend);

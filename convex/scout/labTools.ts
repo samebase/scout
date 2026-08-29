@@ -33,6 +33,7 @@ type BrowserDependencies = {
 
 type LabBrowserHarnessOptions = {
   profileName?: string;
+  onSessionAvailable?: (sessionId: string) => Promise<void>;
   onLiveViewAvailable?: (liveViewUrl: string) => Promise<void>;
   onLiveViewClosed?: () => Promise<void>;
 };
@@ -282,6 +283,7 @@ export function createLabBrowserHarness(
       const targetUrl = httpsUrl(url);
       const session = await dependencies.createSession(options.profileName);
       sessionId = session.sessionId;
+      await options.onSessionAvailable?.(session.sessionId);
       if (session.liveViewUrl !== null) {
         await options.onLiveViewAvailable?.(session.liveViewUrl);
       }

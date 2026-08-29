@@ -75,15 +75,20 @@ describe("Lab browser harness", () => {
     const deps = dependencies();
     const liveViewUrl = "https://liveview.firecrawl.dev/private?signature=read-only";
     deps.createSession.mockResolvedValueOnce({ sessionId: "session-1", liveViewUrl });
+    const onSessionAvailable = vi.fn(async () => undefined);
     const onLiveViewAvailable = vi.fn(async () => undefined);
     const onLiveViewClosed = vi.fn(async () => undefined);
-    const browser = createLabBrowserHarness({ onLiveViewAvailable, onLiveViewClosed }, deps);
+    const browser = createLabBrowserHarness(
+      { onSessionAvailable, onLiveViewAvailable, onLiveViewClosed },
+      deps,
+    );
 
     const output = await browser.tools.browser_open.execute(
       { url: "https://example.com" },
       { toolCallId: "tool-1", messages: [], context: undefined },
     );
 
+    expect(onSessionAvailable).toHaveBeenCalledWith("session-1");
     expect(onLiveViewAvailable).toHaveBeenCalledWith(liveViewUrl);
     expect(JSON.stringify(output)).not.toContain(liveViewUrl);
     await expect(browser.close()).resolves.toMatchObject({ success: true });

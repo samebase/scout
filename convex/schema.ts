@@ -116,6 +116,7 @@ export default defineSchema({
     threadId: v.string(),
     scoutId: v.id("scouts"),
     generationId: v.id("scoutLabGenerations"),
+    firecrawlSessionId: v.optional(v.string()),
   })
     .index("by_generation_id", ["generationId"])
     .index("by_user_id_and_product_id_and_investigation_id_and_claim_key", [

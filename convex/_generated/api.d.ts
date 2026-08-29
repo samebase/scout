@@ -14,6 +14,7 @@ import type * as authConfig from "../authConfig.js";
 import type * as authEmail from "../authEmail.js";
 import type * as authEmailRateLimit from "../authEmailRateLimit.js";
 import type * as authEmails from "../authEmails.js";
+import type * as claimTestReplay from "../claimTestReplay.js";
 import type * as claimTests from "../claimTests.js";
 import type * as claimTestsModel from "../claimTestsModel.js";
 import type * as devAuth from "../devAuth.js";
@@ -60,6 +61,7 @@ declare const fullApi: ApiFromModules<{
   authEmail: typeof authEmail;
   authEmailRateLimit: typeof authEmailRateLimit;
   authEmails: typeof authEmails;
+  claimTestReplay: typeof claimTestReplay;
   claimTests: typeof claimTests;
   claimTestsModel: typeof claimTestsModel;
   devAuth: typeof devAuth;
