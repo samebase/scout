@@ -1087,6 +1087,18 @@ describe("Product investigation parsing", () => {
       parseProductInvestigationResult(
         {
           ...valid,
+          claims: Array.from({ length: 7 }, (_, index) => ({
+            ...validClaim(),
+            claim: `Testable promise ${index + 1}`,
+          })),
+        },
+        "example.test",
+      ),
+    ).toThrow("Investigation claims must contain 1-6 items");
+    expect(() =>
+      parseProductInvestigationResult(
+        {
+          ...valid,
           claims: [{ ...validClaim(), support: "x".repeat(2_001) }],
         },
         "example.test",
@@ -1339,6 +1351,11 @@ describe("Product research retrieval", () => {
     ).toBe(true);
     expect(prepared.prompt.length).toBeLessThanOrEqual(MAX_RESEARCH_PROMPT_CHARACTERS);
     expect(prepared.prompt).toContain("Return exactly one raw JSON object with this shape");
+    expect(prepared.prompt).toContain("Claims require 1-6 items");
+    expect(prepared.prompt).toContain("concrete, user-visible product promise");
+    expect(prepared.prompt).toContain("Merge overlapping promises");
+    expect(prepared.prompt).toContain("Exclude generic category descriptions");
+    expect(prepared.prompt).toContain("Prioritize promises involved in tensions");
     expect(retrieval.totalCredits).toBe(MAX_RESEARCH_FIRECRAWL_CREDITS);
     expect(() =>
       createProductRetrievalMetadata({
@@ -1431,7 +1448,7 @@ describe("Product research synthesis", () => {
     const parsed = parseProductResearchSynthesis({
       ...synthesis,
       audiences: Array.from({ length: 6 }, (_, index) => `Audience ${index + 1}`),
-      claims: Array.from({ length: 13 }, (_, index) => ({
+      claims: Array.from({ length: 7 }, (_, index) => ({
         ...claim,
         claim: `Claim ${index + 1}`,
         qualifiers: Array.from(
@@ -1459,7 +1476,7 @@ describe("Product research synthesis", () => {
     });
 
     expect(parsed.audiences).toHaveLength(5);
-    expect(parsed.claims).toHaveLength(12);
+    expect(parsed.claims).toHaveLength(6);
     expect(parsed.claims.every((item) => item.qualifiers.length === 4)).toBe(true);
     expect(parsed.dependencies).toHaveLength(8);
     expect(parsed.tensions).toHaveLength(5);
@@ -1492,7 +1509,7 @@ describe("Product research synthesis", () => {
       parseProductResearchSynthesis({
         ...validSynthesis(),
         claims: [
-          ...Array.from({ length: 12 }, () => validSynthesis().claims[0]),
+          ...Array.from({ length: 6 }, () => validSynthesis().claims[0]),
           { ...validSynthesis().claims[0], category: "marketing" },
         ],
       }),

@@ -1,3 +1,4 @@
+import { useUIMessages } from "@convex-dev/agent/react";
 import { PaneFrame } from "@samebase/sidebars/PaneFrame";
 import {
   SidebarLayout,
@@ -6,22 +7,27 @@ import {
 } from "@samebase/sidebars/SidebarLayout";
 import { useSidebarActions, useSidebarLayoutPresentation } from "@samebase/sidebars/SidebarRuntime";
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import {
   ArrowLeftIcon,
+  CircleAlertIcon,
   ExternalLinkIcon,
+  LoaderCircleIcon,
   PanelLeftIcon,
   PanelRightIcon,
+  PlayIcon,
+  RotateCcwIcon,
   TerminalSquareIcon,
-  VideoOffIcon,
 } from "lucide-react";
+import { useState } from "react";
 import { api } from "../../convex/_generated/api";
 import {
   scoutSidebarDesktopPrehydrationScript,
   scoutSidebarMobilePrehydrationScript,
 } from "../sidebars/scoutSidebarState";
 import { ServiceIcon } from "#components/service-icon";
+import { ScoutRunMessageView, type ScoutRunMessage } from "#components/scout-run-message";
 import { Button } from "#components/ui/button";
 
 export const Route = createFileRoute("/products/$domain/claims/$claimKey")({
@@ -31,16 +37,15 @@ export const Route = createFileRoute("/products/$domain/claims/$claimKey")({
 type Product = NonNullable<FunctionReturnType<typeof api.products.getByDomain>>;
 type ResolvedClaim = NonNullable<FunctionReturnType<typeof api.products.getClaimByDomain>>;
 type Claim = ResolvedClaim["claim"];
+type ClaimRun = NonNullable<FunctionReturnType<typeof api.claimTests.latest>>;
+
+type StartState = { kind: "idle" } | { kind: "starting" } | { kind: "failed"; message: string };
+type ClaimVerdict = "Supported" | "Qualified" | "Refuted" | "Inconclusive";
 
 const CLAIM_RESIZE_HANDLE_LABELS = {
   left: "Resize claim list",
-  right: "Resize claim activity",
+  right: "Resize test activity",
 } satisfies SidebarLayoutResizeHandleLabels;
-
-const completedDate = new Intl.DateTimeFormat(undefined, {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
 
 const formatResizeHandleValueText: SidebarLayoutResizeHandleValueTextFormatter = ({ widthPx }) =>
   `${widthPx} pixels wide`;
@@ -49,19 +54,19 @@ function ProductClaimPage() {
   const { claimKey, domain } = Route.useParams();
   const product = useQuery(api.products.getByDomain, { domain });
   const resolvedClaim = useQuery(api.products.getClaimByDomain, { claimKey, domain });
-  const claims = product?.latestCompletedInvestigation?.result.claims ?? [];
+  const latestRun = useQuery(api.claimTests.latest, { claimKey, domain });
+  const runMessages = useUIMessages(
+    api.scout.lab.listMessages,
+    latestRun?.threadId ? { threadId: latestRun.threadId } : "skip",
+    { initialNumItems: 50, stream: true },
+  );
   const loading = product === undefined || resolvedClaim === undefined;
+  const messages = latestRun ? runMessages.results : [];
 
   return (
     <>
       <SidebarLayout
-        addressChrome={
-          <ClaimWorkspaceChrome
-            claim={resolvedClaim?.claim}
-            loading={loading}
-            product={product ?? undefined}
-          />
-        }
+        addressChrome={<ClaimWorkspaceChrome loading={loading} product={product ?? undefined} />}
         formatResizeHandleValueText={formatResizeHandleValueText}
         left={
           <PaneFrame
@@ -72,19 +77,8 @@ function ProductClaimPage() {
                 selectedClaimKey={resolvedClaim?.claim.claimKey}
               />
             }
-            footer={
-              <div className="text-muted-foreground flex h-full items-center px-3 text-xs">
-                {product === undefined
-                  ? "Loading claims..."
-                  : product === null
-                    ? "Product not found"
-                    : product.latestCompletedInvestigation === null
-                      ? "No investigation"
-                      : `${claims.length} ${claims.length === 1 ? "claim" : "claims"}`}
-              </div>
-            }
             header={
-              <div className="flex h-full min-w-0 items-center gap-2 px-3">
+              <div className="flex h-full min-w-0 items-center px-3">
                 <Link
                   to="/products/$domain"
                   params={{ domain }}
@@ -102,21 +96,34 @@ function ProductClaimPage() {
           <PaneFrame
             content={
               <ClaimMain
+                claimKey={claimKey}
                 domain={domain}
+                latestRun={latestRun}
                 loading={loading}
+                messages={messages}
                 product={product ?? undefined}
-                resolvedClaim={resolvedClaim ?? undefined}
                 productMissing={product === null}
+                resolvedClaim={resolvedClaim ?? undefined}
                 claimMissing={resolvedClaim === null}
               />
             }
-            scrollRestorationId={`claim-evidence:${domain}:${claimKey}`}
+            scrollRestorationId={`claim-main:${domain}:${claimKey}`}
           />
         }
         right={
           <PaneFrame
-            content={<ClaimActivityPane product={product} resolvedClaim={resolvedClaim} />}
-            header={<ClaimActivityHeader product={product} resolvedClaim={resolvedClaim} />}
+            content={
+              <ClaimActivityPane
+                latestRun={latestRun}
+                loadingMessages={
+                  latestRun !== null &&
+                  latestRun !== undefined &&
+                  runMessages.status === "LoadingFirstPage"
+                }
+                messages={messages}
+              />
+            }
+            header={<ClaimActivityHeader latestRun={latestRun} />}
             scrollRestorationId={`claim-activity:${domain}:${claimKey}`}
           />
         }
@@ -135,11 +142,9 @@ function ProductClaimPage() {
 }
 
 function ClaimWorkspaceChrome({
-  claim,
   loading,
   product,
 }: {
-  claim: Claim | undefined;
   loading: boolean;
   product: Product | undefined;
 }) {
@@ -184,25 +189,14 @@ function ClaimWorkspaceChrome({
           className="size-6 shrink-0 rounded-md"
         />
       ) : null}
-      <div className="min-w-0 flex-1">
-        <h1 className="truncate text-sm font-medium">
-          {loading ? "Loading claim..." : (product?.name ?? "Claim not found")}
-        </h1>
-        <p className="text-muted-foreground truncate font-mono text-[0.6875rem]">
-          {claim?.claim ?? product?.domain ?? ""}
-        </p>
-      </div>
-      <Button asChild size="sm" variant="ghost">
-        <Link to="/lab">
-          <TerminalSquareIcon />
-          Lab
-        </Link>
-      </Button>
+      <h1 className="min-w-0 flex-1 truncate text-sm font-medium">
+        {loading ? "Loading..." : (product?.name ?? "Claim not found")}
+      </h1>
       <Button
         type="button"
         size="icon-sm"
         variant="ghost"
-        aria-label={activityShown ? "Hide claim activity" : "Show claim activity"}
+        aria-label={activityShown ? "Hide test activity" : "Show test activity"}
         aria-pressed={activityShown}
         onClick={toggleActivity}
       >
@@ -226,38 +220,23 @@ function ClaimNavigation({
   if (product === undefined) {
     return (
       <p className="text-muted-foreground px-3 py-8 text-center text-sm" role="status">
-        Loading claims...
+        Loading...
       </p>
     );
   }
 
   if (product === null) {
-    return (
-      <ClaimNavigationEmptyState
-        title="Product not found."
-        detail="Return to the registry and choose an available product."
-      />
-    );
+    return <ClaimNavigationEmptyState title="Product not found" />;
   }
 
   const investigation = product.latestCompletedInvestigation;
   if (investigation === null) {
-    return (
-      <ClaimNavigationEmptyState
-        title="No completed investigation."
-        detail="Investigate this product before opening a claim."
-      />
-    );
+    return <ClaimNavigationEmptyState title="No investigation" />;
   }
 
   const claims = investigation.result.claims;
   if (claims.length === 0) {
-    return (
-      <ClaimNavigationEmptyState
-        title="No claims found."
-        detail="The latest completed investigation did not return any claims."
-      />
-    );
+    return <ClaimNavigationEmptyState title="No claims" />;
   }
 
   return (
@@ -290,105 +269,63 @@ function ClaimNavigation({
   );
 }
 
-function ClaimNavigationEmptyState({ title, detail }: { title: string; detail: string }) {
-  return (
-    <div className="px-3 py-8 text-center">
-      <p className="text-sm font-medium">{title}</p>
-      <p className="text-muted-foreground mt-1 text-sm">{detail}</p>
-    </div>
-  );
+function ClaimNavigationEmptyState({ title }: { title: string }) {
+  return <p className="text-muted-foreground px-3 py-8 text-center text-sm">{title}</p>;
 }
 
 function ClaimMain({
+  claimKey,
   claimMissing,
   domain,
+  latestRun,
   loading,
+  messages,
   product,
   productMissing,
   resolvedClaim,
 }: {
+  claimKey: string;
   claimMissing: boolean;
   domain: string;
+  latestRun: ClaimRun | null | undefined;
   loading: boolean;
+  messages: readonly ScoutRunMessage[];
   product: Product | undefined;
   productMissing: boolean;
   resolvedClaim: ResolvedClaim | undefined;
 }) {
   if (loading) {
-    return (
-      <main className="mx-auto w-full max-w-5xl p-4 @md:p-6">
-        <p className="text-muted-foreground py-16 text-center text-sm" role="status">
-          Loading claim...
-        </p>
-      </main>
-    );
+    return <CenteredStatus>Loading...</CenteredStatus>;
   }
 
   if (productMissing || product === undefined) {
-    return (
-      <ClaimRouteEmptyState
-        title="Product not found."
-        detail="Choose another product from the registry."
-      />
-    );
+    return <ClaimRouteEmptyState title="Product not found" />;
   }
 
   if (product.latestCompletedInvestigation === null) {
-    return (
-      <ClaimRouteEmptyState
-        title="No completed investigation."
-        detail="Investigate this product before opening a claim."
-        domain={domain}
-      />
-    );
+    return <ClaimRouteEmptyState domain={domain} title="Investigate this product first" />;
   }
 
   if (product.latestCompletedInvestigation.result.claims.length === 0) {
-    return (
-      <ClaimRouteEmptyState
-        title="No claims found."
-        detail="The latest completed investigation did not return any claims."
-        domain={domain}
-      />
-    );
+    return <ClaimRouteEmptyState domain={domain} title="No claims found" />;
   }
 
   if (claimMissing || resolvedClaim === undefined) {
-    return (
-      <ClaimRouteEmptyState
-        title="Claim not found."
-        detail="This claim is not part of the current product investigation."
-        domain={domain}
-      />
-    );
+    return <ClaimRouteEmptyState domain={domain} title="Claim not found" />;
   }
 
-  const { claim, completedAt } = resolvedClaim;
+  const claim = resolvedClaim.claim;
 
   return (
-    <main className="mx-auto w-full max-w-5xl p-4 @md:p-6 @xl:p-8">
-      <Link
-        to="/products/$domain"
-        params={{ domain }}
-        className="text-muted-foreground inline-flex items-center gap-1.5 text-xs outline-none hover:text-foreground hover:underline hover:underline-offset-4 focus-visible:ring-3 focus-visible:ring-ring/50"
-      >
-        <ArrowLeftIcon className="size-3.5" aria-hidden="true" />
-        {product.name}
-      </Link>
-
-      <article className="mt-5">
+    <main className="mx-auto w-full max-w-4xl p-4 @md:p-6 @xl:p-8">
+      <article>
         <header className="border-l-2 border-blue-500 pl-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-muted-foreground font-mono text-[0.6875rem] tracking-[0.1em] uppercase">
-              {claim.category}
-            </span>
-          </div>
-          <h2 className="mt-3 max-w-4xl wrap-break-word text-xl font-medium tracking-tight @md:text-2xl @xl:text-3xl">
+          <span className="text-muted-foreground font-mono text-[0.6875rem] tracking-[0.1em] uppercase">
+            {claim.category}
+          </span>
+          <h2 className="mt-3 max-w-3xl wrap-break-word text-xl font-medium tracking-tight @md:text-2xl @xl:text-3xl">
             {claim.claim}
           </h2>
-          <p className="text-muted-foreground mt-3 max-w-3xl wrap-break-word text-sm leading-6">
-            {claim.support}
-          </p>
           <a
             href={claim.sourceUrl}
             target="_blank"
@@ -400,115 +337,204 @@ function ClaimMain({
           </a>
         </header>
 
-        {claim.evidenceExcerpt || claim.qualifiers.length > 0 ? (
-          <section className="mt-6 grid gap-4 @xl:grid-cols-2" aria-label="Research evidence">
-            {claim.evidenceExcerpt ? (
-              <div className="rounded-lg border p-4">
-                <h3 className="text-muted-foreground font-mono text-[0.6875rem] tracking-[0.1em] uppercase">
-                  Source evidence
-                </h3>
-                <p className="mt-2 wrap-break-word text-sm leading-6">{claim.evidenceExcerpt}</p>
-              </div>
-            ) : null}
-            {claim.qualifiers.length > 0 ? (
-              <div className="rounded-lg border p-4">
-                <h3 className="text-muted-foreground font-mono text-[0.6875rem] tracking-[0.1em] uppercase">
-                  Qualifiers
-                </h3>
-                <ul className="mt-2 list-disc space-y-1.5 pl-4 text-sm leading-6">
-                  {claim.qualifiers.map((qualifier, index) => (
-                    <li key={`${index}:${qualifier}`} className="wrap-break-word pl-1">
-                      {qualifier}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-          </section>
+        {claim.evidenceExcerpt ? (
+          <blockquote className="text-muted-foreground mt-6 max-w-3xl border-l pl-4 text-sm leading-6">
+            {claim.evidenceExcerpt}
+          </blockquote>
         ) : null}
 
-        <ClaimTestArea claim={claim} />
+        {claim.support || claim.qualifiers.length > 0 ? (
+          <details className="mt-5 max-w-3xl text-sm">
+            <summary className="text-muted-foreground cursor-pointer select-none outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
+              Research notes
+            </summary>
+            <div className="mt-3 space-y-3 border-l pl-4 leading-6">
+              {claim.support ? <p>{claim.support}</p> : null}
+              {claim.qualifiers.length > 0 ? (
+                <ul className="list-disc space-y-1 pl-4">
+                  {claim.qualifiers.map((qualifier, index) => (
+                    <li key={`${index}:${qualifier}`}>{qualifier}</li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          </details>
+        ) : null}
 
-        <p className="text-muted-foreground mt-4 text-xs">
-          Claim discovered {completedDate.format(completedAt)}
-        </p>
+        <ClaimTest
+          claim={claim}
+          claimKey={claimKey}
+          domain={domain}
+          latestRun={latestRun}
+          messages={messages}
+        />
       </article>
     </main>
   );
 }
 
-function ClaimTestArea({ claim }: { claim: Claim }) {
+function ClaimTest({
+  claim,
+  claimKey,
+  domain,
+  latestRun,
+  messages,
+}: {
+  claim: Claim;
+  claimKey: string;
+  domain: string;
+  latestRun: ClaimRun | null | undefined;
+  messages: readonly ScoutRunMessage[];
+}) {
+  const startClaimTest = useMutation(api.claimTests.start);
+  const [startState, setStartState] = useState<StartState>({ kind: "idle" });
+  const running = latestRun?.generation.status === "pending";
+  const resultText = latestAssistantText(messages);
+
+  const start = async () => {
+    setStartState({ kind: "starting" });
+    try {
+      await startClaimTest({ claimKey, domain });
+      setStartState({ kind: "idle" });
+    } catch (error) {
+      setStartState({ kind: "failed", message: claimTestError(error) });
+    }
+  };
+
   return (
     <section className="mt-8 border-t pt-6" aria-labelledby="claim-test-heading">
-      <div>
-        <h3 id="claim-test-heading" className="text-base font-medium">
-          Proposed test
-        </h3>
-        <p className="text-muted-foreground mt-1 max-w-3xl wrap-break-word text-sm leading-6">
-          {claim.suggestedMysteryShop || "No mystery shop was proposed during research."}
-        </p>
-      </div>
-
-      <div className="mt-5 overflow-hidden rounded-xl border bg-foreground text-background shadow-sm">
-        <div className="flex items-center justify-between gap-4 border-b border-background/15 px-3 py-2.5">
-          <span className="font-mono text-[0.6875rem] tracking-[0.1em] uppercase">
-            Browser evidence
-          </span>
-          <span className="text-background/60 text-xs">Lab not linked</span>
-        </div>
-        <div className="relative flex min-h-52 items-center justify-center overflow-hidden p-6 text-center @xl:aspect-video">
-          <div
-            className="pointer-events-none absolute inset-0 opacity-20"
-            aria-hidden="true"
-            style={{
-              backgroundImage:
-                "radial-gradient(circle at center, currentColor 0.7px, transparent 0.8px)",
-              backgroundSize: "18px 18px",
-            }}
-          />
-          <div className="relative max-w-sm">
-            <VideoOffIcon className="mx-auto size-6 text-background/60" aria-hidden="true" />
-            <p className="mt-3 text-sm font-medium">No browser evidence linked</p>
-            <p className="mt-1 text-background/60 text-sm">
-              This claim does not have a linked Lab experiment. Run and inspect the first experiment
-              in Lab.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <section
-        className="mt-5 rounded-xl border p-4 @md:p-5"
-        aria-labelledby="claim-result-heading"
+      <h3
+        id="claim-test-heading"
+        className="text-muted-foreground font-mono text-[0.6875rem] tracking-[0.1em] uppercase"
       >
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h3 id="claim-result-heading" className="text-sm font-medium">
-            Result
-          </h3>
-          <span className="text-muted-foreground text-xs">Lab not linked</span>
-        </div>
-        <p className="text-muted-foreground mt-3 text-sm">
-          Claim-level results are not connected yet. Inspect the experiment outcome in Lab.
+        Test
+      </h3>
+      <p className="mt-3 max-w-3xl wrap-break-word text-sm leading-6">
+        {claim.suggestedMysteryShop}
+      </p>
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <Button
+          type="button"
+          onClick={() => void start()}
+          disabled={running || startState.kind === "starting" || latestRun === undefined}
+        >
+          {running || startState.kind === "starting" ? (
+            <LoaderCircleIcon className="animate-spin" />
+          ) : latestRun ? (
+            <RotateCcwIcon />
+          ) : (
+            <PlayIcon />
+          )}
+          {running || startState.kind === "starting"
+            ? "Testing"
+            : latestRun
+              ? "Test again"
+              : "Test claim"}
+        </Button>
+        <span className="text-muted-foreground text-xs" aria-live="polite">
+          {runStatus(latestRun)}
+        </span>
+      </div>
+      {startState.kind === "failed" ? (
+        <p className="text-destructive mt-3 flex items-start gap-2 text-sm" role="alert">
+          <CircleAlertIcon className="mt-0.5 size-4 shrink-0" />
+          {startState.message}
         </p>
-      </section>
+      ) : null}
+      <ClaimRunResult latestRun={latestRun} resultText={resultText} />
     </section>
   );
 }
 
-function ClaimRouteEmptyState({
-  detail,
-  domain,
-  title,
+function ClaimRunResult({
+  latestRun,
+  resultText,
 }: {
-  detail: string;
-  domain?: string;
-  title: string;
+  latestRun: ClaimRun | null | undefined;
+  resultText: string | null;
 }) {
+  if (!latestRun) return null;
+
+  if (latestRun.generation.status === "pending" && !resultText) {
+    return (
+      <div className="mt-8 border-t pt-6" role="status">
+        <p className="flex items-center gap-2 text-sm font-medium">
+          <LoaderCircleIcon className="size-4 animate-spin" />
+          Scout is testing the claim
+        </p>
+      </div>
+    );
+  }
+
+  if (latestRun.generation.status === "failed") {
+    return (
+      <div className="mt-8 border-t pt-6">
+        <p className="text-destructive text-sm font-medium">Test failed</p>
+        <p className="text-muted-foreground mt-2 whitespace-pre-wrap text-sm leading-6">
+          {latestRun.generation.failure}
+        </p>
+        <RunMetadata run={latestRun} />
+      </div>
+    );
+  }
+
+  const result = resultText ? parseClaimResult(resultText) : null;
+
+  return (
+    <div className="mt-8 border-t pt-6">
+      {latestRun.generation.status === "pending" ? (
+        <h3 className="text-sm font-medium">Live result</h3>
+      ) : result?.verdict ? (
+        <p className="flex items-center gap-2 text-sm font-medium">
+          <span
+            className={`size-2 rounded-full ${verdictDotClass(result.verdict)}`}
+            aria-hidden="true"
+          />
+          {result.verdict}
+        </p>
+      ) : (
+        <h3 className="text-sm font-medium">Result</h3>
+      )}
+      {result?.details ? (
+        latestRun.generation.status === "completed" && result.verdict ? (
+          <details className="mt-4 max-w-3xl text-sm">
+            <summary className="text-muted-foreground cursor-pointer select-none outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
+              Evidence and observations
+            </summary>
+            <div className="mt-4 border-l pl-4 whitespace-pre-wrap leading-6">{result.details}</div>
+          </details>
+        ) : (
+          <div className="mt-3 max-w-3xl whitespace-pre-wrap text-sm leading-6">
+            {result.details}
+          </div>
+        )
+      ) : (
+        <p className="text-muted-foreground mt-3 text-sm">No written result.</p>
+      )}
+      <RunMetadata run={latestRun} />
+    </div>
+  );
+}
+
+function RunMetadata({ run }: { run: ClaimRun }) {
+  const generation = run.generation;
+  if (generation.status === "pending") return null;
+  const duration =
+    generation.status === "completed"
+      ? generation.completedAt - generation.startedAt
+      : generation.failedAt - generation.startedAt;
+  const parts = [`${(duration / 1000).toFixed(1)} s`, run.scout.displayName];
+  if (generation.firecrawlCredits !== null) {
+    parts.push(`${generation.firecrawlCredits} Firecrawl credits`);
+  }
+  return <p className="text-muted-foreground mt-4 text-xs">{parts.join(" · ")}</p>;
+}
+
+function ClaimRouteEmptyState({ domain, title }: { domain?: string; title: string }) {
   return (
     <main className="mx-auto w-full max-w-3xl p-4 @md:p-6">
       <div className="py-16 text-center">
         <p className="text-sm font-medium">{title}</p>
-        <p className="text-muted-foreground mt-1 text-sm">{detail}</p>
         <Button asChild size="sm" variant="outline" className="mt-4">
           {domain ? (
             <Link to="/products/$domain" params={{ domain }}>
@@ -523,125 +549,140 @@ function ClaimRouteEmptyState({
   );
 }
 
-function claimActivityStatus(
-  product: Product | null | undefined,
-  resolvedClaim: ResolvedClaim | null | undefined,
-) {
-  if (product === undefined || resolvedClaim === undefined) return "Loading...";
-  if (product === null) return "No product";
-  if (product.latestCompletedInvestigation === null) return "No investigation";
-  if (product.latestCompletedInvestigation.result.claims.length === 0) return "No claims";
-  if (resolvedClaim === null) return "No claim";
-  return "Lab not linked";
+function CenteredStatus({ children }: { children: string }) {
+  return (
+    <main className="mx-auto w-full max-w-3xl p-4 @md:p-6">
+      <p className="text-muted-foreground py-16 text-center text-sm" role="status">
+        {children}
+      </p>
+    </main>
+  );
 }
 
-function ClaimActivityHeader({
-  product,
-  resolvedClaim,
-}: {
-  product: Product | null | undefined;
-  resolvedClaim: ResolvedClaim | null | undefined;
-}) {
+function ClaimActivityHeader({ latestRun }: { latestRun: ClaimRun | null | undefined }) {
   return (
     <div className="flex h-full min-w-0 items-center justify-between gap-3 px-3">
-      <span className="truncate text-sm font-medium">Claim activity</span>
+      <span className="truncate text-sm font-medium">Test activity</span>
       <span className="text-muted-foreground text-xs" aria-live="polite">
-        {claimActivityStatus(product, resolvedClaim)}
+        {runStatus(latestRun)}
       </span>
     </div>
   );
 }
 
 function ClaimActivityPane({
-  product,
-  resolvedClaim,
+  latestRun,
+  loadingMessages,
+  messages,
 }: {
-  product: Product | null | undefined;
-  resolvedClaim: ResolvedClaim | null | undefined;
+  latestRun: ClaimRun | null | undefined;
+  loadingMessages: boolean;
+  messages: readonly ScoutRunMessage[];
 }) {
-  if (product === undefined || resolvedClaim === undefined) {
+  if (latestRun === undefined || loadingMessages) {
     return (
-      <p className="text-muted-foreground p-5 text-sm" role="status">
-        Loading claim context...
+      <p className="text-muted-foreground p-4 text-sm" role="status">
+        Loading...
       </p>
     );
   }
 
-  if (product === null) {
-    return (
-      <ClaimActivityNotice
-        title="Product not found"
-        detail="Choose an available product from the registry."
-      />
-    );
+  if (latestRun === null) {
+    return <aside aria-label="Test activity" />;
   }
 
-  if (product.latestCompletedInvestigation === null) {
-    return (
-      <ClaimActivityNotice
-        title="No completed investigation"
-        detail="Investigate the product before connecting a Lab experiment."
-      />
-    );
-  }
-
-  if (product.latestCompletedInvestigation.result.claims.length === 0) {
-    return (
-      <ClaimActivityNotice
-        title="No claims found"
-        detail="The latest completed investigation did not return a claim to connect."
-      />
-    );
-  }
-
-  if (resolvedClaim === null) {
-    return (
-      <ClaimActivityNotice
-        title="Claim not found"
-        detail="This claim is not part of the latest completed investigation."
-      />
-    );
-  }
+  const activityMessages = messages.filter((message) => message.role !== "user");
 
   return (
-    <aside className="p-3 @md:p-4" aria-label="Claim activity details">
-      <div className="rounded-lg border border-dashed p-4">
-        <p className="text-sm font-medium">Lab activity is not linked</p>
-        <p className="text-muted-foreground mt-1 text-sm leading-6">
-          This research claim does not yet reference a Lab experiment.
+    <aside className="space-y-4 p-3 @md:p-4" aria-label="Test activity">
+      {activityMessages.length > 0 ? (
+        activityMessages.map((message) => (
+          <ScoutRunMessageView key={message.key} message={message} showText={false} />
+        ))
+      ) : (
+        <p className="text-muted-foreground text-sm" role="status">
+          Starting Scout...
         </p>
-      </div>
-
-      <section className="mt-5" aria-labelledby="activity-visibility-heading">
-        <h2
-          id="activity-visibility-heading"
-          className="text-muted-foreground font-mono text-[0.6875rem] tracking-[0.1em] uppercase"
-        >
-          Current testing path
-        </h2>
-        <p className="text-muted-foreground mt-2 text-sm leading-6">
-          Use Lab to run the experiment and inspect its agent messages, Firecrawl calls, browser
-          actions, waits, retries, and errors.
-        </p>
-      </section>
-
-      <Button asChild size="sm" variant="outline" className="mt-5 w-full">
-        <Link to="/lab">
+      )}
+      <Button asChild size="sm" variant="ghost" className="w-full">
+        <Link to="/lab" search={{ experiment: latestRun.experimentId, thread: latestRun.threadId }}>
           <TerminalSquareIcon />
-          Open Lab console
+          Open raw run
         </Link>
       </Button>
     </aside>
   );
 }
 
-function ClaimActivityNotice({ title, detail }: { title: string; detail: string }) {
-  return (
-    <aside className="p-3 @md:p-4" aria-label="Claim activity details">
-      <div className="rounded-lg border border-dashed p-4">
-        <p className="text-sm font-medium">{title}</p>
-        <p className="text-muted-foreground mt-1 text-sm leading-6">{detail}</p>
-      </div>
-    </aside>
-  );
+function latestAssistantText(messages: readonly ScoutRunMessage[]) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role === "assistant" && message.text.trim()) return message.text.trim();
+  }
+  return null;
+}
+
+function parseClaimResult(text: string) {
+  const match = text.match(/^\s*\**Verdict:\s*(Supported|Qualified|Refuted|Inconclusive)\**\s*/i);
+  const verdict = match ? canonicalVerdict(match[1]) : null;
+  const details = (match ? text.slice(match[0].length) : text)
+    .replace(/^#{1,6}\s+/gm, "")
+    .replaceAll("**", "")
+    .trim();
+  return { verdict, details };
+}
+
+function canonicalVerdict(value: string | undefined): ClaimVerdict | null {
+  const normalized = value?.toLowerCase();
+  if (normalized === "supported") return "Supported";
+  if (normalized === "qualified") return "Qualified";
+  if (normalized === "refuted") return "Refuted";
+  if (normalized === "inconclusive") return "Inconclusive";
+  return null;
+}
+
+function verdictDotClass(verdict: ClaimVerdict) {
+  switch (verdict) {
+    case "Supported":
+      return "bg-emerald-500";
+    case "Qualified":
+      return "bg-amber-500";
+    case "Refuted":
+      return "bg-red-500";
+    case "Inconclusive":
+      return "bg-slate-400";
+    default: {
+      const _exhaustive: never = verdict;
+      return _exhaustive;
+    }
+  }
+}
+
+function runStatus(run: ClaimRun | null | undefined) {
+  if (run === undefined) return "Loading";
+  if (run === null) return "Not tested";
+  switch (run.generation.status) {
+    case "pending":
+      return "Running";
+    case "completed":
+      return "Completed";
+    case "failed":
+      return "Failed";
+    default: {
+      const _exhaustive: never = run.generation;
+      return _exhaustive;
+    }
+  }
+}
+
+function claimTestError(error: unknown) {
+  if (!(error instanceof Error)) return "Could not start the test.";
+  const message = error.message;
+  const known = [
+    "Active Scout not found",
+    "Scout is already working",
+    "Claim not found",
+    "Product not found",
+  ].find((candidate) => message.includes(candidate));
+  return known ?? "Could not start the test.";
 }

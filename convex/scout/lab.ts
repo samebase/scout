@@ -13,6 +13,7 @@ import {
   type QueryCtx,
 } from "../_generated/server";
 import { requireAppUser } from "../access";
+import { completeClaimTestExperimentForGeneration } from "../claimTestsModel";
 import { canonicalProductDomain, ensureProduct } from "../productsDomain";
 import schema from "../schema";
 import { scoutAgent } from "./agent";
@@ -402,6 +403,7 @@ export const sendMessage = mutation({
         failedAt: Date.now(),
         failure: EXPIRED_GENERATION_FAILURE,
       });
+      await completeClaimTestExperimentForGeneration(ctx, pendingGeneration._id);
     }
     if (!thread.title) {
       await scoutAgent.updateThreadMetadata(ctx, {
@@ -458,6 +460,7 @@ export const startGeneration = internalMutation({
         failedAt: Date.now(),
         failure: EXPIRED_GENERATION_FAILURE,
       });
+      await completeClaimTestExperimentForGeneration(ctx, generation._id);
       return false;
     }
 
@@ -489,6 +492,7 @@ export const expireGeneration = internalMutation({
       failedAt: Date.now(),
       failure: EXPIRED_GENERATION_FAILURE,
     });
+    await completeClaimTestExperimentForGeneration(ctx, generation._id);
     return null;
   },
 });
@@ -521,6 +525,7 @@ export const completeGeneration = internalMutation({
         ? {}
         : { firecrawlDurationMs: args.firecrawlDurationMs }),
     });
+    await completeClaimTestExperimentForGeneration(ctx, generation._id);
     return null;
   },
 });
@@ -555,6 +560,7 @@ export const failGeneration = internalMutation({
         ? {}
         : { firecrawlDurationMs: args.firecrawlDurationMs }),
     });
+    await completeClaimTestExperimentForGeneration(ctx, generation._id);
     return null;
   },
 });

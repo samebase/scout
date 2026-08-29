@@ -1056,18 +1056,11 @@ function ProductDetail({
       </header>
 
       <div className="mt-6 grid gap-4 text-sm @2xl:grid-cols-[minmax(0,1fr)_auto] @2xl:items-end">
-        <dl className="grid gap-4 @lg:grid-cols-2">
+        <dl>
           <div className="min-w-0">
             <dt className="text-muted-foreground text-xs">Scout access</dt>
             <dd className="mt-1">
               <ScoutAccess access={product.scoutAccess} />
-            </dd>
-          </div>
-          <div>
-            <dt className="text-muted-foreground text-xs">Lab experiments</dt>
-            <dd className="mt-1">
-              {product.experimentCount}{" "}
-              {product.experimentCount === 1 ? "experiment" : "experiments"}
             </dd>
           </div>
         </dl>
@@ -1430,207 +1423,158 @@ function InvestigationReport({
   investigation: CompletedInvestigation;
   productDomain: string;
 }) {
-  const suggestedShops = uniqueSuggestedShops(investigation.result.claims);
-
   return (
     <section className="mt-5 border-t pt-5" aria-label="Investigation result">
-      <div className="mb-6 rounded-lg border bg-muted/40 px-3 py-2.5 text-sm">
-        <p className="font-medium">Discovered claims, not verified results</p>
-        <p className="text-muted-foreground mt-1">
-          Scout found these claims in first-party materials. A mystery shop still needs to test
-          whether they hold.
-        </p>
-        <p className="text-muted-foreground mt-2 text-xs">
-          Completed {investigationDate.format(investigation.completedAt)}
-          {` · ${creditCount.format(investigation.creditsUsed)} Firecrawl credits`}
-        </p>
-      </div>
-      <div className="grid gap-6 @2xl:grid-cols-2">
-        <ReportSection title="Summary" className="@2xl:col-span-2">
-          <p className="wrap-break-word text-sm leading-6">{investigation.result.summary}</p>
-        </ReportSection>
+      <p className="text-muted-foreground mb-4 text-xs">
+        {investigation.result.claims.length} unverified claims ·{" "}
+        {creditCount.format(investigation.creditsUsed)} Firecrawl credits ·{" "}
+        {investigationDate.format(investigation.completedAt)}
+      </p>
 
-        <ReportSection title="Tensions" className="@2xl:col-span-2">
-          {investigation.result.tensions.length === 0 ? (
-            <EmptyReportValue />
-          ) : (
-            <ul className="space-y-3">
-              {investigation.result.tensions.map((tension, tensionIndex) => (
-                <li
-                  key={`${tensionIndex}:${tension.summary}`}
-                  className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3"
-                >
-                  <p className="wrap-break-word text-sm font-medium">{tension.summary}</p>
-                  <ul className="mt-2 space-y-2">
-                    {tension.evidence.map((evidence, evidenceIndex) => (
-                      <li key={`${evidenceIndex}:${evidence.sourceUrl}`} className="text-sm">
-                        {evidence.evidenceExcerpt ? (
-                          <p className="text-muted-foreground wrap-break-word leading-6">
-                            {evidence.evidenceExcerpt}
-                          </p>
-                        ) : null}
-                        <SourceLink
-                          href={evidence.sourceUrl}
-                          label={evidence.pageTitle || "Source"}
-                        />
-                      </li>
-                    ))}
-                  </ul>
-                </li>
-              ))}
-            </ul>
-          )}
-        </ReportSection>
+      {investigation.result.claims.length === 0 ? (
+        <EmptyReportValue />
+      ) : (
+        <ul className="divide-y rounded-lg border" aria-label="Claims">
+          {investigation.result.claims.map((claim) => (
+            <li key={claim.claimKey}>
+              <Link
+                to="/products/$domain/claims/$claimKey"
+                params={{ domain: productDomain, claimKey: claim.claimKey }}
+                className="group flex items-start gap-3 p-3 outline-none hover:bg-muted/40 focus-visible:ring-3 focus-visible:ring-ring/50 @md:p-4"
+              >
+                <span className="min-w-0 flex-1 wrap-break-word text-sm font-medium leading-6">
+                  {claim.claim}
+                </span>
+                <span className="text-muted-foreground mt-0.5 shrink-0 font-mono text-[0.625rem] uppercase">
+                  {claim.category}
+                </span>
+                <ArrowRightIcon
+                  className="text-muted-foreground mt-0.5 size-4 shrink-0 transition-transform group-hover:translate-x-0.5"
+                  aria-hidden="true"
+                />
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
 
-        <ReportSection title="Audience">
-          {investigation.result.audiences.length === 0 ? (
-            <EmptyReportValue />
-          ) : (
-            <ul className="space-y-1.5 text-sm">
-              {investigation.result.audiences.map((audience) => (
-                <li key={audience} className="wrap-break-word">
-                  {audience}
-                </li>
-              ))}
-            </ul>
-          )}
-        </ReportSection>
+      <details className="mt-6 border-t pt-5">
+        <summary className="text-muted-foreground cursor-pointer select-none text-sm outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
+          Research details
+        </summary>
+        <div className="mt-6 grid gap-6 @2xl:grid-cols-2">
+          <ReportSection title="Summary" className="@2xl:col-span-2">
+            <p className="wrap-break-word text-sm leading-6">{investigation.result.summary}</p>
+          </ReportSection>
 
-        <ReportSection title="Access">
-          <AccessSummary access={investigation.result.access} />
-        </ReportSection>
-
-        <ReportSection title="Dependencies">
-          {investigation.result.dependencies.length === 0 ? (
-            <EmptyReportValue />
-          ) : (
-            <ul className="space-y-3 text-sm">
-              {investigation.result.dependencies.map((dependency) => (
-                <li key={`${dependency.name}:${dependency.sourceUrl}`}>
-                  <p className="wrap-break-word font-medium">{dependency.name}</p>
-                  <p className="text-muted-foreground mt-0.5 wrap-break-word">
-                    {dependency.relationship}
-                  </p>
-                  <SourceLink href={dependency.sourceUrl} label="Source" />
-                </li>
-              ))}
-            </ul>
-          )}
-        </ReportSection>
-
-        <ReportSection
-          title={`Claims (${investigation.result.claims.length})`}
-          className="@2xl:col-span-2"
-        >
-          {investigation.result.claims.length === 0 ? (
-            <EmptyReportValue />
-          ) : (
-            <ul className="divide-y rounded-lg border">
-              {investigation.result.claims.map((claim, index) => (
-                <li key={`${index}:${claim.claim}:${claim.sourceUrl}`} className="p-3 @md:p-4">
-                  <div className="flex flex-col gap-1 @md:flex-row @md:items-start @md:justify-between @md:gap-4">
-                    <Link
-                      to="/products/$domain/claims/$claimKey"
-                      params={{ domain: productDomain, claimKey: claim.claimKey }}
-                      className="group wrap-break-word text-sm font-medium underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
-                    >
-                      {claim.claim}
-                    </Link>
-                    <span className="text-muted-foreground shrink-0 text-xs">{claim.category}</span>
-                  </div>
-                  <p className="text-muted-foreground mt-2 wrap-break-word text-sm leading-6">
-                    {claim.support}
-                  </p>
-                  {claim.evidenceExcerpt ? (
-                    <p className="mt-2 border-l-2 pl-3 wrap-break-word text-sm leading-6">
-                      {claim.evidenceExcerpt}
-                    </p>
-                  ) : null}
-                  {claim.qualifiers.length > 0 ? (
-                    <div className="mt-2">
-                      <p className="text-muted-foreground text-xs">Qualifiers</p>
-                      <ul className="mt-1 list-disc space-y-1 pl-4 text-sm">
-                        {claim.qualifiers.map((qualifier, qualifierIndex) => (
-                          <li
-                            key={`${qualifierIndex}:${qualifier}`}
-                            className="wrap-break-word pl-1"
-                          >
-                            {qualifier}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-                  <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-                    <SourceLink href={claim.sourceUrl} label={claim.pageTitle || "Source"} />
-                    <Link
-                      to="/products/$domain/claims/$claimKey"
-                      params={{ domain: productDomain, claimKey: claim.claimKey }}
-                      className="inline-flex items-center gap-1 text-xs font-medium underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
-                    >
-                      Open claim
-                      <ArrowRightIcon className="size-3" aria-hidden="true" />
-                    </Link>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </ReportSection>
-
-        <ReportSection title="Suggested mystery shops">
-          {suggestedShops.length === 0 ? (
-            <EmptyReportValue />
-          ) : (
-            <ul className="list-disc space-y-2 pl-4 text-sm">
-              {suggestedShops.map((shop) => (
-                <li key={shop} className="wrap-break-word pl-1">
-                  {shop}
-                </li>
-              ))}
-            </ul>
-          )}
-        </ReportSection>
-
-        <ReportSection title="Unknowns">
-          {investigation.result.unknowns.length === 0 ? (
-            <EmptyReportValue />
-          ) : (
-            <ul className="list-disc space-y-2 pl-4 text-sm">
-              {investigation.result.unknowns.map((unknown) => (
-                <li key={unknown} className="wrap-break-word pl-1">
-                  {unknown}
-                </li>
-              ))}
-            </ul>
-          )}
-        </ReportSection>
-
-        <ReportSection
-          title={`Sources (${investigation.result.sources.length})`}
-          className="@2xl:col-span-2"
-        >
-          {investigation.result.sources.length === 0 ? (
-            <EmptyReportValue />
-          ) : (
-            <ul className="grid gap-2 @2xl:grid-cols-2">
-              {investigation.result.sources.map((source) => (
-                <li key={source.url} className="min-w-0">
-                  <a
-                    href={source.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-muted-foreground inline-flex max-w-full items-start gap-1.5 text-sm underline-offset-4 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          <ReportSection title="Tensions" className="@2xl:col-span-2">
+            {investigation.result.tensions.length === 0 ? (
+              <EmptyReportValue />
+            ) : (
+              <ul className="space-y-3">
+                {investigation.result.tensions.map((tension, tensionIndex) => (
+                  <li
+                    key={`${tensionIndex}:${tension.summary}`}
+                    className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3"
                   >
-                    <span className="wrap-break-word">{source.title || source.url}</span>
-                    <ExternalLinkIcon className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-                  </a>
-                </li>
-              ))}
-            </ul>
-          )}
-        </ReportSection>
-      </div>
+                    <p className="wrap-break-word text-sm font-medium">{tension.summary}</p>
+                    <ul className="mt-2 space-y-2">
+                      {tension.evidence.map((evidence, evidenceIndex) => (
+                        <li key={`${evidenceIndex}:${evidence.sourceUrl}`} className="text-sm">
+                          {evidence.evidenceExcerpt ? (
+                            <p className="text-muted-foreground wrap-break-word leading-6">
+                              {evidence.evidenceExcerpt}
+                            </p>
+                          ) : null}
+                          <SourceLink
+                            href={evidence.sourceUrl}
+                            label={evidence.pageTitle || "Source"}
+                          />
+                        </li>
+                      ))}
+                    </ul>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </ReportSection>
+
+          <ReportSection title="Audience">
+            {investigation.result.audiences.length === 0 ? (
+              <EmptyReportValue />
+            ) : (
+              <ul className="space-y-1.5 text-sm">
+                {investigation.result.audiences.map((audience) => (
+                  <li key={audience} className="wrap-break-word">
+                    {audience}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </ReportSection>
+
+          <ReportSection title="Access">
+            <AccessSummary access={investigation.result.access} />
+          </ReportSection>
+
+          <ReportSection title="Dependencies">
+            {investigation.result.dependencies.length === 0 ? (
+              <EmptyReportValue />
+            ) : (
+              <ul className="space-y-3 text-sm">
+                {investigation.result.dependencies.map((dependency) => (
+                  <li key={`${dependency.name}:${dependency.sourceUrl}`}>
+                    <p className="wrap-break-word font-medium">{dependency.name}</p>
+                    <p className="text-muted-foreground mt-0.5 wrap-break-word">
+                      {dependency.relationship}
+                    </p>
+                    <SourceLink href={dependency.sourceUrl} label="Source" />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </ReportSection>
+
+          <ReportSection title="Unknowns">
+            {investigation.result.unknowns.length === 0 ? (
+              <EmptyReportValue />
+            ) : (
+              <ul className="list-disc space-y-2 pl-4 text-sm">
+                {investigation.result.unknowns.map((unknown) => (
+                  <li key={unknown} className="wrap-break-word pl-1">
+                    {unknown}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </ReportSection>
+
+          <ReportSection
+            title={`Sources (${investigation.result.sources.length})`}
+            className="@2xl:col-span-2"
+          >
+            {investigation.result.sources.length === 0 ? (
+              <EmptyReportValue />
+            ) : (
+              <ul className="grid gap-2 @2xl:grid-cols-2">
+                {investigation.result.sources.map((source) => (
+                  <li key={source.url} className="min-w-0">
+                    <a
+                      href={source.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-muted-foreground inline-flex max-w-full items-start gap-1.5 text-sm underline-offset-4 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                    >
+                      <span className="wrap-break-word">{source.title || source.url}</span>
+                      <ExternalLinkIcon className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </ReportSection>
+        </div>
+      </details>
     </section>
   );
 }
@@ -1781,19 +1725,6 @@ function resetResearchError(error: unknown) {
 
 function reportButtonLabel(investigation: Investigation | null) {
   return investigation?.status === "completed" ? "Show investigation" : "Show last investigation";
-}
-
-function uniqueSuggestedShops(claims: CompletedInvestigation["result"]["claims"]) {
-  const seen = new Set<string>();
-  const shops: string[] = [];
-  for (const claim of claims) {
-    const shop = claim.suggestedMysteryShop.trim();
-    if (shop && !seen.has(shop)) {
-      seen.add(shop);
-      shops.push(shop);
-    }
-  }
-  return shops;
 }
 
 function investigationBorderClass(status: Investigation["status"] | undefined) {
