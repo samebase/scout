@@ -224,7 +224,7 @@ async function onlyProduct(client: AuthenticatedTestBackend) {
 }
 
 describe("Products registry", () => {
-  it("rejects unauthenticated and non-admin list, create, sync, and investigation starts", async () => {
+  it("rejects unauthenticated and non-admin product operations", async () => {
     const backend = testBackend();
     const productId = await backend.run(
       async (ctx) =>
@@ -246,6 +246,9 @@ describe("Products registry", () => {
     await expect(backend.mutation(api.products.startInvestigation, { productId })).rejects.toThrow(
       "Not authorized",
     );
+    await expect(backend.mutation(api.products.resetResearch, { productId })).rejects.toThrow(
+      "Not authorized",
+    );
 
     const nonAdminId = await insertUser(backend, "person@example.test");
     const nonAdmin = backend.withIdentity({ subject: `${nonAdminId}|test-session` });
@@ -257,6 +260,9 @@ describe("Products registry", () => {
       "Not authorized",
     );
     await expect(nonAdmin.mutation(api.products.startInvestigation, { productId })).rejects.toThrow(
+      "Not authorized",
+    );
+    await expect(nonAdmin.mutation(api.products.resetResearch, { productId })).rejects.toThrow(
       "Not authorized",
     );
   });
@@ -537,6 +543,62 @@ describe("Product investigations", () => {
         status: "completed",
         result: { summary: "Example presents a collaborative publishing product." },
       },
+    });
+  });
+
+  it("resets visible research without deleting history and blocks an active attempt", async () => {
+    const { backend, admin } = await authenticatedBackend();
+    const { productId } = await admin.mutation(api.products.create, {
+      url: "example.test",
+      name: "Example",
+    });
+    const first = await admin.mutation(api.products.startInvestigation, { productId });
+
+    await expect(admin.mutation(api.products.resetResearch, { productId })).rejects.toThrow(
+      "Wait for the active investigation to finish before resetting research",
+    );
+    await backend.mutation(internal.products.markProductResearchRunning, {
+      investigationId: first.investigationId,
+    });
+    await expect(admin.mutation(api.products.resetResearch, { productId })).rejects.toThrow(
+      "Wait for the active investigation to finish before resetting research",
+    );
+    await backend.mutation(internal.products.completeProductResearch, {
+      investigationId: first.investigationId,
+      startedAt: NOW.getTime(),
+      retrieval: validRetrievalMetadata(),
+      result: validInvestigationResult(),
+    });
+
+    await expect(admin.mutation(api.products.resetResearch, { productId })).resolves.toEqual({
+      reset: true,
+    });
+    await expect(onlyProduct(admin)).resolves.toMatchObject({
+      latestInvestigation: null,
+      latestCompletedInvestigation: null,
+    });
+    await expect(admin.mutation(api.products.resetResearch, { productId })).resolves.toEqual({
+      reset: false,
+    });
+    const preserved = await backend.run(
+      async (ctx) =>
+        await ctx.db
+          .query("productInvestigations")
+          .withIndex("by_product_id", (q) => q.eq("productId", productId))
+          .take(10),
+    );
+    expect(preserved).toHaveLength(1);
+    expect(preserved[0]).toMatchObject({
+      _id: first.investigationId,
+      status: "completed",
+    });
+
+    const second = await admin.mutation(api.products.startInvestigation, { productId });
+    expect(second.created).toBe(true);
+    expect(second.investigationId).not.toBe(first.investigationId);
+    await expect(onlyProduct(admin)).resolves.toMatchObject({
+      latestInvestigation: { _id: second.investigationId, status: "queued" },
+      latestCompletedInvestigation: null,
     });
   });
 

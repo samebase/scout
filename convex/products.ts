@@ -476,6 +476,38 @@ export const startInvestigation = mutation({
   },
 });
 
+export const resetResearch = mutation({
+  args: { productId: v.id("products") },
+  returns: v.object({ reset: v.boolean() }),
+  handler: async (ctx, args) => {
+    await requireAppUser(ctx);
+    const product = await ctx.db.get("products", args.productId);
+    if (!product) {
+      throw new Error("Product not found");
+    }
+
+    if (product.activeInvestigationId) {
+      const active = await ctx.db.get("productInvestigations", product.activeInvestigationId);
+      if (active?.status === "queued" || active?.status === "running") {
+        throw new Error("Wait for the active investigation to finish before resetting research");
+      }
+    }
+
+    const reset =
+      product.activeInvestigationId !== undefined ||
+      product.latestInvestigationId !== undefined ||
+      product.latestCompletedInvestigationId !== undefined;
+    if (reset) {
+      await ctx.db.patch("products", product._id, {
+        activeInvestigationId: undefined,
+        latestInvestigationId: undefined,
+        latestCompletedInvestigationId: undefined,
+      });
+    }
+    return { reset };
+  },
+});
+
 export const markProductResearchRunning = internalMutation({
   args: { investigationId: v.id("productInvestigations") },
   returns: v.union(

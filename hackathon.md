@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-29T10:46:56Z
+- **Last updated:** 2026-08-29T11:29:16Z
 
 ## Log
 
@@ -404,10 +404,19 @@ handler, avoiding both an abandoned result and duplicate mutation runs. A full b
 reaches the Product list, and the complete check and Cloudflare build path pass 160 tests
 (`src/routes/products.index.tsx`).
 
-### 2026-08-29 - working tree
+### 2026-08-29 - b66c214 - v98
 
 Turned the Product registry into a resizable workspace using the published `@samebase/sidebars`
 package. A compact, filterable product index now drives a linkable dossier pane; desktop widths
 persist across reloads, keyboard resizing is accessible, and mobile selection returns to the main
 dossier without losing the product context (`src/sidebars/`, `src/routes/products*.tsx`,
 `src/style.css`).
+
+### 2026-08-29 - working tree
+
+Added an authenticated research reset for Products. It refuses to interrupt queued or running
+work, returns completed or failed Products to the uninvestigated state, and preserves the underlying
+attempt records for future audit history. The Products workspace confirms the reset inline on
+desktop and mobile, with backend coverage for authorization, active-run safety, repeat calls, and a
+fresh subsequent investigation (`convex/products.ts`, `convex/products.test.ts`,
+`src/routes/products.index.tsx`).
