@@ -26,6 +26,15 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
 - Vite+ stays in `package.json` and supplies the dev, format, lint, test, and build tools behind the
   package scripts.
 
+## UI changes
+
+- Before changing the interface, read `.agents/skills/design-taste-frontend/SKILL.md` and
+  `docs/ui-design-contract.md`.
+- Treat the UI design contract as a cache of current intent, not an invariant. Revalidate it against
+  the requested change, the current product, accessibility needs, and the source code.
+- When a UI change establishes or replaces a reusable design decision, update the contract in the
+  same change.
+
 ## Main build labels
 
 - Use merge commits for pull requests into `main`. Do not squash.

@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-29T17:03:32Z
+- **Last updated:** 2026-08-29T17:20:08Z
 
 ## Log
 
@@ -480,7 +480,7 @@ path passed; desktop pane resizing, the 390-pixel mobile flow, and exact raw-run
 verified in the browser (`convex/productsResearch.ts`, `convex/productsValidation.ts`,
 `src/components/products-workspace.tsx`).
 
-### 2026-08-29 - working tree
+### 2026-08-29 - d018426 - v109
 
 Redesigned every Scout route around one compact, responsive application shell with clearer
 navigation, stronger information hierarchy, consistent controls, deliberate empty and loading
@@ -493,3 +493,11 @@ same standards. The full check passed 168 tests and the production Cloudflare bu
 browser coverage included every route plus populated, empty, signed-out, and 390-pixel mobile
 states. Production Lighthouse scored 97 performance, 100 accessibility, 96 best practices, and 100
 SEO (`.agents/skills/design-taste-frontend/SKILL.md`, `skills-lock.json`).
+
+### 2026-08-29 - working tree
+
+Recorded Scout's current UI direction in a short design contract that future agents can use as a
+cache instead of reconstructing the system from every route. The contract explicitly yields to
+new product evidence, user requirements, accessibility needs, and the source code, and it records
+the current design read, Taste Skill dials, ownership map, defaults, exceptions, and verification
+path (`docs/ui-design-contract.md`, `AGENTS.md`).
