@@ -2,6 +2,7 @@ import { authTables } from "@convex-dev/auth/server";
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import { productInvestigationValidator } from "./productsModel";
+import { productInvestigationActivityFieldsValidator } from "./productsInvestigationActivityModel";
 import { scoutServiceAccountFieldsValidator, scoutWebsiteIdentityValidator } from "./scout/model";
 import { scoutModelValidator, scoutTokenUsageValidator } from "./scout/models";
 
@@ -39,6 +40,20 @@ export default defineSchema({
   productInvestigations: defineTable(productInvestigationValidator)
     .index("by_product_id", ["productId"])
     .index("by_product_id_and_requested_at", ["productId", "requestedAt"]),
+  productInvestigationActivities: defineTable(productInvestigationActivityFieldsValidator.fields)
+    .index("by_investigation_id_and_sequence", ["investigationId", "sequence"])
+    .index("by_investigation_id_and_key", ["investigationId", "key"]),
+  productInvestigationArtifacts: defineTable({
+    investigationId: v.id("productInvestigations"),
+    startedAt: v.number(),
+    sequence: v.number(),
+    url: v.string(),
+    title: v.string(),
+    markdown: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_investigation_id_and_sequence", ["investigationId", "sequence"])
+    .index("by_investigation_id_and_url", ["investigationId", "url"]),
   scoutServiceAccounts: defineTable(
     scoutServiceAccountFieldsValidator.extend({
       productId: v.optional(v.id("products")),

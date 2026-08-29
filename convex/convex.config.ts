@@ -2,6 +2,7 @@ import { defineApp } from "convex/server";
 import { v } from "convex/values";
 import agent from "@convex-dev/agent/convex.config";
 import staticHosting from "@convex-dev/static-hosting/convex.config";
+import workflow from "@convex-dev/workflow/convex.config.js";
 
 // Keep existing app HTTP routes at their current root URLs.
 const app = defineApp({
@@ -16,6 +17,7 @@ const app = defineApp({
   },
 });
 app.use(agent);
+app.use(workflow);
 app.use(staticHosting);
 
 export default app;
