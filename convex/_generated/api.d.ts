@@ -18,10 +18,15 @@ import type * as devAuth from "../devAuth.js";
 import type * as devAuthConfig from "../devAuthConfig.js";
 import type * as email from "../email.js";
 import type * as http from "../http.js";
+import type * as productInvestigationWorkflow from "../productInvestigationWorkflow.js";
 import type * as productResearchAgent from "../productResearchAgent.js";
 import type * as products from "../products.js";
 import type * as productsDomain from "../productsDomain.js";
 import type * as productsInvestigation from "../productsInvestigation.js";
+import type * as productsInvestigationActivities from "../productsInvestigationActivities.js";
+import type * as productsInvestigationActivityModel from "../productsInvestigationActivityModel.js";
+import type * as productsInvestigationInspector from "../productsInvestigationInspector.js";
+import type * as productsInvestigationWorkflow from "../productsInvestigationWorkflow.js";
 import type * as productsModel from "../productsModel.js";
 import type * as productsResearch from "../productsResearch.js";
 import type * as productsValidation from "../productsValidation.js";
@@ -55,10 +60,15 @@ declare const fullApi: ApiFromModules<{
   devAuthConfig: typeof devAuthConfig;
   email: typeof email;
   http: typeof http;
+  productInvestigationWorkflow: typeof productInvestigationWorkflow;
   productResearchAgent: typeof productResearchAgent;
   products: typeof products;
   productsDomain: typeof productsDomain;
   productsInvestigation: typeof productsInvestigation;
+  productsInvestigationActivities: typeof productsInvestigationActivities;
+  productsInvestigationActivityModel: typeof productsInvestigationActivityModel;
+  productsInvestigationInspector: typeof productsInvestigationInspector;
+  productsInvestigationWorkflow: typeof productsInvestigationWorkflow;
   productsModel: typeof productsModel;
   productsResearch: typeof productsResearch;
   productsValidation: typeof productsValidation;
@@ -104,5 +114,6 @@ export declare const internal: FilterApi<
 
 export declare const components: {
   agent: import("@convex-dev/agent/_generated/component.js").ComponentApi<"agent">;
+  workflow: import("@convex-dev/workflow/_generated/component.js").ComponentApi<"workflow">;
   staticHosting: import("@convex-dev/static-hosting/_generated/component.js").ComponentApi<"staticHosting">;
 };

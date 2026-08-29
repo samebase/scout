@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 
 import agentTest from "@convex-dev/agent/test";
+import workflowTest from "@convex-dev/workflow/test";
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { api, internal } from "./_generated/api";
@@ -36,6 +37,7 @@ const NOW = new Date("2026-08-29T12:00:00.000Z");
 function testBackend() {
   const backend = convexTest(schema, modules);
   agentTest.register(backend);
+  workflowTest.register(backend);
   return backend;
 }
 
@@ -428,7 +430,7 @@ describe("Product investigations", () => {
     expect(second).toEqual({ investigationId: first.investigationId, created: false });
     const records = await backend.run(async (ctx) => ({
       investigations: await ctx.db.query("productInvestigations").collect(),
-      scheduled: (await ctx.db.system.query("_scheduled_functions").collect()).filter(
+      legacyScheduled: (await ctx.db.system.query("_scheduled_functions").collect()).filter(
         (job) => job.name === "productsInvestigation:run" && job.state.kind === "pending",
       ),
     }));
@@ -440,9 +442,147 @@ describe("Product investigations", () => {
       requestedModel: "openai/gpt-5.6-luna",
       maxCredits: 9,
       agentThreadId: expect.any(String),
+      workflowId: expect.any(String),
       status: "queued",
     });
-    expect(records.scheduled).toHaveLength(1);
+    expect(records.legacyScheduled).toHaveLength(0);
+  });
+
+  it("keeps the workflow inspector authenticated and returns only the recorded request envelope", async () => {
+    const { backend, admin } = await authenticatedBackend();
+    const { productId } = await admin.mutation(api.products.create, {
+      url: "example.test",
+      name: "Example",
+    });
+    const { investigationId } = await admin.mutation(api.products.startInvestigation, {
+      productId,
+    });
+
+    await expect(
+      backend.query(api.productsInvestigationInspector.get, { investigationId }),
+    ).rejects.toThrow();
+
+    const started = await backend.mutation(internal.products.markProductResearchRunning, {
+      investigationId,
+      durableWorkflow: true,
+    });
+    expect(started).not.toBeNull();
+    if (started === null) throw new Error("Expected the investigation to start");
+
+    const attempt = await backend.mutation(internal.productsInvestigationActivities.start, {
+      investigationId,
+      investigationStartedAt: started.startedAt,
+      key: "firecrawl_map",
+      sequence: 10,
+      actor: "Firecrawl",
+      operation: "POST /v2/map",
+      source: {
+        kind: "external",
+        request: {
+          method: "POST",
+          url: "https://api.firecrawl.dev/v2/map",
+          body: '{\n  "url": "https://example.test",\n  "limit": 50\n}',
+        },
+      },
+    });
+    expect(attempt).toBe(1);
+    if (attempt === null) throw new Error("Expected the activity to start");
+    await backend.mutation(internal.productsInvestigationActivities.complete, {
+      investigationId,
+      investigationStartedAt: started.startedAt,
+      key: "firecrawl_map",
+      attempt,
+      metrics: [
+        { label: "Eligible first-party URLs", value: "11" },
+        { label: "Firecrawl credits", value: "1" },
+      ],
+    });
+
+    const inspector = await admin.query(api.productsInvestigationInspector.get, {
+      investigationId,
+    });
+    expect(inspector).toMatchObject({
+      investigationId,
+      state: "running",
+      activities: [
+        {
+          key: "firecrawl_map",
+          actor: "Firecrawl",
+          operation: "POST /v2/map",
+          source: {
+            kind: "external",
+            request: {
+              method: "POST",
+              url: "https://api.firecrawl.dev/v2/map",
+              body: '{\n  "url": "https://example.test",\n  "limit": 50\n}',
+            },
+          },
+          lifecycle: {
+            status: "completed",
+            metrics: [
+              { label: "Eligible first-party URLs", value: "11" },
+              { label: "Firecrawl credits", value: "1" },
+            ],
+          },
+        },
+      ],
+    });
+    const serialized = JSON.stringify(inspector);
+    expect(serialized).not.toContain("Authorization");
+    expect(serialized).not.toContain("markdown");
+    expect(serialized).not.toContain("prompt");
+    expect(serialized).not.toContain("returnValue");
+  });
+
+  it("closes a running provider activity when its investigation fails", async () => {
+    const { backend, admin } = await authenticatedBackend();
+    const { productId } = await admin.mutation(api.products.create, {
+      url: "example.test",
+      name: "Example",
+    });
+    const { investigationId } = await admin.mutation(api.products.startInvestigation, {
+      productId,
+    });
+    const started = await backend.mutation(internal.products.markProductResearchRunning, {
+      investigationId,
+      durableWorkflow: true,
+    });
+    expect(started).not.toBeNull();
+    if (started === null) throw new Error("Expected the investigation to start");
+    await backend.mutation(internal.productsInvestigationActivities.start, {
+      investigationId,
+      investigationStartedAt: started.startedAt,
+      key: "convex_agent_generate",
+      sequence: 80,
+      actor: "OpenAI through Convex Agent",
+      operation: "generateText()",
+      source: { kind: "local" },
+    });
+
+    await expect(
+      backend.mutation(internal.products.failProductResearch, {
+        investigationId,
+        failure: "Product investigation workflow was canceled",
+      }),
+    ).resolves.toBe(true);
+
+    const activities = await backend.run(
+      async (ctx) =>
+        await ctx.db
+          .query("productInvestigationActivities")
+          .withIndex("by_investigation_id_and_sequence", (query) =>
+            query.eq("investigationId", investigationId),
+          )
+          .collect(),
+    );
+    expect(activities).toHaveLength(1);
+    expect(activities[0]?.lifecycle).toMatchObject({
+      status: "failed",
+      attempt: 1,
+      startedAt: NOW.getTime(),
+      failedAt: NOW.getTime(),
+      failure: "Product investigation workflow was canceled",
+    });
   });
 
   it("tracks current running, completed, and failed attempts while preserving the prior result", async () => {

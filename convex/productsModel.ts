@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { vWorkflowId } from "@convex-dev/workflow";
 
 export const LEGACY_PRODUCT_INVESTIGATION_PROVIDER = "firecrawl-agent";
 export const LEGACY_PRODUCT_INVESTIGATION_MODEL = "spark-2";
@@ -108,6 +109,7 @@ const currentInvestigationBaseValidator = v.object({
   provider: v.literal(PRODUCT_INVESTIGATION_PROVIDER),
   requestedModel: v.literal(PRODUCT_INVESTIGATION_MODEL),
   agentThreadId: v.string(),
+  workflowId: v.optional(vWorkflowId),
 });
 
 export const legacyQueuedProductInvestigationValidator = legacyInvestigationBaseValidator.extend({

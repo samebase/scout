@@ -45,6 +45,8 @@
     "@convex-dev/ai-sdk-provider": "^0.1.0",
     "@convex-dev/auth": "^0.0.94",
     "@convex-dev/static-hosting": "^0.2.1",
+    "@convex-dev/workflow": "^0.4.6",
+    "@convex-dev/workpool": "^0.4.10",
     "@samebase/sidebars": "^0.1.0",
     "@shadcn/react": "^0.3.0",
     "@tailwindcss/vite": "^4.3.0",

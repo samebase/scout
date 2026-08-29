@@ -50,6 +50,12 @@ importers:
       '@convex-dev/static-hosting':
         specifier: ^0.2.1
         version: 0.2.1(patch_hash=c85c3c94438fceb25fdc8a0489fa0e3db5f1d5eff56ec1813b699d0caff13207)(convex@1.45.0(react@19.2.6))(react@19.2.6)
+      '@convex-dev/workflow':
+        specifier: ^0.4.6
+        version: 0.4.6(@convex-dev/workpool@0.4.10(convex-helpers@0.1.123(@standard-schema/spec@1.1.0)(convex@1.45.0(react@19.2.6))(hono@4.12.34)(react@19.2.6)(typescript@6.0.3)(zod@4.4.3))(convex@1.45.0(react@19.2.6))(react@19.2.6))(convex-helpers@0.1.123(@standard-schema/spec@1.1.0)(convex@1.45.0(react@19.2.6))(hono@4.12.34)(react@19.2.6)(typescript@6.0.3)(zod@4.4.3))(convex@1.45.0(react@19.2.6))
+      '@convex-dev/workpool':
+        specifier: ^0.4.10
+        version: 0.4.10(convex-helpers@0.1.123(@standard-schema/spec@1.1.0)(convex@1.45.0(react@19.2.6))(hono@4.12.34)(react@19.2.6)(typescript@6.0.3)(zod@4.4.3))(convex@1.45.0(react@19.2.6))(react@19.2.6)
       '@samebase/sidebars':
         specifier: ^0.1.0
         version: 0.1.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -462,12 +468,31 @@ packages:
       react:
         optional: true
 
+  '@convex-dev/batch-worker@0.2.1':
+    resolution: {integrity: sha512-QEDW6XmT+SmBJAmNqyl0QAEmJ4yMKJAIoJ+LntsA8KY5gYP+UhSFvTEMCvo177RZxOR/cfkZ3R+4S/UBaj/JnQ==}
+    peerDependencies:
+      convex: ^1.36.1
+      react: ^18.3.1 || ^19.0.0
+
   '@convex-dev/static-hosting@0.2.1':
     resolution: {integrity: sha512-QMcfKUOB8dHeLa81xzk2GEIn7LzhEvtdgYhfFpIFer6uE/+xMStDxHAZsX5h1qsttYi7wNbEKAMf7MfOQ7ZrMw==}
     hasBin: true
     peerDependencies:
       convex: ^1.37.0
       react: ^18.3.1 || ^19.0.0
+
+  '@convex-dev/workflow@0.4.6':
+    resolution: {integrity: sha512-SxKVwJ2Ab5/rqjHIIZRfHQcsDe9d9of/61CAPdeO3yIbH+MFliH6PLRCVMIyj2Xk3RC3qzdvb7qxT6Zds9bhKw==}
+    peerDependencies:
+      '@convex-dev/workpool': ^0.4.4
+      convex: ^1.36.1
+      convex-helpers: ^0.1.99
+
+  '@convex-dev/workpool@0.4.10':
+    resolution: {integrity: sha512-wJTSZ3vmGIfR1enEzttlDq6YtXr/hmJr8DO3sa2v861WHOL1zyyXfWuvrHQiDuOOVryQJujqKc8VcH1IJ4um5g==}
+    peerDependencies:
+      convex: ^1.36.1
+      convex-helpers: ^0.1.94
 
   '@cspotcode/source-map-support@0.8.1':
     resolution: {integrity: sha512-IchNf6dN4tHoMFIn/7OE8LWZ19Y6q/67Bmf6vnGREv8RSbBVb9LPJxEcnwrcwX6ixSvaiGoomAUvu4YSxXrVgw==}
@@ -2718,6 +2743,9 @@ packages:
     resolution: {integrity: sha512-6t10qk83GOG8p0vKmaCr8eiilZwO171AvbROMtvvNiwrTly62t+7XkA8RdIIVbpMhCASAsxgAzdRSwh6nw/5Dg==}
     engines: {node: '>=4'}
 
+  async-channel@0.2.0:
+    resolution: {integrity: sha512-BJyjI/sfKlyijaBt2hbOSxT28xGNtLR0QLzAKO1Hlnv5BULY7sAoYoTPW3lfr1ZIC7y+FxabxO9T8GXpyoofGg==}
+
   babel-dead-code-elimination@1.0.12:
     resolution: {integrity: sha512-GERT7L2TiYcYDtYk1IpD+ASAYXjKbLTDPhBtYj7X1NuRMDTMtAx9kyBenub1Ev41lo91OHCKdmP+egTDmfQ7Ig==}
 
@@ -4752,10 +4780,30 @@ snapshots:
     optionalDependencies:
       react: 19.2.6
 
+  '@convex-dev/batch-worker@0.2.1(convex@1.45.0(react@19.2.6))(react@19.2.6)':
+    dependencies:
+      convex: 1.45.0(react@19.2.6)
+      react: 19.2.6
+
   '@convex-dev/static-hosting@0.2.1(patch_hash=c85c3c94438fceb25fdc8a0489fa0e3db5f1d5eff56ec1813b699d0caff13207)(convex@1.45.0(react@19.2.6))(react@19.2.6)':
     dependencies:
       convex: 1.45.0(react@19.2.6)
       react: 19.2.6
+
+  '@convex-dev/workflow@0.4.6(@convex-dev/workpool@0.4.10(convex-helpers@0.1.123(@standard-schema/spec@1.1.0)(convex@1.45.0(react@19.2.6))(hono@4.12.34)(react@19.2.6)(typescript@6.0.3)(zod@4.4.3))(convex@1.45.0(react@19.2.6))(react@19.2.6))(convex-helpers@0.1.123(@standard-schema/spec@1.1.0)(convex@1.45.0(react@19.2.6))(hono@4.12.34)(react@19.2.6)(typescript@6.0.3)(zod@4.4.3))(convex@1.45.0(react@19.2.6))':
+    dependencies:
+      '@convex-dev/workpool': 0.4.10(convex-helpers@0.1.123(@standard-schema/spec@1.1.0)(convex@1.45.0(react@19.2.6))(hono@4.12.34)(react@19.2.6)(typescript@6.0.3)(zod@4.4.3))(convex@1.45.0(react@19.2.6))(react@19.2.6)
+      async-channel: 0.2.0
+      convex: 1.45.0(react@19.2.6)
+      convex-helpers: 0.1.123(@standard-schema/spec@1.1.0)(convex@1.45.0(react@19.2.6))(hono@4.12.34)(react@19.2.6)(typescript@6.0.3)(zod@4.4.3)
+
+  '@convex-dev/workpool@0.4.10(convex-helpers@0.1.123(@standard-schema/spec@1.1.0)(convex@1.45.0(react@19.2.6))(hono@4.12.34)(react@19.2.6)(typescript@6.0.3)(zod@4.4.3))(convex@1.45.0(react@19.2.6))(react@19.2.6)':
+    dependencies:
+      '@convex-dev/batch-worker': 0.2.1(convex@1.45.0(react@19.2.6))(react@19.2.6)
+      convex: 1.45.0(react@19.2.6)
+      convex-helpers: 0.1.123(@standard-schema/spec@1.1.0)(convex@1.45.0(react@19.2.6))(hono@4.12.34)(react@19.2.6)(typescript@6.0.3)(zod@4.4.3)
+    transitivePeerDependencies:
+      - react
 
   '@cspotcode/source-map-support@0.8.1':
     dependencies:
@@ -6634,6 +6682,8 @@ snapshots:
   ast-types@0.16.1:
     dependencies:
       tslib: 2.8.1
+
+  async-channel@0.2.0: {}
 
   babel-dead-code-elimination@1.0.12:
     dependencies:

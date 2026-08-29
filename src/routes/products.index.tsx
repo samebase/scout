@@ -14,6 +14,7 @@ import {
   ExternalLinkIcon,
   LoaderCircleIcon,
   PanelLeftIcon,
+  PanelRightIcon,
   PlusIcon,
   RefreshCwIcon,
   RotateCcwIcon,
@@ -41,9 +42,8 @@ export const Route = createFileRoute("/products/")({
 type Product = FunctionReturnType<typeof api.products.list>[number];
 type Investigation = NonNullable<Product["latestInvestigation"]>;
 type CompletedInvestigation = NonNullable<Product["latestCompletedInvestigation"]>;
-type CurrentRunningInvestigation = Extract<
-  Investigation,
-  { provider: "firecrawl-convex"; status: "running" }
+type InvestigationInspector = NonNullable<
+  FunctionReturnType<typeof api.productsInvestigationInspector.get>
 >;
 
 type AddProductState =
@@ -78,7 +78,7 @@ const creditCount = new Intl.NumberFormat(undefined, {
 
 const PRODUCT_RESIZE_HANDLE_LABELS = {
   left: "Resize product list",
-  right: "Resize product details",
+  right: "Resize investigation activity",
 } satisfies SidebarLayoutResizeHandleLabels;
 
 const formatResizeHandleValueText: SidebarLayoutResizeHandleValueTextFormatter = ({ widthPx }) =>
@@ -133,6 +133,11 @@ function ProductsIndexPage() {
     search.product === undefined
       ? loadedProducts[0]
       : loadedProducts.find((product) => product._id === search.product);
+  const selectedInvestigationId = selectedProduct?.latestInvestigation?._id;
+  const inspector = useQuery(
+    api.productsInvestigationInspector.get,
+    selectedInvestigationId === undefined ? "skip" : { investigationId: selectedInvestigationId },
+  );
 
   useEffect(() => {
     const firstProduct = loadedProducts[0];
@@ -182,6 +187,7 @@ function ProductsIndexPage() {
       <SidebarLayout
         addressChrome={
           <ProductsChrome
+            activityState={inspector?.state}
             addButton={addButton}
             addOpen={addOpen}
             addSubmitting={addSubmitting}
@@ -222,6 +228,7 @@ function ProductsIndexPage() {
                 loading={loading}
                 notice={notice}
                 selectedProduct={selectedProduct}
+                inspector={inspector}
                 selectionMissing={search.product !== undefined && selectedProduct === undefined}
                 syncState={syncState}
                 onAddCancel={closeAdd}
@@ -230,6 +237,20 @@ function ProductsIndexPage() {
               />
             }
             scrollRestorationId="product-dossier"
+          />
+        }
+        right={
+          <PaneFrame
+            content={
+              <InvestigationActivityPane
+                inspector={inspector}
+                investigationId={selectedInvestigationId}
+                productName={selectedProduct?.name}
+              />
+            }
+            footer={<InvestigationActivityFooter inspector={inspector} />}
+            header={<InvestigationActivityHeader inspector={inspector} />}
+            scrollRestorationId="product-investigation-activity"
           />
         }
         resizeHandleLabels={PRODUCT_RESIZE_HANDLE_LABELS}
@@ -247,6 +268,7 @@ function ProductsIndexPage() {
 }
 
 function ProductsChrome({
+  activityState,
   addButton,
   addOpen,
   addSubmitting,
@@ -254,6 +276,7 @@ function ProductsChrome({
   productCount,
   onToggleAdd,
 }: {
+  activityState: InvestigationInspector["state"] | undefined;
   addButton: RefObject<HTMLButtonElement | null>;
   addOpen: boolean;
   addSubmitting: boolean;
@@ -261,9 +284,11 @@ function ProductsChrome({
   productCount: number;
   onToggleAdd: () => void;
 }) {
-  const { setMobilePane, toggleLeftPane } = useSidebarActions();
-  const { isMobile, leftDesktopOpen, mobilePane } = useSidebarLayoutPresentation();
+  const { setMobilePane, toggleLeftPane, toggleRightPane } = useSidebarActions();
+  const { isMobile, leftDesktopOpen, mobilePane, rightDesktopOpen } =
+    useSidebarLayoutPresentation();
   const productsShown = isMobile ? mobilePane === "left" : leftDesktopOpen;
+  const activityShown = isMobile ? mobilePane === "right" : rightDesktopOpen;
 
   const toggleProducts = () => {
     if (isMobile) {
@@ -271,6 +296,14 @@ function ProductsChrome({
       return;
     }
     toggleLeftPane();
+  };
+
+  const toggleActivity = () => {
+    if (isMobile) {
+      setMobilePane(activityShown ? "main" : "right");
+      return;
+    }
+    toggleRightPane();
   };
 
   return (
@@ -295,6 +328,28 @@ function ProductsChrome({
         {loading ? "Loading..." : `${productCount} ${productCount === 1 ? "product" : "products"}`}
       </p>
       <Button
+        type="button"
+        size="icon-sm"
+        variant="ghost"
+        aria-label={activityShown ? "Hide investigation activity" : "Show investigation activity"}
+        aria-pressed={activityShown}
+        onClick={toggleActivity}
+      >
+        <span className="relative">
+          <PanelRightIcon />
+          {activityState === "running" ||
+          activityState === "queued" ||
+          activityState === "failed" ? (
+            <span
+              className={`absolute -right-0.5 -top-0.5 size-1.5 rounded-full ${
+                activityState === "failed" ? "bg-destructive" : "bg-blue-500"
+              }`}
+              aria-hidden="true"
+            />
+          ) : null}
+        </span>
+      </Button>
+      <Button
         ref={addButton}
         type="button"
         size="sm"
@@ -308,6 +363,373 @@ function ProductsChrome({
       </Button>
     </div>
   );
+}
+
+function InvestigationActivityHeader({
+  inspector,
+}: {
+  inspector: InvestigationInspector | null | undefined;
+}) {
+  return (
+    <div className="flex h-full min-w-0 items-center justify-between gap-3 px-3">
+      <span className="truncate text-sm font-medium">Investigation activity</span>
+      <span className="text-muted-foreground text-xs" aria-live="polite">
+        {inspector === undefined
+          ? ""
+          : inspector === null
+            ? "No workflow"
+            : investigationStateLabel(inspector.state)}
+      </span>
+    </div>
+  );
+}
+
+function InvestigationActivityFooter({
+  inspector,
+}: {
+  inspector: InvestigationInspector | null | undefined;
+}) {
+  if (inspector === undefined || inspector === null) {
+    return <div className="h-full" />;
+  }
+  const startedAt = inspector.startedAt ?? inspector.requestedAt;
+  const duration = inspector.finishedAt === null ? null : inspector.finishedAt - startedAt;
+  return (
+    <div className="text-muted-foreground flex h-full items-center justify-between gap-3 px-3 text-xs">
+      <span>
+        {creditCount.format(inspector.firecrawlCredits.used)} / {inspector.firecrawlCredits.maximum}{" "}
+        Firecrawl credits
+      </span>
+      {duration === null ? null : <span>{formatDuration(duration)}</span>}
+    </div>
+  );
+}
+
+function InvestigationActivityPane({
+  inspector,
+  investigationId,
+  productName,
+}: {
+  inspector: InvestigationInspector | null | undefined;
+  investigationId: Investigation["_id"] | undefined;
+  productName: string | undefined;
+}) {
+  const hasRunningActivity =
+    inspector?.activities.some((activity) => activity.lifecycle.status === "running") ?? false;
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!hasRunningActivity) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [hasRunningActivity]);
+
+  if (investigationId === undefined) {
+    return (
+      <div className="text-muted-foreground p-5 text-sm">
+        <p>No investigation yet.</p>
+        <p className="mt-2 text-xs">Start one to see every provider call and Workflow step.</p>
+      </div>
+    );
+  }
+  if (inspector === undefined) {
+    return (
+      <p className="text-muted-foreground p-5 text-sm" role="status">
+        Loading investigation activity...
+      </p>
+    );
+  }
+  if (inspector === null) {
+    return (
+      <div className="text-muted-foreground p-5 text-sm">
+        <p>Detailed activity is unavailable for this investigation.</p>
+        <p className="mt-2 text-xs">Refresh it to run the new durable Workflow.</p>
+      </div>
+    );
+  }
+  const announcedActivity =
+    inspector.activities.find((activity) => activity.lifecycle.status === "running") ??
+    inspector.activities.at(-1);
+
+  return (
+    <div className="p-3">
+      <section className="bg-muted/35 rounded-lg border p-3" aria-label="Workflow run">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-medium">{productName ?? "Product"} investigation</p>
+            <p className="text-muted-foreground mt-1 text-xs">
+              Requested {investigationDate.format(inspector.requestedAt)}
+            </p>
+          </div>
+          <ActivityStatusBadge status={inspector.state} />
+        </div>
+        <dl className="mt-3 grid gap-2 text-xs">
+          <div>
+            <dt className="text-muted-foreground">Workflow ID</dt>
+            <dd className="mt-0.5 break-all font-mono">{inspector.workflowId}</dd>
+          </div>
+          <div>
+            <dt className="text-muted-foreground">Claims model</dt>
+            <dd className="mt-0.5 break-all font-mono">
+              {inspector.model.name} · {inspector.model.effort}
+            </dd>
+          </div>
+        </dl>
+      </section>
+
+      {inspector.failure === null ? null : (
+        <div
+          className="border-destructive/30 bg-destructive/5 mt-3 rounded-lg border p-3"
+          role="alert"
+        >
+          <p className="text-destructive text-sm font-medium">Workflow failed</p>
+          <p className="text-muted-foreground mt-1 wrap-break-word text-xs">{inspector.failure}</p>
+        </div>
+      )}
+
+      <div className="mt-4 flex items-center justify-between gap-3 px-1">
+        <h2 className="text-xs font-medium uppercase tracking-[0.12em]">Provider activity</h2>
+        <span className="text-muted-foreground text-xs">{inspector.activities.length} records</span>
+      </div>
+      <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {announcedActivity === undefined
+          ? `Workflow ${investigationStateLabel(inspector.state)}`
+          : `${announcedActivity.actor} ${announcedActivity.operation}: ${activityLifecycleLabel(
+              announcedActivity.lifecycle.status,
+            )}`}
+      </p>
+      {inspector.activities.length === 0 ? (
+        <div className="mt-2 rounded-lg border border-dashed px-3 py-8 text-center">
+          <LoaderCircleIcon
+            className={
+              "mx-auto size-4 " +
+              (inspector.state === "running" || inspector.state === "queued"
+                ? "animate-spin motion-reduce:animate-none"
+                : "")
+            }
+          />
+          <p className="mt-2 text-sm">
+            {inspector.state === "queued"
+              ? "Waiting for Workflow to start"
+              : "No provider calls recorded"}
+          </p>
+        </div>
+      ) : (
+        <ol className="mt-2 space-y-2" aria-label="Investigation provider activity">
+          {inspector.activities.map((activity) => (
+            <li key={activity.id}>
+              <InvestigationActivity activity={activity} now={now} />
+            </li>
+          ))}
+        </ol>
+      )}
+
+      <details className="mt-4 rounded-lg border">
+        <summary className="cursor-pointer px-3 py-2.5 text-sm font-medium focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
+          Durable Workflow steps ({inspector.workflowSteps.length})
+        </summary>
+        <ol className="border-t px-3 py-2" aria-label="Durable Workflow steps">
+          {inspector.workflowSteps.length === 0 ? (
+            <li className="text-muted-foreground py-2 text-xs">
+              No Workflow step has started yet.
+            </li>
+          ) : (
+            inspector.workflowSteps.map((step) => (
+              <li
+                key={step.stepNumber + "-" + step.name}
+                className="flex gap-2 border-b py-2 last:border-b-0"
+              >
+                <span
+                  className={"mt-1 size-2 shrink-0 rounded-full " + activityStatusDot(step.status)}
+                  aria-hidden="true"
+                />
+                <span className="min-w-0">
+                  <span className="block wrap-break-word text-xs">{step.name}</span>
+                  <span className="text-muted-foreground mt-0.5 block text-[0.6875rem]">
+                    {activityLifecycleLabel(step.status)}
+                    {step.completedAt === null
+                      ? ""
+                      : " · " + formatDuration(step.completedAt - step.startedAt)}
+                  </span>
+                </span>
+              </li>
+            ))
+          )}
+        </ol>
+      </details>
+    </div>
+  );
+}
+
+function InvestigationActivity({
+  activity,
+  now,
+}: {
+  activity: InvestigationInspector["activities"][number];
+  now: number;
+}) {
+  const status = activity.lifecycle.status;
+  const current = status === "running";
+  const terminalTime =
+    status === "completed"
+      ? activity.lifecycle.completedAt
+      : status === "failed"
+        ? activity.lifecycle.failedAt
+        : status === "skipped"
+          ? activity.lifecycle.skippedAt
+          : now;
+  const duration = status === "skipped" ? null : terminalTime - activity.lifecycle.startedAt;
+
+  return (
+    <details
+      className="group rounded-lg border bg-background"
+      open={current || status === "failed" ? true : undefined}
+    >
+      <summary
+        className="cursor-pointer list-none px-3 py-3 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+        aria-current={current ? "step" : undefined}
+      >
+        <div className="flex items-start gap-2.5">
+          <span
+            className={"mt-1.5 size-2 shrink-0 rounded-full " + activityStatusDot(status)}
+            aria-hidden="true"
+          />
+          <span className="min-w-0 flex-1">
+            <span className="text-muted-foreground block text-[0.6875rem] font-medium uppercase tracking-[0.12em]">
+              {activity.actor}
+            </span>
+            <span className="mt-0.5 block wrap-break-word font-mono text-xs">
+              {activity.operation}
+            </span>
+            <span className="text-muted-foreground mt-1 block text-[0.6875rem]">
+              {activityLifecycleLabel(status)}
+              {duration === null ? "" : " · " + formatDuration(duration)}
+              {status === "skipped" ? "" : " · attempt " + activity.lifecycle.attempt}
+            </span>
+          </span>
+          <ChevronDownIcon
+            className="text-muted-foreground mt-1 size-3.5 shrink-0 transition-transform group-open:rotate-180"
+            aria-hidden="true"
+          />
+        </div>
+      </summary>
+      <div className="border-t px-3 py-3">
+        {activity.source.kind === "external" ? (
+          <div>
+            <p className="text-muted-foreground text-[0.6875rem] font-medium uppercase tracking-[0.12em]">
+              Request
+            </p>
+            {activity.source.request.url === null ? null : (
+              <p className="mt-1 wrap-break-word font-mono text-xs">
+                {activity.source.request.method} {activity.source.request.url}
+              </p>
+            )}
+            <pre
+              className="bg-muted/60 mt-2 max-w-full overflow-auto rounded-md border p-2 font-mono text-[0.6875rem] leading-5 whitespace-pre-wrap wrap-break-word"
+              tabIndex={0}
+            >
+              {activity.source.request.body}
+            </pre>
+          </div>
+        ) : null}
+        {status === "completed" && activity.lifecycle.metrics.length > 0 ? (
+          <dl className={activity.source.kind === "external" ? "mt-3 grid gap-2" : "grid gap-2"}>
+            {activity.lifecycle.metrics.map((metric) => (
+              <div key={metric.label}>
+                <dt className="text-muted-foreground text-[0.6875rem]">{metric.label}</dt>
+                <dd className="mt-0.5 wrap-break-word whitespace-pre-wrap text-xs">
+                  {metric.value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        ) : status === "failed" ? (
+          <p className="text-destructive wrap-break-word text-xs" role="alert">
+            {activity.lifecycle.failure}
+          </p>
+        ) : status === "skipped" ? (
+          <p className="text-muted-foreground wrap-break-word text-xs">
+            {activity.lifecycle.reason}
+          </p>
+        ) : (
+          <p className="text-muted-foreground text-xs">The request is still running.</p>
+        )}
+      </div>
+    </details>
+  );
+}
+
+function ActivityStatusBadge({ status }: { status: InvestigationInspector["state"] }) {
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-1 text-xs">
+      <span className={"size-1.5 rounded-full " + activityStatusDot(status)} aria-hidden="true" />
+      {investigationStateLabel(status)}
+    </span>
+  );
+}
+
+function investigationStateLabel(status: InvestigationInspector["state"]) {
+  switch (status) {
+    case "queued":
+      return "Queued";
+    case "running":
+      return "Running";
+    case "completed":
+      return "Completed";
+    case "failed":
+      return "Failed";
+    case "canceled":
+      return "Canceled";
+    default: {
+      const exhaustive: never = status;
+      return exhaustive;
+    }
+  }
+}
+
+function activityLifecycleLabel(
+  status:
+    | InvestigationInspector["state"]
+    | InvestigationInspector["activities"][number]["lifecycle"]["status"]
+    | InvestigationInspector["workflowSteps"][number]["status"],
+) {
+  return status === "queued" ? "Queued" : status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+function activityStatusDot(
+  status:
+    | InvestigationInspector["state"]
+    | InvestigationInspector["activities"][number]["lifecycle"]["status"]
+    | InvestigationInspector["workflowSteps"][number]["status"],
+) {
+  switch (status) {
+    case "queued":
+      return "bg-amber-500";
+    case "running":
+      return "bg-blue-500 animate-pulse motion-reduce:animate-none";
+    case "completed":
+      return "bg-emerald-500";
+    case "failed":
+      return "bg-destructive";
+    case "canceled":
+      return "bg-muted-foreground";
+    case "skipped":
+      return "bg-muted-foreground/60";
+    default: {
+      const exhaustive: never = status;
+      return exhaustive;
+    }
+  }
+}
+
+function formatDuration(milliseconds: number) {
+  const safeMilliseconds = Math.max(0, milliseconds);
+  if (safeMilliseconds < 1_000) return Math.round(safeMilliseconds) + " ms";
+  const seconds = Math.floor(safeMilliseconds / 1_000);
+  if (seconds < 60) return seconds + " s";
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return remainingSeconds === 0 ? minutes + " min" : minutes + " min " + remainingSeconds + " s";
 }
 
 function ProductNavigation({
@@ -393,6 +815,7 @@ function ProductsMain({
   loading,
   notice,
   selectedProduct,
+  inspector,
   selectionMissing,
   syncState,
   onAddCancel,
@@ -403,6 +826,7 @@ function ProductsMain({
   loading: boolean;
   notice: PageNotice;
   selectedProduct: Product | undefined;
+  inspector: InvestigationInspector | null | undefined;
   selectionMissing: boolean;
   syncState: RegistrySyncState;
   onAddCancel: () => void;
@@ -410,7 +834,7 @@ function ProductsMain({
   onAddSubmittingChange: (submitting: boolean) => void;
 }) {
   return (
-    <main className="mx-auto w-full max-w-4xl p-4 sm:p-6">
+    <main className="mx-auto w-full max-w-4xl p-4 @md:p-6">
       {addOpen ? (
         <AddProductForm
           onCancel={onAddCancel}
@@ -451,7 +875,11 @@ function ProductsMain({
         </div>
       ) : (
         <div className={addOpen || notice || syncState.kind === "failed" ? "mt-6" : undefined}>
-          <ProductDetail key={selectedProduct._id} product={selectedProduct} />
+          <ProductDetail
+            key={selectedProduct._id}
+            product={selectedProduct}
+            inspector={inspector}
+          />
         </div>
       )}
     </main>
@@ -511,13 +939,13 @@ function AddProductForm({
   return (
     <section
       id="add-product-panel"
-      className="bg-card rounded-xl border p-4 sm:p-5"
+      className="bg-card rounded-xl border p-4 @md:p-5"
       aria-labelledby="add-product-heading"
     >
       <h2 id="add-product-heading" className="text-lg font-medium">
         Add product
       </h2>
-      <form className="mt-5 grid gap-4 sm:grid-cols-2" onSubmit={(event) => void submit(event)}>
+      <form className="mt-5 grid gap-4 @xl:grid-cols-2" onSubmit={(event) => void submit(event)}>
         <FormField
           label="Product URL or domain"
           htmlFor="product-url"
@@ -557,7 +985,7 @@ function AddProductForm({
           />
         </FormField>
 
-        <div className="flex items-center justify-end gap-2 sm:col-span-2">
+        <div className="flex items-center justify-end gap-2 @xl:col-span-2">
           <Button type="button" variant="ghost" disabled={submitting} onClick={onCancel}>
             Cancel
           </Button>
@@ -567,7 +995,7 @@ function AddProductForm({
           </Button>
         </div>
         {state.kind === "failed" ? (
-          <p className="text-destructive text-sm sm:col-span-2" role="alert">
+          <p className="text-destructive text-sm @xl:col-span-2" role="alert">
             {state.message}
           </p>
         ) : null}
@@ -576,7 +1004,13 @@ function AddProductForm({
   );
 }
 
-function ProductDetail({ product }: { product: Product }) {
+function ProductDetail({
+  product,
+  inspector,
+}: {
+  product: Product;
+  inspector: InvestigationInspector | null | undefined;
+}) {
   const [reportOpen, setReportOpen] = useState(true);
   const [requestState, setRequestState] = useState<InvestigationRequestState>({ kind: "idle" });
   const [resetState, setResetState] = useState<ResearchResetState>({ kind: "idle" });
@@ -590,7 +1024,7 @@ function ProductDetail({ product }: { product: Product }) {
   return (
     <article>
       <header className={`border-l-2 pl-3 ${investigationBorderClass(latest?.status)}`}>
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
+        <div className="flex flex-col gap-3 @xl:flex-row @xl:items-start @xl:justify-between @xl:gap-6">
           <div className="flex min-w-0 items-start gap-3">
             <ServiceIcon
               serviceName={product.name}
@@ -610,12 +1044,15 @@ function ProductDetail({ product }: { product: Product }) {
               </a>
             </div>
           </div>
-          <InvestigationStatus investigation={latest} />
+          <InvestigationStatus
+            investigation={latest}
+            currentOperation={currentInvestigationOperation(inspector)}
+          />
         </div>
       </header>
 
-      <div className="mt-6 grid gap-4 text-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-        <dl className="grid gap-4 sm:grid-cols-2">
+      <div className="mt-6 grid gap-4 text-sm @2xl:grid-cols-[minmax(0,1fr)_auto] @2xl:items-end">
+        <dl className="grid gap-4 @lg:grid-cols-2">
           <div className="min-w-0">
             <dt className="text-muted-foreground text-xs">Scout access</dt>
             <dd className="mt-1">
@@ -631,7 +1068,7 @@ function ProductDetail({ product }: { product: Product }) {
           </div>
         </dl>
 
-        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+        <div className="flex flex-wrap items-center gap-2 @2xl:justify-end">
           {report ? (
             <Button
               type="button"
@@ -802,7 +1239,30 @@ function ScoutAccess({ access }: { access: Product["scoutAccess"] }) {
   );
 }
 
-function InvestigationStatus({ investigation }: { investigation: Investigation | null }) {
+function currentInvestigationOperation(
+  inspector: InvestigationInspector | null | undefined,
+): string | null {
+  if (inspector === undefined || inspector === null) return null;
+  for (let index = inspector.activities.length - 1; index >= 0; index -= 1) {
+    const activity = inspector.activities[index];
+    if (activity?.lifecycle.status === "running") {
+      return `${activity.actor} ${activity.operation}`;
+    }
+  }
+  for (let index = inspector.workflowSteps.length - 1; index >= 0; index -= 1) {
+    const step = inspector.workflowSteps[index];
+    if (step?.status === "running") return step.name;
+  }
+  return null;
+}
+
+function InvestigationStatus({
+  investigation,
+  currentOperation,
+}: {
+  investigation: Investigation | null;
+  currentOperation: string | null;
+}) {
   if (investigation === null) {
     return (
       <span className="text-muted-foreground inline-flex shrink-0 items-center gap-2 text-sm">
@@ -822,9 +1282,7 @@ function InvestigationStatus({ investigation }: { investigation: Investigation |
         <StatusLabel
           dotClass="bg-blue-500"
           label="Investigating"
-          {...(investigation.provider === "firecrawl-convex"
-            ? { note: investigationStageLabel(investigation.stage) }
-            : {})}
+          {...(currentOperation === null ? {} : { note: currentOperation })}
           detail={investigation.startedAt}
           credits={investigation.creditsUsed}
         />
@@ -854,23 +1312,6 @@ function InvestigationStatus({ investigation }: { investigation: Investigation |
   }
 }
 
-function investigationStageLabel(stage: CurrentRunningInvestigation["stage"]) {
-  switch (stage) {
-    case "mapping":
-      return "Mapping the site";
-    case "selecting":
-      return "Selecting source pages";
-    case "scraping":
-      return "Reading source pages";
-    case "synthesizing":
-      return "Summarizing claims";
-    default: {
-      const exhaustive: never = stage;
-      return exhaustive;
-    }
-  }
-}
-
 function StatusLabel({
   dotClass,
   label,
@@ -885,12 +1326,17 @@ function StatusLabel({
   credits?: number | null;
 }) {
   return (
-    <span className="inline-flex shrink-0 items-start gap-2 text-right text-sm" role="status">
-      <span className={`mt-1.5 size-2 rounded-full ${dotClass}`} aria-hidden="true" />
-      <span>
+    <span
+      className="inline-flex min-w-0 items-start gap-2 text-left text-sm @xl:max-w-[58%] @xl:shrink-0 @xl:text-right"
+      role="status"
+    >
+      <span className={`mt-1.5 size-2 shrink-0 rounded-full ${dotClass}`} aria-hidden="true" />
+      <span className="min-w-0">
         <span className="block">{label}</span>
-        {note ? <span className="text-muted-foreground block text-xs">{note}</span> : null}
-        <span className="text-muted-foreground block text-xs">
+        {note ? (
+          <span className="text-muted-foreground block wrap-break-word text-xs">{note}</span>
+        ) : null}
+        <span className="text-muted-foreground block wrap-break-word text-xs">
           {investigationDate.format(detail)}
           {credits === undefined || credits === null
             ? null
@@ -913,12 +1359,22 @@ function InvestigationAction({
   onStateChange: (state: InvestigationRequestState) => void;
 }) {
   const startInvestigation = useMutation(api.products.startInvestigation);
+  const { setMobilePane, toggleRightPane } = useSidebarActions();
+  const { isMobile, rightDesktopOpen } = useSidebarLayoutPresentation();
   const submitting = state.kind === "submitting";
+
+  const showActivity = () => {
+    if (isMobile) {
+      setMobilePane("right");
+    } else if (!rightDesktopOpen) {
+      toggleRightPane();
+    }
+  };
 
   if (investigation?.status === "queued" || investigation?.status === "running") {
     return (
       <Button type="button" size="sm" disabled>
-        <LoaderCircleIcon className="animate-spin" />
+        <LoaderCircleIcon className="animate-spin motion-reduce:animate-none" />
         {investigation.status === "queued" ? "Queued" : "Investigating"}
       </Button>
     );
@@ -936,6 +1392,7 @@ function InvestigationAction({
       return;
     }
     onStateChange({ kind: "submitting" });
+    showActivity();
     try {
       await startInvestigation({ productId });
       onStateChange({ kind: "idle" });
@@ -944,13 +1401,14 @@ function InvestigationAction({
         kind: "failed",
         message: "Could not start the investigation. Try again.",
       });
+      if (isMobile) setMobilePane("main");
     }
   };
 
   return (
     <Button type="button" size="sm" disabled={submitting} onClick={() => void request()}>
       {submitting ? (
-        <LoaderCircleIcon className="animate-spin" />
+        <LoaderCircleIcon className="animate-spin motion-reduce:animate-none" />
       ) : investigation === null ? (
         <SearchIcon />
       ) : (
@@ -977,12 +1435,12 @@ function InvestigationReport({ investigation }: { investigation: CompletedInvest
           {` · ${creditCount.format(investigation.creditsUsed)} Firecrawl credits`}
         </p>
       </div>
-      <div className="grid gap-6 sm:grid-cols-2">
-        <ReportSection title="Summary" className="sm:col-span-2">
+      <div className="grid gap-6 @2xl:grid-cols-2">
+        <ReportSection title="Summary" className="@2xl:col-span-2">
           <p className="wrap-break-word text-sm leading-6">{investigation.result.summary}</p>
         </ReportSection>
 
-        <ReportSection title="Tensions" className="sm:col-span-2">
+        <ReportSection title="Tensions" className="@2xl:col-span-2">
           {investigation.result.tensions.length === 0 ? (
             <EmptyReportValue />
           ) : (
@@ -1052,15 +1510,15 @@ function InvestigationReport({ investigation }: { investigation: CompletedInvest
 
         <ReportSection
           title={`Claims (${investigation.result.claims.length})`}
-          className="sm:col-span-2"
+          className="@2xl:col-span-2"
         >
           {investigation.result.claims.length === 0 ? (
             <EmptyReportValue />
           ) : (
             <ul className="divide-y rounded-lg border">
               {investigation.result.claims.map((claim, index) => (
-                <li key={`${index}:${claim.claim}:${claim.sourceUrl}`} className="p-3 sm:p-4">
-                  <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                <li key={`${index}:${claim.claim}:${claim.sourceUrl}`} className="p-3 @md:p-4">
+                  <div className="flex flex-col gap-1 @md:flex-row @md:items-start @md:justify-between @md:gap-4">
                     <p className="wrap-break-word text-sm font-medium">{claim.claim}</p>
                     <span className="text-muted-foreground shrink-0 text-xs">{claim.category}</span>
                   </div>
@@ -1124,12 +1582,12 @@ function InvestigationReport({ investigation }: { investigation: CompletedInvest
 
         <ReportSection
           title={`Sources (${investigation.result.sources.length})`}
-          className="sm:col-span-2"
+          className="@2xl:col-span-2"
         >
           {investigation.result.sources.length === 0 ? (
             <EmptyReportValue />
           ) : (
-            <ul className="grid gap-2 sm:grid-cols-2">
+            <ul className="grid gap-2 @2xl:grid-cols-2">
               {investigation.result.sources.map((source) => (
                 <li key={source.url} className="min-w-0">
                   <a

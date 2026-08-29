@@ -7,12 +7,12 @@
 - **Repo:** private
 - **Frontend:** Convex static hosting
 - **Convex deployment:** https://usable-spider-599.eu-west-1.convex.cloud
-- **Components:** @convex-dev/agent, @convex-dev/static-hosting
+- **Components:** @convex-dev/agent, @convex-dev/static-hosting, @convex-dev/workflow
 - **Convex features:** schema, tables, indexes, queries, paginated queries, realtime queries, mutations, actions, scheduled functions, HTTP actions, AI Gateway
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-29T11:52:32Z
+- **Last updated:** 2026-08-29T13:11:12Z
 
 ## Log
 
@@ -421,7 +421,7 @@ desktop and mobile, with backend coverage for authorization, active-run safety, 
 fresh subsequent investigation (`convex/products.ts`, `convex/products.test.ts`,
 `src/routes/products.index.tsx`).
 
-### 2026-08-29 - working tree
+### 2026-08-29 - c90c3ca - v103
 
 Separated Lab history from other Agent threads after a Product investigation thread caused the
 entire Lab query to fail. The Lab now paginates its own authenticated thread bindings and hydrates
@@ -429,3 +429,19 @@ only those Agent records, while direct access still rejects unbound threads. Pro
 also report their live mapping, source-selection, page-reading, and claim-summarization stage rather
 than showing one opaque spinner until completion (`convex/schema.ts`, `convex/scout/lab.ts`,
 `convex/scoutLab.test.ts`, `convex/products*.ts`, `src/routes/products.index.tsx`).
+
+### 2026-08-29 - working tree
+
+Moved Product research onto a durable Convex Workflow and added an authenticated activity ledger.
+The resizable Products inspector now shows each sanitized Firecrawl map, search, and scrape request,
+per-call timing and credit use, the Agent generation configuration, and the reactive Workflow step
+history without returning authorization headers, scraped Markdown, prompts, or raw Workflow data.
+External provider actions do not retry automatically, and terminal failures close any in-flight
+activity transactionally (`convex/productInvestigationWorkflow.ts`,
+`convex/productsInvestigation*.ts`, `convex/products.ts`, `convex/schema.ts`).
+
+The Products dossier and report now respond to their pane's width instead of the browser viewport,
+so resizing either sidebar cannot collapse product identity, status, metadata, or controls. A live
+Samebase refresh exposed all provider operations and completed at seven Firecrawl credits. The full
+check passed 163 tests and the Cloudflare build path passed after adversarial backend, UI, desktop,
+and mobile review (`src/routes/products.index.tsx`, `convex/products.test.ts`).

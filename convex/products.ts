@@ -11,6 +11,7 @@ import {
 } from "./_generated/server";
 import { requireAppUser } from "./access";
 import { productResearchAgent } from "./productResearchAgent";
+import { productInvestigationWorkflow } from "./productInvestigationWorkflow";
 import {
   canonicalProductDomain,
   ensureProduct,
@@ -102,6 +103,7 @@ function currentInvestigationBase(investigation: CurrentInvestigation) {
     effort: investigation.effort,
     maxCredits: investigation.maxCredits,
     agentThreadId: investigation.agentThreadId,
+    ...(investigation.workflowId === undefined ? {} : { workflowId: investigation.workflowId }),
   };
 }
 
@@ -485,11 +487,21 @@ export const startInvestigation = mutation({
       agentThreadId: threadId,
       status: "queued",
     });
+    const workflowId = await productInvestigationWorkflow.start(
+      ctx,
+      internal.productsInvestigationWorkflow.productResearchV1,
+      { investigationId },
+      {
+        startAsync: true,
+        onComplete: internal.productsInvestigationWorkflow.onComplete,
+        context: { investigationId },
+      },
+    );
+    await ctx.db.patch("productInvestigations", investigationId, { workflowId });
     await ctx.db.patch("products", product._id, {
       activeInvestigationId: investigationId,
       latestInvestigationId: investigationId,
     });
-    await ctx.scheduler.runAfter(0, internal.productsInvestigation.run, { investigationId });
     return { investigationId, created: true };
   },
 });
@@ -527,7 +539,10 @@ export const resetResearch = mutation({
 });
 
 export const markProductResearchRunning = internalMutation({
-  args: { investigationId: v.id("productInvestigations") },
+  args: {
+    investigationId: v.id("productInvestigations"),
+    durableWorkflow: v.optional(v.boolean()),
+  },
   returns: v.union(
     v.null(),
     v.object({
@@ -556,11 +571,13 @@ export const markProductResearchRunning = internalMutation({
       status: "running",
       startedAt,
     });
-    await ctx.scheduler.runAfter(
-      PRODUCT_RESEARCH_WATCHDOG_MS,
-      internal.products.watchdogProductResearch,
-      { investigationId: investigation._id, startedAt },
-    );
+    if (args.durableWorkflow !== true) {
+      await ctx.scheduler.runAfter(
+        PRODUCT_RESEARCH_WATCHDOG_MS,
+        internal.products.watchdogProductResearch,
+        { investigationId: investigation._id, startedAt },
+      );
+    }
     return {
       productDomain: product.domain,
       productName: product.name,
@@ -680,13 +697,39 @@ export const failProductResearch = internalMutation({
           ? investigation.retrieval
           : undefined
         : validateProductRetrievalMetadata(args.retrieval);
+    const failedAt = Date.now();
+    const failure = boundedInvestigationFailure(new Error(args.failure));
+    const activities = await ctx.db
+      .query("productInvestigationActivities")
+      .withIndex("by_investigation_id_and_sequence", (query) =>
+        query.eq("investigationId", investigation._id),
+      )
+      .take(32);
+    for (const activity of activities) {
+      if (activity.lifecycle.status !== "running") continue;
+      await ctx.db.replace("productInvestigationActivities", activity._id, {
+        investigationId: activity.investigationId,
+        key: activity.key,
+        sequence: activity.sequence,
+        actor: activity.actor,
+        operation: activity.operation,
+        source: activity.source,
+        lifecycle: {
+          status: "failed",
+          attempt: activity.lifecycle.attempt,
+          startedAt: activity.lifecycle.startedAt,
+          failedAt,
+          failure,
+        },
+      });
+    }
     await ctx.db.replace("productInvestigations", investigation._id, {
       ...currentInvestigationBase(investigation),
       status: "failed",
       ...(investigation.status === "running" ? { startedAt: investigation.startedAt } : {}),
-      failedAt: Date.now(),
+      failedAt,
       ...(retrieval === undefined ? {} : { retrieval }),
-      failure: boundedInvestigationFailure(new Error(args.failure)),
+      failure,
     });
     await ctx.db.patch("products", product._id, { activeInvestigationId: undefined });
     return true;
