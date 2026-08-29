@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-29T17:20:08Z
+- **Last updated:** 2026-08-29T17:48:33Z
 
 ## Log
 
@@ -494,10 +494,32 @@ browser coverage included every route plus populated, empty, signed-out, and 390
 states. Production Lighthouse scored 97 performance, 100 accessibility, 96 best practices, and 100
 SEO (`.agents/skills/design-taste-frontend/SKILL.md`, `skills-lock.json`).
 
-### 2026-08-29 - working tree
+### 2026-08-29 - 00263c9 - v110
 
 Recorded Scout's current UI direction in a short design contract that future agents can use as a
 cache instead of reconstructing the system from every route. The contract explicitly yields to
 new product evidence, user requirements, accessibility needs, and the source code, and it records
 the current design read, Taste Skill dials, ownership map, defaults, exceptions, and verification
 path (`docs/ui-design-contract.md`, `AGENTS.md`).
+
+### 2026-08-29 - working tree
+
+Embedded Firecrawl's read-only live browser in the claim workspace while a Scout test is active.
+The signed provider URL is validated at the Firecrawl boundary, kept out of the Agent transcript,
+exposed only through an authenticated owner-scoped realtime query, and deleted when the browser or
+generation closes (`convex/claimTests*.ts`, `convex/scout/labGeneration.ts`,
+`convex/scout/lib/firecrawl*.ts`, `src/routes/products.$domain.claims.$claimKey.tsx`).
+
+The live session uses Scout's shared controls and container-responsive pane styling, so the browser
+remains the primary work surface as the center pane changes width.
+
+Removed rounded accent-rail containers from Product and claim headings while keeping real
+investigation status inline. The Scout design contract and project-local Taste preflight now ban
+that motif; desktop and 390-pixel mobile checks covered both routes
+(`src/components/products-workspace.tsx`, `docs/ui-design-contract.md`,
+`.agents/skills/design-taste-frontend/SKILL.md`).
+
+A live Samebase verification showed the iframe move from GitHub sign-in to Samebase documentation
+alongside the tool trace, then disappear on `browser_close` while the verdict remained. The run used
+three Firecrawl credits and 82.2 browser seconds; all 174 tests and the complete Cloudflare build
+path passed.

@@ -360,4 +360,71 @@ describe("Claim tests", () => {
       }),
     ).resolves.toBeNull();
   });
+
+  it("exposes a pending live view only to its owner and removes it on close or terminal state", async () => {
+    const { backend, userId, admin } = await authenticatedBackend();
+    await insertScout(backend);
+    const snapshot = await insertCompletedInvestigation(backend, {
+      userId,
+      claims: [claim("a visible browser session")],
+    });
+    const claimKey = snapshot.claimKeys[0];
+    if (!claimKey) throw new Error("Expected a claim key");
+    const started = await admin.mutation(api.claimTests.start, {
+      domain: "example.test",
+      claimKey,
+    });
+    const generation = await backend.run(async (ctx) => {
+      const run = await ctx.db.get("claimTestRuns", started.runId);
+      return run ? await ctx.db.get("scoutLabGenerations", run.generationId) : null;
+    });
+    if (!generation) throw new Error("Expected a generation");
+    const liveViewUrl = "https://liveview.firecrawl.dev/private?signature=read-only";
+
+    await backend.mutation(internal.claimTests.setLiveView, {
+      promptMessageId: generation.promptMessageId,
+      liveViewUrl,
+    });
+    await expect(
+      admin.query(api.claimTests.liveView, { domain: "example.test", claimKey }),
+    ).resolves.toEqual({ url: liveViewUrl });
+
+    const otherUserId = await backend.run(
+      async (ctx) => await ctx.db.insert("users", { email: ADMIN_EMAIL }),
+    );
+    const otherAdmin = backend.withIdentity({ subject: `${otherUserId}|other-session` });
+    await expect(
+      otherAdmin.query(api.claimTests.liveView, { domain: "example.test", claimKey }),
+    ).resolves.toBeNull();
+    await expect(
+      backend.query(api.claimTests.liveView, { domain: "example.test", claimKey }),
+    ).rejects.toThrow("Not authorized");
+
+    await backend.mutation(internal.claimTests.clearLiveView, {
+      promptMessageId: generation.promptMessageId,
+    });
+    await expect(
+      admin.query(api.claimTests.liveView, { domain: "example.test", claimKey }),
+    ).resolves.toBeNull();
+
+    await backend.mutation(internal.claimTests.setLiveView, {
+      promptMessageId: generation.promptMessageId,
+      liveViewUrl,
+    });
+    await backend.mutation(internal.scout.lab.completeGeneration, {
+      promptMessageId: generation.promptMessageId,
+      usage: { totalTokens: 1 },
+    });
+    await expect(
+      admin.query(api.claimTests.liveView, { domain: "example.test", claimKey }),
+    ).resolves.toBeNull();
+    await expect(
+      backend.run(async (ctx) =>
+        ctx.db
+          .query("claimTestLiveViews")
+          .withIndex("by_generation_id", (index) => index.eq("generationId", generation._id))
+          .unique(),
+      ),
+    ).resolves.toBeNull();
+  });
 });

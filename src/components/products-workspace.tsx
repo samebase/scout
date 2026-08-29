@@ -1028,9 +1028,7 @@ function ProductDetail({
 
   return (
     <article>
-      <header
-        className={`rounded-[0.875rem] border border-l-4 bg-card p-5 shadow-[0_10px_32px_color-mix(in_oklch,var(--foreground)_4%,transparent)] @md:p-6 ${investigationBorderClass(latest?.status)}`}
-      >
+      <header>
         <div className="flex flex-col gap-3 @xl:flex-row @xl:items-start @xl:justify-between @xl:gap-6">
           <div className="flex min-w-0 items-start gap-3">
             <ServiceIcon
@@ -1731,25 +1729,6 @@ function resetResearchError(error: unknown) {
 
 function reportButtonLabel(investigation: Investigation | null) {
   return investigation?.status === "completed" ? "Show investigation" : "Show last investigation";
-}
-
-function investigationBorderClass(status: Investigation["status"] | undefined) {
-  switch (status) {
-    case undefined:
-      return "border-l-transparent";
-    case "queued":
-      return "border-l-amber-500";
-    case "running":
-      return "border-l-blue-500";
-    case "completed":
-      return "border-l-emerald-500";
-    case "failed":
-      return "border-l-destructive";
-    default: {
-      const exhaustive: never = status;
-      return exhaustive;
-    }
-  }
 }
 
 function investigationDotClass(status: Investigation["status"] | undefined) {

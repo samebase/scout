@@ -37,6 +37,9 @@ rules do not automatically apply to Scout's dense product workspaces.
 - Keep controls near a 10px radius and larger panels near 14-16px. Pills belong to compact controls
   or tags, not every container.
 - Prefer borders, spacing, and subtle tinted shadows over heavy elevation or glass effects.
+- Do not combine a rounded card or panel with a thick accent-colored left border. Use typography,
+  spacing, a full-width divider, or an inline semantic status instead. A flat selection rail in a
+  navigation list is a separate pattern.
 - Support light and dark system themes. Preserve the same hierarchy in both modes.
 
 The semantic tokens and radius scale in `src/style.css` are the source of truth. Update this summary

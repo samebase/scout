@@ -214,6 +214,7 @@ LLMs default to clichés. Override these defaults proactively. Each rule has a c
 * Use cards ONLY when elevation communicates real hierarchy. Otherwise group with `border-t`, `divide-y`, or negative space.
 * When a shadow is used, tint it to the background hue. No pure-black drop shadows on light backgrounds.
 * For `VISUAL_DENSITY > 7`: generic card containers are banned. Data metrics breathe in plain layout.
+* **NO ACCENT-RAIL CARDS (mandatory):** A rounded card or panel with a thick accent-colored left border is banned. This generic emphasis motif does not create real hierarchy. Use typography and spacing for page or object headings. Use a full-width divider or inline semantic status when the interface needs separation or state. Flat selection rails in navigation lists are a separate pattern.
 * **SHAPE CONSISTENCY LOCK (mandatory):** Pick ONE corner-radius scale for the page and stick to it. Options: all-sharp (radius 0), all-soft (radius 12-16px), all-pill (full radius for interactive). Mixed systems are allowed only when there is a documented rule (e.g. "buttons are full-pill, cards are 16px, inputs are 8px") and that rule is followed everywhere. Round buttons in a square layout, or square cards on a pill-button page, is broken design.
 
 ### 4.5 Interactive UI States
@@ -970,6 +971,7 @@ Run this matrix before outputting code. This is the last filter.
 - [ ] **`useEffect` animations** have strict cleanup functions?
 - [ ] **Empty / loading / error** states provided?
 - [ ] **Cards omitted** in favor of spacing where possible?
+- [ ] **No accent-rail cards**: no rounded card or panel uses a thick colored left border for emphasis?
 - [ ] **Icons** from an allowed library only (Phosphor / HugeIcons / Radix / Tabler), no hand-rolled SVG paths?
 - [ ] **Motion** isolated in client-leaf components with `'use client'` at the top, memoized?
 - [ ] **No AI Tells** from Section 9 (Inter as default, AI-purple, three-equal cards, Jane Doe, Acme, "Quietly in use at")?

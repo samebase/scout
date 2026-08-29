@@ -63,6 +63,14 @@ export async function completeClaimTestExperimentForGeneration(
   ctx: Pick<MutationCtx, "db">,
   generationId: Id<"scoutLabGenerations">,
 ) {
+  const liveView = await ctx.db
+    .query("claimTestLiveViews")
+    .withIndex("by_generation_id", (query) => query.eq("generationId", generationId))
+    .unique();
+  if (liveView) {
+    await ctx.db.delete("claimTestLiveViews", liveView._id);
+  }
+
   const run = await ctx.db
     .query("claimTestRuns")
     .withIndex("by_generation_id", (query) => query.eq("generationId", generationId))

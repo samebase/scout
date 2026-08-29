@@ -56,6 +56,7 @@ function ProductClaimPage() {
   const product = useQuery(api.products.getByDomain, { domain });
   const resolvedClaim = useQuery(api.products.getClaimByDomain, { claimKey, domain });
   const latestRun = useQuery(api.claimTests.latest, { claimKey, domain });
+  const liveView = useQuery(api.claimTests.liveView, { claimKey, domain });
   const runMessages = useUIMessages(
     api.scout.lab.listMessages,
     latestRun?.threadId ? { threadId: latestRun.threadId } : "skip",
@@ -100,6 +101,7 @@ function ProductClaimPage() {
                 claimKey={claimKey}
                 domain={domain}
                 latestRun={latestRun}
+                liveViewUrl={liveView?.url ?? null}
                 loading={loading}
                 messages={messages}
                 product={product ?? undefined}
@@ -279,6 +281,7 @@ function ClaimMain({
   claimMissing,
   domain,
   latestRun,
+  liveViewUrl,
   loading,
   messages,
   product,
@@ -289,6 +292,7 @@ function ClaimMain({
   claimMissing: boolean;
   domain: string;
   latestRun: ClaimRun | null | undefined;
+  liveViewUrl: string | null;
   loading: boolean;
   messages: readonly ScoutRunMessage[];
   product: Product | undefined;
@@ -320,7 +324,7 @@ function ClaimMain({
   return (
     <main className="mx-auto w-full max-w-5xl p-4 @md:p-7 @xl:p-10">
       <article>
-        <header className="rounded-[0.875rem] border border-l-4 border-l-primary bg-card p-5 shadow-[0_12px_34px_color-mix(in_oklch,var(--foreground)_4%,transparent)] @md:p-7">
+        <header className="max-w-4xl">
           <span className="text-muted-foreground font-mono text-xs font-medium">
             {claim.category}
           </span>
@@ -367,6 +371,7 @@ function ClaimMain({
           claimKey={claimKey}
           domain={domain}
           latestRun={latestRun}
+          liveViewUrl={liveViewUrl}
           messages={messages}
         />
       </article>
@@ -379,12 +384,14 @@ function ClaimTest({
   claimKey,
   domain,
   latestRun,
+  liveViewUrl,
   messages,
 }: {
   claim: Claim;
   claimKey: string;
   domain: string;
   latestRun: ClaimRun | null | undefined;
+  liveViewUrl: string | null;
   messages: readonly ScoutRunMessage[];
 }) {
   const startClaimTest = useMutation(api.claimTests.start);
@@ -439,25 +446,31 @@ function ClaimTest({
           {startState.message}
         </p>
       ) : null}
-      <ClaimRunResult latestRun={latestRun} resultText={resultText} />
+      <ClaimRunResult latestRun={latestRun} liveViewUrl={liveViewUrl} resultText={resultText} />
     </section>
   );
 }
 
 function ClaimRunResult({
   latestRun,
+  liveViewUrl,
   resultText,
 }: {
   latestRun: ClaimRun | null | undefined;
+  liveViewUrl: string | null;
   resultText: string | null;
 }) {
   if (!latestRun) return null;
 
   if (latestRun.generation.status === "pending" && !resultText) {
+    if (liveViewUrl) {
+      return <ClaimLiveBrowser url={liveViewUrl} />;
+    }
+
     return (
       <div className="mt-8 border-t pt-6" role="status">
         <p className="flex items-center gap-2 text-sm font-medium">
-          <LoaderCircleIcon className="size-4 animate-spin" />
+          <LoaderCircleIcon className="size-4 animate-spin text-primary" />
           Scout is testing the claim
         </p>
       </div>
@@ -477,40 +490,83 @@ function ClaimRunResult({
   }
 
   const result = resultText ? parseClaimResult(resultText) : null;
+  const liveBrowser =
+    latestRun.generation.status === "pending" && liveViewUrl ? (
+      <ClaimLiveBrowser url={liveViewUrl} />
+    ) : null;
 
   return (
-    <div className="mt-8 border-t pt-6">
-      {latestRun.generation.status === "pending" ? (
-        <h3 className="text-sm font-medium">Live result</h3>
-      ) : result?.verdict ? (
-        <p className="flex items-center gap-2 text-sm font-medium">
-          <span
-            className={`size-2 rounded-full ${verdictDotClass(result.verdict)}`}
-            aria-hidden="true"
-          />
-          {result.verdict}
-        </p>
-      ) : (
-        <h3 className="text-sm font-medium">Result</h3>
-      )}
-      {result?.details ? (
-        latestRun.generation.status === "completed" && result.verdict ? (
-          <details className="mt-4 max-w-3xl text-sm">
-            <summary className="text-muted-foreground cursor-pointer select-none outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
-              Evidence and observations
-            </summary>
-            <div className="mt-4 border-l pl-4 whitespace-pre-wrap leading-6">{result.details}</div>
-          </details>
+    <>
+      {liveBrowser}
+      <div className="mt-8 border-t pt-6">
+        {latestRun.generation.status === "pending" ? (
+          <h3 className="text-sm font-medium">Live result</h3>
+        ) : result?.verdict ? (
+          <p className="flex items-center gap-2 text-sm font-medium">
+            <span
+              className={`size-2 rounded-full ${verdictDotClass(result.verdict)}`}
+              aria-hidden="true"
+            />
+            {result.verdict}
+          </p>
         ) : (
-          <div className="mt-3 max-w-3xl whitespace-pre-wrap text-sm leading-6">
-            {result.details}
-          </div>
-        )
-      ) : (
-        <p className="text-muted-foreground mt-3 text-sm">No written result.</p>
-      )}
-      <RunMetadata run={latestRun} />
-    </div>
+          <h3 className="text-sm font-medium">Result</h3>
+        )}
+        {result?.details ? (
+          latestRun.generation.status === "completed" && result.verdict ? (
+            <details className="mt-4 max-w-3xl text-sm">
+              <summary className="text-muted-foreground cursor-pointer select-none outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
+                Evidence and observations
+              </summary>
+              <div className="mt-4 border-l pl-4 whitespace-pre-wrap leading-6">
+                {result.details}
+              </div>
+            </details>
+          ) : (
+            <div className="mt-3 max-w-3xl whitespace-pre-wrap text-sm leading-6">
+              {result.details}
+            </div>
+          )
+        ) : (
+          <p className="text-muted-foreground mt-3 text-sm">No written result.</p>
+        )}
+        <RunMetadata run={latestRun} />
+      </div>
+    </>
+  );
+}
+
+function ClaimLiveBrowser({ url }: { url: string }) {
+  return (
+    <section
+      className="surface-panel mt-8 overflow-hidden"
+      aria-labelledby="claim-live-browser-heading"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/30 px-3 py-2.5 @md:px-4">
+        <div className="flex min-w-0 items-center gap-2">
+          <LoaderCircleIcon className="size-3.5 shrink-0 animate-spin text-primary" />
+          <h3 id="claim-live-browser-heading" className="truncate text-sm font-semibold">
+            Firecrawl browser
+          </h3>
+          <span className="text-muted-foreground text-xs" role="status">
+            Live
+          </span>
+        </div>
+        <Button asChild size="xs" variant="outline">
+          <a href={url} target="_blank" rel="noreferrer">
+            Open
+            <ExternalLinkIcon data-icon="inline-end" aria-hidden="true" />
+          </a>
+        </Button>
+      </div>
+      <iframe
+        src={url}
+        title="Live Scout browser"
+        referrerPolicy="no-referrer"
+        sandbox="allow-same-origin allow-scripts"
+        className="block h-64 w-full bg-background @md:h-80 @xl:h-[30rem]"
+      />
+    </section>
   );
 }
 

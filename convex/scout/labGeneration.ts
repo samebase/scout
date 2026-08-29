@@ -125,7 +125,20 @@ export const generateResponse = internalAction({
       if (!scout || scout.status !== "active") {
         throw new Error("Active Scout not found");
       }
-      browser = createLabBrowserHarness({ profileName: scout.firecrawl.profileName });
+      browser = createLabBrowserHarness({
+        profileName: scout.firecrawl.profileName,
+        onLiveViewAvailable: async (liveViewUrl) => {
+          await ctx.runMutation(internal.claimTests.setLiveView, {
+            promptMessageId: args.promptMessageId,
+            liveViewUrl,
+          });
+        },
+        onLiveViewClosed: async () => {
+          await ctx.runMutation(internal.claimTests.clearLiveView, {
+            promptMessageId: args.promptMessageId,
+          });
+        },
+      });
       requireSecret(env.FIRECRAWL_API_KEY, "FIRECRAWL_API_KEY");
       agentMailClient = await createMCPClient({
         transport: {

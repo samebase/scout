@@ -24,7 +24,10 @@ function interaction(overrides: Partial<BrowserInteraction> = {}): BrowserIntera
 
 function dependencies() {
   return {
-    createSession: vi.fn(async () => ({ sessionId: "session-1" })),
+    createSession: vi.fn(async () => ({
+      sessionId: "session-1",
+      liveViewUrl: null as string | null,
+    })),
     executeCode: vi.fn(async () => interaction()),
     closeSession: vi.fn(async () => ({
       success: true,
@@ -66,6 +69,25 @@ describe("Lab browser harness", () => {
     await browser.open("https://example.com");
 
     expect(deps.createSession).toHaveBeenCalledWith("scout-conrad");
+  });
+
+  test("publishes a live view outside model-visible tool output and clears it after close", async () => {
+    const deps = dependencies();
+    const liveViewUrl = "https://liveview.firecrawl.dev/private?signature=read-only";
+    deps.createSession.mockResolvedValueOnce({ sessionId: "session-1", liveViewUrl });
+    const onLiveViewAvailable = vi.fn(async () => undefined);
+    const onLiveViewClosed = vi.fn(async () => undefined);
+    const browser = createLabBrowserHarness({ onLiveViewAvailable, onLiveViewClosed }, deps);
+
+    const output = await browser.tools.browser_open.execute(
+      { url: "https://example.com" },
+      { toolCallId: "tool-1", messages: [], context: undefined },
+    );
+
+    expect(onLiveViewAvailable).toHaveBeenCalledWith(liveViewUrl);
+    expect(JSON.stringify(output)).not.toContain(liveViewUrl);
+    await expect(browser.close()).resolves.toMatchObject({ success: true });
+    expect(onLiveViewClosed).toHaveBeenCalledOnce();
   });
 
   test("constructs shell-quoted commands from structured actions", async () => {

@@ -39,6 +39,7 @@ import type * as scout_labAccess from "../scout/labAccess.js";
 import type * as scout_labGeneration from "../scout/labGeneration.js";
 import type * as scout_labTools from "../scout/labTools.js";
 import type * as scout_lib_firecrawl from "../scout/lib/firecrawl.js";
+import type * as scout_lib_firecrawlLiveView from "../scout/lib/firecrawlLiveView.js";
 import type * as scout_lib_http from "../scout/lib/http.js";
 import type * as scout_lib_redaction from "../scout/lib/redaction.js";
 import type * as scout_model from "../scout/model.js";
@@ -84,6 +85,7 @@ declare const fullApi: ApiFromModules<{
   "scout/labGeneration": typeof scout_labGeneration;
   "scout/labTools": typeof scout_labTools;
   "scout/lib/firecrawl": typeof scout_lib_firecrawl;
+  "scout/lib/firecrawlLiveView": typeof scout_lib_firecrawlLiveView;
   "scout/lib/http": typeof scout_lib_http;
   "scout/lib/redaction": typeof scout_lib_redaction;
   "scout/model": typeof scout_model;

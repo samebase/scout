@@ -1,7 +1,13 @@
 import { type Infer, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
+import {
+  internalMutation,
+  mutation,
+  query,
+  type MutationCtx,
+  type QueryCtx,
+} from "./_generated/server";
 import { requireAppUser } from "./access";
 import {
   claimTestLatestValidator,
@@ -12,6 +18,7 @@ import { canonicalProductDomain } from "./productsDomain";
 import { projectClaims } from "./productsClaims";
 import { scoutAgent } from "./scout/agent";
 import { DEFAULT_SCOUT_MODEL } from "./scout/models";
+import { requireFirecrawlLiveViewUrl } from "./scout/lib/firecrawlLiveView";
 
 const MAX_ACTIVE_SCOUTS = 50;
 const MAX_EXPERIMENTS_PER_USER = 100;
@@ -382,5 +389,113 @@ export const latest = query({
       throw new Error("Claim test run is unavailable");
     }
     return projectRun(run, generation, scout);
+  },
+});
+
+export const liveView = query({
+  args: {
+    domain: v.string(),
+    claimKey: v.string(),
+  },
+  returns: v.union(v.object({ url: v.string() }), v.null()),
+  handler: async (ctx, args) => {
+    const userId = await requireAppUser(ctx);
+    const domain = routeProductDomain(args.domain);
+    const claimKey = routeClaimKey(args.claimKey);
+    if (domain === null || claimKey === null) return null;
+    const current = await findCurrentClaim(ctx, domain, claimKey);
+    if (!current) return null;
+
+    const run = await latestRunForClaim(ctx, {
+      userId,
+      productId: current.product._id,
+      investigationId: current.investigation._id,
+      claimKey: current.claim.claimKey,
+    });
+    if (!run) return null;
+    const generation = await ctx.db.get("scoutLabGenerations", run.generationId);
+    if (!generation || generation.status !== "pending") return null;
+
+    const liveView = await ctx.db
+      .query("claimTestLiveViews")
+      .withIndex("by_generation_id", (index) => index.eq("generationId", generation._id))
+      .unique();
+    if (!liveView) return null;
+    if (liveView.runId !== run._id || liveView.userId !== userId) {
+      throw new Error("Claim test live view has an invalid ownership binding");
+    }
+    return { url: requireFirecrawlLiveViewUrl(liveView.liveViewUrl) };
+  },
+});
+
+export const setLiveView = internalMutation({
+  args: {
+    promptMessageId: v.string(),
+    liveViewUrl: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const generation = await ctx.db
+      .query("scoutLabGenerations")
+      .withIndex("by_prompt_message_id", (index) =>
+        index.eq("promptMessageId", args.promptMessageId),
+      )
+      .unique();
+    if (!generation) {
+      throw new Error("Lab generation not found");
+    }
+    if (generation.status !== "pending") return null;
+    const run = await ctx.db
+      .query("claimTestRuns")
+      .withIndex("by_generation_id", (index) => index.eq("generationId", generation._id))
+      .unique();
+    if (!run) return null;
+    const liveViewUrl = requireFirecrawlLiveViewUrl(args.liveViewUrl);
+    const existing = await ctx.db
+      .query("claimTestLiveViews")
+      .withIndex("by_generation_id", (index) => index.eq("generationId", generation._id))
+      .unique();
+    if (existing) {
+      await ctx.db.replace("claimTestLiveViews", existing._id, {
+        generationId: generation._id,
+        runId: run._id,
+        userId: run.userId,
+        liveViewUrl,
+        openedAt: Date.now(),
+      });
+      return null;
+    }
+    await ctx.db.insert("claimTestLiveViews", {
+      generationId: generation._id,
+      runId: run._id,
+      userId: run.userId,
+      liveViewUrl,
+      openedAt: Date.now(),
+    });
+    return null;
+  },
+});
+
+export const clearLiveView = internalMutation({
+  args: {
+    promptMessageId: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const generation = await ctx.db
+      .query("scoutLabGenerations")
+      .withIndex("by_prompt_message_id", (index) =>
+        index.eq("promptMessageId", args.promptMessageId),
+      )
+      .unique();
+    if (!generation) return null;
+    const liveView = await ctx.db
+      .query("claimTestLiveViews")
+      .withIndex("by_generation_id", (index) => index.eq("generationId", generation._id))
+      .unique();
+    if (liveView) {
+      await ctx.db.delete("claimTestLiveViews", liveView._id);
+    }
+    return null;
   },
 });
