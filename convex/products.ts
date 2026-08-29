@@ -66,6 +66,8 @@ type LegacyInvestigation = Extract<
   { provider: typeof LEGACY_PRODUCT_INVESTIGATION_PROVIDER }
 >;
 
+type RunningCurrentInvestigation = Extract<CurrentInvestigation, { status: "running" }>;
+
 function isCurrentInvestigation(
   investigation: Doc<"productInvestigations">,
 ): investigation is CurrentInvestigation {
@@ -73,6 +75,21 @@ function isCurrentInvestigation(
     investigation.provider === PRODUCT_INVESTIGATION_PROVIDER &&
     investigation.requestedModel === PRODUCT_INVESTIGATION_MODEL
   );
+}
+
+function currentInvestigationStage(
+  investigation: RunningCurrentInvestigation,
+): "mapping" | "selecting" | "scraping" | "synthesizing" {
+  if (investigation.retrieval === undefined) {
+    return "mapping";
+  }
+  if (investigation.retrieval.selectedPageCount === 0) {
+    return "selecting";
+  }
+  if (investigation.retrieval.scrapeCredits === 0) {
+    return "scraping";
+  }
+  return "synthesizing";
 }
 
 function currentInvestigationBase(investigation: CurrentInvestigation) {
@@ -165,6 +182,7 @@ function projectInvestigation(investigation: Doc<"productInvestigations">) {
           ...currentInvestigationPublicBase(investigation),
           status: investigation.status,
           startedAt: investigation.startedAt,
+          stage: currentInvestigationStage(investigation),
           providerJobId: null,
           pollCount: 0,
           creditsUsed: investigation.retrieval?.totalCredits ?? null,

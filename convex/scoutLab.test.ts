@@ -362,7 +362,7 @@ describe("Scout agent lab", () => {
     ]);
   });
 
-  it("rejects Agent threads without an application Scout binding", async () => {
+  it("keeps non-Lab Agent threads out of Lab history", async () => {
     const backend = testBackend();
     const userId = await insertUser(backend, ADMIN_EMAIL);
     const admin = backend.withIdentity({ subject: `${userId}|test-session` });
@@ -370,7 +370,7 @@ describe("Scout agent lab", () => {
       async (ctx) => await scoutAgent.createThread(ctx, { userId }),
     );
 
-    await expect(listLabThreads(admin)).rejects.toThrow("missing its Scout binding");
+    await expect(listLabThreads(admin)).resolves.toEqual([]);
     await expect(
       admin.query(api.scout.lab.listMessages, {
         threadId: unbound.threadId,

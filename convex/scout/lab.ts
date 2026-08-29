@@ -170,23 +170,14 @@ export const listThreads = query({
   returns: paginationResultValidator(recentThreadValidator),
   handler: async (ctx, args) => {
     const userId = await requireAppUser(ctx);
-    const threads = await ctx.runQuery(components.agent.threads.listThreadsByUserId, {
-      userId,
-      order: "desc",
-      paginationOpts: args.paginationOpts,
-    });
-    const bindings = await Promise.all(
-      threads.page.map(
-        async (thread) => await requireThreadBinding(ctx, { threadId: thread._id, userId }),
-      ),
-    );
-    return {
-      ...threads,
-      page: threads.page.map((thread, index) => {
-        const binding = bindings[index];
-        if (!binding) {
-          throw new Error("Thread is missing its Scout binding");
-        }
+    const bindings = await ctx.db
+      .query("scoutLabThreads")
+      .withIndex("by_user_id_and_created_at", (q) => q.eq("userId", userId))
+      .order("desc")
+      .paginate(args.paginationOpts);
+    const page = await Promise.all(
+      bindings.page.map(async (binding) => {
+        const thread = await requireOwnedAgentThread(ctx, binding.threadId, binding.userId);
         return {
           threadId: thread._id,
           creationTime: thread._creationTime,
@@ -195,6 +186,10 @@ export const listThreads = query({
           experimentId: binding.experimentId ?? null,
         };
       }),
+    );
+    return {
+      ...bindings,
+      page,
     };
   },
 });

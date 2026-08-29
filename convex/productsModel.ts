@@ -82,6 +82,13 @@ export const productRetrievalMetadataValidator = v.object({
   scrapedPageCount: v.number(),
 });
 
+export const productInvestigationStageValidator = v.union(
+  v.literal("mapping"),
+  v.literal("selecting"),
+  v.literal("scraping"),
+  v.literal("synthesizing"),
+);
+
 const investigationIdentityFields = {
   productId: v.id("products"),
   requestedByUserId: v.id("users"),
@@ -225,6 +232,7 @@ const runningLegacyPublicValidator = v.object({
 const runningCurrentPublicValidator = v.object({
   ...currentPublicBase,
   ...runningPublicFields,
+  stage: productInvestigationStageValidator,
 });
 
 const completedPublicFields = {

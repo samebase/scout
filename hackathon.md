@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-29T11:29:16Z
+- **Last updated:** 2026-08-29T11:52:32Z
 
 ## Log
 
@@ -412,7 +412,7 @@ persist across reloads, keyboard resizing is accessible, and mobile selection re
 dossier without losing the product context (`src/sidebars/`, `src/routes/products*.tsx`,
 `src/style.css`).
 
-### 2026-08-29 - working tree
+### 2026-08-29 - b4a8bc5 - v100
 
 Added an authenticated research reset for Products. It refuses to interrupt queued or running
 work, returns completed or failed Products to the uninvestigated state, and preserves the underlying
@@ -420,3 +420,12 @@ attempt records for future audit history. The Products workspace confirms the re
 desktop and mobile, with backend coverage for authorization, active-run safety, repeat calls, and a
 fresh subsequent investigation (`convex/products.ts`, `convex/products.test.ts`,
 `src/routes/products.index.tsx`).
+
+### 2026-08-29 - working tree
+
+Separated Lab history from other Agent threads after a Product investigation thread caused the
+entire Lab query to fail. The Lab now paginates its own authenticated thread bindings and hydrates
+only those Agent records, while direct access still rejects unbound threads. Product investigations
+also report their live mapping, source-selection, page-reading, and claim-summarization stage rather
+than showing one opaque spinner until completion (`convex/schema.ts`, `convex/scout/lab.ts`,
+`convex/scoutLab.test.ts`, `convex/products*.ts`, `src/routes/products.index.tsx`).

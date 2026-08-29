@@ -466,6 +466,42 @@ describe("Product investigations", () => {
         investigationId: first.investigationId,
       }),
     ).resolves.toBeNull();
+    await expect(onlyProduct(admin)).resolves.toMatchObject({
+      latestInvestigation: {
+        _id: first.investigationId,
+        status: "running",
+        stage: "mapping",
+        creditsUsed: null,
+      },
+    });
+    await backend.mutation(internal.products.recordProductResearchRetrieval, {
+      investigationId: first.investigationId,
+      startedAt: NOW.getTime(),
+      retrieval: createProductRetrievalMetadata({
+        searchCredits: 0,
+        mapCandidateCount: 5,
+        selectedPageCount: 0,
+        scrapedPageCount: 0,
+        scrapeCredits: 0,
+      }),
+    });
+    await expect(onlyProduct(admin)).resolves.toMatchObject({
+      latestInvestigation: { status: "running", stage: "selecting", creditsUsed: 1 },
+    });
+    await backend.mutation(internal.products.recordProductResearchRetrieval, {
+      investigationId: first.investigationId,
+      startedAt: NOW.getTime(),
+      retrieval: createProductRetrievalMetadata({
+        searchCredits: 0,
+        mapCandidateCount: 5,
+        selectedPageCount: 2,
+        scrapedPageCount: 0,
+        scrapeCredits: 0,
+      }),
+    });
+    await expect(onlyProduct(admin)).resolves.toMatchObject({
+      latestInvestigation: { status: "running", stage: "scraping", creditsUsed: 1 },
+    });
     await expect(
       backend.mutation(internal.products.recordProductResearchRetrieval, {
         investigationId: first.investigationId,
@@ -479,6 +515,7 @@ describe("Product investigations", () => {
         provider: "firecrawl-convex",
         requestedModel: "openai/gpt-5.6-luna",
         status: "running",
+        stage: "synthesizing",
         providerJobId: null,
         pollCount: 0,
         creditsUsed: 3,
