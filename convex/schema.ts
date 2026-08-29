@@ -25,6 +25,7 @@ export default defineSchema({
       profileName: v.string(),
     }),
   })
+    .index("by_status", ["status"])
     .index("by_slug", ["slug"])
     .index("by_agent_mail_address", ["agentMail.address"])
     .index("by_agent_mail_inbox_id", ["agentMail.inboxId"])
@@ -106,4 +107,21 @@ export default defineSchema({
     .index("by_prompt_message_id", ["promptMessageId"])
     .index("by_thread_id_and_order", ["threadId", "order"])
     .index("by_scout_id_and_status", ["scoutId", "status"]),
+  claimTestRuns: defineTable({
+    userId: v.id("users"),
+    productId: v.id("products"),
+    investigationId: v.id("productInvestigations"),
+    claimKey: v.string(),
+    experimentId: v.id("scoutLabExperiments"),
+    threadId: v.string(),
+    scoutId: v.id("scouts"),
+    generationId: v.id("scoutLabGenerations"),
+  })
+    .index("by_generation_id", ["generationId"])
+    .index("by_user_id_and_product_id_and_investigation_id_and_claim_key", [
+      "userId",
+      "productId",
+      "investigationId",
+      "claimKey",
+    ]),
 });

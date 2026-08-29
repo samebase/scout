@@ -27,12 +27,18 @@ import {
   PRODUCT_INVESTIGATION_MAX_CREDITS,
   PRODUCT_INVESTIGATION_MODEL,
   PRODUCT_INVESTIGATION_PROVIDER,
+  productClaimRouteValidator,
   productInvestigationResultValidator,
   productListItemValidator,
   productRetrievalMetadataValidator,
 } from "./productsModel";
+import { projectClaims } from "./productsClaims";
 import { validateProductRetrievalMetadata } from "./productsResearch";
-import { boundedInvestigationFailure, parseProductInvestigationResult } from "./productsValidation";
+import {
+  boundedInvestigationFailure,
+  parseProductInvestigationResult,
+  type ProductInvestigationResult,
+} from "./productsValidation";
 
 const MAX_ACCOUNTS_PER_PRODUCT = 200;
 const MAX_EXPERIMENTS_PER_PRODUCT = 100;
@@ -68,6 +74,21 @@ type LegacyInvestigation = Extract<
 >;
 
 type RunningCurrentInvestigation = Extract<CurrentInvestigation, { status: "running" }>;
+
+function routeProductDomain(value: string) {
+  try {
+    return canonicalProductDomain(value, "Product domain");
+  } catch {
+    return null;
+  }
+}
+
+function projectInvestigationResult(result: ProductInvestigationResult) {
+  return {
+    ...result,
+    claims: projectClaims(result.claims),
+  };
+}
 
 function isCurrentInvestigation(
   investigation: Doc<"productInvestigations">,
@@ -156,7 +177,7 @@ function projectCompletedInvestigation(investigation: CompletedInvestigation) {
       creditsUsed: investigation.retrieval.totalCredits,
       reportedModel: null,
       providerExpiresAt: null,
-      result: investigation.result,
+      result: projectInvestigationResult(investigation.result),
     };
   }
   return {
@@ -168,7 +189,7 @@ function projectCompletedInvestigation(investigation: CompletedInvestigation) {
     creditsUsed: investigation.creditsUsed,
     reportedModel: investigation.reportedModel ?? null,
     providerExpiresAt: investigation.providerExpiresAt ?? null,
-    result: investigation.result,
+    result: projectInvestigationResult(investigation.result),
   };
 }
 
@@ -403,6 +424,61 @@ export const list = query({
       products.map(async (product) => await projectProduct(ctx, product, userId)),
     );
     return result.sort((left, right) => left.name.localeCompare(right.name));
+  },
+});
+
+export const getByDomain = query({
+  args: { domain: v.string() },
+  returns: v.union(productListItemValidator, v.null()),
+  handler: async (ctx, args) => {
+    const userId = await requireAppUser(ctx);
+    const domain = routeProductDomain(args.domain);
+    if (domain === null) return null;
+    const product = await ctx.db
+      .query("products")
+      .withIndex("by_domain", (q) => q.eq("domain", domain))
+      .unique();
+    return product ? await projectProduct(ctx, product, userId) : null;
+  },
+});
+
+export const getClaimByDomain = query({
+  args: {
+    domain: v.string(),
+    claimKey: v.string(),
+  },
+  returns: v.union(productClaimRouteValidator, v.null()),
+  handler: async (ctx, args) => {
+    await requireAppUser(ctx);
+    const domain = routeProductDomain(args.domain);
+    if (domain === null) return null;
+    const product = await ctx.db
+      .query("products")
+      .withIndex("by_domain", (q) => q.eq("domain", domain))
+      .unique();
+    if (!product?.latestCompletedInvestigationId) return null;
+
+    const investigation = await ctx.db.get(
+      "productInvestigations",
+      product.latestCompletedInvestigationId,
+    );
+    if (investigation?.status !== "completed" || investigation.productId !== product._id) {
+      return null;
+    }
+    const claim = projectClaims(investigation.result.claims).find(
+      (candidate) => candidate.claimKey === args.claimKey,
+    );
+    return claim
+      ? {
+          product: {
+            name: product.name,
+            domain: product.domain,
+            primaryUrl: product.primaryUrl,
+          },
+          claim,
+          completedAt: investigation.completedAt,
+        }
+      : null;
   },
 });
 

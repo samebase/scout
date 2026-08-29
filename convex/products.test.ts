@@ -239,6 +239,15 @@ describe("Products registry", () => {
     const createArgs = { url: "example.test", name: "Example" };
 
     await expect(backend.query(api.products.list, {})).rejects.toThrow("Not authorized");
+    await expect(
+      backend.query(api.products.getByDomain, { domain: "example.test" }),
+    ).rejects.toThrow("Not authorized");
+    await expect(
+      backend.query(api.products.getClaimByDomain, {
+        domain: "example.test",
+        claimKey: "claim-example",
+      }),
+    ).rejects.toThrow("Not authorized");
     await expect(backend.mutation(api.products.create, createArgs)).rejects.toThrow(
       "Not authorized",
     );
@@ -255,6 +264,15 @@ describe("Products registry", () => {
     const nonAdminId = await insertUser(backend, "person@example.test");
     const nonAdmin = backend.withIdentity({ subject: `${nonAdminId}|test-session` });
     await expect(nonAdmin.query(api.products.list, {})).rejects.toThrow("Not authorized");
+    await expect(
+      nonAdmin.query(api.products.getByDomain, { domain: "example.test" }),
+    ).rejects.toThrow("Not authorized");
+    await expect(
+      nonAdmin.query(api.products.getClaimByDomain, {
+        domain: "example.test",
+        claimKey: "claim-example",
+      }),
+    ).rejects.toThrow("Not authorized");
     await expect(nonAdmin.mutation(api.products.create, createArgs)).rejects.toThrow(
       "Not authorized",
     );
@@ -294,6 +312,141 @@ describe("Products registry", () => {
         primaryUrl: "https://example.test",
       },
     ]);
+  });
+
+  it("resolves canonical domain and deterministic claim routes without rewriting research", async () => {
+    const { backend, userId, admin } = await authenticatedBackend();
+    const { productId } = await admin.mutation(api.products.create, {
+      url: "example.test",
+      name: "Example",
+    });
+    const secondClaim: ProductInvestigationResult["claims"][number] = {
+      ...validClaim(),
+      claim: "Example says the starter plan is free for small teams.",
+      category: "pricing",
+      support: "The pricing page describes a free starter plan.",
+      suggestedMysteryShop: "Create a team and verify which features remain free.",
+      evidenceExcerpt: "Free for small teams.",
+    };
+    const sameWordingDifferentEvidence: ProductInvestigationResult["claims"][number] = {
+      ...validClaim(),
+      support: "A separate page qualifies the same wording with an account limit.",
+      suggestedMysteryShop: "Create enough projects to find the documented account limit.",
+      qualifiers: ["The claim applies only below the documented account limit."],
+      evidenceExcerpt: "Available while the account remains below its project limit.",
+      pageTitle: "Example account limits",
+    };
+    const result: ProductInvestigationResult = {
+      ...validInvestigationResult(),
+      claims: [validClaim(), sameWordingDifferentEvidence, validClaim(), secondClaim],
+    };
+    const investigationId = await backend.run(async (ctx) => {
+      const id = await ctx.db.insert("productInvestigations", {
+        productId,
+        requestedByUserId: userId,
+        requestedAt: NOW.getTime() - 2_000,
+        provider: "firecrawl-convex",
+        requestedModel: "openai/gpt-5.6-luna",
+        effort: "medium",
+        maxCredits: 9,
+        agentThreadId: "route-test-thread",
+        status: "completed",
+        startedAt: NOW.getTime() - 1_500,
+        completedAt: NOW.getTime() - 1_000,
+        retrieval: validRetrievalMetadata(),
+        result,
+      });
+      await ctx.db.patch("products", productId, {
+        latestInvestigationId: id,
+        latestCompletedInvestigationId: id,
+      });
+      return id;
+    });
+
+    const product = await admin.query(api.products.getByDomain, {
+      domain: " https://WWW.Example.TEST/docs/claims ",
+    });
+    expect(product).toMatchObject({
+      name: "Example",
+      domain: "example.test",
+      latestCompletedInvestigation: {
+        _id: investigationId,
+        status: "completed",
+      },
+    });
+    const claims = product?.latestCompletedInvestigation?.result.claims ?? [];
+    expect(claims).toHaveLength(4);
+    expect(claims.map((claim) => claim.claimKey)).toEqual([
+      expect.stringMatching(/^claim-[a-z0-9]{10}$/),
+      expect.stringMatching(/^claim-[a-z0-9]{10}$/),
+      expect.stringMatching(/^claim-[a-z0-9]{10}-2$/),
+      expect.stringMatching(/^claim-[a-z0-9]{10}$/),
+    ]);
+    expect(new Set(claims.map((claim) => claim.claimKey)).size).toBe(4);
+    expect(claims[1]?.claimKey).not.toBe(claims[0]?.claimKey);
+    expect(claims[2]?.claimKey).toBe(`${claims[0]?.claimKey}-2`);
+
+    await backend.run(async (ctx) => {
+      await ctx.db.patch(investigationId, {
+        result: {
+          ...result,
+          claims: [secondClaim, sameWordingDifferentEvidence, validClaim(), validClaim()],
+        },
+      });
+    });
+    const reordered = await admin.query(api.products.getByDomain, { domain: "example.test" });
+    const reorderedClaims = reordered?.latestCompletedInvestigation?.result.claims ?? [];
+    expect(
+      reorderedClaims.find((claim) => claim.support === sameWordingDifferentEvidence.support)
+        ?.claimKey,
+    ).toBe(claims[1]?.claimKey);
+    expect(reorderedClaims.find((claim) => claim.claim === secondClaim.claim)?.claimKey).toBe(
+      claims[3]?.claimKey,
+    );
+
+    const selectedClaimKey = claims[3]?.claimKey;
+    if (!selectedClaimKey) throw new Error("Expected a projected claim key");
+    await expect(
+      admin.query(api.products.getClaimByDomain, {
+        domain: "www.example.test/features",
+        claimKey: selectedClaimKey,
+      }),
+    ).resolves.toMatchObject({
+      product: {
+        name: "Example",
+        domain: "example.test",
+        primaryUrl: "https://example.test",
+      },
+      claim: {
+        claimKey: selectedClaimKey,
+        claim: secondClaim.claim,
+      },
+      completedAt: NOW.getTime() - 1_000,
+    });
+    await expect(
+      admin.query(api.products.getClaimByDomain, {
+        domain: "example.test",
+        claimKey: "claim-does-not-exist",
+      }),
+    ).resolves.toBeNull();
+    await expect(
+      admin.query(api.products.getByDomain, { domain: "missing.example" }),
+    ).resolves.toBeNull();
+    await expect(
+      admin.query(api.products.getByDomain, { domain: "not a valid domain" }),
+    ).resolves.toBeNull();
+    await expect(
+      admin.query(api.products.getClaimByDomain, {
+        domain: "not a valid domain",
+        claimKey: selectedClaimKey,
+      }),
+    ).resolves.toBeNull();
+
+    const stored = await backend.run(
+      async (ctx) => await ctx.db.get("productInvestigations", investigationId),
+    );
+    const storedClaim = stored?.status === "completed" ? stored.result.claims[0] : undefined;
+    expect(storedClaim && "claimKey" in storedClaim).toBe(false);
   });
 
   it("links structured service-account and Lab experiment creation to one Product", async () => {
@@ -934,6 +1087,18 @@ describe("Product investigation parsing", () => {
       parseProductInvestigationResult(
         {
           ...valid,
+          claims: Array.from({ length: 7 }, (_, index) => ({
+            ...validClaim(),
+            claim: `Testable promise ${index + 1}`,
+          })),
+        },
+        "example.test",
+      ),
+    ).toThrow("Investigation claims must contain 1-6 items");
+    expect(() =>
+      parseProductInvestigationResult(
+        {
+          ...valid,
           claims: [{ ...validClaim(), support: "x".repeat(2_001) }],
         },
         "example.test",
@@ -1186,6 +1351,11 @@ describe("Product research retrieval", () => {
     ).toBe(true);
     expect(prepared.prompt.length).toBeLessThanOrEqual(MAX_RESEARCH_PROMPT_CHARACTERS);
     expect(prepared.prompt).toContain("Return exactly one raw JSON object with this shape");
+    expect(prepared.prompt).toContain("Claims require 1-6 items");
+    expect(prepared.prompt).toContain("concrete, user-visible product promise");
+    expect(prepared.prompt).toContain("Merge overlapping promises");
+    expect(prepared.prompt).toContain("Exclude generic category descriptions");
+    expect(prepared.prompt).toContain("Prioritize promises involved in tensions");
     expect(retrieval.totalCredits).toBe(MAX_RESEARCH_FIRECRAWL_CREDITS);
     expect(() =>
       createProductRetrievalMetadata({
@@ -1278,7 +1448,7 @@ describe("Product research synthesis", () => {
     const parsed = parseProductResearchSynthesis({
       ...synthesis,
       audiences: Array.from({ length: 6 }, (_, index) => `Audience ${index + 1}`),
-      claims: Array.from({ length: 13 }, (_, index) => ({
+      claims: Array.from({ length: 7 }, (_, index) => ({
         ...claim,
         claim: `Claim ${index + 1}`,
         qualifiers: Array.from(
@@ -1306,7 +1476,7 @@ describe("Product research synthesis", () => {
     });
 
     expect(parsed.audiences).toHaveLength(5);
-    expect(parsed.claims).toHaveLength(12);
+    expect(parsed.claims).toHaveLength(6);
     expect(parsed.claims.every((item) => item.qualifiers.length === 4)).toBe(true);
     expect(parsed.dependencies).toHaveLength(8);
     expect(parsed.tensions).toHaveLength(5);
@@ -1339,7 +1509,7 @@ describe("Product research synthesis", () => {
       parseProductResearchSynthesis({
         ...validSynthesis(),
         claims: [
-          ...Array.from({ length: 12 }, () => validSynthesis().claims[0]),
+          ...Array.from({ length: 6 }, () => validSynthesis().claims[0]),
           { ...validSynthesis().claims[0], category: "marketing" },
         ],
       }),

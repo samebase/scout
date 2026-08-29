@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-29T13:11:12Z
+- **Last updated:** 2026-08-29T16:13:27Z
 
 ## Log
 
@@ -430,7 +430,7 @@ also report their live mapping, source-selection, page-reading, and claim-summar
 than showing one opaque spinner until completion (`convex/schema.ts`, `convex/scout/lab.ts`,
 `convex/scoutLab.test.ts`, `convex/products*.ts`, `src/routes/products.index.tsx`).
 
-### 2026-08-29 - working tree
+### 2026-08-29 - c54fc78 - v104
 
 Moved Product research onto a durable Convex Workflow and added an authenticated activity ledger.
 The resizable Products inspector now shows each sanitized Firecrawl map, search, and scrape request,
@@ -445,3 +445,37 @@ so resizing either sidebar cannot collapse product identity, status, metadata, o
 Samebase refresh exposed all provider operations and completed at seven Firecrawl credits. The full
 check passed 163 tests and the Cloudflare build path passed after adversarial backend, UI, desktop,
 and mobile review (`src/routes/products.index.tsx`, `convex/products.test.ts`).
+
+### 2026-08-29 - 5bba27e - v106
+
+Replaced Product query-ID selection with canonical domain routes and added a dedicated, linkable
+three-pane claim workspace. Content-derived claim keys stay attached to the same evidence across
+research reordering, while malformed domains, missing products, absent investigations, empty
+reports, and stale claim keys render distinct states without rewriting stored research
+(`convex/products.ts`, `convex/productsModel.ts`, `src/components/products-workspace.tsx`,
+`src/routes/products.$domain*.tsx`).
+
+The claim list, evidence dossier, proposed test, and explicit Lab handoff respond to pane width and
+switch cleanly between mobile panes. Bundling the published sidebar package during SSR also restored
+direct-route development loads and prerender. The full check passed 164 tests and the complete
+Cloudflare build path passed after adversarial route review and live browser verification
+(`vite.config.ts`, `convex/products.test.ts`).
+
+### 2026-08-29 - working tree
+
+Connected each researched claim to an exact investigation snapshot and an automatically created
+Scout verification run. Starting a test now creates its Lab experiment, thread, prompt, scheduled
+generation, and audit link in one mutation; repeated clicks reuse pending work, while terminal runs
+can be retried. The claim page reacts to the same Agent transcript and separates the compact verdict
+from the browser/tool trace and full raw Lab transcript (`convex/claimTests*.ts`,
+`convex/productsClaims.ts`, `convex/scout/lab.ts`, `src/components/scout-run-message.tsx`,
+`src/routes/products.$domain.claims.$claimKey.tsx`).
+
+Fresh investigations now synthesize at most six concrete, bounded, testable claims rather than a
+long product-description inventory. A live Samebase refresh produced six claims, and its pricing
+claim completed as Supported in 102.6 seconds using four Firecrawl credits while streaming the
+Scout's browser operations. The product report now leads with that short claim queue and keeps
+secondary research collapsed. The full check passed 168 tests and the complete Cloudflare build
+path passed; desktop pane resizing, the 390-pixel mobile flow, and exact raw-run navigation were
+verified in the browser (`convex/productsResearch.ts`, `convex/productsValidation.ts`,
+`src/components/products-workspace.tsx`).

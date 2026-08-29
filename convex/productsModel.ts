@@ -73,6 +73,16 @@ export const productInvestigationResultValidator = v.object({
   sources: v.array(productSourceValidator),
 });
 
+export const productClaimPublicValidator = productClaimValidator.extend({
+  claimKey: v.string(),
+});
+
+export const productInvestigationResultPublicValidator = productInvestigationResultValidator.extend(
+  {
+    claims: v.array(productClaimPublicValidator),
+  },
+);
+
 export const productRetrievalMetadataValidator = v.object({
   mapCredits: v.number(),
   searchCredits: v.number(),
@@ -245,7 +255,7 @@ const completedPublicFields = {
   creditsUsed: v.number(),
   reportedModel: v.union(v.string(), v.null()),
   providerExpiresAt: v.union(v.string(), v.null()),
-  result: productInvestigationResultValidator,
+  result: productInvestigationResultPublicValidator,
 };
 
 export const completedLegacyProductInvestigationPublicValidator = v.object({
@@ -311,4 +321,14 @@ export const productListItemValidator = v.object({
   experimentCount: v.number(),
   latestInvestigation: v.union(productInvestigationPublicValidator, v.null()),
   latestCompletedInvestigation: v.union(completedProductInvestigationPublicValidator, v.null()),
+});
+
+export const productClaimRouteValidator = v.object({
+  product: v.object({
+    name: v.string(),
+    domain: v.string(),
+    primaryUrl: v.string(),
+  }),
+  claim: productClaimPublicValidator,
+  completedAt: v.number(),
 });

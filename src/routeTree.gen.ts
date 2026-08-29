@@ -15,8 +15,11 @@ import { Route as ProductsRouteImport } from './routes/products'
 import { Route as ScoutsRouteImport } from './routes/scouts'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ProductsIndexRouteImport } from './routes/products.index'
+import { Route as ProductsDomainRouteImport } from './routes/products.$domain'
 import { Route as ScoutsIndexRouteImport } from './routes/scouts.index'
 import { Route as ScoutsSlugRouteImport } from './routes/scouts.$slug'
+import { Route as ProductsDomainIndexRouteImport } from './routes/products.$domain.index'
+import { Route as ProductsDomainClaimsClaimKeyRouteImport } from './routes/products.$domain.claims.$claimKey'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -48,6 +51,11 @@ const ProductsIndexRoute = ProductsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => ProductsRoute,
 } as any)
+const ProductsDomainRoute = ProductsDomainRouteImport.update({
+  id: '/$domain',
+  path: '/$domain',
+  getParentRoute: () => ProductsRoute,
+} as any)
 const ScoutsIndexRoute = ScoutsIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -58,6 +66,17 @@ const ScoutsSlugRoute = ScoutsSlugRouteImport.update({
   path: '/$slug',
   getParentRoute: () => ScoutsRoute,
 } as any)
+const ProductsDomainIndexRoute = ProductsDomainIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ProductsDomainRoute,
+} as any)
+const ProductsDomainClaimsClaimKeyRoute =
+  ProductsDomainClaimsClaimKeyRouteImport.update({
+    id: '/claims/$claimKey',
+    path: '/claims/$claimKey',
+    getParentRoute: () => ProductsDomainRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -65,9 +84,12 @@ export interface FileRoutesByFullPath {
   '/products': typeof ProductsRouteWithChildren
   '/scouts': typeof ScoutsRouteWithChildren
   '/settings': typeof SettingsRoute
+  '/products/$domain': typeof ProductsDomainRouteWithChildren
   '/scouts/$slug': typeof ScoutsSlugRoute
   '/products/': typeof ProductsIndexRoute
   '/scouts/': typeof ScoutsIndexRoute
+  '/products/$domain/': typeof ProductsDomainIndexRoute
+  '/products/$domain/claims/$claimKey': typeof ProductsDomainClaimsClaimKeyRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -76,6 +98,8 @@ export interface FileRoutesByTo {
   '/scouts/$slug': typeof ScoutsSlugRoute
   '/products': typeof ProductsIndexRoute
   '/scouts': typeof ScoutsIndexRoute
+  '/products/$domain': typeof ProductsDomainIndexRoute
+  '/products/$domain/claims/$claimKey': typeof ProductsDomainClaimsClaimKeyRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -84,9 +108,12 @@ export interface FileRoutesById {
   '/products': typeof ProductsRouteWithChildren
   '/scouts': typeof ScoutsRouteWithChildren
   '/settings': typeof SettingsRoute
+  '/products/$domain': typeof ProductsDomainRouteWithChildren
   '/scouts/$slug': typeof ScoutsSlugRoute
   '/products/': typeof ProductsIndexRoute
   '/scouts/': typeof ScoutsIndexRoute
+  '/products/$domain/': typeof ProductsDomainIndexRoute
+  '/products/$domain/claims/$claimKey': typeof ProductsDomainClaimsClaimKeyRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -96,11 +123,22 @@ export interface FileRouteTypes {
     | '/products'
     | '/scouts'
     | '/settings'
+    | '/products/$domain'
     | '/scouts/$slug'
     | '/products/'
     | '/scouts/'
+    | '/products/$domain/'
+    | '/products/$domain/claims/$claimKey'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/lab' | '/settings' | '/scouts/$slug' | '/products' | '/scouts'
+  to:
+    | '/'
+    | '/lab'
+    | '/settings'
+    | '/scouts/$slug'
+    | '/products'
+    | '/scouts'
+    | '/products/$domain'
+    | '/products/$domain/claims/$claimKey'
   id:
     | '__root__'
     | '/'
@@ -108,9 +146,12 @@ export interface FileRouteTypes {
     | '/products'
     | '/scouts'
     | '/settings'
+    | '/products/$domain'
     | '/scouts/$slug'
     | '/products/'
     | '/scouts/'
+    | '/products/$domain/'
+    | '/products/$domain/claims/$claimKey'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -165,6 +206,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProductsIndexRouteImport
       parentRoute: typeof ProductsRoute
     }
+    '/products/$domain': {
+      id: '/products/$domain'
+      path: '/$domain'
+      fullPath: '/products/$domain'
+      preLoaderRoute: typeof ProductsDomainRouteImport
+      parentRoute: typeof ProductsRoute
+    }
     '/scouts/': {
       id: '/scouts/'
       path: '/'
@@ -179,14 +227,44 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ScoutsSlugRouteImport
       parentRoute: typeof ScoutsRoute
     }
+    '/products/$domain/': {
+      id: '/products/$domain/'
+      path: '/'
+      fullPath: '/products/$domain/'
+      preLoaderRoute: typeof ProductsDomainIndexRouteImport
+      parentRoute: typeof ProductsDomainRoute
+    }
+    '/products/$domain/claims/$claimKey': {
+      id: '/products/$domain/claims/$claimKey'
+      path: '/claims/$claimKey'
+      fullPath: '/products/$domain/claims/$claimKey'
+      preLoaderRoute: typeof ProductsDomainClaimsClaimKeyRouteImport
+      parentRoute: typeof ProductsDomainRoute
+    }
   }
 }
 
+interface ProductsDomainRouteChildren {
+  ProductsDomainIndexRoute: typeof ProductsDomainIndexRoute
+  ProductsDomainClaimsClaimKeyRoute: typeof ProductsDomainClaimsClaimKeyRoute
+}
+
+const ProductsDomainRouteChildren: ProductsDomainRouteChildren = {
+  ProductsDomainIndexRoute: ProductsDomainIndexRoute,
+  ProductsDomainClaimsClaimKeyRoute: ProductsDomainClaimsClaimKeyRoute,
+}
+
+const ProductsDomainRouteWithChildren = ProductsDomainRoute._addFileChildren(
+  ProductsDomainRouteChildren,
+)
+
 interface ProductsRouteChildren {
+  ProductsDomainRoute: typeof ProductsDomainRouteWithChildren
   ProductsIndexRoute: typeof ProductsIndexRoute
 }
 
 const ProductsRouteChildren: ProductsRouteChildren = {
+  ProductsDomainRoute: ProductsDomainRouteWithChildren,
   ProductsIndexRoute: ProductsIndexRoute,
 }
 

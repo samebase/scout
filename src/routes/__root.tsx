@@ -56,9 +56,7 @@ function RootComponent() {
                 <Link to="/scouts">Scouts</Link>
               </Button>
               <Button asChild variant="link">
-                <Link to="/products" search={{ product: undefined }}>
-                  Products
-                </Link>
+                <Link to="/products">Products</Link>
               </Button>
               <Button asChild variant="link">
                 <Link to="/settings">Settings</Link>

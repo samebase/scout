@@ -6,6 +6,12 @@ import { defineConfig } from "vite-plus";
 import { prerenderPages } from "./prerender.config.ts";
 
 export default defineConfig({
+  ssr: {
+    // The published sidebar package imports its structural CSS from its JS
+    // entrypoint. Bundle it for SSR so Vite handles that import instead of
+    // leaving Node to load the CSS file directly.
+    noExternal: ["@samebase/sidebars"],
+  },
   fmt: {
     ignorePatterns: [".agents/**", "convex/_generated/**", "src/routeTree.gen.ts"],
   },
