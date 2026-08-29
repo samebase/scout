@@ -39,6 +39,8 @@ type CompletedInvestigation = NonNullable<Product["latestCompletedInvestigation"
 type InvestigationInspector = NonNullable<
   FunctionReturnType<typeof api.productsInvestigationInspector.get>
 >;
+type ClaimTestStatuses = FunctionReturnType<typeof api.claimTests.listStatuses>;
+type ClaimTestListState = ClaimTestStatuses[number]["state"] | "loading";
 
 type AddProductState =
   | { kind: "idle" }
@@ -1021,6 +1023,10 @@ function ProductDetail({
   const [resetState, setResetState] = useState<ResearchResetState>({ kind: "idle" });
   const latest = product.latestInvestigation;
   const report = latest?.status === "completed" ? latest : product.latestCompletedInvestigation;
+  const claimTestStatuses = useQuery(
+    api.claimTests.listStatuses,
+    report === null ? "skip" : { domain: product.domain },
+  );
   const resetAvailable =
     (latest !== null || report !== null) &&
     latest?.status !== "queued" &&
@@ -1130,7 +1136,11 @@ function ProductDetail({
       {report ? (
         <Collapsible open={reportOpen} onOpenChange={setReportOpen}>
           <CollapsibleContent id={`product-investigation-${product._id}`}>
-            <InvestigationReport investigation={report} productDomain={product.domain} />
+            <InvestigationReport
+              claimTestStatuses={claimTestStatuses}
+              investigation={report}
+              productDomain={product.domain}
+            />
           </CollapsibleContent>
         </Collapsible>
       ) : null}
@@ -1423,12 +1433,18 @@ function InvestigationAction({
 }
 
 function InvestigationReport({
+  claimTestStatuses,
   investigation,
   productDomain,
 }: {
+  claimTestStatuses: ClaimTestStatuses | undefined;
   investigation: CompletedInvestigation;
   productDomain: string;
 }) {
+  const claimTestStateByKey = new Map(
+    claimTestStatuses?.map(({ claimKey, state }) => [claimKey, state]),
+  );
+
   return (
     <section className="mt-6 border-t pt-6" aria-label="Investigation result">
       <p className="text-muted-foreground mb-4 text-xs">
@@ -1448,11 +1464,22 @@ function InvestigationReport({
                 params={{ domain: productDomain, claimKey: claim.claimKey }}
                 className="group flex items-start gap-3 p-4 outline-none transition-colors hover:bg-muted/40 focus-visible:ring-3 focus-visible:ring-ring/40 @md:p-5"
               >
-                <span className="min-w-0 flex-1 wrap-break-word text-sm font-medium leading-6">
-                  {claim.claim}
-                </span>
-                <span className="text-muted-foreground mt-0.5 shrink-0 font-mono text-[0.625rem] font-medium">
-                  {claim.category}
+                <span className="min-w-0 flex-1">
+                  <span className="block wrap-break-word text-sm font-medium leading-6">
+                    {claim.claim}
+                  </span>
+                  <span className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                    <span className="text-muted-foreground font-mono text-[0.625rem] font-medium">
+                      {claim.category}
+                    </span>
+                    <ClaimTestStatus
+                      state={
+                        claimTestStatuses === undefined
+                          ? "loading"
+                          : (claimTestStateByKey.get(claim.claimKey) ?? "untested")
+                      }
+                    />
+                  </span>
                 </span>
                 <ArrowRightIcon
                   className="text-muted-foreground mt-0.5 size-4 shrink-0 transition-transform group-hover:translate-x-0.5"
@@ -1582,6 +1609,34 @@ function InvestigationReport({
         </div>
       </details>
     </section>
+  );
+}
+
+function ClaimTestStatus({ state }: { state: ClaimTestListState }) {
+  const label = {
+    failed: "Test failed",
+    loading: "Checking",
+    tested: "Tested",
+    testing: "Testing",
+    untested: "Untested",
+  }[state];
+  const className = {
+    failed: "border-destructive/30 bg-destructive/10 text-destructive",
+    loading: "border-border bg-muted/70 text-muted-foreground",
+    tested:
+      "border-emerald-600/30 bg-emerald-500/10 text-emerald-700 dark:border-emerald-400/30 dark:text-emerald-300",
+    testing:
+      "border-blue-600/30 bg-blue-500/10 text-blue-700 dark:border-blue-400/30 dark:text-blue-300",
+    untested: "border-border bg-muted text-muted-foreground",
+  }[state];
+
+  return (
+    <span
+      className={`inline-flex rounded-md border px-2 py-1 text-[0.6875rem] leading-none font-semibold ${className}`}
+      aria-live="polite"
+    >
+      {label}
+    </span>
   );
 }
 

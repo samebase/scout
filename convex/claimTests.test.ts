@@ -174,7 +174,11 @@ describe("Claim tests", () => {
       experimentId: started.experimentId,
       threadId: started.threadId,
     });
-    expect(stored.generation).toMatchObject({ status: "pending", scoutId });
+    expect(stored.generation).toMatchObject({
+      status: "pending",
+      scoutId,
+      model: "qwen/qwen3.7-flash",
+    });
     expect(stored.experiment).toMatchObject({
       status: "active",
       productId: snapshot.productId,
@@ -241,14 +245,21 @@ describe("Claim tests", () => {
     await insertScout(backend);
     const snapshot = await insertCompletedInvestigation(backend, {
       userId,
-      claims: [claim("a browser-readable result")],
+      claims: [claim("a browser-readable result"), claim("an untested export")],
     });
     const claimKey = snapshot.claimKeys[0];
-    if (!claimKey) throw new Error("Expected a claim key");
+    const untestedClaimKey = snapshot.claimKeys[1];
+    if (!claimKey || !untestedClaimKey) throw new Error("Expected claim keys");
     const first = await admin.mutation(api.claimTests.start, {
       domain: "example.test",
       claimKey,
     });
+    await expect(
+      admin.query(api.claimTests.listStatuses, { domain: "example.test" }),
+    ).resolves.toEqual([
+      { claimKey, state: "testing" },
+      { claimKey: untestedClaimKey, state: "untested" },
+    ]);
     const firstGeneration = await backend.run(async (ctx) => {
       const run = await ctx.db.get("claimTestRuns", first.runId);
       return run ? await ctx.db.get("scoutLabGenerations", run.generationId) : null;
@@ -275,6 +286,9 @@ describe("Claim tests", () => {
         firecrawlDurationMs: 9_000,
       },
     });
+    await expect(
+      admin.query(api.claimTests.listStatuses, { domain: "example.test" }),
+    ).resolves.toContainEqual({ claimKey, state: "tested" });
 
     const second = await admin.mutation(api.claimTests.start, {
       domain: "example.test",
@@ -282,6 +296,9 @@ describe("Claim tests", () => {
     });
     expect(second.created).toBe(true);
     expect(second.runId).not.toBe(first.runId);
+    await expect(
+      admin.query(api.claimTests.listStatuses, { domain: "example.test" }),
+    ).resolves.toContainEqual({ claimKey, state: "testing" });
     const secondGeneration = await backend.run(async (ctx) => {
       const run = await ctx.db.get("claimTestRuns", second.runId);
       return run ? await ctx.db.get("scoutLabGenerations", run.generationId) : null;
@@ -305,6 +322,9 @@ describe("Claim tests", () => {
         firecrawlCredits: 1,
       },
     });
+    await expect(
+      admin.query(api.claimTests.listStatuses, { domain: "example.test" }),
+    ).resolves.toContainEqual({ claimKey, state: "failed" });
     await expect(
       admin.mutation(api.claimTests.start, { domain: "example.test", claimKey }),
     ).resolves.toMatchObject({ created: true });
@@ -394,8 +414,14 @@ describe("Claim tests", () => {
     );
     const otherAdmin = backend.withIdentity({ subject: `${otherUserId}|other-session` });
     await expect(
+      otherAdmin.query(api.claimTests.listStatuses, { domain: "example.test" }),
+    ).resolves.toEqual([{ claimKey, state: "untested" }]);
+    await expect(
       otherAdmin.query(api.claimTests.liveView, { domain: "example.test", claimKey }),
     ).resolves.toBeNull();
+    await expect(
+      backend.query(api.claimTests.listStatuses, { domain: "example.test" }),
+    ).rejects.toThrow("Not authorized");
     await expect(
       backend.query(api.claimTests.liveView, { domain: "example.test", claimKey }),
     ).rejects.toThrow("Not authorized");

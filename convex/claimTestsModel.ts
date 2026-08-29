@@ -16,6 +16,18 @@ const claimTestRunBaseValidator = v.object({
   }),
 });
 
+export const claimTestStatusValidator = v.object({
+  claimKey: v.string(),
+  state: v.union(
+    v.literal("untested"),
+    v.literal("testing"),
+    v.literal("tested"),
+    v.literal("failed"),
+  ),
+});
+
+export const claimTestStatusesValidator = v.array(claimTestStatusValidator);
+
 const terminalGenerationMetadataFields = {
   usage: v.union(scoutTokenUsageValidator, v.null()),
   firecrawlCredits: v.union(v.number(), v.null()),

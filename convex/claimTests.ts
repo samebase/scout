@@ -11,13 +11,14 @@ import {
 import { requireAppUser } from "./access";
 import {
   claimTestLatestValidator,
+  claimTestStatusesValidator,
   completeClaimTestExperimentForGeneration,
   startClaimTestResultValidator,
 } from "./claimTestsModel";
 import { canonicalProductDomain } from "./productsDomain";
 import { projectClaims } from "./productsClaims";
 import { scoutAgent } from "./scout/agent";
-import { DEFAULT_SCOUT_MODEL } from "./scout/models";
+import type { SelectableScoutModel } from "./scout/models";
 import { requireFirecrawlLiveViewUrl } from "./scout/lib/firecrawlLiveView";
 
 const MAX_ACTIVE_SCOUTS = 50;
@@ -28,6 +29,7 @@ const GENERATION_START_TIMEOUT_MS = 5 * 60 * 1_000;
 const EXPIRED_GENERATION_FAILURE = "Generation stopped before completion";
 const CLAIM_KEY_PATTERN = /^claim-[a-z0-9]{10}(?:-[1-9][0-9]*)?$/;
 const MAX_CLAIM_KEY_LENGTH = 64;
+const CLAIM_TEST_MODEL = "qwen/qwen3.7-flash" satisfies SelectableScoutModel;
 
 type DatabaseContext = Pick<QueryCtx, "db">;
 
@@ -53,7 +55,7 @@ function routeClaimKey(value: string) {
     : null;
 }
 
-async function findCurrentClaim(ctx: DatabaseContext, domain: string, claimKey: string) {
+async function findCurrentInvestigation(ctx: DatabaseContext, domain: string) {
   const product = await ctx.db
     .query("products")
     .withIndex("by_domain", (index) => index.eq("domain", domain))
@@ -67,10 +69,16 @@ async function findCurrentClaim(ctx: DatabaseContext, domain: string, claimKey: 
   if (investigation?.status !== "completed" || investigation.productId !== product._id) {
     return null;
   }
-  const claim = projectClaims(investigation.result.claims).find(
+  return { product, investigation };
+}
+
+async function findCurrentClaim(ctx: DatabaseContext, domain: string, claimKey: string) {
+  const current = await findCurrentInvestigation(ctx, domain);
+  if (!current) return null;
+  const claim = projectClaims(current.investigation.result.claims).find(
     (candidate) => candidate.claimKey === claimKey,
   );
-  return claim ? { product, investigation, claim } : null;
+  return claim ? { ...current, claim } : null;
 }
 
 async function latestRunForClaim(
@@ -331,7 +339,7 @@ export const start = mutation({
       scoutId: scout._id,
       status: "pending",
       leaseExpiresAt,
-      model: DEFAULT_SCOUT_MODEL,
+      model: CLAIM_TEST_MODEL,
       startedAt: now,
     });
     const runId = await ctx.db.insert("claimTestRuns", {
@@ -348,7 +356,7 @@ export const start = mutation({
       threadId: createdThread.threadId,
       userId,
       promptMessageId: saved.messageId,
-      model: DEFAULT_SCOUT_MODEL,
+      model: CLAIM_TEST_MODEL,
     });
     await ctx.scheduler.runAt(leaseExpiresAt, internal.scout.lab.expireGeneration, {
       generationId,
@@ -389,6 +397,46 @@ export const latest = query({
       throw new Error("Claim test run is unavailable");
     }
     return projectRun(run, generation, scout);
+  },
+});
+
+export const listStatuses = query({
+  args: {
+    domain: v.string(),
+  },
+  returns: claimTestStatusesValidator,
+  handler: async (ctx, args) => {
+    const userId = await requireAppUser(ctx);
+    const domain = routeProductDomain(args.domain);
+    if (domain === null) return [];
+    const current = await findCurrentInvestigation(ctx, domain);
+    if (!current) return [];
+
+    return await Promise.all(
+      projectClaims(current.investigation.result.claims).map(async (claim) => {
+        const run = await latestRunForClaim(ctx, {
+          userId,
+          productId: current.product._id,
+          investigationId: current.investigation._id,
+          claimKey: claim.claimKey,
+        });
+        if (!run) {
+          return { claimKey: claim.claimKey, state: "untested" as const };
+        }
+        const generation = await ctx.db.get("scoutLabGenerations", run.generationId);
+        if (!generation) {
+          throw new Error("Claim test run is unavailable");
+        }
+        switch (generation.status) {
+          case "pending":
+            return { claimKey: claim.claimKey, state: "testing" as const };
+          case "completed":
+            return { claimKey: claim.claimKey, state: "tested" as const };
+          case "failed":
+            return { claimKey: claim.claimKey, state: "failed" as const };
+        }
+      }),
+    );
   },
 });
 

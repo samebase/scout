@@ -524,7 +524,7 @@ alongside the tool trace, then disappear on `browser_close` while the verdict re
 three Firecrawl credits and 82.2 browser seconds; all 174 tests and the complete Cloudflare build
 path passed.
 
-### 2026-08-29 - working tree
+### 2026-08-29 - 8b60948 - v114
 
 Removed the vendored Taste Skill and UI design contract after using them showed that their
 landing-page focus did not fit Scout's dense product workflows. Removed the mandatory agent
@@ -533,3 +533,18 @@ authentication background tints with neutral surfaces. The full check passed 174
 production build passed, and desktop and 390-pixel mobile views passed browser verification
 (`.agents/skills/design-taste-frontend/SKILL.md`, `docs/ui-design-contract.md`, `AGENTS.md`,
 `skills-lock.json`, `src/style.css`, `src/routes/index.tsx`).
+
+### 2026-08-29 - working tree
+
+Made the Product claim queue show each current claim's latest owner-scoped run state as Untested,
+Testing, Tested, or Test failed. The status is a realtime Convex query over the exact investigation
+snapshot, so another account's run and an older investigation cannot mark a claim as tested
+(`convex/claimTests*.ts`, `src/components/products-workspace.tsx`).
+
+The live Samebase queue showed two green Tested labels and four neutral Untested labels at both full
+and 390-pixel pane widths. All 174 tests, the Convex development push, and the complete Cloudflare
+build path passed.
+
+New claim-test attempts now use Qwen 3.7 Flash through Convex AI Gateway. The choice is scoped to
+claim verification: product investigation and ordinary Lab runs keep their existing model defaults
+(`convex/claimTests.ts`, `convex/claimTests.test.ts`).
