@@ -1,6 +1,12 @@
 import { authTables } from "@convex-dev/auth/server";
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import {
+  claimTestBrowserActionValidator,
+  claimTestBrowserOperationStateValidator,
+  claimTestBrowserSessionLifecycleValidator,
+  claimTestBrowserViewportValidator,
+} from "./claimTestBrowserModel";
 import { productInvestigationValidator } from "./productsModel";
 import { productInvestigationActivityFieldsValidator } from "./productsInvestigationActivityModel";
 import { scoutServiceAccountFieldsValidator, scoutWebsiteIdentityValidator } from "./scout/model";
@@ -116,7 +122,6 @@ export default defineSchema({
     threadId: v.string(),
     scoutId: v.id("scouts"),
     generationId: v.id("scoutLabGenerations"),
-    firecrawlSessionId: v.optional(v.string()),
   })
     .index("by_generation_id", ["generationId"])
     .index("by_user_id_and_product_id_and_investigation_id_and_claim_key", [
@@ -125,6 +130,29 @@ export default defineSchema({
       "investigationId",
       "claimKey",
     ]),
+  claimTestBrowserSessions: defineTable({
+    runId: v.id("claimTestRuns"),
+    generationId: v.id("scoutLabGenerations"),
+    userId: v.id("users"),
+    provider: v.literal("firecrawl"),
+    providerSessionId: v.string(),
+    viewport: claimTestBrowserViewportValidator,
+    nextOperationSequence: v.number(),
+    lifecycle: claimTestBrowserSessionLifecycleValidator,
+  })
+    .index("by_run_id", ["runId"])
+    .index("by_generation_id", ["generationId"])
+    .index("by_provider_and_provider_session_id", ["provider", "providerSessionId"]),
+  claimTestBrowserOperations: defineTable({
+    sessionId: v.id("claimTestBrowserSessions"),
+    runId: v.id("claimTestRuns"),
+    sequence: v.number(),
+    toolCallId: v.string(),
+    action: claimTestBrowserActionValidator,
+    state: claimTestBrowserOperationStateValidator,
+  })
+    .index("by_session_id_and_sequence", ["sessionId", "sequence"])
+    .index("by_session_id_and_tool_call_id", ["sessionId", "toolCallId"]),
   claimTestLiveViews: defineTable({
     generationId: v.id("scoutLabGenerations"),
     runId: v.id("claimTestRuns"),

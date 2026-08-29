@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-29T20:51:59Z
+- **Last updated:** 2026-08-29T23:10:23Z
 
 ## Log
 
@@ -549,7 +549,7 @@ New claim-test attempts now use Qwen 3.7 Flash through Convex AI Gateway. The ch
 claim verification: product investigation and ordinary Lab runs keep their existing model defaults
 (`convex/claimTests.ts`, `convex/claimTests.test.ts`).
 
-### 2026-08-29 - working tree
+### 2026-08-29 - 4d0bd2f - v117
 
 Saved each new claim test's Firecrawl browser session and added an authenticated replay surface to
 the completed run. Scout stores only the provider session ID; Convex actions fetch fresh replay
@@ -561,3 +561,19 @@ The player skips Firecrawl's blank bootstrap tab, lets the operator switch among
 lazy-loads HLS support. A new Samebase run completed with Qwen 3.7 Flash in 138.1 seconds using five
 Firecrawl credits; its 110-second recording loaded in the claim page and played to 17.5 seconds.
 All 178 tests and the complete Cloudflare build path passed.
+
+### 2026-08-29 - working tree
+
+Reconstructed each claim test as one replay timeline across Firecrawl's per-tab recordings. Every
+browser mutation now records its exact run, session, tool call, action sequence, before and after
+tab inventory, provider timestamp, and click box; an unknown post-dispatch outcome stops the run
+instead of guessing or retrying it (`convex/claimTestBrowserModel.ts`, `convex/claimTests.ts`,
+`convex/scout/browserTelemetry.ts`, `convex/scout/labTools.ts`, `convex/schema.ts`).
+
+The claim page plays matched tabs on one clock, switches at the first observation that confirms a
+tab change, marks captured clicks, and exposes ambiguous or unmatched provider tracks for manual
+inspection instead of guessing. A clean Samebase pricing run recorded ten applied operations,
+closed in 93.3 browser seconds using four Firecrawl credits, and played its 80-second real track in
+both the wide and three-pane layouts while retaining one unmatched blank provider recording. All
+189 tests and the complete Cloudflare build path passed
+(`src/lib/claimReplayTimeline.ts`, `src/routes/products.$domain.claims.$claimKey.tsx`).

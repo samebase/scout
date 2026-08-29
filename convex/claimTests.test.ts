@@ -381,7 +381,7 @@ describe("Claim tests", () => {
     ).resolves.toBeNull();
   });
 
-  it("keeps the Firecrawl replay session private and bound to the owning run", async () => {
+  it("keeps browser evidence private and bound to one exact run", async () => {
     const { backend, userId, admin } = await authenticatedBackend();
     await insertScout(backend);
     const snapshot = await insertCompletedInvestigation(backend, {
@@ -400,20 +400,76 @@ describe("Claim tests", () => {
     });
     if (!generation) throw new Error("Expected a generation");
 
-    await backend.mutation(internal.claimTests.setBrowserSession, {
+    await expect(
+      backend.mutation(internal.claimTests.setBrowserSession, {
+        promptMessageId: generation.promptMessageId,
+        sessionId: "firecrawl-session-1",
+      }),
+    ).resolves.toEqual({ captureOperations: true });
+    await backend.mutation(internal.claimTests.prepareBrowserOperation, {
       promptMessageId: generation.promptMessageId,
-      sessionId: "firecrawl-session-1",
+      toolCallId: "tool-call-1",
+      action: { kind: "click", ref: "@e1" },
     });
-    await backend.mutation(internal.claimTests.setBrowserSession, {
+    await backend.mutation(internal.claimTests.settleBrowserOperation, {
       promptMessageId: generation.promptMessageId,
-      sessionId: "firecrawl-session-1",
+      toolCallId: "tool-call-1",
+      outcome: {
+        kind: "applied",
+        telemetry: {
+          version: 1,
+          before: {
+            capturedAtMs: 1_000,
+            tabs: [
+              {
+                tabId: "t1",
+                title: "Example",
+                url: "https://example.test/",
+                active: true,
+              },
+            ],
+          },
+          dispatchedAtMs: 1_010,
+          returnedAtMs: 1_020,
+          after: {
+            capturedAtMs: 1_020,
+            tabs: [
+              {
+                tabId: "t1",
+                title: "Example account",
+                url: "https://example.test/account",
+                active: true,
+              },
+            ],
+          },
+          pointer: {
+            tabId: "t1",
+            ref: "@e1",
+            box: { x: 10, y: 20, width: 80, height: 40 },
+          },
+        },
+      },
+    });
+    await backend.mutation(internal.claimTests.closeBrowserSessionRecord, {
+      promptMessageId: generation.promptMessageId,
+      providerDurationMs: 2_000,
+      creditsBilled: 1,
     });
     await expect(
-      admin.query(internal.claimTests.replaySession, {
-        domain: "example.test",
-        claimKey,
-      }),
-    ).resolves.toEqual({ sessionId: "firecrawl-session-1" });
+      admin.query(internal.claimTests.replayData, { runId: started.runId }),
+    ).resolves.toMatchObject({
+      providerSessionId: "firecrawl-session-1",
+      viewport: { width: 1_280, height: 800 },
+      lifecycle: { kind: "closed", providerDurationMs: 2_000, creditsBilled: 1 },
+      operations: [
+        {
+          sequence: 1,
+          toolCallId: "tool-call-1",
+          action: { kind: "click", ref: "@e1" },
+          state: { kind: "applied" },
+        },
+      ],
+    });
     await expect(
       admin.query(api.claimTests.latest, { domain: "example.test", claimKey }),
     ).resolves.not.toHaveProperty("firecrawlSessionId");
@@ -423,16 +479,10 @@ describe("Claim tests", () => {
     );
     const otherAdmin = backend.withIdentity({ subject: `${otherUserId}|other-session` });
     await expect(
-      otherAdmin.query(internal.claimTests.replaySession, {
-        domain: "example.test",
-        claimKey,
-      }),
+      otherAdmin.query(internal.claimTests.replayData, { runId: started.runId }),
     ).resolves.toBeNull();
     await expect(
-      backend.query(internal.claimTests.replaySession, {
-        domain: "example.test",
-        claimKey,
-      }),
+      backend.query(internal.claimTests.replayData, { runId: started.runId }),
     ).rejects.toThrow("Not authorized");
     await expect(
       backend.mutation(internal.claimTests.setBrowserSession, {

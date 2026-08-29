@@ -128,9 +128,29 @@ export const generateResponse = internalAction({
       browser = createLabBrowserHarness({
         profileName: scout.firecrawl.profileName,
         onSessionAvailable: async (sessionId) => {
-          await ctx.runMutation(internal.claimTests.setBrowserSession, {
+          return await ctx.runMutation(internal.claimTests.setBrowserSession, {
             promptMessageId: args.promptMessageId,
             sessionId,
+          });
+        },
+        onOperationPrepared: async ({ action, toolCallId }) =>
+          await ctx.runMutation(internal.claimTests.prepareBrowserOperation, {
+            promptMessageId: args.promptMessageId,
+            toolCallId,
+            action,
+          }),
+        onOperationSettled: async ({ toolCallId, outcome }) => {
+          await ctx.runMutation(internal.claimTests.settleBrowserOperation, {
+            promptMessageId: args.promptMessageId,
+            toolCallId,
+            outcome,
+          });
+        },
+        onSessionClosed: async ({ creditsBilled, sessionDurationMs }) => {
+          await ctx.runMutation(internal.claimTests.closeBrowserSessionRecord, {
+            promptMessageId: args.promptMessageId,
+            providerDurationMs: sessionDurationMs,
+            creditsBilled,
           });
         },
         onLiveViewAvailable: async (liveViewUrl) => {
