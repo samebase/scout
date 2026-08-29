@@ -33,6 +33,8 @@ type BrowserDependencies = {
 
 type LabBrowserHarnessOptions = {
   profileName?: string;
+  onLiveViewAvailable?: (liveViewUrl: string) => Promise<void>;
+  onLiveViewClosed?: () => Promise<void>;
 };
 
 const defaultBrowserDependencies: BrowserDependencies = {
@@ -280,6 +282,9 @@ export function createLabBrowserHarness(
       const targetUrl = httpsUrl(url);
       const session = await dependencies.createSession(options.profileName);
       sessionId = session.sessionId;
+      if (session.liveViewUrl !== null) {
+        await options.onLiveViewAvailable?.(session.liveViewUrl);
+      }
       const snapshot = await dependencies.executeCode(
         sessionId,
         `${["agent-browser", "open", targetUrl].map(shellQuote).join(" ")} && ${[
@@ -330,6 +335,7 @@ export function createLabBrowserHarness(
         if (!result.success) {
           throw new Error("Firecrawl did not stop the browser session");
         }
+        await options.onLiveViewClosed?.();
         sessionId = undefined;
         stopResult = result;
         return result;

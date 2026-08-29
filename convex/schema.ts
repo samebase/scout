@@ -124,4 +124,11 @@ export default defineSchema({
       "investigationId",
       "claimKey",
     ]),
+  claimTestLiveViews: defineTable({
+    generationId: v.id("scoutLabGenerations"),
+    runId: v.id("claimTestRuns"),
+    userId: v.id("users"),
+    liveViewUrl: v.string(),
+    openedAt: v.number(),
+  }).index("by_generation_id", ["generationId"]),
 });

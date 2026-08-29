@@ -1,4 +1,5 @@
 import { fetchJson, ProviderHttpError, requireEnv, requireRecord, requireString } from "./http";
+import { optionalFirecrawlLiveViewUrl } from "./firecrawlLiveView";
 
 const FIRECRAWL_BASE_URL = "https://api.firecrawl.dev/v2";
 const MAX_OUTPUT_LENGTH = 40_000;
@@ -129,7 +130,23 @@ export async function createBrowserSession(profileName?: string) {
     throw new Error("Firecrawl did not create a browser session");
   }
 
-  return { sessionId: requireString(response, "id", "Firecrawl") };
+  const sessionId = requireString(response, "id", "Firecrawl");
+  try {
+    return {
+      sessionId,
+      liveViewUrl: optionalFirecrawlLiveViewUrl(response["liveViewUrl"]),
+    };
+  } catch (error) {
+    try {
+      await closeBrowserSession(sessionId);
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [error, cleanupError],
+        "Firecrawl returned an invalid live view URL and the browser session could not be closed",
+      );
+    }
+    throw error;
+  }
 }
 
 async function executeBrowserInteraction(

@@ -53,29 +53,55 @@ describe("standalone Firecrawl Browser Sandbox", () => {
   test("starts a standalone session without a profile", async () => {
     responses.push(jsonResponse({ success: true, id: "session-fresh" }));
 
-    await expect(createBrowserSession()).resolves.toEqual({ sessionId: "session-fresh" });
+    await expect(createBrowserSession()).resolves.toEqual({
+      sessionId: "session-fresh",
+      liveViewUrl: null,
+    });
     expect(requests[0]?.url).toBe("https://api.firecrawl.dev/v2/interact");
     expect(requests[0]?.init?.method).toBe("POST");
     expect(requestBody(requests[0])).toEqual({});
   });
 
-  test("starts a writable named profile without exposing provider URLs", async () => {
+  test("returns only the validated read-only live view for a writable named profile", async () => {
     responses.push(
       jsonResponse({
         success: true,
         id: "session-1",
         cdpUrl: "wss://cdp-proxy.firecrawl.dev/private",
-        liveViewUrl: "https://liveview.firecrawl.dev/private",
+        liveViewUrl: "https://liveview.firecrawl.dev/private?signature=read-only",
+        interactiveLiveViewUrl:
+          "https://liveview.firecrawl.dev/private?signature=interactive-control",
       }),
     );
 
     await expect(createBrowserSession("scout-conrad")).resolves.toEqual({
       sessionId: "session-1",
+      liveViewUrl: "https://liveview.firecrawl.dev/private?signature=read-only",
     });
     expect(requests).toHaveLength(1);
     expect(requestBody(requests[0])).toEqual({
       profile: { name: "scout-conrad", saveChanges: true },
     });
+  });
+
+  test.each([
+    "http://liveview.firecrawl.dev/private",
+    "https://api.firecrawl.dev/private",
+    "https://liveview.firecrawl.dev.evil.test/private",
+    "https://user:password@liveview.firecrawl.dev/private",
+  ])("rejects an invalid provider live view URL: %s", async (liveViewUrl) => {
+    responses.push(
+      jsonResponse({ success: true, id: "session-1", liveViewUrl }),
+      jsonResponse({ success: true }),
+    );
+
+    await expect(createBrowserSession()).rejects.toThrow(
+      "Firecrawl returned an invalid live view URL",
+    );
+    expect(requests.map((request) => request.url)).toEqual([
+      "https://api.firecrawl.dev/v2/interact",
+      "https://api.firecrawl.dev/v2/interact/session-1",
+    ]);
   });
 
   test("executes code against the standalone session", async () => {
