@@ -41,6 +41,10 @@ export const Route = createFileRoute("/products/")({
 type Product = FunctionReturnType<typeof api.products.list>[number];
 type Investigation = NonNullable<Product["latestInvestigation"]>;
 type CompletedInvestigation = NonNullable<Product["latestCompletedInvestigation"]>;
+type CurrentRunningInvestigation = Extract<
+  Investigation,
+  { provider: "firecrawl-convex"; status: "running" }
+>;
 
 type AddProductState =
   | { kind: "idle" }
@@ -818,7 +822,11 @@ function InvestigationStatus({ investigation }: { investigation: Investigation |
         <StatusLabel
           dotClass="bg-blue-500"
           label="Investigating"
+          {...(investigation.provider === "firecrawl-convex"
+            ? { note: investigationStageLabel(investigation.stage) }
+            : {})}
           detail={investigation.startedAt}
+          credits={investigation.creditsUsed}
         />
       );
     case "completed":
@@ -846,22 +854,42 @@ function InvestigationStatus({ investigation }: { investigation: Investigation |
   }
 }
 
+function investigationStageLabel(stage: CurrentRunningInvestigation["stage"]) {
+  switch (stage) {
+    case "mapping":
+      return "Mapping the site";
+    case "selecting":
+      return "Selecting source pages";
+    case "scraping":
+      return "Reading source pages";
+    case "synthesizing":
+      return "Summarizing claims";
+    default: {
+      const exhaustive: never = stage;
+      return exhaustive;
+    }
+  }
+}
+
 function StatusLabel({
   dotClass,
   label,
+  note,
   detail,
   credits,
 }: {
   dotClass: string;
   label: string;
+  note?: string;
   detail: number;
   credits?: number | null;
 }) {
   return (
-    <span className="inline-flex shrink-0 items-start gap-2 text-right text-sm">
+    <span className="inline-flex shrink-0 items-start gap-2 text-right text-sm" role="status">
       <span className={`mt-1.5 size-2 rounded-full ${dotClass}`} aria-hidden="true" />
       <span>
         <span className="block">{label}</span>
+        {note ? <span className="text-muted-foreground block text-xs">{note}</span> : null}
         <span className="text-muted-foreground block text-xs">
           {investigationDate.format(detail)}
           {credits === undefined || credits === null

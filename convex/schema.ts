@@ -69,7 +69,9 @@ export default defineSchema({
     scoutId: v.id("scouts"),
     experimentId: v.optional(v.id("scoutLabExperiments")),
     createdAt: v.number(),
-  }).index("by_thread_id", ["threadId"]),
+  })
+    .index("by_thread_id", ["threadId"])
+    .index("by_user_id_and_created_at", ["userId", "createdAt"]),
   scoutLabGenerations: defineTable({
     threadId: v.string(),
     order: v.number(),
