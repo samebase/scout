@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-29T17:48:33Z
+- **Last updated:** 2026-08-29T18:34:04Z
 
 ## Log
 
@@ -502,7 +502,7 @@ new product evidence, user requirements, accessibility needs, and the source cod
 the current design read, Taste Skill dials, ownership map, defaults, exceptions, and verification
 path (`docs/ui-design-contract.md`, `AGENTS.md`).
 
-### 2026-08-29 - working tree
+### 2026-08-29 - 71fb342 - v112
 
 Embedded Firecrawl's read-only live browser in the claim workspace while a Scout test is active.
 The signed provider URL is validated at the Firecrawl boundary, kept out of the Agent transcript,
@@ -523,3 +523,13 @@ A live Samebase verification showed the iframe move from GitHub sign-in to Sameb
 alongside the tool trace, then disappear on `browser_close` while the verdict remained. The run used
 three Firecrawl credits and 82.2 browser seconds; all 174 tests and the complete Cloudflare build
 path passed.
+
+### 2026-08-29 - working tree
+
+Removed the vendored Taste Skill and UI design contract after using them showed that their
+landing-page focus did not fit Scout's dense product workflows. Removed the mandatory agent
+instructions and skill lock entry while keeping the interface redesign. Replaced the light page and
+authentication background tints with neutral surfaces. The full check passed 174 tests, the
+production build passed, and desktop and 390-pixel mobile views passed browser verification
+(`.agents/skills/design-taste-frontend/SKILL.md`, `docs/ui-design-contract.md`, `AGENTS.md`,
+`skills-lock.json`, `src/style.css`, `src/routes/index.tsx`).

@@ -34,7 +34,7 @@ function HomePage() {
 
 function SignedOutHome() {
   return (
-    <main className="grid min-h-[100dvh] bg-[color-mix(in_oklch,var(--background),var(--primary)_3%)] lg:grid-cols-[minmax(0,1.1fr)_minmax(28rem,0.9fr)]">
+    <main className="grid min-h-[100dvh] bg-background lg:grid-cols-[minmax(0,1.1fr)_minmax(28rem,0.9fr)]">
       <section className="relative flex min-h-[48dvh] flex-col justify-between overflow-hidden bg-primary p-6 text-primary-foreground sm:p-10 lg:min-h-[100dvh] lg:p-14">
         <div className="relative flex items-center gap-3">
           <span className="grid size-10 place-items-center rounded-[0.625rem] bg-primary-foreground text-primary shadow-lg">
