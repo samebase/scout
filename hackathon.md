@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-30T11:53:14Z
+- **Last updated:** 2026-08-30T12:34:14Z
 
 ## Log
 
@@ -605,7 +605,7 @@ Qwen 3.7 Flash. The Scout emitted two `browser_switch_tab` actions, the reconstr
 two tab-change markers across two recorded tracks, and the Product queue returned to Tested. All
 191 tests, the Convex development push, and the complete Cloudflare build path passed.
 
-### 2026-08-30 - working tree
+### 2026-08-30 - ad50bdf - v121
 
 Replaced the editable starting URL with one inspectable Scout prompt built from the Product name,
 domain, primary URL, claim, and optional test instructions. Generated research URLs remain
@@ -620,3 +620,16 @@ test status follows custom claims across investigations (`convex/schema.ts`,
 A browser-driven Samebase check created a custom account-creation claim without instructions,
 verified the generated product-aware prompt, edited the instructions, and removed the claim. All
 193 tests, the Convex development push, and the complete Cloudflare build path passed.
+
+### 2026-08-30 - working tree
+
+Collapsed generated claim edits and removals into one mutually exclusive override record. Claim
+test runs now use one stable claim key and always retain the exact claim and instructions they
+tested; legacy starting-URL snapshots and duplicate custom-claim run IDs were removed instead of
+preserved through migration code (`convex/schema.ts`, `convex/productClaimEdits.ts`,
+`convex/claimTests.ts`).
+
+Backed up the development deployment, cleared only incompatible claim-test and override records,
+and pushed the narrowed schema. A browser-driven Samebase check edited and removed a generated
+claim, then created, edited, and removed a custom claim. All 193 tests, the Convex development push,
+and the complete Cloudflare build path passed.

@@ -61,18 +61,28 @@ export default defineSchema({
   })
     .index("by_investigation_id_and_sequence", ["investigationId", "sequence"])
     .index("by_investigation_id_and_url", ["investigationId", "url"]),
-  productClaimEdits: defineTable({
-    userId: v.id("users"),
-    productId: v.id("products"),
-    investigationId: v.id("productInvestigations"),
-    claimKey: v.string(),
-    claim: v.string(),
-    // Kept during schema migration for edits written before sourceUrl became
-    // read-only research evidence. Application projections ignore this field.
-    sourceUrl: v.optional(v.string()),
-    suggestedMysteryShop: v.string(),
-    editedAt: v.number(),
-  }).index("by_user_id_and_product_id_and_investigation_id_and_claim_key", [
+  productClaimOverrides: defineTable(
+    v.union(
+      v.object({
+        kind: v.literal("edited"),
+        userId: v.id("users"),
+        productId: v.id("products"),
+        investigationId: v.id("productInvestigations"),
+        claimKey: v.string(),
+        claim: v.string(),
+        suggestedMysteryShop: v.string(),
+        editedAt: v.number(),
+      }),
+      v.object({
+        kind: v.literal("hidden"),
+        userId: v.id("users"),
+        productId: v.id("products"),
+        investigationId: v.id("productInvestigations"),
+        claimKey: v.string(),
+        hiddenAt: v.number(),
+      }),
+    ),
+  ).index("by_user_id_and_product_id_and_investigation_id_and_claim_key", [
     "userId",
     "productId",
     "investigationId",
@@ -86,18 +96,6 @@ export default defineSchema({
     createdAt: v.number(),
     editedAt: v.optional(v.number()),
   }).index("by_user_id_and_product_id", ["userId", "productId"]),
-  productClaimHides: defineTable({
-    userId: v.id("users"),
-    productId: v.id("products"),
-    investigationId: v.id("productInvestigations"),
-    claimKey: v.string(),
-    hiddenAt: v.number(),
-  }).index("by_user_id_and_product_id_and_investigation_id_and_claim_key", [
-    "userId",
-    "productId",
-    "investigationId",
-    "claimKey",
-  ]),
   scoutServiceAccounts: defineTable(
     scoutServiceAccountFieldsValidator.extend({
       productId: v.optional(v.id("products")),
@@ -154,13 +152,12 @@ export default defineSchema({
     userId: v.id("users"),
     productId: v.id("products"),
     investigationId: v.id("productInvestigations"),
-    customClaimId: v.optional(v.id("productCustomClaims")),
     claimKey: v.string(),
     experimentId: v.id("scoutLabExperiments"),
     threadId: v.string(),
     scoutId: v.id("scouts"),
     generationId: v.id("scoutLabGenerations"),
-    testedClaim: v.optional(productClaimSnapshotValidator),
+    testedClaim: productClaimSnapshotValidator,
   })
     .index("by_generation_id", ["generationId"])
     .index("by_user_id_and_product_id_and_investigation_id_and_claim_key", [
@@ -169,11 +166,7 @@ export default defineSchema({
       "investigationId",
       "claimKey",
     ])
-    .index("by_user_id_and_product_id_and_custom_claim_id", [
-      "userId",
-      "productId",
-      "customClaimId",
-    ]),
+    .index("by_user_id_and_product_id_and_claim_key", ["userId", "productId", "claimKey"]),
   claimTestBrowserSessions: defineTable({
     runId: v.id("claimTestRuns"),
     generationId: v.id("scoutLabGenerations"),

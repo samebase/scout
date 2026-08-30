@@ -25,7 +25,6 @@ import {
 } from "./claimTestsModel";
 import {
   claimSnapshot,
-  customClaimIdForRoute,
   findCurrentProductClaim,
   findCurrentProductInvestigation,
   projectClaimsForUser,
@@ -78,17 +77,13 @@ async function latestRunForClaim(
   },
 ) {
   if (args.claim.origin === "custom") {
-    const customClaimId = customClaimIdForRoute(ctx, args.claim.claimKey);
-    if (!customClaimId) {
-      throw new Error("Custom claim route is invalid");
-    }
     return await ctx.db
       .query("claimTestRuns")
-      .withIndex("by_user_id_and_product_id_and_custom_claim_id", (index) =>
+      .withIndex("by_user_id_and_product_id_and_claim_key", (index) =>
         index
           .eq("userId", args.userId)
           .eq("productId", args.productId)
-          .eq("customClaimId", customClaimId),
+          .eq("claimKey", args.claim.claimKey),
       )
       .order("desc")
       .first();
@@ -134,7 +129,7 @@ function projectRun(
     experimentId: run.experimentId,
     createdAt: run._creationTime,
     matchesCurrentClaim: runMatchesCurrentClaim(run.testedClaim, currentClaim),
-    testedClaim: run.testedClaim ?? null,
+    testedClaim: run.testedClaim,
     scout: {
       id: scout._id,
       displayName: scout.displayName,
@@ -407,7 +402,6 @@ export const start = mutation({
       userId,
       productId: current.product._id,
       investigationId: current.investigation._id,
-      ...(current.kind === "custom" ? { customClaimId: current.customClaim._id } : {}),
       claimKey: current.claim.claimKey,
       experimentId,
       threadId: createdThread.threadId,

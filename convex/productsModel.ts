@@ -32,9 +32,6 @@ export const productClaimValidator = v.object({
 export const productClaimSnapshotValidator = v.object({
   claim: v.string(),
   suggestedMysteryShop: v.string(),
-  // Older claim test runs included the research URL in their snapshot. Keep
-  // accepting it while new runs store only the editable test inputs.
-  sourceUrl: v.optional(v.string()),
 });
 
 export const productDependencyValidator = v.object({

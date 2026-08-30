@@ -26,6 +26,13 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
 - Vite+ stays in `package.json` and supplies the dev, format, lint, test, and build tools behind the
   package scripts.
 
+## Hackathon scope
+
+- This app is pre-user hackathon software. Do not preserve legacy routes, schema fields, or
+  backward-compatible code paths for disposable development data unless the user explicitly asks.
+- Prefer the simpler current design and a targeted development-data reset over migration scaffolding.
+  Never apply this shortcut to production or user data without explicit authorization.
+
 ## Main build labels
 
 - Use merge commits for pull requests into `main`. Do not squash.

@@ -12,7 +12,7 @@ const claimTestRunBaseValidator = v.object({
   experimentId: v.id("scoutLabExperiments"),
   createdAt: v.number(),
   matchesCurrentClaim: v.boolean(),
-  testedClaim: v.union(productClaimSnapshotValidator, v.null()),
+  testedClaim: productClaimSnapshotValidator,
   scout: v.object({
     id: v.id("scouts"),
     displayName: v.string(),

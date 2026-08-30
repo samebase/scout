@@ -321,7 +321,7 @@ describe("Claim tests", () => {
     });
     const firstGeneration = await backend.run(async (ctx) => {
       const run = await ctx.db.get("claimTestRuns", firstRun.runId);
-      expect(run?.customClaimId).toBeDefined();
+      expect(run?.claimKey).toBe(customClaimKey);
       expect(run?.testedClaim).toEqual({
         claim: "A visitor can compare two drafts side by side.",
         suggestedMysteryShop: "",
@@ -382,11 +382,6 @@ describe("Claim tests", () => {
       }),
     ).resolves.toBe(second.investigationId);
 
-    const customClaimId = await backend.run(async (ctx) => {
-      const run = await ctx.db.get("claimTestRuns", firstRun.runId);
-      return run?.customClaimId;
-    });
-    if (!customClaimId) throw new Error("Expected a custom claim run scope");
     await admin.mutation(api.products.removeClaim, {
       domain: "example.test",
       claimKey: customClaimKey,
@@ -396,11 +391,11 @@ describe("Claim tests", () => {
         async (ctx) =>
           await ctx.db
             .query("claimTestRuns")
-            .withIndex("by_user_id_and_product_id_and_custom_claim_id", (index) =>
+            .withIndex("by_user_id_and_product_id_and_claim_key", (index) =>
               index
                 .eq("userId", userId)
                 .eq("productId", first.productId)
-                .eq("customClaimId", customClaimId),
+                .eq("claimKey", customClaimKey),
             )
             .take(3),
       ),
@@ -640,16 +635,6 @@ describe("Claim tests", () => {
       promptMessageId: firstGeneration.promptMessageId,
       usage: { promptTokens: 100, completionTokens: 20, totalTokens: 120 },
     });
-    await backend.run(
-      async (ctx) =>
-        await ctx.db.patch("claimTestRuns", first.runId, {
-          testedClaim: {
-            claim: originalClaim.claim,
-            suggestedMysteryShop: originalClaim.suggestedMysteryShop,
-            sourceUrl: "https://legacy.example.test/old-evidence",
-          },
-        }),
-    );
     await expect(
       admin.query(api.claimTests.listStatuses, { domain: "example.test" }),
     ).resolves.toContainEqual({ claimKey, state: "tested" });

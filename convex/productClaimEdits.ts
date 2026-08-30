@@ -18,8 +18,7 @@ const GENERATED_CLAIM_KEY_PATTERN = /^claim-[a-z0-9]{10}(?:-[1-9][0-9]*)?$/;
 const CUSTOM_CLAIM_KEY_PATTERN = /^custom-[A-Za-z0-9_-]+$/;
 const CUSTOM_CLAIM_KEY_PREFIX = "custom-";
 const MAX_CLAIM_KEY_LENGTH = 64;
-const MAX_CLAIM_EDITS_PER_INVESTIGATION = 20;
-const MAX_CLAIM_HIDES_PER_INVESTIGATION = 20;
+const MAX_CLAIM_OVERRIDES_PER_INVESTIGATION = 20;
 
 type DatabaseContext = Pick<QueryCtx, "db">;
 type BaseClaim = ReturnType<typeof projectClaims>[number];
@@ -82,31 +81,28 @@ export function claimSnapshotsMatch(left: ClaimSnapshot, right: ClaimSnapshot) {
 }
 
 export function runMatchesCurrentClaim(
-  testedClaim: ClaimSnapshot | undefined,
+  testedClaim: ClaimSnapshot,
   currentClaim: ProjectedProductClaim,
 ) {
-  if (testedClaim) {
-    return claimSnapshotsMatch(testedClaim, claimSnapshot(currentClaim));
-  }
-  return currentClaim.origin === "generated" && !currentClaim.isEdited;
+  return claimSnapshotsMatch(testedClaim, claimSnapshot(currentClaim));
 }
 
-export function applyClaimEdit(
+export function applyClaimOverride(
   baseClaim: BaseClaim,
-  edit: Doc<"productClaimEdits"> | null,
+  override: Extract<Doc<"productClaimOverrides">, { kind: "edited" }> | null,
 ): ProjectedGeneratedProductClaim {
   const hasEditableChanges =
-    edit !== null &&
-    (edit.claim !== baseClaim.claim ||
-      edit.suggestedMysteryShop !== baseClaim.suggestedMysteryShop);
-  return edit && hasEditableChanges
+    override !== null &&
+    (override.claim !== baseClaim.claim ||
+      override.suggestedMysteryShop !== baseClaim.suggestedMysteryShop);
+  return override && hasEditableChanges
     ? {
         ...baseClaim,
         origin: "generated",
-        claim: edit.claim,
-        suggestedMysteryShop: edit.suggestedMysteryShop,
+        claim: override.claim,
+        suggestedMysteryShop: override.suggestedMysteryShop,
         isEdited: true,
-        editedAt: edit.editedAt,
+        editedAt: override.editedAt,
       }
     : {
         ...baseClaim,
@@ -130,7 +126,7 @@ export function projectCustomClaim(
   };
 }
 
-async function claimEdit(
+async function claimOverride(
   ctx: DatabaseContext,
   args: {
     userId: Id<"users">;
@@ -140,28 +136,7 @@ async function claimEdit(
   },
 ) {
   return await ctx.db
-    .query("productClaimEdits")
-    .withIndex("by_user_id_and_product_id_and_investigation_id_and_claim_key", (query) =>
-      query
-        .eq("userId", args.userId)
-        .eq("productId", args.productId)
-        .eq("investigationId", args.investigationId)
-        .eq("claimKey", args.claimKey),
-    )
-    .unique();
-}
-
-async function claimHide(
-  ctx: DatabaseContext,
-  args: {
-    userId: Id<"users">;
-    productId: Id<"products">;
-    investigationId: Id<"productInvestigations">;
-    claimKey: string;
-  },
-) {
-  return await ctx.db
-    .query("productClaimHides")
+    .query("productClaimOverrides")
     .withIndex("by_user_id_and_product_id_and_investigation_id_and_claim_key", (query) =>
       query
         .eq("userId", args.userId)
@@ -181,25 +156,16 @@ export async function projectClaimsForUser(
     claims: ProductInvestigationResult["claims"];
   },
 ) {
-  const [edits, hides, customClaims] = await Promise.all([
+  const [overrides, customClaims] = await Promise.all([
     ctx.db
-      .query("productClaimEdits")
+      .query("productClaimOverrides")
       .withIndex("by_user_id_and_product_id_and_investigation_id_and_claim_key", (query) =>
         query
           .eq("userId", args.userId)
           .eq("productId", args.productId)
           .eq("investigationId", args.investigationId),
       )
-      .take(MAX_CLAIM_EDITS_PER_INVESTIGATION),
-    ctx.db
-      .query("productClaimHides")
-      .withIndex("by_user_id_and_product_id_and_investigation_id_and_claim_key", (query) =>
-        query
-          .eq("userId", args.userId)
-          .eq("productId", args.productId)
-          .eq("investigationId", args.investigationId),
-      )
-      .take(MAX_CLAIM_HIDES_PER_INVESTIGATION),
+      .take(MAX_CLAIM_OVERRIDES_PER_INVESTIGATION),
     ctx.db
       .query("productCustomClaims")
       .withIndex("by_user_id_and_product_id", (query) =>
@@ -207,13 +173,12 @@ export async function projectClaimsForUser(
       )
       .take(MAX_CUSTOM_CLAIMS_PER_PRODUCT),
   ]);
-  const editsByClaimKey = new Map(edits.map((edit) => [edit.claimKey, edit]));
-  const hiddenClaimKeys = new Set(hides.map((hide) => hide.claimKey));
-  const generatedClaims = projectClaims(args.claims).flatMap((baseClaim) =>
-    hiddenClaimKeys.has(baseClaim.claimKey)
-      ? []
-      : [applyClaimEdit(baseClaim, editsByClaimKey.get(baseClaim.claimKey) ?? null)],
-  );
+  const overridesByClaimKey = new Map(overrides.map((override) => [override.claimKey, override]));
+  const generatedClaims = projectClaims(args.claims).flatMap((baseClaim) => {
+    const override = overridesByClaimKey.get(baseClaim.claimKey);
+    if (override?.kind === "hidden") return [];
+    return [applyClaimOverride(baseClaim, override ?? null)];
+  });
   return [...generatedClaims, ...customClaims.map(projectCustomClaim)];
 }
 
@@ -273,14 +238,13 @@ export async function findCurrentProductClaim(
     investigationId: current.investigation._id,
     claimKey: baseClaim.claimKey,
   };
-  const [edit, hide] = await Promise.all([claimEdit(ctx, lookup), claimHide(ctx, lookup)]);
-  if (hide && !args.includeHiddenGenerated) return null;
+  const override = await claimOverride(ctx, lookup);
+  if (override?.kind === "hidden" && !args.includeHiddenGenerated) return null;
   return {
     ...current,
     kind: "generated" as const,
     baseClaim,
-    edit,
-    hide,
-    claim: applyClaimEdit(baseClaim, edit),
+    override,
+    claim: applyClaimOverride(baseClaim, override?.kind === "edited" ? override : null),
   };
 }

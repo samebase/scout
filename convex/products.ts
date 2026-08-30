@@ -12,7 +12,7 @@ import {
 import { requireAppUser } from "./access";
 import { productResearchAgent } from "./productResearchAgent";
 import {
-  applyClaimEdit,
+  applyClaimOverride,
   claimSnapshot,
   claimSnapshotsMatch,
   customClaimRouteKey,
@@ -539,10 +539,10 @@ export const updateClaim = mutation({
     }
 
     if (claimSnapshotsMatch(nextSnapshot, claimSnapshot(current.baseClaim))) {
-      if (current.edit) {
-        await ctx.db.delete("productClaimEdits", current.edit._id);
+      if (current.override) {
+        await ctx.db.delete("productClaimOverrides", current.override._id);
       }
-      return applyClaimEdit(current.baseClaim, null);
+      return applyClaimOverride(current.baseClaim, null);
     }
     if (claimSnapshotsMatch(nextSnapshot, claimSnapshot(current.claim))) {
       return current.claim;
@@ -550,6 +550,7 @@ export const updateClaim = mutation({
 
     const editedAt = Date.now();
     const replacement = {
+      kind: "edited" as const,
       userId,
       productId: current.product._id,
       investigationId: current.investigation._id,
@@ -557,10 +558,10 @@ export const updateClaim = mutation({
       ...nextSnapshot,
       editedAt,
     };
-    if (current.edit) {
-      await ctx.db.replace("productClaimEdits", current.edit._id, replacement);
+    if (current.override) {
+      await ctx.db.replace("productClaimOverrides", current.override._id, replacement);
     } else {
-      await ctx.db.insert("productClaimEdits", replacement);
+      await ctx.db.insert("productClaimOverrides", replacement);
     }
     return {
       ...current.baseClaim,
@@ -634,14 +635,19 @@ export const removeClaim = mutation({
       await ctx.db.delete("productCustomClaims", current.customClaim._id);
       return null;
     }
-    if (!current.hide) {
-      await ctx.db.insert("productClaimHides", {
-        userId,
-        productId: current.product._id,
-        investigationId: current.investigation._id,
-        claimKey: current.claim.claimKey,
-        hiddenAt: Date.now(),
-      });
+    if (current.override?.kind === "hidden") return null;
+    const replacement = {
+      kind: "hidden" as const,
+      userId,
+      productId: current.product._id,
+      investigationId: current.investigation._id,
+      claimKey: current.baseClaim.claimKey,
+      hiddenAt: Date.now(),
+    };
+    if (current.override) {
+      await ctx.db.replace("productClaimOverrides", current.override._id, replacement);
+    } else {
+      await ctx.db.insert("productClaimOverrides", replacement);
     }
     return null;
   },

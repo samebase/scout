@@ -529,8 +529,8 @@ describe("Products registry", () => {
 
     const stored = await backend.run(async (ctx) => ({
       investigation: await ctx.db.get("productInvestigations", investigationId),
-      edit: await ctx.db
-        .query("productClaimEdits")
+      override: await ctx.db
+        .query("productClaimOverrides")
         .withIndex("by_user_id_and_product_id_and_investigation_id_and_claim_key", (query) =>
           query
             .eq("userId", userId)
@@ -543,13 +543,15 @@ describe("Products registry", () => {
     expect(stored.investigation?.status === "completed" && stored.investigation.result).toEqual(
       result,
     );
-    expect(stored.edit).toMatchObject({
+    expect(stored.override).toMatchObject({
+      kind: "edited",
       userId,
       productId,
       investigationId,
       claimKey,
       claim: edited.claim,
     });
+    expect(stored.override && "sourceUrl" in stored.override).toBe(false);
 
     await expect(
       admin.mutation(api.products.updateClaim, {
@@ -586,6 +588,29 @@ describe("Products registry", () => {
       origin: "generated",
       sourceUrl: validClaim().sourceUrl,
       suggestedMysteryShop: "",
+    });
+
+    await admin.mutation(api.products.removeClaim, { domain: "example.test", claimKey });
+    const hiddenOverride = await backend.run(
+      async (ctx) =>
+        await ctx.db
+          .query("productClaimOverrides")
+          .withIndex("by_user_id_and_product_id_and_investigation_id_and_claim_key", (query) =>
+            query
+              .eq("userId", userId)
+              .eq("productId", productId)
+              .eq("investigationId", investigationId)
+              .eq("claimKey", claimKey),
+          )
+          .unique(),
+    );
+    expect(hiddenOverride).toMatchObject({
+      _id: stored.override?._id,
+      kind: "hidden",
+      userId,
+      productId,
+      investigationId,
+      claimKey,
     });
   });
 
