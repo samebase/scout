@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
+import { expireClaimTestHumanHandoffForGeneration } from "./claimTestHumanHandoffsModel";
 import { productClaimSnapshotValidator } from "./productsModel";
 import { scoutModelValidator, scoutTokenUsageValidator } from "./scout/models";
 
@@ -79,6 +80,8 @@ export async function completeClaimTestExperimentForGeneration(
   ctx: Pick<MutationCtx, "db">,
   generationId: Id<"scoutLabGenerations">,
 ) {
+  await expireClaimTestHumanHandoffForGeneration(ctx, generationId);
+
   const liveView = await ctx.db
     .query("claimTestLiveViews")
     .withIndex("by_generation_id", (query) => query.eq("generationId", generationId))

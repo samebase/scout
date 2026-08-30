@@ -62,13 +62,14 @@ describe("standalone Firecrawl Browser Sandbox", () => {
     await expect(createBrowserSession()).resolves.toEqual({
       sessionId: "session-fresh",
       liveViewUrl: null,
+      interactiveLiveViewUrl: null,
     });
     expect(requests[0]?.url).toBe("https://api.firecrawl.dev/v2/interact");
     expect(requests[0]?.init?.method).toBe("POST");
     expect(requestBody(requests[0])).toEqual({ recordSession: true });
   });
 
-  test("returns only the validated read-only live view for a writable named profile", async () => {
+  test("returns validated read-only and interactive live views for a writable named profile", async () => {
     responses.push(
       jsonResponse({
         success: true,
@@ -83,6 +84,8 @@ describe("standalone Firecrawl Browser Sandbox", () => {
     await expect(createBrowserSession("scout-conrad")).resolves.toEqual({
       sessionId: "session-1",
       liveViewUrl: "https://liveview.firecrawl.dev/private?signature=read-only",
+      interactiveLiveViewUrl:
+        "https://liveview.firecrawl.dev/private?signature=interactive-control",
     });
     expect(requests).toHaveLength(1);
     expect(requestBody(requests[0])).toEqual({
@@ -156,6 +159,26 @@ describe("standalone Firecrawl Browser Sandbox", () => {
   ])("rejects an invalid provider live view URL: %s", async (liveViewUrl) => {
     responses.push(
       jsonResponse({ success: true, id: "session-1", liveViewUrl }),
+      jsonResponse({ success: true }),
+    );
+
+    await expect(createBrowserSession()).rejects.toThrow(
+      "Firecrawl returned an invalid live view URL",
+    );
+    expect(requests.map((request) => request.url)).toEqual([
+      "https://api.firecrawl.dev/v2/interact",
+      "https://api.firecrawl.dev/v2/interact/session-1",
+    ]);
+  });
+
+  test("rejects and closes a session with an invalid interactive live view URL", async () => {
+    responses.push(
+      jsonResponse({
+        success: true,
+        id: "session-1",
+        liveViewUrl: "https://liveview.firecrawl.dev/private?signature=read-only",
+        interactiveLiveViewUrl: "https://attacker.test/takeover",
+      }),
       jsonResponse({ success: true }),
     );
 

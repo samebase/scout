@@ -50,6 +50,7 @@ type LabBrowserHarnessOptions = {
   profileName?: string;
   onSessionAvailable?: (sessionId: string) => Promise<BrowserSessionPolicy | undefined>;
   onLiveViewAvailable?: (liveViewUrl: string) => Promise<void>;
+  onInteractiveLiveViewAvailable?: (interactiveLiveViewUrl: string) => Promise<void>;
   onLiveViewClosed?: () => Promise<void>;
   onOperationPrepared?: (operation: {
     toolCallId: string;
@@ -502,6 +503,9 @@ export function createLabBrowserHarness(
       captureOperations = policy?.captureOperations === true;
       if (session.liveViewUrl !== null) {
         await options.onLiveViewAvailable?.(session.liveViewUrl);
+      }
+      if (session.interactiveLiveViewUrl !== null) {
+        await options.onInteractiveLiveViewAvailable?.(session.interactiveLiveViewUrl);
       }
       if (captureOperations) {
         return await runInstrumentedMutation(
