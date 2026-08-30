@@ -13,7 +13,8 @@ import {
   type QueryCtx,
 } from "../_generated/server";
 import { requireAppUser } from "../access";
-import { completeClaimTestExperimentForGeneration } from "../claimTestsModel";
+import { settleClaimTestRunForGeneration } from "../claimTestsModel";
+import { claimTestOutcomeValidator } from "../claimTestRunModel";
 import { canonicalProductDomain, ensureProduct } from "../productsDomain";
 import schema from "../schema";
 import { scoutAgent } from "./agent";
@@ -387,6 +388,13 @@ export const sendMessage = mutation({
     const userId = await requireAppUser(ctx);
     const thread = await requireOwnedAgentThread(ctx, args.threadId, userId);
     const { scoutId } = await requireThreadBinding(ctx, { threadId: args.threadId, userId });
+    const claimTestRun = await ctx.db
+      .query("claimTestRuns")
+      .withIndex("by_thread_id", (query) => query.eq("threadId", args.threadId))
+      .unique();
+    if (claimTestRun) {
+      throw new Error("Continue claim-test runs from the claim workspace");
+    }
     await requireActiveScout(ctx, scoutId);
     const prompt = promptText(args.prompt);
     const model = args.model ?? DEFAULT_SCOUT_MODEL;
@@ -403,7 +411,10 @@ export const sendMessage = mutation({
         failedAt: Date.now(),
         failure: EXPIRED_GENERATION_FAILURE,
       });
-      await completeClaimTestExperimentForGeneration(ctx, pendingGeneration._id);
+      await settleClaimTestRunForGeneration(ctx, pendingGeneration._id, {
+        kind: "failed",
+        failure: EXPIRED_GENERATION_FAILURE,
+      });
     }
     if (!thread.title) {
       await scoutAgent.updateThreadMetadata(ctx, {
@@ -460,7 +471,10 @@ export const startGeneration = internalMutation({
         failedAt: Date.now(),
         failure: EXPIRED_GENERATION_FAILURE,
       });
-      await completeClaimTestExperimentForGeneration(ctx, generation._id);
+      await settleClaimTestRunForGeneration(ctx, generation._id, {
+        kind: "failed",
+        failure: EXPIRED_GENERATION_FAILURE,
+      });
       return false;
     }
 
@@ -492,7 +506,10 @@ export const expireGeneration = internalMutation({
       failedAt: Date.now(),
       failure: EXPIRED_GENERATION_FAILURE,
     });
-    await completeClaimTestExperimentForGeneration(ctx, generation._id);
+    await settleClaimTestRunForGeneration(ctx, generation._id, {
+      kind: "failed",
+      failure: EXPIRED_GENERATION_FAILURE,
+    });
     return null;
   },
 });
@@ -501,6 +518,7 @@ export const completeGeneration = internalMutation({
   args: {
     promptMessageId: v.string(),
     usage: scoutTokenUsageValidator,
+    claimTestOutcome: v.optional(claimTestOutcomeValidator),
     firecrawlCredits: v.optional(v.number()),
     firecrawlDurationMs: v.optional(v.number()),
   },
@@ -525,7 +543,10 @@ export const completeGeneration = internalMutation({
         ? {}
         : { firecrawlDurationMs: args.firecrawlDurationMs }),
     });
-    await completeClaimTestExperimentForGeneration(ctx, generation._id);
+    await settleClaimTestRunForGeneration(ctx, generation._id, {
+      kind: "completed",
+      outcome: args.claimTestOutcome ?? null,
+    });
     return null;
   },
 });
@@ -560,7 +581,10 @@ export const failGeneration = internalMutation({
         ? {}
         : { firecrawlDurationMs: args.firecrawlDurationMs }),
     });
-    await completeClaimTestExperimentForGeneration(ctx, generation._id);
+    await settleClaimTestRunForGeneration(ctx, generation._id, {
+      kind: "failed",
+      failure: args.failure,
+    });
     return null;
   },
 });

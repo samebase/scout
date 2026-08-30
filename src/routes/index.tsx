@@ -113,7 +113,7 @@ function SignedInHome() {
           <WorkspaceLink
             to="/scouts"
             title="Manage Scouts"
-            description="Connect persistent identities and service accounts."
+            description="Give worker models persistent identities, inboxes, browser state, and accounts."
             icon={<UsersIcon />}
           />
           <WorkspaceLink

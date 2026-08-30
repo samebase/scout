@@ -87,6 +87,9 @@ function ScoutDetailPage() {
           <div>
             <h1 className="route-heading wrap-break-word">{scout.displayName}</h1>
             <p className="text-muted-foreground mt-1 font-mono text-xs">/{scout.slug}</p>
+            <p className="text-muted-foreground mt-3 max-w-xl text-sm leading-6">
+              Worker models act as {scout.displayName} using this identity and the resources below.
+            </p>
           </div>
           <span className="inline-flex shrink-0 self-start items-center gap-2 rounded-full bg-muted px-2.5 py-1 text-xs font-medium">
             <span className={`size-2 rounded-full ${statusDotClass}`} aria-hidden="true" />
@@ -97,7 +100,7 @@ function ScoutDetailPage() {
 
       <section aria-labelledby="scout-identity-heading">
         <h2 id="scout-identity-heading" className="text-lg font-semibold tracking-[-0.02em]">
-          Website identity
+          Identity
         </h2>
         <dl className="surface-panel mt-3 grid gap-5 p-5 text-sm sm:grid-cols-2 sm:p-6">
           <div className="min-w-0">
@@ -120,7 +123,7 @@ function ScoutDetailPage() {
           id="scout-provider-connections-heading"
           className="text-lg font-semibold tracking-[-0.02em]"
         >
-          Provider connections
+          Runtime resources
         </h2>
         <dl className="surface-panel mt-3 grid gap-5 p-5 text-sm sm:grid-cols-2 sm:p-6">
           <div className="min-w-0">

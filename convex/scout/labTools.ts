@@ -176,13 +176,27 @@ function redactProviderUrls(value: string) {
   });
 }
 
-function browserOutput(interaction: BrowserInteraction, outputOverride?: string) {
+function redactSensitiveValues(value: string, sensitiveValues: ReadonlySet<string>) {
+  let redacted = value;
+  for (const sensitiveValue of [...sensitiveValues].sort(
+    (left, right) => right.length - left.length,
+  )) {
+    redacted = redacted.replaceAll(sensitiveValue, "[secret redacted]");
+  }
+  return redactProviderUrls(redacted);
+}
+
+function browserOutput(
+  interaction: BrowserInteraction,
+  sensitiveValues: ReadonlySet<string>,
+  outputOverride?: string,
+) {
   const output = outputOverride ?? (interaction.stdout || interaction.result || interaction.output);
   return {
     success: interaction.success,
-    output: redactProviderUrls(output).slice(0, MAX_TOOL_OUTPUT_LENGTH),
+    output: redactSensitiveValues(output, sensitiveValues).slice(0, MAX_TOOL_OUTPUT_LENGTH),
     error: interaction.error
-      ? redactProviderUrls(interaction.error).slice(0, MAX_TOOL_OUTPUT_LENGTH)
+      ? redactSensitiveValues(interaction.error, sensitiveValues).slice(0, MAX_TOOL_OUTPUT_LENGTH)
       : null,
     exitCode: interaction.exitCode,
     killed: interaction.killed,
@@ -197,8 +211,11 @@ function interactionFailure(interaction: BrowserInteraction) {
     : `Browser provider command failed with exit code ${interaction.exitCode}`;
 }
 
-function browserMutationOutput(interaction: BrowserInteraction) {
-  const base = browserOutput(interaction);
+function browserMutationOutput(
+  interaction: BrowserInteraction,
+  sensitiveValues: ReadonlySet<string>,
+) {
+  const base = browserOutput(interaction, sensitiveValues);
   if (
     interaction.exitCode !== SNAPSHOT_FAILED_AFTER_MUTATION_EXIT_CODE ||
     !interaction.stderr.includes(SNAPSHOT_FAILED_AFTER_MUTATION)
@@ -210,8 +227,9 @@ function browserMutationOutput(interaction: BrowserInteraction) {
     success: false,
     output:
       "Mutation applied, but the compact post-action snapshot failed. Inspect the current page before continuing and do not retry the mutation.",
-    stderr: redactProviderUrls(
+    stderr: redactSensitiveValues(
       interaction.stderr.replaceAll(SNAPSHOT_FAILED_AFTER_MUTATION, "").trim(),
+      sensitiveValues,
     ).slice(0, MAX_TOOL_OUTPUT_LENGTH),
     error: "PostActionSnapshotFailed",
     mutationApplied: true,
@@ -326,6 +344,7 @@ export function createLabBrowserHarness(
   let localToolCallSequence = 0;
   let terminalTelemetryFailure: { error: unknown } | undefined;
   let operationTail: Promise<void> = Promise.resolve();
+  const sensitiveValues = new Set<string>();
 
   function serialized<T>(operation: () => Promise<T>) {
     const result = operationTail.then(operation, operation);
@@ -349,7 +368,7 @@ export function createLabBrowserHarness(
         "bash",
         operation,
       );
-      return browserOutput(interaction);
+      return browserOutput(interaction, sensitiveValues);
     });
   }
 
@@ -443,11 +462,11 @@ export function createLabBrowserHarness(
     }
 
     if (outcome.kind === "applied") {
-      return browserOutput(interaction, parsed?.modelOutput ?? "");
+      return browserOutput(interaction, sensitiveValues, parsed?.modelOutput ?? "");
     }
     if (outcome.kind === "applied_snapshot_failed") {
       return {
-        ...browserOutput(interaction, ""),
+        ...browserOutput(interaction, sensitiveValues, ""),
         success: false,
         output:
           "Mutation applied, but the compact post-action snapshot failed. Inspect the current page before continuing and do not retry the mutation.",
@@ -463,7 +482,7 @@ export function createLabBrowserHarness(
       terminalTelemetryFailure = { error };
       throw error;
     }
-    return browserOutput(interaction, "Action failed before browser dispatch.");
+    return browserOutput(interaction, sensitiveValues, "Action failed before browser dispatch.");
   }
 
   function executeMutation(
@@ -482,7 +501,7 @@ export function createLabBrowserHarness(
         return await runInstrumentedMutation(parts, action, toolCallId);
       }
       const interaction = await dependencies.executeCode(sessionId, code, 60, "bash", "mutate");
-      return browserMutationOutput(interaction);
+      return browserMutationOutput(interaction, sensitiveValues);
     });
   }
 
@@ -525,7 +544,7 @@ export function createLabBrowserHarness(
         "bash",
         "mutate",
       );
-      return browserOutput(snapshot);
+      return browserOutput(snapshot, sensitiveValues);
     });
     void opening.then(
       () => {
@@ -594,6 +613,10 @@ export function createLabBrowserHarness(
   }
 
   const actions = {
+    registerSensitiveValue: (value: string) => {
+      if (!value) throw new Error("Sensitive browser values cannot be empty");
+      sensitiveValues.add(value);
+    },
     snapshot: async () => await execute(["agent-browser", "snapshot", "-i"], "read"),
     navigate: async (url: string, toolCallId?: string) => {
       const targetUrl = httpsUrl(url);
@@ -652,8 +675,10 @@ export function createLabBrowserHarness(
       );
     },
     getPage: async (kind: "url" | "title") => await execute(["agent-browser", "get", kind], "read"),
-    getElement: async (kind: "text" | "value", ref: string) =>
-      await execute(["agent-browser", "get", kind, elementRef(ref)], "read"),
+    getElement: async (ref: string) =>
+      await execute(["agent-browser", "get", "text", elementRef(ref)], "read"),
+    getElementAttribute: async (ref: string, attribute: "type") =>
+      await execute(["agent-browser", "get", "attr", elementRef(ref), attribute], "read"),
     getCount: async (selector: string) =>
       await execute(
         [
@@ -759,12 +784,11 @@ export function createLabBrowserHarness(
     }),
     browser_get: tool({
       description:
-        "Read the current URL/title or the text/value of one element ref. Use kind count narrowly to count elements matching one precise CSS selector when accessibility output omits repeated visual semantics.",
+        "Read the current URL/title or the text of one element ref. Use kind count narrowly to count elements matching one precise CSS selector when accessibility output omits repeated visual semantics.",
       inputSchema: z.discriminatedUnion("kind", [
         z.object({ kind: z.literal("url") }),
         z.object({ kind: z.literal("title") }),
         z.object({ kind: z.literal("text"), ref: z.string() }),
-        z.object({ kind: z.literal("value"), ref: z.string() }),
         z.object({
           kind: z.literal("count"),
           selector: z
@@ -782,8 +806,7 @@ export function createLabBrowserHarness(
           case "title":
             return await actions.getPage(input.kind);
           case "text":
-          case "value":
-            return await actions.getElement(input.kind, input.ref);
+            return await actions.getElement(input.ref);
           case "count":
             return await actions.getCount(input.selector);
         }

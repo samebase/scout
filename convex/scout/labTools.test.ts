@@ -267,6 +267,58 @@ describe("Lab browser harness", () => {
     );
   });
 
+  test("reads a trusted element type attribute without exposing generic values", async () => {
+    const deps = dependencies();
+    const browser = createLabBrowserHarness({}, deps);
+    await browser.open("https://example.com");
+    deps.executeCode.mockResolvedValueOnce(interaction({ stdout: "password" }));
+
+    await expect(browser.actions.getElementAttribute("@e7", "type")).resolves.toMatchObject({
+      output: "password",
+    });
+    expect(deps.executeCode).toHaveBeenLastCalledWith(
+      "session-1",
+      "'agent-browser' 'get' 'attr' '@e7' 'type'",
+      60,
+      "bash",
+      "read",
+    );
+  });
+
+  test("redacts a registered password from later model-visible snapshots", async () => {
+    const deps = dependencies();
+    const browser = createLabBrowserHarness({}, deps);
+    await browser.open("https://example.com");
+    browser.actions.registerSensitiveValue("configured-secret-123");
+    deps.executeCode.mockResolvedValueOnce(
+      interaction({ stdout: '- textbox "Password" value="configured-secret-123" [ref=e7]' }),
+    );
+
+    const snapshot = await browser.actions.snapshot();
+
+    expect(JSON.stringify(snapshot)).not.toContain("configured-secret-123");
+    expect(snapshot.output).toContain("[secret redacted]");
+  });
+
+  test("redacts a URL-shaped password before sanitizing ordinary URLs", async () => {
+    const deps = dependencies();
+    const browser = createLabBrowserHarness({}, deps);
+    await browser.open("https://example.com");
+    const password = "https://secret.example/password-path?piece=tail";
+    browser.actions.registerSensitiveValue(password);
+    deps.executeCode.mockResolvedValueOnce(
+      interaction({
+        stdout: `- textbox "Password" value="${password}" [ref=e7]`,
+        error: `Provider echoed ${password}`,
+      }),
+    );
+
+    const snapshot = await browser.actions.snapshot();
+
+    expect(JSON.stringify(snapshot)).not.toContain("password-path");
+    expect(snapshot.output).toContain("[secret redacted]");
+  });
+
   test("dispatches browser_get count through the narrow read action", async () => {
     const deps = dependencies();
     const browser = createLabBrowserHarness({}, deps);

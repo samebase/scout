@@ -18,11 +18,21 @@ import {
   claimTestBrowserViewportValidator,
 } from "./claimTestBrowserModel";
 import {
-  claimTestLatestValidator,
+  claimTestBrowserSessionDetailValidator,
+  claimTestBrowserSessionsValidator,
+  claimTestRunValidator,
+  claimTestRunsValidator,
   claimTestStatusesValidator,
-  completeClaimTestExperimentForGeneration,
+  continueClaimTestResultValidator,
+  projectClaimTestGeneration,
+  settleClaimTestRunForGeneration,
   startClaimTestResultValidator,
 } from "./claimTestsModel";
+import {
+  claimTestAccountCreationValidator,
+  claimTestBrowserProfileSelectionValidator,
+  claimTestBrowserProfileValidator,
+} from "./claimTestRunModel";
 import {
   claimSnapshot,
   findCurrentProductClaim,
@@ -47,6 +57,8 @@ const MAX_BROWSER_SESSION_ID_LENGTH = 200;
 const MAX_BROWSER_TOOL_CALL_ID_LENGTH = 200;
 const MAX_BROWSER_FAILURE_LENGTH = 2_000;
 const MAX_BROWSER_OPERATIONS = 100;
+const MAX_RUNS_PER_CLAIM = 50;
+const MAX_BROWSER_SESSIONS_PER_RUN = 25;
 const CLAIM_TEST_BROWSER_VIEWPORT = { width: 1_280, height: 800 } as const;
 const CLAIM_TEST_MODEL = "qwen/qwen3.7-flash" satisfies SelectableScoutModel;
 
@@ -67,7 +79,7 @@ function routeProductDomain(value: string) {
   }
 }
 
-async function latestRunForClaim(
+async function runsForClaim(
   ctx: DatabaseContext,
   args: {
     userId: Id<"users">;
@@ -86,7 +98,7 @@ async function latestRunForClaim(
           .eq("claimKey", args.claim.claimKey),
       )
       .order("desc")
-      .first();
+      .take(MAX_RUNS_PER_CLAIM);
   }
   return await ctx.db
     .query("claimTestRuns")
@@ -98,24 +110,39 @@ async function latestRunForClaim(
         .eq("claimKey", args.claim.claimKey),
     )
     .order("desc")
-    .first();
+    .take(MAX_RUNS_PER_CLAIM);
 }
 
-function terminalMetadata(generation: Doc<"scoutLabGenerations">) {
-  return {
-    usage: generation.usage ?? null,
-    firecrawlCredits: generation.firecrawlCredits ?? null,
-    firecrawlDurationMs: generation.firecrawlDurationMs ?? null,
-  };
+async function latestRunForClaim(ctx: DatabaseContext, args: Parameters<typeof runsForClaim>[1]) {
+  return (await runsForClaim(ctx, args))[0] ?? null;
+}
+
+async function generationForRunState(ctx: DatabaseContext, run: Doc<"claimTestRuns">) {
+  const generation = await ctx.db.get("scoutLabGenerations", run.state.generationId);
+  if (!generation || generation.threadId !== run.threadId || generation.scoutId !== run.scoutId) {
+    throw new Error("Claim test run has an invalid generation binding");
+  }
+  return generation;
+}
+
+async function runForGeneration(ctx: DatabaseContext, generation: Doc<"scoutLabGenerations">) {
+  const run = await ctx.db
+    .query("claimTestRuns")
+    .withIndex("by_thread_id", (index) => index.eq("threadId", generation.threadId))
+    .unique();
+  if (run && run.scoutId !== generation.scoutId) {
+    throw new Error("Claim test run has an invalid Scout binding");
+  }
+  return run;
 }
 
 function projectRun(
   run: Doc<"claimTestRuns">,
   generation: Doc<"scoutLabGenerations">,
   scout: Doc<"scouts">,
-  currentClaim: ProjectedProductClaim,
-): Infer<typeof claimTestLatestValidator> {
-  if (generation._id !== run.generationId || generation.scoutId !== run.scoutId) {
+  matchesCurrentClaim: boolean,
+): Infer<typeof claimTestRunValidator> {
+  if (generation._id !== run.state.generationId || generation.scoutId !== run.scoutId) {
     throw new Error("Claim test run has an invalid generation binding");
   }
   if (scout._id !== run.scoutId) {
@@ -128,62 +155,35 @@ function projectRun(
     threadId: run.threadId,
     experimentId: run.experimentId,
     createdAt: run._creationTime,
-    matchesCurrentClaim: runMatchesCurrentClaim(run.testedClaim, currentClaim),
+    matchesCurrentClaim,
     testedClaim: run.testedClaim,
+    browserProfile: run.browserProfile,
+    accountCreation: run.accountCreation,
+    state: run.state,
     scout: {
       id: scout._id,
       displayName: scout.displayName,
     },
   };
-  switch (generation.status) {
-    case "pending":
-      return {
-        ...base,
-        generation: {
-          status: generation.status,
-          model: generation.model,
-          startedAt: generation.startedAt,
-          leaseExpiresAt: generation.leaseExpiresAt,
-        },
-      };
-    case "completed":
-      if (generation.completedAt === undefined) {
-        throw new Error("Completed claim test generation is missing its completion time");
-      }
-      return {
-        ...base,
-        generation: {
-          status: generation.status,
-          model: generation.model,
-          startedAt: generation.startedAt,
-          completedAt: generation.completedAt,
-          ...terminalMetadata(generation),
-        },
-      };
-    case "failed":
-      if (generation.failedAt === undefined || generation.failure === undefined) {
-        throw new Error("Failed claim test generation is missing failure metadata");
-      }
-      return {
-        ...base,
-        generation: {
-          status: generation.status,
-          model: generation.model,
-          startedAt: generation.startedAt,
-          failedAt: generation.failedAt,
-          failure: generation.failure,
-          ...terminalMetadata(generation),
-        },
-      };
-  }
+  return { ...base, generation: projectClaimTestGeneration(generation) };
 }
 
-async function selectAvailableScout(ctx: MutationCtx, now: number) {
+async function selectAvailableScout(
+  ctx: MutationCtx,
+  now: number,
+  requestedScoutId?: Id<"scouts">,
+) {
   const scouts = await ctx.db
     .query("scouts")
     .withIndex("by_status", (index) => index.eq("status", "active"))
     .take(MAX_ACTIVE_SCOUTS);
-  for (const scout of scouts) {
+  const candidates = requestedScoutId
+    ? scouts.filter((scout) => scout._id === requestedScoutId)
+    : scouts;
+  if (requestedScoutId && candidates.length === 0) {
+    throw new Error("Selected Scout is not active");
+  }
+  for (const scout of candidates) {
     const pending = await ctx.db
       .query("scoutLabGenerations")
       .withIndex("by_scout_id_and_status", (index) =>
@@ -198,10 +198,13 @@ async function selectAvailableScout(ctx: MutationCtx, now: number) {
       failedAt: now,
       failure: EXPIRED_GENERATION_FAILURE,
     });
-    await completeClaimTestExperimentForGeneration(ctx, pending._id);
+    await settleClaimTestRunForGeneration(ctx, pending._id, {
+      kind: "failed",
+      failure: EXPIRED_GENERATION_FAILURE,
+    });
     return scout;
   }
-  if (scouts.length === 0) {
+  if (candidates.length === 0) {
     throw new Error("No active Scout is configured");
   }
   throw new Error("All active Scouts are already working");
@@ -212,6 +215,7 @@ export function buildClaimTestPrompt(args: {
   productDomain: string;
   productPrimaryUrl: string;
   claim: ProjectedProductClaim;
+  accountCreation: Infer<typeof claimTestAccountCreationValidator>;
 }) {
   const researchSection =
     args.claim.origin === "generated"
@@ -228,6 +232,10 @@ export function buildClaimTestPrompt(args: {
         )}\nEND UNTRUSTED RESEARCH CONTEXT\n`
       : "";
   const operatorInstructions = args.claim.suggestedMysteryShop || "(none provided)";
+  const accountInstructions =
+    args.accountCreation === "required"
+      ? "Create or recover exactly one free account using only the configured Scout identity. Before returning a conclusive verdict, open an authenticated account menu that visibly contains both the Scout's exact identifier and a Sign out or Log out control, then record it with the dedicated account tool."
+      : "Account creation is not part of this run. You may sign in only when the configured Scout already has an account; otherwise stop and return Inconclusive.";
   return `Independently test one product claim as a mystery shopper.
 
 Target product:
@@ -246,7 +254,7 @@ Run one bounded verification:
 - Start with the primary website URL and current product UI. Treat only visible first-party product pages and observed product behavior as evidence. An authentication provider may be used only to sign in with the configured Scout identity.
 - Capture the exact visible wording, the URL where it appeared, and direct observations from any product interaction. Distinguish marketing copy from behavior you observed.
 - Follow the operator instructions when they are safe and useful, but plan the check from the claim and product context when none were provided. Change the instructions when a smaller check can answer the claim.
-- If an account is needed, use only the configured Scout identity. You may sign in to its existing account or create a free, reversible account when necessary.
+- ${accountInstructions}
 - If a CAPTCHA or another strictly human-only check blocks the test, use the dedicated human-help tool. Do not attempt to solve, bypass, stop at, or merely report it. This rule overrides conflicting operator instructions, including an instruction to stop and report a CAPTCHA. If the operator does not continue before the request expires, return Inconclusive rather than Refuted.
 - Never purchase anything, enter payment details, start a paid commitment, publish public content, contact or invite third parties, delete data, or make an irreversible external change. If the claim requires one of those actions, stop and return Inconclusive.
 - Do not infer success from this prompt, prior research, source code, or the name of a UI control. Verify the resulting visible state.
@@ -260,6 +268,7 @@ export const promptPreview = query({
   args: {
     domain: v.string(),
     claimKey: v.string(),
+    accountCreation: claimTestAccountCreationValidator,
   },
   returns: v.union(v.string(), v.null()),
   handler: async (ctx, args) => {
@@ -274,13 +283,22 @@ export const promptPreview = query({
       productDomain: current.product.domain,
       productPrimaryUrl: current.product.primaryUrl,
       claim: current.claim,
+      accountCreation: args.accountCreation,
     });
   },
 });
 
-export const isClaimTestGeneration = internalQuery({
+export const generationContext = internalQuery({
   args: { promptMessageId: v.string() },
-  returns: v.boolean(),
+  returns: v.union(
+    v.object({
+      runId: v.id("claimTestRuns"),
+      productDomain: v.string(),
+      browserProfile: claimTestBrowserProfileValidator,
+      accountCreation: claimTestAccountCreationValidator,
+    }),
+    v.null(),
+  ),
   handler: async (ctx, args) => {
     const generation = await ctx.db
       .query("scoutLabGenerations")
@@ -288,19 +306,67 @@ export const isClaimTestGeneration = internalQuery({
         index.eq("promptMessageId", args.promptMessageId),
       )
       .unique();
-    if (!generation) return false;
-    const run = await ctx.db
-      .query("claimTestRuns")
-      .withIndex("by_generation_id", (index) => index.eq("generationId", generation._id))
-      .unique();
-    return run !== null;
+    if (!generation) return null;
+    const run = await runForGeneration(ctx, generation);
+    if (!run) return null;
+    const product = await ctx.db.get("products", run.productId);
+    if (!product) {
+      throw new Error("Claim test product is unavailable");
+    }
+    return {
+      runId: run._id,
+      productDomain: product.domain,
+      browserProfile: run.browserProfile,
+      accountCreation: run.accountCreation,
+    };
   },
 });
+
+async function enqueueGeneration(
+  ctx: MutationCtx,
+  args: {
+    threadId: string;
+    userId: Id<"users">;
+    scoutId: Id<"scouts">;
+    prompt: string;
+  },
+) {
+  const saved = await scoutAgent.saveMessage(ctx, {
+    threadId: args.threadId,
+    userId: args.userId,
+    prompt: args.prompt,
+    skipEmbeddings: true,
+  });
+  const now = Date.now();
+  const leaseExpiresAt = now + GENERATION_START_TIMEOUT_MS;
+  const generationId = await ctx.db.insert("scoutLabGenerations", {
+    threadId: args.threadId,
+    order: saved.message.order,
+    promptMessageId: saved.messageId,
+    scoutId: args.scoutId,
+    status: "pending",
+    leaseExpiresAt,
+    model: CLAIM_TEST_MODEL,
+    startedAt: now,
+  });
+  await ctx.scheduler.runAfter(0, internal.scout.labGeneration.generateResponse, {
+    threadId: args.threadId,
+    userId: args.userId,
+    promptMessageId: saved.messageId,
+    model: CLAIM_TEST_MODEL,
+  });
+  await ctx.scheduler.runAt(leaseExpiresAt, internal.scout.lab.expireGeneration, {
+    generationId,
+  });
+  return generationId;
+}
 
 export const start = mutation({
   args: {
     domain: v.string(),
     claimKey: v.string(),
+    browserProfile: claimTestBrowserProfileSelectionValidator,
+    accountCreation: claimTestAccountCreationValidator,
   },
   returns: startClaimTestResultValidator,
   handler: async (ctx, args) => {
@@ -313,22 +379,32 @@ export const start = mutation({
     if (!current) {
       throw new Error("Claim not found in the current completed investigation");
     }
+    if (args.accountCreation === "required" && args.browserProfile.kind !== "scout") {
+      throw new Error("Account creation requires a persistent Scout browser profile");
+    }
 
-    const previousRun = await latestRunForClaim(ctx, {
+    const existingRuns = await runsForClaim(ctx, {
       userId,
       productId: current.product._id,
       investigationId: current.investigation._id,
       claim: current.claim,
     });
+    const previousRun = existingRuns[0] ?? null;
     if (previousRun) {
-      const previousGeneration = await ctx.db.get("scoutLabGenerations", previousRun.generationId);
-      if (!previousGeneration) {
-        throw new Error("Claim test generation is unavailable");
-      }
+      const previousGeneration = await generationForRunState(ctx, previousRun);
       if (
+        previousRun.state.kind === "running" &&
         previousGeneration.status === "pending" &&
         runMatchesCurrentClaim(previousRun.testedClaim, current.claim)
       ) {
+        const profileMatches =
+          args.browserProfile.kind === "fresh"
+            ? previousRun.browserProfile.kind === "fresh"
+            : previousRun.browserProfile.kind === "scout" &&
+              previousRun.scoutId === args.browserProfile.scoutId;
+        if (!profileMatches || previousRun.accountCreation !== args.accountCreation) {
+          throw new Error("The active claim test uses a different run configuration");
+        }
         return {
           runId: previousRun._id,
           threadId: previousRun.threadId,
@@ -336,6 +412,9 @@ export const start = mutation({
           created: false,
         };
       }
+    }
+    if (existingRuns.length >= MAX_RUNS_PER_CLAIM) {
+      throw new Error(`A claim can have at most ${MAX_RUNS_PER_CLAIM} test runs`);
     }
 
     const experiments = await ctx.db
@@ -347,7 +426,15 @@ export const start = mutation({
     }
 
     const now = Date.now();
-    const scout = await selectAvailableScout(ctx, now);
+    const scout = await selectAvailableScout(
+      ctx,
+      now,
+      args.browserProfile.kind === "scout" ? args.browserProfile.scoutId : undefined,
+    );
+    const browserProfile =
+      args.browserProfile.kind === "scout"
+        ? ({ kind: "scout", profileName: scout.firecrawl.profileName } as const)
+        : ({ kind: "fresh" } as const);
     const experimentName = truncateText(
       `${current.product.name}: ${current.claim.claim}`,
       MAX_EXPERIMENT_NAME_LENGTH,
@@ -381,23 +468,13 @@ export const start = mutation({
       productDomain: current.product.domain,
       productPrimaryUrl: current.product.primaryUrl,
       claim: current.claim,
+      accountCreation: args.accountCreation,
     });
-    const saved = await scoutAgent.saveMessage(ctx, {
+    const generationId = await enqueueGeneration(ctx, {
       threadId: createdThread.threadId,
       userId,
-      prompt,
-      skipEmbeddings: true,
-    });
-    const leaseExpiresAt = now + GENERATION_START_TIMEOUT_MS;
-    const generationId = await ctx.db.insert("scoutLabGenerations", {
-      threadId: createdThread.threadId,
-      order: saved.message.order,
-      promptMessageId: saved.messageId,
       scoutId: scout._id,
-      status: "pending",
-      leaseExpiresAt,
-      model: CLAIM_TEST_MODEL,
-      startedAt: now,
+      prompt,
     });
     const runId = await ctx.db.insert("claimTestRuns", {
       userId,
@@ -407,17 +484,10 @@ export const start = mutation({
       experimentId,
       threadId: createdThread.threadId,
       scoutId: scout._id,
-      generationId,
+      browserProfile,
+      accountCreation: args.accountCreation,
+      state: { kind: "running", generationId },
       testedClaim: claimSnapshot(current.claim),
-    });
-    await ctx.scheduler.runAfter(0, internal.scout.labGeneration.generateResponse, {
-      threadId: createdThread.threadId,
-      userId,
-      promptMessageId: saved.messageId,
-      model: CLAIM_TEST_MODEL,
-    });
-    await ctx.scheduler.runAt(leaseExpiresAt, internal.scout.lab.expireGeneration, {
-      generationId,
     });
     return {
       runId,
@@ -428,33 +498,131 @@ export const start = mutation({
   },
 });
 
-export const latest = query({
+export const continueRun = mutation({
+  args: { runId: v.id("claimTestRuns") },
+  returns: continueClaimTestResultValidator,
+  handler: async (ctx, args) => {
+    const userId = await requireAppUser(ctx);
+    const run = await ctx.db.get("claimTestRuns", args.runId);
+    if (!run || run.userId !== userId) throw new Error("Claim test run not found");
+    if (run.state.kind === "running") {
+      throw new Error("Claim test run is already running");
+    }
+    const scout = await ctx.db.get("scouts", run.scoutId);
+    if (!scout || scout.status !== "active") throw new Error("Run Scout is not active");
+    const pending = await ctx.db
+      .query("scoutLabGenerations")
+      .withIndex("by_scout_id_and_status", (index) =>
+        index.eq("scoutId", scout._id).eq("status", "pending"),
+      )
+      .first();
+    if (pending && pending.leaseExpiresAt > Date.now()) {
+      throw new Error("Scout is already working");
+    }
+    if (pending) {
+      const now = Date.now();
+      await ctx.db.patch("scoutLabGenerations", pending._id, {
+        status: "failed",
+        failedAt: now,
+        failure: EXPIRED_GENERATION_FAILURE,
+      });
+      await settleClaimTestRunForGeneration(ctx, pending._id, {
+        kind: "failed",
+        failure: EXPIRED_GENERATION_FAILURE,
+      });
+    }
+    const experiment = await ctx.db.get("scoutLabExperiments", run.experimentId);
+    if (!experiment || experiment.scoutId !== run.scoutId) {
+      throw new Error("Claim test experiment is unavailable");
+    }
+    if (experiment.status !== "active") {
+      await ctx.db.patch("scoutLabExperiments", experiment._id, { status: "active" });
+    }
+    const generationId = await enqueueGeneration(ctx, {
+      threadId: run.threadId,
+      userId,
+      scoutId: run.scoutId,
+      prompt:
+        "Continue the same claim-test attempt after the previous browser session ended. Review the existing thread evidence, open a new browser session with the run's configured browser profile, and finish the bounded verification with one exact Verdict line.",
+    });
+    await ctx.db.patch("claimTestRuns", run._id, {
+      state: { kind: "running", generationId },
+    });
+    return { runId: run._id, generationId, threadId: run.threadId };
+  },
+});
+
+export const listRuns = query({
   args: {
     domain: v.string(),
     claimKey: v.string(),
   },
-  returns: v.union(claimTestLatestValidator, v.null()),
+  returns: claimTestRunsValidator,
   handler: async (ctx, args) => {
     const userId = await requireAppUser(ctx);
     const domain = routeProductDomain(args.domain);
     const claimKey = routeClaimKey(args.claimKey);
-    if (domain === null || claimKey === null) return null;
+    if (domain === null || claimKey === null) return [];
     const current = await findCurrentProductClaim(ctx, { userId, domain, claimKey });
-    if (!current) return null;
+    if (!current) return [];
 
-    const run = await latestRunForClaim(ctx, {
+    const runs = await runsForClaim(ctx, {
       userId,
       productId: current.product._id,
       investigationId: current.investigation._id,
       claim: current.claim,
     });
-    if (!run) return null;
-    const generation = await ctx.db.get("scoutLabGenerations", run.generationId);
-    const scout = await ctx.db.get("scouts", run.scoutId);
-    if (!generation || !scout) {
-      throw new Error("Claim test run is unavailable");
-    }
-    return projectRun(run, generation, scout, current.claim);
+    return await Promise.all(
+      runs.map(async (run) => {
+        const [generation, scout] = await Promise.all([
+          generationForRunState(ctx, run),
+          ctx.db.get("scouts", run.scoutId),
+        ]);
+        if (!scout) throw new Error("Claim test run Scout is unavailable");
+        return projectRun(
+          run,
+          generation,
+          scout,
+          runMatchesCurrentClaim(run.testedClaim, current.claim),
+        );
+      }),
+    );
+  },
+});
+
+export const getRun = query({
+  args: {
+    runId: v.string(),
+    domain: v.string(),
+    claimKey: v.string(),
+  },
+  returns: v.union(claimTestRunValidator, v.null()),
+  handler: async (ctx, args) => {
+    const userId = await requireAppUser(ctx);
+    const domain = routeProductDomain(args.domain);
+    const claimKey = routeClaimKey(args.claimKey);
+    const runId = ctx.db.normalizeId("claimTestRuns", args.runId);
+    if (domain === null || claimKey === null || runId === null) return null;
+    const run = await ctx.db.get("claimTestRuns", runId);
+    if (!run || run.userId !== userId) return null;
+    const [generation, scout, product] = await Promise.all([
+      generationForRunState(ctx, run),
+      ctx.db.get("scouts", run.scoutId),
+      ctx.db.get("products", run.productId),
+    ]);
+    if (!scout || !product) throw new Error("Claim test run context is unavailable");
+    if (product.domain !== domain || run.claimKey !== claimKey) return null;
+    const current = await findCurrentProductClaim(ctx, {
+      userId,
+      domain: product.domain,
+      claimKey: run.claimKey,
+    });
+    return projectRun(
+      run,
+      generation,
+      scout,
+      current !== null && runMatchesCurrentClaim(run.testedClaim, current.claim),
+    );
   },
 });
 
@@ -491,15 +659,17 @@ export const listStatuses = query({
         if (!runMatchesCurrentClaim(run.testedClaim, claim)) {
           return { claimKey: claim.claimKey, state: "needs_retest" as const };
         }
-        const generation = await ctx.db.get("scoutLabGenerations", run.generationId);
-        if (!generation) {
-          throw new Error("Claim test run is unavailable");
-        }
-        switch (generation.status) {
-          case "pending":
+        switch (run.state.kind) {
+          case "running":
             return { claimKey: claim.claimKey, state: "testing" as const };
           case "completed":
-            return { claimKey: claim.claimKey, state: "tested" as const };
+            return {
+              claimKey: claim.claimKey,
+              state:
+                run.state.outcome.verdict === "inconclusive"
+                  ? ("inconclusive" as const)
+                  : ("tested" as const),
+            };
           case "failed":
             return { claimKey: claim.claimKey, state: "failed" as const };
         }
@@ -508,37 +678,86 @@ export const listStatuses = query({
   },
 });
 
-export const liveView = query({
-  args: {
-    domain: v.string(),
-    claimKey: v.string(),
+function projectBrowserSession(session: Doc<"claimTestBrowserSessions">) {
+  return {
+    sessionId: session._id,
+    generationId: session.generationId,
+    sequence: session.sequence,
+    createdAt: session._creationTime,
+    provider: session.provider,
+    profileName: session.profileName,
+    viewport: session.viewport,
+    lifecycle: session.lifecycle,
+    operationCount: Math.max(0, session.nextOperationSequence - 1),
+  };
+}
+
+async function ownedBrowserSession(
+  ctx: DatabaseContext,
+  args: { sessionId: Id<"claimTestBrowserSessions">; userId: Id<"users"> },
+) {
+  const session = await ctx.db.get("claimTestBrowserSessions", args.sessionId);
+  if (!session || session.userId !== args.userId) return null;
+  const run = await ctx.db.get("claimTestRuns", session.runId);
+  if (!run || run.userId !== args.userId) return null;
+  return { run, session };
+}
+
+export const listBrowserSessions = query({
+  args: { runId: v.id("claimTestRuns") },
+  returns: claimTestBrowserSessionsValidator,
+  handler: async (ctx, args) => {
+    const userId = await requireAppUser(ctx);
+    const run = await ctx.db.get("claimTestRuns", args.runId);
+    if (!run || run.userId !== userId) return [];
+    const sessions = await ctx.db
+      .query("claimTestBrowserSessions")
+      .withIndex("by_run_id_and_sequence", (index) => index.eq("runId", run._id))
+      .order("asc")
+      .take(MAX_BROWSER_SESSIONS_PER_RUN);
+    return sessions.map(projectBrowserSession);
   },
+});
+
+export const getBrowserSession = query({
+  args: { sessionId: v.id("claimTestBrowserSessions") },
+  returns: v.union(claimTestBrowserSessionDetailValidator, v.null()),
+  handler: async (ctx, args) => {
+    const userId = await requireAppUser(ctx);
+    const owned = await ownedBrowserSession(ctx, { sessionId: args.sessionId, userId });
+    if (!owned) return null;
+    const operations = await ctx.db
+      .query("claimTestBrowserOperations")
+      .withIndex("by_session_id_and_sequence", (index) => index.eq("sessionId", owned.session._id))
+      .take(MAX_BROWSER_OPERATIONS);
+    return {
+      ...projectBrowserSession(owned.session),
+      runId: owned.run._id,
+      operations: operations.map((operation) => ({
+        operationId: operation._id,
+        sequence: operation.sequence,
+        toolCallId: operation.toolCallId,
+        action: operation.action,
+        state: operation.state,
+      })),
+    };
+  },
+});
+
+export const liveView = query({
+  args: { sessionId: v.id("claimTestBrowserSessions") },
   returns: v.union(v.object({ url: v.string() }), v.null()),
   handler: async (ctx, args) => {
     const userId = await requireAppUser(ctx);
-    const domain = routeProductDomain(args.domain);
-    const claimKey = routeClaimKey(args.claimKey);
-    if (domain === null || claimKey === null) return null;
-    const current = await findCurrentProductClaim(ctx, { userId, domain, claimKey });
-    if (!current) return null;
-
-    const run = await latestRunForClaim(ctx, {
-      userId,
-      productId: current.product._id,
-      investigationId: current.investigation._id,
-      claim: current.claim,
-    });
-    if (!run) return null;
-    if (!runMatchesCurrentClaim(run.testedClaim, current.claim)) return null;
-    const generation = await ctx.db.get("scoutLabGenerations", run.generationId);
-    if (!generation || generation.status !== "pending") return null;
+    const owned = await ownedBrowserSession(ctx, { sessionId: args.sessionId, userId });
+    if (!owned || owned.session.lifecycle.kind !== "active") return null;
 
     const liveView = await ctx.db
       .query("claimTestLiveViews")
-      .withIndex("by_generation_id", (index) => index.eq("generationId", generation._id))
+      .withIndex("by_session_id", (index) => index.eq("sessionId", owned.session._id))
       .unique();
     if (!liveView) return null;
-    if (liveView.runId !== run._id || liveView.userId !== userId) {
+    if (liveView.runId !== owned.run._id || liveView.userId !== userId) {
       throw new Error("Claim test live view has an invalid ownership binding");
     }
     return { url: requireFirecrawlLiveViewUrl(liveView.liveViewUrl) };
@@ -547,7 +766,7 @@ export const liveView = query({
 
 export const replayData = internalQuery({
   args: {
-    runId: v.id("claimTestRuns"),
+    sessionId: v.id("claimTestBrowserSessions"),
   },
   returns: v.union(
     v.object({
@@ -560,24 +779,16 @@ export const replayData = internalQuery({
   ),
   handler: async (ctx, args) => {
     const userId = await requireAppUser(ctx);
-    const run = await ctx.db.get("claimTestRuns", args.runId);
-    if (!run || run.userId !== userId) return null;
-    const session = await ctx.db
-      .query("claimTestBrowserSessions")
-      .withIndex("by_run_id", (query) => query.eq("runId", run._id))
-      .unique();
-    if (!session) return null;
-    if (session.userId !== userId || session.generationId !== run.generationId) {
-      throw new Error("Claim test browser session has an invalid ownership binding");
-    }
+    const owned = await ownedBrowserSession(ctx, { sessionId: args.sessionId, userId });
+    if (!owned) return null;
     const operations = await ctx.db
       .query("claimTestBrowserOperations")
-      .withIndex("by_session_id_and_sequence", (query) => query.eq("sessionId", session._id))
+      .withIndex("by_session_id_and_sequence", (query) => query.eq("sessionId", owned.session._id))
       .take(MAX_BROWSER_OPERATIONS);
     return {
-      providerSessionId: session.providerSessionId,
-      viewport: session.viewport,
-      lifecycle: session.lifecycle,
+      providerSessionId: owned.session.providerSessionId,
+      viewport: owned.session.viewport,
+      lifecycle: owned.session.lifecycle,
       operations: operations.map((operation) => ({
         operationId: operation._id,
         sequence: operation.sequence,
@@ -592,12 +803,15 @@ export const replayData = internalQuery({
 export const setBrowserSession = internalMutation({
   args: {
     promptMessageId: v.string(),
-    sessionId: v.string(),
+    providerSessionId: v.string(),
   },
-  returns: v.object({ captureOperations: v.boolean() }),
+  returns: v.object({
+    browserSessionId: v.union(v.id("claimTestBrowserSessions"), v.null()),
+    captureOperations: v.boolean(),
+  }),
   handler: async (ctx, args) => {
-    const sessionId = args.sessionId.trim();
-    if (!sessionId || sessionId.length > MAX_BROWSER_SESSION_ID_LENGTH) {
+    const providerSessionId = args.providerSessionId.trim();
+    if (!providerSessionId || providerSessionId.length > MAX_BROWSER_SESSION_ID_LENGTH) {
       throw new Error("Firecrawl browser session ID is invalid");
     }
     const generation = await ctx.db
@@ -609,39 +823,55 @@ export const setBrowserSession = internalMutation({
     if (!generation) {
       throw new Error("Lab generation not found");
     }
-    if (generation.status !== "pending") return { captureOperations: false };
-    const run = await ctx.db
-      .query("claimTestRuns")
-      .withIndex("by_generation_id", (index) => index.eq("generationId", generation._id))
-      .unique();
-    if (!run) return { captureOperations: false };
+    if (generation.status !== "pending") {
+      return { browserSessionId: null, captureOperations: false };
+    }
+    const run = await runForGeneration(ctx, generation);
+    if (!run || run.state.kind !== "running" || run.state.generationId !== generation._id) {
+      return { browserSessionId: null, captureOperations: false };
+    }
     const existing = await ctx.db
       .query("claimTestBrowserSessions")
       .withIndex("by_generation_id", (query) => query.eq("generationId", generation._id))
       .unique();
     if (existing) {
-      if (existing.providerSessionId !== sessionId) {
+      if (existing.providerSessionId !== providerSessionId) {
         throw new Error("Claim test already has a different Firecrawl browser session");
       }
-      return { captureOperations: true };
+      return { browserSessionId: existing._id, captureOperations: true };
     }
-    await ctx.db.insert("claimTestBrowserSessions", {
+    const latestSession = await ctx.db
+      .query("claimTestBrowserSessions")
+      .withIndex("by_run_id_and_sequence", (index) => index.eq("runId", run._id))
+      .order("desc")
+      .first();
+    if (latestSession?.lifecycle.kind === "active") {
+      throw new Error("Claim test run already has an active browser session");
+    }
+    if ((latestSession?.sequence ?? 0) >= MAX_BROWSER_SESSIONS_PER_RUN) {
+      throw new Error(
+        `A claim-test run can have at most ${MAX_BROWSER_SESSIONS_PER_RUN} browser sessions`,
+      );
+    }
+    const browserSessionId = await ctx.db.insert("claimTestBrowserSessions", {
       runId: run._id,
       generationId: generation._id,
       userId: run.userId,
+      sequence: (latestSession?.sequence ?? 0) + 1,
       provider: "firecrawl",
-      providerSessionId: sessionId,
+      providerSessionId,
+      profileName: run.browserProfile.kind === "scout" ? run.browserProfile.profileName : null,
       viewport: CLAIM_TEST_BROWSER_VIEWPORT,
       nextOperationSequence: 1,
       lifecycle: { kind: "active", openedAtMs: Date.now() },
     });
-    return { captureOperations: true };
+    return { browserSessionId, captureOperations: true };
   },
 });
 
 export const prepareBrowserOperation = internalMutation({
   args: {
-    promptMessageId: v.string(),
+    sessionId: v.id("claimTestBrowserSessions"),
     toolCallId: v.string(),
     action: claimTestBrowserActionValidator,
   },
@@ -651,25 +881,22 @@ export const prepareBrowserOperation = internalMutation({
     if (!toolCallId || toolCallId.length > MAX_BROWSER_TOOL_CALL_ID_LENGTH) {
       throw new Error("Browser tool call ID is invalid");
     }
-    const generation = await ctx.db
-      .query("scoutLabGenerations")
-      .withIndex("by_prompt_message_id", (query) =>
-        query.eq("promptMessageId", args.promptMessageId),
-      )
-      .unique();
+    const session = await ctx.db.get("claimTestBrowserSessions", args.sessionId);
+    const generation = session
+      ? await ctx.db.get("scoutLabGenerations", session.generationId)
+      : null;
     if (!generation || generation.status !== "pending") {
       throw new Error("Active claim test generation not found");
     }
-    const run = await ctx.db
-      .query("claimTestRuns")
-      .withIndex("by_generation_id", (query) => query.eq("generationId", generation._id))
-      .unique();
+    const run = await runForGeneration(ctx, generation);
     if (!run) throw new Error("Claim test run not found");
-    const session = await ctx.db
-      .query("claimTestBrowserSessions")
-      .withIndex("by_generation_id", (query) => query.eq("generationId", generation._id))
-      .unique();
-    if (!session || session.runId !== run._id || session.lifecycle.kind !== "active") {
+    if (
+      !session ||
+      session.runId !== run._id ||
+      session.lifecycle.kind !== "active" ||
+      run.state.kind !== "running" ||
+      run.state.generationId !== generation._id
+    ) {
       throw new Error("Active claim test browser session not found");
     }
     const duplicate = await ctx.db
@@ -682,6 +909,11 @@ export const prepareBrowserOperation = internalMutation({
       return false;
     }
     const sequence = session.nextOperationSequence;
+    if (sequence > MAX_BROWSER_OPERATIONS) {
+      throw new Error(
+        `A claim-test browser session can have at most ${MAX_BROWSER_OPERATIONS} operations`,
+      );
+    }
     await ctx.db.patch("claimTestBrowserSessions", session._id, {
       nextOperationSequence: sequence + 1,
     });
@@ -699,27 +931,14 @@ export const prepareBrowserOperation = internalMutation({
 
 export const settleBrowserOperation = internalMutation({
   args: {
-    promptMessageId: v.string(),
+    sessionId: v.id("claimTestBrowserSessions"),
     toolCallId: v.string(),
     outcome: claimTestBrowserOutcomeValidator,
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const generation = await ctx.db
-      .query("scoutLabGenerations")
-      .withIndex("by_prompt_message_id", (query) =>
-        query.eq("promptMessageId", args.promptMessageId),
-      )
-      .unique();
-    if (!generation) throw new Error("Claim test generation not found");
-    const run = await ctx.db
-      .query("claimTestRuns")
-      .withIndex("by_generation_id", (query) => query.eq("generationId", generation._id))
-      .unique();
-    const session = await ctx.db
-      .query("claimTestBrowserSessions")
-      .withIndex("by_generation_id", (query) => query.eq("generationId", generation._id))
-      .unique();
+    const session = await ctx.db.get("claimTestBrowserSessions", args.sessionId);
+    const run = session ? await ctx.db.get("claimTestRuns", session.runId) : null;
     const operation = session
       ? await ctx.db
           .query("claimTestBrowserOperations")
@@ -761,23 +980,13 @@ export const settleBrowserOperation = internalMutation({
 
 export const closeBrowserSessionRecord = internalMutation({
   args: {
-    promptMessageId: v.string(),
+    sessionId: v.id("claimTestBrowserSessions"),
     providerDurationMs: v.union(v.number(), v.null()),
     creditsBilled: v.union(v.number(), v.null()),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const generation = await ctx.db
-      .query("scoutLabGenerations")
-      .withIndex("by_prompt_message_id", (query) =>
-        query.eq("promptMessageId", args.promptMessageId),
-      )
-      .unique();
-    if (!generation) return null;
-    const session = await ctx.db
-      .query("claimTestBrowserSessions")
-      .withIndex("by_generation_id", (query) => query.eq("generationId", generation._id))
-      .unique();
+    const session = await ctx.db.get("claimTestBrowserSessions", args.sessionId);
     if (!session || session.lifecycle.kind === "closed") return null;
     await ctx.db.patch("claimTestBrowserSessions", session._id, {
       lifecycle: {
@@ -794,33 +1003,31 @@ export const closeBrowserSessionRecord = internalMutation({
 
 export const setLiveView = internalMutation({
   args: {
-    promptMessageId: v.string(),
+    sessionId: v.id("claimTestBrowserSessions"),
     liveViewUrl: v.string(),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const generation = await ctx.db
-      .query("scoutLabGenerations")
-      .withIndex("by_prompt_message_id", (index) =>
-        index.eq("promptMessageId", args.promptMessageId),
-      )
-      .unique();
+    const session = await ctx.db.get("claimTestBrowserSessions", args.sessionId);
+    const generation = session
+      ? await ctx.db.get("scoutLabGenerations", session.generationId)
+      : null;
     if (!generation) {
       throw new Error("Lab generation not found");
     }
     if (generation.status !== "pending") return null;
-    const run = await ctx.db
-      .query("claimTestRuns")
-      .withIndex("by_generation_id", (index) => index.eq("generationId", generation._id))
-      .unique();
-    if (!run) return null;
+    const run = await runForGeneration(ctx, generation);
+    if (!run || !session || session.runId !== run._id || session.lifecycle.kind !== "active") {
+      return null;
+    }
     const liveViewUrl = requireFirecrawlLiveViewUrl(args.liveViewUrl);
     const existing = await ctx.db
       .query("claimTestLiveViews")
-      .withIndex("by_generation_id", (index) => index.eq("generationId", generation._id))
+      .withIndex("by_session_id", (index) => index.eq("sessionId", session._id))
       .unique();
     if (existing) {
       await ctx.db.replace("claimTestLiveViews", existing._id, {
+        sessionId: session._id,
         generationId: generation._id,
         runId: run._id,
         userId: run.userId,
@@ -830,6 +1037,7 @@ export const setLiveView = internalMutation({
       return null;
     }
     await ctx.db.insert("claimTestLiveViews", {
+      sessionId: session._id,
       generationId: generation._id,
       runId: run._id,
       userId: run.userId,
@@ -842,20 +1050,13 @@ export const setLiveView = internalMutation({
 
 export const clearLiveView = internalMutation({
   args: {
-    promptMessageId: v.string(),
+    sessionId: v.id("claimTestBrowserSessions"),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const generation = await ctx.db
-      .query("scoutLabGenerations")
-      .withIndex("by_prompt_message_id", (index) =>
-        index.eq("promptMessageId", args.promptMessageId),
-      )
-      .unique();
-    if (!generation) return null;
     const liveView = await ctx.db
       .query("claimTestLiveViews")
-      .withIndex("by_generation_id", (index) => index.eq("generationId", generation._id))
+      .withIndex("by_session_id", (index) => index.eq("sessionId", args.sessionId))
       .unique();
     if (liveView) {
       await ctx.db.delete("claimTestLiveViews", liveView._id);

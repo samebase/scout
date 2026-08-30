@@ -92,6 +92,8 @@ describe("Scout service-account inventory", () => {
         serviceDomain: "tally.so",
         identifier: "CONRAD@AGENTMAIL.TO",
         authenticationEvidence: { kind: "none" },
+        firstRecordedByClaimTest: null,
+        lastVerifiedByClaimTest: null,
       },
     ]);
   });

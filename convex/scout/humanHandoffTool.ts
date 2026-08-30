@@ -20,7 +20,7 @@ type HumanHandoffRequest<HandoffId> = {
 type HumanHandoffCallbacks<HandoffId> = {
   request: (reason: string) => Promise<HumanHandoffRequest<HandoffId>>;
   getStatus: (handoffId: HandoffId) => Promise<HumanHandoffStatus>;
-  expire: (handoffId: HandoffId) => Promise<void>;
+  expire: (handoffId: HandoffId) => Promise<HumanHandoffStatus>;
 };
 
 type HumanHandoffDependencies = {
@@ -116,7 +116,24 @@ export function createHumanHandoffTool<HandoffId>(
         await dependencies.sleep(Math.min(STATUS_POLL_INTERVAL_MS, Math.max(0, remainingMs)));
       }
 
-      await callbacks.expire(request.handoffId);
+      const finalStatus = await callbacks.expire(request.handoffId);
+      if (finalStatus === "continued") {
+        return {
+          resumed: true,
+          message:
+            "The operator finished the human-only step. Inspect the current browser state before continuing.",
+        };
+      }
+      if (finalStatus === "missing") {
+        throw new Error("The human-help request disappeared while Scout was waiting");
+      }
+      if (finalStatus === "expired") {
+        return {
+          resumed: false,
+          message:
+            "The human-help request expired. Stop this check and return Verdict: Inconclusive.",
+        };
+      }
       return {
         resumed: false,
         message:

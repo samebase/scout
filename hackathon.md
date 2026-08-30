@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-30T13:57:10Z
+- **Last updated:** 2026-08-30T22:23:44Z
 
 ## Log
 
@@ -634,7 +634,7 @@ and pushed the narrowed schema. A browser-driven Samebase check edited and remov
 claim, then created, edited, and removed a custom claim. All 193 tests, the Convex development push,
 and the complete Cloudflare build path passed.
 
-### 2026-08-30 - working tree
+### 2026-08-30 - 93c0341 - v124
 
 Added one-shot human takeover for claim tests. A CAPTCHA or other human-only browser result now
 emails the authenticated operator one validated Firecrawl interactive link, shows the same session
@@ -647,3 +647,20 @@ session. The request now allows five minutes and recommends desktop after mobile
 proved unreliable. Expiration produces a deterministic Inconclusive result even when the model does
 not complete its forced close turn. All 225 tests, the Convex development push, and the complete
 Cloudflare build path passed.
+
+### 2026-08-30 - working tree
+
+Made Product → Claim → Run the inspectable testing hierarchy. One Claim can now keep multiple Runs;
+one Run can continue through multiple worker generations and temporary Firecrawl browser sessions.
+The dense three-pane workspace exposes run state, session activity, human takeover, live browser,
+per-tab replay, click markers, result, and service-account evidence without adding a general mission
+or orchestration framework (`convex/claimTests.ts`, `convex/claimTestRunModel.ts`,
+`src/components/claim-run-workspace.tsx`, `src/components/claim-run-replay.tsx`).
+
+Added persistent Scout browser profiles and trusted account-creation boundaries. The model cannot
+read the configured password, credential fill is restricted to verified password inputs on the
+tested product domain, and a conclusive successful account run records authenticated identity and
+session-control evidence against the Scout. A live GitHub run completed CAPTCHA takeover, email
+verification, account creation, account recording, and replay. All 247 tests, the Convex development
+push, and the complete Cloudflare build path passed (`convex/scout/labGeneration.ts`,
+`convex/scout/serviceAccounts.ts`, `convex/claimTestHumanHandoffs.ts`).

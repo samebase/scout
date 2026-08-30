@@ -8,10 +8,26 @@ import {
   claimTestBrowserViewportValidator,
 } from "./claimTestBrowserModel";
 import { claimTestHumanHandoffValidator } from "./claimTestHumanHandoffsModel";
+import {
+  claimTestAccountCreationValidator,
+  claimTestBrowserProfileValidator,
+  claimTestRunStateValidator,
+} from "./claimTestRunModel";
 import { productClaimSnapshotValidator, productInvestigationValidator } from "./productsModel";
 import { productInvestigationActivityFieldsValidator } from "./productsInvestigationActivityModel";
 import { scoutServiceAccountFieldsValidator, scoutWebsiteIdentityValidator } from "./scout/model";
 import { scoutModelValidator, scoutTokenUsageValidator } from "./scout/models";
+
+const claimTestServiceAccountProvenanceValidator = v.object({
+  runId: v.id("claimTestRuns"),
+  generationId: v.id("scoutLabGenerations"),
+  sessionId: v.id("claimTestBrowserSessions"),
+  recordedAt: v.number(),
+  observedUrl: v.string(),
+  visibleIdentity: v.string(),
+  visibleSessionControl: v.string(),
+  accountAccess: v.union(v.literal("created"), v.literal("recovered")),
+});
 
 export default defineSchema({
   ...authTables,
@@ -100,6 +116,8 @@ export default defineSchema({
   scoutServiceAccounts: defineTable(
     scoutServiceAccountFieldsValidator.extend({
       productId: v.optional(v.id("products")),
+      firstRecordedByClaimTest: v.optional(claimTestServiceAccountProvenanceValidator),
+      lastVerifiedByClaimTest: v.optional(claimTestServiceAccountProvenanceValidator),
     }).fields,
   )
     .index("by_scout_id", ["scoutId"])
@@ -157,10 +175,13 @@ export default defineSchema({
     experimentId: v.id("scoutLabExperiments"),
     threadId: v.string(),
     scoutId: v.id("scouts"),
-    generationId: v.id("scoutLabGenerations"),
+    serviceAccountId: v.optional(v.id("scoutServiceAccounts")),
+    browserProfile: claimTestBrowserProfileValidator,
+    accountCreation: claimTestAccountCreationValidator,
+    state: claimTestRunStateValidator,
     testedClaim: productClaimSnapshotValidator,
   })
-    .index("by_generation_id", ["generationId"])
+    .index("by_thread_id", ["threadId"])
     .index("by_user_id_and_product_id_and_investigation_id_and_claim_key", [
       "userId",
       "productId",
@@ -172,13 +193,15 @@ export default defineSchema({
     runId: v.id("claimTestRuns"),
     generationId: v.id("scoutLabGenerations"),
     userId: v.id("users"),
+    sequence: v.number(),
     provider: v.literal("firecrawl"),
     providerSessionId: v.string(),
+    profileName: v.union(v.string(), v.null()),
     viewport: claimTestBrowserViewportValidator,
     nextOperationSequence: v.number(),
     lifecycle: claimTestBrowserSessionLifecycleValidator,
   })
-    .index("by_run_id", ["runId"])
+    .index("by_run_id_and_sequence", ["runId", "sequence"])
     .index("by_generation_id", ["generationId"])
     .index("by_provider_and_provider_session_id", ["provider", "providerSessionId"]),
   claimTestBrowserOperations: defineTable({
@@ -192,13 +215,16 @@ export default defineSchema({
     .index("by_session_id_and_sequence", ["sessionId", "sequence"])
     .index("by_session_id_and_tool_call_id", ["sessionId", "toolCallId"]),
   claimTestLiveViews: defineTable({
+    sessionId: v.id("claimTestBrowserSessions"),
     generationId: v.id("scoutLabGenerations"),
     runId: v.id("claimTestRuns"),
     userId: v.id("users"),
     liveViewUrl: v.string(),
     openedAt: v.number(),
-  }).index("by_generation_id", ["generationId"]),
-  claimTestHumanHandoffs: defineTable(claimTestHumanHandoffValidator).index("by_generation_id", [
-    "generationId",
-  ]),
+  })
+    .index("by_session_id", ["sessionId"])
+    .index("by_generation_id", ["generationId"]),
+  claimTestHumanHandoffs: defineTable(claimTestHumanHandoffValidator)
+    .index("by_session_id", ["sessionId"])
+    .index("by_generation_id", ["generationId"]),
 });

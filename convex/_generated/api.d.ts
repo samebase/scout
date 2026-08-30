@@ -18,6 +18,7 @@ import type * as claimTestBrowserModel from "../claimTestBrowserModel.js";
 import type * as claimTestHumanHandoffs from "../claimTestHumanHandoffs.js";
 import type * as claimTestHumanHandoffsModel from "../claimTestHumanHandoffsModel.js";
 import type * as claimTestReplay from "../claimTestReplay.js";
+import type * as claimTestRunModel from "../claimTestRunModel.js";
 import type * as claimTests from "../claimTests.js";
 import type * as claimTestsModel from "../claimTestsModel.js";
 import type * as devAuth from "../devAuth.js";
@@ -38,6 +39,7 @@ import type * as productsInvestigationWorkflow from "../productsInvestigationWor
 import type * as productsModel from "../productsModel.js";
 import type * as productsResearch from "../productsResearch.js";
 import type * as productsValidation from "../productsValidation.js";
+import type * as scout_accountPasswordTool from "../scout/accountPasswordTool.js";
 import type * as scout_agent from "../scout/agent.js";
 import type * as scout_browserTelemetry from "../scout/browserTelemetry.js";
 import type * as scout_claimTestLoop from "../scout/claimTestLoop.js";
@@ -53,6 +55,7 @@ import type * as scout_lib_redaction from "../scout/lib/redaction.js";
 import type * as scout_model from "../scout/model.js";
 import type * as scout_models from "../scout/models.js";
 import type * as scout_scouts from "../scout/scouts.js";
+import type * as scout_serviceAccountTool from "../scout/serviceAccountTool.js";
 import type * as scout_serviceAccounts from "../scout/serviceAccounts.js";
 
 import type {
@@ -72,6 +75,7 @@ declare const fullApi: ApiFromModules<{
   claimTestHumanHandoffs: typeof claimTestHumanHandoffs;
   claimTestHumanHandoffsModel: typeof claimTestHumanHandoffsModel;
   claimTestReplay: typeof claimTestReplay;
+  claimTestRunModel: typeof claimTestRunModel;
   claimTests: typeof claimTests;
   claimTestsModel: typeof claimTestsModel;
   devAuth: typeof devAuth;
@@ -92,6 +96,7 @@ declare const fullApi: ApiFromModules<{
   productsModel: typeof productsModel;
   productsResearch: typeof productsResearch;
   productsValidation: typeof productsValidation;
+  "scout/accountPasswordTool": typeof scout_accountPasswordTool;
   "scout/agent": typeof scout_agent;
   "scout/browserTelemetry": typeof scout_browserTelemetry;
   "scout/claimTestLoop": typeof scout_claimTestLoop;
@@ -107,6 +112,7 @@ declare const fullApi: ApiFromModules<{
   "scout/model": typeof scout_model;
   "scout/models": typeof scout_models;
   "scout/scouts": typeof scout_scouts;
+  "scout/serviceAccountTool": typeof scout_serviceAccountTool;
   "scout/serviceAccounts": typeof scout_serviceAccounts;
 }>;
 

@@ -20,6 +20,8 @@ import { Route as ScoutsIndexRouteImport } from './routes/scouts.index'
 import { Route as ScoutsSlugRouteImport } from './routes/scouts.$slug'
 import { Route as ProductsDomainIndexRouteImport } from './routes/products.$domain.index'
 import { Route as ProductsDomainClaimsClaimKeyRouteImport } from './routes/products.$domain.claims.$claimKey'
+import { Route as ProductsDomainClaimsClaimKeyIndexRouteImport } from './routes/products.$domain.claims.$claimKey.index'
+import { Route as ProductsDomainClaimsClaimKeyRunsRunIdRouteImport } from './routes/products.$domain.claims.$claimKey.runs.$runId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -77,6 +79,18 @@ const ProductsDomainClaimsClaimKeyRoute =
     path: '/claims/$claimKey',
     getParentRoute: () => ProductsDomainRoute,
   } as any)
+const ProductsDomainClaimsClaimKeyIndexRoute =
+  ProductsDomainClaimsClaimKeyIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => ProductsDomainClaimsClaimKeyRoute,
+  } as any)
+const ProductsDomainClaimsClaimKeyRunsRunIdRoute =
+  ProductsDomainClaimsClaimKeyRunsRunIdRouteImport.update({
+    id: '/runs/$runId',
+    path: '/runs/$runId',
+    getParentRoute: () => ProductsDomainClaimsClaimKeyRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -89,7 +103,9 @@ export interface FileRoutesByFullPath {
   '/products/': typeof ProductsIndexRoute
   '/scouts/': typeof ScoutsIndexRoute
   '/products/$domain/': typeof ProductsDomainIndexRoute
-  '/products/$domain/claims/$claimKey': typeof ProductsDomainClaimsClaimKeyRoute
+  '/products/$domain/claims/$claimKey': typeof ProductsDomainClaimsClaimKeyRouteWithChildren
+  '/products/$domain/claims/$claimKey/': typeof ProductsDomainClaimsClaimKeyIndexRoute
+  '/products/$domain/claims/$claimKey/runs/$runId': typeof ProductsDomainClaimsClaimKeyRunsRunIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -99,7 +115,8 @@ export interface FileRoutesByTo {
   '/products': typeof ProductsIndexRoute
   '/scouts': typeof ScoutsIndexRoute
   '/products/$domain': typeof ProductsDomainIndexRoute
-  '/products/$domain/claims/$claimKey': typeof ProductsDomainClaimsClaimKeyRoute
+  '/products/$domain/claims/$claimKey': typeof ProductsDomainClaimsClaimKeyIndexRoute
+  '/products/$domain/claims/$claimKey/runs/$runId': typeof ProductsDomainClaimsClaimKeyRunsRunIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -113,7 +130,9 @@ export interface FileRoutesById {
   '/products/': typeof ProductsIndexRoute
   '/scouts/': typeof ScoutsIndexRoute
   '/products/$domain/': typeof ProductsDomainIndexRoute
-  '/products/$domain/claims/$claimKey': typeof ProductsDomainClaimsClaimKeyRoute
+  '/products/$domain/claims/$claimKey': typeof ProductsDomainClaimsClaimKeyRouteWithChildren
+  '/products/$domain/claims/$claimKey/': typeof ProductsDomainClaimsClaimKeyIndexRoute
+  '/products/$domain/claims/$claimKey/runs/$runId': typeof ProductsDomainClaimsClaimKeyRunsRunIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -129,6 +148,8 @@ export interface FileRouteTypes {
     | '/scouts/'
     | '/products/$domain/'
     | '/products/$domain/claims/$claimKey'
+    | '/products/$domain/claims/$claimKey/'
+    | '/products/$domain/claims/$claimKey/runs/$runId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -139,6 +160,7 @@ export interface FileRouteTypes {
     | '/scouts'
     | '/products/$domain'
     | '/products/$domain/claims/$claimKey'
+    | '/products/$domain/claims/$claimKey/runs/$runId'
   id:
     | '__root__'
     | '/'
@@ -152,6 +174,8 @@ export interface FileRouteTypes {
     | '/scouts/'
     | '/products/$domain/'
     | '/products/$domain/claims/$claimKey'
+    | '/products/$domain/claims/$claimKey/'
+    | '/products/$domain/claims/$claimKey/runs/$runId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -241,17 +265,50 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProductsDomainClaimsClaimKeyRouteImport
       parentRoute: typeof ProductsDomainRoute
     }
+    '/products/$domain/claims/$claimKey/': {
+      id: '/products/$domain/claims/$claimKey/'
+      path: '/'
+      fullPath: '/products/$domain/claims/$claimKey/'
+      preLoaderRoute: typeof ProductsDomainClaimsClaimKeyIndexRouteImport
+      parentRoute: typeof ProductsDomainClaimsClaimKeyRoute
+    }
+    '/products/$domain/claims/$claimKey/runs/$runId': {
+      id: '/products/$domain/claims/$claimKey/runs/$runId'
+      path: '/runs/$runId'
+      fullPath: '/products/$domain/claims/$claimKey/runs/$runId'
+      preLoaderRoute: typeof ProductsDomainClaimsClaimKeyRunsRunIdRouteImport
+      parentRoute: typeof ProductsDomainClaimsClaimKeyRoute
+    }
   }
 }
 
+interface ProductsDomainClaimsClaimKeyRouteChildren {
+  ProductsDomainClaimsClaimKeyIndexRoute: typeof ProductsDomainClaimsClaimKeyIndexRoute
+  ProductsDomainClaimsClaimKeyRunsRunIdRoute: typeof ProductsDomainClaimsClaimKeyRunsRunIdRoute
+}
+
+const ProductsDomainClaimsClaimKeyRouteChildren: ProductsDomainClaimsClaimKeyRouteChildren =
+  {
+    ProductsDomainClaimsClaimKeyIndexRoute:
+      ProductsDomainClaimsClaimKeyIndexRoute,
+    ProductsDomainClaimsClaimKeyRunsRunIdRoute:
+      ProductsDomainClaimsClaimKeyRunsRunIdRoute,
+  }
+
+const ProductsDomainClaimsClaimKeyRouteWithChildren =
+  ProductsDomainClaimsClaimKeyRoute._addFileChildren(
+    ProductsDomainClaimsClaimKeyRouteChildren,
+  )
+
 interface ProductsDomainRouteChildren {
   ProductsDomainIndexRoute: typeof ProductsDomainIndexRoute
-  ProductsDomainClaimsClaimKeyRoute: typeof ProductsDomainClaimsClaimKeyRoute
+  ProductsDomainClaimsClaimKeyRoute: typeof ProductsDomainClaimsClaimKeyRouteWithChildren
 }
 
 const ProductsDomainRouteChildren: ProductsDomainRouteChildren = {
   ProductsDomainIndexRoute: ProductsDomainIndexRoute,
-  ProductsDomainClaimsClaimKeyRoute: ProductsDomainClaimsClaimKeyRoute,
+  ProductsDomainClaimsClaimKeyRoute:
+    ProductsDomainClaimsClaimKeyRouteWithChildren,
 }
 
 const ProductsDomainRouteWithChildren = ProductsDomainRoute._addFileChildren(

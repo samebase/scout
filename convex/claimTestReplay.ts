@@ -46,7 +46,7 @@ function replayIsProcessing(error: unknown) {
 
 export const listPages = action({
   args: {
-    runId: v.id("claimTestRuns"),
+    sessionId: v.id("claimTestBrowserSessions"),
   },
   returns: v.union(
     replayNotReadyValidator,
@@ -82,7 +82,7 @@ export const listPages = action({
 
 export const loadPlaylist = action({
   args: {
-    runId: v.id("claimTestRuns"),
+    sessionId: v.id("claimTestBrowserSessions"),
     pageId: v.string(),
   },
   returns: v.union(
@@ -94,7 +94,7 @@ export const loadPlaylist = action({
   ),
   handler: async (ctx, args): Promise<ReplayPlaylistResult> => {
     const replayData = await ctx.runQuery(internal.claimTests.replayData, {
-      runId: args.runId,
+      sessionId: args.sessionId,
     });
     if (!replayData) return { status: "unavailable" } as const;
 

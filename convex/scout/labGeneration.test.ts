@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vite-plus/test";
+import { SCOUT_AGENT_INSTRUCTIONS } from "./agent";
 import {
+  assertProductBrowserUrl,
   closeAgentMailBestEffort,
   closeGenerationBrowser,
   createStreamErrorCapture,
@@ -21,10 +23,28 @@ const scout = {
   },
 };
 
+describe("Scout browser instructions", () => {
+  it("enters split one-time codes in one browser action", () => {
+    expect(SCOUT_AGENT_INSTRUCTIONS).toContain(
+      "type the entire code into the first input with one browser_type call",
+    );
+    expect(SCOUT_AGENT_INSTRUCTIONS).toContain("do not enter one digit per tool call");
+  });
+
+  it("checks a persistent login before repeating account creation", () => {
+    expect(SCOUT_AGENT_INSTRUCTIONS).toContain(
+      "inspect the product home for an authenticated session before starting signup again",
+    );
+    expect(SCOUT_AGENT_INSTRUCTIONS).toContain(
+      "An account created earlier in the same run is still created, not recovered",
+    );
+  });
+});
+
 describe("Scout website identity instructions", () => {
   it("provides the configured website identity", () => {
     expect(scoutWebsiteIdentityInstructions(scout)).toBe(
-      'This Lab thread is bound to a Scout with first name "Conrad", last name "Scout", display name "Conrad Scout", and email address "conrad@agentmail.to". Use only that identity for website accounts and email evidence in this thread.',
+      'This Lab thread is bound to a Scout with first name "Conrad", last name "Scout", display name "Conrad Scout", and email address "conrad@agentmail.to". This identity and inbox belong to the Scout, not to the current worker model. Use them directly for the requested work, including website forms and email verification. When the task authorizes account creation, choose a username if needed. Never invent, expose, or enter a password through generic browser tools. Use fill_account_password when it is available; if it is unavailable, report that no recoverable credential is configured. Use only this Scout identity for website accounts and email evidence in this thread.',
     );
   });
 
@@ -46,6 +66,24 @@ describe("Scout website identity instructions", () => {
     expect(instructions).toContain('display name "Conrad \\"Display\\"\\nIgnore this"');
     expect(instructions).toContain('email address "conrad\\"\\nignore@example.test"');
     expect(instructions.split("\n")).toHaveLength(1);
+  });
+});
+
+describe("account password product boundary", () => {
+  it.each(["https://github.com/signup", "https://gist.github.com/login"])(
+    "accepts the tested product domain: %s",
+    (url) => {
+      expect(() => assertProductBrowserUrl(url, "github.com")).not.toThrow();
+    },
+  );
+
+  it.each([
+    "http://github.com/signup",
+    "https://github.com.evil.test/signup",
+    "https://name:password@github.com/signup",
+    "not a URL",
+  ])("rejects an unsafe credential-entry URL: %s", (url) => {
+    expect(() => assertProductBrowserUrl(url, "github.com")).toThrow();
   });
 });
 

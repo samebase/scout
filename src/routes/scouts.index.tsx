@@ -63,7 +63,7 @@ function ScoutsIndexPage() {
         <div>
           <h1 className="route-heading">Scouts</h1>
           <p className="mt-3 max-w-2xl text-base leading-7 text-muted-foreground">
-            Persistent identities for repeatable product tests.
+            Persistent identities and resources for replaceable worker models.
           </p>
         </div>
         <div className="flex items-center gap-3 sm:pb-1">
@@ -102,7 +102,7 @@ function ScoutsIndexPage() {
         <div className="surface-panel border-dashed px-5 py-16 text-center">
           <p className="text-base font-semibold">No Scouts yet</p>
           <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">
-            Register an AgentMail inbox and Firecrawl profile to create a reusable identity.
+            Register an AgentMail inbox and Firecrawl profile to give workers a reusable identity.
           </p>
         </div>
       ) : (

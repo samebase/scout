@@ -1,13 +1,7 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import {
-  internalMutation,
-  internalQuery,
-  mutation,
-  query,
-  type QueryCtx,
-} from "./_generated/server";
+import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { requireAppUser } from "./access";
 import {
   activeClaimTestHumanHandoffValidator,
@@ -15,19 +9,10 @@ import {
   requestedClaimTestHumanHandoffValidator,
   terminalHandoffIdentity,
 } from "./claimTestHumanHandoffsModel";
-import {
-  findCurrentProductClaim,
-  routeClaimKey,
-  runMatchesCurrentClaim,
-  type ProjectedProductClaim,
-} from "./productClaimEdits";
-import { canonicalProductDomain } from "./productsDomain";
 import { requireFirecrawlLiveViewUrl } from "./scout/lib/firecrawlLiveView";
 
 const HUMAN_HANDOFF_WAIT_MS = 5 * 60 * 1_000;
 const MAX_HANDOFF_REASON_LENGTH = 500;
-
-type DatabaseContext = Pick<QueryCtx, "db">;
 
 function boundedReason(value: string) {
   const reason = value.trim().replaceAll(/\s+/g, " ");
@@ -36,65 +21,6 @@ function boundedReason(value: string) {
     throw new Error(`Human help reason must be ${MAX_HANDOFF_REASON_LENGTH} characters or fewer`);
   }
   return reason;
-}
-
-function routeProductDomain(value: string) {
-  try {
-    return canonicalProductDomain(value, "Product domain");
-  } catch {
-    return null;
-  }
-}
-
-async function latestRunForClaim(
-  ctx: DatabaseContext,
-  args: {
-    userId: Id<"users">;
-    productId: Id<"products">;
-    investigationId: Id<"productInvestigations">;
-    claim: ProjectedProductClaim;
-  },
-) {
-  if (args.claim.origin === "custom") {
-    return await ctx.db
-      .query("claimTestRuns")
-      .withIndex("by_user_id_and_product_id_and_claim_key", (index) =>
-        index
-          .eq("userId", args.userId)
-          .eq("productId", args.productId)
-          .eq("claimKey", args.claim.claimKey),
-      )
-      .order("desc")
-      .first();
-  }
-  return await ctx.db
-    .query("claimTestRuns")
-    .withIndex("by_user_id_and_product_id_and_investigation_id_and_claim_key", (index) =>
-      index
-        .eq("userId", args.userId)
-        .eq("productId", args.productId)
-        .eq("investigationId", args.investigationId)
-        .eq("claimKey", args.claim.claimKey),
-    )
-    .order("desc")
-    .first();
-}
-
-async function currentPendingRun(
-  ctx: DatabaseContext,
-  args: { userId: Id<"users">; domain: string; claimKey: string },
-) {
-  const current = await findCurrentProductClaim(ctx, args);
-  if (!current) return null;
-  const run = await latestRunForClaim(ctx, {
-    userId: args.userId,
-    productId: current.product._id,
-    investigationId: current.investigation._id,
-    claim: current.claim,
-  });
-  if (!run || !runMatchesCurrentClaim(run.testedClaim, current.claim)) return null;
-  const generation = await ctx.db.get("scoutLabGenerations", run.generationId);
-  return generation?.status === "pending" ? { run, generation } : null;
 }
 
 function requestResult(args: {
@@ -116,27 +42,29 @@ function requestResult(args: {
 }
 
 export const active = query({
-  args: {
-    domain: v.string(),
-    claimKey: v.string(),
-  },
+  args: { sessionId: v.id("claimTestBrowserSessions") },
   returns: v.union(activeClaimTestHumanHandoffValidator, v.null()),
   handler: async (ctx, args) => {
     const userId = await requireAppUser(ctx);
-    const domain = routeProductDomain(args.domain);
-    const claimKey = routeClaimKey(args.claimKey);
-    if (domain === null || claimKey === null) return null;
-    const current = await currentPendingRun(ctx, { userId, domain, claimKey });
-    if (!current) return null;
+    const session = await ctx.db.get("claimTestBrowserSessions", args.sessionId);
+    if (!session || session.userId !== userId || session.lifecycle.kind !== "active") return null;
+    const run = await ctx.db.get("claimTestRuns", session.runId);
+    if (!run || run.userId !== userId) return null;
     const handoff = await ctx.db
       .query("claimTestHumanHandoffs")
-      .withIndex("by_generation_id", (index) => index.eq("generationId", current.generation._id))
+      .withIndex("by_session_id", (index) => index.eq("sessionId", session._id))
       .unique();
     if (!handoff || handoff.status !== "waiting") return null;
-    if (handoff.runId !== current.run._id || handoff.userId !== userId) {
+    if (
+      handoff.runId !== run._id ||
+      handoff.userId !== userId ||
+      handoff.generationId !== session.generationId
+    ) {
       throw new Error("Claim test human handoff has an invalid ownership binding");
     }
     return {
+      handoffId: handoff._id,
+      sessionId: handoff.sessionId,
       runId: handoff.runId,
       reason: handoff.reason,
       requestedAt: handoff.requestedAt,
@@ -146,29 +74,49 @@ export const active = query({
   },
 });
 
-export const continueCurrent = mutation({
-  args: {
-    domain: v.string(),
-    claimKey: v.string(),
-  },
+export const continueHandoff = mutation({
+  args: { handoffId: v.id("claimTestHumanHandoffs") },
   returns: v.boolean(),
   handler: async (ctx, args) => {
     const userId = await requireAppUser(ctx);
-    const domain = canonicalProductDomain(args.domain, "Product domain");
-    const claimKey = routeClaimKey(args.claimKey);
-    if (claimKey === null) return false;
-    const current = await currentPendingRun(ctx, { userId, domain, claimKey });
-    if (!current) return false;
-    const handoff = await ctx.db
-      .query("claimTestHumanHandoffs")
-      .withIndex("by_generation_id", (index) => index.eq("generationId", current.generation._id))
-      .unique();
+    const handoff = await ctx.db.get("claimTestHumanHandoffs", args.handoffId);
     if (!handoff || handoff.status !== "waiting") return false;
-    if (handoff.runId !== current.run._id || handoff.userId !== userId) return false;
+    if (handoff.userId !== userId) return false;
+    const [run, session, generation] = await Promise.all([
+      ctx.db.get("claimTestRuns", handoff.runId),
+      ctx.db.get("claimTestBrowserSessions", handoff.sessionId),
+      ctx.db.get("scoutLabGenerations", handoff.generationId),
+    ]);
+    const continuedAt = Date.now();
+    if (handoff.expiresAt <= continuedAt) {
+      await ctx.db.replace("claimTestHumanHandoffs", handoff._id, {
+        ...terminalHandoffIdentity(handoff),
+        status: "expired",
+        expiredAt: continuedAt,
+      });
+      return false;
+    }
+    if (
+      !run ||
+      run.userId !== userId ||
+      run.state.kind !== "running" ||
+      run.state.generationId !== handoff.generationId ||
+      !session ||
+      session.runId !== run._id ||
+      session.generationId !== handoff.generationId ||
+      session.userId !== userId ||
+      session.lifecycle.kind !== "active" ||
+      !generation ||
+      generation.threadId !== run.threadId ||
+      generation.scoutId !== run.scoutId ||
+      generation.status !== "pending"
+    ) {
+      return false;
+    }
     await ctx.db.replace("claimTestHumanHandoffs", handoff._id, {
       ...terminalHandoffIdentity(handoff),
       status: "continued",
-      continuedAt: Date.now(),
+      continuedAt,
     });
     return true;
   },
@@ -195,9 +143,11 @@ export const request = internalMutation({
     }
     const run = await ctx.db
       .query("claimTestRuns")
-      .withIndex("by_generation_id", (index) => index.eq("generationId", generation._id))
+      .withIndex("by_thread_id", (index) => index.eq("threadId", generation.threadId))
       .unique();
-    if (!run) throw new Error("Claim test run not found");
+    if (!run || run.state.kind !== "running" || run.state.generationId !== generation._id) {
+      throw new Error("Claim test run not found");
+    }
     const browserSession = await ctx.db
       .query("claimTestBrowserSessions")
       .withIndex("by_generation_id", (index) => index.eq("generationId", generation._id))
@@ -222,7 +172,7 @@ export const request = internalMutation({
 
     const existing = await ctx.db
       .query("claimTestHumanHandoffs")
-      .withIndex("by_generation_id", (index) => index.eq("generationId", generation._id))
+      .withIndex("by_session_id", (index) => index.eq("sessionId", browserSession._id))
       .unique();
     if (existing?.status === "waiting") {
       if (existing.runId !== run._id || existing.userId !== run.userId) {
@@ -246,6 +196,7 @@ export const request = internalMutation({
     const requestedAt = Date.now();
     const expiresAt = requestedAt + HUMAN_HANDOFF_WAIT_MS;
     const handoffFields = {
+      sessionId: browserSession._id,
       generationId: generation._id,
       runId: run._id,
       userId: run.userId,
@@ -285,15 +236,16 @@ export const getStatus = internalQuery({
 
 export const expire = internalMutation({
   args: { handoffId: v.id("claimTestHumanHandoffs") },
-  returns: v.null(),
+  returns: claimTestHumanHandoffStatusValidator,
   handler: async (ctx, args) => {
     const handoff = await ctx.db.get("claimTestHumanHandoffs", args.handoffId);
-    if (!handoff || handoff.status !== "waiting") return null;
+    if (!handoff) return "missing";
+    if (handoff.status !== "waiting") return handoff.status;
     await ctx.db.replace("claimTestHumanHandoffs", handoff._id, {
       ...terminalHandoffIdentity(handoff),
       status: "expired",
       expiredAt: Date.now(),
     });
-    return null;
+    return "expired";
   },
 });
