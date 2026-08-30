@@ -260,6 +260,15 @@ describe("Products registry", () => {
     await expect(backend.mutation(api.products.resetResearch, { productId })).rejects.toThrow(
       "Not authorized",
     );
+    await expect(
+      backend.mutation(api.products.updateClaim, {
+        domain: "example.test",
+        claimKey: "claim-0000000000",
+        claim: "Edited claim",
+        sourceUrl: "https://example.test/start",
+        suggestedMysteryShop: "Test the edited claim.",
+      }),
+    ).rejects.toThrow("Not authorized");
 
     const nonAdminId = await insertUser(backend, "person@example.test");
     const nonAdmin = backend.withIdentity({ subject: `${nonAdminId}|test-session` });
@@ -285,6 +294,15 @@ describe("Products registry", () => {
     await expect(nonAdmin.mutation(api.products.resetResearch, { productId })).rejects.toThrow(
       "Not authorized",
     );
+    await expect(
+      nonAdmin.mutation(api.products.updateClaim, {
+        domain: "example.test",
+        claimKey: "claim-0000000000",
+        claim: "Edited claim",
+        sourceUrl: "https://example.test/start",
+        suggestedMysteryShop: "Test the edited claim.",
+      }),
+    ).rejects.toThrow("Not authorized");
   });
 
   it("canonicalizes domains and deduplicates leading www hosts with arbitrary paths", async () => {
@@ -447,6 +465,137 @@ describe("Products registry", () => {
     );
     const storedClaim = stored?.status === "completed" ? stored.result.claims[0] : undefined;
     expect(storedClaim && "claimKey" in storedClaim).toBe(false);
+  });
+
+  it("edits a generated claim without changing its route key or stored research", async () => {
+    const { backend, userId, admin } = await authenticatedBackend();
+    const { productId } = await admin.mutation(api.products.create, {
+      url: "example.test",
+      name: "Example",
+    });
+    const result = validInvestigationResult();
+    const investigationId = await backend.run(async (ctx) => {
+      const id = await ctx.db.insert("productInvestigations", {
+        productId,
+        requestedByUserId: userId,
+        requestedAt: NOW.getTime() - 2_000,
+        provider: "firecrawl-convex",
+        requestedModel: "qwen/qwen3.7-flash",
+        effort: "medium",
+        maxCredits: 9,
+        agentThreadId: "claim-edit-thread",
+        status: "completed",
+        startedAt: NOW.getTime() - 1_500,
+        completedAt: NOW.getTime() - 1_000,
+        retrieval: validRetrievalMetadata(),
+        result,
+      });
+      await ctx.db.patch("products", productId, {
+        latestInvestigationId: id,
+        latestCompletedInvestigationId: id,
+      });
+      return id;
+    });
+    const before = await admin.query(api.products.getByDomain, { domain: "example.test" });
+    const claimKey = before?.latestCompletedInvestigation?.result.claims[0]?.claimKey;
+    if (!claimKey) throw new Error("Expected a generated claim key");
+
+    const edited = await admin.mutation(api.products.updateClaim, {
+      domain: "https://www.example.test/account",
+      claimKey,
+      claim: "A visitor can draft a workspace without signing in.",
+      sourceUrl: "https://forms.example.test/new?mode=anonymous",
+      suggestedMysteryShop:
+        "Open the starting URL in two tabs, switch between them, and verify whether both drafts remain editable.",
+    });
+    expect(edited).toMatchObject({
+      claimKey,
+      claim: "A visitor can draft a workspace without signing in.",
+      sourceUrl: "https://forms.example.test/new?mode=anonymous",
+      isEdited: true,
+      editedAt: NOW.getTime(),
+    });
+
+    const [listed, selected] = await Promise.all([
+      admin.query(api.products.list, {}),
+      admin.query(api.products.getClaimByDomain, { domain: "example.test", claimKey }),
+    ]);
+    expect(
+      listed[0]?.latestCompletedInvestigation?.result.claims.find(
+        (candidate) => candidate.claimKey === claimKey,
+      ),
+    ).toMatchObject(edited);
+    expect(selected?.claim).toEqual(edited);
+
+    const stored = await backend.run(async (ctx) => ({
+      investigation: await ctx.db.get("productInvestigations", investigationId),
+      edit: await ctx.db
+        .query("productClaimEdits")
+        .withIndex("by_user_id_and_product_id_and_investigation_id_and_claim_key", (query) =>
+          query
+            .eq("userId", userId)
+            .eq("productId", productId)
+            .eq("investigationId", investigationId)
+            .eq("claimKey", claimKey),
+        )
+        .unique(),
+    }));
+    expect(stored.investigation?.status === "completed" && stored.investigation.result).toEqual(
+      result,
+    );
+    expect(stored.edit).toMatchObject({
+      userId,
+      productId,
+      investigationId,
+      claimKey,
+      claim: edited.claim,
+    });
+
+    await expect(
+      admin.mutation(api.products.updateClaim, {
+        domain: "example.test",
+        claimKey,
+        claim: " ",
+        sourceUrl: "https://example.test/start",
+        suggestedMysteryShop: "Test it.",
+      }),
+    ).rejects.toThrow("Claim cannot be empty");
+    await expect(
+      admin.mutation(api.products.updateClaim, {
+        domain: "example.test",
+        claimKey,
+        claim: "x".repeat(1_201),
+        sourceUrl: "https://example.test/start",
+        suggestedMysteryShop: "Test it.",
+      }),
+    ).rejects.toThrow("Claim must be 1200 characters or fewer");
+    await expect(
+      admin.mutation(api.products.updateClaim, {
+        domain: "example.test",
+        claimKey,
+        claim: "A bounded claim.",
+        sourceUrl: "https://different.test/start",
+        suggestedMysteryShop: "Test it.",
+      }),
+    ).rejects.toThrow("Starting URL must belong to example.test");
+    await expect(
+      admin.mutation(api.products.updateClaim, {
+        domain: "example.test",
+        claimKey,
+        claim: "A bounded claim.",
+        sourceUrl: "https://person:secret@example.test/start",
+        suggestedMysteryShop: "Test it.",
+      }),
+    ).rejects.toThrow("Starting URL must use HTTP or HTTPS without credentials");
+    await expect(
+      admin.mutation(api.products.updateClaim, {
+        domain: "example.test",
+        claimKey,
+        claim: "A bounded claim.",
+        sourceUrl: "https://example.test/start",
+        suggestedMysteryShop: "x".repeat(1_201),
+      }),
+    ).rejects.toThrow("Test instructions must be 1200 characters or fewer");
   });
 
   it("links structured service-account and Lab experiment creation to one Product", async () => {

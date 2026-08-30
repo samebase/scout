@@ -7,7 +7,7 @@ import {
   claimTestBrowserSessionLifecycleValidator,
   claimTestBrowserViewportValidator,
 } from "./claimTestBrowserModel";
-import { productInvestigationValidator } from "./productsModel";
+import { productClaimSnapshotValidator, productInvestigationValidator } from "./productsModel";
 import { productInvestigationActivityFieldsValidator } from "./productsInvestigationActivityModel";
 import { scoutServiceAccountFieldsValidator, scoutWebsiteIdentityValidator } from "./scout/model";
 import { scoutModelValidator, scoutTokenUsageValidator } from "./scout/models";
@@ -61,6 +61,21 @@ export default defineSchema({
   })
     .index("by_investigation_id_and_sequence", ["investigationId", "sequence"])
     .index("by_investigation_id_and_url", ["investigationId", "url"]),
+  productClaimEdits: defineTable({
+    userId: v.id("users"),
+    productId: v.id("products"),
+    investigationId: v.id("productInvestigations"),
+    claimKey: v.string(),
+    claim: v.string(),
+    sourceUrl: v.string(),
+    suggestedMysteryShop: v.string(),
+    editedAt: v.number(),
+  }).index("by_user_id_and_product_id_and_investigation_id_and_claim_key", [
+    "userId",
+    "productId",
+    "investigationId",
+    "claimKey",
+  ]),
   scoutServiceAccounts: defineTable(
     scoutServiceAccountFieldsValidator.extend({
       productId: v.optional(v.id("products")),
@@ -122,6 +137,7 @@ export default defineSchema({
     threadId: v.string(),
     scoutId: v.id("scouts"),
     generationId: v.id("scoutLabGenerations"),
+    testedClaim: v.optional(productClaimSnapshotValidator),
   })
     .index("by_generation_id", ["generationId"])
     .index("by_user_id_and_product_id_and_investigation_id_and_claim_key", [

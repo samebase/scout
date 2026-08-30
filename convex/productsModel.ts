@@ -29,6 +29,12 @@ export const productClaimValidator = v.object({
   pageTitle: v.union(v.string(), v.null()),
 });
 
+export const productClaimSnapshotValidator = productClaimValidator.pick(
+  "claim",
+  "sourceUrl",
+  "suggestedMysteryShop",
+);
+
 export const productDependencyValidator = v.object({
   name: v.string(),
   relationship: v.string(),
@@ -76,6 +82,8 @@ export const productInvestigationResultValidator = v.object({
 
 export const productClaimPublicValidator = productClaimValidator.extend({
   claimKey: v.string(),
+  isEdited: v.boolean(),
+  editedAt: v.union(v.number(), v.null()),
 });
 
 export const productInvestigationResultPublicValidator = productInvestigationResultValidator.extend(

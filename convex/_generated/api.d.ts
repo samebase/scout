@@ -22,6 +22,7 @@ import type * as devAuth from "../devAuth.js";
 import type * as devAuthConfig from "../devAuthConfig.js";
 import type * as email from "../email.js";
 import type * as http from "../http.js";
+import type * as productClaimEdits from "../productClaimEdits.js";
 import type * as productInvestigationWorkflow from "../productInvestigationWorkflow.js";
 import type * as productResearchAgent from "../productResearchAgent.js";
 import type * as products from "../products.js";
@@ -71,6 +72,7 @@ declare const fullApi: ApiFromModules<{
   devAuthConfig: typeof devAuthConfig;
   email: typeof email;
   http: typeof http;
+  productClaimEdits: typeof productClaimEdits;
   productInvestigationWorkflow: typeof productInvestigationWorkflow;
   productResearchAgent: typeof productResearchAgent;
   products: typeof products;

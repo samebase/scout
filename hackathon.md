@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-29T23:33:46Z
+- **Last updated:** 2026-08-30T10:52:28Z
 
 ## Log
 
@@ -578,7 +578,7 @@ both the wide and three-pane layouts while retaining one unmatched blank provide
 189 tests and the complete Cloudflare build path passed
 (`src/lib/claimReplayTimeline.ts`, `src/routes/products.$domain.claims.$claimKey.tsx`).
 
-### 2026-08-29 - working tree
+### 2026-08-29 - 77d28de - v119
 
 Made Qwen 3.7 Flash the default for product research, Lab, and Scout, while keeping Luna available
 only when selected. Product synthesis now discards generated array items beyond the documented
@@ -591,3 +591,16 @@ created and edited a form anonymously, then observed both Preview and Publish op
 Tally account,” producing a Refuted verdict in 122.7 seconds with four Firecrawl credits. All 189
 tests and the complete Cloudflare build path passed (`convex/claimTests.ts`,
 `convex/scout/labGeneration.ts`, `src/lib/claimReplayTimeline.ts`).
+
+### 2026-08-30 - working tree
+
+Made generated claims editable in place without changing their route or rewriting completed
+research. Each user-scoped override stores the claim, starting URL, and test instructions; new runs
+snapshot that exact target, while a later edit marks the preserved result and replay as Needs retest
+(`convex/productClaimEdits.ts`, `convex/claimTests.ts`,
+`src/routes/products.$domain.claims.$claimKey.tsx`).
+
+A browser-driven Tally trial edited one claim, proved the Needs retest transition, and reran it with
+Qwen 3.7 Flash. The Scout emitted two `browser_switch_tab` actions, the reconstructed replay showed
+two tab-change markers across two recorded tracks, and the Product queue returned to Tested. All
+191 tests, the Convex development push, and the complete Cloudflare build path passed.

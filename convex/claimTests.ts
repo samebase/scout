@@ -23,8 +23,16 @@ import {
   completeClaimTestExperimentForGeneration,
   startClaimTestResultValidator,
 } from "./claimTestsModel";
+import {
+  claimSnapshot,
+  findCurrentProductClaim,
+  findCurrentProductInvestigation,
+  projectClaimsForUser,
+  routeClaimKey,
+  runMatchesCurrentClaim,
+  type ProjectedProductClaim,
+} from "./productClaimEdits";
 import { canonicalProductDomain } from "./productsDomain";
-import { projectClaims } from "./productsClaims";
 import { scoutAgent } from "./scout/agent";
 import type { SelectableScoutModel } from "./scout/models";
 import { requireFirecrawlLiveViewUrl } from "./scout/lib/firecrawlLiveView";
@@ -35,8 +43,6 @@ const MAX_EXPERIMENT_NAME_LENGTH = 120;
 const MAX_THREAD_TITLE_LENGTH = 80;
 const GENERATION_START_TIMEOUT_MS = 5 * 60 * 1_000;
 const EXPIRED_GENERATION_FAILURE = "Generation stopped before completion";
-const CLAIM_KEY_PATTERN = /^claim-[a-z0-9]{10}(?:-[1-9][0-9]*)?$/;
-const MAX_CLAIM_KEY_LENGTH = 64;
 const MAX_BROWSER_SESSION_ID_LENGTH = 200;
 const MAX_BROWSER_TOOL_CALL_ID_LENGTH = 200;
 const MAX_BROWSER_FAILURE_LENGTH = 2_000;
@@ -59,39 +65,6 @@ function routeProductDomain(value: string) {
   } catch {
     return null;
   }
-}
-
-function routeClaimKey(value: string) {
-  const claimKey = value.trim();
-  return claimKey.length <= MAX_CLAIM_KEY_LENGTH && CLAIM_KEY_PATTERN.test(claimKey)
-    ? claimKey
-    : null;
-}
-
-async function findCurrentInvestigation(ctx: DatabaseContext, domain: string) {
-  const product = await ctx.db
-    .query("products")
-    .withIndex("by_domain", (index) => index.eq("domain", domain))
-    .unique();
-  if (!product?.latestCompletedInvestigationId) return null;
-
-  const investigation = await ctx.db.get(
-    "productInvestigations",
-    product.latestCompletedInvestigationId,
-  );
-  if (investigation?.status !== "completed" || investigation.productId !== product._id) {
-    return null;
-  }
-  return { product, investigation };
-}
-
-async function findCurrentClaim(ctx: DatabaseContext, domain: string, claimKey: string) {
-  const current = await findCurrentInvestigation(ctx, domain);
-  if (!current) return null;
-  const claim = projectClaims(current.investigation.result.claims).find(
-    (candidate) => candidate.claimKey === claimKey,
-  );
-  return claim ? { ...current, claim } : null;
 }
 
 async function latestRunForClaim(
@@ -128,6 +101,7 @@ function projectRun(
   run: Doc<"claimTestRuns">,
   generation: Doc<"scoutLabGenerations">,
   scout: Doc<"scouts">,
+  currentClaim: ProjectedProductClaim,
 ): Infer<typeof claimTestLatestValidator> {
   if (generation._id !== run.generationId || generation.scoutId !== run.scoutId) {
     throw new Error("Claim test run has an invalid generation binding");
@@ -142,6 +116,8 @@ function projectRun(
     threadId: run.threadId,
     experimentId: run.experimentId,
     createdAt: run._creationTime,
+    matchesCurrentClaim: runMatchesCurrentClaim(run.testedClaim, currentClaim),
+    testedClaim: run.testedClaim ?? null,
     scout: {
       id: scout._id,
       displayName: scout.displayName,
@@ -222,7 +198,7 @@ async function selectAvailableScout(ctx: MutationCtx, now: number) {
 export function buildClaimTestPrompt(args: {
   productName: string;
   productDomain: string;
-  claim: ReturnType<typeof projectClaims>[number];
+  claim: ProjectedProductClaim;
 }) {
   const researchContext = JSON.stringify(
     {
@@ -289,7 +265,9 @@ export const start = mutation({
     const userId = await requireAppUser(ctx);
     const domain = canonicalProductDomain(args.domain, "Product domain");
     const claimKey = routeClaimKey(args.claimKey);
-    const current = claimKey ? await findCurrentClaim(ctx, domain, claimKey) : null;
+    const current = claimKey
+      ? await findCurrentProductClaim(ctx, { userId, domain, claimKey })
+      : null;
     if (!current) {
       throw new Error("Claim not found in the current completed investigation");
     }
@@ -305,7 +283,10 @@ export const start = mutation({
       if (!previousGeneration) {
         throw new Error("Claim test generation is unavailable");
       }
-      if (previousGeneration.status === "pending") {
+      if (
+        previousGeneration.status === "pending" &&
+        runMatchesCurrentClaim(previousRun.testedClaim, current.claim)
+      ) {
         return {
           runId: previousRun._id,
           threadId: previousRun.threadId,
@@ -384,6 +365,7 @@ export const start = mutation({
       threadId: createdThread.threadId,
       scoutId: scout._id,
       generationId,
+      testedClaim: claimSnapshot(current.claim),
     });
     await ctx.scheduler.runAfter(0, internal.scout.labGeneration.generateResponse, {
       threadId: createdThread.threadId,
@@ -414,7 +396,7 @@ export const latest = query({
     const domain = routeProductDomain(args.domain);
     const claimKey = routeClaimKey(args.claimKey);
     if (domain === null || claimKey === null) return null;
-    const current = await findCurrentClaim(ctx, domain, claimKey);
+    const current = await findCurrentProductClaim(ctx, { userId, domain, claimKey });
     if (!current) return null;
 
     const run = await latestRunForClaim(ctx, {
@@ -429,7 +411,7 @@ export const latest = query({
     if (!generation || !scout) {
       throw new Error("Claim test run is unavailable");
     }
-    return projectRun(run, generation, scout);
+    return projectRun(run, generation, scout, current.claim);
   },
 });
 
@@ -442,11 +424,18 @@ export const listStatuses = query({
     const userId = await requireAppUser(ctx);
     const domain = routeProductDomain(args.domain);
     if (domain === null) return [];
-    const current = await findCurrentInvestigation(ctx, domain);
+    const current = await findCurrentProductInvestigation(ctx, domain);
     if (!current) return [];
 
+    const claims = await projectClaimsForUser(ctx, {
+      userId,
+      productId: current.product._id,
+      investigationId: current.investigation._id,
+      claims: current.investigation.result.claims,
+    });
+
     return await Promise.all(
-      projectClaims(current.investigation.result.claims).map(async (claim) => {
+      claims.map(async (claim) => {
         const run = await latestRunForClaim(ctx, {
           userId,
           productId: current.product._id,
@@ -455,6 +444,9 @@ export const listStatuses = query({
         });
         if (!run) {
           return { claimKey: claim.claimKey, state: "untested" as const };
+        }
+        if (!runMatchesCurrentClaim(run.testedClaim, claim)) {
+          return { claimKey: claim.claimKey, state: "needs_retest" as const };
         }
         const generation = await ctx.db.get("scoutLabGenerations", run.generationId);
         if (!generation) {
@@ -484,7 +476,7 @@ export const liveView = query({
     const domain = routeProductDomain(args.domain);
     const claimKey = routeClaimKey(args.claimKey);
     if (domain === null || claimKey === null) return null;
-    const current = await findCurrentClaim(ctx, domain, claimKey);
+    const current = await findCurrentProductClaim(ctx, { userId, domain, claimKey });
     if (!current) return null;
 
     const run = await latestRunForClaim(ctx, {
@@ -494,6 +486,7 @@ export const liveView = query({
       claimKey: current.claim.claimKey,
     });
     if (!run) return null;
+    if (!runMatchesCurrentClaim(run.testedClaim, current.claim)) return null;
     const generation = await ctx.db.get("scoutLabGenerations", run.generationId);
     if (!generation || generation.status !== "pending") return null;
 

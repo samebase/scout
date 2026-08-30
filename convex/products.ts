@@ -11,6 +11,18 @@ import {
 } from "./_generated/server";
 import { requireAppUser } from "./access";
 import { productResearchAgent } from "./productResearchAgent";
+import {
+  applyClaimEdit,
+  claimSnapshot,
+  claimSnapshotsMatch,
+  findCurrentProductClaim,
+  MAX_EDITED_CLAIM_LENGTH,
+  MAX_EDITED_TEST_INSTRUCTIONS_LENGTH,
+  projectClaimsForUser,
+  requiredClaimStartingUrl,
+  requiredEditedClaimText,
+  routeClaimKey,
+} from "./productClaimEdits";
 import { productInvestigationWorkflow } from "./productInvestigationWorkflow";
 import {
   canonicalProductDomain,
@@ -27,18 +39,14 @@ import {
   PRODUCT_INVESTIGATION_MAX_CREDITS,
   PRODUCT_INVESTIGATION_MODEL,
   PRODUCT_INVESTIGATION_PROVIDER,
+  productClaimPublicValidator,
   productClaimRouteValidator,
   productInvestigationResultValidator,
   productListItemValidator,
   productRetrievalMetadataValidator,
 } from "./productsModel";
-import { projectClaims } from "./productsClaims";
 import { validateProductRetrievalMetadata } from "./productsResearch";
-import {
-  boundedInvestigationFailure,
-  parseProductInvestigationResult,
-  type ProductInvestigationResult,
-} from "./productsValidation";
+import { boundedInvestigationFailure, parseProductInvestigationResult } from "./productsValidation";
 import type { SelectableScoutModel } from "./scout/models";
 
 const MAX_ACCOUNTS_PER_PRODUCT = 200;
@@ -84,10 +92,19 @@ function routeProductDomain(value: string) {
   }
 }
 
-function projectInvestigationResult(result: ProductInvestigationResult) {
+async function projectInvestigationResult(
+  ctx: Pick<QueryCtx, "db">,
+  userId: Id<"users">,
+  investigation: CompletedInvestigation,
+) {
   return {
-    ...result,
-    claims: projectClaims(result.claims),
+    ...investigation.result,
+    claims: await projectClaimsForUser(ctx, {
+      userId,
+      productId: investigation.productId,
+      investigationId: investigation._id,
+      claims: investigation.result.claims,
+    }),
   };
 }
 
@@ -164,7 +181,12 @@ function legacyInvestigationPublicBase(investigation: LegacyInvestigation): {
 
 type CompletedInvestigation = Extract<Doc<"productInvestigations">, { status: "completed" }>;
 
-function projectCompletedInvestigation(investigation: CompletedInvestigation) {
+async function projectCompletedInvestigation(
+  ctx: Pick<QueryCtx, "db">,
+  userId: Id<"users">,
+  investigation: CompletedInvestigation,
+) {
+  const result = await projectInvestigationResult(ctx, userId, investigation);
   if (investigation.provider === PRODUCT_INVESTIGATION_PROVIDER) {
     return {
       ...currentInvestigationPublicBase(investigation),
@@ -175,7 +197,7 @@ function projectCompletedInvestigation(investigation: CompletedInvestigation) {
       creditsUsed: investigation.retrieval.totalCredits,
       reportedModel: null,
       providerExpiresAt: null,
-      result: projectInvestigationResult(investigation.result),
+      result,
     };
   }
   return {
@@ -187,11 +209,15 @@ function projectCompletedInvestigation(investigation: CompletedInvestigation) {
     creditsUsed: investigation.creditsUsed,
     reportedModel: investigation.reportedModel ?? null,
     providerExpiresAt: investigation.providerExpiresAt ?? null,
-    result: projectInvestigationResult(investigation.result),
+    result,
   };
 }
 
-function projectInvestigation(investigation: Doc<"productInvestigations">) {
+async function projectInvestigation(
+  ctx: Pick<QueryCtx, "db">,
+  userId: Id<"users">,
+  investigation: Doc<"productInvestigations">,
+) {
   switch (investigation.status) {
     case "queued":
       return investigation.provider === PRODUCT_INVESTIGATION_PROVIDER
@@ -222,7 +248,7 @@ function projectInvestigation(investigation: Doc<"productInvestigations">) {
         providerExpiresAt: investigation.providerExpiresAt ?? null,
       };
     case "completed":
-      return projectCompletedInvestigation(investigation);
+      return await projectCompletedInvestigation(ctx, userId, investigation);
     case "failed":
       if (investigation.provider === PRODUCT_INVESTIGATION_PROVIDER) {
         return {
@@ -315,10 +341,12 @@ async function projectProduct(ctx: QueryCtx, product: Doc<"products">, userId: I
     scoutAccess,
     experimentCount: experiments.length,
     latestInvestigation:
-      latest && latest.productId === product._id ? projectInvestigation(latest) : null,
+      latest && latest.productId === product._id
+        ? await projectInvestigation(ctx, userId, latest)
+        : null,
     latestCompletedInvestigation:
       latestCompleted?.status === "completed" && latestCompleted.productId === product._id
-        ? projectCompletedInvestigation(latestCompleted)
+        ? await projectCompletedInvestigation(ctx, userId, latestCompleted)
         : null,
   };
 }
@@ -447,36 +475,86 @@ export const getClaimByDomain = query({
   },
   returns: v.union(productClaimRouteValidator, v.null()),
   handler: async (ctx, args) => {
-    await requireAppUser(ctx);
+    const userId = await requireAppUser(ctx);
     const domain = routeProductDomain(args.domain);
-    if (domain === null) return null;
-    const product = await ctx.db
-      .query("products")
-      .withIndex("by_domain", (q) => q.eq("domain", domain))
-      .unique();
-    if (!product?.latestCompletedInvestigationId) return null;
-
-    const investigation = await ctx.db.get(
-      "productInvestigations",
-      product.latestCompletedInvestigationId,
-    );
-    if (investigation?.status !== "completed" || investigation.productId !== product._id) {
-      return null;
-    }
-    const claim = projectClaims(investigation.result.claims).find(
-      (candidate) => candidate.claimKey === args.claimKey,
-    );
-    return claim
+    const claimKey = routeClaimKey(args.claimKey);
+    if (domain === null || claimKey === null) return null;
+    const current = await findCurrentProductClaim(ctx, { userId, domain, claimKey });
+    return current
       ? {
           product: {
-            name: product.name,
-            domain: product.domain,
-            primaryUrl: product.primaryUrl,
+            name: current.product.name,
+            domain: current.product.domain,
+            primaryUrl: current.product.primaryUrl,
           },
-          claim,
-          completedAt: investigation.completedAt,
+          claim: current.claim,
+          completedAt: current.investigation.completedAt,
         }
       : null;
+  },
+});
+
+export const updateClaim = mutation({
+  args: {
+    domain: v.string(),
+    claimKey: v.string(),
+    claim: v.string(),
+    sourceUrl: v.string(),
+    suggestedMysteryShop: v.string(),
+  },
+  returns: productClaimPublicValidator,
+  handler: async (ctx, args) => {
+    const userId = await requireAppUser(ctx);
+    const domain = canonicalProductDomain(args.domain, "Product domain");
+    const claimKey = routeClaimKey(args.claimKey);
+    if (claimKey === null) {
+      throw new Error("Claim not found in the current completed investigation");
+    }
+    const current = await findCurrentProductClaim(ctx, { userId, domain, claimKey });
+    if (!current) {
+      throw new Error("Claim not found in the current completed investigation");
+    }
+
+    const nextSnapshot = {
+      claim: requiredEditedClaimText(args.claim, "Claim", MAX_EDITED_CLAIM_LENGTH),
+      sourceUrl: requiredClaimStartingUrl(args.sourceUrl, current.product.domain),
+      suggestedMysteryShop: requiredEditedClaimText(
+        args.suggestedMysteryShop,
+        "Test instructions",
+        MAX_EDITED_TEST_INSTRUCTIONS_LENGTH,
+      ),
+    };
+    if (claimSnapshotsMatch(nextSnapshot, claimSnapshot(current.claim))) {
+      return current.claim;
+    }
+
+    if (claimSnapshotsMatch(nextSnapshot, claimSnapshot(current.baseClaim))) {
+      if (current.edit) {
+        await ctx.db.delete("productClaimEdits", current.edit._id);
+      }
+      return applyClaimEdit(current.baseClaim, null);
+    }
+
+    const editedAt = Date.now();
+    const replacement = {
+      userId,
+      productId: current.product._id,
+      investigationId: current.investigation._id,
+      claimKey: current.baseClaim.claimKey,
+      ...nextSnapshot,
+      editedAt,
+    };
+    if (current.edit) {
+      await ctx.db.replace("productClaimEdits", current.edit._id, replacement);
+    } else {
+      await ctx.db.insert("productClaimEdits", replacement);
+    }
+    return {
+      ...current.baseClaim,
+      ...nextSnapshot,
+      isEdited: true,
+      editedAt,
+    };
   },
 });
 

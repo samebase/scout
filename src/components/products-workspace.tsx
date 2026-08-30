@@ -1616,6 +1616,7 @@ function ClaimTestStatus({ state }: { state: ClaimTestListState }) {
   const label = {
     failed: "Test failed",
     loading: "Checking",
+    needs_retest: "Needs retest",
     tested: "Tested",
     testing: "Testing",
     untested: "Untested",
@@ -1623,6 +1624,8 @@ function ClaimTestStatus({ state }: { state: ClaimTestListState }) {
   const className = {
     failed: "border-destructive/30 bg-destructive/10 text-destructive",
     loading: "border-border bg-muted/70 text-muted-foreground",
+    needs_retest:
+      "border-amber-600/30 bg-amber-500/10 text-amber-800 dark:border-amber-400/30 dark:text-amber-300",
     tested:
       "border-emerald-600/30 bg-emerald-500/10 text-emerald-700 dark:border-emerald-400/30 dark:text-emerald-300",
     testing:

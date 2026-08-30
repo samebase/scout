@@ -18,11 +18,12 @@ import {
   PanelLeftIcon,
   PanelRightIcon,
   PauseIcon,
+  PencilIcon,
   PlayIcon,
   RotateCcwIcon,
   TerminalSquareIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import {
   scoutSidebarDesktopPrehydrationScript,
@@ -31,6 +32,8 @@ import {
 import { ServiceIcon } from "#components/service-icon";
 import { ScoutRunMessageView, type ScoutRunMessage } from "#components/scout-run-message";
 import { Button } from "#components/ui/button";
+import { Input } from "#components/ui/input";
+import { Textarea } from "#components/ui/textarea";
 import {
   activeClickAt,
   activePageIdAt,
@@ -51,6 +54,15 @@ type ReplayPagesResult = FunctionReturnType<typeof api.claimTestReplay.listPages
 type ReplayReady = Extract<ReplayPagesResult, { status: "ready" }>;
 
 type StartState = { kind: "idle" } | { kind: "starting" } | { kind: "failed"; message: string };
+type ClaimEditFields = {
+  claim: string;
+  sourceUrl: string;
+  suggestedMysteryShop: string;
+};
+type ClaimEditState =
+  | { kind: "closed" }
+  | { kind: "editing"; fields: ClaimEditFields; error: string | null }
+  | { kind: "saving"; fields: ClaimEditFields };
 type ClaimVerdict = "Supported" | "Qualified" | "Refuted" | "Inconclusive";
 
 const CLAIM_RESIZE_HANDLE_LABELS = {
@@ -110,6 +122,7 @@ function ProductClaimPage() {
           <PaneFrame
             content={
               <ClaimMain
+                key={claimKey}
                 claimKey={claimKey}
                 domain={domain}
                 latestRun={latestRun}
@@ -311,6 +324,8 @@ function ClaimMain({
   productMissing: boolean;
   resolvedClaim: ResolvedClaim | undefined;
 }) {
+  const [editing, setEditing] = useState(false);
+
   if (loading) {
     return <CenteredStatus>Loading...</CenteredStatus>;
   }
@@ -336,58 +351,228 @@ function ClaimMain({
   return (
     <main className="mx-auto w-full max-w-5xl p-4 @md:p-7 @xl:p-10">
       <article>
-        <header className="max-w-4xl">
-          <span className="text-muted-foreground font-mono text-xs font-medium">
-            {claim.category}
-          </span>
-          <h2 className="mt-3 max-w-3xl wrap-break-word text-2xl font-semibold tracking-[-0.04em] @md:text-3xl @xl:text-4xl">
-            {claim.claim}
-          </h2>
-          <a
-            href={claim.sourceUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="text-muted-foreground mt-3 inline-flex max-w-full items-center gap-1.5 text-xs underline underline-offset-4 outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
-          >
-            <span className="truncate">{claim.pageTitle || "Source"}</span>
-            <ExternalLinkIcon className="size-3 shrink-0" aria-hidden="true" />
-          </a>
-        </header>
-
-        {claim.evidenceExcerpt ? (
-          <blockquote className="mt-6 max-w-3xl rounded-[0.75rem] bg-muted/55 px-4 py-3 text-sm leading-6 text-muted-foreground">
-            {claim.evidenceExcerpt}
-          </blockquote>
-        ) : null}
-
-        {claim.support || claim.qualifiers.length > 0 ? (
-          <details className="mt-5 max-w-3xl text-sm">
-            <summary className="text-muted-foreground cursor-pointer select-none outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
-              Research notes
-            </summary>
-            <div className="mt-3 space-y-3 border-l pl-4 leading-6">
-              {claim.support ? <p>{claim.support}</p> : null}
-              {claim.qualifiers.length > 0 ? (
-                <ul className="list-disc space-y-1 pl-4">
-                  {claim.qualifiers.map((qualifier, index) => (
-                    <li key={`${index}:${qualifier}`}>{qualifier}</li>
-                  ))}
-                </ul>
-              ) : null}
-            </div>
-          </details>
-        ) : null}
-
-        <ClaimTest
+        <ClaimHeader
+          key={claim.claimKey}
           claim={claim}
           claimKey={claimKey}
           domain={domain}
-          latestRun={latestRun}
-          liveViewUrl={liveViewUrl}
-          messages={messages}
+          onEditingChange={setEditing}
+          testRunning={latestRun?.generation.status === "pending"}
         />
+
+        {editing ? null : (
+          <>
+            {claim.evidenceExcerpt ? (
+              <blockquote className="mt-6 max-w-3xl rounded-[0.75rem] bg-muted/55 px-4 py-3 text-sm leading-6 text-muted-foreground">
+                {claim.evidenceExcerpt}
+              </blockquote>
+            ) : null}
+
+            {claim.support || claim.qualifiers.length > 0 ? (
+              <details className="mt-5 max-w-3xl text-sm">
+                <summary className="text-muted-foreground cursor-pointer select-none outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
+                  Research notes
+                </summary>
+                <div className="mt-3 space-y-3 border-l pl-4 leading-6">
+                  {claim.support ? <p>{claim.support}</p> : null}
+                  {claim.qualifiers.length > 0 ? (
+                    <ul className="list-disc space-y-1 pl-4">
+                      {claim.qualifiers.map((qualifier, index) => (
+                        <li key={`${index}:${qualifier}`}>{qualifier}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+              </details>
+            ) : null}
+
+            <ClaimTest
+              claim={claim}
+              claimKey={claimKey}
+              domain={domain}
+              latestRun={latestRun}
+              liveViewUrl={liveViewUrl}
+              messages={messages}
+            />
+          </>
+        )}
       </article>
     </main>
+  );
+}
+
+function ClaimHeader({
+  claim,
+  claimKey,
+  domain,
+  onEditingChange,
+  testRunning,
+}: {
+  claim: Claim;
+  claimKey: string;
+  domain: string;
+  onEditingChange: (editing: boolean) => void;
+  testRunning: boolean;
+}) {
+  const updateClaim = useMutation(api.products.updateClaim);
+  const [state, setState] = useState<ClaimEditState>({ kind: "closed" });
+
+  const open = () => {
+    onEditingChange(true);
+    setState({
+      kind: "editing",
+      fields: {
+        claim: claim.claim,
+        sourceUrl: claim.sourceUrl,
+        suggestedMysteryShop: claim.suggestedMysteryShop,
+      },
+      error: null,
+    });
+  };
+
+  const change = <Key extends keyof ClaimEditFields>(key: Key, value: ClaimEditFields[Key]) => {
+    setState((current) =>
+      current.kind === "editing"
+        ? {
+            kind: "editing",
+            fields: { ...current.fields, [key]: value },
+            error: null,
+          }
+        : current,
+    );
+  };
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (state.kind !== "editing") return;
+    const error = validateClaimEdit(state.fields, domain);
+    if (error) {
+      setState({ ...state, error });
+      return;
+    }
+    const fields = {
+      claim: state.fields.claim.trim(),
+      sourceUrl: state.fields.sourceUrl.trim(),
+      suggestedMysteryShop: state.fields.suggestedMysteryShop.trim(),
+    };
+    setState({ kind: "saving", fields });
+    try {
+      await updateClaim({ claimKey, domain, ...fields });
+      setState({ kind: "closed" });
+      onEditingChange(false);
+    } catch (error) {
+      setState({ kind: "editing", fields, error: claimUpdateError(error) });
+    }
+  };
+
+  if (state.kind !== "closed") {
+    const saving = state.kind === "saving";
+    const error = state.kind === "editing" ? state.error : null;
+    return (
+      <form className="max-w-3xl" onSubmit={(event) => void submit(event)}>
+        <h2 className="text-xl font-semibold tracking-[-0.025em]">Edit claim</h2>
+        <div className="mt-5 grid gap-4">
+          <label className="grid gap-2 text-sm font-medium">
+            Claim
+            <Textarea
+              name="claim"
+              value={state.fields.claim}
+              onChange={(event) => change("claim", event.target.value)}
+              disabled={saving}
+              maxLength={1_200}
+              rows={4}
+              required
+            />
+          </label>
+          <label className="grid gap-2 text-sm font-medium">
+            Starting URL
+            <Input
+              name="sourceUrl"
+              type="url"
+              value={state.fields.sourceUrl}
+              onChange={(event) => change("sourceUrl", event.target.value)}
+              disabled={saving}
+              maxLength={2_048}
+              required
+            />
+            <span className="text-muted-foreground text-xs font-normal">
+              Scout opens this page first.
+            </span>
+          </label>
+          <label className="grid gap-2 text-sm font-medium">
+            Test instructions
+            <Textarea
+              name="suggestedMysteryShop"
+              value={state.fields.suggestedMysteryShop}
+              onChange={(event) => change("suggestedMysteryShop", event.target.value)}
+              disabled={saving}
+              maxLength={1_200}
+              rows={5}
+              required
+            />
+          </label>
+        </div>
+        {error ? (
+          <p className="text-destructive mt-4 flex items-start gap-2 text-sm" role="alert">
+            <CircleAlertIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            {error}
+          </p>
+        ) : null}
+        <div className="mt-5 flex flex-wrap items-center gap-2">
+          <Button type="submit" disabled={saving}>
+            {saving ? <LoaderCircleIcon className="animate-spin" /> : null}
+            {saving ? "Saving" : "Save"}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={saving}
+            onClick={() => {
+              setState({ kind: "closed" });
+              onEditingChange(false);
+            }}
+          >
+            Cancel
+          </Button>
+        </div>
+      </form>
+    );
+  }
+
+  return (
+    <header className="max-w-4xl">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="text-muted-foreground font-mono text-xs font-medium">
+            {claim.category}
+          </span>
+          {claim.isEdited ? <span className="text-muted-foreground text-xs">Edited</span> : null}
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={open}
+          disabled={testRunning}
+          title={testRunning ? "Wait for the current test to finish" : undefined}
+        >
+          <PencilIcon />
+          Edit
+        </Button>
+      </div>
+      <h2 className="mt-3 max-w-3xl wrap-break-word text-2xl font-semibold tracking-[-0.04em] @md:text-3xl @xl:text-4xl">
+        {claim.claim}
+      </h2>
+      <a
+        href={claim.sourceUrl}
+        target="_blank"
+        rel="noreferrer"
+        className="text-muted-foreground mt-3 inline-flex max-w-full items-center gap-1.5 text-xs underline underline-offset-4 outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+      >
+        <span className="truncate">{claim.pageTitle || "Starting page"}</span>
+        <ExternalLinkIcon className="size-3 shrink-0" aria-hidden="true" />
+      </a>
+    </header>
   );
 }
 
@@ -492,6 +677,7 @@ function ClaimRunResult({
   if (latestRun.generation.status === "failed") {
     return (
       <>
+        <PreviousClaimRunNotice run={latestRun} />
         <ClaimReplay runId={latestRun.runId} />
         <div className="mt-8 border-t pt-6">
           <p className="text-destructive text-sm font-medium">Test failed</p>
@@ -512,6 +698,7 @@ function ClaimRunResult({
 
   return (
     <>
+      <PreviousClaimRunNotice run={latestRun} />
       {liveBrowser ??
         (latestRun.generation.status === "completed" ? (
           <ClaimReplay runId={latestRun.runId} />
@@ -551,6 +738,40 @@ function ClaimRunResult({
         <RunMetadata run={latestRun} />
       </div>
     </>
+  );
+}
+
+function PreviousClaimRunNotice({ run }: { run: ClaimRun }) {
+  if (run.matchesCurrentClaim) return null;
+  return (
+    <section className="mt-8 border-t pt-6" aria-labelledby="previous-claim-run-heading">
+      <h3 id="previous-claim-run-heading" className="text-sm font-semibold">
+        Needs retest
+      </h3>
+      <p className="text-muted-foreground mt-2 max-w-3xl text-sm leading-6">
+        This run used earlier claim wording. Its replay and result remain available below.
+      </p>
+      {run.testedClaim ? (
+        <details className="mt-3 max-w-3xl text-sm">
+          <summary className="text-muted-foreground cursor-pointer select-none outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
+            What this run tested
+          </summary>
+          <div className="mt-3 space-y-3 border-l pl-4 leading-6">
+            <p className="font-medium">{run.testedClaim.claim}</p>
+            <p>{run.testedClaim.suggestedMysteryShop}</p>
+            <a
+              href={run.testedClaim.sourceUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="text-muted-foreground inline-flex max-w-full items-center gap-1.5 text-xs underline underline-offset-4 outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              <span className="truncate">{run.testedClaim.sourceUrl}</span>
+              <ExternalLinkIcon className="size-3 shrink-0" aria-hidden="true" />
+            </a>
+          </div>
+        </details>
+      ) : null}
+    </section>
   );
 }
 
@@ -1282,6 +1503,7 @@ function verdictDotClass(verdict: ClaimVerdict) {
 function runStatus(run: ClaimRun | null | undefined) {
   if (run === undefined) return "Loading";
   if (run === null) return "Not tested";
+  if (!run.matchesCurrentClaim && run.generation.status !== "pending") return "Needs retest";
   switch (run.generation.status) {
     case "pending":
       return "Running";
@@ -1306,4 +1528,62 @@ function claimTestError(error: unknown) {
     "Product not found",
   ].find((candidate) => message.includes(candidate));
   return known ?? "Could not start the test.";
+}
+
+function validateClaimEdit(fields: ClaimEditFields, domain: string) {
+  if (!fields.claim.trim()) return "Claim cannot be empty.";
+  if (Array.from(fields.claim.trim()).length > 1_200) {
+    return "Claim must be 1,200 characters or fewer.";
+  }
+  if (!fields.suggestedMysteryShop.trim()) return "Test instructions cannot be empty.";
+  if (Array.from(fields.suggestedMysteryShop.trim()).length > 1_200) {
+    return "Test instructions must be 1,200 characters or fewer.";
+  }
+
+  let url: URL;
+  try {
+    url = new URL(fields.sourceUrl.trim());
+  } catch {
+    return "Starting URL must be a valid URL.";
+  }
+  if (
+    (url.protocol !== "http:" && url.protocol !== "https:") ||
+    url.username !== "" ||
+    url.password !== ""
+  ) {
+    return "Starting URL must use HTTP or HTTPS without credentials.";
+  }
+  const hostname = url.hostname.toLowerCase().replace(/\.$/, "");
+  if (hostname !== domain && !hostname.endsWith(`.${domain}`)) {
+    return `Starting URL must belong to ${domain}.`;
+  }
+  return null;
+}
+
+function claimUpdateError(error: unknown) {
+  if (!(error instanceof Error)) return "Could not save the claim.";
+  const messages = [
+    ["Claim cannot be empty", "Claim cannot be empty."],
+    ["Claim must be 1200 characters or fewer", "Claim must be 1,200 characters or fewer."],
+    ["Starting URL must be a valid URL", "Starting URL must be a valid URL."],
+    [
+      "Starting URL must use HTTP or HTTPS without credentials",
+      "Starting URL must use HTTP or HTTPS without credentials.",
+    ],
+    ["Test instructions cannot be empty", "Test instructions cannot be empty."],
+    [
+      "Test instructions must be 1200 characters or fewer",
+      "Test instructions must be 1,200 characters or fewer.",
+    ],
+    [
+      "Claim not found in the current completed investigation",
+      "Claim is no longer part of the current investigation.",
+    ],
+  ] as const;
+  const known = messages.find(([needle]) => error.message.includes(needle));
+  if (known) return known[1];
+  const domainError = error.message.match(/Starting URL must belong to ([a-z0-9.-]+)/i);
+  return domainError
+    ? `Starting URL must belong to ${domainError[1]}.`
+    : "Could not save the claim.";
 }

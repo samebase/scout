@@ -341,6 +341,105 @@ describe("Claim tests", () => {
     ).resolves.toMatchObject({ created: true });
   });
 
+  it("tests the edited claim snapshot and marks an older result as needing a retest", async () => {
+    const { backend, userId, admin } = await authenticatedBackend();
+    await insertScout(backend);
+    const originalClaim = claim("one browser tab");
+    const snapshot = await insertCompletedInvestigation(backend, {
+      userId,
+      claims: [originalClaim],
+    });
+    const claimKey = snapshot.claimKeys[0];
+    if (!claimKey) throw new Error("Expected a claim key");
+
+    const first = await admin.mutation(api.claimTests.start, {
+      domain: "example.test",
+      claimKey,
+    });
+    const firstGeneration = await backend.run(async (ctx) => {
+      const run = await ctx.db.get("claimTestRuns", first.runId);
+      expect(run?.testedClaim).toEqual({
+        claim: originalClaim.claim,
+        sourceUrl: originalClaim.sourceUrl,
+        suggestedMysteryShop: originalClaim.suggestedMysteryShop,
+      });
+      return run ? await ctx.db.get("scoutLabGenerations", run.generationId) : null;
+    });
+    if (!firstGeneration) throw new Error("Expected the original generation");
+    await backend.mutation(internal.scout.lab.completeGeneration, {
+      promptMessageId: firstGeneration.promptMessageId,
+      usage: { promptTokens: 100, completionTokens: 20, totalTokens: 120 },
+    });
+
+    const editedClaim = {
+      claim: "The same form can remain open and usable in two tabs.",
+      sourceUrl: "https://app.example.test/forms/demo",
+      suggestedMysteryShop:
+        "Open the form in two tabs, switch from the first tab to the second and back, and describe the visible state after each switch.",
+    };
+    const edited = await admin.mutation(api.products.updateClaim, {
+      domain: "example.test",
+      claimKey,
+      ...editedClaim,
+    });
+    expect(edited).toMatchObject({ claimKey, ...editedClaim, isEdited: true });
+    await expect(
+      admin.query(api.claimTests.listStatuses, { domain: "example.test" }),
+    ).resolves.toEqual([{ claimKey, state: "needs_retest" }]);
+    await expect(
+      admin.query(api.claimTests.latest, { domain: "example.test", claimKey }),
+    ).resolves.toMatchObject({
+      runId: first.runId,
+      matchesCurrentClaim: false,
+      testedClaim: {
+        claim: originalClaim.claim,
+        sourceUrl: originalClaim.sourceUrl,
+        suggestedMysteryShop: originalClaim.suggestedMysteryShop,
+      },
+      generation: { status: "completed" },
+    });
+
+    const second = await admin.mutation(api.claimTests.start, {
+      domain: "example.test",
+      claimKey,
+    });
+    expect(second).toMatchObject({ created: true });
+    expect(second.runId).not.toBe(first.runId);
+    const secondGeneration = await backend.run(async (ctx) => {
+      const run = await ctx.db.get("claimTestRuns", second.runId);
+      expect(run?.testedClaim).toEqual(editedClaim);
+      return run ? await ctx.db.get("scoutLabGenerations", run.generationId) : null;
+    });
+    if (!secondGeneration) throw new Error("Expected the edited generation");
+    const messages = await admin.query(api.scout.lab.listMessages, {
+      threadId: second.threadId,
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+    const prompt = messages.page.find((message) => message.role === "user")?.text;
+    expect(prompt).toContain(editedClaim.claim);
+    expect(prompt).toContain(editedClaim.sourceUrl);
+    expect(prompt).toContain(editedClaim.suggestedMysteryShop);
+    await expect(
+      admin.query(api.claimTests.latest, { domain: "example.test", claimKey }),
+    ).resolves.toMatchObject({
+      runId: second.runId,
+      matchesCurrentClaim: true,
+      testedClaim: editedClaim,
+      generation: { status: "pending" },
+    });
+    await expect(
+      admin.query(api.claimTests.listStatuses, { domain: "example.test" }),
+    ).resolves.toEqual([{ claimKey, state: "testing" }]);
+
+    await backend.mutation(internal.scout.lab.completeGeneration, {
+      promptMessageId: secondGeneration.promptMessageId,
+      usage: { promptTokens: 80, completionTokens: 10, totalTokens: 90 },
+    });
+    await expect(
+      admin.query(api.claimTests.listStatuses, { domain: "example.test" }),
+    ).resolves.toEqual([{ claimKey, state: "tested" }]);
+  });
+
   it("links lookup to both the exact claim and the current investigation snapshot", async () => {
     const { backend, userId, admin } = await authenticatedBackend();
     await insertScout(backend);
