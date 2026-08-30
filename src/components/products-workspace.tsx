@@ -1728,6 +1728,7 @@ function AddClaimForm({ domain, onCancel }: { domain: string; onCancel: () => vo
 function ClaimTestStatus({ state }: { state: ClaimTestListState }) {
   const label = {
     failed: "Test failed",
+    inconclusive: "Inconclusive",
     loading: "Checking",
     needs_retest: "Needs retest",
     tested: "Tested",
@@ -1736,6 +1737,7 @@ function ClaimTestStatus({ state }: { state: ClaimTestListState }) {
   }[state];
   const className = {
     failed: "border-destructive/30 bg-destructive/10 text-destructive",
+    inconclusive: "border-border bg-muted text-muted-foreground",
     loading: "border-border bg-muted/70 text-muted-foreground",
     needs_retest:
       "border-amber-600/30 bg-amber-500/10 text-amber-800 dark:border-amber-400/30 dark:text-amber-300",

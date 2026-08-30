@@ -6,6 +6,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { ADMIN_EMAIL } from "./authConfig";
+import { parseClaimTestOutcome } from "./claimTestRunModel";
 import { projectClaims } from "./productsClaims";
 import type { ProductInvestigationResult } from "./productsValidation";
 import schema from "./schema";
@@ -20,6 +21,18 @@ function testBackend() {
 
 type TestBackend = ReturnType<typeof testBackend>;
 type AuthenticatedTestBackend = ReturnType<TestBackend["withIdentity"]>;
+
+const FRESH_RUN = {
+  browserProfile: { kind: "fresh" as const },
+  accountCreation: "not_requested" as const,
+};
+
+const ACCOUNT_EVIDENCE = {
+  accountAccess: "created" as const,
+  observedUrl: "https://example.test/settings/profile",
+  visibleIdentity: "Signed in as conrad@example.test",
+  visibleSessionControl: "Sign out",
+};
 
 async function authenticatedBackend() {
   const backend = testBackend();
@@ -81,6 +94,64 @@ function investigationResult(
     unknowns: [],
     sources: [{ url: "https://example.test/features", title: "Example features" }],
   };
+}
+
+function appliedBrowserTelemetry(afterUrl: string) {
+  return {
+    version: 1 as const,
+    before: {
+      capturedAtMs: 1_000,
+      tabs: [
+        {
+          tabId: "t1",
+          title: "Example",
+          url: "https://example.test/",
+          active: true,
+        },
+      ],
+    },
+    dispatchedAtMs: 1_010,
+    returnedAtMs: 1_020,
+    after: {
+      capturedAtMs: 1_020,
+      tabs: [
+        {
+          tabId: "t1",
+          title: "Authenticated account",
+          url: afterUrl,
+          active: true,
+        },
+      ],
+    },
+    pointer: null,
+  };
+}
+
+async function captureBrowserEvidence(
+  backend: TestBackend,
+  promptMessageId: string,
+  suffix: string,
+) {
+  const registered = await backend.mutation(internal.claimTests.setBrowserSession, {
+    promptMessageId,
+    providerSessionId: `evidence-${suffix}`,
+  });
+  if (!registered.browserSessionId) throw new Error("Expected a browser session");
+  const toolCallId = `evidence-open-${suffix}`;
+  await backend.mutation(internal.claimTests.prepareBrowserOperation, {
+    sessionId: registered.browserSessionId,
+    toolCallId,
+    action: { kind: "open", url: "https://example.test/evidence" },
+  });
+  await backend.mutation(internal.claimTests.settleBrowserOperation, {
+    sessionId: registered.browserSessionId,
+    toolCallId,
+    outcome: {
+      kind: "applied",
+      telemetry: appliedBrowserTelemetry("https://example.test/evidence"),
+    },
+  });
+  return registered.browserSessionId;
 }
 
 async function insertCompletedInvestigation(
@@ -151,18 +222,34 @@ async function startClaimTestWithBrowser(
   const started = await admin.mutation(api.claimTests.start, {
     domain: "example.test",
     claimKey,
+    ...FRESH_RUN,
   });
   const generation = await backend.run(async (ctx) => {
     const run = await ctx.db.get("claimTestRuns", started.runId);
-    return run ? await ctx.db.get("scoutLabGenerations", run.generationId) : null;
+    return run ? await ctx.db.get("scoutLabGenerations", run.state.generationId) : null;
   });
   if (!generation) throw new Error("Expected a claim test generation");
-  await backend.mutation(internal.claimTests.setBrowserSession, {
+  const registered = await backend.mutation(internal.claimTests.setBrowserSession, {
     promptMessageId: generation.promptMessageId,
-    sessionId: "firecrawl-session-1",
+    providerSessionId: "firecrawl-session-1",
   });
-  return { claimKey, started, generation };
+  if (!registered.browserSessionId) throw new Error("Expected a claim test browser session");
+  return { claimKey, started, generation, sessionId: registered.browserSessionId };
 }
+
+describe("Claim-test verdict parsing", () => {
+  it("accepts only the exact required first line", () => {
+    expect(parseClaimTestOutcome("Verdict: Supported\n\nDirect evidence.")).toEqual({
+      verdict: "supported",
+    });
+    expect(parseClaimTestOutcome("Verdict: Inconclusive")).toEqual({
+      verdict: "inconclusive",
+    });
+    expect(parseClaimTestOutcome(" Verdict: Supported")).toBeNull();
+    expect(parseClaimTestOutcome("Verdict: supported")).toBeNull();
+    expect(parseClaimTestOutcome("Summary\nVerdict: Supported")).toBeNull();
+  });
+});
 
 describe("Claim tests", () => {
   it("keeps custom claims owner-scoped and product-scoped across investigations", async () => {
@@ -327,10 +414,12 @@ describe("Claim tests", () => {
       admin.query(api.claimTests.promptPreview, {
         domain: "example.test",
         claimKey: customClaimKey,
+        accountCreation: "not_requested",
       }),
       admin.query(api.claimTests.promptPreview, {
         domain: "example.test",
         claimKey: generatedClaimKey,
+        accountCreation: "not_requested",
       }),
     ]);
     expect(customPrompt).toContain("Name: Example");
@@ -347,6 +436,7 @@ describe("Claim tests", () => {
     const firstRun = await admin.mutation(api.claimTests.start, {
       domain: "example.test",
       claimKey: customClaimKey,
+      ...FRESH_RUN,
     });
     const firstGeneration = await backend.run(async (ctx) => {
       const run = await ctx.db.get("claimTestRuns", firstRun.runId);
@@ -355,12 +445,14 @@ describe("Claim tests", () => {
         claim: "A visitor can compare two drafts side by side.",
         suggestedMysteryShop: "",
       });
-      return run ? await ctx.db.get("scoutLabGenerations", run.generationId) : null;
+      return run ? await ctx.db.get("scoutLabGenerations", run.state.generationId) : null;
     });
     if (!firstGeneration) throw new Error("Expected a custom claim generation");
+    await captureBrowserEvidence(backend, firstGeneration.promptMessageId, "status-refresh");
     await backend.mutation(internal.scout.lab.completeGeneration, {
       promptMessageId: firstGeneration.promptMessageId,
       usage: { promptTokens: 50, completionTokens: 10, totalTokens: 60 },
+      claimTestOutcome: { verdict: "supported" },
     });
     await expect(
       admin.query(api.claimTests.listStatuses, { domain: "example.test" }),
@@ -373,7 +465,8 @@ describe("Claim tests", () => {
       suffix: "status-refresh",
     });
     await expect(
-      admin.query(api.claimTests.latest, {
+      admin.query(api.claimTests.getRun, {
+        runId: firstRun.runId,
         domain: "example.test",
         claimKey: customClaimKey,
       }),
@@ -399,6 +492,7 @@ describe("Claim tests", () => {
     const secondRun = await admin.mutation(api.claimTests.start, {
       domain: "example.test",
       claimKey: customClaimKey,
+      ...FRESH_RUN,
     });
     expect(secondRun.created).toBe(true);
     await expect(
@@ -445,12 +539,15 @@ describe("Claim tests", () => {
     const started = await admin.mutation(api.claimTests.start, {
       domain: "https://WWW.EXAMPLE.test/products",
       claimKey,
+      ...FRESH_RUN,
     });
 
     expect(started).toMatchObject({ created: true });
     const stored = await backend.run(async (ctx) => {
       const run = await ctx.db.get("claimTestRuns", started.runId);
-      const generation = run ? await ctx.db.get("scoutLabGenerations", run.generationId) : null;
+      const generation = run
+        ? await ctx.db.get("scoutLabGenerations", run.state.generationId)
+        : null;
       const experiment = run ? await ctx.db.get("scoutLabExperiments", run.experimentId) : null;
       const thread = run
         ? await ctx.db
@@ -468,6 +565,9 @@ describe("Claim tests", () => {
       scoutId,
       experimentId: started.experimentId,
       threadId: started.threadId,
+      browserProfile: { kind: "fresh" },
+      accountCreation: "not_requested",
+      state: { kind: "running" },
     });
     expect(stored.generation).toMatchObject({
       status: "pending",
@@ -498,15 +598,20 @@ describe("Claim tests", () => {
     expect(prompt).toContain("Begin the final response with exactly one line");
     expect(prompt).toContain("Close the browser");
     await expect(
-      backend.query(internal.claimTests.isClaimTestGeneration, {
+      backend.query(internal.claimTests.generationContext, {
         promptMessageId: stored.generation?.promptMessageId ?? "missing",
       }),
-    ).resolves.toBe(true);
+    ).resolves.toMatchObject({
+      runId: started.runId,
+      productDomain: "example.test",
+      browserProfile: { kind: "fresh" },
+      accountCreation: "not_requested",
+    });
     await expect(
-      backend.query(internal.claimTests.isClaimTestGeneration, {
+      backend.query(internal.claimTests.generationContext, {
         promptMessageId: "missing",
       }),
-    ).resolves.toBe(false);
+    ).resolves.toBeNull();
   });
 
   it("returns the same run while its exact claim generation is pending", async () => {
@@ -522,10 +627,12 @@ describe("Claim tests", () => {
     const first = await admin.mutation(api.claimTests.start, {
       domain: "example.test",
       claimKey,
+      ...FRESH_RUN,
     });
     const second = await admin.mutation(api.claimTests.start, {
       domain: "example.test",
       claimKey,
+      ...FRESH_RUN,
     });
 
     expect(second).toEqual({ ...first, created: false });
@@ -559,6 +666,7 @@ describe("Claim tests", () => {
     const first = await admin.mutation(api.claimTests.start, {
       domain: "example.test",
       claimKey,
+      ...FRESH_RUN,
     });
     await expect(
       admin.query(api.claimTests.listStatuses, { domain: "example.test" }),
@@ -568,13 +676,15 @@ describe("Claim tests", () => {
     ]);
     const firstGeneration = await backend.run(async (ctx) => {
       const run = await ctx.db.get("claimTestRuns", first.runId);
-      return run ? await ctx.db.get("scoutLabGenerations", run.generationId) : null;
+      return run ? await ctx.db.get("scoutLabGenerations", run.state.generationId) : null;
     });
     if (!firstGeneration) throw new Error("Expected a generation");
 
+    await captureBrowserEvidence(backend, firstGeneration.promptMessageId, "terminal-success");
     await backend.mutation(internal.scout.lab.completeGeneration, {
       promptMessageId: firstGeneration.promptMessageId,
       usage: { promptTokens: 100, completionTokens: 20, totalTokens: 120 },
+      claimTestOutcome: { verdict: "supported" },
       firecrawlCredits: 3,
       firecrawlDurationMs: 9_000,
     });
@@ -582,7 +692,11 @@ describe("Claim tests", () => {
       backend.run(async (ctx) => await ctx.db.get("scoutLabExperiments", first.experimentId)),
     ).resolves.toMatchObject({ status: "completed" });
     await expect(
-      admin.query(api.claimTests.latest, { domain: "example.test", claimKey }),
+      admin.query(api.claimTests.getRun, {
+        runId: first.runId,
+        domain: "example.test",
+        claimKey,
+      }),
     ).resolves.toMatchObject({
       runId: first.runId,
       generation: {
@@ -599,6 +713,7 @@ describe("Claim tests", () => {
     const second = await admin.mutation(api.claimTests.start, {
       domain: "example.test",
       claimKey,
+      ...FRESH_RUN,
     });
     expect(second.created).toBe(true);
     expect(second.runId).not.toBe(first.runId);
@@ -607,7 +722,7 @@ describe("Claim tests", () => {
     ).resolves.toContainEqual({ claimKey, state: "testing" });
     const secondGeneration = await backend.run(async (ctx) => {
       const run = await ctx.db.get("claimTestRuns", second.runId);
-      return run ? await ctx.db.get("scoutLabGenerations", run.generationId) : null;
+      return run ? await ctx.db.get("scoutLabGenerations", run.state.generationId) : null;
     });
     if (!secondGeneration) throw new Error("Expected a retry generation");
     await backend.mutation(internal.scout.lab.failGeneration, {
@@ -619,7 +734,11 @@ describe("Claim tests", () => {
       backend.run(async (ctx) => await ctx.db.get("scoutLabExperiments", second.experimentId)),
     ).resolves.toMatchObject({ status: "completed" });
     await expect(
-      admin.query(api.claimTests.latest, { domain: "example.test", claimKey }),
+      admin.query(api.claimTests.getRun, {
+        runId: second.runId,
+        domain: "example.test",
+        claimKey,
+      }),
     ).resolves.toMatchObject({
       runId: second.runId,
       generation: {
@@ -632,8 +751,469 @@ describe("Claim tests", () => {
       admin.query(api.claimTests.listStatuses, { domain: "example.test" }),
     ).resolves.toContainEqual({ claimKey, state: "failed" });
     await expect(
-      admin.mutation(api.claimTests.start, { domain: "example.test", claimKey }),
+      admin.mutation(api.claimTests.start, {
+        domain: "example.test",
+        claimKey,
+        ...FRESH_RUN,
+      }),
     ).resolves.toMatchObject({ created: true });
+  });
+
+  it("continues one run on the same thread with ordered persistent-profile sessions", async () => {
+    const { backend, userId, admin } = await authenticatedBackend();
+    const scoutId = await insertScout(backend);
+    const snapshot = await insertCompletedInvestigation(backend, {
+      userId,
+      claims: [claim("a continued authenticated workflow")],
+    });
+    const claimKey = snapshot.claimKeys[0];
+    if (!claimKey) throw new Error("Expected a claim key");
+    const runConfig = {
+      browserProfile: { kind: "scout" as const, scoutId },
+      accountCreation: "not_requested" as const,
+    };
+    const started = await admin.mutation(api.claimTests.start, {
+      domain: "example.test",
+      claimKey,
+      ...runConfig,
+    });
+    const firstGeneration = await backend.run(async (ctx) => {
+      const run = await ctx.db.get("claimTestRuns", started.runId);
+      return run ? await ctx.db.get("scoutLabGenerations", run.state.generationId) : null;
+    });
+    if (!firstGeneration) throw new Error("Expected the first generation");
+    const firstRegistered = await backend.mutation(internal.claimTests.setBrowserSession, {
+      promptMessageId: firstGeneration.promptMessageId,
+      providerSessionId: "continued-session-1",
+    });
+    if (!firstRegistered.browserSessionId) throw new Error("Expected the first session");
+    await backend.mutation(internal.claimTests.closeBrowserSessionRecord, {
+      sessionId: firstRegistered.browserSessionId,
+      providerDurationMs: 1_000,
+      creditsBilled: 1,
+    });
+    await backend.mutation(internal.scout.lab.completeGeneration, {
+      promptMessageId: firstGeneration.promptMessageId,
+      usage: { totalTokens: 10 },
+      claimTestOutcome: { verdict: "inconclusive" },
+    });
+    await expect(
+      admin.query(api.claimTests.listStatuses, { domain: "example.test" }),
+    ).resolves.toEqual([{ claimKey, state: "inconclusive" }]);
+
+    const continued = await admin.mutation(api.claimTests.continueRun, {
+      runId: started.runId,
+    });
+    expect(continued.runId).toBe(started.runId);
+    expect(continued.threadId).toBe(started.threadId);
+    expect(continued.generationId).not.toBe(firstGeneration._id);
+    const secondGeneration = await backend.run(
+      async (ctx) => await ctx.db.get("scoutLabGenerations", continued.generationId),
+    );
+    if (!secondGeneration) throw new Error("Expected the continued generation");
+    const secondRegistered = await backend.mutation(internal.claimTests.setBrowserSession, {
+      promptMessageId: secondGeneration.promptMessageId,
+      providerSessionId: "continued-session-2",
+    });
+    if (!secondRegistered.browserSessionId) throw new Error("Expected the second session");
+    await backend.mutation(internal.claimTests.prepareBrowserOperation, {
+      sessionId: secondRegistered.browserSessionId,
+      toolCallId: "continued-open",
+      action: { kind: "open", url: "https://example.test/continued" },
+    });
+    await backend.mutation(internal.claimTests.settleBrowserOperation, {
+      sessionId: secondRegistered.browserSessionId,
+      toolCallId: "continued-open",
+      outcome: {
+        kind: "applied",
+        telemetry: appliedBrowserTelemetry("https://example.test/continued"),
+      },
+    });
+
+    await expect(
+      admin.query(api.claimTests.listBrowserSessions, { runId: started.runId }),
+    ).resolves.toMatchObject([
+      {
+        sessionId: firstRegistered.browserSessionId,
+        generationId: firstGeneration._id,
+        sequence: 1,
+        profileName: "conrad-profile",
+        operationCount: 0,
+      },
+      {
+        sessionId: secondRegistered.browserSessionId,
+        generationId: secondGeneration._id,
+        sequence: 2,
+        profileName: "conrad-profile",
+        operationCount: 1,
+      },
+    ]);
+    await expect(
+      admin.query(internal.claimTests.replayData, {
+        sessionId: firstRegistered.browserSessionId,
+      }),
+    ).resolves.toMatchObject({ providerSessionId: "continued-session-1", operations: [] });
+    await expect(
+      admin.query(internal.claimTests.replayData, {
+        sessionId: secondRegistered.browserSessionId,
+      }),
+    ).resolves.toMatchObject({
+      providerSessionId: "continued-session-2",
+      operations: [{ toolCallId: "continued-open" }],
+    });
+    await expect(
+      admin.query(api.claimTests.getRun, {
+        runId: started.runId,
+        domain: "example.test",
+        claimKey,
+      }),
+    ).resolves.toMatchObject({
+      threadId: started.threadId,
+      browserProfile: { kind: "scout", profileName: "conrad-profile" },
+      state: { kind: "running", generationId: secondGeneration._id },
+    });
+    await expect(
+      backend.run(async (ctx) =>
+        ctx.db
+          .query("scoutLabGenerations")
+          .withIndex("by_thread_id_and_order", (index) => index.eq("threadId", started.threadId))
+          .collect(),
+      ),
+    ).resolves.toHaveLength(2);
+
+    await backend.mutation(internal.claimTests.closeBrowserSessionRecord, {
+      sessionId: secondRegistered.browserSessionId,
+      providerDurationMs: 2_000,
+      creditsBilled: 1,
+    });
+    await backend.mutation(internal.scout.lab.completeGeneration, {
+      promptMessageId: secondGeneration.promptMessageId,
+      usage: { totalTokens: 20 },
+      claimTestOutcome: { verdict: "supported" },
+    });
+    const testedAgain = await admin.mutation(api.claimTests.start, {
+      domain: "example.test",
+      claimKey,
+      ...runConfig,
+    });
+    expect(testedAgain.runId).not.toBe(started.runId);
+    expect(testedAgain.threadId).not.toBe(started.threadId);
+    await expect(
+      admin.query(api.claimTests.listRuns, { domain: "example.test", claimKey }),
+    ).resolves.toHaveLength(2);
+  });
+
+  it("does not mark a completed generation tested without an exact verdict", async () => {
+    const { backend, userId, admin } = await authenticatedBackend();
+    await insertScout(backend);
+    const snapshot = await insertCompletedInvestigation(backend, {
+      userId,
+      claims: [claim("an explicit verdict")],
+    });
+    const claimKey = snapshot.claimKeys[0];
+    if (!claimKey) throw new Error("Expected a claim key");
+    const started = await admin.mutation(api.claimTests.start, {
+      domain: "example.test",
+      claimKey,
+      ...FRESH_RUN,
+    });
+    const generation = await backend.run(async (ctx) => {
+      const run = await ctx.db.get("claimTestRuns", started.runId);
+      return run ? await ctx.db.get("scoutLabGenerations", run.state.generationId) : null;
+    });
+    if (!generation) throw new Error("Expected a generation");
+    await backend.mutation(internal.scout.lab.completeGeneration, {
+      promptMessageId: generation.promptMessageId,
+      usage: { totalTokens: 1 },
+    });
+    await expect(
+      admin.query(api.claimTests.getRun, {
+        runId: started.runId,
+        domain: "example.test",
+        claimKey,
+      }),
+    ).resolves.toMatchObject({
+      generation: { status: "completed" },
+      state: {
+        kind: "failed",
+        failure: "Scout completed without an exact claim verdict",
+      },
+    });
+    await expect(
+      admin.query(api.claimTests.listStatuses, { domain: "example.test" }),
+    ).resolves.toContainEqual({ claimKey, state: "failed" });
+  });
+
+  it("rejects a conclusive verdict when no browser evidence was captured", async () => {
+    const { backend, userId, admin } = await authenticatedBackend();
+    await insertScout(backend);
+    const snapshot = await insertCompletedInvestigation(backend, {
+      userId,
+      claims: [claim("browser-backed evidence")],
+    });
+    const claimKey = snapshot.claimKeys[0];
+    if (!claimKey) throw new Error("Expected a claim key");
+    const started = await admin.mutation(api.claimTests.start, {
+      domain: "example.test",
+      claimKey,
+      ...FRESH_RUN,
+    });
+    const generation = await backend.run(async (ctx) => {
+      const run = await ctx.db.get("claimTestRuns", started.runId);
+      return run ? await ctx.db.get("scoutLabGenerations", run.state.generationId) : null;
+    });
+    if (!generation) throw new Error("Expected a generation");
+    await backend.mutation(internal.scout.lab.completeGeneration, {
+      promptMessageId: generation.promptMessageId,
+      usage: { totalTokens: 1 },
+      claimTestOutcome: { verdict: "supported" },
+    });
+    await expect(
+      admin.query(api.claimTests.getRun, {
+        runId: started.runId,
+        domain: "example.test",
+        claimKey,
+      }),
+    ).resolves.toMatchObject({
+      state: {
+        kind: "failed",
+        failure: "Scout returned a claim verdict without captured browser evidence",
+      },
+    });
+  });
+
+  it("rejects a successful required-account verdict without an authenticated account record", async () => {
+    const { backend, userId, admin } = await authenticatedBackend();
+    const scoutId = await insertScout(backend);
+    const snapshot = await insertCompletedInvestigation(backend, {
+      userId,
+      claims: [claim("account creation")],
+    });
+    const claimKey = snapshot.claimKeys[0];
+    if (!claimKey) throw new Error("Expected a claim key");
+    const started = await admin.mutation(api.claimTests.start, {
+      domain: "example.test",
+      claimKey,
+      browserProfile: { kind: "scout", scoutId },
+      accountCreation: "required",
+    });
+    const generation = await backend.run(async (ctx) => {
+      const run = await ctx.db.get("claimTestRuns", started.runId);
+      return run ? await ctx.db.get("scoutLabGenerations", run.state.generationId) : null;
+    });
+    if (!generation) throw new Error("Expected a generation");
+    await captureBrowserEvidence(backend, generation.promptMessageId, "unrecorded-account");
+    await backend.mutation(internal.scout.lab.completeGeneration, {
+      promptMessageId: generation.promptMessageId,
+      usage: { totalTokens: 1 },
+      claimTestOutcome: { verdict: "supported" },
+    });
+    await expect(
+      admin.query(api.claimTests.getRun, {
+        runId: started.runId,
+        domain: "example.test",
+        claimKey,
+      }),
+    ).resolves.toMatchObject({
+      state: {
+        kind: "failed",
+        failure:
+          "Scout returned a successful account-creation verdict without recording authenticated account evidence",
+      },
+    });
+  });
+
+  it("records a required account idempotently with verified run and session provenance", async () => {
+    const { backend, userId, admin } = await authenticatedBackend();
+    const scoutId = await insertScout(backend);
+    const snapshot = await insertCompletedInvestigation(backend, {
+      userId,
+      claims: [claim("account creation")],
+    });
+    const claimKey = snapshot.claimKeys[0];
+    if (!claimKey) throw new Error("Expected a claim key");
+    await expect(
+      admin.mutation(api.claimTests.start, {
+        domain: "example.test",
+        claimKey,
+        browserProfile: { kind: "fresh" },
+        accountCreation: "required",
+      }),
+    ).rejects.toThrow("Account creation requires a persistent Scout browser profile");
+
+    const started = await admin.mutation(api.claimTests.start, {
+      domain: "example.test",
+      claimKey,
+      browserProfile: { kind: "scout", scoutId },
+      accountCreation: "required",
+    });
+    const generation = await backend.run(async (ctx) => {
+      const run = await ctx.db.get("claimTestRuns", started.runId);
+      return run ? await ctx.db.get("scoutLabGenerations", run.state.generationId) : null;
+    });
+    if (!generation) throw new Error("Expected a generation");
+    const registered = await backend.mutation(internal.claimTests.setBrowserSession, {
+      promptMessageId: generation.promptMessageId,
+      providerSessionId: "account-session",
+    });
+    if (!registered.browserSessionId) throw new Error("Expected an account browser session");
+    await expect(
+      backend.mutation(internal.scout.serviceAccounts.upsertFromClaimTest, {
+        promptMessageId: generation.promptMessageId,
+        identifier: "conrad@example.test",
+        ...ACCOUNT_EVIDENCE,
+      }),
+    ).rejects.toThrow("successful product-page observation");
+    await backend.mutation(internal.claimTests.prepareBrowserOperation, {
+      sessionId: registered.browserSessionId,
+      toolCallId: "account-open",
+      action: { kind: "open", url: "https://example.test/account" },
+    });
+    await backend.mutation(internal.claimTests.settleBrowserOperation, {
+      sessionId: registered.browserSessionId,
+      toolCallId: "account-open",
+      outcome: {
+        kind: "applied",
+        telemetry: appliedBrowserTelemetry("https://example.test/account"),
+      },
+    });
+    await expect(
+      backend.mutation(internal.scout.serviceAccounts.upsertFromClaimTest, {
+        promptMessageId: generation.promptMessageId,
+        identifier: "conrad@example.test",
+        ...ACCOUNT_EVIDENCE,
+      }),
+    ).rejects.toThrow("not from the latest product page");
+    await expect(
+      backend.mutation(internal.scout.serviceAccounts.upsertFromClaimTest, {
+        promptMessageId: generation.promptMessageId,
+        identifier: "conrad@example.test",
+        ...ACCOUNT_EVIDENCE,
+        observedUrl: "https://example.test/account",
+        visibleSessionControl: "Follow",
+      }),
+    ).rejects.toThrow("does not expose a Sign out or Log out control");
+    await expect(
+      backend.mutation(internal.scout.serviceAccounts.upsertFromClaimTest, {
+        promptMessageId: generation.promptMessageId,
+        identifier: "conrad@example.test",
+        ...ACCOUNT_EVIDENCE,
+        observedUrl: "https://example.test/account",
+        visibleIdentity: "Signed in as conrad@example.test-helper",
+      }),
+    ).rejects.toThrow("does not contain the exact identifier");
+    await expect(
+      backend.mutation(internal.scout.serviceAccounts.upsertFromClaimTest, {
+        promptMessageId: generation.promptMessageId,
+        identifier: "conrad@example.test",
+        ...ACCOUNT_EVIDENCE,
+        observedUrl: "https://example.test/account",
+        visibleSessionControl: "Sign out guide",
+      }),
+    ).rejects.toThrow("does not expose a Sign out or Log out control");
+    await backend.mutation(internal.claimTests.prepareBrowserOperation, {
+      sessionId: registered.browserSessionId,
+      toolCallId: "account-identity",
+      action: { kind: "navigate", url: "https://example.test/settings/profile" },
+    });
+    await backend.mutation(internal.claimTests.settleBrowserOperation, {
+      sessionId: registered.browserSessionId,
+      toolCallId: "account-identity",
+      outcome: {
+        kind: "applied",
+        telemetry: appliedBrowserTelemetry("https://example.test/settings/profile"),
+      },
+    });
+
+    const first = await backend.mutation(internal.scout.serviceAccounts.upsertFromClaimTest, {
+      promptMessageId: generation.promptMessageId,
+      identifier: "conrad@example.test",
+      ...ACCOUNT_EVIDENCE,
+    });
+    expect(first.created).toBe(true);
+    await expect(
+      backend.mutation(internal.scout.serviceAccounts.upsertFromClaimTest, {
+        promptMessageId: generation.promptMessageId,
+        identifier: "conrad@example.test",
+        ...ACCOUNT_EVIDENCE,
+      }),
+    ).resolves.toEqual({ serviceAccountId: first.serviceAccountId, created: false });
+    await expect(
+      backend.mutation(internal.scout.serviceAccounts.upsertFromClaimTest, {
+        promptMessageId: generation.promptMessageId,
+        identifier: "other@example.test",
+        ...ACCOUNT_EVIDENCE,
+        visibleIdentity: "Signed in as other@example.test",
+      }),
+    ).rejects.toThrow("only one service account");
+    await expect(
+      backend.run(async (ctx) => ({
+        account: await ctx.db.get("scoutServiceAccounts", first.serviceAccountId),
+        count: (await ctx.db.query("scoutServiceAccounts").collect()).length,
+        run: await ctx.db.get("claimTestRuns", started.runId),
+      })),
+    ).resolves.toMatchObject({
+      count: 1,
+      run: { serviceAccountId: first.serviceAccountId },
+      account: {
+        scoutId,
+        productId: snapshot.productId,
+        serviceName: "Example",
+        serviceDomain: "example.test",
+        identifier: "conrad@example.test",
+        authenticationEvidence: { kind: "succeeded", checkedAt: expect.any(Number) },
+        firstRecordedByClaimTest: {
+          runId: started.runId,
+          generationId: generation._id,
+          sessionId: registered.browserSessionId,
+          recordedAt: expect.any(Number),
+          ...ACCOUNT_EVIDENCE,
+        },
+        lastVerifiedByClaimTest: {
+          runId: started.runId,
+          generationId: generation._id,
+          sessionId: registered.browserSessionId,
+          recordedAt: expect.any(Number),
+          ...ACCOUNT_EVIDENCE,
+        },
+      },
+    });
+    await expect(
+      admin.query(api.scout.serviceAccounts.forClaimTestRun, { runId: started.runId }),
+    ).resolves.toMatchObject({
+      _id: first.serviceAccountId,
+      identifier: "conrad@example.test",
+      firstRecordedByClaimTest: {
+        runId: started.runId,
+        accountAccess: "created",
+      },
+      lastVerifiedByClaimTest: {
+        runId: started.runId,
+        accountAccess: "created",
+      },
+    });
+    await backend.mutation(internal.scout.lab.completeGeneration, {
+      promptMessageId: generation.promptMessageId,
+      usage: { totalTokens: 1 },
+      claimTestOutcome: { verdict: "supported" },
+    });
+    const forbidden = await admin.mutation(api.claimTests.start, {
+      domain: "example.test",
+      claimKey,
+      ...FRESH_RUN,
+    });
+    const forbiddenGeneration = await backend.run(async (ctx) => {
+      const run = await ctx.db.get("claimTestRuns", forbidden.runId);
+      return run ? await ctx.db.get("scoutLabGenerations", run.state.generationId) : null;
+    });
+    if (!forbiddenGeneration) throw new Error("Expected a forbidden generation");
+    await expect(
+      backend.mutation(internal.scout.serviceAccounts.upsertFromClaimTest, {
+        promptMessageId: forbiddenGeneration.promptMessageId,
+        identifier: "conrad@example.test",
+        ...ACCOUNT_EVIDENCE,
+      }),
+    ).rejects.toThrow("cannot record a created service account");
   });
 
   it("tests the edited claim snapshot and marks an older result as needing a retest", async () => {
@@ -650,6 +1230,7 @@ describe("Claim tests", () => {
     const first = await admin.mutation(api.claimTests.start, {
       domain: "example.test",
       claimKey,
+      ...FRESH_RUN,
     });
     const firstGeneration = await backend.run(async (ctx) => {
       const run = await ctx.db.get("claimTestRuns", first.runId);
@@ -657,12 +1238,14 @@ describe("Claim tests", () => {
         claim: originalClaim.claim,
         suggestedMysteryShop: originalClaim.suggestedMysteryShop,
       });
-      return run ? await ctx.db.get("scoutLabGenerations", run.generationId) : null;
+      return run ? await ctx.db.get("scoutLabGenerations", run.state.generationId) : null;
     });
     if (!firstGeneration) throw new Error("Expected the original generation");
+    await captureBrowserEvidence(backend, firstGeneration.promptMessageId, "original-claim");
     await backend.mutation(internal.scout.lab.completeGeneration, {
       promptMessageId: firstGeneration.promptMessageId,
       usage: { promptTokens: 100, completionTokens: 20, totalTokens: 120 },
+      claimTestOutcome: { verdict: "supported" },
     });
     await expect(
       admin.query(api.claimTests.listStatuses, { domain: "example.test" }),
@@ -683,7 +1266,11 @@ describe("Claim tests", () => {
       admin.query(api.claimTests.listStatuses, { domain: "example.test" }),
     ).resolves.toEqual([{ claimKey, state: "needs_retest" }]);
     await expect(
-      admin.query(api.claimTests.latest, { domain: "example.test", claimKey }),
+      admin.query(api.claimTests.getRun, {
+        runId: first.runId,
+        domain: "example.test",
+        claimKey,
+      }),
     ).resolves.toMatchObject({
       runId: first.runId,
       matchesCurrentClaim: false,
@@ -697,13 +1284,14 @@ describe("Claim tests", () => {
     const second = await admin.mutation(api.claimTests.start, {
       domain: "example.test",
       claimKey,
+      ...FRESH_RUN,
     });
     expect(second).toMatchObject({ created: true });
     expect(second.runId).not.toBe(first.runId);
     const secondGeneration = await backend.run(async (ctx) => {
       const run = await ctx.db.get("claimTestRuns", second.runId);
       expect(run?.testedClaim).toEqual(editedClaim);
-      return run ? await ctx.db.get("scoutLabGenerations", run.generationId) : null;
+      return run ? await ctx.db.get("scoutLabGenerations", run.state.generationId) : null;
     });
     if (!secondGeneration) throw new Error("Expected the edited generation");
     const messages = await admin.query(api.scout.lab.listMessages, {
@@ -715,7 +1303,11 @@ describe("Claim tests", () => {
     expect(prompt).toContain(originalClaim.sourceUrl);
     expect(prompt).toContain(editedClaim.suggestedMysteryShop);
     await expect(
-      admin.query(api.claimTests.latest, { domain: "example.test", claimKey }),
+      admin.query(api.claimTests.getRun, {
+        runId: second.runId,
+        domain: "example.test",
+        claimKey,
+      }),
     ).resolves.toMatchObject({
       runId: second.runId,
       matchesCurrentClaim: true,
@@ -726,9 +1318,11 @@ describe("Claim tests", () => {
       admin.query(api.claimTests.listStatuses, { domain: "example.test" }),
     ).resolves.toEqual([{ claimKey, state: "testing" }]);
 
+    await captureBrowserEvidence(backend, secondGeneration.promptMessageId, "edited-claim");
     await backend.mutation(internal.scout.lab.completeGeneration, {
       promptMessageId: secondGeneration.promptMessageId,
       usage: { promptTokens: 80, completionTokens: 10, totalTokens: 90 },
+      claimTestOutcome: { verdict: "supported" },
     });
     await expect(
       admin.query(api.claimTests.listStatuses, { domain: "example.test" }),
@@ -750,10 +1344,12 @@ describe("Claim tests", () => {
     const started = await admin.mutation(api.claimTests.start, {
       domain: "example.test",
       claimKey: firstClaimKey,
+      ...FRESH_RUN,
     });
 
     await expect(
-      admin.query(api.claimTests.latest, {
+      admin.query(api.claimTests.getRun, {
+        runId: started.runId,
         domain: "example.test",
         claimKey: firstClaimKey,
       }),
@@ -765,11 +1361,11 @@ describe("Claim tests", () => {
       generation: { status: "pending" },
     });
     await expect(
-      admin.query(api.claimTests.latest, {
+      admin.query(api.claimTests.listRuns, {
         domain: "example.test",
         claimKey: secondClaimKey,
       }),
-    ).resolves.toBeNull();
+    ).resolves.toEqual([]);
 
     const secondSnapshot = await insertCompletedInvestigation(backend, {
       userId,
@@ -779,9 +1375,27 @@ describe("Claim tests", () => {
     });
     expect(secondSnapshot.claimKeys[0]).toBe(firstClaimKey);
     await expect(
-      admin.query(api.claimTests.latest, {
+      admin.query(api.claimTests.listRuns, {
         domain: "example.test",
         claimKey: firstClaimKey,
+      }),
+    ).resolves.toEqual([]);
+    await expect(
+      admin.query(api.claimTests.getRun, {
+        runId: started.runId,
+        domain: "example.test",
+        claimKey: firstClaimKey,
+      }),
+    ).resolves.toMatchObject({
+      runId: started.runId,
+      investigationId: firstSnapshot.investigationId,
+      matchesCurrentClaim: true,
+    });
+    await expect(
+      admin.query(api.claimTests.getRun, {
+        runId: started.runId,
+        domain: "example.test",
+        claimKey: secondClaimKey,
       }),
     ).resolves.toBeNull();
   });
@@ -798,26 +1412,28 @@ describe("Claim tests", () => {
     const started = await admin.mutation(api.claimTests.start, {
       domain: "example.test",
       claimKey,
+      ...FRESH_RUN,
     });
     const generation = await backend.run(async (ctx) => {
       const run = await ctx.db.get("claimTestRuns", started.runId);
-      return run ? await ctx.db.get("scoutLabGenerations", run.generationId) : null;
+      return run ? await ctx.db.get("scoutLabGenerations", run.state.generationId) : null;
     });
     if (!generation) throw new Error("Expected a generation");
 
-    await expect(
-      backend.mutation(internal.claimTests.setBrowserSession, {
-        promptMessageId: generation.promptMessageId,
-        sessionId: "firecrawl-session-1",
-      }),
-    ).resolves.toEqual({ captureOperations: true });
-    await backend.mutation(internal.claimTests.prepareBrowserOperation, {
+    const registered = await backend.mutation(internal.claimTests.setBrowserSession, {
       promptMessageId: generation.promptMessageId,
+      providerSessionId: "firecrawl-session-1",
+    });
+    expect(registered).toMatchObject({ captureOperations: true });
+    if (!registered.browserSessionId) throw new Error("Expected a browser session ID");
+    const sessionId = registered.browserSessionId;
+    await backend.mutation(internal.claimTests.prepareBrowserOperation, {
+      sessionId,
       toolCallId: "tool-call-1",
       action: { kind: "click", ref: "@e1" },
     });
     await backend.mutation(internal.claimTests.settleBrowserOperation, {
-      promptMessageId: generation.promptMessageId,
+      sessionId,
       toolCallId: "tool-call-1",
       outcome: {
         kind: "applied",
@@ -856,27 +1472,31 @@ describe("Claim tests", () => {
       },
     });
     await backend.mutation(internal.claimTests.closeBrowserSessionRecord, {
-      promptMessageId: generation.promptMessageId,
+      sessionId,
       providerDurationMs: 2_000,
       creditsBilled: 1,
     });
+    await expect(admin.query(internal.claimTests.replayData, { sessionId })).resolves.toMatchObject(
+      {
+        providerSessionId: "firecrawl-session-1",
+        viewport: { width: 1_280, height: 800 },
+        lifecycle: { kind: "closed", providerDurationMs: 2_000, creditsBilled: 1 },
+        operations: [
+          {
+            sequence: 1,
+            toolCallId: "tool-call-1",
+            action: { kind: "click", ref: "@e1" },
+            state: { kind: "applied" },
+          },
+        ],
+      },
+    );
     await expect(
-      admin.query(internal.claimTests.replayData, { runId: started.runId }),
-    ).resolves.toMatchObject({
-      providerSessionId: "firecrawl-session-1",
-      viewport: { width: 1_280, height: 800 },
-      lifecycle: { kind: "closed", providerDurationMs: 2_000, creditsBilled: 1 },
-      operations: [
-        {
-          sequence: 1,
-          toolCallId: "tool-call-1",
-          action: { kind: "click", ref: "@e1" },
-          state: { kind: "applied" },
-        },
-      ],
-    });
-    await expect(
-      admin.query(api.claimTests.latest, { domain: "example.test", claimKey }),
+      admin.query(api.claimTests.getRun, {
+        runId: started.runId,
+        domain: "example.test",
+        claimKey,
+      }),
     ).resolves.not.toHaveProperty("firecrawlSessionId");
 
     const otherUserId = await backend.run(
@@ -884,15 +1504,15 @@ describe("Claim tests", () => {
     );
     const otherAdmin = backend.withIdentity({ subject: `${otherUserId}|other-session` });
     await expect(
-      otherAdmin.query(internal.claimTests.replayData, { runId: started.runId }),
+      otherAdmin.query(internal.claimTests.replayData, { sessionId }),
     ).resolves.toBeNull();
-    await expect(
-      backend.query(internal.claimTests.replayData, { runId: started.runId }),
-    ).rejects.toThrow("Not authorized");
+    await expect(backend.query(internal.claimTests.replayData, { sessionId })).rejects.toThrow(
+      "Not authorized",
+    );
     await expect(
       backend.mutation(internal.claimTests.setBrowserSession, {
         promptMessageId: generation.promptMessageId,
-        sessionId: "different-session",
+        providerSessionId: "different-session",
       }),
     ).rejects.toThrow("different Firecrawl browser session");
   });
@@ -909,21 +1529,28 @@ describe("Claim tests", () => {
     const started = await admin.mutation(api.claimTests.start, {
       domain: "example.test",
       claimKey,
+      ...FRESH_RUN,
     });
     const generation = await backend.run(async (ctx) => {
       const run = await ctx.db.get("claimTestRuns", started.runId);
-      return run ? await ctx.db.get("scoutLabGenerations", run.generationId) : null;
+      return run ? await ctx.db.get("scoutLabGenerations", run.state.generationId) : null;
     });
     if (!generation) throw new Error("Expected a generation");
+    const registered = await backend.mutation(internal.claimTests.setBrowserSession, {
+      promptMessageId: generation.promptMessageId,
+      providerSessionId: "firecrawl-live-session",
+    });
+    if (!registered.browserSessionId) throw new Error("Expected a browser session ID");
+    const sessionId = registered.browserSessionId;
     const liveViewUrl = "https://liveview.firecrawl.dev/private?signature=read-only";
 
     await backend.mutation(internal.claimTests.setLiveView, {
-      promptMessageId: generation.promptMessageId,
+      sessionId,
       liveViewUrl,
     });
-    await expect(
-      admin.query(api.claimTests.liveView, { domain: "example.test", claimKey }),
-    ).resolves.toEqual({ url: liveViewUrl });
+    await expect(admin.query(api.claimTests.liveView, { sessionId })).resolves.toEqual({
+      url: liveViewUrl,
+    });
 
     const otherUserId = await backend.run(
       async (ctx) => await ctx.db.insert("users", { email: ADMIN_EMAIL }),
@@ -932,34 +1559,29 @@ describe("Claim tests", () => {
     await expect(
       otherAdmin.query(api.claimTests.listStatuses, { domain: "example.test" }),
     ).resolves.toEqual([{ claimKey, state: "untested" }]);
-    await expect(
-      otherAdmin.query(api.claimTests.liveView, { domain: "example.test", claimKey }),
-    ).resolves.toBeNull();
+    await expect(otherAdmin.query(api.claimTests.liveView, { sessionId })).resolves.toBeNull();
     await expect(
       backend.query(api.claimTests.listStatuses, { domain: "example.test" }),
     ).rejects.toThrow("Not authorized");
-    await expect(
-      backend.query(api.claimTests.liveView, { domain: "example.test", claimKey }),
-    ).rejects.toThrow("Not authorized");
+    await expect(backend.query(api.claimTests.liveView, { sessionId })).rejects.toThrow(
+      "Not authorized",
+    );
 
     await backend.mutation(internal.claimTests.clearLiveView, {
-      promptMessageId: generation.promptMessageId,
+      sessionId,
     });
-    await expect(
-      admin.query(api.claimTests.liveView, { domain: "example.test", claimKey }),
-    ).resolves.toBeNull();
+    await expect(admin.query(api.claimTests.liveView, { sessionId })).resolves.toBeNull();
 
     await backend.mutation(internal.claimTests.setLiveView, {
-      promptMessageId: generation.promptMessageId,
+      sessionId,
       liveViewUrl,
     });
     await backend.mutation(internal.scout.lab.completeGeneration, {
       promptMessageId: generation.promptMessageId,
       usage: { totalTokens: 1 },
+      claimTestOutcome: { verdict: "inconclusive" },
     });
-    await expect(
-      admin.query(api.claimTests.liveView, { domain: "example.test", claimKey }),
-    ).resolves.toBeNull();
+    await expect(admin.query(api.claimTests.liveView, { sessionId })).resolves.toBeNull();
     await expect(
       backend.run(async (ctx) =>
         ctx.db
@@ -972,7 +1594,7 @@ describe("Claim tests", () => {
 
   it("lets only the current run owner continue one idempotent human handoff", async () => {
     const { backend, userId, admin } = await authenticatedBackend();
-    const { claimKey, started, generation } = await startClaimTestWithBrowser(
+    const { started, generation, sessionId } = await startClaimTestWithBrowser(
       backend,
       userId,
       admin,
@@ -1007,8 +1629,7 @@ describe("Claim tests", () => {
     ).resolves.toMatchObject({ handoffId: requested.handoffId, created: false });
     await expect(
       admin.query(api.claimTestHumanHandoffs.active, {
-        domain: "example.test",
-        claimKey,
+        sessionId,
       }),
     ).resolves.toMatchObject({
       runId: started.runId,
@@ -1022,33 +1643,28 @@ describe("Claim tests", () => {
     const otherAdmin = backend.withIdentity({ subject: `${otherUserId}|other-session` });
     await expect(
       otherAdmin.query(api.claimTestHumanHandoffs.active, {
-        domain: "example.test",
-        claimKey,
+        sessionId,
       }),
     ).resolves.toBeNull();
     await expect(
-      otherAdmin.mutation(api.claimTestHumanHandoffs.continueCurrent, {
-        domain: "example.test",
-        claimKey,
+      otherAdmin.mutation(api.claimTestHumanHandoffs.continueHandoff, {
+        handoffId: requested.handoffId,
       }),
     ).resolves.toBe(false);
     await expect(
       backend.query(api.claimTestHumanHandoffs.active, {
-        domain: "example.test",
-        claimKey,
+        sessionId,
       }),
     ).rejects.toThrow("Not authorized");
     await expect(
-      backend.mutation(api.claimTestHumanHandoffs.continueCurrent, {
-        domain: "example.test",
-        claimKey,
+      backend.mutation(api.claimTestHumanHandoffs.continueHandoff, {
+        handoffId: requested.handoffId,
       }),
     ).rejects.toThrow("Not authorized");
 
     await expect(
-      admin.mutation(api.claimTestHumanHandoffs.continueCurrent, {
-        domain: "example.test",
-        claimKey,
+      admin.mutation(api.claimTestHumanHandoffs.continueHandoff, {
+        handoffId: requested.handoffId,
       }),
     ).resolves.toBe(true);
     await expect(
@@ -1070,9 +1686,36 @@ describe("Claim tests", () => {
     ).rejects.toThrow("already ended");
   });
 
+  it("does not continue a human handoff after its deadline", async () => {
+    const { backend, userId, admin } = await authenticatedBackend();
+    const { generation } = await startClaimTestWithBrowser(backend, userId, admin);
+    const requested = await backend.mutation(internal.claimTestHumanHandoffs.request, {
+      promptMessageId: generation.promptMessageId,
+      reason: "A CAPTCHA blocks the account form.",
+      interactiveLiveViewUrl:
+        "https://liveview.firecrawl.dev/private?signature=interactive-control",
+    });
+    await backend.run(async (ctx) => {
+      const handoff = await ctx.db.get("claimTestHumanHandoffs", requested.handoffId);
+      if (!handoff || handoff.status !== "waiting") throw new Error("Expected a waiting handoff");
+      await ctx.db.patch("claimTestHumanHandoffs", handoff._id, { expiresAt: Date.now() - 1 });
+    });
+
+    await expect(
+      admin.mutation(api.claimTestHumanHandoffs.continueHandoff, {
+        handoffId: requested.handoffId,
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      backend.query(internal.claimTestHumanHandoffs.getStatus, {
+        handoffId: requested.handoffId,
+      }),
+    ).resolves.toBe("expired");
+  });
+
   it("removes the interactive takeover secret when the generation completes", async () => {
     const { backend, userId, admin } = await authenticatedBackend();
-    const { claimKey, generation } = await startClaimTestWithBrowser(backend, userId, admin);
+    const { generation, sessionId } = await startClaimTestWithBrowser(backend, userId, admin);
     const requested = await backend.mutation(internal.claimTestHumanHandoffs.request, {
       promptMessageId: generation.promptMessageId,
       reason: "A CAPTCHA blocks the account form.",
@@ -1083,6 +1726,7 @@ describe("Claim tests", () => {
     await backend.mutation(internal.scout.lab.completeGeneration, {
       promptMessageId: generation.promptMessageId,
       usage: { totalTokens: 1 },
+      claimTestOutcome: { verdict: "inconclusive" },
     });
 
     const stored = await backend.run(
@@ -1092,8 +1736,7 @@ describe("Claim tests", () => {
     expect(stored).not.toHaveProperty("interactiveLiveViewUrl");
     await expect(
       admin.query(api.claimTestHumanHandoffs.active, {
-        domain: "example.test",
-        claimKey,
+        sessionId,
       }),
     ).resolves.toBeNull();
   });

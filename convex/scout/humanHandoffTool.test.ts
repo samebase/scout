@@ -31,7 +31,7 @@ describe("human handoff tool", () => {
       {
         request: vi.fn(async () => request()),
         getStatus,
-        expire: vi.fn(async () => undefined),
+        expire: vi.fn(async () => "expired" as const),
       },
       { sendEmail, sleep, now: () => 1_000 },
     );
@@ -58,7 +58,7 @@ describe("human handoff tool", () => {
       {
         request: vi.fn(async () => request({ created: false })),
         getStatus: vi.fn(async () => "continued" as const),
-        expire: vi.fn(async () => undefined),
+        expire: vi.fn(async () => "expired" as const),
       },
       { sendEmail, sleep: vi.fn(async () => undefined), now: () => 1_000 },
     );
@@ -70,7 +70,7 @@ describe("human handoff tool", () => {
   });
 
   test("expires the request before surfacing an email delivery failure", async () => {
-    const expiration = vi.fn(async () => undefined);
+    const expiration = vi.fn(async () => "expired" as const);
     const handoff = createHumanHandoffTool(
       {
         request: vi.fn(async () => request()),
@@ -97,7 +97,7 @@ describe("human handoff tool", () => {
       {
         request: vi.fn(async () => request()),
         getStatus: vi.fn(async () => "expired" as const),
-        expire: vi.fn(async () => undefined),
+        expire: vi.fn(async () => "expired" as const),
       },
       {
         sendEmail: vi.fn(async () => undefined),
@@ -109,5 +109,31 @@ describe("human handoff tool", () => {
     expect(output).toMatchObject({ resumed: false });
     expect(JSON.stringify(output)).not.toContain(interactiveLiveViewUrl);
     expect(JSON.stringify(output)).toContain("Inconclusive");
+  });
+
+  test("observes a continuation committed before the final atomic expiry", async () => {
+    let now = 9_000;
+    const expire = vi.fn(async () => "continued" as const);
+    const getStatus = vi.fn(async () => "waiting" as const);
+    const handoff = createHumanHandoffTool(
+      {
+        request: vi.fn(async () => request()),
+        getStatus,
+        expire,
+      },
+      {
+        sendEmail: vi.fn(async () => undefined),
+        sleep: vi.fn(async (milliseconds) => {
+          now += milliseconds;
+        }),
+        now: () => now,
+      },
+    );
+
+    await expect(
+      handoff.execute({ reason: "GitHub requires a CAPTCHA." }, toolOptions),
+    ).resolves.toMatchObject({ resumed: true });
+    expect(getStatus).toHaveBeenCalledOnce();
+    expect(expire).toHaveBeenCalledWith("handoff-1");
   });
 });

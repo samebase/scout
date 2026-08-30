@@ -3,6 +3,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 
 const handoffIdentityValidator = v.object({
+  sessionId: v.id("claimTestBrowserSessions"),
   generationId: v.id("scoutLabGenerations"),
   runId: v.id("claimTestRuns"),
   userId: v.id("users"),
@@ -34,6 +35,8 @@ export const claimTestHumanHandoffStatusValidator = v.union(
 );
 
 export const activeClaimTestHumanHandoffValidator = v.object({
+  handoffId: v.id("claimTestHumanHandoffs"),
+  sessionId: v.id("claimTestBrowserSessions"),
   runId: v.id("claimTestRuns"),
   reason: v.string(),
   requestedAt: v.number(),
@@ -53,6 +56,7 @@ export const requestedClaimTestHumanHandoffValidator = v.object({
 
 function handoffIdentity(handoff: Doc<"claimTestHumanHandoffs">) {
   return {
+    sessionId: handoff.sessionId,
     generationId: handoff.generationId,
     runId: handoff.runId,
     userId: handoff.userId,
