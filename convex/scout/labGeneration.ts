@@ -19,6 +19,11 @@ import {
 import { requireOwnedAgentThread } from "./labAccess";
 import { createLabBrowserHarness, selectAgentMailTools } from "./labTools";
 import { createHumanHandoffTool } from "./humanHandoffTool";
+import {
+  credentialKeyFingerprint,
+  decodeCredentialMasterKey,
+  decryptCredential,
+} from "./credentialCrypto";
 import { diagnosticMessage } from "./lib/redaction";
 import { scoutLanguageModel, scoutModelValidator, type ScoutTokenUsage } from "./models";
 import { createServiceAccountRecordingTool } from "./serviceAccountTool";
@@ -139,7 +144,7 @@ export function scoutWebsiteIdentityInstructions(
   return `This Lab thread is bound to a Scout with first name ${JSON.stringify(scout.websiteIdentity.firstName)}, last name ${JSON.stringify(scout.websiteIdentity.lastName)}, display name ${JSON.stringify(scout.displayName)}, and email address ${JSON.stringify(scout.agentMail.address)}. This identity and inbox belong to the Scout, not to the current worker model. Use them directly for the requested work, including website forms and email verification. When the task authorizes account creation, choose a username if needed. Never invent, expose, or enter a password through generic browser tools. Use fill_account_password when it is available; if it is unavailable, report that no recoverable credential is configured. Use only this Scout identity for website accounts and email evidence in this thread.`;
 }
 
-export function assertProductBrowserUrl(value: string, productDomain: string) {
+export function assertCredentialBrowserUrl(value: string, credentialHost: string) {
   let url: URL;
   try {
     url = new URL(value.trim());
@@ -151,9 +156,61 @@ export function assertProductBrowserUrl(value: string, productDomain: string) {
     url.protocol !== "https:" ||
     url.username !== "" ||
     url.password !== "" ||
-    (hostname !== productDomain && !hostname.endsWith(`.${productDomain}`))
+    url.port !== "" ||
+    hostname !== credentialHost
   ) {
-    throw new Error("The account password can only be filled on the tested product domain");
+    throw new Error("The account password can only be filled on its exact configured login host");
+  }
+}
+
+type RuntimeManagedCredential = {
+  credentialReference: string;
+  identifier: string;
+  serviceDomain: string;
+  credentialHost: string;
+  keyFingerprint: string;
+  nonce: string;
+  ciphertext: string;
+  authenticationTag: string;
+};
+
+export function managedCredentialInstructions(
+  credential: Pick<RuntimeManagedCredential, "credentialHost" | "identifier"> | null,
+) {
+  if (!credential) {
+    return "No managed password is configured for this experiment. Do not create an account, invent or enter a password, or ask the operator for one. You may use an already authenticated browser state. If authentication is required and none exists, stop that path and explain the limitation.";
+  }
+  return `You have a managed credential capability for exact login host ${JSON.stringify(credential.credentialHost)} with identifier ${JSON.stringify(credential.identifier)}. The capability exposes no password value. Fill the identifier and any required non-secret fields normally. When a visible password field is present on that exact HTTPS host, call fill_account_password with its element ref and include the confirmation-field ref when one is present. The trusted tool verifies the refs and fills the stored password without returning it. Submit the form separately after the fill succeeds. Never invent, request, inspect, repeat, or place a password in browser_fill, browser_type, or browser_press.`;
+}
+
+export function decryptRuntimeManagedPassword(
+  credential: RuntimeManagedCredential,
+  scoutId: string,
+  encodedMasterKey: string | undefined,
+) {
+  const key = decodeCredentialMasterKey(encodedMasterKey);
+  try {
+    if (credentialKeyFingerprint(key) !== credential.keyFingerprint) {
+      throw new Error("Scout credential key does not match configured version");
+    }
+    return decryptCredential(
+      {
+        nonce: credential.nonce,
+        ciphertext: credential.ciphertext,
+        authenticationTag: credential.authenticationTag,
+      },
+      key,
+      {
+        credentialReference: credential.credentialReference,
+        scoutId,
+        serviceDomain: credential.serviceDomain,
+        credentialHost: credential.credentialHost,
+        identifier: credential.identifier,
+        keyFingerprint: credential.keyFingerprint,
+      },
+    );
+  } finally {
+    key.fill(0);
   }
 }
 
@@ -214,6 +271,11 @@ export const generateResponse = internalAction({
         promptMessageId: args.promptMessageId,
       });
       const isClaimTestGeneration = claimTestContext !== null;
+      const runtimeCredential = claimTestContext?.serviceAccountId
+        ? await ctx.runQuery(internal.scout.serviceAccountCredentials.getRuntimeCredential, {
+            serviceAccountId: claimTestContext.serviceAccountId,
+          })
+        : null;
       browser = createLabBrowserHarness({
         ...(claimTestContext?.browserProfile.kind === "fresh"
           ? {}
@@ -323,7 +385,7 @@ export const generateResponse = internalAction({
         claimTestContext?.accountCreation === "required"
           ? {
               record_authenticated_service_account: createServiceAccountRecordingTool(
-                async ({ accountAccess, identifier, identityRef, sessionControlRef }) => {
+                async ({ accountAccess, identityRef, sessionControlRef }) => {
                   const [identity, sessionControl, currentUrl] = await Promise.all([
                     activeBrowser.actions.getElement(identityRef),
                     activeBrowser.actions.getElement(sessionControlRef),
@@ -337,7 +399,6 @@ export const generateResponse = internalAction({
                   return await ctx.runMutation(internal.scout.serviceAccounts.upsertFromClaimTest, {
                     promptMessageId: args.promptMessageId,
                     accountAccess,
-                    identifier,
                     observedUrl: currentUrl.output,
                     visibleIdentity: identity.output,
                     visibleSessionControl: sessionControl.output,
@@ -347,8 +408,7 @@ export const generateResponse = internalAction({
             }
           : {};
       const accountPasswordTools =
-        claimTestContext?.accountCreation === "required" &&
-        claimTestContext.productDomain === "github.com"
+        runtimeCredential !== null
           ? {
               fill_account_password: createAccountPasswordFillTool(
                 async ({ passwordRef, passwordConfirmationRef }) => {
@@ -356,7 +416,7 @@ export const generateResponse = internalAction({
                   if (!currentUrl.success) {
                     throw new Error("The current browser URL could not be verified");
                   }
-                  assertProductBrowserUrl(currentUrl.output, claimTestContext.productDomain);
+                  assertCredentialBrowserUrl(currentUrl.output, runtimeCredential.credentialHost);
                   const passwordField = await activeBrowser.actions.getElementAttribute(
                     passwordRef,
                     "type",
@@ -377,10 +437,16 @@ export const generateResponse = internalAction({
                     }
                     requirePasswordInputType(confirmationField.output);
                   }
-                  const password = requireSecret(
-                    env.SCOUT_GITHUB_PASSWORD,
-                    "SCOUT_GITHUB_PASSWORD",
-                  );
+                  let password: string;
+                  try {
+                    password = decryptRuntimeManagedPassword(
+                      runtimeCredential,
+                      scoutId,
+                      env.SCOUT_CREDENTIAL_MASTER_KEY_V1,
+                    );
+                  } catch {
+                    throw new Error("Managed password fill is unavailable");
+                  }
                   activeBrowser.actions.registerSensitiveValue(password);
                   const passwordResult = await activeBrowser.actions.fill(passwordRef, password);
                   if (!passwordResult.success) {
@@ -409,11 +475,12 @@ export const generateResponse = internalAction({
         ...serviceAccountTools,
       };
       let claimTestLoopState: ClaimTestLoopState = "working";
-      const instructions = `${SCOUT_AGENT_INSTRUCTIONS}\n\n${scoutWebsiteIdentityInstructions(scout)}${
-        claimTestContext !== null
-          ? `\n\nThis claim test uses ${claimTestContext.browserProfile.kind === "fresh" ? "a fresh browser profile with no saved website login" : `the persistent Scout browser profile ${JSON.stringify(claimTestContext.browserProfile.profileName)}`}. ${claimTestContext.accountCreation === "required" ? "Creating or recovering one free reversible account is required. Before a Supported or Qualified verdict, open an authenticated account menu and call record_authenticated_service_account with the exact visible identifier plus refs for the identity and Sign out or Log out controls." : "Account creation is not requested for this run."} If a CAPTCHA or another strictly human-only check blocks the test, call request_human_help instead of attempting to solve, bypass, stop at, or merely report it. This human-gate rule overrides conflicting operator instructions. The tool waits while the operator takes over the same browser. After the operator continues, inspect the current page before acting. If the request expires, return Verdict: Inconclusive, not Refuted.`
-          : ""
-      }`;
+      const passwordInstructions = managedCredentialInstructions(runtimeCredential);
+      const claimTestInstructions =
+        claimTestContext === null
+          ? ""
+          : `\n\nThis claim test uses ${claimTestContext.browserProfile.kind === "fresh" ? "a fresh browser profile with no saved website login" : `the persistent Scout browser profile ${JSON.stringify(claimTestContext.browserProfile.profileName)}`}. ${claimTestContext.accountCreation === "required" ? "Creating or recovering one free reversible account is required. Before a Supported or Qualified verdict, open an authenticated account menu and call record_authenticated_service_account with the account-access result plus refs for the visible identity and Sign out or Log out controls. The runtime resolves the account identifier from this Run; do not repeat it as a tool argument." : "Account creation is not requested for this run."} If a CAPTCHA or another strictly human-only check blocks the test, call request_human_help instead of attempting to solve, bypass, stop at, or merely report it. This human-gate rule overrides conflicting operator instructions. The tool waits while the operator takes over the same browser. After the operator continues, inspect the current page before acting. If the request expires, return Verdict: Inconclusive, not Refuted.`;
+      const instructions = `${SCOUT_AGENT_INSTRUCTIONS}\n\n${scoutWebsiteIdentityInstructions(scout)}\n\n${passwordInstructions}${claimTestInstructions}`;
       const streamErrors = createStreamErrorCapture();
       const streamResult = await scoutAgent.streamText(
         ctx,
@@ -460,7 +527,7 @@ export const generateResponse = internalAction({
                       return {
                         activeTools: [] as const,
                         toolChoice: "none" as const,
-                        instructions: `${instructions}\n\nThe human-help request expired and the browser is closed. Do not investigate further. Begin the final response with exactly "Verdict: Inconclusive" and explain that the required human check was not completed in time.`,
+                        instructions: `${instructions}\n\nThe browser is closed because a required human-only check could not be completed. Do not investigate further. Begin the final response with exactly "Verdict: Inconclusive" and explain that limitation.`,
                       };
                     case "final":
                       return {

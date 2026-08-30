@@ -545,6 +545,13 @@ function NewRunControls({
   const [allowAccountCreation, setAllowAccountCreation] = useState(false);
   const [state, setState] = useState<StartState>({ kind: "idle" });
   const selectedScout = scouts?.find((scout) => scout._id === profile);
+  const serviceAccounts = useQuery(
+    api.scout.serviceAccounts.list,
+    selectedScout ? { scoutId: selectedScout._id } : "skip",
+  );
+  const managedServiceAccount = serviceAccounts?.find(
+    (account) => account.serviceDomain === domain && account.managedCredential !== undefined,
+  );
   const starting = state.kind === "starting";
 
   const changeProfile = (value: string) => {
@@ -556,6 +563,13 @@ function NewRunControls({
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (starting) return;
+    if (allowAccountCreation && managedServiceAccount === undefined) {
+      setState({
+        kind: "failed",
+        message: `Prepare a managed ${domain} account for the selected Scout first.`,
+      });
+      return;
+    }
     setState({ kind: "starting" });
     try {
       const result = await startRun({
@@ -565,6 +579,9 @@ function NewRunControls({
           ? { kind: "scout", scoutId: selectedScout._id }
           : { kind: "fresh" },
         accountCreation: allowAccountCreation ? "required" : "not_requested",
+        ...(allowAccountCreation && managedServiceAccount
+          ? { serviceAccountId: managedServiceAccount._id }
+          : {}),
       });
       onClose();
       await navigate({
@@ -599,10 +616,14 @@ function NewRunControls({
         <input
           type="checkbox"
           checked={allowAccountCreation}
-          disabled={starting || selectedScout === undefined}
+          disabled={starting || managedServiceAccount === undefined}
           onChange={(event) => setAllowAccountCreation(event.currentTarget.checked)}
         />
-        <span>Create or recover an account</span>
+        <span>
+          {managedServiceAccount
+            ? `Create or recover ${managedServiceAccount.identifier}`
+            : "Create or recover an account"}
+        </span>
       </label>
       <div className="flex items-center gap-1.5">
         <Button type="submit" size="sm" disabled={starting || scouts === undefined}>
@@ -620,6 +641,12 @@ function NewRunControls({
         >
           <CircleAlertIcon className="size-3.5 shrink-0" />
           {state.message}
+        </p>
+      ) : null}
+      {selectedScout && serviceAccounts !== undefined && managedServiceAccount === undefined ? (
+        <p className="col-span-full text-xs text-muted-foreground">
+          Add a managed account for {domain} to {selectedScout.displayName} before enabling account
+          creation.
         </p>
       ) : null}
     </form>

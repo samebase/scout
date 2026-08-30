@@ -121,12 +121,35 @@ export default defineSchema({
     }).fields,
   )
     .index("by_scout_id", ["scoutId"])
+    .index("by_scout_id_and_service_domain", ["scoutId", "serviceDomain"])
     .index("by_product_id", ["productId"])
     .index("by_scout_id_and_service_domain_and_identifier", [
       "scoutId",
       "serviceDomain",
       "identifier",
     ]),
+  scoutManagedCredentials: defineTable({
+    credentialReference: v.string(),
+    serviceAccountId: v.id("scoutServiceAccounts"),
+    scoutId: v.id("scouts"),
+    formatVersion: v.literal(1),
+    algorithm: v.literal("aes-256-gcm"),
+    keyVersion: v.literal(1),
+    keyFingerprint: v.string(),
+    credentialHost: v.string(),
+    identifier: v.string(),
+    nonce: v.string(),
+    ciphertext: v.string(),
+    authenticationTag: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_credential_reference", ["credentialReference"])
+    .index("by_service_account_id", ["serviceAccountId"]),
+  scoutCredentialKeys: defineTable({
+    keyVersion: v.literal(1),
+    keyFingerprint: v.string(),
+    createdAt: v.number(),
+  }).index("by_key_version", ["keyVersion"]),
   scoutLabExperiments: defineTable({
     userId: v.id("users"),
     scoutId: v.id("scouts"),

@@ -17,7 +17,6 @@ import { productClaimSnapshotValidator } from "./productsModel";
 import { scoutModelValidator, scoutTokenUsageValidator } from "./scout/models";
 
 const MAX_BROWSER_OPERATIONS_PER_SESSION = 100;
-const MAX_SERVICE_ACCOUNTS = 200;
 
 const claimTestRunBaseValidator = v.object({
   runId: v.id("claimTestRuns"),
@@ -212,15 +211,13 @@ async function hasRecordedAccountEvidence(
   run: Doc<"claimTestRuns">,
   generationId: Id<"scoutLabGenerations">,
 ) {
-  const accounts = await ctx.db
-    .query("scoutServiceAccounts")
-    .withIndex("by_product_id", (query) => query.eq("productId", run.productId))
-    .take(MAX_SERVICE_ACCOUNTS);
-  return accounts.some(
-    (account) =>
-      account.scoutId === run.scoutId &&
-      account.lastVerifiedByClaimTest?.runId === run._id &&
-      account.lastVerifiedByClaimTest.generationId === generationId,
+  if (run.serviceAccountId === undefined) return false;
+  const account = await ctx.db.get("scoutServiceAccounts", run.serviceAccountId);
+  return (
+    account?.scoutId === run.scoutId &&
+    account.productId === run.productId &&
+    account.lastVerifiedByClaimTest?.runId === run._id &&
+    account.lastVerifiedByClaimTest.generationId === generationId
   );
 }
 

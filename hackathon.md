@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-30T22:23:44Z
+- **Last updated:** 2026-08-30T23:26:58Z
 
 ## Log
 
@@ -648,7 +648,7 @@ proved unreliable. Expiration produces a deterministic Inconclusive result even 
 not complete its forced close turn. All 225 tests, the Convex development push, and the complete
 Cloudflare build path passed.
 
-### 2026-08-30 - working tree
+### 2026-08-30 - 67536d8 - v127
 
 Made Product → Claim → Run the inspectable testing hierarchy. One Claim can now keep multiple Runs;
 one Run can continue through multiple worker generations and temporary Firecrawl browser sessions.
@@ -664,3 +664,26 @@ session-control evidence against the Scout. A live GitHub run completed CAPTCHA 
 verification, account creation, account recording, and replay. All 247 tests, the Convex development
 push, and the complete Cloudflare build path passed (`convex/scout/labGeneration.ts`,
 `convex/scout/serviceAccounts.ts`, `convex/claimTestHumanHandoffs.ts`).
+
+### 2026-08-30 - working tree
+
+Added managed Scout passwords encrypted with AES-256-GCM in Convex. Public queries and the agent see
+only safe account metadata. An account-creation Run must bind one exact prepared service-account ID
+for its selected Scout and Product before it starts; every continued generation and browser session
+reuses that ID. The recording tool accepts only account access and browser element refs; trusted
+code derives the expected identifier from the bound account, verifies the visible identity, and
+updates only that row instead of accepting another model-selected account
+(`convex/scout/serviceAccountCredentials.ts`, `convex/scout/credentialCrypto.ts`,
+`convex/claimTests.ts`, `convex/scout/serviceAccountTool.ts`,
+`convex/scout/serviceAccounts.ts`, `src/routes/scouts.$slug.tsx`).
+
+Reused the ref-based `fill_account_password` capability as the only password tool. Trusted server
+code checks the exact HTTPS login host and password input types, decrypts the bound credential,
+registers it for exact and URI-encoded output redaction, and fills through Firecrawl while telemetry
+stores only refs and character counts. Managed Runs retain persistent profiles, replay, live view,
+operation capture, and human takeover. Documented that Firecrawl receives plaintext and that Scout
+cannot scrub provider-rendered replay or raise Firecrawl's undocumented recording quality
+(`convex/scout/labGeneration.ts`, `convex/scout/labTools.ts`,
+`docs/firecrawl-limitations.md`, `docs/scout-credential-store-decision.md`). All 272 tests, the
+Convex development push, and the
+complete Cloudflare build path passed.

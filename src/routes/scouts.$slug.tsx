@@ -1,5 +1,5 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { useMutation, useQuery } from "convex/react";
+import { useAction, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { ArrowLeftIcon, LoaderCircleIcon, PlusIcon, XIcon } from "lucide-react";
 import { type FormEvent, type ReactNode, useRef, useState } from "react";
@@ -19,6 +19,7 @@ type AuthenticationEvidence = ServiceAccount["authenticationEvidence"];
 type AccountFields = {
   serviceName: string;
   serviceDomain: string;
+  credentialHost: string;
   identifier: string;
 };
 
@@ -229,7 +230,7 @@ function ServiceAccountsSection({
                   </p>
                 </div>
               </div>
-              <dl className="grid min-w-0 gap-4 sm:grid-cols-2">
+              <dl className="grid min-w-0 gap-4 sm:grid-cols-3">
                 <div className="min-w-0">
                   <dt className="text-muted-foreground text-xs">Identifier</dt>
                   <dd className="mt-1 wrap-break-word">{account.identifier}</dd>
@@ -238,6 +239,19 @@ function ServiceAccountsSection({
                   <dt className="text-muted-foreground text-xs">Authentication</dt>
                   <dd className="mt-1">
                     <AuthenticationEvidence evidence={account.authenticationEvidence} />
+                  </dd>
+                </div>
+                <div className="min-w-0">
+                  <dt className="text-muted-foreground text-xs">Password</dt>
+                  <dd className="mt-1">
+                    {account.managedCredential ? (
+                      <span>
+                        Managed · Prepared{" "}
+                        <EvidenceTime timestamp={account.managedCredential.createdAt} />
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">External</span>
+                    )}
                   </dd>
                 </div>
               </dl>
@@ -260,10 +274,11 @@ function AccountRegistrationForm({
   onCancel: () => void;
   onSubmittingChange: (submitting: boolean) => void;
 }) {
-  const registerAccount = useMutation(api.scout.serviceAccounts.register);
+  const registerAccount = useAction(api.scout.serviceAccountCredentialActions.registerManaged);
   const [fields, setFields] = useState<AccountFields>({
     serviceName: "",
     serviceDomain: "",
+    credentialHost: "",
     identifier: scout.agentMail.address,
   });
   const [state, setState] = useState<RegistrationState>({ kind: "idle" });
@@ -284,20 +299,28 @@ function AccountRegistrationForm({
 
     const serviceName = fields.serviceName.trim();
     const serviceDomain = fields.serviceDomain.trim().toLowerCase();
+    const credentialHost = fields.credentialHost.trim().toLowerCase();
     const identifier = fields.identifier.trim();
-    if (!serviceName || !serviceDomain || !identifier) {
-      setState({ kind: "failed", message: "Enter a service, domain, and account identifier." });
+    if (!serviceName || !serviceDomain || !credentialHost || !identifier) {
+      setState({
+        kind: "failed",
+        message: "Enter a service, product domain, login host, and account identifier.",
+      });
       return;
     }
     if (
       serviceDomain.includes("://") ||
       serviceDomain.includes("/") ||
       serviceDomain.includes(":") ||
-      serviceDomain.includes("@")
+      serviceDomain.includes("@") ||
+      credentialHost.includes("://") ||
+      credentialHost.includes("/") ||
+      credentialHost.includes(":") ||
+      credentialHost.includes("@")
     ) {
       setState({
         kind: "failed",
-        message: "Enter only the service domain, such as tally.so.",
+        message: "Enter only the exact login host, such as account.example.com.",
       });
       return;
     }
@@ -309,11 +332,13 @@ function AccountRegistrationForm({
         scoutId: scout._id,
         serviceName,
         serviceDomain,
+        credentialHost,
         identifier,
       });
       setFields({
         serviceName: "",
         serviceDomain: "",
+        credentialHost: "",
         identifier: scout.agentMail.address,
       });
       setState({ kind: "idle" });
@@ -326,7 +351,11 @@ function AccountRegistrationForm({
 
   return (
     <div id="register-service-account-panel" className="surface-panel mt-4 p-5 sm:p-6">
-      <form className="grid gap-4 sm:grid-cols-3" onSubmit={(event) => void submit(event)}>
+      <form className="grid gap-4 sm:grid-cols-2" onSubmit={(event) => void submit(event)}>
+        <p className="text-muted-foreground text-sm sm:col-span-2">
+          Scout generates and encrypts the password. It can fill the password during a run, but it
+          cannot display it here.
+        </p>
         <FormField label="Service name" htmlFor="service-account-name">
           <Input
             id="service-account-name"
@@ -341,18 +370,32 @@ function AccountRegistrationForm({
             onChange={(event) => updateField("serviceName", event.currentTarget.value)}
           />
         </FormField>
-        <FormField label="Domain" htmlFor="service-account-domain">
+        <FormField label="Product domain" htmlFor="service-account-domain">
           <Input
             id="service-account-domain"
             name="serviceDomain"
             value={fields.serviceDomain}
             autoComplete="off"
             inputMode="url"
-            placeholder="tally.so"
+            placeholder="example.com"
             required
             maxLength={253}
             disabled={submitting}
             onChange={(event) => updateField("serviceDomain", event.currentTarget.value)}
+          />
+        </FormField>
+        <FormField label="Exact login host" htmlFor="service-account-login-host">
+          <Input
+            id="service-account-login-host"
+            name="credentialHost"
+            value={fields.credentialHost}
+            autoComplete="off"
+            inputMode="url"
+            placeholder="account.example.com"
+            required
+            maxLength={253}
+            disabled={submitting}
+            onChange={(event) => updateField("credentialHost", event.currentTarget.value)}
           />
         </FormField>
         <FormField label="Account identifier" htmlFor="service-account-identifier">
@@ -369,7 +412,7 @@ function AccountRegistrationForm({
           />
         </FormField>
 
-        <div className="flex items-center justify-end gap-2 sm:col-span-3">
+        <div className="flex items-center justify-end gap-2 sm:col-span-2">
           <Button type="button" variant="ghost" disabled={submitting} onClick={onCancel}>
             Cancel
           </Button>
@@ -379,7 +422,7 @@ function AccountRegistrationForm({
           </Button>
         </div>
         {state.kind === "failed" ? (
-          <p className="text-destructive text-sm sm:col-span-3" role="alert">
+          <p className="text-destructive text-sm sm:col-span-2" role="alert">
             {state.message}
           </p>
         ) : null}
@@ -445,8 +488,17 @@ function accountRegistrationError(error: unknown) {
   if (message.includes("Service account is already registered")) {
     return "That account is already registered for this scout.";
   }
+  if (message.includes("already has a managed credential")) {
+    return "This scout already has a managed password for that product.";
+  }
+  if (message.includes("SCOUT_CREDENTIAL_MASTER_KEY_V1")) {
+    return "Managed credential encryption is not configured for this deployment.";
+  }
+  if (message.includes("Login host")) {
+    return "Enter an exact HTTPS login host without a path, such as account.example.com.";
+  }
   if (message.includes("service domain") || message.includes("Service domain")) {
-    return "Enter a valid service domain, such as tally.so.";
+    return "Enter a valid product domain, such as example.com.";
   }
   return "Could not add the account. Check the values and try again.";
 }

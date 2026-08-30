@@ -234,7 +234,7 @@ export function buildClaimTestPrompt(args: {
   const operatorInstructions = args.claim.suggestedMysteryShop || "(none provided)";
   const accountInstructions =
     args.accountCreation === "required"
-      ? "Create or recover exactly one free account using only the configured Scout identity. Before returning a conclusive verdict, open an authenticated account menu that visibly contains both the Scout's exact identifier and a Sign out or Log out control, then record it with the dedicated account tool."
+      ? "Create or recover exactly one free account using only the configured Scout identity and a password tool supplied by the runtime. Never invent, request, or expose a password. Before returning a conclusive verdict, open an authenticated account menu that visibly contains both the Scout's exact identifier and a Sign out or Log out control, then record it with the dedicated account tool. The runtime matches this evidence to the account already bound to the Run; do not pass an account identifier to the recording tool."
       : "Account creation is not part of this run. You may sign in only when the configured Scout already has an account; otherwise stop and return Inconclusive.";
   return `Independently test one product claim as a mystery shopper.
 
@@ -255,7 +255,7 @@ Run one bounded verification:
 - Capture the exact visible wording, the URL where it appeared, and direct observations from any product interaction. Distinguish marketing copy from behavior you observed.
 - Follow the operator instructions when they are safe and useful, but plan the check from the claim and product context when none were provided. Change the instructions when a smaller check can answer the claim.
 - ${accountInstructions}
-- If a CAPTCHA or another strictly human-only check blocks the test, use the dedicated human-help tool. Do not attempt to solve, bypass, stop at, or merely report it. This rule overrides conflicting operator instructions, including an instruction to stop and report a CAPTCHA. If the operator does not continue before the request expires, return Inconclusive rather than Refuted.
+- If a CAPTCHA or another strictly human-only check blocks the test, use the dedicated human-help tool when it is available. Do not attempt to solve or bypass the check. When human help is unavailable or expires, return Inconclusive rather than Refuted.
 - Never purchase anything, enter payment details, start a paid commitment, publish public content, contact or invite third parties, delete data, or make an irreversible external change. If the claim requires one of those actions, stop and return Inconclusive.
 - Do not infer success from this prompt, prior research, source code, or the name of a UI control. Verify the resulting visible state.
 - Keep the check bounded. Use no more browser actions than needed to answer this one claim; stop exploring once a precondition makes the proposed check invalid.
@@ -296,6 +296,7 @@ export const generationContext = internalQuery({
       productDomain: v.string(),
       browserProfile: claimTestBrowserProfileValidator,
       accountCreation: claimTestAccountCreationValidator,
+      serviceAccountId: v.union(v.id("scoutServiceAccounts"), v.null()),
     }),
     v.null(),
   ),
@@ -313,11 +314,29 @@ export const generationContext = internalQuery({
     if (!product) {
       throw new Error("Claim test product is unavailable");
     }
+    const serviceAccount =
+      run.serviceAccountId === undefined
+        ? null
+        : await ctx.db.get("scoutServiceAccounts", run.serviceAccountId);
+    if (
+      run.accountCreation === "required" &&
+      (!serviceAccount ||
+        serviceAccount.scoutId !== run.scoutId ||
+        serviceAccount.productId !== run.productId ||
+        serviceAccount.serviceDomain !== product.domain ||
+        serviceAccount.managedCredential === undefined)
+    ) {
+      throw new Error("Claim-test run has an invalid managed service-account binding");
+    }
+    if (run.accountCreation === "not_requested" && run.serviceAccountId !== undefined) {
+      throw new Error("Claim-test run has an unexpected service-account binding");
+    }
     return {
       runId: run._id,
       productDomain: product.domain,
       browserProfile: run.browserProfile,
       accountCreation: run.accountCreation,
+      serviceAccountId: serviceAccount?._id ?? null,
     };
   },
 });
@@ -367,6 +386,7 @@ export const start = mutation({
     claimKey: v.string(),
     browserProfile: claimTestBrowserProfileSelectionValidator,
     accountCreation: claimTestAccountCreationValidator,
+    serviceAccountId: v.optional(v.id("scoutServiceAccounts")),
   },
   returns: startClaimTestResultValidator,
   handler: async (ctx, args) => {
@@ -381,6 +401,25 @@ export const start = mutation({
     }
     if (args.accountCreation === "required" && args.browserProfile.kind !== "scout") {
       throw new Error("Account creation requires a persistent Scout browser profile");
+    }
+    if (args.accountCreation === "required" && args.serviceAccountId === undefined) {
+      throw new Error("Account creation requires a prepared managed service account");
+    }
+    if (args.accountCreation === "not_requested" && args.serviceAccountId !== undefined) {
+      throw new Error("A service account can be bound only to an account-creation run");
+    }
+    if (args.serviceAccountId !== undefined) {
+      const serviceAccount = await ctx.db.get("scoutServiceAccounts", args.serviceAccountId);
+      if (
+        !serviceAccount ||
+        args.browserProfile.kind !== "scout" ||
+        serviceAccount.scoutId !== args.browserProfile.scoutId ||
+        serviceAccount.productId !== current.product._id ||
+        serviceAccount.serviceDomain !== current.product.domain ||
+        serviceAccount.managedCredential === undefined
+      ) {
+        throw new Error("Prepared managed service account does not match this run");
+      }
     }
 
     const existingRuns = await runsForClaim(ctx, {
@@ -402,7 +441,11 @@ export const start = mutation({
             ? previousRun.browserProfile.kind === "fresh"
             : previousRun.browserProfile.kind === "scout" &&
               previousRun.scoutId === args.browserProfile.scoutId;
-        if (!profileMatches || previousRun.accountCreation !== args.accountCreation) {
+        if (
+          !profileMatches ||
+          previousRun.accountCreation !== args.accountCreation ||
+          previousRun.serviceAccountId !== args.serviceAccountId
+        ) {
           throw new Error("The active claim test uses a different run configuration");
         }
         return {
@@ -486,6 +529,7 @@ export const start = mutation({
       scoutId: scout._id,
       browserProfile,
       accountCreation: args.accountCreation,
+      ...(args.serviceAccountId === undefined ? {} : { serviceAccountId: args.serviceAccountId }),
       state: { kind: "running", generationId },
       testedClaim: claimSnapshot(current.claim),
     });
