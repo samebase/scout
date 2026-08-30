@@ -28,6 +28,7 @@ function dependencies() {
     createSession: vi.fn(async () => ({
       sessionId: "session-1",
       liveViewUrl: null as string | null,
+      interactiveLiveViewUrl: null as string | null,
     })),
     executeCode: vi.fn(
       async (
@@ -84,12 +85,24 @@ describe("Lab browser harness", () => {
   test("publishes a live view outside model-visible tool output and clears it after close", async () => {
     const deps = dependencies();
     const liveViewUrl = "https://liveview.firecrawl.dev/private?signature=read-only";
-    deps.createSession.mockResolvedValueOnce({ sessionId: "session-1", liveViewUrl });
+    const interactiveLiveViewUrl =
+      "https://liveview.firecrawl.dev/private?signature=interactive-control";
+    deps.createSession.mockResolvedValueOnce({
+      sessionId: "session-1",
+      liveViewUrl,
+      interactiveLiveViewUrl,
+    });
     const onSessionAvailable = vi.fn(async () => undefined);
     const onLiveViewAvailable = vi.fn(async () => undefined);
+    const onInteractiveLiveViewAvailable = vi.fn(async () => undefined);
     const onLiveViewClosed = vi.fn(async () => undefined);
     const browser = createLabBrowserHarness(
-      { onSessionAvailable, onLiveViewAvailable, onLiveViewClosed },
+      {
+        onSessionAvailable,
+        onLiveViewAvailable,
+        onInteractiveLiveViewAvailable,
+        onLiveViewClosed,
+      },
       deps,
     );
 
@@ -100,7 +113,9 @@ describe("Lab browser harness", () => {
 
     expect(onSessionAvailable).toHaveBeenCalledWith("session-1");
     expect(onLiveViewAvailable).toHaveBeenCalledWith(liveViewUrl);
+    expect(onInteractiveLiveViewAvailable).toHaveBeenCalledWith(interactiveLiveViewUrl);
     expect(JSON.stringify(output)).not.toContain(liveViewUrl);
+    expect(JSON.stringify(output)).not.toContain(interactiveLiveViewUrl);
     await expect(browser.close()).resolves.toMatchObject({ success: true });
     expect(onLiveViewClosed).toHaveBeenCalledOnce();
   });

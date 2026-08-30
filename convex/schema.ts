@@ -7,6 +7,7 @@ import {
   claimTestBrowserSessionLifecycleValidator,
   claimTestBrowserViewportValidator,
 } from "./claimTestBrowserModel";
+import { claimTestHumanHandoffValidator } from "./claimTestHumanHandoffsModel";
 import { productClaimSnapshotValidator, productInvestigationValidator } from "./productsModel";
 import { productInvestigationActivityFieldsValidator } from "./productsInvestigationActivityModel";
 import { scoutServiceAccountFieldsValidator, scoutWebsiteIdentityValidator } from "./scout/model";
@@ -197,4 +198,7 @@ export default defineSchema({
     liveViewUrl: v.string(),
     openedAt: v.number(),
   }).index("by_generation_id", ["generationId"]),
+  claimTestHumanHandoffs: defineTable(claimTestHumanHandoffValidator).index("by_generation_id", [
+    "generationId",
+  ]),
 });

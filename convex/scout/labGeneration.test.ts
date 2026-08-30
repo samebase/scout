@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import {
   closeAgentMailBestEffort,
   closeGenerationBrowser,
+  createStreamErrorCapture,
+  EXPIRED_HUMAN_HANDOFF_RESULT,
   generationFailureDetails,
+  persistExpiredHumanHandoffResult,
   scoutWebsiteIdentityInstructions,
 } from "./labGeneration";
 
@@ -79,6 +82,82 @@ describe("generation browser cleanup", () => {
       usage,
     });
     expect(details.terminalError).toBe(cleanupFailure);
+  });
+});
+
+describe("stream error capture", () => {
+  it("captures the first SDK stream error for terminal generation handling", () => {
+    const capture = createStreamErrorCapture();
+    const first = new Error("stream failed");
+
+    capture.onError({ error: first });
+    capture.onError({ error: new Error("later failure") });
+
+    expect(() => capture.throwIfCaptured()).toThrow(first);
+  });
+
+  it("does not block completion when the stream had no error", () => {
+    expect(() => createStreamErrorCapture().throwIfCaptured()).not.toThrow();
+  });
+});
+
+describe("expired human-handoff result persistence", () => {
+  const expiredToolResult = {
+    toolName: "request_human_help",
+    output: {
+      resumed: false,
+      message: "The human-help request expired. Stop this check and return Verdict: Inconclusive.",
+    },
+  };
+
+  it("persists Inconclusive when Qwen writes the forced close as reasoning instead of a tool call", async () => {
+    const persisted: Array<{ role: "assistant"; content: string }> = [];
+    const steps = [
+      { text: "", toolResults: [expiredToolResult] },
+      {
+        text: "",
+        reasoning:
+          "<tool_call>\n<function=browser_close>\n<parameter=reason>Human-help request expired</parameter>\n</function>\n</tool_call>",
+        finishReason: "stop",
+        toolResults: [],
+      },
+    ];
+
+    await expect(
+      persistExpiredHumanHandoffResult(steps, async (message) => {
+        persisted.push(message);
+      }),
+    ).resolves.toBe(true);
+    expect(persisted).toEqual([{ role: "assistant", content: EXPIRED_HUMAN_HANDOFF_RESULT }]);
+  });
+
+  it("does not duplicate a written Inconclusive verdict", async () => {
+    const persist = vi.fn(async () => undefined);
+
+    await expect(
+      persistExpiredHumanHandoffResult(
+        [
+          { text: "", toolResults: [expiredToolResult] },
+          {
+            text: "Verdict: Inconclusive\n\nThe human check expired.",
+            toolResults: [],
+          },
+        ],
+        persist,
+      ),
+    ).resolves.toBe(false);
+    expect(persist).not.toHaveBeenCalled();
+  });
+
+  it("surfaces persistence failure so the generation cannot be marked completed", async () => {
+    await expect(
+      persistExpiredHumanHandoffResult(
+        [{ text: "", toolResults: [expiredToolResult] }],
+        async () => {
+          throw new Error("message persistence failed");
+        },
+      ),
+    ).rejects.toThrow("message persistence failed");
   });
 });
 

@@ -19,6 +19,7 @@ function testBackend() {
 }
 
 type TestBackend = ReturnType<typeof testBackend>;
+type AuthenticatedTestBackend = ReturnType<TestBackend["withIdentity"]>;
 
 async function authenticatedBackend() {
   const backend = testBackend();
@@ -133,6 +134,34 @@ async function insertCompletedInvestigation(
       claimKeys: projectClaims(args.claims).map((item) => item.claimKey),
     };
   });
+}
+
+async function startClaimTestWithBrowser(
+  backend: TestBackend,
+  userId: Id<"users">,
+  admin: AuthenticatedTestBackend,
+) {
+  await insertScout(backend);
+  const snapshot = await insertCompletedInvestigation(backend, {
+    userId,
+    claims: [claim("account creation")],
+  });
+  const claimKey = snapshot.claimKeys[0];
+  if (!claimKey) throw new Error("Expected a claim key");
+  const started = await admin.mutation(api.claimTests.start, {
+    domain: "example.test",
+    claimKey,
+  });
+  const generation = await backend.run(async (ctx) => {
+    const run = await ctx.db.get("claimTestRuns", started.runId);
+    return run ? await ctx.db.get("scoutLabGenerations", run.generationId) : null;
+  });
+  if (!generation) throw new Error("Expected a claim test generation");
+  await backend.mutation(internal.claimTests.setBrowserSession, {
+    promptMessageId: generation.promptMessageId,
+    sessionId: "firecrawl-session-1",
+  });
+  return { claimKey, started, generation };
 }
 
 describe("Claim tests", () => {
@@ -939,5 +968,154 @@ describe("Claim tests", () => {
           .unique(),
       ),
     ).resolves.toBeNull();
+  });
+
+  it("lets only the current run owner continue one idempotent human handoff", async () => {
+    const { backend, userId, admin } = await authenticatedBackend();
+    const { claimKey, started, generation } = await startClaimTestWithBrowser(
+      backend,
+      userId,
+      admin,
+    );
+    const interactiveLiveViewUrl =
+      "https://liveview.firecrawl.dev/private?signature=interactive-control";
+
+    const requested = await backend.mutation(internal.claimTestHumanHandoffs.request, {
+      promptMessageId: generation.promptMessageId,
+      reason: "  GitHub requires a CAPTCHA.  ",
+      interactiveLiveViewUrl,
+    });
+    expect(requested).toMatchObject({
+      created: true,
+      recipientEmail: ADMIN_EMAIL,
+      productName: "Example",
+      scoutName: "Conrad Scout",
+      interactiveLiveViewUrl,
+    });
+    const waitingHandoff = await backend.run(
+      async (ctx) => await ctx.db.get("claimTestHumanHandoffs", requested.handoffId),
+    );
+    expect(waitingHandoff?.status).toBe("waiting");
+    if (waitingHandoff?.status !== "waiting") throw new Error("Expected a waiting handoff");
+    expect(waitingHandoff.expiresAt - waitingHandoff.requestedAt).toBe(5 * 60 * 1_000);
+    await expect(
+      backend.mutation(internal.claimTestHumanHandoffs.request, {
+        promptMessageId: generation.promptMessageId,
+        reason: "GitHub requires a CAPTCHA.",
+        interactiveLiveViewUrl,
+      }),
+    ).resolves.toMatchObject({ handoffId: requested.handoffId, created: false });
+    await expect(
+      admin.query(api.claimTestHumanHandoffs.active, {
+        domain: "example.test",
+        claimKey,
+      }),
+    ).resolves.toMatchObject({
+      runId: started.runId,
+      reason: "GitHub requires a CAPTCHA.",
+      url: interactiveLiveViewUrl,
+    });
+
+    const otherUserId = await backend.run(
+      async (ctx) => await ctx.db.insert("users", { email: ADMIN_EMAIL }),
+    );
+    const otherAdmin = backend.withIdentity({ subject: `${otherUserId}|other-session` });
+    await expect(
+      otherAdmin.query(api.claimTestHumanHandoffs.active, {
+        domain: "example.test",
+        claimKey,
+      }),
+    ).resolves.toBeNull();
+    await expect(
+      otherAdmin.mutation(api.claimTestHumanHandoffs.continueCurrent, {
+        domain: "example.test",
+        claimKey,
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      backend.query(api.claimTestHumanHandoffs.active, {
+        domain: "example.test",
+        claimKey,
+      }),
+    ).rejects.toThrow("Not authorized");
+    await expect(
+      backend.mutation(api.claimTestHumanHandoffs.continueCurrent, {
+        domain: "example.test",
+        claimKey,
+      }),
+    ).rejects.toThrow("Not authorized");
+
+    await expect(
+      admin.mutation(api.claimTestHumanHandoffs.continueCurrent, {
+        domain: "example.test",
+        claimKey,
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      backend.query(internal.claimTestHumanHandoffs.getStatus, {
+        handoffId: requested.handoffId,
+      }),
+    ).resolves.toBe("continued");
+    const stored = await backend.run(
+      async (ctx) => await ctx.db.get("claimTestHumanHandoffs", requested.handoffId),
+    );
+    expect(stored).toMatchObject({ status: "continued" });
+    expect(stored).not.toHaveProperty("interactiveLiveViewUrl");
+    await expect(
+      backend.mutation(internal.claimTestHumanHandoffs.request, {
+        promptMessageId: generation.promptMessageId,
+        reason: "A second request",
+        interactiveLiveViewUrl,
+      }),
+    ).rejects.toThrow("already ended");
+  });
+
+  it("removes the interactive takeover secret when the generation completes", async () => {
+    const { backend, userId, admin } = await authenticatedBackend();
+    const { claimKey, generation } = await startClaimTestWithBrowser(backend, userId, admin);
+    const requested = await backend.mutation(internal.claimTestHumanHandoffs.request, {
+      promptMessageId: generation.promptMessageId,
+      reason: "A CAPTCHA blocks the account form.",
+      interactiveLiveViewUrl:
+        "https://liveview.firecrawl.dev/private?signature=interactive-control",
+    });
+
+    await backend.mutation(internal.scout.lab.completeGeneration, {
+      promptMessageId: generation.promptMessageId,
+      usage: { totalTokens: 1 },
+    });
+
+    const stored = await backend.run(
+      async (ctx) => await ctx.db.get("claimTestHumanHandoffs", requested.handoffId),
+    );
+    expect(stored).toMatchObject({ status: "expired" });
+    expect(stored).not.toHaveProperty("interactiveLiveViewUrl");
+    await expect(
+      admin.query(api.claimTestHumanHandoffs.active, {
+        domain: "example.test",
+        claimKey,
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it("removes the interactive takeover secret when the request times out", async () => {
+    const { backend, userId, admin } = await authenticatedBackend();
+    const { generation } = await startClaimTestWithBrowser(backend, userId, admin);
+    const requested = await backend.mutation(internal.claimTestHumanHandoffs.request, {
+      promptMessageId: generation.promptMessageId,
+      reason: "A CAPTCHA blocks the account form.",
+      interactiveLiveViewUrl:
+        "https://liveview.firecrawl.dev/private?signature=interactive-control",
+    });
+
+    await backend.mutation(internal.claimTestHumanHandoffs.expire, {
+      handoffId: requested.handoffId,
+    });
+
+    const stored = await backend.run(
+      async (ctx) => await ctx.db.get("claimTestHumanHandoffs", requested.handoffId),
+    );
+    expect(stored).toMatchObject({ status: "expired" });
+    expect(stored).not.toHaveProperty("interactiveLiveViewUrl");
   });
 });

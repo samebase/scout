@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-30T12:34:14Z
+- **Last updated:** 2026-08-30T13:57:10Z
 
 ## Log
 
@@ -621,7 +621,7 @@ A browser-driven Samebase check created a custom account-creation claim without 
 verified the generated product-aware prompt, edited the instructions, and removed the claim. All
 193 tests, the Convex development push, and the complete Cloudflare build path passed.
 
-### 2026-08-30 - working tree
+### 2026-08-30 - f5d4e56 - v122
 
 Collapsed generated claim edits and removals into one mutually exclusive override record. Claim
 test runs now use one stable claim key and always retain the exact claim and instructions they
@@ -633,3 +633,17 @@ Backed up the development deployment, cleared only incompatible claim-test and o
 and pushed the narrowed schema. A browser-driven Samebase check edited and removed a generated
 claim, then created, edited, and removed a custom claim. All 193 tests, the Convex development push,
 and the complete Cloudflare build path passed.
+
+### 2026-08-30 - working tree
+
+Added one-shot human takeover for claim tests. A CAPTCHA or other human-only browser result now
+emails the authenticated operator one validated Firecrawl interactive link, shows the same session
+on the claim page, and resumes Scout only after the operator explicitly continues
+(`convex/claimTestHumanHandoffs.ts`, `convex/scout/claimTestLoop.ts`,
+`src/routes/products.$domain.claims.$claimKey.tsx`).
+
+A live GitHub signup reached a DataDome challenge and delivered the takeover email and interactive
+session. The request now allows five minutes and recommends desktop after mobile drag controls
+proved unreliable. Expiration produces a deterministic Inconclusive result even when the model does
+not complete its forced close turn. All 225 tests, the Convex development push, and the complete
+Cloudflare build path passed.

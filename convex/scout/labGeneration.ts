@@ -7,14 +7,22 @@ import { internal } from "../_generated/api";
 import type { Doc } from "../_generated/dataModel";
 import { env, internalAction } from "../_generated/server";
 import { SCOUT_AGENT_INSTRUCTIONS, scoutAgent } from "./agent";
+import {
+  createSingleUseHumanHandoffArm,
+  decideClaimTestStep,
+  humanHandoffOutcome,
+  immediatelyPrecedingToolResult,
+  type ClaimTestLoopState,
+} from "./claimTestLoop";
 import { requireOwnedAgentThread } from "./labAccess";
 import { createLabBrowserHarness, selectAgentMailTools } from "./labTools";
+import { createHumanHandoffTool } from "./humanHandoffTool";
 import { diagnosticMessage } from "./lib/redaction";
 import { scoutLanguageModel, scoutModelValidator, type ScoutTokenUsage } from "./models";
 
 const MAX_GENERATION_STEPS = 24;
 const CLAIM_TEST_CLOSE_STEP = 18;
-const CLAIM_TEST_FINAL_STEP = 19;
+const CLAIM_TEST_HANDOFF_CLOSE_STEP = MAX_GENERATION_STEPS - 2;
 const AGENT_MAIL_CLOSE_TIMEOUT_MS = 1_000;
 
 type LabBrowser = ReturnType<typeof createLabBrowserHarness>;
@@ -22,6 +30,42 @@ type LabBrowserUsage = Awaited<ReturnType<LabBrowser["close"]>>;
 type GenerationResult =
   | { kind: "completed"; usage: ScoutTokenUsage }
   | { kind: "failed"; error: unknown };
+
+type ClaimTestGenerationStep = {
+  readonly text: string;
+  readonly toolResults: readonly (
+    | {
+        readonly toolName: string;
+        readonly output: unknown;
+      }
+    | undefined
+  )[];
+};
+
+export const EXPIRED_HUMAN_HANDOFF_RESULT = `Verdict: Inconclusive
+
+The required human verification was not completed within five minutes, so this claim could not be tested.`;
+
+function needsExpiredHumanHandoffResult(steps: readonly ClaimTestGenerationStep[]) {
+  const expired = steps.some((step) =>
+    step.toolResults.some(
+      (result) =>
+        result?.toolName === "request_human_help" &&
+        humanHandoffOutcome(result.output) === "expired",
+    ),
+  );
+  if (!expired) return false;
+  return !/^\s*Verdict:\s*Inconclusive\b/i.test(steps.at(-1)?.text ?? "");
+}
+
+export async function persistExpiredHumanHandoffResult(
+  steps: readonly ClaimTestGenerationStep[],
+  persist: (message: { role: "assistant"; content: string }) => Promise<void>,
+) {
+  if (!needsExpiredHumanHandoffResult(steps)) return false;
+  await persist({ role: "assistant", content: EXPIRED_HUMAN_HANDOFF_RESULT });
+  return true;
+}
 
 export function generationFailureDetails(
   generationResult: GenerationResult,
@@ -42,6 +86,18 @@ export function generationFailureDetails(
   return generationResult.kind === "completed"
     ? { failure, terminalError, usage: generationResult.usage }
     : { failure, terminalError };
+}
+
+export function createStreamErrorCapture() {
+  let captured: { error: unknown } | null = null;
+  return {
+    onError: (event: { error: unknown }) => {
+      captured ??= { error: event.error };
+    },
+    throwIfCaptured: () => {
+      if (captured) throw captured.error;
+    },
+  };
 }
 
 export async function closeGenerationBrowser(browser: Pick<LabBrowser, "close"> | undefined) {
@@ -115,6 +171,7 @@ export const generateResponse = internalAction({
 
     let agentMailClient: MCPClient | undefined;
     let browser: LabBrowser | undefined;
+    let interactiveLiveViewUrl: string | null = null;
     let generationResult: GenerationResult;
 
     try {
@@ -165,7 +222,11 @@ export const generateResponse = internalAction({
             liveViewUrl,
           });
         },
+        onInteractiveLiveViewAvailable: async (url) => {
+          interactiveLiveViewUrl = url;
+        },
         onLiveViewClosed: async () => {
+          interactiveLiveViewUrl = null;
           await ctx.runMutation(internal.claimTests.clearLiveView, {
             promptMessageId: args.promptMessageId,
           });
@@ -185,16 +246,48 @@ export const generateResponse = internalAction({
         await agentMailClient.tools(),
         scout.agentMail.inboxId,
       );
+      const humanHandoffArm = createSingleUseHumanHandoffArm();
+      const humanHandoffTools = isClaimTestGeneration
+        ? {
+            request_human_help: createHumanHandoffTool({
+              request: async (reason) => {
+                if (!humanHandoffArm.consume()) {
+                  throw new Error(
+                    "Human help is available only after Scout detects a human-only browser gate",
+                  );
+                }
+                if (interactiveLiveViewUrl === null) {
+                  throw new Error(
+                    "The current browser session has no interactive human-takeover link",
+                  );
+                }
+                return await ctx.runMutation(internal.claimTestHumanHandoffs.request, {
+                  promptMessageId: args.promptMessageId,
+                  reason,
+                  interactiveLiveViewUrl,
+                });
+              },
+              getStatus: async (handoffId) =>
+                await ctx.runQuery(internal.claimTestHumanHandoffs.getStatus, { handoffId }),
+              expire: async (handoffId) => {
+                await ctx.runMutation(internal.claimTestHumanHandoffs.expire, { handoffId });
+              },
+            }),
+          }
+        : {};
 
       const tools = {
         ...browser.tools,
         ...agentMailTools,
+        ...humanHandoffTools,
       };
+      let claimTestLoopState: ClaimTestLoopState = "working";
       const instructions = `${SCOUT_AGENT_INSTRUCTIONS}\n\n${scoutWebsiteIdentityInstructions(scout)}${
         isClaimTestGeneration
-          ? "\n\nThis claim test starts in a fresh browser profile with no saved website login. Treat that clean state as part of the evidence."
+          ? "\n\nThis claim test starts in a fresh browser profile with no saved website login. Treat that clean state as part of the evidence. If a CAPTCHA or another strictly human-only check blocks the test, call request_human_help instead of attempting to solve, bypass, stop at, or merely report it. This human-gate rule overrides conflicting operator instructions. The tool waits while the operator takes over the same browser. After the operator continues, inspect the current page before acting. If the request expires, return Verdict: Inconclusive, not Refuted."
           : ""
       }`;
+      const streamErrors = createStreamErrorCapture();
       const streamResult = await scoutAgent.streamText(
         ctx,
         { threadId: args.threadId, userId: args.userId },
@@ -204,23 +297,53 @@ export const generateResponse = internalAction({
           instructions,
           tools,
           stopWhen: isStepCount(MAX_GENERATION_STEPS),
+          onError: streamErrors.onError,
           ...(isClaimTestGeneration
             ? {
-                prepareStep: ({ stepNumber }: { stepNumber: number }) => {
-                  if (stepNumber === CLAIM_TEST_CLOSE_STEP) {
-                    return {
-                      activeTools: ["browser_close"] as const,
-                      toolChoice: { type: "tool", toolName: "browser_close" } as const,
-                    };
+                prepareStep: ({ steps, stepNumber }) => {
+                  const decision = decideClaimTestStep({
+                    state: claimTestLoopState,
+                    stepNumber,
+                    normalCloseStep: CLAIM_TEST_CLOSE_STEP,
+                    handoffCloseStep: CLAIM_TEST_HANDOFF_CLOSE_STEP,
+                    previousToolResult: immediatelyPrecedingToolResult(steps),
+                  });
+                  claimTestLoopState = decision.nextState;
+                  switch (decision.kind) {
+                    case "request_human_help":
+                      humanHandoffArm.arm();
+                      return {
+                        activeTools: ["request_human_help"] as const,
+                        toolChoice: {
+                          type: "tool",
+                          toolName: "request_human_help",
+                        } as const,
+                      };
+                    case "browser_snapshot":
+                      return {
+                        activeTools: ["browser_snapshot"] as const,
+                        toolChoice: { type: "tool", toolName: "browser_snapshot" } as const,
+                      };
+                    case "browser_close":
+                      return {
+                        activeTools: ["browser_close"] as const,
+                        toolChoice: { type: "tool", toolName: "browser_close" } as const,
+                      };
+                    case "final_inconclusive":
+                      return {
+                        activeTools: [] as const,
+                        toolChoice: "none" as const,
+                        instructions: `${instructions}\n\nThe human-help request expired and the browser is closed. Do not investigate further. Begin the final response with exactly "Verdict: Inconclusive" and explain that the required human check was not completed in time.`,
+                      };
+                    case "final":
+                      return {
+                        activeTools: [] as const,
+                        toolChoice: "none" as const,
+                        instructions: `${instructions}\n\nThe bounded browser phase is over. Do not investigate further. Give the final claim verdict now, beginning with the required Verdict line.`,
+                      };
+                    case "none":
+                      return undefined;
                   }
-                  if (stepNumber >= CLAIM_TEST_FINAL_STEP) {
-                    return {
-                      activeTools: [] as const,
-                      toolChoice: "none" as const,
-                      instructions: `${instructions}\n\nThe bounded browser phase is over. Do not investigate further. Give the final claim verdict now, beginning with the required Verdict line.`,
-                    };
-                  }
-                  return undefined;
                 },
               }
             : {}),
@@ -234,6 +357,18 @@ export const generateResponse = internalAction({
         },
       );
       await streamResult.consumeStream();
+      streamErrors.throwIfCaptured();
+      if (isClaimTestGeneration) {
+        await persistExpiredHumanHandoffResult(await streamResult.steps, async (message) => {
+          await scoutAgent.saveMessage(ctx, {
+            threadId: args.threadId,
+            userId: args.userId,
+            promptMessageId: args.promptMessageId,
+            message,
+            skipEmbeddings: true,
+          });
+        });
+      }
       generationResult = {
         kind: "completed",
         usage: tokenUsage(await streamResult.totalUsage),

@@ -14,6 +14,7 @@ import {
   ArrowLeftIcon,
   CircleAlertIcon,
   ExternalLinkIcon,
+  HandIcon,
   LoaderCircleIcon,
   PanelLeftIcon,
   PanelRightIcon,
@@ -50,6 +51,7 @@ type Product = NonNullable<FunctionReturnType<typeof api.products.getByDomain>>;
 type ResolvedClaim = NonNullable<FunctionReturnType<typeof api.products.getClaimByDomain>>;
 type Claim = ResolvedClaim["claim"];
 type ClaimRun = NonNullable<FunctionReturnType<typeof api.claimTests.latest>>;
+type HumanHandoff = NonNullable<FunctionReturnType<typeof api.claimTestHumanHandoffs.active>>;
 type ReplayPagesResult = FunctionReturnType<typeof api.claimTestReplay.listPages>;
 type ReplayReady = Extract<ReplayPagesResult, { status: "ready" }>;
 
@@ -68,6 +70,10 @@ type ClaimRemoveState =
   | { kind: "removing" }
   | { kind: "failed"; message: string };
 type ClaimVerdict = "Supported" | "Qualified" | "Refuted" | "Inconclusive";
+type HandoffContinueState =
+  | { kind: "idle" }
+  | { kind: "continuing" }
+  | { kind: "failed"; message: string };
 
 const CLAIM_RESIZE_HANDLE_LABELS = {
   left: "Resize claim list",
@@ -85,6 +91,7 @@ function ProductClaimPage() {
   const resolvedClaim = useQuery(api.products.getClaimByDomain, { claimKey, domain });
   const latestRun = useQuery(api.claimTests.latest, { claimKey, domain });
   const liveView = useQuery(api.claimTests.liveView, { claimKey, domain });
+  const humanHandoff = useQuery(api.claimTestHumanHandoffs.active, { claimKey, domain });
   const runMessages = useUIMessages(
     api.scout.lab.listMessages,
     latestRun?.threadId ? { threadId: latestRun.threadId } : "skip",
@@ -129,6 +136,7 @@ function ProductClaimPage() {
                 key={claimKey}
                 claimKey={claimKey}
                 domain={domain}
+                humanHandoff={humanHandoff ?? null}
                 latestRun={latestRun}
                 liveViewUrl={liveView?.url ?? null}
                 loading={loading}
@@ -155,7 +163,12 @@ function ProductClaimPage() {
                 messages={messages}
               />
             }
-            header={<ClaimActivityHeader latestRun={latestRun} />}
+            header={
+              <ClaimActivityHeader
+                humanHandoffActive={humanHandoff !== null && humanHandoff !== undefined}
+                latestRun={latestRun}
+              />
+            }
             scrollRestorationId={`claim-activity:${domain}:${claimKey}`}
           />
         }
@@ -309,6 +322,7 @@ function ClaimMain({
   claimKey,
   claimMissing,
   domain,
+  humanHandoff,
   latestRun,
   liveViewUrl,
   loading,
@@ -320,6 +334,7 @@ function ClaimMain({
   claimKey: string;
   claimMissing: boolean;
   domain: string;
+  humanHandoff: HumanHandoff | null;
   latestRun: ClaimRun | null | undefined;
   liveViewUrl: string | null;
   loading: boolean;
@@ -398,6 +413,7 @@ function ClaimMain({
               claim={claim}
               claimKey={claimKey}
               domain={domain}
+              humanHandoff={humanHandoff}
               latestRun={latestRun}
               liveViewUrl={liveViewUrl}
               messages={messages}
@@ -650,6 +666,7 @@ function ClaimTest({
   claim,
   claimKey,
   domain,
+  humanHandoff,
   latestRun,
   liveViewUrl,
   messages,
@@ -657,6 +674,7 @@ function ClaimTest({
   claim: Claim;
   claimKey: string;
   domain: string;
+  humanHandoff: HumanHandoff | null;
   latestRun: ClaimRun | null | undefined;
   liveViewUrl: string | null;
   messages: readonly ScoutRunMessage[];
@@ -724,21 +742,45 @@ function ClaimTest({
           {startState.message}
         </p>
       ) : null}
-      <ClaimRunResult latestRun={latestRun} liveViewUrl={liveViewUrl} resultText={resultText} />
+      <ClaimRunResult
+        claimKey={claimKey}
+        domain={domain}
+        humanHandoff={humanHandoff}
+        latestRun={latestRun}
+        liveViewUrl={liveViewUrl}
+        resultText={resultText}
+      />
     </section>
   );
 }
 
 function ClaimRunResult({
+  claimKey,
+  domain,
+  humanHandoff,
   latestRun,
   liveViewUrl,
   resultText,
 }: {
+  claimKey: string;
+  domain: string;
+  humanHandoff: HumanHandoff | null;
   latestRun: ClaimRun | null | undefined;
   liveViewUrl: string | null;
   resultText: string | null;
 }) {
   if (!latestRun) return null;
+
+  if (humanHandoff) {
+    return (
+      <ClaimHumanHandoff
+        claimKey={claimKey}
+        domain={domain}
+        handoff={humanHandoff}
+        scoutName={latestRun.scout.displayName}
+      />
+    );
+  }
 
   if (latestRun.generation.status === "pending" && !resultText) {
     if (liveViewUrl) {
@@ -819,6 +861,83 @@ function ClaimRunResult({
         <RunMetadata run={latestRun} />
       </div>
     </>
+  );
+}
+
+function ClaimHumanHandoff({
+  claimKey,
+  domain,
+  handoff,
+  scoutName,
+}: {
+  claimKey: string;
+  domain: string;
+  handoff: HumanHandoff;
+  scoutName: string;
+}) {
+  const continueCurrent = useMutation(api.claimTestHumanHandoffs.continueCurrent);
+  const [state, setState] = useState<HandoffContinueState>({ kind: "idle" });
+
+  const continueScout = async () => {
+    setState({ kind: "continuing" });
+    try {
+      const continued = await continueCurrent({ claimKey, domain });
+      if (!continued) {
+        setState({ kind: "failed", message: "This takeover request is no longer active." });
+        return;
+      }
+      setState({ kind: "idle" });
+    } catch (error) {
+      setState({ kind: "failed", message: claimTestError(error) });
+    }
+  };
+
+  return (
+    <section className="surface-panel mt-8 overflow-hidden" aria-labelledby="human-handoff-heading">
+      <div className="flex flex-col gap-3 border-b bg-muted/30 px-4 py-4 @md:flex-row @md:items-start @md:justify-between">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <HandIcon className="size-4 shrink-0 text-primary" aria-hidden="true" />
+            <h3 id="human-handoff-heading" className="text-sm font-semibold">
+              {scoutName} needs your help
+            </h3>
+          </div>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{handoff.reason}</p>
+        </div>
+        <Button asChild size="sm" variant="outline" className="shrink-0">
+          <a href={handoff.url} target="_blank" rel="noreferrer">
+            Open takeover
+            <ExternalLinkIcon data-icon="inline-end" aria-hidden="true" />
+          </a>
+        </Button>
+      </div>
+      <iframe
+        src={handoff.url}
+        title="Interactive Scout browser"
+        referrerPolicy="no-referrer"
+        sandbox="allow-forms allow-same-origin allow-scripts"
+        className="block h-80 w-full bg-background @md:h-[30rem] @xl:h-[38rem]"
+      />
+      <div className="flex flex-col gap-3 border-t px-4 py-4 @md:flex-row @md:items-center @md:justify-between">
+        <p className="text-sm text-muted-foreground">
+          Complete the human-only step, then continue Scout.
+        </p>
+        <Button
+          type="button"
+          size="sm"
+          onClick={() => void continueScout()}
+          disabled={state.kind === "continuing"}
+        >
+          {state.kind === "continuing" ? <LoaderCircleIcon className="animate-spin" /> : null}
+          {state.kind === "continuing" ? "Continuing" : "Continue Scout"}
+        </Button>
+      </div>
+      {state.kind === "failed" ? (
+        <p className="border-t px-4 py-3 text-sm text-destructive" role="alert">
+          {state.message}
+        </p>
+      ) : null}
+    </section>
   );
 }
 
@@ -1475,12 +1594,18 @@ function CenteredStatus({ children }: { children: string }) {
   );
 }
 
-function ClaimActivityHeader({ latestRun }: { latestRun: ClaimRun | null | undefined }) {
+function ClaimActivityHeader({
+  humanHandoffActive,
+  latestRun,
+}: {
+  humanHandoffActive: boolean;
+  latestRun: ClaimRun | null | undefined;
+}) {
   return (
     <div className="flex h-full min-w-0 items-center justify-between gap-3 px-3">
       <span className="truncate text-sm font-semibold">Test activity</span>
       <span className="text-muted-foreground text-xs" aria-live="polite">
-        {runStatus(latestRun)}
+        {humanHandoffActive ? "Needs you" : runStatus(latestRun)}
       </span>
     </div>
   );

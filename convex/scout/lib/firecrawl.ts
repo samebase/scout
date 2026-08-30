@@ -195,6 +195,7 @@ export async function createBrowserSession(profileName?: string) {
     return {
       sessionId,
       liveViewUrl: optionalFirecrawlLiveViewUrl(response["liveViewUrl"]),
+      interactiveLiveViewUrl: optionalFirecrawlLiveViewUrl(response["interactiveLiveViewUrl"]),
     };
   } catch (error) {
     try {
