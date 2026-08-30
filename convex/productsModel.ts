@@ -1,10 +1,11 @@
 import { v } from "convex/values";
 import { vWorkflowId } from "@convex-dev/workflow";
+import { selectableScoutModelValidator } from "./scout/models";
 
 export const LEGACY_PRODUCT_INVESTIGATION_PROVIDER = "firecrawl-agent";
 export const LEGACY_PRODUCT_INVESTIGATION_MODEL = "spark-2";
 export const PRODUCT_INVESTIGATION_PROVIDER = "firecrawl-convex";
-export const PRODUCT_INVESTIGATION_MODEL = "openai/gpt-5.6-luna";
+export const PRODUCT_INVESTIGATION_MODEL = "qwen/qwen3.7-flash";
 export const PRODUCT_INVESTIGATION_EFFORT = "medium";
 export const PRODUCT_INVESTIGATION_MAX_CREDITS = 9;
 
@@ -26,6 +27,11 @@ export const productClaimValidator = v.object({
   qualifiers: v.array(v.string()),
   evidenceExcerpt: v.union(v.string(), v.null()),
   pageTitle: v.union(v.string(), v.null()),
+});
+
+export const productClaimSnapshotValidator = v.object({
+  claim: v.string(),
+  suggestedMysteryShop: v.string(),
 });
 
 export const productDependencyValidator = v.object({
@@ -73,15 +79,33 @@ export const productInvestigationResultValidator = v.object({
   sources: v.array(productSourceValidator),
 });
 
-export const productClaimPublicValidator = productClaimValidator.extend({
+export const productGeneratedClaimPublicValidator = productClaimValidator.extend({
+  origin: v.literal("generated"),
   claimKey: v.string(),
+  isEdited: v.boolean(),
+  editedAt: v.union(v.number(), v.null()),
 });
 
-export const productInvestigationResultPublicValidator = productInvestigationResultValidator.extend(
-  {
-    claims: v.array(productClaimPublicValidator),
-  },
+export const productCustomClaimPublicValidator = v.object({
+  origin: v.literal("custom"),
+  claimKey: v.string(),
+  claim: v.string(),
+  category: v.literal("custom"),
+  suggestedMysteryShop: v.string(),
+  isEdited: v.boolean(),
+  editedAt: v.union(v.number(), v.null()),
+});
+
+export const productClaimPublicValidator = v.union(
+  productGeneratedClaimPublicValidator,
+  productCustomClaimPublicValidator,
 );
+
+export const productInvestigationResultPublicValidator = productInvestigationResultValidator
+  .omit("claims")
+  .extend({
+    claims: v.array(productClaimPublicValidator),
+  });
 
 export const productRetrievalMetadataValidator = v.object({
   mapCredits: v.number(),
@@ -117,7 +141,7 @@ const legacyInvestigationBaseValidator = v.object({
 const currentInvestigationBaseValidator = v.object({
   ...investigationIdentityFields,
   provider: v.literal(PRODUCT_INVESTIGATION_PROVIDER),
-  requestedModel: v.literal(PRODUCT_INVESTIGATION_MODEL),
+  requestedModel: selectableScoutModelValidator,
   agentThreadId: v.string(),
   workflowId: v.optional(vWorkflowId),
 });
@@ -213,7 +237,7 @@ const legacyPublicBase = {
 const currentPublicBase = {
   ...publicIdentityFields,
   provider: v.literal(PRODUCT_INVESTIGATION_PROVIDER),
-  requestedModel: v.literal(PRODUCT_INVESTIGATION_MODEL),
+  requestedModel: selectableScoutModelValidator,
 };
 
 const queuedLegacyPublicValidator = v.object({

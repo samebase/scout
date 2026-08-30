@@ -1,7 +1,13 @@
 import { authTables } from "@convex-dev/auth/server";
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
-import { productInvestigationValidator } from "./productsModel";
+import {
+  claimTestBrowserActionValidator,
+  claimTestBrowserOperationStateValidator,
+  claimTestBrowserSessionLifecycleValidator,
+  claimTestBrowserViewportValidator,
+} from "./claimTestBrowserModel";
+import { productClaimSnapshotValidator, productInvestigationValidator } from "./productsModel";
 import { productInvestigationActivityFieldsValidator } from "./productsInvestigationActivityModel";
 import { scoutServiceAccountFieldsValidator, scoutWebsiteIdentityValidator } from "./scout/model";
 import { scoutModelValidator, scoutTokenUsageValidator } from "./scout/models";
@@ -55,6 +61,41 @@ export default defineSchema({
   })
     .index("by_investigation_id_and_sequence", ["investigationId", "sequence"])
     .index("by_investigation_id_and_url", ["investigationId", "url"]),
+  productClaimOverrides: defineTable(
+    v.union(
+      v.object({
+        kind: v.literal("edited"),
+        userId: v.id("users"),
+        productId: v.id("products"),
+        investigationId: v.id("productInvestigations"),
+        claimKey: v.string(),
+        claim: v.string(),
+        suggestedMysteryShop: v.string(),
+        editedAt: v.number(),
+      }),
+      v.object({
+        kind: v.literal("hidden"),
+        userId: v.id("users"),
+        productId: v.id("products"),
+        investigationId: v.id("productInvestigations"),
+        claimKey: v.string(),
+        hiddenAt: v.number(),
+      }),
+    ),
+  ).index("by_user_id_and_product_id_and_investigation_id_and_claim_key", [
+    "userId",
+    "productId",
+    "investigationId",
+    "claimKey",
+  ]),
+  productCustomClaims: defineTable({
+    userId: v.id("users"),
+    productId: v.id("products"),
+    claim: v.string(),
+    suggestedMysteryShop: v.string(),
+    createdAt: v.number(),
+    editedAt: v.optional(v.number()),
+  }).index("by_user_id_and_product_id", ["userId", "productId"]),
   scoutServiceAccounts: defineTable(
     scoutServiceAccountFieldsValidator.extend({
       productId: v.optional(v.id("products")),
@@ -116,6 +157,7 @@ export default defineSchema({
     threadId: v.string(),
     scoutId: v.id("scouts"),
     generationId: v.id("scoutLabGenerations"),
+    testedClaim: productClaimSnapshotValidator,
   })
     .index("by_generation_id", ["generationId"])
     .index("by_user_id_and_product_id_and_investigation_id_and_claim_key", [
@@ -123,7 +165,31 @@ export default defineSchema({
       "productId",
       "investigationId",
       "claimKey",
-    ]),
+    ])
+    .index("by_user_id_and_product_id_and_claim_key", ["userId", "productId", "claimKey"]),
+  claimTestBrowserSessions: defineTable({
+    runId: v.id("claimTestRuns"),
+    generationId: v.id("scoutLabGenerations"),
+    userId: v.id("users"),
+    provider: v.literal("firecrawl"),
+    providerSessionId: v.string(),
+    viewport: claimTestBrowserViewportValidator,
+    nextOperationSequence: v.number(),
+    lifecycle: claimTestBrowserSessionLifecycleValidator,
+  })
+    .index("by_run_id", ["runId"])
+    .index("by_generation_id", ["generationId"])
+    .index("by_provider_and_provider_session_id", ["provider", "providerSessionId"]),
+  claimTestBrowserOperations: defineTable({
+    sessionId: v.id("claimTestBrowserSessions"),
+    runId: v.id("claimTestRuns"),
+    sequence: v.number(),
+    toolCallId: v.string(),
+    action: claimTestBrowserActionValidator,
+    state: claimTestBrowserOperationStateValidator,
+  })
+    .index("by_session_id_and_sequence", ["sessionId", "sequence"])
+    .index("by_session_id_and_tool_call_id", ["sessionId", "toolCallId"]),
   claimTestLiveViews: defineTable({
     generationId: v.id("scoutLabGenerations"),
     runId: v.id("claimTestRuns"),

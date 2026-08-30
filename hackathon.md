@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-29T18:34:04Z
+- **Last updated:** 2026-08-30T12:34:14Z
 
 ## Log
 
@@ -524,7 +524,7 @@ alongside the tool trace, then disappear on `browser_close` while the verdict re
 three Firecrawl credits and 82.2 browser seconds; all 174 tests and the complete Cloudflare build
 path passed.
 
-### 2026-08-29 - working tree
+### 2026-08-29 - 8b60948 - v114
 
 Removed the vendored Taste Skill and UI design contract after using them showed that their
 landing-page focus did not fit Scout's dense product workflows. Removed the mandatory agent
@@ -533,3 +533,103 @@ authentication background tints with neutral surfaces. The full check passed 174
 production build passed, and desktop and 390-pixel mobile views passed browser verification
 (`.agents/skills/design-taste-frontend/SKILL.md`, `docs/ui-design-contract.md`, `AGENTS.md`,
 `skills-lock.json`, `src/style.css`, `src/routes/index.tsx`).
+
+### 2026-08-29 - 2180348 - v116
+
+Made the Product claim queue show each current claim's latest owner-scoped run state as Untested,
+Testing, Tested, or Test failed. The status is a realtime Convex query over the exact investigation
+snapshot, so another account's run and an older investigation cannot mark a claim as tested
+(`convex/claimTests*.ts`, `src/components/products-workspace.tsx`).
+
+The live Samebase queue showed two green Tested labels and four neutral Untested labels at both full
+and 390-pixel pane widths. All 174 tests, the Convex development push, and the complete Cloudflare
+build path passed.
+
+New claim-test attempts now use Qwen 3.7 Flash through Convex AI Gateway. The choice is scoped to
+claim verification: product investigation and ordinary Lab runs keep their existing model defaults
+(`convex/claimTests.ts`, `convex/claimTests.test.ts`).
+
+### 2026-08-29 - 4d0bd2f - v117
+
+Saved each new claim test's Firecrawl browser session and added an authenticated replay surface to
+the completed run. Scout stores only the provider session ID; Convex actions fetch fresh replay
+metadata and HLS playlists when needed, keeping the Firecrawl key and signed recording links out of
+the database and public queries (`convex/claimTestReplay.ts`, `convex/claimTests.ts`,
+`convex/scout/lib/firecrawl.ts`, `src/routes/products.$domain.claims.$claimKey.tsx`).
+
+The player skips Firecrawl's blank bootstrap tab, lets the operator switch among recorded tabs, and
+lazy-loads HLS support. A new Samebase run completed with Qwen 3.7 Flash in 138.1 seconds using five
+Firecrawl credits; its 110-second recording loaded in the claim page and played to 17.5 seconds.
+All 178 tests and the complete Cloudflare build path passed.
+
+### 2026-08-29 - 53d3c36 - v118
+
+Reconstructed each claim test as one replay timeline across Firecrawl's per-tab recordings. Every
+browser mutation now records its exact run, session, tool call, action sequence, before and after
+tab inventory, provider timestamp, and click box; an unknown post-dispatch outcome stops the run
+instead of guessing or retrying it (`convex/claimTestBrowserModel.ts`, `convex/claimTests.ts`,
+`convex/scout/browserTelemetry.ts`, `convex/scout/labTools.ts`, `convex/schema.ts`).
+
+The claim page plays matched tabs on one clock, switches at the first observation that confirms a
+tab change, marks captured clicks, and exposes ambiguous or unmatched provider tracks for manual
+inspection instead of guessing. A clean Samebase pricing run recorded ten applied operations,
+closed in 93.3 browser seconds using four Firecrawl credits, and played its 80-second real track in
+both the wide and three-pane layouts while retaining one unmatched blank provider recording. All
+189 tests and the complete Cloudflare build path passed
+(`src/lib/claimReplayTimeline.ts`, `src/routes/products.$domain.claims.$claimKey.tsx`).
+
+### 2026-08-29 - 77d28de - v119
+
+Made Qwen 3.7 Flash the default for product research, Lab, and Scout, while keeping Luna available
+only when selected. Product synthesis now discards generated array items beyond the documented
+limits before validating retained claims, so Tally's malformed seventh claim no longer fails the
+workflow (`convex/productsResearch.ts`, `convex/productsModel.ts`, `convex/scout/models.ts`).
+
+Claim tests now start in a fresh Firecrawl browser, force a bounded close and final verdict, and do
+not display a later matched video at 0:00 when the initial tab is ambiguous. A clean Tally run
+created and edited a form anonymously, then observed both Preview and Publish open “Create your
+Tally account,” producing a Refuted verdict in 122.7 seconds with four Firecrawl credits. All 189
+tests and the complete Cloudflare build path passed (`convex/claimTests.ts`,
+`convex/scout/labGeneration.ts`, `src/lib/claimReplayTimeline.ts`).
+
+### 2026-08-30 - 9cfaca8 - v120
+
+Made generated claims editable in place without changing their route or rewriting completed
+research. Each user-scoped override stores the claim, starting URL, and test instructions; new runs
+snapshot that exact target, while a later edit marks the preserved result and replay as Needs retest
+(`convex/productClaimEdits.ts`, `convex/claimTests.ts`,
+`src/routes/products.$domain.claims.$claimKey.tsx`).
+
+A browser-driven Tally trial edited one claim, proved the Needs retest transition, and reran it with
+Qwen 3.7 Flash. The Scout emitted two `browser_switch_tab` actions, the reconstructed replay showed
+two tab-change markers across two recorded tracks, and the Product queue returned to Tested. All
+191 tests, the Convex development push, and the complete Cloudflare build path passed.
+
+### 2026-08-30 - ad50bdf - v121
+
+Replaced the editable starting URL with one inspectable Scout prompt built from the Product name,
+domain, primary URL, claim, and optional test instructions. Generated research URLs remain
+read-only evidence; custom claims carry no fabricated research context
+(`convex/claimTests.ts`, `convex/productClaimEdits.ts`, `convex/products.ts`).
+
+Added owner-scoped custom claims and administrator controls to add, edit, and remove claims. Custom
+claims survive renewed product research, generated removals are scoped to one investigation, and
+test status follows custom claims across investigations (`convex/schema.ts`,
+`src/components/products-workspace.tsx`, `src/routes/products.$domain.claims.$claimKey.tsx`).
+
+A browser-driven Samebase check created a custom account-creation claim without instructions,
+verified the generated product-aware prompt, edited the instructions, and removed the claim. All
+193 tests, the Convex development push, and the complete Cloudflare build path passed.
+
+### 2026-08-30 - working tree
+
+Collapsed generated claim edits and removals into one mutually exclusive override record. Claim
+test runs now use one stable claim key and always retain the exact claim and instructions they
+tested; legacy starting-URL snapshots and duplicate custom-claim run IDs were removed instead of
+preserved through migration code (`convex/schema.ts`, `convex/productClaimEdits.ts`,
+`convex/claimTests.ts`).
+
+Backed up the development deployment, cleared only incompatible claim-test and override records,
+and pushed the narrowed schema. A browser-driven Samebase check edited and removed a generated
+claim, then created, edited, and removed a custom claim. All 193 tests, the Convex development push,
+and the complete Cloudflare build path passed.

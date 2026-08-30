@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
+import { productClaimSnapshotValidator } from "./productsModel";
 import { scoutModelValidator, scoutTokenUsageValidator } from "./scout/models";
 
 const claimTestRunBaseValidator = v.object({
@@ -10,11 +11,26 @@ const claimTestRunBaseValidator = v.object({
   threadId: v.string(),
   experimentId: v.id("scoutLabExperiments"),
   createdAt: v.number(),
+  matchesCurrentClaim: v.boolean(),
+  testedClaim: productClaimSnapshotValidator,
   scout: v.object({
     id: v.id("scouts"),
     displayName: v.string(),
   }),
 });
+
+export const claimTestStatusValidator = v.object({
+  claimKey: v.string(),
+  state: v.union(
+    v.literal("untested"),
+    v.literal("testing"),
+    v.literal("tested"),
+    v.literal("failed"),
+    v.literal("needs_retest"),
+  ),
+});
+
+export const claimTestStatusesValidator = v.array(claimTestStatusValidator);
 
 const terminalGenerationMetadataFields = {
   usage: v.union(scoutTokenUsageValidator, v.null()),

@@ -1,8 +1,9 @@
 import { tool, type ToolSet } from "ai";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
+import { browserTraceMarkers } from "./browserTelemetry";
 import { createLabBrowserHarness, selectAgentMailTools } from "./labTools";
-import type { BrowserInteraction } from "./lib/firecrawl";
+import type { BrowserInteraction, BrowserOperation } from "./lib/firecrawl";
 
 const atomicSnapshotSuffix =
   " && { 'agent-browser' 'snapshot' '-i' '-c' || { 'printf' '%s\\n' '__SCOUT_SNAPSHOT_FAILED_AFTER_MUTATION__' >&2; exit 86; }; }";
@@ -28,7 +29,15 @@ function dependencies() {
       sessionId: "session-1",
       liveViewUrl: null as string | null,
     })),
-    executeCode: vi.fn(async () => interaction()),
+    executeCode: vi.fn(
+      async (
+        _sessionId: string,
+        _code: string,
+        _timeoutSeconds: number,
+        _language?: "node" | "bash",
+        _operation?: BrowserOperation,
+      ) => interaction(),
+    ),
     closeSession: vi.fn(async () => ({
       success: true,
       sessionDurationMs: 1_500,
@@ -36,6 +45,7 @@ function dependencies() {
       replayAvailable: true,
     })),
     sleep: vi.fn(async () => undefined),
+    traceToken: vi.fn(() => "fixed"),
   };
 }
 
@@ -75,19 +85,139 @@ describe("Lab browser harness", () => {
     const deps = dependencies();
     const liveViewUrl = "https://liveview.firecrawl.dev/private?signature=read-only";
     deps.createSession.mockResolvedValueOnce({ sessionId: "session-1", liveViewUrl });
+    const onSessionAvailable = vi.fn(async () => undefined);
     const onLiveViewAvailable = vi.fn(async () => undefined);
     const onLiveViewClosed = vi.fn(async () => undefined);
-    const browser = createLabBrowserHarness({ onLiveViewAvailable, onLiveViewClosed }, deps);
+    const browser = createLabBrowserHarness(
+      { onSessionAvailable, onLiveViewAvailable, onLiveViewClosed },
+      deps,
+    );
 
     const output = await browser.tools.browser_open.execute(
       { url: "https://example.com" },
       { toolCallId: "tool-1", messages: [], context: undefined },
     );
 
+    expect(onSessionAvailable).toHaveBeenCalledWith("session-1");
     expect(onLiveViewAvailable).toHaveBeenCalledWith(liveViewUrl);
     expect(JSON.stringify(output)).not.toContain(liveViewUrl);
     await expect(browser.close()).resolves.toMatchObject({ success: true });
     expect(onLiveViewClosed).toHaveBeenCalledOnce();
+  });
+
+  test("captures one strict operation envelope without storing URL secrets", async () => {
+    const deps = dependencies();
+    const markers = browserTraceMarkers("fixed");
+    const beforeTabs = JSON.stringify({ success: true, data: { tabs: [] } });
+    const afterTabs = JSON.stringify({
+      success: true,
+      data: {
+        tabs: [
+          {
+            tabId: "t1",
+            title: "Account",
+            url: "https://example.com/account?code=secret",
+            active: true,
+          },
+        ],
+      },
+    });
+    deps.executeCode.mockResolvedValueOnce(
+      interaction({
+        stdout: [
+          markers.begin,
+          "1000",
+          beforeTabs,
+          "1010",
+          "1020",
+          afterTabs,
+          markers.end,
+          '- heading "Account"',
+        ].join("\n"),
+        stderr: `${markers.dispatch}\n`,
+      }),
+    );
+    const onOperationPrepared = vi.fn(async () => true);
+    const onOperationSettled = vi.fn(async () => undefined);
+    const browser = createLabBrowserHarness(
+      {
+        onSessionAvailable: async () => ({ captureOperations: true }),
+        onOperationPrepared,
+        onOperationSettled,
+      },
+      deps,
+    );
+
+    const result = await browser.tools.browser_open.execute(
+      { url: "https://example.com/account?code=secret#finish" },
+      { toolCallId: "tool-1", messages: [], context: undefined },
+    );
+
+    expect(result).toMatchObject({ success: true, output: '- heading "Account"' });
+    expect(onOperationPrepared).toHaveBeenCalledWith({
+      toolCallId: "tool-1",
+      action: { kind: "open", url: "https://example.com/account" },
+    });
+    expect(onOperationSettled).toHaveBeenCalledWith({
+      toolCallId: "tool-1",
+      outcome: {
+        kind: "applied",
+        telemetry: expect.objectContaining({
+          before: { capturedAtMs: 1000, tabs: [] },
+          dispatchedAtMs: 1010,
+          returnedAtMs: 1020,
+          after: {
+            capturedAtMs: 1020,
+            tabs: [
+              expect.objectContaining({
+                tabId: "t1",
+                url: "https://example.com/account",
+              }),
+            ],
+          },
+        }),
+      },
+    });
+    expect(deps.executeCode.mock.calls[0]?.[1]).toContain(
+      "'agent-browser' 'set' 'viewport' '1280' '800'",
+    );
+    expect(deps.executeCode.mock.calls[0]?.[1]).toContain("'agent-browser' '--json' 'tab'");
+    expect(deps.executeCode.mock.calls[0]?.[1]).toContain(
+      "'agent-browser' 'open' 'https://example.com/account?code=secret#finish' >/dev/null",
+    );
+  });
+
+  test("settles a rejected execute request as indeterminate and stops later mutations", async () => {
+    const deps = dependencies();
+    deps.executeCode.mockRejectedValueOnce(new Error("socket reset after request"));
+    const onOperationSettled = vi.fn(async () => undefined);
+    const browser = createLabBrowserHarness(
+      {
+        onSessionAvailable: async () => ({ captureOperations: true }),
+        onOperationPrepared: async () => true,
+        onOperationSettled,
+      },
+      deps,
+    );
+
+    await expect(
+      browser.tools.browser_open.execute(
+        { url: "https://example.com" },
+        { toolCallId: "tool-1", messages: [], context: undefined },
+      ),
+    ).rejects.toThrow("outcome is unknown");
+    expect(onOperationSettled).toHaveBeenCalledWith({
+      toolCallId: "tool-1",
+      outcome: {
+        kind: "indeterminate_after_dispatch",
+        failure: "Browser provider transport failed; dispatch status is unknown",
+      },
+    });
+
+    await expect(browser.actions.navigate("https://example.com/next", "tool-2")).rejects.toThrow(
+      "outcome is unknown",
+    );
+    expect(deps.executeCode).toHaveBeenCalledOnce();
   });
 
   test("constructs shell-quoted commands from structured actions", async () => {
@@ -299,6 +429,9 @@ describe("Lab browser harness", () => {
 
     await expect(browser.actions.click("button.login")).rejects.toThrow("must look like @e1");
     await expect(browser.actions.navigate("http://example.com")).rejects.toThrow("must use HTTPS");
+    await expect(browser.actions.navigate("https://name:secret@example.com")).rejects.toThrow(
+      "must not contain credentials",
+    );
     expect(deps.executeCode).toHaveBeenCalledTimes(1);
   });
 
@@ -449,6 +582,18 @@ describe("Lab browser harness", () => {
 
     await expect(browser.open("https://example.com")).resolves.toMatchObject({
       output: "watch [Firecrawl URL redacted]",
+    });
+  });
+
+  test("removes credentials and query secrets from returned non-provider URLs", async () => {
+    const deps = dependencies();
+    deps.executeCode.mockResolvedValueOnce(
+      interaction({ stdout: "opened https://name:secret@example.com/account?token=secret#finish" }),
+    );
+    const browser = createLabBrowserHarness({}, deps);
+
+    await expect(browser.open("https://example.com")).resolves.toMatchObject({
+      output: "opened https://example.com/account",
     });
   });
 });

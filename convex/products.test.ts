@@ -260,6 +260,14 @@ describe("Products registry", () => {
     await expect(backend.mutation(api.products.resetResearch, { productId })).rejects.toThrow(
       "Not authorized",
     );
+    await expect(
+      backend.mutation(api.products.updateClaim, {
+        domain: "example.test",
+        claimKey: "claim-0000000000",
+        claim: "Edited claim",
+        suggestedMysteryShop: "Test the edited claim.",
+      }),
+    ).rejects.toThrow("Not authorized");
 
     const nonAdminId = await insertUser(backend, "person@example.test");
     const nonAdmin = backend.withIdentity({ subject: `${nonAdminId}|test-session` });
@@ -285,6 +293,14 @@ describe("Products registry", () => {
     await expect(nonAdmin.mutation(api.products.resetResearch, { productId })).rejects.toThrow(
       "Not authorized",
     );
+    await expect(
+      nonAdmin.mutation(api.products.updateClaim, {
+        domain: "example.test",
+        claimKey: "claim-0000000000",
+        claim: "Edited claim",
+        suggestedMysteryShop: "Test the edited claim.",
+      }),
+    ).rejects.toThrow("Not authorized");
   });
 
   it("canonicalizes domains and deduplicates leading www hosts with arbitrary paths", async () => {
@@ -397,8 +413,10 @@ describe("Products registry", () => {
     const reordered = await admin.query(api.products.getByDomain, { domain: "example.test" });
     const reorderedClaims = reordered?.latestCompletedInvestigation?.result.claims ?? [];
     expect(
-      reorderedClaims.find((claim) => claim.support === sameWordingDifferentEvidence.support)
-        ?.claimKey,
+      reorderedClaims.find(
+        (claim) =>
+          claim.origin === "generated" && claim.support === sameWordingDifferentEvidence.support,
+      )?.claimKey,
     ).toBe(claims[1]?.claimKey);
     expect(reorderedClaims.find((claim) => claim.claim === secondClaim.claim)?.claimKey).toBe(
       claims[3]?.claimKey,
@@ -447,6 +465,153 @@ describe("Products registry", () => {
     );
     const storedClaim = stored?.status === "completed" ? stored.result.claims[0] : undefined;
     expect(storedClaim && "claimKey" in storedClaim).toBe(false);
+  });
+
+  it("edits a generated claim without changing its route key or stored research", async () => {
+    const { backend, userId, admin } = await authenticatedBackend();
+    const { productId } = await admin.mutation(api.products.create, {
+      url: "example.test",
+      name: "Example",
+    });
+    const result = validInvestigationResult();
+    const investigationId = await backend.run(async (ctx) => {
+      const id = await ctx.db.insert("productInvestigations", {
+        productId,
+        requestedByUserId: userId,
+        requestedAt: NOW.getTime() - 2_000,
+        provider: "firecrawl-convex",
+        requestedModel: "qwen/qwen3.7-flash",
+        effort: "medium",
+        maxCredits: 9,
+        agentThreadId: "claim-edit-thread",
+        status: "completed",
+        startedAt: NOW.getTime() - 1_500,
+        completedAt: NOW.getTime() - 1_000,
+        retrieval: validRetrievalMetadata(),
+        result,
+      });
+      await ctx.db.patch("products", productId, {
+        latestInvestigationId: id,
+        latestCompletedInvestigationId: id,
+      });
+      return id;
+    });
+    const before = await admin.query(api.products.getByDomain, { domain: "example.test" });
+    const claimKey = before?.latestCompletedInvestigation?.result.claims[0]?.claimKey;
+    if (!claimKey) throw new Error("Expected a generated claim key");
+
+    const edited = await admin.mutation(api.products.updateClaim, {
+      domain: "https://www.example.test/account",
+      claimKey,
+      claim: "A visitor can draft a workspace without signing in.",
+      suggestedMysteryShop:
+        "Open the starting URL in two tabs, switch between them, and verify whether both drafts remain editable.",
+    });
+    expect(edited).toMatchObject({
+      claimKey,
+      claim: "A visitor can draft a workspace without signing in.",
+      sourceUrl: validClaim().sourceUrl,
+      origin: "generated",
+      isEdited: true,
+      editedAt: NOW.getTime(),
+    });
+
+    const [listed, selected] = await Promise.all([
+      admin.query(api.products.list, {}),
+      admin.query(api.products.getClaimByDomain, { domain: "example.test", claimKey }),
+    ]);
+    expect(
+      listed[0]?.latestCompletedInvestigation?.result.claims.find(
+        (candidate) => candidate.claimKey === claimKey,
+      ),
+    ).toMatchObject(edited);
+    expect(selected?.claim).toEqual(edited);
+
+    const stored = await backend.run(async (ctx) => ({
+      investigation: await ctx.db.get("productInvestigations", investigationId),
+      override: await ctx.db
+        .query("productClaimOverrides")
+        .withIndex("by_user_id_and_product_id_and_investigation_id_and_claim_key", (query) =>
+          query
+            .eq("userId", userId)
+            .eq("productId", productId)
+            .eq("investigationId", investigationId)
+            .eq("claimKey", claimKey),
+        )
+        .unique(),
+    }));
+    expect(stored.investigation?.status === "completed" && stored.investigation.result).toEqual(
+      result,
+    );
+    expect(stored.override).toMatchObject({
+      kind: "edited",
+      userId,
+      productId,
+      investigationId,
+      claimKey,
+      claim: edited.claim,
+    });
+    expect(stored.override && "sourceUrl" in stored.override).toBe(false);
+
+    await expect(
+      admin.mutation(api.products.updateClaim, {
+        domain: "example.test",
+        claimKey,
+        claim: " ",
+        suggestedMysteryShop: "Test it.",
+      }),
+    ).rejects.toThrow("Claim cannot be empty");
+    await expect(
+      admin.mutation(api.products.updateClaim, {
+        domain: "example.test",
+        claimKey,
+        claim: "x".repeat(1_201),
+        suggestedMysteryShop: "Test it.",
+      }),
+    ).rejects.toThrow("Claim must be 1200 characters or fewer");
+    await expect(
+      admin.mutation(api.products.updateClaim, {
+        domain: "example.test",
+        claimKey,
+        claim: "A bounded claim.",
+        suggestedMysteryShop: "x".repeat(1_201),
+      }),
+    ).rejects.toThrow("Test instructions must be 1200 characters or fewer");
+    await expect(
+      admin.mutation(api.products.updateClaim, {
+        domain: "example.test",
+        claimKey,
+        claim: "A bounded claim.",
+        suggestedMysteryShop: "   ",
+      }),
+    ).resolves.toMatchObject({
+      origin: "generated",
+      sourceUrl: validClaim().sourceUrl,
+      suggestedMysteryShop: "",
+    });
+
+    await admin.mutation(api.products.removeClaim, { domain: "example.test", claimKey });
+    const hiddenOverride = await backend.run(
+      async (ctx) =>
+        await ctx.db
+          .query("productClaimOverrides")
+          .withIndex("by_user_id_and_product_id_and_investigation_id_and_claim_key", (query) =>
+            query
+              .eq("userId", userId)
+              .eq("productId", productId)
+              .eq("investigationId", investigationId)
+              .eq("claimKey", claimKey),
+          )
+          .unique(),
+    );
+    expect(hiddenOverride).toMatchObject({
+      _id: stored.override?._id,
+      kind: "hidden",
+      userId,
+      productId,
+      investigationId,
+      claimKey,
+    });
   });
 
   it("links structured service-account and Lab experiment creation to one Product", async () => {
@@ -592,7 +757,7 @@ describe("Product investigations", () => {
       _id: first.investigationId,
       productId,
       provider: "firecrawl-convex",
-      requestedModel: "openai/gpt-5.6-luna",
+      requestedModel: "qwen/qwen3.7-flash",
       maxCredits: 9,
       agentThreadId: expect.any(String),
       workflowId: expect.any(String),
@@ -657,6 +822,7 @@ describe("Product investigations", () => {
     expect(inspector).toMatchObject({
       investigationId,
       state: "running",
+      model: { name: "qwen/qwen3.7-flash" },
       activities: [
         {
           key: "firecrawl_map",
@@ -806,7 +972,7 @@ describe("Product investigations", () => {
       latestInvestigation: {
         _id: first.investigationId,
         provider: "firecrawl-convex",
-        requestedModel: "openai/gpt-5.6-luna",
+        requestedModel: "qwen/qwen3.7-flash",
         status: "running",
         stage: "synthesizing",
         providerJobId: null,
@@ -976,7 +1142,7 @@ describe("Product investigations", () => {
     expect(retry.created).toBe(true);
     expect(current).toMatchObject({
       provider: "firecrawl-convex",
-      requestedModel: "openai/gpt-5.6-luna",
+      requestedModel: "qwen/qwen3.7-flash",
       status: "queued",
       agentThreadId: expect.any(String),
     });
@@ -1442,20 +1608,23 @@ describe("Product research synthesis", () => {
     expect(fabricated.claims[0]?.evidenceExcerpt).toBeNull();
   });
 
-  it("validates then truncates harmless array overproduction", () => {
+  it("truncates model overproduction before validating bounded array contents", () => {
     const synthesis = validSynthesis();
     const claim = synthesis.claims[0];
     const parsed = parseProductResearchSynthesis({
       ...synthesis,
       audiences: Array.from({ length: 6 }, (_, index) => `Audience ${index + 1}`),
-      claims: Array.from({ length: 7 }, (_, index) => ({
-        ...claim,
-        claim: `Claim ${index + 1}`,
-        qualifiers: Array.from(
-          { length: 5 },
-          (_, qualifierIndex) => `Qualifier ${qualifierIndex + 1}`,
-        ),
-      })),
+      claims: [
+        ...Array.from({ length: 6 }, (_, index) => ({
+          ...claim,
+          claim: `Claim ${index + 1}`,
+          qualifiers: [
+            ...Array.from({ length: 4 }, (_, qualifierIndex) => `Qualifier ${qualifierIndex + 1}`),
+            null,
+          ],
+        })),
+        { category: "not-a-category" },
+      ],
       dependencies: Array.from({ length: 9 }, (_, index) => ({
         name: `Dependency ${index + 1}`,
         relationship: "The product names this dependency.",
@@ -1483,6 +1652,7 @@ describe("Product research synthesis", () => {
     expect(parsed.tensions.every((item) => item.evidence.length === 4)).toBe(true);
     expect(parsed.access.requirements).toHaveLength(5);
     expect(parsed.unknowns).toHaveLength(8);
+    expect(parsed.claims.at(-1)?.claim).toBe("Claim 6");
     expect(() =>
       hydrateProductResearchResult(parsed, [researchPage("S1")], "example.test"),
     ).not.toThrow();
@@ -1509,7 +1679,7 @@ describe("Product research synthesis", () => {
       parseProductResearchSynthesis({
         ...validSynthesis(),
         claims: [
-          ...Array.from({ length: 6 }, () => validSynthesis().claims[0]),
+          ...Array.from({ length: 5 }, () => validSynthesis().claims[0]),
           { ...validSynthesis().claims[0], category: "marketing" },
         ],
       }),
@@ -1517,7 +1687,7 @@ describe("Product research synthesis", () => {
     expect(() =>
       parseProductResearchSynthesis({
         ...validSynthesis(),
-        audiences: ["One", "Two", "Three", "Four", "Five", 6],
+        audiences: ["One", "Two", "Three", "Four", 5, "Ignored"],
       }),
     ).toThrow();
   });

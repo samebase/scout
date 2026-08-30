@@ -2,11 +2,7 @@ import { v } from "convex/values";
 import { query } from "./_generated/server";
 import { requireAppUser } from "./access";
 import { productInvestigationWorkflow } from "./productInvestigationWorkflow";
-import {
-  PRODUCT_INVESTIGATION_PROVIDER,
-  PRODUCT_INVESTIGATION_MODEL,
-  PRODUCT_INVESTIGATION_EFFORT,
-} from "./productsModel";
+import { PRODUCT_INVESTIGATION_PROVIDER, PRODUCT_INVESTIGATION_EFFORT } from "./productsModel";
 import { productInvestigationInspectorValidator } from "./productsInvestigationActivityModel";
 
 function workflowStepStatus(
@@ -80,7 +76,7 @@ export const get = query({
       effort: string;
     } = {
       provider: "OpenAI through Convex Agent",
-      name: PRODUCT_INVESTIGATION_MODEL,
+      name: investigation.requestedModel,
       effort: PRODUCT_INVESTIGATION_EFFORT,
     };
 

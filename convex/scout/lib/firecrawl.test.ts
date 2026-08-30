@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { closeBrowserSession, createBrowserSession, executeBrowserCode } from "./firecrawl";
+import {
+  closeBrowserSession,
+  createBrowserSession,
+  executeBrowserCode,
+  getBrowserReplayPlaylist,
+  listBrowserReplayPages,
+} from "./firecrawl";
 import { fetchJson, ProviderHttpError } from "./http";
 
 type CapturedRequest = {
@@ -59,7 +65,7 @@ describe("standalone Firecrawl Browser Sandbox", () => {
     });
     expect(requests[0]?.url).toBe("https://api.firecrawl.dev/v2/interact");
     expect(requests[0]?.init?.method).toBe("POST");
-    expect(requestBody(requests[0])).toEqual({});
+    expect(requestBody(requests[0])).toEqual({ recordSession: true });
   });
 
   test("returns only the validated read-only live view for a writable named profile", async () => {
@@ -80,8 +86,66 @@ describe("standalone Firecrawl Browser Sandbox", () => {
     });
     expect(requests).toHaveLength(1);
     expect(requestBody(requests[0])).toEqual({
+      recordSession: true,
       profile: { name: "scout-conrad", saveChanges: true },
     });
+  });
+
+  test("loads replay metadata without exposing URL credentials or query parameters", async () => {
+    responses.push(
+      jsonResponse({
+        success: true,
+        pages: [
+          {
+            pageId: "1",
+            pageUrl: "https://example.test/callback?code=secret#token",
+            startTimeMs: 120,
+            endTimeMs: 5_400,
+          },
+          {
+            pageId: "2",
+            pageUrl: "about:blank",
+            startTimeMs: 6_000,
+            endTimeMs: 7_000,
+          },
+        ],
+      }),
+    );
+
+    await expect(listBrowserReplayPages("session-1")).resolves.toEqual([
+      {
+        pageId: "1",
+        pageUrl: "https://example.test/callback",
+        startTimeMs: 120,
+        endTimeMs: 5_400,
+      },
+      {
+        pageId: "2",
+        pageUrl: null,
+        startTimeMs: 6_000,
+        endTimeMs: 7_000,
+      },
+    ]);
+    expect(requests[0]?.url).toBe("https://api.firecrawl.dev/v2/interact/session-1/replay");
+  });
+
+  test("loads a fresh HLS replay playlist for one recorded page", async () => {
+    const playlist = "#EXTM3U\n#EXT-X-VERSION:3\nhttps://recording.test/segment.ts?sig=fresh\n";
+    responses.push(new Response(playlist));
+
+    await expect(getBrowserReplayPlaylist("session-1", "2")).resolves.toBe(playlist);
+    expect(requests[0]?.url).toBe("https://api.firecrawl.dev/v2/interact/session-1/replay/2");
+    expect(requests[0]?.init?.headers).toMatchObject({
+      Authorization: "Bearer test-key",
+      Accept: "application/vnd.apple.mpegurl",
+    });
+  });
+
+  test("rejects an invalid replay page before contacting Firecrawl", async () => {
+    await expect(getBrowserReplayPlaylist("session-1", "../../secret")).rejects.toThrow(
+      "Firecrawl replay page ID is invalid",
+    );
+    expect(requests).toHaveLength(0);
   });
 
   test.each([

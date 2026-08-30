@@ -6,9 +6,10 @@ import {
   type SidebarLayoutResizeHandleValueTextFormatter,
 } from "@samebase/sidebars/SidebarLayout";
 import { useSidebarActions, useSidebarLayoutPresentation } from "@samebase/sidebars/SidebarRuntime";
-import { Link, createFileRoute } from "@tanstack/react-router";
-import { useMutation, useQuery } from "convex/react";
+import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useAction, useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
+import type HlsType from "hls.js";
 import {
   ArrowLeftIcon,
   CircleAlertIcon,
@@ -16,11 +17,14 @@ import {
   LoaderCircleIcon,
   PanelLeftIcon,
   PanelRightIcon,
+  PauseIcon,
+  PencilIcon,
   PlayIcon,
   RotateCcwIcon,
   TerminalSquareIcon,
+  Trash2Icon,
 } from "lucide-react";
-import { useState } from "react";
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import {
   scoutSidebarDesktopPrehydrationScript,
@@ -29,6 +33,13 @@ import {
 import { ServiceIcon } from "#components/service-icon";
 import { ScoutRunMessageView, type ScoutRunMessage } from "#components/scout-run-message";
 import { Button } from "#components/ui/button";
+import { Textarea } from "#components/ui/textarea";
+import {
+  activeClickAt,
+  activePageIdAt,
+  activeTabAt,
+  buildReplayTimeline,
+} from "#lib/claimReplayTimeline";
 
 export const Route = createFileRoute("/products/$domain/claims/$claimKey")({
   head: () => ({ meta: [{ title: "Claim test | Scout" }] }),
@@ -39,14 +50,31 @@ type Product = NonNullable<FunctionReturnType<typeof api.products.getByDomain>>;
 type ResolvedClaim = NonNullable<FunctionReturnType<typeof api.products.getClaimByDomain>>;
 type Claim = ResolvedClaim["claim"];
 type ClaimRun = NonNullable<FunctionReturnType<typeof api.claimTests.latest>>;
+type ReplayPagesResult = FunctionReturnType<typeof api.claimTestReplay.listPages>;
+type ReplayReady = Extract<ReplayPagesResult, { status: "ready" }>;
 
 type StartState = { kind: "idle" } | { kind: "starting" } | { kind: "failed"; message: string };
+type ClaimEditFields = {
+  claim: string;
+  suggestedMysteryShop: string;
+};
+type ClaimEditState =
+  | { kind: "closed" }
+  | { kind: "editing"; fields: ClaimEditFields; error: string | null }
+  | { kind: "saving"; fields: ClaimEditFields };
+type ClaimRemoveState =
+  | { kind: "idle" }
+  | { kind: "confirming" }
+  | { kind: "removing" }
+  | { kind: "failed"; message: string };
 type ClaimVerdict = "Supported" | "Qualified" | "Refuted" | "Inconclusive";
 
 const CLAIM_RESIZE_HANDLE_LABELS = {
   left: "Resize claim list",
   right: "Resize test activity",
 } satisfies SidebarLayoutResizeHandleLabels;
+const REPLAY_PREPARATION_RETRIES = 10;
+const REPLAY_RETRY_DELAY_MS = 2_000;
 
 const formatResizeHandleValueText: SidebarLayoutResizeHandleValueTextFormatter = ({ widthPx }) =>
   `${widthPx} pixels wide`;
@@ -98,6 +126,7 @@ function ProductClaimPage() {
           <PaneFrame
             content={
               <ClaimMain
+                key={claimKey}
                 claimKey={claimKey}
                 domain={domain}
                 latestRun={latestRun}
@@ -299,6 +328,8 @@ function ClaimMain({
   productMissing: boolean;
   resolvedClaim: ResolvedClaim | undefined;
 }) {
+  const [editing, setEditing] = useState(false);
+
   if (loading) {
     return <CenteredStatus>Loading...</CenteredStatus>;
   }
@@ -324,58 +355,294 @@ function ClaimMain({
   return (
     <main className="mx-auto w-full max-w-5xl p-4 @md:p-7 @xl:p-10">
       <article>
-        <header className="max-w-4xl">
-          <span className="text-muted-foreground font-mono text-xs font-medium">
-            {claim.category}
-          </span>
-          <h2 className="mt-3 max-w-3xl wrap-break-word text-2xl font-semibold tracking-[-0.04em] @md:text-3xl @xl:text-4xl">
-            {claim.claim}
-          </h2>
-          <a
-            href={claim.sourceUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="text-muted-foreground mt-3 inline-flex max-w-full items-center gap-1.5 text-xs underline underline-offset-4 outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
-          >
-            <span className="truncate">{claim.pageTitle || "Source"}</span>
-            <ExternalLinkIcon className="size-3 shrink-0" aria-hidden="true" />
-          </a>
-        </header>
-
-        {claim.evidenceExcerpt ? (
-          <blockquote className="mt-6 max-w-3xl rounded-[0.75rem] bg-muted/55 px-4 py-3 text-sm leading-6 text-muted-foreground">
-            {claim.evidenceExcerpt}
-          </blockquote>
-        ) : null}
-
-        {claim.support || claim.qualifiers.length > 0 ? (
-          <details className="mt-5 max-w-3xl text-sm">
-            <summary className="text-muted-foreground cursor-pointer select-none outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
-              Research notes
-            </summary>
-            <div className="mt-3 space-y-3 border-l pl-4 leading-6">
-              {claim.support ? <p>{claim.support}</p> : null}
-              {claim.qualifiers.length > 0 ? (
-                <ul className="list-disc space-y-1 pl-4">
-                  {claim.qualifiers.map((qualifier, index) => (
-                    <li key={`${index}:${qualifier}`}>{qualifier}</li>
-                  ))}
-                </ul>
-              ) : null}
-            </div>
-          </details>
-        ) : null}
-
-        <ClaimTest
+        <ClaimHeader
+          key={claim.claimKey}
           claim={claim}
           claimKey={claimKey}
           domain={domain}
-          latestRun={latestRun}
-          liveViewUrl={liveViewUrl}
-          messages={messages}
+          onEditingChange={setEditing}
+          testRunning={latestRun?.generation.status === "pending"}
         />
+
+        {editing ? null : (
+          <>
+            {claim.origin === "generated" ? (
+              <>
+                {claim.evidenceExcerpt ? (
+                  <blockquote className="mt-6 max-w-3xl rounded-[0.75rem] bg-muted/55 px-4 py-3 text-sm leading-6 text-muted-foreground">
+                    {claim.evidenceExcerpt}
+                  </blockquote>
+                ) : null}
+
+                {claim.support || claim.qualifiers.length > 0 ? (
+                  <details className="mt-5 max-w-3xl text-sm">
+                    <summary className="text-muted-foreground cursor-pointer select-none outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
+                      Research notes
+                    </summary>
+                    <div className="mt-3 space-y-3 border-l pl-4 leading-6">
+                      {claim.support ? <p>{claim.support}</p> : null}
+                      {claim.qualifiers.length > 0 ? (
+                        <ul className="list-disc space-y-1 pl-4">
+                          {claim.qualifiers.map((qualifier, index) => (
+                            <li key={`${index}:${qualifier}`}>{qualifier}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </div>
+                  </details>
+                ) : null}
+              </>
+            ) : null}
+
+            <ClaimTest
+              claim={claim}
+              claimKey={claimKey}
+              domain={domain}
+              latestRun={latestRun}
+              liveViewUrl={liveViewUrl}
+              messages={messages}
+            />
+          </>
+        )}
       </article>
     </main>
+  );
+}
+
+function ClaimHeader({
+  claim,
+  claimKey,
+  domain,
+  onEditingChange,
+  testRunning,
+}: {
+  claim: Claim;
+  claimKey: string;
+  domain: string;
+  onEditingChange: (editing: boolean) => void;
+  testRunning: boolean;
+}) {
+  const navigate = useNavigate();
+  const removeClaim = useMutation(api.products.removeClaim);
+  const updateClaim = useMutation(api.products.updateClaim);
+  const [state, setState] = useState<ClaimEditState>({ kind: "closed" });
+  const [removeState, setRemoveState] = useState<ClaimRemoveState>({ kind: "idle" });
+
+  const open = () => {
+    onEditingChange(true);
+    setState({
+      kind: "editing",
+      fields: {
+        claim: claim.claim,
+        suggestedMysteryShop: claim.suggestedMysteryShop,
+      },
+      error: null,
+    });
+  };
+
+  const change = <Key extends keyof ClaimEditFields>(key: Key, value: ClaimEditFields[Key]) => {
+    setState((current) =>
+      current.kind === "editing"
+        ? {
+            kind: "editing",
+            fields: { ...current.fields, [key]: value },
+            error: null,
+          }
+        : current,
+    );
+  };
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (state.kind !== "editing") return;
+    const error = validateClaimEdit(state.fields);
+    if (error) {
+      setState({ ...state, error });
+      return;
+    }
+    const fields = {
+      claim: state.fields.claim.trim(),
+      suggestedMysteryShop: state.fields.suggestedMysteryShop.trim(),
+    };
+    setState({ kind: "saving", fields });
+    try {
+      await updateClaim({ claimKey, domain, ...fields });
+      setState({ kind: "closed" });
+      onEditingChange(false);
+    } catch (error) {
+      setState({ kind: "editing", fields, error: claimUpdateError(error) });
+    }
+  };
+
+  const remove = async () => {
+    if (removeState.kind === "removing") return;
+    setRemoveState({ kind: "removing" });
+    try {
+      await removeClaim({ claimKey, domain });
+      await navigate({ to: "/products/$domain", params: { domain } });
+    } catch {
+      setRemoveState({ kind: "failed", message: "Could not remove the claim." });
+    }
+  };
+
+  if (state.kind !== "closed") {
+    const saving = state.kind === "saving";
+    const error = state.kind === "editing" ? state.error : null;
+    return (
+      <form className="max-w-3xl" onSubmit={(event) => void submit(event)}>
+        <h2 className="text-xl font-semibold tracking-[-0.025em]">Edit claim</h2>
+        <div className="mt-5 grid gap-4">
+          <label className="grid gap-2 text-sm font-medium">
+            Claim
+            <Textarea
+              name="claim"
+              value={state.fields.claim}
+              onChange={(event) => change("claim", event.target.value)}
+              disabled={saving}
+              maxLength={1_200}
+              rows={4}
+              required
+            />
+          </label>
+          <label className="grid gap-2 text-sm font-medium">
+            Test instructions <span className="text-muted-foreground font-normal">Optional</span>
+            <Textarea
+              name="suggestedMysteryShop"
+              value={state.fields.suggestedMysteryShop}
+              onChange={(event) => change("suggestedMysteryShop", event.target.value)}
+              disabled={saving}
+              maxLength={1_200}
+              rows={5}
+            />
+          </label>
+        </div>
+        {error ? (
+          <p className="text-destructive mt-4 flex items-start gap-2 text-sm" role="alert">
+            <CircleAlertIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            {error}
+          </p>
+        ) : null}
+        <div className="mt-5 flex flex-wrap items-center gap-2">
+          <Button type="submit" disabled={saving}>
+            {saving ? <LoaderCircleIcon className="animate-spin" /> : null}
+            {saving ? "Saving" : "Save"}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={saving}
+            onClick={() => {
+              setState({ kind: "closed" });
+              onEditingChange(false);
+            }}
+          >
+            Cancel
+          </Button>
+        </div>
+      </form>
+    );
+  }
+
+  return (
+    <header className="max-w-4xl">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="text-muted-foreground font-mono text-xs font-medium">
+            {claim.category}
+          </span>
+          {claim.isEdited ? <span className="text-muted-foreground text-xs">Edited</span> : null}
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={open}
+            disabled={testRunning || removeState.kind !== "idle"}
+            title={testRunning ? "Wait for the current test to finish" : undefined}
+          >
+            <PencilIcon />
+            Edit
+          </Button>
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Remove claim"
+            onClick={() => setRemoveState({ kind: "confirming" })}
+            disabled={testRunning || removeState.kind !== "idle"}
+            title={testRunning ? "Wait for the current test to finish" : "Remove claim"}
+          >
+            <Trash2Icon />
+          </Button>
+        </div>
+      </div>
+      <h2 className="mt-3 max-w-3xl wrap-break-word text-2xl font-semibold tracking-[-0.04em] @md:text-3xl @xl:text-4xl">
+        {claim.claim}
+      </h2>
+      {claim.origin === "generated" ? (
+        <a
+          href={claim.sourceUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="text-muted-foreground mt-3 inline-flex max-w-full items-center gap-1.5 text-xs underline underline-offset-4 outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+        >
+          <span className="truncate">{claim.pageTitle || "Research source"}</span>
+          <ExternalLinkIcon className="size-3 shrink-0" aria-hidden="true" />
+        </a>
+      ) : null}
+      {removeState.kind === "confirming" || removeState.kind === "removing" ? (
+        <div className="mt-5 border-t pt-4">
+          <p className="text-sm font-medium">Remove this claim?</p>
+          <p className="text-muted-foreground mt-1 text-sm">It will disappear from this product.</p>
+          <div className="mt-3 flex items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="destructive"
+              disabled={removeState.kind === "removing"}
+              onClick={() => void remove()}
+            >
+              {removeState.kind === "removing" ? (
+                <LoaderCircleIcon className="animate-spin" />
+              ) : (
+                <Trash2Icon />
+              )}
+              {removeState.kind === "removing" ? "Removing" : "Remove claim"}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={removeState.kind === "removing"}
+              onClick={() => setRemoveState({ kind: "idle" })}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : removeState.kind === "failed" ? (
+        <div className="mt-5 border-t pt-4">
+          <p className="text-destructive text-sm" role="alert">
+            {removeState.message}
+          </p>
+          <div className="mt-3 flex items-center gap-2">
+            <Button type="button" size="sm" variant="destructive" onClick={() => void remove()}>
+              <Trash2Icon />
+              Try again
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => setRemoveState({ kind: "idle" })}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : null}
+    </header>
   );
 }
 
@@ -395,6 +662,7 @@ function ClaimTest({
   messages: readonly ScoutRunMessage[];
 }) {
   const startClaimTest = useMutation(api.claimTests.start);
+  const promptPreview = useQuery(api.claimTests.promptPreview, { claimKey, domain });
   const [startState, setStartState] = useState<StartState>({ kind: "idle" });
   const running = latestRun?.generation.status === "pending";
   const resultText = latestAssistantText(messages);
@@ -415,8 +683,18 @@ function ClaimTest({
         Test this claim
       </h3>
       <p className="mt-3 max-w-3xl wrap-break-word text-sm leading-6">
-        {claim.suggestedMysteryShop}
+        {claim.suggestedMysteryShop || "Scout will choose a bounded way to test this claim."}
       </p>
+      {promptPreview ? (
+        <details className="mt-4 max-w-3xl text-sm">
+          <summary className="text-muted-foreground cursor-pointer select-none outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
+            View initial prompt
+          </summary>
+          <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap border bg-muted/35 p-4 font-mono text-xs leading-5">
+            {promptPreview}
+          </pre>
+        </details>
+      ) : null}
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <Button
           type="button"
@@ -479,13 +757,17 @@ function ClaimRunResult({
 
   if (latestRun.generation.status === "failed") {
     return (
-      <div className="mt-8 border-t pt-6">
-        <p className="text-destructive text-sm font-medium">Test failed</p>
-        <p className="text-muted-foreground mt-2 whitespace-pre-wrap text-sm leading-6">
-          {latestRun.generation.failure}
-        </p>
-        <RunMetadata run={latestRun} />
-      </div>
+      <>
+        <PreviousClaimRunNotice run={latestRun} />
+        <ClaimReplay runId={latestRun.runId} />
+        <div className="mt-8 border-t pt-6">
+          <p className="text-destructive text-sm font-medium">Test failed</p>
+          <p className="text-muted-foreground mt-2 whitespace-pre-wrap text-sm leading-6">
+            {latestRun.generation.failure}
+          </p>
+          <RunMetadata run={latestRun} />
+        </div>
+      </>
     );
   }
 
@@ -497,7 +779,11 @@ function ClaimRunResult({
 
   return (
     <>
-      {liveBrowser}
+      <PreviousClaimRunNotice run={latestRun} />
+      {liveBrowser ??
+        (latestRun.generation.status === "completed" ? (
+          <ClaimReplay runId={latestRun.runId} />
+        ) : null)}
       <div className="mt-8 border-t pt-6">
         {latestRun.generation.status === "pending" ? (
           <h3 className="text-sm font-medium">Live result</h3>
@@ -536,6 +822,33 @@ function ClaimRunResult({
   );
 }
 
+function PreviousClaimRunNotice({ run }: { run: ClaimRun }) {
+  if (run.matchesCurrentClaim) return null;
+  return (
+    <section className="mt-8 border-t pt-6" aria-labelledby="previous-claim-run-heading">
+      <h3 id="previous-claim-run-heading" className="text-sm font-semibold">
+        Needs retest
+      </h3>
+      <p className="text-muted-foreground mt-2 max-w-3xl text-sm leading-6">
+        This run used earlier claim wording. Its replay and result remain available below.
+      </p>
+      {run.testedClaim ? (
+        <details className="mt-3 max-w-3xl text-sm">
+          <summary className="text-muted-foreground cursor-pointer select-none outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
+            What this run tested
+          </summary>
+          <div className="mt-3 space-y-3 border-l pl-4 leading-6">
+            <p className="font-medium">{run.testedClaim.claim}</p>
+            {run.testedClaim.suggestedMysteryShop ? (
+              <p>{run.testedClaim.suggestedMysteryShop}</p>
+            ) : null}
+          </div>
+        </details>
+      ) : null}
+    </section>
+  );
+}
+
 function ClaimLiveBrowser({ url }: { url: string }) {
   return (
     <section
@@ -568,6 +881,555 @@ function ClaimLiveBrowser({ url }: { url: string }) {
       />
     </section>
   );
+}
+
+type ReplayLoadState =
+  | { kind: "loading" | "processing" }
+  | { kind: "ready"; replay: ReplayReady }
+  | { kind: "unavailable" | "delayed" | "failed" };
+
+function ClaimReplay({ runId }: { runId: ClaimRun["runId"] }) {
+  const listPages = useAction(api.claimTestReplay.listPages);
+  const [requestVersion, setRequestVersion] = useState(0);
+  const [state, setState] = useState<ReplayLoadState>({ kind: "loading" });
+  const refresh = useCallback(() => setRequestVersion((version) => version + 1), []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let retryTimer: number | undefined;
+    let attempt = 0;
+    setState({ kind: "loading" });
+
+    const load = async () => {
+      try {
+        const replay = await listPages({ runId });
+        if (cancelled) return;
+        if (replay.status === "ready") {
+          if (replay.pages.length === 0) {
+            setState({ kind: "delayed" });
+            return;
+          }
+          setState({ kind: "ready", replay });
+          return;
+        }
+        if (replay.status === "unavailable") {
+          setState({ kind: "unavailable" });
+          return;
+        }
+        attempt += 1;
+        if (attempt >= REPLAY_PREPARATION_RETRIES) {
+          setState({ kind: "delayed" });
+          return;
+        }
+        setState({ kind: "processing" });
+        retryTimer = window.setTimeout(() => void load(), REPLAY_RETRY_DELAY_MS);
+      } catch {
+        if (!cancelled) setState({ kind: "failed" });
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+    };
+  }, [listPages, requestVersion, runId]);
+
+  return (
+    <section className="surface-panel mt-8 overflow-hidden" aria-labelledby="claim-replay-heading">
+      <div className="flex min-w-0 items-center justify-between gap-3 border-b bg-muted/30 px-3 py-2.5 @md:px-4">
+        <div className="flex min-w-0 items-center gap-2">
+          <PlayIcon className="size-3.5 shrink-0 text-primary" aria-hidden="true" />
+          <h3 id="claim-replay-heading" className="truncate text-sm font-semibold">
+            Firecrawl replay
+          </h3>
+        </div>
+        <Button type="button" size="xs" variant="ghost" onClick={refresh}>
+          <RotateCcwIcon />
+          Refresh
+        </Button>
+      </div>
+      {state.kind === "ready" ? (
+        <ClaimReplayPlayer replay={state.replay} requestVersion={requestVersion} runId={runId} />
+      ) : (
+        <ReplayStatus state={state.kind} onRetry={refresh} />
+      )}
+    </section>
+  );
+}
+
+function ReplayStatus({
+  onRetry,
+  state,
+}: {
+  onRetry: () => void;
+  state: Exclude<ReplayLoadState["kind"], "ready">;
+}) {
+  const waiting = state === "loading" || state === "processing";
+  const message = waiting
+    ? "Preparing replay"
+    : state === "unavailable"
+      ? "This run has no saved replay."
+      : state === "delayed"
+        ? "The replay is taking longer than expected."
+        : "Could not load the replay.";
+  return (
+    <div className="flex min-h-40 flex-col items-center justify-center gap-3 px-4 py-8 text-center">
+      <p className="text-muted-foreground flex items-center gap-2 text-sm" role="status">
+        {waiting ? <LoaderCircleIcon className="size-4 animate-spin" aria-hidden="true" /> : null}
+        {message}
+      </p>
+      {!waiting && state !== "unavailable" ? (
+        <Button type="button" size="sm" variant="outline" onClick={onRetry}>
+          <RotateCcwIcon />
+          Retry
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+type ReplayPlaylistsState =
+  | { kind: "loading" }
+  | { kind: "ready"; playlists: Map<string, string>; failedPageIds: string[] }
+  | { kind: "failed" };
+
+function ClaimReplayPlayer({
+  replay,
+  requestVersion,
+  runId,
+}: {
+  replay: ReplayReady;
+  requestVersion: number;
+  runId: ClaimRun["runId"];
+}) {
+  const loadPlaylist = useAction(api.claimTestReplay.loadPlaylist);
+  const [playlistState, setPlaylistState] = useState<ReplayPlaylistsState>({ kind: "loading" });
+  const [currentTimeMs, setCurrentTimeMs] = useState(0);
+  const currentTimeRef = useRef(0);
+  const playbackAnchorRef = useRef({ currentTimeMs: 0, performanceMs: 0 });
+  const [playing, setPlaying] = useState(false);
+  const [manualPageId, setManualPageId] = useState<string | null>(null);
+  const [mediaAspectRatios, setMediaAspectRatios] = useState<Record<string, number>>({});
+  const [failedMediaPageIds, setFailedMediaPageIds] = useState<string[]>([]);
+  const timeline = useMemo(
+    () => buildReplayTimeline(replay.pages, replay.operations),
+    [replay.operations, replay.pages],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    setPlaylistState({ kind: "loading" });
+
+    void Promise.all(
+      timeline.pages.map(async (page) => {
+        for (let attempt = 0; attempt < REPLAY_PREPARATION_RETRIES; attempt += 1) {
+          try {
+            const result = await loadPlaylist({ runId, pageId: page.pageId });
+            if (result.status === "ready") {
+              return [page.pageId, result.playlist] as const;
+            }
+            if (result.status === "unavailable") return null;
+          } catch {
+            return null;
+          }
+          await new Promise<void>((resolve) => window.setTimeout(resolve, REPLAY_RETRY_DELAY_MS));
+        }
+        return null;
+      }),
+    ).then((loaded) => {
+      if (cancelled) return;
+      const successful = loaded.filter(
+        (entry): entry is readonly [string, string] => entry !== null,
+      );
+      if (successful.length === 0) {
+        setPlaylistState({ kind: "failed" });
+        return;
+      }
+      const playlists = new Map(successful);
+      setPlaylistState({
+        kind: "ready",
+        playlists,
+        failedPageIds: timeline.pages
+          .filter((page) => !playlists.has(page.pageId))
+          .map((page) => page.pageId),
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [loadPlaylist, requestVersion, runId, timeline.pages]);
+
+  useEffect(() => {
+    currentTimeRef.current = 0;
+    setCurrentTimeMs(0);
+    setPlaying(false);
+    setManualPageId(null);
+    setFailedMediaPageIds([]);
+  }, [runId, requestVersion]);
+
+  const reportMediaFailure = useCallback((pageId: string) => {
+    setFailedMediaPageIds((current) => (current.includes(pageId) ? current : [...current, pageId]));
+  }, []);
+
+  useEffect(() => {
+    if (!playing) return;
+    playbackAnchorRef.current = {
+      currentTimeMs: currentTimeRef.current,
+      performanceMs: performance.now(),
+    };
+    let frame = 0;
+    let lastRender = 0;
+    const tick = (now: number) => {
+      const next = Math.min(
+        timeline.durationMs,
+        playbackAnchorRef.current.currentTimeMs + (now - playbackAnchorRef.current.performanceMs),
+      );
+      currentTimeRef.current = next;
+      if (now - lastRender >= 50 || next === timeline.durationMs) {
+        lastRender = now;
+        setCurrentTimeMs(next);
+      }
+      if (next >= timeline.durationMs) {
+        setPlaying(false);
+        return;
+      }
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [playing, timeline.durationMs]);
+
+  const seek = (nextTimeMs: number) => {
+    const bounded = Math.min(Math.max(0, nextTimeMs), timeline.durationMs);
+    currentTimeRef.current = bounded;
+    setCurrentTimeMs(bounded);
+    if (playing) {
+      playbackAnchorRef.current = { currentTimeMs: bounded, performanceMs: performance.now() };
+    }
+  };
+
+  const activeTabId = activeTabAt(timeline.points, currentTimeMs);
+  const automaticPageId = activePageIdAt(timeline, currentTimeMs);
+  const activePageId = manualPageId ?? automaticPageId;
+  const activePage = timeline.pages.find((page) => page.pageId === activePageId) ?? null;
+  const pointer = activeClickAt(timeline.events, activeTabId, currentTimeMs);
+  const viewportAspectRatio = replay.viewport.width / replay.viewport.height;
+  const activeMediaAspectRatio = activePageId ? mediaAspectRatios[activePageId] : undefined;
+  const pointerIsAccurate =
+    pointer !== null &&
+    activeMediaAspectRatio !== undefined &&
+    Math.abs(activeMediaAspectRatio - viewportAspectRatio) / viewportAspectRatio < 0.02;
+
+  const togglePlayback = () => {
+    if (currentTimeRef.current >= timeline.durationMs) seek(0);
+    setManualPageId(null);
+    setPlaying((current) => !current);
+  };
+
+  if (playlistState.kind !== "ready") {
+    return (
+      <div
+        className="flex items-center justify-center bg-neutral-950 px-4 text-center"
+        style={{ aspectRatio: `${replay.viewport.width} / ${replay.viewport.height}` }}
+      >
+        <p className="flex items-center gap-2 text-sm text-neutral-300" role="status">
+          {playlistState.kind === "loading" ? (
+            <LoaderCircleIcon className="size-4 animate-spin" aria-hidden="true" />
+          ) : null}
+          {playlistState.kind === "loading"
+            ? `Loading ${timeline.pages.length} recorded ${timeline.pages.length === 1 ? "tab" : "tabs"}`
+            : "The recorded tabs could not be loaded."}
+        </p>
+      </div>
+    );
+  }
+
+  const failedPageIds = new Set([...playlistState.failedPageIds, ...failedMediaPageIds]);
+  const activeTrackFailed = activePageId !== null && failedPageIds.has(activePageId);
+  const unmatchedPageCount = timeline.pages.filter(
+    (page) => page.binding.kind !== "correlated",
+  ).length;
+
+  return (
+    <div className="min-w-0">
+      <div
+        className="relative isolate overflow-hidden bg-neutral-950"
+        style={{ aspectRatio: `${replay.viewport.width} / ${replay.viewport.height}` }}
+      >
+        {timeline.pages.map((page) => {
+          const playlist = playlistState.playlists.get(page.pageId);
+          if (!playlist) return null;
+          return (
+            <ClaimReplayTrack
+              key={page.pageId}
+              active={page.pageId === activePageId}
+              localTimeSeconds={Math.max(0, currentTimeMs - page.relativeStartMs) / 1_000}
+              onAspectRatio={(ratio) =>
+                setMediaAspectRatios((current) =>
+                  current[page.pageId] === ratio ? current : { ...current, [page.pageId]: ratio },
+                )
+              }
+              onFailure={reportMediaFailure}
+              pageId={page.pageId}
+              playing={playing}
+              playlist={playlist}
+            />
+          );
+        })}
+        {activeTrackFailed ? (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-neutral-950/90 px-8 text-center text-sm text-neutral-300">
+            This recording could not be played. Choose another track or refresh the replay.
+          </div>
+        ) : activePageId === null ? (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-neutral-950/90 px-8 text-center text-sm text-neutral-300">
+            A tab change was recorded, but Firecrawl did not expose enough identity data to match it
+            to one video track.
+          </div>
+        ) : null}
+        {pointerIsAccurate && pointer ? (
+          <span
+            className="pointer-events-none absolute z-20 size-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-primary/50 shadow-[0_0_0_4px_rgba(0,0,0,0.35)] motion-safe:animate-ping"
+            style={{
+              left: `${((pointer.box.x + pointer.box.width / 2) / replay.viewport.width) * 100}%`,
+              top: `${((pointer.box.y + pointer.box.height / 2) / replay.viewport.height) * 100}%`,
+            }}
+            aria-hidden="true"
+          />
+        ) : null}
+      </div>
+
+      <div className="border-t bg-background px-3 py-3 @md:px-4">
+        <div className="flex min-w-0 items-center gap-2">
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            aria-label={playing ? "Pause replay" : "Play replay"}
+            onClick={togglePlayback}
+          >
+            {playing ? <PauseIcon /> : <PlayIcon />}
+          </Button>
+          <span className="text-muted-foreground w-20 shrink-0 font-mono text-[11px] tabular-nums">
+            {formatReplayTime(currentTimeMs)} / {formatReplayTime(timeline.durationMs)}
+          </span>
+          <div className="relative min-w-0 flex-1">
+            <input
+              type="range"
+              min={0}
+              max={Math.max(1, timeline.durationMs)}
+              step={50}
+              value={currentTimeMs}
+              onChange={(event) => {
+                setManualPageId(null);
+                seek(Number(event.currentTarget.value));
+              }}
+              aria-label="Replay position"
+              className="accent-primary block h-5 w-full cursor-pointer"
+            />
+            <div className="pointer-events-none absolute inset-x-0 top-1/2 h-0" aria-hidden="true">
+              {timeline.transitions.map((transition) => (
+                <span
+                  key={`${transition.sequence}-${transition.fromTabId}-${transition.toTabId}`}
+                  className="absolute top-[-6px] h-3 min-w-px bg-foreground/60"
+                  style={{
+                    left: `${(transition.earliestTimeMs / Math.max(1, timeline.durationMs)) * 100}%`,
+                    width: `${Math.max(
+                      0.15,
+                      ((transition.latestTimeMs - transition.earliestTimeMs) /
+                        Math.max(1, timeline.durationMs)) *
+                        100,
+                    )}%`,
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-2 flex min-w-0 items-center gap-1 overflow-x-auto pb-1">
+          {timeline.pages.map((page, index) => (
+            <button
+              key={page.pageId}
+              type="button"
+              onClick={() => {
+                setPlaying(false);
+                setManualPageId(page.pageId);
+                if (currentTimeMs < page.relativeStartMs || currentTimeMs > page.relativeEndMs) {
+                  seek(page.relativeStartMs);
+                }
+              }}
+              className={`shrink-0 rounded-md border px-2 py-1 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 ${
+                page.pageId === activePageId
+                  ? "border-foreground/30 bg-foreground text-background"
+                  : "bg-background text-muted-foreground hover:text-foreground"
+              }`}
+              aria-pressed={page.pageId === activePageId}
+            >
+              {replayPageLabel(page, index)}
+            </button>
+          ))}
+        </div>
+
+        <div className="text-muted-foreground mt-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px]">
+          <span className="truncate">
+            {activePage
+              ? replayPageLabel(activePage, timeline.pages.indexOf(activePage))
+              : "Unmatched tab"}
+          </span>
+          <span>
+            {timeline.events.length} {timeline.events.length === 1 ? "action" : "actions"},{" "}
+            {timeline.pages.length} recorded {timeline.pages.length === 1 ? "tab" : "tabs"}
+          </span>
+        </div>
+        <p className="text-muted-foreground mt-2 text-[11px] leading-4">
+          {timeline.hasIntegrityGap ? "The operation log contains an evidence gap. " : ""}
+          {unmatchedPageCount > 0
+            ? `${unmatchedPageCount} ${unmatchedPageCount === 1 ? "recording is" : "recordings are"} unmatched and ${unmatchedPageCount === 1 ? "remains" : "remain"} available for manual inspection. `
+            : ""}
+          {timeline.transitions.length > 0
+            ? `${timeline.transitions.length} ${timeline.transitions.length === 1 ? "tab change is" : "tab changes are"} shown at the first confirming sample; each marker spans the interval in which the change occurred. `
+            : "No tab change was observed. "}
+          Tracks match automatically only when one URL and its start time identify one recorded tab.
+          {failedPageIds.size > 0
+            ? ` ${failedPageIds.size} ${failedPageIds.size === 1 ? "recording could" : "recordings could"} not be loaded.`
+            : ""}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function ClaimReplayTrack({
+  active,
+  localTimeSeconds,
+  onAspectRatio,
+  onFailure,
+  pageId,
+  playing,
+  playlist,
+}: {
+  active: boolean;
+  localTimeSeconds: number;
+  onAspectRatio: (ratio: number) => void;
+  onFailure: (pageId: string) => void;
+  pageId: string;
+  playing: boolean;
+  playlist: string;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    setFailed(false);
+    const playlistUrl = URL.createObjectURL(
+      new Blob([playlist], { type: "application/vnd.apple.mpegurl" }),
+    );
+    let cancelled = false;
+    let hls: HlsType | undefined;
+
+    const load = async () => {
+      try {
+        const { default: Hls } = await import("hls.js");
+        if (cancelled) return;
+        if (Hls.isSupported()) {
+          hls = new Hls();
+          hls.on(Hls.Events.ERROR, (_event, data) => {
+            if (data.fatal) {
+              setFailed(true);
+              onFailure(pageId);
+            }
+          });
+          hls.loadSource(playlistUrl);
+          hls.attachMedia(video);
+        } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+          video.src = playlistUrl;
+          video.load();
+        } else {
+          setFailed(true);
+          onFailure(pageId);
+        }
+      } catch {
+        if (!cancelled) {
+          setFailed(true);
+          onFailure(pageId);
+        }
+      }
+    };
+
+    void load();
+
+    return () => {
+      cancelled = true;
+      hls?.destroy();
+      video.removeAttribute("src");
+      video.load();
+      URL.revokeObjectURL(playlistUrl);
+    };
+  }, [onFailure, pageId, playlist]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (!active) {
+      video.pause();
+      return;
+    }
+    if (Number.isFinite(video.duration) && Math.abs(video.currentTime - localTimeSeconds) > 0.35) {
+      video.currentTime = Math.min(localTimeSeconds, video.duration || localTimeSeconds);
+    }
+    if (playing && video.paused) {
+      void video.play().catch(() => undefined);
+    } else if (!playing && !video.paused) {
+      video.pause();
+    }
+  }, [active, localTimeSeconds, playing]);
+
+  return (
+    <video
+      ref={videoRef}
+      muted
+      playsInline
+      preload="auto"
+      aria-label="Recorded Scout browser session"
+      aria-hidden={!active}
+      onError={() => {
+        setFailed(true);
+        onFailure(pageId);
+      }}
+      onLoadedMetadata={(event) => {
+        const video = event.currentTarget;
+        if (video.videoWidth > 0 && video.videoHeight > 0) {
+          onAspectRatio(video.videoWidth / video.videoHeight);
+        }
+      }}
+      className={`absolute inset-0 block size-full object-contain transition-opacity duration-150 motion-reduce:transition-none ${
+        active && !failed ? "opacity-100" : "pointer-events-none opacity-0"
+      }`}
+    />
+  );
+}
+
+function replayPageLabel(
+  page: { pageUrl: string | null; binding?: { kind: string } },
+  index: number,
+) {
+  if (!page.pageUrl) {
+    return page.binding?.kind === "unmatched"
+      ? `Unmatched recording ${index + 1}`
+      : `Tab ${index + 1}`;
+  }
+  const url = new URL(page.pageUrl);
+  return `${url.hostname}${url.pathname === "/" ? "" : url.pathname}`;
+}
+
+function formatReplayTime(milliseconds: number) {
+  const totalSeconds = Math.max(0, Math.floor(milliseconds / 1_000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
 function RunMetadata({ run }: { run: ClaimRun }) {
@@ -715,6 +1577,7 @@ function verdictDotClass(verdict: ClaimVerdict) {
 function runStatus(run: ClaimRun | null | undefined) {
   if (run === undefined) return "Loading";
   if (run === null) return "Not tested";
+  if (!run.matchesCurrentClaim && run.generation.status !== "pending") return "Needs retest";
   switch (run.generation.status) {
     case "pending":
       return "Running";
@@ -739,4 +1602,33 @@ function claimTestError(error: unknown) {
     "Product not found",
   ].find((candidate) => message.includes(candidate));
   return known ?? "Could not start the test.";
+}
+
+function validateClaimEdit(fields: ClaimEditFields) {
+  if (!fields.claim.trim()) return "Claim cannot be empty.";
+  if (Array.from(fields.claim.trim()).length > 1_200) {
+    return "Claim must be 1,200 characters or fewer.";
+  }
+  if (Array.from(fields.suggestedMysteryShop.trim()).length > 1_200) {
+    return "Test instructions must be 1,200 characters or fewer.";
+  }
+  return null;
+}
+
+function claimUpdateError(error: unknown) {
+  if (!(error instanceof Error)) return "Could not save the claim.";
+  const messages = [
+    ["Claim cannot be empty", "Claim cannot be empty."],
+    ["Claim must be 1200 characters or fewer", "Claim must be 1,200 characters or fewer."],
+    [
+      "Test instructions must be 1200 characters or fewer",
+      "Test instructions must be 1,200 characters or fewer.",
+    ],
+    [
+      "Claim not found in the current completed investigation",
+      "Claim is no longer part of the current investigation.",
+    ],
+  ] as const;
+  const known = messages.find(([needle]) => error.message.includes(needle));
+  return known?.[1] ?? "Could not save the claim.";
 }
