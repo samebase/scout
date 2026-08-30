@@ -15,11 +15,14 @@ import {
   applyClaimEdit,
   claimSnapshot,
   claimSnapshotsMatch,
+  customClaimRouteKey,
+  editedTestInstructions,
   findCurrentProductClaim,
+  findCurrentProductInvestigation,
+  MAX_CUSTOM_CLAIMS_PER_PRODUCT,
   MAX_EDITED_CLAIM_LENGTH,
-  MAX_EDITED_TEST_INSTRUCTIONS_LENGTH,
+  projectCustomClaim,
   projectClaimsForUser,
-  requiredClaimStartingUrl,
   requiredEditedClaimText,
   routeClaimKey,
 } from "./productClaimEdits";
@@ -499,7 +502,6 @@ export const updateClaim = mutation({
     domain: v.string(),
     claimKey: v.string(),
     claim: v.string(),
-    sourceUrl: v.string(),
     suggestedMysteryShop: v.string(),
   },
   returns: productClaimPublicValidator,
@@ -517,15 +519,23 @@ export const updateClaim = mutation({
 
     const nextSnapshot = {
       claim: requiredEditedClaimText(args.claim, "Claim", MAX_EDITED_CLAIM_LENGTH),
-      sourceUrl: requiredClaimStartingUrl(args.sourceUrl, current.product.domain),
-      suggestedMysteryShop: requiredEditedClaimText(
-        args.suggestedMysteryShop,
-        "Test instructions",
-        MAX_EDITED_TEST_INSTRUCTIONS_LENGTH,
-      ),
+      suggestedMysteryShop: editedTestInstructions(args.suggestedMysteryShop),
     };
-    if (claimSnapshotsMatch(nextSnapshot, claimSnapshot(current.claim))) {
-      return current.claim;
+
+    if (current.kind === "custom") {
+      if (claimSnapshotsMatch(nextSnapshot, claimSnapshot(current.claim))) {
+        return current.claim;
+      }
+      const editedAt = Date.now();
+      await ctx.db.patch("productCustomClaims", current.customClaim._id, {
+        ...nextSnapshot,
+        editedAt,
+      });
+      return projectCustomClaim({
+        ...current.customClaim,
+        ...nextSnapshot,
+        editedAt,
+      });
     }
 
     if (claimSnapshotsMatch(nextSnapshot, claimSnapshot(current.baseClaim))) {
@@ -533,6 +543,9 @@ export const updateClaim = mutation({
         await ctx.db.delete("productClaimEdits", current.edit._id);
       }
       return applyClaimEdit(current.baseClaim, null);
+    }
+    if (claimSnapshotsMatch(nextSnapshot, claimSnapshot(current.claim))) {
+      return current.claim;
     }
 
     const editedAt = Date.now();
@@ -551,10 +564,86 @@ export const updateClaim = mutation({
     }
     return {
       ...current.baseClaim,
+      origin: current.claim.origin,
       ...nextSnapshot,
       isEdited: true,
       editedAt,
     };
+  },
+});
+
+export const createClaim = mutation({
+  args: {
+    domain: v.string(),
+    claim: v.string(),
+    suggestedMysteryShop: v.string(),
+  },
+  returns: v.string(),
+  handler: async (ctx, args) => {
+    const userId = await requireAppUser(ctx);
+    const domain = canonicalProductDomain(args.domain, "Product domain");
+    const current = await findCurrentProductInvestigation(ctx, domain);
+    if (!current) {
+      throw new Error("A completed investigation is required before adding a claim");
+    }
+    const existing = await ctx.db
+      .query("productCustomClaims")
+      .withIndex("by_user_id_and_product_id", (query) =>
+        query.eq("userId", userId).eq("productId", current.product._id),
+      )
+      .take(MAX_CUSTOM_CLAIMS_PER_PRODUCT);
+    if (existing.length >= MAX_CUSTOM_CLAIMS_PER_PRODUCT) {
+      throw new Error(
+        `A product can contain at most ${MAX_CUSTOM_CLAIMS_PER_PRODUCT} custom claims`,
+      );
+    }
+    const now = Date.now();
+    const customClaimId = await ctx.db.insert("productCustomClaims", {
+      userId,
+      productId: current.product._id,
+      claim: requiredEditedClaimText(args.claim, "Claim", MAX_EDITED_CLAIM_LENGTH),
+      suggestedMysteryShop: editedTestInstructions(args.suggestedMysteryShop),
+      createdAt: now,
+    });
+    return customClaimRouteKey(customClaimId);
+  },
+});
+
+export const removeClaim = mutation({
+  args: {
+    domain: v.string(),
+    claimKey: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const userId = await requireAppUser(ctx);
+    const domain = canonicalProductDomain(args.domain, "Product domain");
+    const claimKey = routeClaimKey(args.claimKey);
+    const current = claimKey
+      ? await findCurrentProductClaim(ctx, {
+          userId,
+          domain,
+          claimKey,
+          includeHiddenGenerated: true,
+        })
+      : null;
+    if (!current) {
+      throw new Error("Claim not found in the current completed investigation");
+    }
+    if (current.kind === "custom") {
+      await ctx.db.delete("productCustomClaims", current.customClaim._id);
+      return null;
+    }
+    if (!current.hide) {
+      await ctx.db.insert("productClaimHides", {
+        userId,
+        productId: current.product._id,
+        investigationId: current.investigation._id,
+        claimKey: current.claim.claimKey,
+        hiddenAt: Date.now(),
+      });
+    }
+    return null;
   },
 });
 

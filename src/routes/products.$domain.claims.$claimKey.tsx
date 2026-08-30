@@ -6,7 +6,7 @@ import {
   type SidebarLayoutResizeHandleValueTextFormatter,
 } from "@samebase/sidebars/SidebarLayout";
 import { useSidebarActions, useSidebarLayoutPresentation } from "@samebase/sidebars/SidebarRuntime";
-import { Link, createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useAction, useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import type HlsType from "hls.js";
@@ -22,6 +22,7 @@ import {
   PlayIcon,
   RotateCcwIcon,
   TerminalSquareIcon,
+  Trash2Icon,
 } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
@@ -32,7 +33,6 @@ import {
 import { ServiceIcon } from "#components/service-icon";
 import { ScoutRunMessageView, type ScoutRunMessage } from "#components/scout-run-message";
 import { Button } from "#components/ui/button";
-import { Input } from "#components/ui/input";
 import { Textarea } from "#components/ui/textarea";
 import {
   activeClickAt,
@@ -56,13 +56,17 @@ type ReplayReady = Extract<ReplayPagesResult, { status: "ready" }>;
 type StartState = { kind: "idle" } | { kind: "starting" } | { kind: "failed"; message: string };
 type ClaimEditFields = {
   claim: string;
-  sourceUrl: string;
   suggestedMysteryShop: string;
 };
 type ClaimEditState =
   | { kind: "closed" }
   | { kind: "editing"; fields: ClaimEditFields; error: string | null }
   | { kind: "saving"; fields: ClaimEditFields };
+type ClaimRemoveState =
+  | { kind: "idle" }
+  | { kind: "confirming" }
+  | { kind: "removing" }
+  | { kind: "failed"; message: string };
 type ClaimVerdict = "Supported" | "Qualified" | "Refuted" | "Inconclusive";
 
 const CLAIM_RESIZE_HANDLE_LABELS = {
@@ -362,28 +366,32 @@ function ClaimMain({
 
         {editing ? null : (
           <>
-            {claim.evidenceExcerpt ? (
-              <blockquote className="mt-6 max-w-3xl rounded-[0.75rem] bg-muted/55 px-4 py-3 text-sm leading-6 text-muted-foreground">
-                {claim.evidenceExcerpt}
-              </blockquote>
-            ) : null}
+            {claim.origin === "generated" ? (
+              <>
+                {claim.evidenceExcerpt ? (
+                  <blockquote className="mt-6 max-w-3xl rounded-[0.75rem] bg-muted/55 px-4 py-3 text-sm leading-6 text-muted-foreground">
+                    {claim.evidenceExcerpt}
+                  </blockquote>
+                ) : null}
 
-            {claim.support || claim.qualifiers.length > 0 ? (
-              <details className="mt-5 max-w-3xl text-sm">
-                <summary className="text-muted-foreground cursor-pointer select-none outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
-                  Research notes
-                </summary>
-                <div className="mt-3 space-y-3 border-l pl-4 leading-6">
-                  {claim.support ? <p>{claim.support}</p> : null}
-                  {claim.qualifiers.length > 0 ? (
-                    <ul className="list-disc space-y-1 pl-4">
-                      {claim.qualifiers.map((qualifier, index) => (
-                        <li key={`${index}:${qualifier}`}>{qualifier}</li>
-                      ))}
-                    </ul>
-                  ) : null}
-                </div>
-              </details>
+                {claim.support || claim.qualifiers.length > 0 ? (
+                  <details className="mt-5 max-w-3xl text-sm">
+                    <summary className="text-muted-foreground cursor-pointer select-none outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
+                      Research notes
+                    </summary>
+                    <div className="mt-3 space-y-3 border-l pl-4 leading-6">
+                      {claim.support ? <p>{claim.support}</p> : null}
+                      {claim.qualifiers.length > 0 ? (
+                        <ul className="list-disc space-y-1 pl-4">
+                          {claim.qualifiers.map((qualifier, index) => (
+                            <li key={`${index}:${qualifier}`}>{qualifier}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </div>
+                  </details>
+                ) : null}
+              </>
             ) : null}
 
             <ClaimTest
@@ -414,8 +422,11 @@ function ClaimHeader({
   onEditingChange: (editing: boolean) => void;
   testRunning: boolean;
 }) {
+  const navigate = useNavigate();
+  const removeClaim = useMutation(api.products.removeClaim);
   const updateClaim = useMutation(api.products.updateClaim);
   const [state, setState] = useState<ClaimEditState>({ kind: "closed" });
+  const [removeState, setRemoveState] = useState<ClaimRemoveState>({ kind: "idle" });
 
   const open = () => {
     onEditingChange(true);
@@ -423,7 +434,6 @@ function ClaimHeader({
       kind: "editing",
       fields: {
         claim: claim.claim,
-        sourceUrl: claim.sourceUrl,
         suggestedMysteryShop: claim.suggestedMysteryShop,
       },
       error: null,
@@ -445,14 +455,13 @@ function ClaimHeader({
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (state.kind !== "editing") return;
-    const error = validateClaimEdit(state.fields, domain);
+    const error = validateClaimEdit(state.fields);
     if (error) {
       setState({ ...state, error });
       return;
     }
     const fields = {
       claim: state.fields.claim.trim(),
-      sourceUrl: state.fields.sourceUrl.trim(),
       suggestedMysteryShop: state.fields.suggestedMysteryShop.trim(),
     };
     setState({ kind: "saving", fields });
@@ -462,6 +471,17 @@ function ClaimHeader({
       onEditingChange(false);
     } catch (error) {
       setState({ kind: "editing", fields, error: claimUpdateError(error) });
+    }
+  };
+
+  const remove = async () => {
+    if (removeState.kind === "removing") return;
+    setRemoveState({ kind: "removing" });
+    try {
+      await removeClaim({ claimKey, domain });
+      await navigate({ to: "/products/$domain", params: { domain } });
+    } catch {
+      setRemoveState({ kind: "failed", message: "Could not remove the claim." });
     }
   };
 
@@ -485,22 +505,7 @@ function ClaimHeader({
             />
           </label>
           <label className="grid gap-2 text-sm font-medium">
-            Starting URL
-            <Input
-              name="sourceUrl"
-              type="url"
-              value={state.fields.sourceUrl}
-              onChange={(event) => change("sourceUrl", event.target.value)}
-              disabled={saving}
-              maxLength={2_048}
-              required
-            />
-            <span className="text-muted-foreground text-xs font-normal">
-              Scout opens this page first.
-            </span>
-          </label>
-          <label className="grid gap-2 text-sm font-medium">
-            Test instructions
+            Test instructions <span className="text-muted-foreground font-normal">Optional</span>
             <Textarea
               name="suggestedMysteryShop"
               value={state.fields.suggestedMysteryShop}
@@ -508,7 +513,6 @@ function ClaimHeader({
               disabled={saving}
               maxLength={1_200}
               rows={5}
-              required
             />
           </label>
         </div>
@@ -548,30 +552,96 @@ function ClaimHeader({
           </span>
           {claim.isEdited ? <span className="text-muted-foreground text-xs">Edited</span> : null}
         </div>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          onClick={open}
-          disabled={testRunning}
-          title={testRunning ? "Wait for the current test to finish" : undefined}
-        >
-          <PencilIcon />
-          Edit
-        </Button>
+        <div className="flex shrink-0 items-center gap-1">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={open}
+            disabled={testRunning || removeState.kind !== "idle"}
+            title={testRunning ? "Wait for the current test to finish" : undefined}
+          >
+            <PencilIcon />
+            Edit
+          </Button>
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Remove claim"
+            onClick={() => setRemoveState({ kind: "confirming" })}
+            disabled={testRunning || removeState.kind !== "idle"}
+            title={testRunning ? "Wait for the current test to finish" : "Remove claim"}
+          >
+            <Trash2Icon />
+          </Button>
+        </div>
       </div>
       <h2 className="mt-3 max-w-3xl wrap-break-word text-2xl font-semibold tracking-[-0.04em] @md:text-3xl @xl:text-4xl">
         {claim.claim}
       </h2>
-      <a
-        href={claim.sourceUrl}
-        target="_blank"
-        rel="noreferrer"
-        className="text-muted-foreground mt-3 inline-flex max-w-full items-center gap-1.5 text-xs underline underline-offset-4 outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
-      >
-        <span className="truncate">{claim.pageTitle || "Starting page"}</span>
-        <ExternalLinkIcon className="size-3 shrink-0" aria-hidden="true" />
-      </a>
+      {claim.origin === "generated" ? (
+        <a
+          href={claim.sourceUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="text-muted-foreground mt-3 inline-flex max-w-full items-center gap-1.5 text-xs underline underline-offset-4 outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+        >
+          <span className="truncate">{claim.pageTitle || "Research source"}</span>
+          <ExternalLinkIcon className="size-3 shrink-0" aria-hidden="true" />
+        </a>
+      ) : null}
+      {removeState.kind === "confirming" || removeState.kind === "removing" ? (
+        <div className="mt-5 border-t pt-4">
+          <p className="text-sm font-medium">Remove this claim?</p>
+          <p className="text-muted-foreground mt-1 text-sm">It will disappear from this product.</p>
+          <div className="mt-3 flex items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="destructive"
+              disabled={removeState.kind === "removing"}
+              onClick={() => void remove()}
+            >
+              {removeState.kind === "removing" ? (
+                <LoaderCircleIcon className="animate-spin" />
+              ) : (
+                <Trash2Icon />
+              )}
+              {removeState.kind === "removing" ? "Removing" : "Remove claim"}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={removeState.kind === "removing"}
+              onClick={() => setRemoveState({ kind: "idle" })}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : removeState.kind === "failed" ? (
+        <div className="mt-5 border-t pt-4">
+          <p className="text-destructive text-sm" role="alert">
+            {removeState.message}
+          </p>
+          <div className="mt-3 flex items-center gap-2">
+            <Button type="button" size="sm" variant="destructive" onClick={() => void remove()}>
+              <Trash2Icon />
+              Try again
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => setRemoveState({ kind: "idle" })}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </header>
   );
 }
@@ -592,6 +662,7 @@ function ClaimTest({
   messages: readonly ScoutRunMessage[];
 }) {
   const startClaimTest = useMutation(api.claimTests.start);
+  const promptPreview = useQuery(api.claimTests.promptPreview, { claimKey, domain });
   const [startState, setStartState] = useState<StartState>({ kind: "idle" });
   const running = latestRun?.generation.status === "pending";
   const resultText = latestAssistantText(messages);
@@ -612,8 +683,18 @@ function ClaimTest({
         Test this claim
       </h3>
       <p className="mt-3 max-w-3xl wrap-break-word text-sm leading-6">
-        {claim.suggestedMysteryShop}
+        {claim.suggestedMysteryShop || "Scout will choose a bounded way to test this claim."}
       </p>
+      {promptPreview ? (
+        <details className="mt-4 max-w-3xl text-sm">
+          <summary className="text-muted-foreground cursor-pointer select-none outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
+            View initial prompt
+          </summary>
+          <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap border bg-muted/35 p-4 font-mono text-xs leading-5">
+            {promptPreview}
+          </pre>
+        </details>
+      ) : null}
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <Button
           type="button"
@@ -758,16 +839,9 @@ function PreviousClaimRunNotice({ run }: { run: ClaimRun }) {
           </summary>
           <div className="mt-3 space-y-3 border-l pl-4 leading-6">
             <p className="font-medium">{run.testedClaim.claim}</p>
-            <p>{run.testedClaim.suggestedMysteryShop}</p>
-            <a
-              href={run.testedClaim.sourceUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="text-muted-foreground inline-flex max-w-full items-center gap-1.5 text-xs underline underline-offset-4 outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
-            >
-              <span className="truncate">{run.testedClaim.sourceUrl}</span>
-              <ExternalLinkIcon className="size-3 shrink-0" aria-hidden="true" />
-            </a>
+            {run.testedClaim.suggestedMysteryShop ? (
+              <p>{run.testedClaim.suggestedMysteryShop}</p>
+            ) : null}
           </div>
         </details>
       ) : null}
@@ -1530,32 +1604,13 @@ function claimTestError(error: unknown) {
   return known ?? "Could not start the test.";
 }
 
-function validateClaimEdit(fields: ClaimEditFields, domain: string) {
+function validateClaimEdit(fields: ClaimEditFields) {
   if (!fields.claim.trim()) return "Claim cannot be empty.";
   if (Array.from(fields.claim.trim()).length > 1_200) {
     return "Claim must be 1,200 characters or fewer.";
   }
-  if (!fields.suggestedMysteryShop.trim()) return "Test instructions cannot be empty.";
   if (Array.from(fields.suggestedMysteryShop.trim()).length > 1_200) {
     return "Test instructions must be 1,200 characters or fewer.";
-  }
-
-  let url: URL;
-  try {
-    url = new URL(fields.sourceUrl.trim());
-  } catch {
-    return "Starting URL must be a valid URL.";
-  }
-  if (
-    (url.protocol !== "http:" && url.protocol !== "https:") ||
-    url.username !== "" ||
-    url.password !== ""
-  ) {
-    return "Starting URL must use HTTP or HTTPS without credentials.";
-  }
-  const hostname = url.hostname.toLowerCase().replace(/\.$/, "");
-  if (hostname !== domain && !hostname.endsWith(`.${domain}`)) {
-    return `Starting URL must belong to ${domain}.`;
   }
   return null;
 }
@@ -1565,12 +1620,6 @@ function claimUpdateError(error: unknown) {
   const messages = [
     ["Claim cannot be empty", "Claim cannot be empty."],
     ["Claim must be 1200 characters or fewer", "Claim must be 1,200 characters or fewer."],
-    ["Starting URL must be a valid URL", "Starting URL must be a valid URL."],
-    [
-      "Starting URL must use HTTP or HTTPS without credentials",
-      "Starting URL must use HTTP or HTTPS without credentials.",
-    ],
-    ["Test instructions cannot be empty", "Test instructions cannot be empty."],
     [
       "Test instructions must be 1200 characters or fewer",
       "Test instructions must be 1,200 characters or fewer.",
@@ -1581,9 +1630,5 @@ function claimUpdateError(error: unknown) {
     ],
   ] as const;
   const known = messages.find(([needle]) => error.message.includes(needle));
-  if (known) return known[1];
-  const domainError = error.message.match(/Starting URL must belong to ([a-z0-9.-]+)/i);
-  return domainError
-    ? `Starting URL must belong to ${domainError[1]}.`
-    : "Could not save the claim.";
+  return known?.[1] ?? "Could not save the claim.";
 }

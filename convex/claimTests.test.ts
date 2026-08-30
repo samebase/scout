@@ -136,6 +136,277 @@ async function insertCompletedInvestigation(
 }
 
 describe("Claim tests", () => {
+  it("keeps custom claims owner-scoped and product-scoped across investigations", async () => {
+    const { backend, userId, admin } = await authenticatedBackend();
+    const otherUserId = await backend.run(
+      async (ctx) => await ctx.db.insert("users", { email: ADMIN_EMAIL }),
+    );
+    const otherAdmin = backend.withIdentity({ subject: `${otherUserId}|other-session` });
+    const product = await admin.mutation(api.products.create, {
+      url: "example.test",
+      name: "Example",
+    });
+    await expect(
+      admin.mutation(api.products.createClaim, {
+        domain: "example.test",
+        claim: "A claim before research",
+        suggestedMysteryShop: "",
+      }),
+    ).rejects.toThrow("A completed investigation is required");
+    const first = await insertCompletedInvestigation(backend, {
+      userId,
+      productId: product.productId,
+      claims: [claim("a generated workflow")],
+    });
+    const generatedClaimKey = first.claimKeys[0];
+    if (!generatedClaimKey) throw new Error("Expected a generated claim key");
+
+    const customClaimKey = await admin.mutation(api.products.createClaim, {
+      domain: "https://www.example.test/product",
+      claim: "  A workspace can be duplicated without publishing it.  ",
+      suggestedMysteryShop: "  Open a private workspace and look for Duplicate.  ",
+    });
+    expect(customClaimKey).toMatch(/^custom-/);
+
+    const firstProduct = await admin.query(api.products.getByDomain, {
+      domain: "example.test",
+    });
+    const customClaim = firstProduct?.latestCompletedInvestigation?.result.claims.find(
+      (candidate) => candidate.claimKey === customClaimKey,
+    );
+    expect(customClaim).toEqual({
+      origin: "custom",
+      claimKey: customClaimKey,
+      claim: "A workspace can be duplicated without publishing it.",
+      category: "custom",
+      suggestedMysteryShop: "Open a private workspace and look for Duplicate.",
+      isEdited: false,
+      editedAt: null,
+    });
+    expect(customClaim && "sourceUrl" in customClaim).toBe(false);
+    await expect(
+      otherAdmin.query(api.products.getClaimByDomain, {
+        domain: "example.test",
+        claimKey: customClaimKey,
+      }),
+    ).resolves.toBeNull();
+    await expect(
+      otherAdmin.mutation(api.products.updateClaim, {
+        domain: "example.test",
+        claimKey: customClaimKey,
+        claim: "Another user's edit",
+        suggestedMysteryShop: "",
+      }),
+    ).rejects.toThrow("Claim not found");
+
+    await expect(
+      admin.mutation(api.products.updateClaim, {
+        domain: "example.test",
+        claimKey: customClaimKey,
+        claim: "A private workspace can be duplicated.",
+        suggestedMysteryShop: "   ",
+      }),
+    ).resolves.toMatchObject({
+      origin: "custom",
+      claimKey: customClaimKey,
+      claim: "A private workspace can be duplicated.",
+      suggestedMysteryShop: "",
+      isEdited: true,
+    });
+
+    await insertCompletedInvestigation(backend, {
+      userId,
+      productId: first.productId,
+      claims: [claim("a generated workflow")],
+      suffix: "refreshed",
+    });
+    await expect(
+      admin.query(api.products.getClaimByDomain, {
+        domain: "example.test",
+        claimKey: customClaimKey,
+      }),
+    ).resolves.toMatchObject({
+      claim: {
+        origin: "custom",
+        claimKey: customClaimKey,
+        claim: "A private workspace can be duplicated.",
+      },
+    });
+
+    await expect(
+      admin.mutation(api.products.removeClaim, {
+        domain: "example.test",
+        claimKey: customClaimKey,
+      }),
+    ).resolves.toBeNull();
+    await expect(
+      admin.query(api.products.getClaimByDomain, {
+        domain: "example.test",
+        claimKey: customClaimKey,
+      }),
+    ).resolves.toBeNull();
+
+    await admin.mutation(api.products.removeClaim, {
+      domain: "example.test",
+      claimKey: generatedClaimKey,
+    });
+    const [ownerProduct, otherProduct] = await Promise.all([
+      admin.query(api.products.getByDomain, { domain: "example.test" }),
+      otherAdmin.query(api.products.getByDomain, { domain: "example.test" }),
+    ]);
+    expect(
+      ownerProduct?.latestCompletedInvestigation?.result.claims.some(
+        (candidate) => candidate.claimKey === generatedClaimKey,
+      ),
+    ).toBe(false);
+    expect(
+      otherProduct?.latestCompletedInvestigation?.result.claims.some(
+        (candidate) => candidate.claimKey === generatedClaimKey,
+      ),
+    ).toBe(true);
+
+    await insertCompletedInvestigation(backend, {
+      userId,
+      productId: first.productId,
+      claims: [claim("a generated workflow")],
+      suffix: "third",
+    });
+    const afterRefresh = await admin.query(api.products.getByDomain, { domain: "example.test" });
+    expect(
+      afterRefresh?.latestCompletedInvestigation?.result.claims.some(
+        (candidate) => candidate.claimKey === generatedClaimKey,
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps custom claim test status across reinvestigation and previews its exact prompt", async () => {
+    const { backend, userId, admin } = await authenticatedBackend();
+    await insertScout(backend);
+    const first = await insertCompletedInvestigation(backend, {
+      userId,
+      claims: [claim("research-only evidence")],
+    });
+    const generatedClaimKey = first.claimKeys[0];
+    if (!generatedClaimKey) throw new Error("Expected a generated claim key");
+    const customClaimKey = await admin.mutation(api.products.createClaim, {
+      domain: "example.test",
+      claim: "A visitor can compare two drafts side by side.",
+      suggestedMysteryShop: "",
+    });
+
+    const [customPrompt, generatedPrompt] = await Promise.all([
+      admin.query(api.claimTests.promptPreview, {
+        domain: "example.test",
+        claimKey: customClaimKey,
+      }),
+      admin.query(api.claimTests.promptPreview, {
+        domain: "example.test",
+        claimKey: generatedClaimKey,
+      }),
+    ]);
+    expect(customPrompt).toContain("Name: Example");
+    expect(customPrompt).toContain("Domain: example.test");
+    expect(customPrompt).toContain("Primary website URL: https://example.test");
+    expect(customPrompt).toContain("A visitor can compare two drafts side by side.");
+    expect(customPrompt).toContain("Operator instructions:\n(none provided)");
+    expect(customPrompt).toContain("Never purchase anything");
+    expect(customPrompt).not.toContain("UNTRUSTED RESEARCH CONTEXT");
+    expect(customPrompt).not.toContain("https://example.test/features");
+    expect(generatedPrompt).toContain("UNTRUSTED RESEARCH CONTEXT");
+    expect(generatedPrompt).toContain("https://example.test/features");
+
+    const firstRun = await admin.mutation(api.claimTests.start, {
+      domain: "example.test",
+      claimKey: customClaimKey,
+    });
+    const firstGeneration = await backend.run(async (ctx) => {
+      const run = await ctx.db.get("claimTestRuns", firstRun.runId);
+      expect(run?.customClaimId).toBeDefined();
+      expect(run?.testedClaim).toEqual({
+        claim: "A visitor can compare two drafts side by side.",
+        suggestedMysteryShop: "",
+      });
+      return run ? await ctx.db.get("scoutLabGenerations", run.generationId) : null;
+    });
+    if (!firstGeneration) throw new Error("Expected a custom claim generation");
+    await backend.mutation(internal.scout.lab.completeGeneration, {
+      promptMessageId: firstGeneration.promptMessageId,
+      usage: { promptTokens: 50, completionTokens: 10, totalTokens: 60 },
+    });
+    await expect(
+      admin.query(api.claimTests.listStatuses, { domain: "example.test" }),
+    ).resolves.toContainEqual({ claimKey: customClaimKey, state: "tested" });
+
+    const second = await insertCompletedInvestigation(backend, {
+      userId,
+      productId: first.productId,
+      claims: [claim("new research evidence")],
+      suffix: "status-refresh",
+    });
+    await expect(
+      admin.query(api.claimTests.latest, {
+        domain: "example.test",
+        claimKey: customClaimKey,
+      }),
+    ).resolves.toMatchObject({
+      runId: firstRun.runId,
+      investigationId: first.investigationId,
+      matchesCurrentClaim: true,
+      generation: { status: "completed" },
+    });
+    await expect(
+      admin.query(api.claimTests.listStatuses, { domain: "example.test" }),
+    ).resolves.toContainEqual({ claimKey: customClaimKey, state: "tested" });
+
+    await admin.mutation(api.products.updateClaim, {
+      domain: "example.test",
+      claimKey: customClaimKey,
+      claim: "A visitor can compare three drafts side by side.",
+      suggestedMysteryShop: "Open the draft comparison view.",
+    });
+    await expect(
+      admin.query(api.claimTests.listStatuses, { domain: "example.test" }),
+    ).resolves.toContainEqual({ claimKey: customClaimKey, state: "needs_retest" });
+    const secondRun = await admin.mutation(api.claimTests.start, {
+      domain: "example.test",
+      claimKey: customClaimKey,
+    });
+    expect(secondRun.created).toBe(true);
+    await expect(
+      admin.query(api.claimTests.listStatuses, { domain: "example.test" }),
+    ).resolves.toContainEqual({ claimKey: customClaimKey, state: "testing" });
+    await expect(
+      backend.run(async (ctx) => {
+        const run = await ctx.db.get("claimTestRuns", secondRun.runId);
+        return run?.investigationId;
+      }),
+    ).resolves.toBe(second.investigationId);
+
+    const customClaimId = await backend.run(async (ctx) => {
+      const run = await ctx.db.get("claimTestRuns", firstRun.runId);
+      return run?.customClaimId;
+    });
+    if (!customClaimId) throw new Error("Expected a custom claim run scope");
+    await admin.mutation(api.products.removeClaim, {
+      domain: "example.test",
+      claimKey: customClaimKey,
+    });
+    await expect(
+      backend.run(
+        async (ctx) =>
+          await ctx.db
+            .query("claimTestRuns")
+            .withIndex("by_user_id_and_product_id_and_custom_claim_id", (index) =>
+              index
+                .eq("userId", userId)
+                .eq("productId", first.productId)
+                .eq("customClaimId", customClaimId),
+            )
+            .take(3),
+      ),
+    ).resolves.toHaveLength(2);
+  });
+
   it("starts one linked Lab generation with a bounded verification prompt", async () => {
     const { backend, userId, admin } = await authenticatedBackend();
     const scoutId = await insertScout(backend);
@@ -360,7 +631,6 @@ describe("Claim tests", () => {
       const run = await ctx.db.get("claimTestRuns", first.runId);
       expect(run?.testedClaim).toEqual({
         claim: originalClaim.claim,
-        sourceUrl: originalClaim.sourceUrl,
         suggestedMysteryShop: originalClaim.suggestedMysteryShop,
       });
       return run ? await ctx.db.get("scoutLabGenerations", run.generationId) : null;
@@ -370,10 +640,22 @@ describe("Claim tests", () => {
       promptMessageId: firstGeneration.promptMessageId,
       usage: { promptTokens: 100, completionTokens: 20, totalTokens: 120 },
     });
+    await backend.run(
+      async (ctx) =>
+        await ctx.db.patch("claimTestRuns", first.runId, {
+          testedClaim: {
+            claim: originalClaim.claim,
+            suggestedMysteryShop: originalClaim.suggestedMysteryShop,
+            sourceUrl: "https://legacy.example.test/old-evidence",
+          },
+        }),
+    );
+    await expect(
+      admin.query(api.claimTests.listStatuses, { domain: "example.test" }),
+    ).resolves.toContainEqual({ claimKey, state: "tested" });
 
     const editedClaim = {
       claim: "The same form can remain open and usable in two tabs.",
-      sourceUrl: "https://app.example.test/forms/demo",
       suggestedMysteryShop:
         "Open the form in two tabs, switch from the first tab to the second and back, and describe the visible state after each switch.",
     };
@@ -393,7 +675,6 @@ describe("Claim tests", () => {
       matchesCurrentClaim: false,
       testedClaim: {
         claim: originalClaim.claim,
-        sourceUrl: originalClaim.sourceUrl,
         suggestedMysteryShop: originalClaim.suggestedMysteryShop,
       },
       generation: { status: "completed" },
@@ -417,7 +698,7 @@ describe("Claim tests", () => {
     });
     const prompt = messages.page.find((message) => message.role === "user")?.text;
     expect(prompt).toContain(editedClaim.claim);
-    expect(prompt).toContain(editedClaim.sourceUrl);
+    expect(prompt).toContain(originalClaim.sourceUrl);
     expect(prompt).toContain(editedClaim.suggestedMysteryShop);
     await expect(
       admin.query(api.claimTests.latest, { domain: "example.test", claimKey }),

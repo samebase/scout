@@ -67,9 +67,31 @@ export default defineSchema({
     investigationId: v.id("productInvestigations"),
     claimKey: v.string(),
     claim: v.string(),
-    sourceUrl: v.string(),
+    // Kept during schema migration for edits written before sourceUrl became
+    // read-only research evidence. Application projections ignore this field.
+    sourceUrl: v.optional(v.string()),
     suggestedMysteryShop: v.string(),
     editedAt: v.number(),
+  }).index("by_user_id_and_product_id_and_investigation_id_and_claim_key", [
+    "userId",
+    "productId",
+    "investigationId",
+    "claimKey",
+  ]),
+  productCustomClaims: defineTable({
+    userId: v.id("users"),
+    productId: v.id("products"),
+    claim: v.string(),
+    suggestedMysteryShop: v.string(),
+    createdAt: v.number(),
+    editedAt: v.optional(v.number()),
+  }).index("by_user_id_and_product_id", ["userId", "productId"]),
+  productClaimHides: defineTable({
+    userId: v.id("users"),
+    productId: v.id("products"),
+    investigationId: v.id("productInvestigations"),
+    claimKey: v.string(),
+    hiddenAt: v.number(),
   }).index("by_user_id_and_product_id_and_investigation_id_and_claim_key", [
     "userId",
     "productId",
@@ -132,6 +154,7 @@ export default defineSchema({
     userId: v.id("users"),
     productId: v.id("products"),
     investigationId: v.id("productInvestigations"),
+    customClaimId: v.optional(v.id("productCustomClaims")),
     claimKey: v.string(),
     experimentId: v.id("scoutLabExperiments"),
     threadId: v.string(),
@@ -145,6 +168,11 @@ export default defineSchema({
       "productId",
       "investigationId",
       "claimKey",
+    ])
+    .index("by_user_id_and_product_id_and_custom_claim_id", [
+      "userId",
+      "productId",
+      "customClaimId",
     ]),
   claimTestBrowserSessions: defineTable({
     runId: v.id("claimTestRuns"),

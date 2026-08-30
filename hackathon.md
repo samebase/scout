@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-30T10:52:28Z
+- **Last updated:** 2026-08-30T11:53:14Z
 
 ## Log
 
@@ -592,7 +592,7 @@ Tally account,” producing a Refuted verdict in 122.7 seconds with four Firecra
 tests and the complete Cloudflare build path passed (`convex/claimTests.ts`,
 `convex/scout/labGeneration.ts`, `src/lib/claimReplayTimeline.ts`).
 
-### 2026-08-30 - working tree
+### 2026-08-30 - 9cfaca8 - v120
 
 Made generated claims editable in place without changing their route or rewriting completed
 research. Each user-scoped override stores the claim, starting URL, and test instructions; new runs
@@ -604,3 +604,19 @@ A browser-driven Tally trial edited one claim, proved the Needs retest transitio
 Qwen 3.7 Flash. The Scout emitted two `browser_switch_tab` actions, the reconstructed replay showed
 two tab-change markers across two recorded tracks, and the Product queue returned to Tested. All
 191 tests, the Convex development push, and the complete Cloudflare build path passed.
+
+### 2026-08-30 - working tree
+
+Replaced the editable starting URL with one inspectable Scout prompt built from the Product name,
+domain, primary URL, claim, and optional test instructions. Generated research URLs remain
+read-only evidence; custom claims carry no fabricated research context
+(`convex/claimTests.ts`, `convex/productClaimEdits.ts`, `convex/products.ts`).
+
+Added owner-scoped custom claims and administrator controls to add, edit, and remove claims. Custom
+claims survive renewed product research, generated removals are scoped to one investigation, and
+test status follows custom claims across investigations (`convex/schema.ts`,
+`src/components/products-workspace.tsx`, `src/routes/products.$domain.claims.$claimKey.tsx`).
+
+A browser-driven Samebase check created a custom account-creation claim without instructions,
+verified the generated product-aware prompt, edited the instructions, and removed the claim. All
+193 tests, the Convex development push, and the complete Cloudflare build path passed.

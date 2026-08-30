@@ -32,6 +32,7 @@ import { ServiceIcon } from "#components/service-icon";
 import { Button } from "#components/ui/button";
 import { Collapsible, CollapsibleContent } from "#components/ui/collapsible";
 import { Input } from "#components/ui/input";
+import { Textarea } from "#components/ui/textarea";
 
 type Product = FunctionReturnType<typeof api.products.list>[number];
 type Investigation = NonNullable<Product["latestInvestigation"]>;
@@ -43,6 +44,11 @@ type ClaimTestStatuses = FunctionReturnType<typeof api.claimTests.listStatuses>;
 type ClaimTestListState = ClaimTestStatuses[number]["state"] | "loading";
 
 type AddProductState =
+  | { kind: "idle" }
+  | { kind: "submitting" }
+  | { kind: "failed"; message: string };
+
+type AddClaimState =
   | { kind: "idle" }
   | { kind: "submitting" }
   | { kind: "failed"; message: string };
@@ -1441,22 +1447,41 @@ function InvestigationReport({
   investigation: CompletedInvestigation;
   productDomain: string;
 }) {
+  const [addOpen, setAddOpen] = useState(false);
   const claimTestStateByKey = new Map(
     claimTestStatuses?.map(({ claimKey, state }) => [claimKey, state]),
   );
 
   return (
     <section className="mt-6 border-t pt-6" aria-label="Investigation result">
-      <p className="text-muted-foreground mb-4 text-xs">
-        {investigation.result.claims.length} unverified claims,{" "}
-        {creditCount.format(investigation.creditsUsed)} Firecrawl credits,{" "}
-        {investigationDate.format(investigation.completedAt)}
-      </p>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-muted-foreground text-xs">
+          {investigation.result.claims.length} unverified claims,{" "}
+          {creditCount.format(investigation.creditsUsed)} Firecrawl credits,{" "}
+          {investigationDate.format(investigation.completedAt)}
+        </p>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          aria-expanded={addOpen}
+          aria-controls="add-claim-form"
+          onClick={() => setAddOpen((open) => !open)}
+        >
+          {addOpen ? <XIcon /> : <PlusIcon />}
+          {addOpen ? "Close" : "Add claim"}
+        </Button>
+      </div>
+
+      {addOpen ? <AddClaimForm domain={productDomain} onCancel={() => setAddOpen(false)} /> : null}
 
       {investigation.result.claims.length === 0 ? (
         <EmptyReportValue />
       ) : (
-        <ul className="surface-panel divide-y overflow-hidden" aria-label="Claims">
+        <ul
+          className={`surface-panel divide-y overflow-hidden ${addOpen ? "mt-4" : ""}`}
+          aria-label="Claims"
+        >
           {investigation.result.claims.map((claim) => (
             <li key={claim.claimKey}>
               <Link
@@ -1612,6 +1637,94 @@ function InvestigationReport({
   );
 }
 
+function AddClaimForm({ domain, onCancel }: { domain: string; onCancel: () => void }) {
+  const navigate = useNavigate();
+  const createClaim = useMutation(api.products.createClaim);
+  const [claim, setClaim] = useState("");
+  const [suggestedMysteryShop, setSuggestedMysteryShop] = useState("");
+  const [state, setState] = useState<AddClaimState>({ kind: "idle" });
+  const submitting = state.kind === "submitting";
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (submitting) return;
+
+    const trimmedClaim = claim.trim();
+    const trimmedInstructions = suggestedMysteryShop.trim();
+    const error = validateNewClaim(trimmedClaim, trimmedInstructions);
+    if (error) {
+      setState({ kind: "failed", message: error });
+      return;
+    }
+
+    setState({ kind: "submitting" });
+    try {
+      const claimKey = await createClaim({
+        domain,
+        claim: trimmedClaim,
+        suggestedMysteryShop: trimmedInstructions,
+      });
+      await navigate({
+        to: "/products/$domain/claims/$claimKey",
+        params: { domain, claimKey },
+      });
+    } catch (error) {
+      setState({ kind: "failed", message: createClaimError(error) });
+    }
+  };
+
+  return (
+    <form
+      id="add-claim-form"
+      className="surface-panel mb-4 p-4 @md:p-5"
+      onSubmit={(event) => void submit(event)}
+    >
+      <div className="grid gap-4">
+        <FormField label="Claim" htmlFor="new-claim">
+          <Textarea
+            id="new-claim"
+            name="claim"
+            value={claim}
+            onChange={(event) => setClaim(event.target.value)}
+            disabled={submitting}
+            maxLength={1_200}
+            rows={3}
+            autoFocus
+            required
+          />
+        </FormField>
+        <FormField label="Test instructions" htmlFor="new-claim-instructions" hint="Optional">
+          <Textarea
+            id="new-claim-instructions"
+            name="suggestedMysteryShop"
+            value={suggestedMysteryShop}
+            onChange={(event) => setSuggestedMysteryShop(event.target.value)}
+            disabled={submitting}
+            maxLength={1_200}
+            rows={4}
+          />
+        </FormField>
+      </div>
+      {state.kind === "failed" ? (
+        <p className="text-destructive mt-3 text-sm" role="alert">
+          {state.message}
+        </p>
+      ) : null}
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <Button type="submit" size="sm" disabled={submitting}>
+          {submitting ? (
+            <LoaderCircleIcon className="animate-spin motion-reduce:animate-none" />
+          ) : null}
+          {submitting ? "Adding" : "Add claim"}
+        </Button>
+        <Button type="button" size="sm" variant="ghost" disabled={submitting} onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+    </form>
+  );
+}
+
 function ClaimTestStatus({ state }: { state: ClaimTestListState }) {
   const label = {
     failed: "Test failed",
@@ -1731,6 +1844,31 @@ function FormField({
       ) : null}
       <div className="mt-1.5">{children}</div>
     </div>
+  );
+}
+
+function validateNewClaim(claim: string, suggestedMysteryShop: string) {
+  if (!claim) return "Claim cannot be empty.";
+  if (Array.from(claim).length > 1_200) return "Claim must be 1,200 characters or fewer.";
+  if (Array.from(suggestedMysteryShop).length > 1_200) {
+    return "Test instructions must be 1,200 characters or fewer.";
+  }
+  return null;
+}
+
+function createClaimError(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  const knownMessages = [
+    ["Claim cannot be empty", "Claim cannot be empty."],
+    ["Claim must be 1200 characters or fewer", "Claim must be 1,200 characters or fewer."],
+    [
+      "Test instructions must be 1200 characters or fewer",
+      "Test instructions must be 1,200 characters or fewer.",
+    ],
+    ["at most 50 custom claims", "This product already has 50 custom claims."],
+  ] as const;
+  return (
+    knownMessages.find(([needle]) => message.includes(needle))?.[1] ?? "Could not add the claim."
   );
 }
 

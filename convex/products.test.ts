@@ -265,7 +265,6 @@ describe("Products registry", () => {
         domain: "example.test",
         claimKey: "claim-0000000000",
         claim: "Edited claim",
-        sourceUrl: "https://example.test/start",
         suggestedMysteryShop: "Test the edited claim.",
       }),
     ).rejects.toThrow("Not authorized");
@@ -299,7 +298,6 @@ describe("Products registry", () => {
         domain: "example.test",
         claimKey: "claim-0000000000",
         claim: "Edited claim",
-        sourceUrl: "https://example.test/start",
         suggestedMysteryShop: "Test the edited claim.",
       }),
     ).rejects.toThrow("Not authorized");
@@ -415,8 +413,10 @@ describe("Products registry", () => {
     const reordered = await admin.query(api.products.getByDomain, { domain: "example.test" });
     const reorderedClaims = reordered?.latestCompletedInvestigation?.result.claims ?? [];
     expect(
-      reorderedClaims.find((claim) => claim.support === sameWordingDifferentEvidence.support)
-        ?.claimKey,
+      reorderedClaims.find(
+        (claim) =>
+          claim.origin === "generated" && claim.support === sameWordingDifferentEvidence.support,
+      )?.claimKey,
     ).toBe(claims[1]?.claimKey);
     expect(reorderedClaims.find((claim) => claim.claim === secondClaim.claim)?.claimKey).toBe(
       claims[3]?.claimKey,
@@ -504,14 +504,14 @@ describe("Products registry", () => {
       domain: "https://www.example.test/account",
       claimKey,
       claim: "A visitor can draft a workspace without signing in.",
-      sourceUrl: "https://forms.example.test/new?mode=anonymous",
       suggestedMysteryShop:
         "Open the starting URL in two tabs, switch between them, and verify whether both drafts remain editable.",
     });
     expect(edited).toMatchObject({
       claimKey,
       claim: "A visitor can draft a workspace without signing in.",
-      sourceUrl: "https://forms.example.test/new?mode=anonymous",
+      sourceUrl: validClaim().sourceUrl,
+      origin: "generated",
       isEdited: true,
       editedAt: NOW.getTime(),
     });
@@ -556,7 +556,6 @@ describe("Products registry", () => {
         domain: "example.test",
         claimKey,
         claim: " ",
-        sourceUrl: "https://example.test/start",
         suggestedMysteryShop: "Test it.",
       }),
     ).rejects.toThrow("Claim cannot be empty");
@@ -565,7 +564,6 @@ describe("Products registry", () => {
         domain: "example.test",
         claimKey,
         claim: "x".repeat(1_201),
-        sourceUrl: "https://example.test/start",
         suggestedMysteryShop: "Test it.",
       }),
     ).rejects.toThrow("Claim must be 1200 characters or fewer");
@@ -574,28 +572,21 @@ describe("Products registry", () => {
         domain: "example.test",
         claimKey,
         claim: "A bounded claim.",
-        sourceUrl: "https://different.test/start",
-        suggestedMysteryShop: "Test it.",
-      }),
-    ).rejects.toThrow("Starting URL must belong to example.test");
-    await expect(
-      admin.mutation(api.products.updateClaim, {
-        domain: "example.test",
-        claimKey,
-        claim: "A bounded claim.",
-        sourceUrl: "https://person:secret@example.test/start",
-        suggestedMysteryShop: "Test it.",
-      }),
-    ).rejects.toThrow("Starting URL must use HTTP or HTTPS without credentials");
-    await expect(
-      admin.mutation(api.products.updateClaim, {
-        domain: "example.test",
-        claimKey,
-        claim: "A bounded claim.",
-        sourceUrl: "https://example.test/start",
         suggestedMysteryShop: "x".repeat(1_201),
       }),
     ).rejects.toThrow("Test instructions must be 1200 characters or fewer");
+    await expect(
+      admin.mutation(api.products.updateClaim, {
+        domain: "example.test",
+        claimKey,
+        claim: "A bounded claim.",
+        suggestedMysteryShop: "   ",
+      }),
+    ).resolves.toMatchObject({
+      origin: "generated",
+      sourceUrl: validClaim().sourceUrl,
+      suggestedMysteryShop: "",
+    });
   });
 
   it("links structured service-account and Lab experiment creation to one Product", async () => {

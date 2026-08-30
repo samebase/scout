@@ -29,11 +29,13 @@ export const productClaimValidator = v.object({
   pageTitle: v.union(v.string(), v.null()),
 });
 
-export const productClaimSnapshotValidator = productClaimValidator.pick(
-  "claim",
-  "sourceUrl",
-  "suggestedMysteryShop",
-);
+export const productClaimSnapshotValidator = v.object({
+  claim: v.string(),
+  suggestedMysteryShop: v.string(),
+  // Older claim test runs included the research URL in their snapshot. Keep
+  // accepting it while new runs store only the editable test inputs.
+  sourceUrl: v.optional(v.string()),
+});
 
 export const productDependencyValidator = v.object({
   name: v.string(),
@@ -80,17 +82,33 @@ export const productInvestigationResultValidator = v.object({
   sources: v.array(productSourceValidator),
 });
 
-export const productClaimPublicValidator = productClaimValidator.extend({
+export const productGeneratedClaimPublicValidator = productClaimValidator.extend({
+  origin: v.literal("generated"),
   claimKey: v.string(),
   isEdited: v.boolean(),
   editedAt: v.union(v.number(), v.null()),
 });
 
-export const productInvestigationResultPublicValidator = productInvestigationResultValidator.extend(
-  {
-    claims: v.array(productClaimPublicValidator),
-  },
+export const productCustomClaimPublicValidator = v.object({
+  origin: v.literal("custom"),
+  claimKey: v.string(),
+  claim: v.string(),
+  category: v.literal("custom"),
+  suggestedMysteryShop: v.string(),
+  isEdited: v.boolean(),
+  editedAt: v.union(v.number(), v.null()),
+});
+
+export const productClaimPublicValidator = v.union(
+  productGeneratedClaimPublicValidator,
+  productCustomClaimPublicValidator,
 );
+
+export const productInvestigationResultPublicValidator = productInvestigationResultValidator
+  .omit("claims")
+  .extend({
+    claims: v.array(productClaimPublicValidator),
+  });
 
 export const productRetrievalMetadataValidator = v.object({
   mapCredits: v.number(),
