@@ -41,6 +41,33 @@ local backend.
 
 Open the local URL printed by Vite.
 
+## Configure managed credentials
+
+Managed service-account registration requires one 32-byte master key in the Convex deployment.
+Generate a canonical base64 value with Node.js:
+
+```sh
+node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('base64'))"
+```
+
+Set the printed value as the Convex environment variable
+`SCOUT_CREDENTIAL_MASTER_KEY_V1`. Omit the value from the command and paste it at the interactive
+prompt so it does not enter shell history:
+
+```sh
+pnpm exec convex env set SCOUT_CREDENTIAL_MASTER_KEY_V1
+```
+
+Store the same value in a separate secured backup. Convex data backups do not include an
+independent copy of this key. Do not replace the `_V1` value after creating credentials: key
+fingerprint checks intentionally stop reads and writes rather than mixing two keys under one
+version.
+
+Before starting a claim test that creates or recovers an account, open the selected Scout and add a
+managed account for the Product domain. Set the exact host where its password form appears. The run
+control enables account creation only when that Scout has a matching prepared account, and the
+backend binds its exact ID to the run.
+
 ## Force worktree mode
 
 Use the normal `pnpm run dev` command in a linked Git worktree. Use the explicit

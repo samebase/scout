@@ -20,10 +20,11 @@ them, and changing the model does not create a new Scout.
 
 Selecting a Scout for a run gives the worker permission to use that Scout's inbox, browser profile,
 and existing accounts for the requested work. When a run requires account creation, the worker may
-choose a username, generate a password, read verification mail, and create or recover one free
-reversible account without requesting another approval. Payment, public posting, destructive
-changes, and other actions outside the run remain forbidden. A CAPTCHA or another human-only gate
-uses the explicit human handoff.
+choose a username, use the exact managed account selected before the run, read verification mail,
+and create or recover one free reversible account without requesting another approval. The worker
+never receives or generates the password. Payment, public posting, destructive changes, and other
+actions outside the run remain forbidden. A CAPTCHA or another human-only gate uses the explicit
+human handoff.
 
 This separation lets a human or a stronger manager choose the claim, worker model, and recovery
 instructions while a cheaper worker performs the browser actions. It also gives a future public
@@ -69,16 +70,20 @@ dependencies, unknowns, and suggested mystery shops. These findings are explicit
 only a later observed journey can establish whether a claim holds. Refreshing an investigation
 preserves the last completed result if the new attempt fails.
 
-`scoutServiceAccounts` records only accounts that exist. Each record stores the Product, Scout,
-account identifier, and timestamped authentication evidence. The evidence describes the last
-check. It does not claim that the login still works.
+`scoutServiceAccounts` stores the Product, Scout, account identifier, optional managed-credential
+metadata, and timestamped authentication evidence. A managed registration is `prepared`: Scout has
+generated a password, but the remote account may still need to be created or have that password set.
+The evidence describes the last real authentication check; it does not claim that the login still
+works. New registrations start with unchecked evidence. The app must record a succeeded or failed
+check only when a browser journey can attach traceable provenance, not from a manual admin
+assertion.
 
-New registrations start with unchecked evidence. The app must record a succeeded or failed check
-only when a browser journey can attach traceable provenance, not from a manual admin assertion.
-
-One Scout can have many service accounts. A run can create, recover, verify, or reuse an account.
-Service accounts belong to the Scout, not to a run or Lab thread. A successful account-creation run
-must record authenticated evidence before it can return a successful verdict.
+One Scout can have many service accounts. Service accounts belong to the Scout, not to a run or Lab
+thread. Before an account-creation run starts, application code validates one exact prepared managed
+account against the selected Scout and Product and stores its ID on the run. Every later generation
+and browser session in that run reuses the same ID. Authentication evidence updates that row only;
+the runtime never discovers an account from an ambient Scout-and-domain match. A successful
+account-creation run must record authenticated evidence before it can return a successful verdict.
 
 An experiment is an admin-only Lab grouping for one Product test. It records a name, one Scout, the
 target Product, one overall objective or claim, and an active or completed status. Its status
@@ -112,10 +117,30 @@ messages.
 The app resolves provider credentials from the bound Scout before a generation starts. This keeps
 identity selection in application code instead of model arguments.
 
-Service-account inventory stores no passwords, tokens, cookies, or live browser sessions. Provider
-systems own credentials and browser state. The inventory stores the account identifier, the Scout
-that owns it, and claim-test provenance for the first recording and latest verification. A missing
-account is not an inventory record.
+Service-account inventory stores no plaintext passwords, tokens, cookies, or live browser sessions.
+It stores the account identifier, the owning Scout, safe managed-credential metadata, and claim-test
+provenance for the first recording and latest verification. A missing account is not an inventory
+record.
+
+Managed passwords are encrypted in a separate Convex table with a deployment key that is not stored
+in the database. Public queries and the model see only safe account metadata. The model is told that
+a managed credential is prepared, along with its account identifier and exact login host, but it
+receives no password, encrypted envelope, or credential reference. It calls
+`fill_account_password` with visible password-field refs. Trusted server code resolves the account
+from the run's exact `serviceAccountId`, verifies the browser is on the configured exact HTTPS login
+host, verifies every ref is a password input, decrypts the password, registers it for output
+redaction, and fills it. The tool returns only a field count; the model submits the form separately.
+The account-recording tool likewise accepts only account access and visible element refs. Trusted
+code derives the expected identifier from the same bound account, verifies the rendered identity,
+and updates only that row.
+
+Firecrawl receives the plaintext during the fill and is part of the trusted infrastructure boundary.
+Managed runs retain their selected persistent profile, operation telemetry, replay, live view, and
+human takeover. Scout's structured operation records contain only refs and character counts, never
+field values, but provider-rendered replay or live view can still capture what the remote browser
+displayed. See
+[Scout managed credentials](./scout-credential-store-decision.md) and
+[Firecrawl limitations](./firecrawl-limitations.md).
 
 ## 2026-08-28 browser-agent experiment
 
@@ -153,4 +178,6 @@ authentication data, and provider environment variables.
 
 Do not add a mission planner, general orchestration framework, or mirrored provider database until
 the claim-test Runs show a concrete need. Runs, generations, browser-session records, and Scout
-service accounts are the current execution model.
+service accounts are the current execution model. Do not add direct account-to-thread links;
+account-creation runs bind one exact service-account ID before execution, and continuations inherit
+that immutable run binding.

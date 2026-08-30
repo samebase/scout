@@ -82,6 +82,92 @@ describe("Lab browser harness", () => {
     expect(deps.createSession).toHaveBeenCalledWith("scout-conrad");
   });
 
+  test("keeps profile and live views available after a sensitive value is registered", async () => {
+    const deps = dependencies();
+    const password = "HackathonPassword!42x";
+    const onLiveViewAvailable = vi.fn(async () => undefined);
+    const onInteractiveLiveViewAvailable = vi.fn(async () => undefined);
+    deps.createSession.mockResolvedValueOnce({
+      sessionId: "session-1",
+      liveViewUrl: "https://liveview.firecrawl.dev/private?signature=read-only",
+      interactiveLiveViewUrl:
+        "https://liveview.firecrawl.dev/private?signature=interactive-control",
+    });
+    const browser = createLabBrowserHarness(
+      {
+        profileName: "scout-conrad",
+        onLiveViewAvailable,
+        onInteractiveLiveViewAvailable,
+      },
+      deps,
+    );
+
+    await browser.open("https://accounts.example.com/signup");
+    browser.actions.registerSensitiveValue(password);
+    await browser.actions.fill("@e2", password);
+
+    deps.executeCode.mockResolvedValueOnce(
+      interaction({ stdout: `raw ${password}; encoded ${encodeURIComponent(password)}` }),
+    );
+    await expect(browser.actions.snapshot()).resolves.toMatchObject({
+      output: "raw [secret redacted]; encoded [secret redacted]",
+    });
+    expect(deps.createSession).toHaveBeenCalledWith("scout-conrad");
+    expect(onLiveViewAvailable).toHaveBeenCalledOnce();
+    expect(onInteractiveLiveViewAvailable).toHaveBeenCalledOnce();
+    expect(browser.tools).not.toHaveProperty("browser_submit_managed_password");
+  });
+
+  test("uses a constant provider error after a sensitive value without disabling later reads", async () => {
+    const deps = dependencies();
+    const password = "NeverEchoThis!42";
+    const browser = createLabBrowserHarness({}, deps);
+    await browser.open("https://accounts.example.com/login");
+    browser.actions.registerSensitiveValue(password);
+    deps.executeCode.mockRejectedValueOnce(new Error(`provider echoed ${password}`));
+
+    await expect(browser.actions.snapshot()).rejects.toThrow(
+      "Browser provider request failed after managed credential use",
+    );
+    deps.executeCode.mockResolvedValueOnce(interaction({ stdout: '- heading "Recovered"' }));
+    await expect(browser.actions.snapshot()).resolves.toMatchObject({
+      output: '- heading "Recovered"',
+    });
+  });
+
+  test("keeps managed credential material out of browser cleanup failures", async () => {
+    const deps = dependencies();
+    const password = "NeverEchoThisDuringClose!42";
+    deps.closeSession
+      .mockRejectedValueOnce(new Error(`provider echoed ${password}`))
+      .mockRejectedValueOnce(new Error(`provider echoed ${encodeURIComponent(password)}`));
+    const browser = createLabBrowserHarness({}, deps);
+    await browser.open("https://accounts.example.com/login");
+    browser.actions.registerSensitiveValue(password);
+    const closeTool = browser.tools.browser_close;
+    if (!closeTool?.execute) throw new Error("Expected browser close tool");
+
+    await expect(
+      closeTool.execute({}, { toolCallId: "tool-close", messages: [], context: undefined }),
+    ).rejects.toThrow("Managed browser cleanup failed");
+    await expect(browser.close()).rejects.toThrow("Managed browser cleanup failed");
+    await expect(browser.close()).rejects.toThrow("Managed browser cleanup failed");
+
+    expect(deps.closeSession).toHaveBeenCalledTimes(2);
+    const failures = await Promise.all(
+      [browser.close(), browser.close()].map(async (closing) => {
+        try {
+          await closing;
+          return "";
+        } catch (error) {
+          return error instanceof Error ? error.message : String(error);
+        }
+      }),
+    );
+    expect(failures.join(" ")).not.toContain(password);
+    expect(failures.join(" ")).not.toContain(encodeURIComponent(password));
+  });
+
   test("publishes a live view outside model-visible tool output and clears it after close", async () => {
     const deps = dependencies();
     const liveViewUrl = "https://liveview.firecrawl.dev/private?signature=read-only";

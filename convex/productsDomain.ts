@@ -20,7 +20,7 @@ export function requiredProductText(value: string, label: string, maximumLength:
   return trimmed;
 }
 
-export function canonicalProductDomain(value: string, label = "Product URL") {
+function parseDomainInput(value: string, label: string) {
   const input = requiredProductText(value, label, MAX_PRODUCT_URL_INPUT_LENGTH);
   let parsed: URL;
   try {
@@ -36,11 +36,7 @@ export function canonicalProductDomain(value: string, label = "Product URL") {
     throw new Error(`${label} must not include credentials`);
   }
 
-  const parsedHostname = parsed.hostname.toLowerCase().replace(/\.$/, "");
-  const hostname =
-    parsedHostname.startsWith("www.") && parsedHostname.split(".").length > 2
-      ? parsedHostname.slice(4)
-      : parsedHostname;
+  const hostname = parsed.hostname.toLowerCase().replace(/\.$/, "");
   const labels = hostname.split(".");
   const validLabels = labels.every(
     (domainLabel) => domainLabel.length <= 63 && DNS_LABEL_PATTERN.test(domainLabel),
@@ -53,6 +49,27 @@ export function canonicalProductDomain(value: string, label = "Product URL") {
     !validLabels
   ) {
     throw new Error(`${label} must be a valid hostname or URL`);
+  }
+  return { hostname, parsed };
+}
+
+export function canonicalProductDomain(value: string, label = "Product URL") {
+  const { hostname: parsedHostname } = parseDomainInput(value, label);
+  return parsedHostname.startsWith("www.") && parsedHostname.split(".").length > 2
+    ? parsedHostname.slice(4)
+    : parsedHostname;
+}
+
+export function canonicalCredentialHost(value: string, label = "Login host") {
+  const { hostname, parsed } = parseDomainInput(value, label);
+  if (
+    parsed.protocol !== "https:" ||
+    parsed.port !== "" ||
+    parsed.pathname !== "/" ||
+    parsed.search !== "" ||
+    parsed.hash !== ""
+  ) {
+    throw new Error(`${label} must be an HTTPS hostname without a path, port, query, or fragment`);
   }
   return hostname;
 }

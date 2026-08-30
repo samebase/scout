@@ -207,6 +207,66 @@ async function insertCompletedInvestigation(
   });
 }
 
+async function insertPreparedManagedAccount(
+  backend: TestBackend,
+  args: {
+    scoutId: Id<"scouts">;
+    productId: Id<"products">;
+    identifier?: string;
+    credentialHost?: string;
+  },
+) {
+  return await backend.run(async (ctx) => {
+    const product = await ctx.db.get("products", args.productId);
+    if (!product) throw new Error("Expected a product");
+    const createdAt = Date.now();
+    const identifier = args.identifier ?? "conrad@example.test";
+    const credentialHost = args.credentialHost ?? "accounts.example.test";
+    const keyFingerprint = "test-key-fingerprint";
+    const serviceAccountId = await ctx.db.insert("scoutServiceAccounts", {
+      scoutId: args.scoutId,
+      productId: args.productId,
+      serviceName: product.name,
+      serviceDomain: product.domain,
+      identifier,
+      authenticationEvidence: { kind: "none" },
+      managedCredential: {
+        kind: "managed",
+        status: "prepared",
+        credentialHost,
+        createdAt,
+      },
+    });
+    const configuredKey = await ctx.db
+      .query("scoutCredentialKeys")
+      .withIndex("by_key_version", (query) => query.eq("keyVersion", 1))
+      .unique();
+    if (!configuredKey) {
+      await ctx.db.insert("scoutCredentialKeys", {
+        keyVersion: 1,
+        keyFingerprint,
+        createdAt,
+      });
+    }
+    await ctx.db.insert("scoutManagedCredentials", {
+      credentialReference: crypto.randomUUID(),
+      serviceAccountId,
+      scoutId: args.scoutId,
+      formatVersion: 1,
+      algorithm: "aes-256-gcm",
+      keyVersion: 1,
+      keyFingerprint,
+      credentialHost,
+      identifier,
+      nonce: "test-nonce",
+      ciphertext: "test-ciphertext",
+      authenticationTag: "test-authentication-tag",
+      createdAt,
+    });
+    return serviceAccountId;
+  });
+}
+
 async function startClaimTestWithBrowser(
   backend: TestBackend,
   userId: Id<"users">,
@@ -410,7 +470,7 @@ describe("Claim tests", () => {
       suggestedMysteryShop: "",
     });
 
-    const [customPrompt, generatedPrompt] = await Promise.all([
+    const [customPrompt, generatedPrompt, accountPrompt] = await Promise.all([
       admin.query(api.claimTests.promptPreview, {
         domain: "example.test",
         claimKey: customClaimKey,
@@ -420,6 +480,11 @@ describe("Claim tests", () => {
         domain: "example.test",
         claimKey: generatedClaimKey,
         accountCreation: "not_requested",
+      }),
+      admin.query(api.claimTests.promptPreview, {
+        domain: "example.test",
+        claimKey: customClaimKey,
+        accountCreation: "required",
       }),
     ]);
     expect(customPrompt).toContain("Name: Example");
@@ -432,6 +497,8 @@ describe("Claim tests", () => {
     expect(customPrompt).not.toContain("https://example.test/features");
     expect(generatedPrompt).toContain("UNTRUSTED RESEARCH CONTEXT");
     expect(generatedPrompt).toContain("https://example.test/features");
+    expect(accountPrompt).toContain("account already bound to the Run");
+    expect(accountPrompt).toContain("do not pass an account identifier to the recording tool");
 
     const firstRun = await admin.mutation(api.claimTests.start, {
       domain: "example.test",
@@ -759,7 +826,7 @@ describe("Claim tests", () => {
     ).resolves.toMatchObject({ created: true });
   });
 
-  it("continues one run on the same thread with ordered persistent-profile sessions", async () => {
+  it("reuses one bound managed account across persistent-profile sessions with replay and live view", async () => {
     const { backend, userId, admin } = await authenticatedBackend();
     const scoutId = await insertScout(backend);
     const snapshot = await insertCompletedInvestigation(backend, {
@@ -768,9 +835,14 @@ describe("Claim tests", () => {
     });
     const claimKey = snapshot.claimKeys[0];
     if (!claimKey) throw new Error("Expected a claim key");
+    const serviceAccountId = await insertPreparedManagedAccount(backend, {
+      scoutId,
+      productId: snapshot.productId,
+    });
     const runConfig = {
       browserProfile: { kind: "scout" as const, scoutId },
-      accountCreation: "not_requested" as const,
+      accountCreation: "required" as const,
+      serviceAccountId,
     };
     const started = await admin.mutation(api.claimTests.start, {
       domain: "example.test",
@@ -782,6 +854,11 @@ describe("Claim tests", () => {
       return run ? await ctx.db.get("scoutLabGenerations", run.state.generationId) : null;
     });
     if (!firstGeneration) throw new Error("Expected the first generation");
+    await expect(
+      backend.query(internal.claimTests.generationContext, {
+        promptMessageId: firstGeneration.promptMessageId,
+      }),
+    ).resolves.toMatchObject({ serviceAccountId });
     const firstRegistered = await backend.mutation(internal.claimTests.setBrowserSession, {
       promptMessageId: firstGeneration.promptMessageId,
       providerSessionId: "continued-session-1",
@@ -811,11 +888,24 @@ describe("Claim tests", () => {
       async (ctx) => await ctx.db.get("scoutLabGenerations", continued.generationId),
     );
     if (!secondGeneration) throw new Error("Expected the continued generation");
+    await expect(
+      backend.query(internal.claimTests.generationContext, {
+        promptMessageId: secondGeneration.promptMessageId,
+      }),
+    ).resolves.toMatchObject({ serviceAccountId });
     const secondRegistered = await backend.mutation(internal.claimTests.setBrowserSession, {
       promptMessageId: secondGeneration.promptMessageId,
       providerSessionId: "continued-session-2",
     });
     if (!secondRegistered.browserSessionId) throw new Error("Expected the second session");
+    const liveViewUrl = "https://liveview.firecrawl.dev/private?signature=managed-session";
+    await backend.mutation(internal.claimTests.setLiveView, {
+      sessionId: secondRegistered.browserSessionId,
+      liveViewUrl,
+    });
+    await expect(
+      admin.query(api.claimTests.liveView, { sessionId: secondRegistered.browserSessionId }),
+    ).resolves.toEqual({ url: liveViewUrl });
     await backend.mutation(internal.claimTests.prepareBrowserOperation, {
       sessionId: secondRegistered.browserSessionId,
       toolCallId: "continued-open",
@@ -889,7 +979,7 @@ describe("Claim tests", () => {
     await backend.mutation(internal.scout.lab.completeGeneration, {
       promptMessageId: secondGeneration.promptMessageId,
       usage: { totalTokens: 20 },
-      claimTestOutcome: { verdict: "supported" },
+      claimTestOutcome: { verdict: "inconclusive" },
     });
     const testedAgain = await admin.mutation(api.claimTests.start, {
       domain: "example.test",
@@ -991,11 +1081,16 @@ describe("Claim tests", () => {
     });
     const claimKey = snapshot.claimKeys[0];
     if (!claimKey) throw new Error("Expected a claim key");
+    const serviceAccountId = await insertPreparedManagedAccount(backend, {
+      scoutId,
+      productId: snapshot.productId,
+    });
     const started = await admin.mutation(api.claimTests.start, {
       domain: "example.test",
       claimKey,
       browserProfile: { kind: "scout", scoutId },
       accountCreation: "required",
+      serviceAccountId,
     });
     const generation = await backend.run(async (ctx) => {
       const run = await ctx.db.get("claimTestRuns", started.runId);
@@ -1023,7 +1118,34 @@ describe("Claim tests", () => {
     });
   });
 
-  it("records a required account idempotently with verified run and session provenance", async () => {
+  it("rejects a managed account that is not owned by the selected Scout", async () => {
+    const { backend, userId, admin } = await authenticatedBackend();
+    const selectedScoutId = await insertScout(backend, "selected");
+    const otherScoutId = await insertScout(backend, "other");
+    const snapshot = await insertCompletedInvestigation(backend, {
+      userId,
+      claims: [claim("account creation")],
+    });
+    const claimKey = snapshot.claimKeys[0];
+    if (!claimKey) throw new Error("Expected a claim key");
+    const otherServiceAccountId = await insertPreparedManagedAccount(backend, {
+      scoutId: otherScoutId,
+      productId: snapshot.productId,
+      identifier: "other@example.test",
+    });
+
+    await expect(
+      admin.mutation(api.claimTests.start, {
+        domain: "example.test",
+        claimKey,
+        browserProfile: { kind: "scout", scoutId: selectedScoutId },
+        accountCreation: "required",
+        serviceAccountId: otherServiceAccountId,
+      }),
+    ).rejects.toThrow("does not match this run");
+  });
+
+  it("records only the Run-bound account with server-resolved identity evidence", async () => {
     const { backend, userId, admin } = await authenticatedBackend();
     const scoutId = await insertScout(backend);
     const snapshot = await insertCompletedInvestigation(backend, {
@@ -1032,6 +1154,15 @@ describe("Claim tests", () => {
     });
     const claimKey = snapshot.claimKeys[0];
     if (!claimKey) throw new Error("Expected a claim key");
+    const serviceAccountId = await insertPreparedManagedAccount(backend, {
+      scoutId,
+      productId: snapshot.productId,
+    });
+    const otherServiceAccountId = await insertPreparedManagedAccount(backend, {
+      scoutId,
+      productId: snapshot.productId,
+      identifier: "other@example.test",
+    });
     await expect(
       admin.mutation(api.claimTests.start, {
         domain: "example.test",
@@ -1040,12 +1171,21 @@ describe("Claim tests", () => {
         accountCreation: "required",
       }),
     ).rejects.toThrow("Account creation requires a persistent Scout browser profile");
+    await expect(
+      admin.mutation(api.claimTests.start, {
+        domain: "example.test",
+        claimKey,
+        browserProfile: { kind: "scout", scoutId },
+        accountCreation: "required",
+      }),
+    ).rejects.toThrow("requires a prepared managed service account");
 
     const started = await admin.mutation(api.claimTests.start, {
       domain: "example.test",
       claimKey,
       browserProfile: { kind: "scout", scoutId },
       accountCreation: "required",
+      serviceAccountId,
     });
     const generation = await backend.run(async (ctx) => {
       const run = await ctx.db.get("claimTestRuns", started.runId);
@@ -1060,7 +1200,6 @@ describe("Claim tests", () => {
     await expect(
       backend.mutation(internal.scout.serviceAccounts.upsertFromClaimTest, {
         promptMessageId: generation.promptMessageId,
-        identifier: "conrad@example.test",
         ...ACCOUNT_EVIDENCE,
       }),
     ).rejects.toThrow("successful product-page observation");
@@ -1080,14 +1219,12 @@ describe("Claim tests", () => {
     await expect(
       backend.mutation(internal.scout.serviceAccounts.upsertFromClaimTest, {
         promptMessageId: generation.promptMessageId,
-        identifier: "conrad@example.test",
         ...ACCOUNT_EVIDENCE,
       }),
     ).rejects.toThrow("not from the latest product page");
     await expect(
       backend.mutation(internal.scout.serviceAccounts.upsertFromClaimTest, {
         promptMessageId: generation.promptMessageId,
-        identifier: "conrad@example.test",
         ...ACCOUNT_EVIDENCE,
         observedUrl: "https://example.test/account",
         visibleSessionControl: "Follow",
@@ -1096,7 +1233,6 @@ describe("Claim tests", () => {
     await expect(
       backend.mutation(internal.scout.serviceAccounts.upsertFromClaimTest, {
         promptMessageId: generation.promptMessageId,
-        identifier: "conrad@example.test",
         ...ACCOUNT_EVIDENCE,
         observedUrl: "https://example.test/account",
         visibleIdentity: "Signed in as conrad@example.test-helper",
@@ -1105,7 +1241,6 @@ describe("Claim tests", () => {
     await expect(
       backend.mutation(internal.scout.serviceAccounts.upsertFromClaimTest, {
         promptMessageId: generation.promptMessageId,
-        identifier: "conrad@example.test",
         ...ACCOUNT_EVIDENCE,
         observedUrl: "https://example.test/account",
         visibleSessionControl: "Sign out guide",
@@ -1127,34 +1262,31 @@ describe("Claim tests", () => {
 
     const first = await backend.mutation(internal.scout.serviceAccounts.upsertFromClaimTest, {
       promptMessageId: generation.promptMessageId,
-      identifier: "conrad@example.test",
       ...ACCOUNT_EVIDENCE,
     });
-    expect(first.created).toBe(true);
+    expect(first).toEqual({ serviceAccountId, created: false });
     await expect(
       backend.mutation(internal.scout.serviceAccounts.upsertFromClaimTest, {
         promptMessageId: generation.promptMessageId,
-        identifier: "conrad@example.test",
         ...ACCOUNT_EVIDENCE,
       }),
-    ).resolves.toEqual({ serviceAccountId: first.serviceAccountId, created: false });
+    ).resolves.toEqual({ serviceAccountId, created: false });
     await expect(
       backend.mutation(internal.scout.serviceAccounts.upsertFromClaimTest, {
         promptMessageId: generation.promptMessageId,
-        identifier: "other@example.test",
         ...ACCOUNT_EVIDENCE,
         visibleIdentity: "Signed in as other@example.test",
       }),
-    ).rejects.toThrow("only one service account");
-    await expect(
-      backend.run(async (ctx) => ({
-        account: await ctx.db.get("scoutServiceAccounts", first.serviceAccountId),
-        count: (await ctx.db.query("scoutServiceAccounts").collect()).length,
-        run: await ctx.db.get("claimTestRuns", started.runId),
-      })),
-    ).resolves.toMatchObject({
-      count: 1,
-      run: { serviceAccountId: first.serviceAccountId },
+    ).rejects.toThrow("does not contain the exact identifier");
+    const recordedAccounts = await backend.run(async (ctx) => ({
+      account: await ctx.db.get("scoutServiceAccounts", serviceAccountId),
+      otherAccount: await ctx.db.get("scoutServiceAccounts", otherServiceAccountId),
+      count: (await ctx.db.query("scoutServiceAccounts").collect()).length,
+      run: await ctx.db.get("claimTestRuns", started.runId),
+    }));
+    expect(recordedAccounts).toMatchObject({
+      count: 2,
+      run: { serviceAccountId },
       account: {
         scoutId,
         productId: snapshot.productId,
@@ -1177,11 +1309,18 @@ describe("Claim tests", () => {
           ...ACCOUNT_EVIDENCE,
         },
       },
+      otherAccount: {
+        _id: otherServiceAccountId,
+        identifier: "other@example.test",
+        authenticationEvidence: { kind: "none" },
+      },
     });
+    expect(recordedAccounts.otherAccount?.firstRecordedByClaimTest).toBeUndefined();
+    expect(recordedAccounts.otherAccount?.lastVerifiedByClaimTest).toBeUndefined();
     await expect(
       admin.query(api.scout.serviceAccounts.forClaimTestRun, { runId: started.runId }),
     ).resolves.toMatchObject({
-      _id: first.serviceAccountId,
+      _id: serviceAccountId,
       identifier: "conrad@example.test",
       firstRecordedByClaimTest: {
         runId: started.runId,
@@ -1210,7 +1349,6 @@ describe("Claim tests", () => {
     await expect(
       backend.mutation(internal.scout.serviceAccounts.upsertFromClaimTest, {
         promptMessageId: forbiddenGeneration.promptMessageId,
-        identifier: "conrad@example.test",
         ...ACCOUNT_EVIDENCE,
       }),
     ).rejects.toThrow("cannot record a created service account");

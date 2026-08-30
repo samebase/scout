@@ -1,12 +1,13 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import { SCOUT_AGENT_INSTRUCTIONS } from "./agent";
 import {
-  assertProductBrowserUrl,
+  assertCredentialBrowserUrl,
   closeAgentMailBestEffort,
   closeGenerationBrowser,
   createStreamErrorCapture,
   EXPIRED_HUMAN_HANDOFF_RESULT,
   generationFailureDetails,
+  managedCredentialInstructions,
   persistExpiredHumanHandoffResult,
   scoutWebsiteIdentityInstructions,
 } from "./labGeneration";
@@ -69,21 +70,42 @@ describe("Scout website identity instructions", () => {
   });
 });
 
-describe("account password product boundary", () => {
-  it.each(["https://github.com/signup", "https://gist.github.com/login"])(
-    "accepts the tested product domain: %s",
-    (url) => {
-      expect(() => assertProductBrowserUrl(url, "github.com")).not.toThrow();
-    },
-  );
+describe("account password host boundary", () => {
+  it("accepts only the exact configured HTTPS login host", () => {
+    expect(() =>
+      assertCredentialBrowserUrl("https://accounts.example.com/signup", "accounts.example.com"),
+    ).not.toThrow();
+  });
 
   it.each([
-    "http://github.com/signup",
-    "https://github.com.evil.test/signup",
-    "https://name:password@github.com/signup",
+    "http://accounts.example.com/signup",
+    "https://sub.accounts.example.com/signup",
+    "https://accounts.example.com:8443/signup",
+    "https://name:password@accounts.example.com/signup",
     "not a URL",
   ])("rejects an unsafe credential-entry URL: %s", (url) => {
-    expect(() => assertProductBrowserUrl(url, "github.com")).toThrow();
+    expect(() => assertCredentialBrowserUrl(url, "accounts.example.com")).toThrow();
+  });
+});
+
+describe("managed credential instructions", () => {
+  it("exposes only safe account metadata and the ref-based password tool", () => {
+    const instructions = managedCredentialInstructions({
+      credentialHost: "accounts.example.com",
+      identifier: "conrad@example.test",
+    });
+
+    expect(instructions).toContain("accounts.example.com");
+    expect(instructions).toContain("conrad@example.test");
+    expect(instructions).toContain("managed credential capability");
+    expect(instructions).toContain("exposes no password value");
+    expect(instructions).toContain("fill_account_password with its element ref");
+    expect(instructions).toContain("Submit the form separately");
+    expect(instructions).not.toContain("credentialReference");
+  });
+
+  it("forbids password creation when no managed credential exists", () => {
+    expect(managedCredentialInstructions(null)).toContain("Do not create an account");
   });
 });
 

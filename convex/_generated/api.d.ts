@@ -43,6 +43,7 @@ import type * as scout_accountPasswordTool from "../scout/accountPasswordTool.js
 import type * as scout_agent from "../scout/agent.js";
 import type * as scout_browserTelemetry from "../scout/browserTelemetry.js";
 import type * as scout_claimTestLoop from "../scout/claimTestLoop.js";
+import type * as scout_credentialCrypto from "../scout/credentialCrypto.js";
 import type * as scout_humanHandoffTool from "../scout/humanHandoffTool.js";
 import type * as scout_lab from "../scout/lab.js";
 import type * as scout_labAccess from "../scout/labAccess.js";
@@ -55,6 +56,8 @@ import type * as scout_lib_redaction from "../scout/lib/redaction.js";
 import type * as scout_model from "../scout/model.js";
 import type * as scout_models from "../scout/models.js";
 import type * as scout_scouts from "../scout/scouts.js";
+import type * as scout_serviceAccountCredentialActions from "../scout/serviceAccountCredentialActions.js";
+import type * as scout_serviceAccountCredentials from "../scout/serviceAccountCredentials.js";
 import type * as scout_serviceAccountTool from "../scout/serviceAccountTool.js";
 import type * as scout_serviceAccounts from "../scout/serviceAccounts.js";
 
@@ -100,6 +103,7 @@ declare const fullApi: ApiFromModules<{
   "scout/agent": typeof scout_agent;
   "scout/browserTelemetry": typeof scout_browserTelemetry;
   "scout/claimTestLoop": typeof scout_claimTestLoop;
+  "scout/credentialCrypto": typeof scout_credentialCrypto;
   "scout/humanHandoffTool": typeof scout_humanHandoffTool;
   "scout/lab": typeof scout_lab;
   "scout/labAccess": typeof scout_labAccess;
@@ -112,6 +116,8 @@ declare const fullApi: ApiFromModules<{
   "scout/model": typeof scout_model;
   "scout/models": typeof scout_models;
   "scout/scouts": typeof scout_scouts;
+  "scout/serviceAccountCredentialActions": typeof scout_serviceAccountCredentialActions;
+  "scout/serviceAccountCredentials": typeof scout_serviceAccountCredentials;
   "scout/serviceAccountTool": typeof scout_serviceAccountTool;
   "scout/serviceAccounts": typeof scout_serviceAccounts;
 }>;

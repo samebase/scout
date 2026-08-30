@@ -181,7 +181,12 @@ function redactSensitiveValues(value: string, sensitiveValues: ReadonlySet<strin
   for (const sensitiveValue of [...sensitiveValues].sort(
     (left, right) => right.length - left.length,
   )) {
+    if (!sensitiveValue) continue;
     redacted = redacted.replaceAll(sensitiveValue, "[secret redacted]");
+    const encoded = encodeURIComponent(sensitiveValue);
+    if (encoded !== sensitiveValue) {
+      redacted = redacted.replaceAll(encoded, "[secret redacted]");
+    }
   }
   return redactProviderUrls(redacted);
 }
@@ -361,13 +366,21 @@ export function createLabBrowserHarness(
         throw new Error("Open a browser session before using it");
       }
       const command = shellCommand(parts);
-      const interaction = await dependencies.executeCode(
-        sessionId,
-        command,
-        timeoutSeconds,
-        "bash",
-        operation,
-      );
+      let interaction: BrowserInteraction;
+      try {
+        interaction = await dependencies.executeCode(
+          sessionId,
+          command,
+          timeoutSeconds,
+          "bash",
+          operation,
+        );
+      } catch (error) {
+        if (sensitiveValues.size > 0) {
+          throw new Error("Browser provider request failed after managed credential use");
+        }
+        throw error;
+      }
       return browserOutput(interaction, sensitiveValues);
     });
   }
@@ -500,7 +513,15 @@ export function createLabBrowserHarness(
       if (captureOperations) {
         return await runInstrumentedMutation(parts, action, toolCallId);
       }
-      const interaction = await dependencies.executeCode(sessionId, code, 60, "bash", "mutate");
+      let interaction: BrowserInteraction;
+      try {
+        interaction = await dependencies.executeCode(sessionId, code, 60, "bash", "mutate");
+      } catch (error) {
+        if (sensitiveValues.size > 0) {
+          throw new Error("Browser provider request failed after managed credential use");
+        }
+        throw error;
+      }
       return browserMutationOutput(interaction, sensitiveValues);
     });
   }
@@ -588,10 +609,12 @@ export function createLabBrowserHarness(
         await options.onSessionClosed?.(result);
         await options.onLiveViewClosed?.();
       } catch (error) {
+        const reportedError =
+          sensitiveValues.size > 0 ? new Error("Managed browser cleanup failed") : error;
         if (closeAttempts >= MAX_BROWSER_CLOSE_ATTEMPTS) {
-          terminalCloseFailure = { error };
+          terminalCloseFailure = { error: reportedError };
         }
-        throw error;
+        throw reportedError;
       }
       sessionId = undefined;
       stopResult = result;
