@@ -6,27 +6,10 @@ import {
   internalQuery,
   mutation,
   query,
-  type MutationCtx,
   type QueryCtx,
 } from "./_generated/server";
 import { requireAppUser } from "./access";
 import { productResearchAgent } from "./productResearchAgent";
-import {
-  applyClaimOverride,
-  claimSnapshot,
-  claimSnapshotsMatch,
-  customClaimRouteKey,
-  editedTestInstructions,
-  findCurrentProductClaim,
-  findProductByDomain,
-  MAX_CUSTOM_CLAIMS_PER_PRODUCT,
-  MAX_EDITED_CLAIM_LENGTH,
-  projectCustomClaim,
-  projectCustomClaimsForUser,
-  projectClaimsForUser,
-  requiredEditedClaimText,
-  routeClaimKey,
-} from "./productClaimEdits";
 import { productInvestigationWorkflow } from "./productInvestigationWorkflow";
 import {
   canonicalProductDomain,
@@ -37,14 +20,10 @@ import {
   requiredProductText,
 } from "./productsDomain";
 import {
-  LEGACY_PRODUCT_INVESTIGATION_MODEL,
-  LEGACY_PRODUCT_INVESTIGATION_PROVIDER,
   PRODUCT_INVESTIGATION_EFFORT,
   PRODUCT_INVESTIGATION_MAX_CREDITS,
   PRODUCT_INVESTIGATION_MODEL,
   PRODUCT_INVESTIGATION_PROVIDER,
-  productClaimPublicValidator,
-  productClaimRouteValidator,
   productInvestigationResultValidator,
   productListItemValidator,
   productRetrievalMetadataValidator,
@@ -55,37 +34,11 @@ import type { SelectableScoutModel } from "./scout/models";
 
 const MAX_ACCOUNTS_PER_PRODUCT = 200;
 const MAX_EXPERIMENTS_PER_PRODUCT = 100;
-const SYNC_BATCH_SIZE = 25;
 const PRODUCT_RESEARCH_WATCHDOG_MS = 4 * 60 * 1_000;
-
-const syncCursorValidator = v.object({
-  phase: v.union(v.literal("accounts"), v.literal("experiments")),
-  cursor: v.union(v.string(), v.null()),
-});
-
-type SyncCursor =
-  | { phase: "accounts"; cursor: string | null }
-  | { phase: "experiments"; cursor: string | null };
-
-type SyncBatchResult = {
-  accountsLinked: number;
-  experimentsLinked: number;
-  skipped: number;
-  next: SyncCursor | null;
-};
 
 type AuthenticationEvidence = "none" | "succeeded" | "failed";
 
-type CurrentInvestigation = Extract<
-  Doc<"productInvestigations">,
-  { provider: typeof PRODUCT_INVESTIGATION_PROVIDER }
->;
-
-type LegacyInvestigation = Extract<
-  Doc<"productInvestigations">,
-  { provider: typeof LEGACY_PRODUCT_INVESTIGATION_PROVIDER }
->;
-
+type CurrentInvestigation = Doc<"productInvestigations">;
 type RunningCurrentInvestigation = Extract<CurrentInvestigation, { status: "running" }>;
 
 function routeProductDomain(value: string) {
@@ -94,28 +47,6 @@ function routeProductDomain(value: string) {
   } catch {
     return null;
   }
-}
-
-async function projectInvestigationResult(
-  ctx: Pick<QueryCtx, "db">,
-  userId: Id<"users">,
-  investigation: CompletedInvestigation,
-) {
-  return {
-    ...investigation.result,
-    claims: await projectClaimsForUser(ctx, {
-      userId,
-      productId: investigation.productId,
-      investigationId: investigation._id,
-      claims: investigation.result.claims,
-    }),
-  };
-}
-
-function isCurrentInvestigation(
-  investigation: Doc<"productInvestigations">,
-): investigation is CurrentInvestigation {
-  return investigation.provider === PRODUCT_INVESTIGATION_PROVIDER;
 }
 
 function currentInvestigationStage(
@@ -165,117 +96,40 @@ function currentInvestigationPublicBase(investigation: CurrentInvestigation): {
   };
 }
 
-function legacyInvestigationPublicBase(investigation: LegacyInvestigation): {
-  _id: Id<"productInvestigations">;
-  requestedAt: number;
-  provider: typeof LEGACY_PRODUCT_INVESTIGATION_PROVIDER;
-  requestedModel: typeof LEGACY_PRODUCT_INVESTIGATION_MODEL;
-  effort: typeof PRODUCT_INVESTIGATION_EFFORT;
-  maxCredits: number;
-} {
-  return {
-    _id: investigation._id,
-    requestedAt: investigation.requestedAt,
-    provider: LEGACY_PRODUCT_INVESTIGATION_PROVIDER,
-    requestedModel: LEGACY_PRODUCT_INVESTIGATION_MODEL,
-    effort: investigation.effort,
-    maxCredits: investigation.maxCredits,
-  };
-}
-
 type CompletedInvestigation = Extract<Doc<"productInvestigations">, { status: "completed" }>;
 
-async function projectCompletedInvestigation(
-  ctx: Pick<QueryCtx, "db">,
-  userId: Id<"users">,
-  investigation: CompletedInvestigation,
-) {
-  const result = await projectInvestigationResult(ctx, userId, investigation);
-  if (investigation.provider === PRODUCT_INVESTIGATION_PROVIDER) {
-    return {
-      ...currentInvestigationPublicBase(investigation),
-      status: investigation.status,
-      startedAt: investigation.startedAt,
-      completedAt: investigation.completedAt,
-      providerJobId: null,
-      creditsUsed: investigation.retrieval.totalCredits,
-      reportedModel: null,
-      providerExpiresAt: null,
-      result,
-    };
-  }
+function projectCompletedInvestigation(investigation: CompletedInvestigation) {
   return {
-    ...legacyInvestigationPublicBase(investigation),
+    ...currentInvestigationPublicBase(investigation),
     status: investigation.status,
     startedAt: investigation.startedAt,
     completedAt: investigation.completedAt,
-    providerJobId: investigation.providerJobId,
-    creditsUsed: investigation.creditsUsed,
-    reportedModel: investigation.reportedModel ?? null,
-    providerExpiresAt: investigation.providerExpiresAt ?? null,
-    result,
+    creditsUsed: investigation.retrieval.totalCredits,
+    result: investigation.result,
   };
 }
 
-async function projectInvestigation(
-  ctx: Pick<QueryCtx, "db">,
-  userId: Id<"users">,
-  investigation: Doc<"productInvestigations">,
-) {
+function projectInvestigation(investigation: CurrentInvestigation) {
   switch (investigation.status) {
     case "queued":
-      return investigation.provider === PRODUCT_INVESTIGATION_PROVIDER
-        ? { ...currentInvestigationPublicBase(investigation), status: investigation.status }
-        : { ...legacyInvestigationPublicBase(investigation), status: investigation.status };
+      return { ...currentInvestigationPublicBase(investigation), status: investigation.status };
     case "running":
-      if (investigation.provider === PRODUCT_INVESTIGATION_PROVIDER) {
-        return {
-          ...currentInvestigationPublicBase(investigation),
-          status: investigation.status,
-          startedAt: investigation.startedAt,
-          stage: currentInvestigationStage(investigation),
-          providerJobId: null,
-          pollCount: 0,
-          creditsUsed: investigation.retrieval?.totalCredits ?? null,
-          reportedModel: null,
-          providerExpiresAt: null,
-        };
-      }
       return {
-        ...legacyInvestigationPublicBase(investigation),
+        ...currentInvestigationPublicBase(investigation),
         status: investigation.status,
         startedAt: investigation.startedAt,
-        providerJobId: investigation.providerJobId,
-        pollCount: investigation.pollCount,
-        creditsUsed: investigation.creditsUsed ?? null,
-        reportedModel: investigation.reportedModel ?? null,
-        providerExpiresAt: investigation.providerExpiresAt ?? null,
+        stage: currentInvestigationStage(investigation),
+        creditsUsed: investigation.retrieval?.totalCredits ?? null,
       };
     case "completed":
-      return await projectCompletedInvestigation(ctx, userId, investigation);
+      return projectCompletedInvestigation(investigation);
     case "failed":
-      if (investigation.provider === PRODUCT_INVESTIGATION_PROVIDER) {
-        return {
-          ...currentInvestigationPublicBase(investigation),
-          status: investigation.status,
-          startedAt: investigation.startedAt ?? null,
-          failedAt: investigation.failedAt,
-          providerJobId: null,
-          creditsUsed: investigation.retrieval?.totalCredits ?? null,
-          reportedModel: null,
-          providerExpiresAt: null,
-          failure: investigation.failure,
-        };
-      }
       return {
-        ...legacyInvestigationPublicBase(investigation),
+        ...currentInvestigationPublicBase(investigation),
         status: investigation.status,
         startedAt: investigation.startedAt ?? null,
         failedAt: investigation.failedAt,
-        providerJobId: investigation.providerJobId ?? null,
-        creditsUsed: investigation.creditsUsed ?? null,
-        reportedModel: investigation.reportedModel ?? null,
-        providerExpiresAt: investigation.providerExpiresAt ?? null,
+        creditsUsed: investigation.retrieval?.totalCredits ?? null,
         failure: investigation.failure,
       };
   }
@@ -294,13 +148,10 @@ function latestAuthenticationEvidence(accounts: Doc<"scoutServiceAccounts">[]) {
 }
 
 async function projectProduct(ctx: QueryCtx, product: Doc<"products">, userId: Id<"users">) {
-  const [accounts, customClaims] = await Promise.all([
-    ctx.db
-      .query("scoutServiceAccounts")
-      .withIndex("by_product_id", (q) => q.eq("productId", product._id))
-      .take(MAX_ACCOUNTS_PER_PRODUCT),
-    projectCustomClaimsForUser(ctx, { userId, productId: product._id }),
-  ]);
+  const accounts = await ctx.db
+    .query("scoutServiceAccounts")
+    .withIndex("by_product_id", (q) => q.eq("productId", product._id))
+    .take(MAX_ACCOUNTS_PER_PRODUCT);
   const accountsByScout = new Map<Id<"scouts">, Doc<"scoutServiceAccounts">[]>();
   for (const account of accounts) {
     const scoutAccounts = accountsByScout.get(account.scoutId) ?? [];
@@ -345,99 +196,15 @@ async function projectProduct(ctx: QueryCtx, product: Doc<"products">, userId: I
     name: product.name,
     domain: product.domain,
     primaryUrl: product.primaryUrl,
-    customClaims,
     scoutAccess,
     experimentCount: experiments.length,
     latestInvestigation:
-      latest && latest.productId === product._id
-        ? await projectInvestigation(ctx, userId, latest)
-        : null,
+      latest && latest.productId === product._id ? projectInvestigation(latest) : null,
     latestCompletedInvestigation:
       latestCompleted?.status === "completed" && latestCompleted.productId === product._id
-        ? await projectCompletedInvestigation(ctx, userId, latestCompleted)
+        ? projectCompletedInvestigation(latestCompleted)
         : null,
   };
-}
-
-async function syncAccountPage(ctx: MutationCtx, cursor: string | null): Promise<SyncBatchResult> {
-  const page = await ctx.db.query("scoutServiceAccounts").paginate({
-    cursor,
-    numItems: SYNC_BATCH_SIZE,
-  });
-  let accountsLinked = 0;
-  let skipped = 0;
-  for (const account of page.page) {
-    if (account.productId) continue;
-    let name: string;
-    let domain: string;
-    try {
-      name = requiredProductText(account.serviceName, "Product name", MAX_PRODUCT_NAME_LENGTH);
-      domain = canonicalProductDomain(account.serviceDomain, "Service domain");
-    } catch {
-      skipped += 1;
-      continue;
-    }
-    const product = await ensureProduct(ctx, { name, domain });
-    await ctx.db.patch("scoutServiceAccounts", account._id, {
-      productId: product.productId,
-    });
-    accountsLinked += 1;
-  }
-  if (!page.isDone) {
-    return {
-      accountsLinked,
-      experimentsLinked: 0,
-      skipped,
-      next: { phase: "accounts", cursor: page.continueCursor },
-    };
-  }
-  return {
-    accountsLinked,
-    experimentsLinked: 0,
-    skipped,
-    next: { phase: "experiments", cursor: null },
-  };
-}
-
-async function syncExperimentPage(
-  ctx: MutationCtx,
-  cursor: string | null,
-): Promise<SyncBatchResult> {
-  const page = await ctx.db.query("scoutLabExperiments").paginate({
-    cursor,
-    numItems: SYNC_BATCH_SIZE,
-  });
-  let experimentsLinked = 0;
-  let skipped = 0;
-  for (const experiment of page.page) {
-    if (experiment.productId) continue;
-    let name: string;
-    let domain: string;
-    try {
-      name = requiredProductText(experiment.targetProduct, "Product name", MAX_PRODUCT_NAME_LENGTH);
-      domain = canonicalProductDomain(experiment.targetDomain, "Target domain");
-    } catch {
-      skipped += 1;
-      continue;
-    }
-    const product = await ensureProduct(ctx, { name, domain });
-    await ctx.db.patch("scoutLabExperiments", experiment._id, {
-      productId: product.productId,
-    });
-    experimentsLinked += 1;
-  }
-  return {
-    accountsLinked: 0,
-    experimentsLinked,
-    skipped,
-    next: page.isDone ? null : { phase: "experiments", cursor: page.continueCursor },
-  };
-}
-
-async function syncKnownProductsBatch(ctx: MutationCtx, state: SyncCursor) {
-  return state.phase === "accounts"
-    ? await syncAccountPage(ctx, state.cursor)
-    : await syncExperimentPage(ctx, state.cursor);
 }
 
 async function activeInvestigationMatches(
@@ -476,186 +243,6 @@ export const getByDomain = query({
   },
 });
 
-export const getClaimByDomain = query({
-  args: {
-    domain: v.string(),
-    claimKey: v.string(),
-  },
-  returns: v.union(productClaimRouteValidator, v.null()),
-  handler: async (ctx, args) => {
-    const userId = await requireAppUser(ctx);
-    const domain = routeProductDomain(args.domain);
-    const claimKey = routeClaimKey(args.claimKey);
-    if (domain === null || claimKey === null) return null;
-    const current = await findCurrentProductClaim(ctx, { userId, domain, claimKey });
-    return current
-      ? {
-          product: {
-            name: current.product.name,
-            domain: current.product.domain,
-            primaryUrl: current.product.primaryUrl,
-          },
-          claim: current.claim,
-          completedAt: current.investigation?.completedAt ?? null,
-        }
-      : null;
-  },
-});
-
-export const updateClaim = mutation({
-  args: {
-    domain: v.string(),
-    claimKey: v.string(),
-    claim: v.string(),
-    suggestedMysteryShop: v.string(),
-  },
-  returns: productClaimPublicValidator,
-  handler: async (ctx, args) => {
-    const userId = await requireAppUser(ctx);
-    const domain = canonicalProductDomain(args.domain, "Product domain");
-    const claimKey = routeClaimKey(args.claimKey);
-    if (claimKey === null) {
-      throw new Error("Claim not found in the current completed investigation");
-    }
-    const current = await findCurrentProductClaim(ctx, { userId, domain, claimKey });
-    if (!current) {
-      throw new Error("Claim not found in the current completed investigation");
-    }
-
-    const nextSnapshot = {
-      claim: requiredEditedClaimText(args.claim, "Claim", MAX_EDITED_CLAIM_LENGTH),
-      suggestedMysteryShop: editedTestInstructions(args.suggestedMysteryShop),
-    };
-
-    if (current.kind === "custom") {
-      if (claimSnapshotsMatch(nextSnapshot, claimSnapshot(current.claim))) {
-        return current.claim;
-      }
-      const editedAt = Date.now();
-      await ctx.db.patch("productCustomClaims", current.customClaim._id, {
-        ...nextSnapshot,
-        editedAt,
-      });
-      return projectCustomClaim({
-        ...current.customClaim,
-        ...nextSnapshot,
-        editedAt,
-      });
-    }
-
-    if (claimSnapshotsMatch(nextSnapshot, claimSnapshot(current.baseClaim))) {
-      if (current.override) {
-        await ctx.db.delete("productClaimOverrides", current.override._id);
-      }
-      return applyClaimOverride(current.baseClaim, null);
-    }
-    if (claimSnapshotsMatch(nextSnapshot, claimSnapshot(current.claim))) {
-      return current.claim;
-    }
-
-    const editedAt = Date.now();
-    const replacement = {
-      kind: "edited" as const,
-      userId,
-      productId: current.product._id,
-      investigationId: current.investigation._id,
-      claimKey: current.baseClaim.claimKey,
-      ...nextSnapshot,
-      editedAt,
-    };
-    if (current.override) {
-      await ctx.db.replace("productClaimOverrides", current.override._id, replacement);
-    } else {
-      await ctx.db.insert("productClaimOverrides", replacement);
-    }
-    return {
-      ...current.baseClaim,
-      origin: current.claim.origin,
-      ...nextSnapshot,
-      isEdited: true,
-      editedAt,
-    };
-  },
-});
-
-export const createClaim = mutation({
-  args: {
-    domain: v.string(),
-    claim: v.string(),
-    suggestedMysteryShop: v.string(),
-  },
-  returns: v.string(),
-  handler: async (ctx, args) => {
-    const userId = await requireAppUser(ctx);
-    const domain = canonicalProductDomain(args.domain, "Product domain");
-    const product = await findProductByDomain(ctx, domain);
-    if (!product) throw new Error("Product not found");
-    const existing = await ctx.db
-      .query("productCustomClaims")
-      .withIndex("by_user_id_and_product_id", (query) =>
-        query.eq("userId", userId).eq("productId", product._id),
-      )
-      .take(MAX_CUSTOM_CLAIMS_PER_PRODUCT);
-    if (existing.length >= MAX_CUSTOM_CLAIMS_PER_PRODUCT) {
-      throw new Error(
-        `A product can contain at most ${MAX_CUSTOM_CLAIMS_PER_PRODUCT} custom claims`,
-      );
-    }
-    const now = Date.now();
-    const customClaimId = await ctx.db.insert("productCustomClaims", {
-      userId,
-      productId: product._id,
-      claim: requiredEditedClaimText(args.claim, "Claim", MAX_EDITED_CLAIM_LENGTH),
-      suggestedMysteryShop: editedTestInstructions(args.suggestedMysteryShop),
-      createdAt: now,
-    });
-    return customClaimRouteKey(customClaimId);
-  },
-});
-
-export const removeClaim = mutation({
-  args: {
-    domain: v.string(),
-    claimKey: v.string(),
-  },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    const userId = await requireAppUser(ctx);
-    const domain = canonicalProductDomain(args.domain, "Product domain");
-    const claimKey = routeClaimKey(args.claimKey);
-    const current = claimKey
-      ? await findCurrentProductClaim(ctx, {
-          userId,
-          domain,
-          claimKey,
-          includeHiddenGenerated: true,
-        })
-      : null;
-    if (!current) {
-      throw new Error("Claim not found in the current completed investigation");
-    }
-    if (current.kind === "custom") {
-      await ctx.db.delete("productCustomClaims", current.customClaim._id);
-      return null;
-    }
-    if (current.override?.kind === "hidden") return null;
-    const replacement = {
-      kind: "hidden" as const,
-      userId,
-      productId: current.product._id,
-      investigationId: current.investigation._id,
-      claimKey: current.baseClaim.claimKey,
-      hiddenAt: Date.now(),
-    };
-    if (current.override) {
-      await ctx.db.replace("productClaimOverrides", current.override._id, replacement);
-    } else {
-      await ctx.db.insert("productClaimOverrides", replacement);
-    }
-    return null;
-  },
-});
-
 export const create = mutation({
   args: {
     url: v.string(),
@@ -675,31 +262,6 @@ export const create = mutation({
           : requiredProductText(args.name, "Product name", MAX_PRODUCT_NAME_LENGTH),
       domain,
     });
-  },
-});
-
-export const syncKnownProducts = mutation({
-  args: {
-    continuation: v.optional(syncCursorValidator),
-  },
-  returns: v.object({
-    accountsLinked: v.number(),
-    experimentsLinked: v.number(),
-    skipped: v.number(),
-    next: v.union(syncCursorValidator, v.null()),
-  }),
-  handler: async (ctx, args) => {
-    await requireAppUser(ctx);
-    const result: SyncBatchResult = await syncKnownProductsBatch(
-      ctx,
-      args.continuation ?? { phase: "accounts", cursor: null },
-    );
-    return {
-      accountsLinked: result.accountsLinked,
-      experimentsLinked: result.experimentsLinked,
-      skipped: result.skipped,
-      next: result.next,
-    };
   },
 });
 
@@ -805,11 +367,7 @@ export const markProductResearchRunning = internalMutation({
   ),
   handler: async (ctx, args) => {
     const investigation = await ctx.db.get("productInvestigations", args.investigationId);
-    if (
-      !investigation ||
-      investigation.status !== "queued" ||
-      !isCurrentInvestigation(investigation)
-    ) {
+    if (!investigation || investigation.status !== "queued") {
       return null;
     }
     const product = await activeInvestigationMatches(ctx, investigation);
@@ -849,7 +407,6 @@ export const isProductResearchActive = internalQuery({
     if (
       !investigation ||
       investigation.status !== "running" ||
-      !isCurrentInvestigation(investigation) ||
       investigation.startedAt !== args.startedAt
     ) {
       return false;
@@ -870,7 +427,6 @@ export const recordProductResearchRetrieval = internalMutation({
     if (
       !investigation ||
       investigation.status !== "running" ||
-      !isCurrentInvestigation(investigation) ||
       investigation.startedAt !== args.startedAt
     ) {
       return false;
@@ -893,11 +449,10 @@ export const completeProductResearch = internalMutation({
   returns: v.boolean(),
   handler: async (ctx, args) => {
     const investigation = await ctx.db.get("productInvestigations", args.investigationId);
-    if (investigation?.status === "completed" && isCurrentInvestigation(investigation)) return true;
+    if (investigation?.status === "completed") return true;
     if (
       !investigation ||
       investigation.status !== "running" ||
-      !isCurrentInvestigation(investigation) ||
       investigation.startedAt !== args.startedAt
     ) {
       return false;
@@ -931,10 +486,9 @@ export const failProductResearch = internalMutation({
   returns: v.boolean(),
   handler: async (ctx, args) => {
     const investigation = await ctx.db.get("productInvestigations", args.investigationId);
-    if (investigation?.status === "failed" && isCurrentInvestigation(investigation)) return true;
+    if (investigation?.status === "failed") return true;
     if (
       !investigation ||
-      !isCurrentInvestigation(investigation) ||
       (investigation.status !== "queued" && investigation.status !== "running")
     ) {
       return false;
@@ -997,7 +551,6 @@ export const watchdogProductResearch = internalMutation({
     if (
       !investigation ||
       investigation.status !== "running" ||
-      !isCurrentInvestigation(investigation) ||
       investigation.startedAt !== args.startedAt
     ) {
       return false;

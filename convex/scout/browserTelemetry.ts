@@ -1,9 +1,6 @@
 import { type Infer } from "convex/values";
 import { z } from "zod";
-import {
-  claimTestBrowserActionValidator,
-  claimTestBrowserTelemetryValidator,
-} from "../claimTestBrowserModel";
+import { taskBrowserActionValidator, taskBrowserTelemetryValidator } from "../taskBrowserModel";
 
 const MAX_TAB_COUNT = 20;
 const MAX_ID_LENGTH = 256;
@@ -31,11 +28,11 @@ const boxEnvelopeSchema = z.object({
   }),
 });
 
-export type ClaimTestBrowserAction = Infer<typeof claimTestBrowserActionValidator>;
-export type ClaimTestBrowserTelemetry = Infer<typeof claimTestBrowserTelemetryValidator>;
+export type TaskBrowserAction = Infer<typeof taskBrowserActionValidator>;
+export type TaskBrowserTelemetry = Infer<typeof taskBrowserTelemetryValidator>;
 
 export type ParsedBrowserTrace = {
-  telemetry: ClaimTestBrowserTelemetry;
+  telemetry: TaskBrowserTelemetry;
   modelOutput: string;
 };
 
@@ -47,7 +44,7 @@ export function browserTraceMarkers(token: string) {
   };
 }
 
-export function actionElementRef(action: ClaimTestBrowserAction) {
+export function actionElementRef(action: TaskBrowserAction) {
   switch (action.kind) {
     case "click":
     case "fill":
@@ -109,7 +106,7 @@ function activeTabId(value: ReturnType<typeof tabs>) {
 export function parseBrowserTrace(
   stdout: string,
   token: string,
-  action: ClaimTestBrowserAction,
+  action: TaskBrowserAction,
 ): ParsedBrowserTrace {
   const markers = browserTraceMarkers(token);
   const begin = stdout.indexOf(`${markers.begin}\n`);

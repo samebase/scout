@@ -1,18 +1,18 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
-  decideClaimTestStep,
+  decideTaskStep,
   createSingleUseHumanHandoffArm,
   detectsHumanGate,
   immediatelyPrecedingToolResult,
-  type ClaimTestLoopState,
-} from "./claimTestLoop";
+  type TaskLoopState,
+} from "./taskLoop";
 
 const dataDomeOutput = {
   output:
     '- Iframe "DataDome Device Check" [ref=e1]\n  - button "Switch to the visual verification" ...',
 };
 
-describe("claim-test human gate detection", () => {
+describe("task human gate detection", () => {
   it("recognizes the real DataDome browser snapshot", () => {
     expect(detectsHumanGate(dataDomeOutput)).toBe(true);
   });
@@ -50,7 +50,7 @@ describe("claim-test human gate detection", () => {
 
   it("does not trigger on a non-browser tool result containing the same DataDome text", () => {
     expect(
-      decideClaimTestStep({
+      decideTaskStep({
         state: "working",
         stepNumber: 5,
         normalCloseStep: 18,
@@ -83,13 +83,13 @@ describe("claim-test human gate detection", () => {
   });
 });
 
-describe("claim-test loop decisions", () => {
+describe("task loop decisions", () => {
   function decide(
-    state: ClaimTestLoopState,
+    state: TaskLoopState,
     previousToolResult: { toolName: string; output: unknown } | null,
     stepNumber = 5,
   ) {
-    return decideClaimTestStep({
+    return decideTaskStep({
       state,
       previousToolResult,
       stepNumber,
@@ -119,7 +119,7 @@ describe("claim-test loop decisions", () => {
     ).toEqual({ kind: "none", nextState: "working_after_handoff" });
   });
 
-  it("closes and then forces Inconclusive after an expired handoff", () => {
+  it("closes and reports an expired handoff without inventing a verdict", () => {
     const close = decide("awaiting_handoff", {
       toolName: "request_human_help",
       output: { resumed: false },
@@ -130,7 +130,7 @@ describe("claim-test loop decisions", () => {
         toolName: "browser_close",
         output: { success: true },
       }),
-    ).toEqual({ kind: "final_inconclusive", nextState: "final" });
+    ).toEqual({ kind: "final", nextState: "final", humanHelpExpired: true });
   });
 
   it("reserves enough late steps for handoff, snapshot, close, and final", () => {

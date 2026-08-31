@@ -5,7 +5,7 @@ import {
   activeTabAt,
   buildReplayTimeline,
   type ReplayOperation,
-} from "./claimReplayTimeline";
+} from "./taskReplayTimeline";
 
 function operation(args: {
   sequence: number;
@@ -50,7 +50,7 @@ function operation(args: {
   };
 }
 
-describe("claim replay timeline", () => {
+describe("task replay timeline", () => {
   test("reconstructs an explicit tab activation on one session clock", () => {
     const timeline = buildReplayTimeline(
       [

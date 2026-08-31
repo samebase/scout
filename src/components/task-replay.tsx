@@ -10,11 +10,11 @@ import {
   activePageIdAt,
   activeTabAt,
   buildReplayTimeline,
-} from "#lib/claimReplayTimeline";
+} from "#lib/taskReplayTimeline";
 
-type ReplayPagesResult = FunctionReturnType<typeof api.claimTestReplay.listPages>;
+type ReplayPagesResult = FunctionReturnType<typeof api.taskReplay.listPages>;
 type ReplayReady = Extract<ReplayPagesResult, { status: "ready" }>;
-type BrowserSessionId = FunctionArgs<typeof api.claimTestReplay.listPages>["sessionId"];
+type BrowserSessionId = FunctionArgs<typeof api.taskReplay.listPages>["sessionId"];
 
 const REPLAY_PREPARATION_RETRIES = 10;
 const REPLAY_RETRY_DELAY_MS = 2_000;
@@ -24,8 +24,8 @@ type ReplayLoadState =
   | { kind: "ready"; replay: ReplayReady }
   | { kind: "unavailable" | "delayed" | "failed" };
 
-export function ClaimRunReplay({ sessionId }: { sessionId: BrowserSessionId }) {
-  const listPages = useAction(api.claimTestReplay.listPages);
+export function TaskReplay({ sessionId }: { sessionId: BrowserSessionId }) {
+  const listPages = useAction(api.taskReplay.listPages);
   const [requestVersion, setRequestVersion] = useState(0);
   const [state, setState] = useState<ReplayLoadState>({ kind: "loading" });
   const refresh = useCallback(() => setRequestVersion((version) => version + 1), []);
@@ -72,11 +72,11 @@ export function ClaimRunReplay({ sessionId }: { sessionId: BrowserSessionId }) {
   }, [listPages, requestVersion, sessionId]);
 
   return (
-    <section className="claim-run-replay" aria-labelledby="claim-replay-heading">
+    <section className="task-replay" aria-labelledby="task-replay-heading">
       <div className="flex min-w-0 items-center justify-between gap-2 border-b px-2 py-1.5 @xs:px-3">
         <div className="flex min-w-0 items-center gap-2">
           <PlayIcon className="size-3.5 shrink-0 text-primary" aria-hidden="true" />
-          <h3 id="claim-replay-heading" className="truncate text-xs font-semibold">
+          <h3 id="task-replay-heading" className="truncate text-xs font-semibold">
             Replay
           </h3>
         </div>
@@ -87,8 +87,8 @@ export function ClaimRunReplay({ sessionId }: { sessionId: BrowserSessionId }) {
       </div>
       {state.kind === "ready" ? (
         <>
-          <div className="claim-run-replay__narrow">Widen pane to view replay</div>
-          <ClaimReplayPlayer
+          <div className="task-replay__narrow">Widen pane to view replay</div>
+          <TaskReplayPlayer
             replay={state.replay}
             requestVersion={requestVersion}
             sessionId={sessionId}
@@ -137,7 +137,7 @@ type ReplayPlaylistsState =
   | { kind: "ready"; playlists: Map<string, string>; failedPageIds: string[] }
   | { kind: "failed" };
 
-function ClaimReplayPlayer({
+function TaskReplayPlayer({
   replay,
   requestVersion,
   sessionId,
@@ -146,7 +146,7 @@ function ClaimReplayPlayer({
   requestVersion: number;
   sessionId: BrowserSessionId;
 }) {
-  const loadPlaylist = useAction(api.claimTestReplay.loadPlaylist);
+  const loadPlaylist = useAction(api.taskReplay.loadPlaylist);
   const [playlistState, setPlaylistState] = useState<ReplayPlaylistsState>({ kind: "loading" });
   const [currentTimeMs, setCurrentTimeMs] = useState(0);
   const currentTimeRef = useRef(0);
@@ -295,7 +295,7 @@ function ClaimReplayPlayer({
   ).length;
 
   return (
-    <div className="claim-run-replay__player">
+    <div className="task-replay__player">
       <div
         className="relative isolate overflow-hidden bg-neutral-950"
         style={{ aspectRatio: `${replay.viewport.width} / ${replay.viewport.height}` }}
@@ -304,7 +304,7 @@ function ClaimReplayPlayer({
           const playlist = playlistState.playlists.get(page.pageId);
           if (!playlist) return null;
           return (
-            <ClaimReplayTrack
+            <TaskReplayTrack
               key={page.pageId}
               active={page.pageId === activePageId}
               localTimeSeconds={Math.max(0, currentTimeMs - page.relativeStartMs) / 1_000}
@@ -443,7 +443,7 @@ function ClaimReplayPlayer({
   );
 }
 
-function ClaimReplayTrack({
+function TaskReplayTrack({
   active,
   localTimeSeconds,
   onAspectRatio,

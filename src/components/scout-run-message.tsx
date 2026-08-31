@@ -28,8 +28,6 @@ const tokenNumber = new Intl.NumberFormat();
 
 export function scoutModelLabel(model: string) {
   switch (model) {
-    case "openai/gpt-5.6-luna":
-      return "Luna";
     case "qwen/qwen3.7-flash":
       return "Qwen 3.7 Flash";
     default:

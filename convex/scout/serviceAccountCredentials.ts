@@ -251,51 +251,53 @@ export const commitManagedRegistration = internalMutation({
   },
 });
 
-export const getRuntimeCredential = internalQuery({
-  args: {
-    serviceAccountId: v.id("scoutServiceAccounts"),
-  },
-  returns: runtimeCredentialValidator,
+export const listRuntimeCredentialsForScout = internalQuery({
+  args: { scoutId: v.id("scouts") },
+  returns: v.array(runtimeCredentialValidator),
   handler: async (ctx, args) => {
-    const account = await ctx.db.get("scoutServiceAccounts", args.serviceAccountId);
-    if (!account?.managedCredential) {
-      throw new Error("Bound service account has no managed credential");
+    const accounts = await ctx.db
+      .query("scoutServiceAccounts")
+      .withIndex("by_scout_id", (query) => query.eq("scoutId", args.scoutId))
+      .take(MAX_ACCOUNTS_PER_SCOUT);
+    const credentials: Array<typeof runtimeCredentialValidator.type> = [];
+    for (const account of accounts) {
+      if (!account.managedCredential) continue;
+      const credential = await ctx.db
+        .query("scoutManagedCredentials")
+        .withIndex("by_service_account_id", (query) => query.eq("serviceAccountId", account._id))
+        .unique();
+      if (
+        !credential ||
+        credential.scoutId !== account.scoutId ||
+        credential.credentialHost !== account.managedCredential.credentialHost ||
+        credential.identifier !== account.identifier ||
+        credential.createdAt !== account.managedCredential.createdAt
+      ) {
+        throw new Error("Managed credential has an invalid service-account binding");
+      }
+      const configuredKey = await ctx.db
+        .query("scoutCredentialKeys")
+        .withIndex("by_key_version", (query) => query.eq("keyVersion", credential.keyVersion))
+        .unique();
+      if (!configuredKey || configuredKey.keyFingerprint !== credential.keyFingerprint) {
+        throw new Error("Managed credential key registry is missing or inconsistent");
+      }
+      credentials.push({
+        serviceAccountId: account._id,
+        identifier: account.identifier,
+        serviceDomain: account.serviceDomain,
+        credentialHost: credential.credentialHost,
+        createdAt: credential.createdAt,
+        credentialReference: credential.credentialReference,
+        formatVersion: credential.formatVersion,
+        algorithm: credential.algorithm,
+        keyVersion: credential.keyVersion,
+        keyFingerprint: credential.keyFingerprint,
+        nonce: credential.nonce,
+        ciphertext: credential.ciphertext,
+        authenticationTag: credential.authenticationTag,
+      });
     }
-
-    const credential = await ctx.db
-      .query("scoutManagedCredentials")
-      .withIndex("by_service_account_id", (query) => query.eq("serviceAccountId", account._id))
-      .unique();
-    if (
-      !credential ||
-      credential.scoutId !== account.scoutId ||
-      credential.credentialHost !== account.managedCredential.credentialHost ||
-      credential.identifier !== account.identifier ||
-      credential.createdAt !== account.managedCredential.createdAt
-    ) {
-      throw new Error("Managed credential has an invalid service-account binding");
-    }
-    const configuredKey = await ctx.db
-      .query("scoutCredentialKeys")
-      .withIndex("by_key_version", (query) => query.eq("keyVersion", credential.keyVersion))
-      .unique();
-    if (!configuredKey || configuredKey.keyFingerprint !== credential.keyFingerprint) {
-      throw new Error("Managed credential key registry is missing or inconsistent");
-    }
-    return {
-      serviceAccountId: account._id,
-      identifier: account.identifier,
-      serviceDomain: account.serviceDomain,
-      credentialHost: credential.credentialHost,
-      createdAt: credential.createdAt,
-      credentialReference: credential.credentialReference,
-      formatVersion: credential.formatVersion,
-      algorithm: credential.algorithm,
-      keyVersion: credential.keyVersion,
-      keyFingerprint: credential.keyFingerprint,
-      nonce: credential.nonce,
-      ciphertext: credential.ciphertext,
-      authenticationTag: credential.authenticationTag,
-    };
+    return credentials;
   },
 });

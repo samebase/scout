@@ -61,7 +61,7 @@ ${request.interactiveLiveViewUrl}
 
 For the most reliable drag controls, open the link on a desktop computer. Mobile drag controls may be unreliable.
 
-Then return to the already-open Scout claim page and press Continue. This request expires in about five minutes.`,
+Then return to the already-open Scout task and press Continue. This request expires in about five minutes.`,
   };
 }
 
@@ -106,7 +106,7 @@ export function createHumanHandoffTool<HandoffId>(
           return {
             resumed: false,
             message:
-              "The human-help request expired. Stop this check and return Verdict: Inconclusive.",
+              "The human-help request expired. Mark the result Inconclusive, stop this browser path, and explain what remains blocked.",
           };
         }
         if (status === "missing") {
@@ -131,13 +131,13 @@ export function createHumanHandoffTool<HandoffId>(
         return {
           resumed: false,
           message:
-            "The human-help request expired. Stop this check and return Verdict: Inconclusive.",
+            "The human-help request expired. Mark the result Inconclusive, stop this browser path, and explain what remains blocked.",
         };
       }
       return {
         resumed: false,
         message:
-          "The human-help request expired. Stop this check and return Verdict: Inconclusive.",
+          "The human-help request expired. Mark the result Inconclusive, stop this browser path, and explain what remains blocked.",
       };
     },
   });

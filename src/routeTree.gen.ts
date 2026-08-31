@@ -19,9 +19,9 @@ import { Route as ProductsDomainRouteImport } from './routes/products.$domain'
 import { Route as ScoutsIndexRouteImport } from './routes/scouts.index'
 import { Route as ScoutsSlugRouteImport } from './routes/scouts.$slug'
 import { Route as ProductsDomainIndexRouteImport } from './routes/products.$domain.index'
-import { Route as ProductsDomainClaimsClaimKeyRouteImport } from './routes/products.$domain.claims.$claimKey'
-import { Route as ProductsDomainClaimsClaimKeyIndexRouteImport } from './routes/products.$domain.claims.$claimKey.index'
-import { Route as ProductsDomainClaimsClaimKeyRunsRunIdRouteImport } from './routes/products.$domain.claims.$claimKey.runs.$runId'
+import { Route as ProductsDomainTasksTaskIdRouteImport } from './routes/products.$domain.tasks.$taskId'
+import { Route as ProductsDomainTasksTaskIdIndexRouteImport } from './routes/products.$domain.tasks.$taskId.index'
+import { Route as ProductsDomainTasksTaskIdAttemptsAttemptIdRouteImport } from './routes/products.$domain.tasks.$taskId.attempts.$attemptId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -73,23 +73,23 @@ const ProductsDomainIndexRoute = ProductsDomainIndexRouteImport.update({
   path: '/',
   getParentRoute: () => ProductsDomainRoute,
 } as any)
-const ProductsDomainClaimsClaimKeyRoute =
-  ProductsDomainClaimsClaimKeyRouteImport.update({
-    id: '/claims/$claimKey',
-    path: '/claims/$claimKey',
+const ProductsDomainTasksTaskIdRoute =
+  ProductsDomainTasksTaskIdRouteImport.update({
+    id: '/tasks/$taskId',
+    path: '/tasks/$taskId',
     getParentRoute: () => ProductsDomainRoute,
   } as any)
-const ProductsDomainClaimsClaimKeyIndexRoute =
-  ProductsDomainClaimsClaimKeyIndexRouteImport.update({
+const ProductsDomainTasksTaskIdIndexRoute =
+  ProductsDomainTasksTaskIdIndexRouteImport.update({
     id: '/',
     path: '/',
-    getParentRoute: () => ProductsDomainClaimsClaimKeyRoute,
+    getParentRoute: () => ProductsDomainTasksTaskIdRoute,
   } as any)
-const ProductsDomainClaimsClaimKeyRunsRunIdRoute =
-  ProductsDomainClaimsClaimKeyRunsRunIdRouteImport.update({
-    id: '/runs/$runId',
-    path: '/runs/$runId',
-    getParentRoute: () => ProductsDomainClaimsClaimKeyRoute,
+const ProductsDomainTasksTaskIdAttemptsAttemptIdRoute =
+  ProductsDomainTasksTaskIdAttemptsAttemptIdRouteImport.update({
+    id: '/attempts/$attemptId',
+    path: '/attempts/$attemptId',
+    getParentRoute: () => ProductsDomainTasksTaskIdRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -103,9 +103,9 @@ export interface FileRoutesByFullPath {
   '/products/': typeof ProductsIndexRoute
   '/scouts/': typeof ScoutsIndexRoute
   '/products/$domain/': typeof ProductsDomainIndexRoute
-  '/products/$domain/claims/$claimKey': typeof ProductsDomainClaimsClaimKeyRouteWithChildren
-  '/products/$domain/claims/$claimKey/': typeof ProductsDomainClaimsClaimKeyIndexRoute
-  '/products/$domain/claims/$claimKey/runs/$runId': typeof ProductsDomainClaimsClaimKeyRunsRunIdRoute
+  '/products/$domain/tasks/$taskId': typeof ProductsDomainTasksTaskIdRouteWithChildren
+  '/products/$domain/tasks/$taskId/': typeof ProductsDomainTasksTaskIdIndexRoute
+  '/products/$domain/tasks/$taskId/attempts/$attemptId': typeof ProductsDomainTasksTaskIdAttemptsAttemptIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -115,8 +115,8 @@ export interface FileRoutesByTo {
   '/products': typeof ProductsIndexRoute
   '/scouts': typeof ScoutsIndexRoute
   '/products/$domain': typeof ProductsDomainIndexRoute
-  '/products/$domain/claims/$claimKey': typeof ProductsDomainClaimsClaimKeyIndexRoute
-  '/products/$domain/claims/$claimKey/runs/$runId': typeof ProductsDomainClaimsClaimKeyRunsRunIdRoute
+  '/products/$domain/tasks/$taskId': typeof ProductsDomainTasksTaskIdIndexRoute
+  '/products/$domain/tasks/$taskId/attempts/$attemptId': typeof ProductsDomainTasksTaskIdAttemptsAttemptIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -130,9 +130,9 @@ export interface FileRoutesById {
   '/products/': typeof ProductsIndexRoute
   '/scouts/': typeof ScoutsIndexRoute
   '/products/$domain/': typeof ProductsDomainIndexRoute
-  '/products/$domain/claims/$claimKey': typeof ProductsDomainClaimsClaimKeyRouteWithChildren
-  '/products/$domain/claims/$claimKey/': typeof ProductsDomainClaimsClaimKeyIndexRoute
-  '/products/$domain/claims/$claimKey/runs/$runId': typeof ProductsDomainClaimsClaimKeyRunsRunIdRoute
+  '/products/$domain/tasks/$taskId': typeof ProductsDomainTasksTaskIdRouteWithChildren
+  '/products/$domain/tasks/$taskId/': typeof ProductsDomainTasksTaskIdIndexRoute
+  '/products/$domain/tasks/$taskId/attempts/$attemptId': typeof ProductsDomainTasksTaskIdAttemptsAttemptIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -147,9 +147,9 @@ export interface FileRouteTypes {
     | '/products/'
     | '/scouts/'
     | '/products/$domain/'
-    | '/products/$domain/claims/$claimKey'
-    | '/products/$domain/claims/$claimKey/'
-    | '/products/$domain/claims/$claimKey/runs/$runId'
+    | '/products/$domain/tasks/$taskId'
+    | '/products/$domain/tasks/$taskId/'
+    | '/products/$domain/tasks/$taskId/attempts/$attemptId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -159,8 +159,8 @@ export interface FileRouteTypes {
     | '/products'
     | '/scouts'
     | '/products/$domain'
-    | '/products/$domain/claims/$claimKey'
-    | '/products/$domain/claims/$claimKey/runs/$runId'
+    | '/products/$domain/tasks/$taskId'
+    | '/products/$domain/tasks/$taskId/attempts/$attemptId'
   id:
     | '__root__'
     | '/'
@@ -173,9 +173,9 @@ export interface FileRouteTypes {
     | '/products/'
     | '/scouts/'
     | '/products/$domain/'
-    | '/products/$domain/claims/$claimKey'
-    | '/products/$domain/claims/$claimKey/'
-    | '/products/$domain/claims/$claimKey/runs/$runId'
+    | '/products/$domain/tasks/$taskId'
+    | '/products/$domain/tasks/$taskId/'
+    | '/products/$domain/tasks/$taskId/attempts/$attemptId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -258,57 +258,55 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProductsDomainIndexRouteImport
       parentRoute: typeof ProductsDomainRoute
     }
-    '/products/$domain/claims/$claimKey': {
-      id: '/products/$domain/claims/$claimKey'
-      path: '/claims/$claimKey'
-      fullPath: '/products/$domain/claims/$claimKey'
-      preLoaderRoute: typeof ProductsDomainClaimsClaimKeyRouteImport
+    '/products/$domain/tasks/$taskId': {
+      id: '/products/$domain/tasks/$taskId'
+      path: '/tasks/$taskId'
+      fullPath: '/products/$domain/tasks/$taskId'
+      preLoaderRoute: typeof ProductsDomainTasksTaskIdRouteImport
       parentRoute: typeof ProductsDomainRoute
     }
-    '/products/$domain/claims/$claimKey/': {
-      id: '/products/$domain/claims/$claimKey/'
+    '/products/$domain/tasks/$taskId/': {
+      id: '/products/$domain/tasks/$taskId/'
       path: '/'
-      fullPath: '/products/$domain/claims/$claimKey/'
-      preLoaderRoute: typeof ProductsDomainClaimsClaimKeyIndexRouteImport
-      parentRoute: typeof ProductsDomainClaimsClaimKeyRoute
+      fullPath: '/products/$domain/tasks/$taskId/'
+      preLoaderRoute: typeof ProductsDomainTasksTaskIdIndexRouteImport
+      parentRoute: typeof ProductsDomainTasksTaskIdRoute
     }
-    '/products/$domain/claims/$claimKey/runs/$runId': {
-      id: '/products/$domain/claims/$claimKey/runs/$runId'
-      path: '/runs/$runId'
-      fullPath: '/products/$domain/claims/$claimKey/runs/$runId'
-      preLoaderRoute: typeof ProductsDomainClaimsClaimKeyRunsRunIdRouteImport
-      parentRoute: typeof ProductsDomainClaimsClaimKeyRoute
+    '/products/$domain/tasks/$taskId/attempts/$attemptId': {
+      id: '/products/$domain/tasks/$taskId/attempts/$attemptId'
+      path: '/attempts/$attemptId'
+      fullPath: '/products/$domain/tasks/$taskId/attempts/$attemptId'
+      preLoaderRoute: typeof ProductsDomainTasksTaskIdAttemptsAttemptIdRouteImport
+      parentRoute: typeof ProductsDomainTasksTaskIdRoute
     }
   }
 }
 
-interface ProductsDomainClaimsClaimKeyRouteChildren {
-  ProductsDomainClaimsClaimKeyIndexRoute: typeof ProductsDomainClaimsClaimKeyIndexRoute
-  ProductsDomainClaimsClaimKeyRunsRunIdRoute: typeof ProductsDomainClaimsClaimKeyRunsRunIdRoute
+interface ProductsDomainTasksTaskIdRouteChildren {
+  ProductsDomainTasksTaskIdIndexRoute: typeof ProductsDomainTasksTaskIdIndexRoute
+  ProductsDomainTasksTaskIdAttemptsAttemptIdRoute: typeof ProductsDomainTasksTaskIdAttemptsAttemptIdRoute
 }
 
-const ProductsDomainClaimsClaimKeyRouteChildren: ProductsDomainClaimsClaimKeyRouteChildren =
+const ProductsDomainTasksTaskIdRouteChildren: ProductsDomainTasksTaskIdRouteChildren =
   {
-    ProductsDomainClaimsClaimKeyIndexRoute:
-      ProductsDomainClaimsClaimKeyIndexRoute,
-    ProductsDomainClaimsClaimKeyRunsRunIdRoute:
-      ProductsDomainClaimsClaimKeyRunsRunIdRoute,
+    ProductsDomainTasksTaskIdIndexRoute: ProductsDomainTasksTaskIdIndexRoute,
+    ProductsDomainTasksTaskIdAttemptsAttemptIdRoute:
+      ProductsDomainTasksTaskIdAttemptsAttemptIdRoute,
   }
 
-const ProductsDomainClaimsClaimKeyRouteWithChildren =
-  ProductsDomainClaimsClaimKeyRoute._addFileChildren(
-    ProductsDomainClaimsClaimKeyRouteChildren,
+const ProductsDomainTasksTaskIdRouteWithChildren =
+  ProductsDomainTasksTaskIdRoute._addFileChildren(
+    ProductsDomainTasksTaskIdRouteChildren,
   )
 
 interface ProductsDomainRouteChildren {
   ProductsDomainIndexRoute: typeof ProductsDomainIndexRoute
-  ProductsDomainClaimsClaimKeyRoute: typeof ProductsDomainClaimsClaimKeyRouteWithChildren
+  ProductsDomainTasksTaskIdRoute: typeof ProductsDomainTasksTaskIdRouteWithChildren
 }
 
 const ProductsDomainRouteChildren: ProductsDomainRouteChildren = {
   ProductsDomainIndexRoute: ProductsDomainIndexRoute,
-  ProductsDomainClaimsClaimKeyRoute:
-    ProductsDomainClaimsClaimKeyRouteWithChildren,
+  ProductsDomainTasksTaskIdRoute: ProductsDomainTasksTaskIdRouteWithChildren,
 }
 
 const ProductsDomainRouteWithChildren = ProductsDomainRoute._addFileChildren(
