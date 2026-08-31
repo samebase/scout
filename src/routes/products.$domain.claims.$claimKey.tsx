@@ -3,7 +3,7 @@ import { CircleAlertIcon, RotateCcwIcon } from "lucide-react";
 import { Button } from "#components/ui/button";
 
 export const Route = createFileRoute("/products/$domain/claims/$claimKey")({
-  head: () => ({ meta: [{ title: "Claim runs | Scout" }] }),
+  head: () => ({ meta: [{ title: "Claim attempts | Scout" }] }),
   component: ClaimRouteLayout,
   errorComponent: ClaimRouteError,
 });

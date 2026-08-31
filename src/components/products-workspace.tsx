@@ -80,7 +80,7 @@ const creditCount = new Intl.NumberFormat(undefined, {
 
 const PRODUCT_RESIZE_HANDLE_LABELS = {
   left: "Resize product list",
-  right: "Resize investigation activity",
+  right: "Resize product research activity",
 } satisfies SidebarLayoutResizeHandleLabels;
 
 const formatResizeHandleValueText: SidebarLayoutResizeHandleValueTextFormatter = ({ widthPx }) =>
@@ -327,7 +327,7 @@ function ProductsChrome({
       <div className="min-w-0 flex-1">
         <h1 className="truncate text-sm font-semibold">Products</h1>
         <p className="text-muted-foreground hidden truncate text-xs sm:block">
-          First-party claims and investigations
+          First-party claims and product research
         </p>
       </div>
       <p className="sr-only" aria-live="polite">
@@ -337,7 +337,7 @@ function ProductsChrome({
         type="button"
         size="icon-sm"
         variant="ghost"
-        aria-label={activityShown ? "Hide investigation activity" : "Show investigation activity"}
+        aria-label={activityShown ? "Hide research activity" : "Show research activity"}
         aria-pressed={activityShown}
         onClick={toggleActivity}
       >
@@ -433,23 +433,23 @@ function InvestigationActivityPane({
   if (investigationId === undefined) {
     return (
       <div className="text-muted-foreground p-5 text-sm">
-        <p>No investigation yet.</p>
-        <p className="mt-2 text-xs">Start one to see every provider call and Workflow step.</p>
+        <p>No product research yet.</p>
+        <p className="mt-2 text-xs">Start research to see every provider call and Workflow step.</p>
       </div>
     );
   }
   if (inspector === undefined) {
     return (
       <p className="text-muted-foreground p-5 text-sm" role="status">
-        Loading investigation activity...
+        Loading research activity...
       </p>
     );
   }
   if (inspector === null) {
     return (
       <div className="text-muted-foreground p-5 text-sm">
-        <p>Detailed activity is unavailable for this investigation.</p>
-        <p className="mt-2 text-xs">Refresh it to run the new durable Workflow.</p>
+        <p>Detailed activity is unavailable for this research.</p>
+        <p className="mt-2 text-xs">Refresh the research to use the current Workflow.</p>
       </div>
     );
   }
@@ -465,7 +465,7 @@ function InvestigationActivityPane({
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-sm font-medium">{productName ?? "Product"} investigation</p>
+            <p className="text-sm font-medium">{productName ?? "Product"} research</p>
             <p className="text-muted-foreground mt-1 text-xs">
               Requested {investigationDate.format(inspector.requestedAt)}
             </p>
@@ -524,7 +524,7 @@ function InvestigationActivityPane({
           </p>
         </div>
       ) : (
-        <ol className="mt-2 space-y-2" aria-label="Investigation provider activity">
+        <ol className="mt-2 space-y-2" aria-label="Product research provider activity">
           {inspector.activities.map((activity) => (
             <li key={activity.id}>
               <InvestigationActivity activity={activity} now={now} />
@@ -882,8 +882,8 @@ function ProductsMain({
           </p>
           <p className="text-muted-foreground mt-1 text-sm">
             {hasProducts
-              ? "Select one from the product list to open its investigation."
-              : "Add a product to investigate what it promises customers."}
+              ? "Select one from the product list to open its research."
+              : "Add a product to research what it promises customers."}
           </p>
         </div>
       ) : (
@@ -1088,7 +1088,7 @@ function ProductDetail({
               onClick={() => setReportOpen((open) => !open)}
             >
               {reportOpen ? <ChevronUpIcon /> : <ChevronDownIcon />}
-              {reportOpen ? "Hide investigation" : reportButtonLabel(latest)}
+              {reportOpen ? "Hide research" : reportButtonLabel(latest)}
             </Button>
           ) : null}
           <InvestigationAction
@@ -1113,11 +1113,11 @@ function ProductDetail({
 
       {latest?.status === "failed" ? (
         <div className="mt-4 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5">
-          <p className="text-destructive text-sm font-medium">Investigation failed</p>
+          <p className="text-destructive text-sm font-medium">Product research failed</p>
           <p className="text-muted-foreground mt-1 wrap-break-word text-sm">{latest.failure}</p>
           {report ? (
             <p className="text-muted-foreground mt-1 text-xs">
-              The last completed investigation is still available.
+              The last completed research report is still available.
             </p>
           ) : null}
         </div>
@@ -1283,8 +1283,8 @@ function ResearchReset({
     >
       <p className="text-sm font-medium">Reset research for {productName}?</p>
       <p className="text-muted-foreground mt-1 text-sm">
-        This hides the current report and returns the product to Not investigated. The underlying
-        run history is kept.
+        This hides the current report and returns the product to Not researched. Previous research
+        records are kept.
       </p>
       {state.kind === "failed" ? (
         <p className="text-destructive mt-2 text-sm" role="alert">
@@ -1370,7 +1370,7 @@ function InvestigationStatus({
     return (
       <span className="text-muted-foreground inline-flex shrink-0 items-center gap-2 text-sm">
         <span className="bg-muted-foreground size-2 rounded-full" aria-hidden="true" />
-        Not investigated
+        Not researched
       </span>
     );
   }
@@ -1378,13 +1378,17 @@ function InvestigationStatus({
   switch (investigation.status) {
     case "queued":
       return (
-        <StatusLabel dotClass="bg-amber-500" label="Queued" detail={investigation.requestedAt} />
+        <StatusLabel
+          dotClass="bg-amber-500"
+          label="Research queued"
+          detail={investigation.requestedAt}
+        />
       );
     case "running":
       return (
         <StatusLabel
           dotClass="bg-blue-500"
-          label="Investigating"
+          label="Researching"
           {...(currentOperation === null ? {} : { note: currentOperation })}
           detail={investigation.startedAt}
           credits={investigation.creditsUsed}
@@ -1394,7 +1398,7 @@ function InvestigationStatus({
       return (
         <StatusLabel
           dotClass="bg-emerald-500"
-          label="Investigated"
+          label="Researched"
           detail={investigation.completedAt}
           credits={investigation.creditsUsed}
         />
@@ -1403,7 +1407,7 @@ function InvestigationStatus({
       return (
         <StatusLabel
           dotClass="bg-destructive"
-          label="Failed"
+          label="Research failed"
           detail={investigation.failedAt}
           credits={investigation.creditsUsed}
         />
@@ -1478,17 +1482,17 @@ function InvestigationAction({
     return (
       <Button type="button" size="sm" disabled>
         <LoaderCircleIcon className="animate-spin motion-reduce:animate-none" />
-        {investigation.status === "queued" ? "Queued" : "Investigating"}
+        {investigation.status === "queued" ? "Research queued" : "Researching"}
       </Button>
     );
   }
 
   const actionLabel =
     investigation === null
-      ? "Investigate claims"
+      ? "Research product"
       : investigation.status === "completed"
-        ? "Refresh investigation"
-        : "Retry investigation";
+        ? "Refresh product research"
+        : "Retry product research";
 
   const request = async () => {
     if (submitting) {
@@ -1502,7 +1506,7 @@ function InvestigationAction({
     } catch {
       onStateChange({
         kind: "failed",
-        message: "Could not start the investigation. Try again.",
+        message: "Could not start product research. Try again.",
       });
       if (isMobile) setMobilePane("main");
     }
@@ -1537,7 +1541,7 @@ function InvestigationReport({
   );
 
   return (
-    <section className="mt-6 border-t pt-6" aria-label="Investigation result">
+    <section className="mt-6 border-t pt-6" aria-label="Product research result">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <p className="text-muted-foreground text-xs">
           {investigation.result.claims.length} unverified claims,{" "}
@@ -2001,7 +2005,7 @@ function addProductError(error: unknown) {
 function resetResearchError(error: unknown) {
   const message = error instanceof Error ? error.message : "";
   if (message.includes("Wait for the active investigation to finish")) {
-    return "Wait for the active investigation to finish before resetting research.";
+    return "Wait for product research to finish before resetting it.";
   }
   if (message.includes("Product not found")) {
     return "This product no longer exists.";
@@ -2010,7 +2014,7 @@ function resetResearchError(error: unknown) {
 }
 
 function reportButtonLabel(investigation: Investigation | null) {
-  return investigation?.status === "completed" ? "Show investigation" : "Show last investigation";
+  return investigation?.status === "completed" ? "Show research" : "Show last research";
 }
 
 function investigationDotClass(status: Investigation["status"] | undefined) {
@@ -2034,18 +2038,18 @@ function investigationDotClass(status: Investigation["status"] | undefined) {
 
 function investigationShortLabel(investigation: Investigation | null) {
   if (investigation === null) {
-    return "Not investigated";
+    return "Not researched";
   }
 
   switch (investigation.status) {
     case "queued":
-      return "Investigation queued";
+      return "Research queued";
     case "running":
-      return "Investigation running";
+      return "Researching";
     case "completed":
-      return "Investigated";
+      return "Researched";
     case "failed":
-      return "Investigation failed";
+      return "Research failed";
     default: {
       const exhaustive: never = investigation;
       return exhaustive;

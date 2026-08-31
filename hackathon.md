@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-31T00:41:33Z
+- **Last updated:** 2026-08-31T11:32:53Z
 
 ## Log
 
@@ -704,11 +704,21 @@ against Conrad's Product account. Replay retained both browser sessions and six 
 provider video remained explicitly unmatched because Firecrawl did not expose enough tab identity.
 All 272 tests and the complete Cloudflare build path passed.
 
-### 2026-08-31 - working tree
+### 2026-08-31 - 8f538cb - v131
 
 Raised the Qwen product-research synthesis ceiling from 6,000 to 16,000 output tokens after a
 Cloudflare response spent nearly the entire smaller budget on reasoning and ended with incomplete
 JSON. Kept the checked-in synthesis path to one Convex Agent `generateText` call followed by strict
 JSON and Zod validation; no experimental `generateObject` or repair implementation remains
 (`convex/productsInvestigationWorkflow.ts`). All 272 tests and the Convex development push passed;
-a fresh Cloudflare investigation is still required to prove the larger budget live.
+a fresh Cloudflare investigation then completed live with six generated claims and seven Firecrawl
+credits.
+
+### 2026-08-31 - working tree
+
+Clarified the operator workflow in the UI. Product controls now use Research product, Refresh
+product research, and Retry product research; each Claim exposes an Attempts list with New attempt,
+Start attempt, and Continue attempt controls (`src/components/products-workspace.tsx`,
+`src/components/claim-run-workspace.tsx`). The existing Product, Claim, Run, and Session data model
+and routes remain unchanged. Verified both Cloudflare views in the local app, and all 272 tests and
+the complete project check passed.

@@ -73,7 +73,7 @@ type ClaimRemoveState =
   | { kind: "failed"; message: string };
 
 const RUN_RESIZE_HANDLE_LABELS = {
-  left: "Resize runs pane",
+  left: "Resize attempts pane",
   right: "Resize sessions pane",
 } satisfies SidebarLayoutResizeHandleLabels;
 
@@ -295,7 +295,7 @@ function ClaimRunChrome({
         type="button"
         size="icon-sm"
         variant="ghost"
-        aria-label={runsShown ? "Hide runs" : "Show runs"}
+        aria-label={runsShown ? "Hide attempts" : "Show attempts"}
         aria-pressed={runsShown}
         onClick={toggleRuns}
       >
@@ -328,7 +328,7 @@ function ClaimRunChrome({
         }}
       >
         <PlusIcon />
-        <span className="hidden @xs:inline">New run</span>
+        <span className="hidden @xs:inline">New attempt</span>
       </Button>
       <Button
         type="button"
@@ -353,7 +353,7 @@ function RunsHeader({ domain }: { domain: string }) {
         className="inline-flex min-w-0 items-center gap-1.5 text-xs font-semibold outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring/50"
       >
         <ArrowLeftIcon className="size-3.5 shrink-0" aria-hidden="true" />
-        <span className="truncate">Runs</span>
+        <span className="truncate">Attempts</span>
       </Link>
     </div>
   );
@@ -371,11 +371,11 @@ function RunsPane({
   selectedRunId: ClaimRun["runId"] | undefined;
 }) {
   const { setMobilePane } = useSidebarActions();
-  if (runs === undefined) return <PaneStatus>Loading runs</PaneStatus>;
-  if (runs.length === 0) return <PaneStatus>No runs</PaneStatus>;
+  if (runs === undefined) return <PaneStatus>Loading attempts</PaneStatus>;
+  if (runs.length === 0) return <PaneStatus>No attempts</PaneStatus>;
 
   return (
-    <nav aria-label="Claim runs">
+    <nav aria-label="Claim attempts">
       <ol className="divide-y">
         {runs.map((run) => {
           const selected = run.runId === selectedRunId;
@@ -427,7 +427,7 @@ function RunModeHeader({
   onModeChange: (mode: MainMode) => void;
 }) {
   return (
-    <div className="claim-run-modes" aria-label="Run view">
+    <div className="claim-run-modes" aria-label="Attempt view">
       {(["browser", "result", "target"] as const).map((item) => (
         <button
           key={item}
@@ -489,7 +489,7 @@ function RunMain({
         <NewRunControls claimKey={claimKey} domain={domain} onClose={onCloseNewRun} />
       ) : null}
       {runMissing ? (
-        <MainStatus>Run not found</MainStatus>
+        <MainStatus>Attempt not found</MainStatus>
       ) : !run ? (
         <TargetView
           claimKey={claimKey}
@@ -589,7 +589,7 @@ function NewRunControls({
         params: { claimKey, domain, runId: result.runId },
       });
     } catch (error) {
-      setState({ kind: "failed", message: actionError(error, "Could not start run") });
+      setState({ kind: "failed", message: actionError(error, "Could not start attempt") });
     }
   };
 
@@ -628,7 +628,7 @@ function NewRunControls({
       <div className="flex items-center gap-1.5">
         <Button type="submit" size="sm" disabled={starting || scouts === undefined}>
           {starting ? <LoaderCircleIcon className="animate-spin" /> : <PlayIcon />}
-          {starting ? "Starting" : "Start"}
+          {starting ? "Starting" : "Start attempt"}
         </Button>
         <Button type="button" size="sm" variant="ghost" disabled={starting} onClick={onClose}>
           Close
@@ -662,7 +662,7 @@ function RunMetadataStrip({
 }) {
   return (
     <dl className="claim-run-metadata">
-      <Metadata label="Run" value={run.runId} mono />
+      <Metadata label="Attempt" value={run.runId} mono />
       <Metadata label="State" value={runLabel(run)} />
       <Metadata label="Scout identity" value={run.scout.displayName} />
       <Metadata label="Browser state" value={runProfileLabel(run)} />
@@ -847,7 +847,7 @@ function ResultView({
   const text = latestAssistantText(messages);
   const details = text ? resultDetails(text) : null;
   return (
-    <section className="claim-run-result" aria-label="Run result">
+    <section className="claim-run-result" aria-label="Attempt result">
       <div className="flex min-w-0 items-center gap-2">
         <StatusDot className={runDotClass(run)} />
         <h2 className="truncate text-sm font-semibold">{runLabel(run)}</h2>
@@ -875,7 +875,7 @@ function ContinueRun({ run }: { run: ClaimRunDetail }) {
       await continueRun({ runId: run.runId });
       setState({ kind: "idle" });
     } catch (error) {
-      setState({ kind: "failed", message: actionError(error, "Could not continue run") });
+      setState({ kind: "failed", message: actionError(error, "Could not continue attempt") });
     }
   };
   return (
@@ -892,7 +892,7 @@ function ContinueRun({ run }: { run: ClaimRunDetail }) {
         ) : (
           <RotateCcwIcon />
         )}
-        {state.kind === "continuing" ? "Continuing" : "Continue run"}
+        {state.kind === "continuing" ? "Continuing" : "Continue attempt"}
       </Button>
       {state.kind === "failed" ? (
         <p className="mt-2 text-xs text-destructive" role="alert">
@@ -1075,7 +1075,7 @@ function TargetView({
                   size="xs"
                   variant="outline"
                   disabled={mutationLocked}
-                  title={hasRunningRun ? "Run is active" : "Edit claim"}
+                  title={hasRunningRun ? "Attempt is active" : "Edit claim"}
                   onClick={openEdit}
                 >
                   <PencilIcon />
@@ -1087,7 +1087,7 @@ function TargetView({
                   variant="ghost"
                   aria-label="Remove claim"
                   disabled={mutationLocked}
-                  title={hasRunningRun ? "Run is active" : "Remove claim"}
+                  title={hasRunningRun ? "Attempt is active" : "Remove claim"}
                   onClick={() => setRemoveState({ kind: "confirming" })}
                 >
                   <Trash2Icon />
@@ -1160,7 +1160,7 @@ function TargetView({
       {run ? (
         <div className="claim-run-target__snapshot">
           <div className="claim-run-target__heading">
-            <span className="font-mono text-[10px] text-muted-foreground">Run snapshot</span>
+            <span className="font-mono text-[10px] text-muted-foreground">Attempt snapshot</span>
             <span
               className={cn(
                 "text-[10px]",
@@ -1179,7 +1179,7 @@ function TargetView({
               <dd>{run.testedClaim.suggestedMysteryShop || "None"}</dd>
             </div>
             <div>
-              <dt>Run</dt>
+              <dt>Attempt</dt>
               <dd className="font-mono">{run.runId}</dd>
             </div>
           </dl>
