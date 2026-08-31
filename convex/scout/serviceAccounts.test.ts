@@ -92,8 +92,8 @@ describe("Scout service-account inventory", () => {
         serviceDomain: "tally.so",
         identifier: "CONRAD@AGENTMAIL.TO",
         authenticationEvidence: { kind: "none" },
-        firstRecordedByClaimTest: null,
-        lastVerifiedByClaimTest: null,
+        firstRecordedByTask: null,
+        lastVerifiedByTask: null,
       },
     ]);
   });
@@ -193,8 +193,14 @@ describe("Scout service-account inventory", () => {
     const scoutId = await insertScout(backend, "conrad");
     await backend.run(async (ctx) => {
       for (let index = 0; index < 50; index += 1) {
+        const productId = await ctx.db.insert("products", {
+          name: `Service ${index}`,
+          domain: `service-${index}.example`,
+          primaryUrl: `https://service-${index}.example`,
+        });
         await ctx.db.insert("scoutServiceAccounts", {
           scoutId,
+          productId,
           serviceName: `Service ${index}`,
           serviceDomain: `service-${index}.example`,
           identifier: `account-${index}`,
@@ -221,8 +227,14 @@ describe("Scout service-account inventory", () => {
     );
     await backend.run(async (ctx) => {
       for (let index = 0; index < 200; index += 1) {
+        const productId = await ctx.db.insert("products", {
+          name: `Service ${index}`,
+          domain: `service-${index}.example`,
+          primaryUrl: `https://service-${index}.example`,
+        });
         await ctx.db.insert("scoutServiceAccounts", {
           scoutId: scoutIds[Math.floor(index / 50)],
+          productId,
           serviceName: `Service ${index}`,
           serviceDomain: `service-${index}.example`,
           identifier: `account-${index}`,

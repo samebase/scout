@@ -48,15 +48,15 @@ function SignedOutHome() {
             Test the promise.
           </h1>
           <p className="mt-6 max-w-[34rem] text-base leading-7 text-primary-foreground/90 sm:text-lg">
-            Turn product claims into repeatable user journeys, sourced evidence, and clear verdicts.
+            Give a persistent Scout a product task, watch it work, and keep the evidence.
           </p>
         </div>
 
         <ul className="relative grid gap-3 text-sm text-primary-foreground/90 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
           {[
-            "Capture first-party claims",
-            "Run with a fresh identity",
-            "Record what actually happened",
+            "Write the task in plain language",
+            "Reuse a Scout identity",
+            "Watch and replay each attempt",
           ].map((item) => (
             <li
               key={item}
@@ -86,8 +86,8 @@ function SignedInHome() {
         <p className="text-sm font-semibold text-primary">Research workspace</p>
         <h1 className="route-heading mt-3">What should Scout inspect?</h1>
         <p className="mt-4 max-w-2xl text-base leading-7 text-muted-foreground">
-          Collect a product's claims, assign a reusable Scout, then test the customer journey in
-          Lab.
+          Add a product, give a reusable Scout a task, and inspect each attempt from browser to
+          transcript.
         </p>
       </header>
 
@@ -100,7 +100,7 @@ function SignedInHome() {
           <div className="mt-16">
             <h2 className="text-2xl font-semibold tracking-[-0.04em] sm:text-3xl">Open products</h2>
             <p className="mt-2 max-w-lg text-sm leading-6 text-primary-foreground/90">
-              Gather first-party claims and launch a durable investigation.
+              Create free-form tasks, run attempts, and keep optional product research nearby.
             </p>
             <span className="mt-5 inline-flex items-center gap-2 text-sm font-semibold">
               View registry
@@ -119,7 +119,7 @@ function SignedInHome() {
           <WorkspaceLink
             to="/lab"
             title="Open Lab"
-            description="Run focused product experiments and inspect every attempt."
+            description="Use the developer sandbox for agent experiments outside product Tasks."
             icon={<FlaskConicalIcon />}
           />
         </div>

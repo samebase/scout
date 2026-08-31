@@ -2,10 +2,10 @@ import { type Infer, v } from "convex/values";
 import { internal } from "./_generated/api";
 import { action } from "./_generated/server";
 import {
-  claimTestBrowserOperationValidator,
-  claimTestBrowserSessionLifecycleValidator,
-  claimTestBrowserViewportValidator,
-} from "./claimTestBrowserModel";
+  taskBrowserOperationValidator,
+  taskBrowserSessionLifecycleValidator,
+  taskBrowserViewportValidator,
+} from "./taskBrowserModel";
 import { getBrowserReplayPlaylist, listBrowserReplayPages } from "./scout/lib/firecrawl";
 import { ProviderHttpError } from "./scout/lib/http";
 
@@ -23,9 +23,9 @@ const replayNotReadyValidator = v.union(
 
 type ReplayData = {
   providerSessionId: string;
-  viewport: Infer<typeof claimTestBrowserViewportValidator>;
-  lifecycle: Infer<typeof claimTestBrowserSessionLifecycleValidator>;
-  operations: Array<Infer<typeof claimTestBrowserOperationValidator>>;
+  viewport: Infer<typeof taskBrowserViewportValidator>;
+  lifecycle: Infer<typeof taskBrowserSessionLifecycleValidator>;
+  operations: Array<Infer<typeof taskBrowserOperationValidator>>;
 } | null;
 type ReplayPagesResult =
   | { status: "processing" | "unavailable" }
@@ -46,20 +46,20 @@ function replayIsProcessing(error: unknown) {
 
 export const listPages = action({
   args: {
-    sessionId: v.id("claimTestBrowserSessions"),
+    sessionId: v.id("taskBrowserSessions"),
   },
   returns: v.union(
     replayNotReadyValidator,
     v.object({
       status: v.literal("ready"),
       pages: v.array(replayPageValidator),
-      viewport: claimTestBrowserViewportValidator,
-      lifecycle: claimTestBrowserSessionLifecycleValidator,
-      operations: v.array(claimTestBrowserOperationValidator),
+      viewport: taskBrowserViewportValidator,
+      lifecycle: taskBrowserSessionLifecycleValidator,
+      operations: v.array(taskBrowserOperationValidator),
     }),
   ),
   handler: async (ctx, args): Promise<ReplayPagesResult> => {
-    const replayData = await ctx.runQuery(internal.claimTests.replayData, args);
+    const replayData = await ctx.runQuery(internal.tasks.replayData, args);
     if (!replayData) return { status: "unavailable" } as const;
 
     try {
@@ -82,7 +82,7 @@ export const listPages = action({
 
 export const loadPlaylist = action({
   args: {
-    sessionId: v.id("claimTestBrowserSessions"),
+    sessionId: v.id("taskBrowserSessions"),
     pageId: v.string(),
   },
   returns: v.union(
@@ -93,7 +93,7 @@ export const loadPlaylist = action({
     }),
   ),
   handler: async (ctx, args): Promise<ReplayPlaylistResult> => {
-    const replayData = await ctx.runQuery(internal.claimTests.replayData, {
+    const replayData = await ctx.runQuery(internal.tasks.replayData, {
       sessionId: args.sessionId,
     });
     if (!replayData) return { status: "unavailable" } as const;

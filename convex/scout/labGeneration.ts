@@ -6,16 +6,14 @@ import { v } from "convex/values";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import { env, internalAction } from "../_generated/server";
-import { parseClaimTestOutcome } from "../claimTestRunModel";
 import { SCOUT_AGENT_INSTRUCTIONS, scoutAgent } from "./agent";
 import { createAccountPasswordFillTool, requirePasswordInputType } from "./accountPasswordTool";
 import {
   createSingleUseHumanHandoffArm,
-  decideClaimTestStep,
-  humanHandoffOutcome,
+  decideTaskStep,
   immediatelyPrecedingToolResult,
-  type ClaimTestLoopState,
-} from "./claimTestLoop";
+  type TaskLoopState,
+} from "./taskLoop";
 import { requireOwnedAgentThread } from "./labAccess";
 import { createLabBrowserHarness, selectAgentMailTools } from "./labTools";
 import { createHumanHandoffTool } from "./humanHandoffTool";
@@ -29,55 +27,15 @@ import { scoutLanguageModel, scoutModelValidator, type ScoutTokenUsage } from ".
 import { createServiceAccountRecordingTool } from "./serviceAccountTool";
 
 const MAX_GENERATION_STEPS = 24;
-const CLAIM_TEST_CLOSE_STEP = 18;
-const CLAIM_TEST_HANDOFF_CLOSE_STEP = MAX_GENERATION_STEPS - 2;
+const TASK_CLOSE_STEP = 18;
+const TASK_HANDOFF_CLOSE_STEP = MAX_GENERATION_STEPS - 2;
 const AGENT_MAIL_CLOSE_TIMEOUT_MS = 1_000;
 
 type LabBrowser = ReturnType<typeof createLabBrowserHarness>;
 type LabBrowserUsage = Awaited<ReturnType<LabBrowser["close"]>>;
 type GenerationResult =
-  | {
-      kind: "completed";
-      usage: ScoutTokenUsage;
-      claimTestOutcome?: NonNullable<ReturnType<typeof parseClaimTestOutcome>>;
-    }
+  | { kind: "completed"; usage: ScoutTokenUsage }
   | { kind: "failed"; error: unknown };
-
-type ClaimTestGenerationStep = {
-  readonly text: string;
-  readonly toolResults: readonly (
-    | {
-        readonly toolName: string;
-        readonly output: unknown;
-      }
-    | undefined
-  )[];
-};
-
-export const EXPIRED_HUMAN_HANDOFF_RESULT = `Verdict: Inconclusive
-
-The required human verification was not completed within five minutes, so this claim could not be tested.`;
-
-function needsExpiredHumanHandoffResult(steps: readonly ClaimTestGenerationStep[]) {
-  const expired = steps.some((step) =>
-    step.toolResults.some(
-      (result) =>
-        result?.toolName === "request_human_help" &&
-        humanHandoffOutcome(result.output) === "expired",
-    ),
-  );
-  if (!expired) return false;
-  return !/^\s*Verdict:\s*Inconclusive\b/i.test(steps.at(-1)?.text ?? "");
-}
-
-export async function persistExpiredHumanHandoffResult(
-  steps: readonly ClaimTestGenerationStep[],
-  persist: (message: { role: "assistant"; content: string }) => Promise<void>,
-) {
-  if (!needsExpiredHumanHandoffResult(steps)) return false;
-  await persist({ role: "assistant", content: EXPIRED_HUMAN_HANDOFF_RESULT });
-  return true;
-}
 
 export function generationFailureDetails(
   generationResult: GenerationResult,
@@ -175,12 +133,15 @@ type RuntimeManagedCredential = {
 };
 
 export function managedCredentialInstructions(
-  credential: Pick<RuntimeManagedCredential, "credentialHost" | "identifier"> | null,
+  credentials: ReadonlyArray<Pick<RuntimeManagedCredential, "credentialHost" | "identifier">>,
 ) {
-  if (!credential) {
-    return "No managed password is configured for this experiment. Do not create an account, invent or enter a password, or ask the operator for one. You may use an already authenticated browser state. If authentication is required and none exists, stop that path and explain the limitation.";
+  if (credentials.length === 0) {
+    return "This Scout has no managed passwords. Do not invent, request, expose, or enter a password. You may use an already authenticated browser state. If authentication requires a password, explain the limitation.";
   }
-  return `You have a managed credential capability for exact login host ${JSON.stringify(credential.credentialHost)} with identifier ${JSON.stringify(credential.identifier)}. The capability exposes no password value. Fill the identifier and any required non-secret fields normally. When a visible password field is present on that exact HTTPS host, call fill_account_password with its element ref and include the confirmation-field ref when one is present. The trusted tool verifies the refs and fills the stored password without returning it. Submit the form separately after the fill succeeds. Never invent, request, inspect, repeat, or place a password in browser_fill, browser_type, or browser_press.`;
+  const available = credentials
+    .map((credential) => `- ${credential.credentialHost}: ${JSON.stringify(credential.identifier)}`)
+    .join("\n");
+  return `This Scout has managed credential capabilities for these exact HTTPS login hosts:\n${available}\nThe capabilities expose no password values. Fill identifiers and other non-secret fields normally. On one of those exact hosts, call fill_account_password for visible password fields. Trusted code chooses the credential from the current URL and fills it without returning it. Submit separately. Never invent, request, inspect, repeat, or put a password into a generic browser tool.`;
 }
 
 export function decryptRuntimeManagedPassword(
@@ -244,7 +205,7 @@ export const generateResponse = internalAction({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const started = await ctx.runMutation(internal.scout.lab.startGeneration, {
+    const started = await ctx.runMutation(internal.scout.turns.start, {
       promptMessageId: args.promptMessageId,
     });
     if (!started) {
@@ -253,89 +214,91 @@ export const generateResponse = internalAction({
 
     let agentMailClient: MCPClient | undefined;
     let browser: LabBrowser | undefined;
-    let browserSessionId: Id<"claimTestBrowserSessions"> | null = null;
+    let browserSessionId: Id<"taskBrowserSessions"> | null = null;
     let interactiveLiveViewUrl: string | null = null;
     let generationResult: GenerationResult;
 
     try {
       await requireOwnedAgentThread(ctx, args.threadId, args.userId);
-      const scoutId = await ctx.runQuery(internal.scout.lab.getThreadScoutId, {
-        threadId: args.threadId,
-        userId: args.userId,
+      const runtimeContext = await ctx.runQuery(internal.tasks.runtimeContext, {
+        promptMessageId: args.promptMessageId,
       });
+      if (runtimeContext.userId !== args.userId) throw new Error("Scout turn owner is invalid");
+      const scoutId = runtimeContext.scoutId;
       const scout = await ctx.runQuery(internal.scout.scouts.getRuntimeIdentity, { scoutId });
       if (!scout || scout.status !== "active") {
         throw new Error("Active Scout not found");
       }
-      const claimTestContext = await ctx.runQuery(internal.claimTests.generationContext, {
-        promptMessageId: args.promptMessageId,
-      });
-      const isClaimTestGeneration = claimTestContext !== null;
-      const runtimeCredential = claimTestContext?.serviceAccountId
-        ? await ctx.runQuery(internal.scout.serviceAccountCredentials.getRuntimeCredential, {
-            serviceAccountId: claimTestContext.serviceAccountId,
-          })
-        : null;
+      const isTaskTurn = runtimeContext.kind === "task";
+      const runtimeCredentials = await ctx.runQuery(
+        internal.scout.serviceAccountCredentials.listRuntimeCredentialsForScout,
+        { scoutId },
+      );
+      const browserProfileName =
+        runtimeContext.kind === "task"
+          ? runtimeContext.browserProfile.kind === "scout"
+            ? runtimeContext.browserProfile.profileName
+            : undefined
+          : scout.firecrawl.profileName;
       browser = createLabBrowserHarness({
-        ...(claimTestContext?.browserProfile.kind === "fresh"
-          ? {}
-          : {
-              profileName:
-                claimTestContext?.browserProfile.profileName ?? scout.firecrawl.profileName,
-            }),
-        onSessionAvailable: async (sessionId) => {
-          const registered = await ctx.runMutation(internal.claimTests.setBrowserSession, {
-            promptMessageId: args.promptMessageId,
-            providerSessionId: sessionId,
-          });
-          browserSessionId = registered.browserSessionId;
-          return { captureOperations: registered.captureOperations };
-        },
-        onOperationPrepared: async ({ action, toolCallId }) => {
-          if (browserSessionId === null) {
-            throw new Error("Claim test browser session was not registered");
-          }
-          return await ctx.runMutation(internal.claimTests.prepareBrowserOperation, {
-            sessionId: browserSessionId,
-            toolCallId,
-            action,
-          });
-        },
-        onOperationSettled: async ({ toolCallId, outcome }) => {
-          if (browserSessionId === null) {
-            throw new Error("Claim test browser session was not registered");
-          }
-          await ctx.runMutation(internal.claimTests.settleBrowserOperation, {
-            sessionId: browserSessionId,
-            toolCallId,
-            outcome,
-          });
-        },
-        onSessionClosed: async ({ creditsBilled, sessionDurationMs }) => {
-          if (browserSessionId === null) return;
-          await ctx.runMutation(internal.claimTests.closeBrowserSessionRecord, {
-            sessionId: browserSessionId,
-            providerDurationMs: sessionDurationMs,
-            creditsBilled,
-          });
-        },
-        onLiveViewAvailable: async (liveViewUrl) => {
-          if (browserSessionId === null) return;
-          await ctx.runMutation(internal.claimTests.setLiveView, {
-            sessionId: browserSessionId,
-            liveViewUrl,
-          });
-        },
-        onInteractiveLiveViewAvailable: async (url) => {
-          interactiveLiveViewUrl = url;
-        },
-        onLiveViewClosed: async () => {
-          interactiveLiveViewUrl = null;
-          if (browserSessionId === null) return;
-          await ctx.runMutation(internal.claimTests.clearLiveView, {
-            sessionId: browserSessionId,
-          });
-        },
+        ...(browserProfileName === undefined ? {} : { profileName: browserProfileName }),
+        ...(isTaskTurn
+          ? {
+              onSessionAvailable: async (sessionId: string) => {
+                const registered = await ctx.runMutation(internal.tasks.setBrowserSession, {
+                  promptMessageId: args.promptMessageId,
+                  providerSessionId: sessionId,
+                });
+                browserSessionId = registered.browserSessionId;
+                return { captureOperations: registered.captureOperations };
+              },
+              onOperationPrepared: async ({ action, toolCallId }) => {
+                if (browserSessionId === null) {
+                  throw new Error("Task browser session was not registered");
+                }
+                return await ctx.runMutation(internal.tasks.prepareBrowserOperation, {
+                  sessionId: browserSessionId,
+                  toolCallId,
+                  action,
+                });
+              },
+              onOperationSettled: async ({ toolCallId, outcome }) => {
+                if (browserSessionId === null) {
+                  throw new Error("Task browser session was not registered");
+                }
+                await ctx.runMutation(internal.tasks.settleBrowserOperation, {
+                  sessionId: browserSessionId,
+                  toolCallId,
+                  outcome,
+                });
+              },
+              onSessionClosed: async ({ creditsBilled, sessionDurationMs }) => {
+                if (browserSessionId === null) return;
+                await ctx.runMutation(internal.tasks.closeBrowserSessionRecord, {
+                  sessionId: browserSessionId,
+                  providerDurationMs: sessionDurationMs,
+                  creditsBilled,
+                });
+              },
+              onLiveViewAvailable: async (liveViewUrl: string) => {
+                if (browserSessionId === null) return;
+                await ctx.runMutation(internal.tasks.setLiveView, {
+                  sessionId: browserSessionId,
+                  liveViewUrl,
+                });
+              },
+              onInteractiveLiveViewAvailable: async (url: string) => {
+                interactiveLiveViewUrl = url;
+              },
+              onLiveViewClosed: async () => {
+                interactiveLiveViewUrl = null;
+                if (browserSessionId === null) return;
+                await ctx.runMutation(internal.tasks.clearLiveView, {
+                  sessionId: browserSessionId,
+                });
+              },
+            }
+          : {}),
       });
       requireSecret(env.FIRECRAWL_API_KEY, "FIRECRAWL_API_KEY");
       agentMailClient = await createMCPClient({
@@ -352,7 +315,7 @@ export const generateResponse = internalAction({
         scout.agentMail.inboxId,
       );
       const humanHandoffArm = createSingleUseHumanHandoffArm();
-      const humanHandoffTools = isClaimTestGeneration
+      const humanHandoffTools = isTaskTurn
         ? {
             request_human_help: createHumanHandoffTool({
               request: async (reason) => {
@@ -366,55 +329,71 @@ export const generateResponse = internalAction({
                     "The current browser session has no interactive human-takeover link",
                   );
                 }
-                return await ctx.runMutation(internal.claimTestHumanHandoffs.request, {
+                return await ctx.runMutation(internal.taskHumanHandoffs.request, {
                   promptMessageId: args.promptMessageId,
                   reason,
                   interactiveLiveViewUrl,
                 });
               },
               getStatus: async (handoffId) =>
-                await ctx.runQuery(internal.claimTestHumanHandoffs.getStatus, { handoffId }),
+                await ctx.runQuery(internal.taskHumanHandoffs.getStatus, { handoffId }),
               expire: async (handoffId) =>
-                await ctx.runMutation(internal.claimTestHumanHandoffs.expire, { handoffId }),
+                await ctx.runMutation(internal.taskHumanHandoffs.expire, { handoffId }),
             }),
           }
         : {};
       const activeBrowser = browser;
       if (!activeBrowser) throw new Error("Browser harness was not initialized");
-      const serviceAccountTools =
-        claimTestContext?.accountCreation === "required"
-          ? {
-              record_authenticated_service_account: createServiceAccountRecordingTool(
-                async ({ accountAccess, identityRef, sessionControlRef }) => {
-                  const [identity, sessionControl, currentUrl] = await Promise.all([
-                    activeBrowser.actions.getElement(identityRef),
-                    activeBrowser.actions.getElement(sessionControlRef),
-                    activeBrowser.actions.getPage("url"),
-                  ]);
-                  if (!identity.success || !sessionControl.success || !currentUrl.success) {
-                    throw new Error(
-                      "The authenticated account evidence could not be read from the current page",
-                    );
-                  }
-                  return await ctx.runMutation(internal.scout.serviceAccounts.upsertFromClaimTest, {
+      const serviceAccountTools = isTaskTurn
+        ? {
+            record_authenticated_service_account: createServiceAccountRecordingTool(
+              async ({ accountAccess, identityRef, sessionControlRef }) => {
+                const [identity, sessionControl, currentUrl] = await Promise.all([
+                  activeBrowser.actions.getElement(identityRef),
+                  activeBrowser.actions.getElement(sessionControlRef),
+                  activeBrowser.actions.getPage("url"),
+                ]);
+                if (!identity.success || !sessionControl.success || !currentUrl.success) {
+                  throw new Error(
+                    "The authenticated account evidence could not be read from the current page",
+                  );
+                }
+                return await ctx.runMutation(
+                  internal.scout.serviceAccounts.recordAuthenticatedFromTask,
+                  {
                     promptMessageId: args.promptMessageId,
                     accountAccess,
                     observedUrl: currentUrl.output,
                     visibleIdentity: identity.output,
                     visibleSessionControl: sessionControl.output,
-                  });
-                },
-              ),
-            }
-          : {};
+                  },
+                );
+              },
+            ),
+          }
+        : {};
       const accountPasswordTools =
-        runtimeCredential !== null
+        runtimeCredentials.length > 0
           ? {
               fill_account_password: createAccountPasswordFillTool(
                 async ({ passwordRef, passwordConfirmationRef }) => {
                   const currentUrl = await activeBrowser.actions.getPage("url");
                   if (!currentUrl.success) {
                     throw new Error("The current browser URL could not be verified");
+                  }
+                  let currentHostname: string;
+                  try {
+                    currentHostname = new URL(currentUrl.output).hostname.toLowerCase();
+                  } catch {
+                    throw new Error("The current browser URL could not be verified");
+                  }
+                  const runtimeCredential = runtimeCredentials.find(
+                    (credential) => credential.credentialHost === currentHostname,
+                  );
+                  if (!runtimeCredential) {
+                    throw new Error(
+                      "This Scout has no managed password for the current login host",
+                    );
                   }
                   assertCredentialBrowserUrl(currentUrl.output, runtimeCredential.credentialHost);
                   const passwordField = await activeBrowser.actions.getElementAttribute(
@@ -474,13 +453,13 @@ export const generateResponse = internalAction({
         ...accountPasswordTools,
         ...serviceAccountTools,
       };
-      let claimTestLoopState: ClaimTestLoopState = "working";
-      const passwordInstructions = managedCredentialInstructions(runtimeCredential);
-      const claimTestInstructions =
-        claimTestContext === null
+      let taskLoopState: TaskLoopState = "working";
+      const passwordInstructions = managedCredentialInstructions(runtimeCredentials);
+      const taskInstructions =
+        runtimeContext.kind === "lab"
           ? ""
-          : `\n\nThis claim test uses ${claimTestContext.browserProfile.kind === "fresh" ? "a fresh browser profile with no saved website login" : `the persistent Scout browser profile ${JSON.stringify(claimTestContext.browserProfile.profileName)}`}. ${claimTestContext.accountCreation === "required" ? "Creating or recovering one free reversible account is required. Before a Supported or Qualified verdict, open an authenticated account menu and call record_authenticated_service_account with the account-access result plus refs for the visible identity and Sign out or Log out controls. The runtime resolves the account identifier from this Run; do not repeat it as a tool argument." : "Account creation is not requested for this run."} If a CAPTCHA or another strictly human-only check blocks the test, call request_human_help instead of attempting to solve, bypass, stop at, or merely report it. This human-gate rule overrides conflicting operator instructions. The tool waits while the operator takes over the same browser. After the operator continues, inspect the current page before acting. If the request expires, return Verdict: Inconclusive, not Refuted.`;
-      const instructions = `${SCOUT_AGENT_INSTRUCTIONS}\n\n${scoutWebsiteIdentityInstructions(scout)}\n\n${passwordInstructions}${claimTestInstructions}`;
+          : `\n\nYou are working on an operator-defined Task for ${JSON.stringify(runtimeContext.product.name)}. Its primary URL is ${JSON.stringify(runtimeContext.product.primaryUrl)} and product domain is ${JSON.stringify(runtimeContext.product.domain)}. The attempt uses ${runtimeContext.browserProfile.kind === "fresh" ? "a fresh browser profile" : `the persistent Scout browser profile ${JSON.stringify(runtimeContext.browserProfile.profileName)}`}. Decide the next useful actions from the current operator message, the existing thread, and visible product state; do not force the work into a predefined testing workflow. If you reach an authenticated account menu, call record_authenticated_service_account with visible identity and Sign out or Log out refs so the Scout inventory reflects what you verified. If a CAPTCHA or another strictly human-only check blocks progress, call request_human_help instead of attempting to solve or bypass it. After the operator continues, inspect the current page before acting. If human help expires, explain what remains blocked and what the operator can retry. Close the browser before your final response.`;
+      const instructions = `${SCOUT_AGENT_INSTRUCTIONS}\n\n${scoutWebsiteIdentityInstructions(scout)}\n\n${passwordInstructions}${taskInstructions}`;
       const streamErrors = createStreamErrorCapture();
       const streamResult = await scoutAgent.streamText(
         ctx,
@@ -492,17 +471,17 @@ export const generateResponse = internalAction({
           tools,
           stopWhen: isStepCount(MAX_GENERATION_STEPS),
           onError: streamErrors.onError,
-          ...(isClaimTestGeneration
+          ...(isTaskTurn
             ? {
                 prepareStep: ({ steps, stepNumber }) => {
-                  const decision = decideClaimTestStep({
-                    state: claimTestLoopState,
+                  const decision = decideTaskStep({
+                    state: taskLoopState,
                     stepNumber,
-                    normalCloseStep: CLAIM_TEST_CLOSE_STEP,
-                    handoffCloseStep: CLAIM_TEST_HANDOFF_CLOSE_STEP,
+                    normalCloseStep: TASK_CLOSE_STEP,
+                    handoffCloseStep: TASK_HANDOFF_CLOSE_STEP,
                     previousToolResult: immediatelyPrecedingToolResult(steps),
                   });
-                  claimTestLoopState = decision.nextState;
+                  taskLoopState = decision.nextState;
                   switch (decision.kind) {
                     case "request_human_help":
                       humanHandoffArm.arm();
@@ -523,17 +502,13 @@ export const generateResponse = internalAction({
                         activeTools: ["browser_close"] as const,
                         toolChoice: { type: "tool", toolName: "browser_close" } as const,
                       };
-                    case "final_inconclusive":
-                      return {
-                        activeTools: [] as const,
-                        toolChoice: "none" as const,
-                        instructions: `${instructions}\n\nThe browser is closed because a required human-only check could not be completed. Do not investigate further. Begin the final response with exactly "Verdict: Inconclusive" and explain that limitation.`,
-                      };
                     case "final":
                       return {
                         activeTools: [] as const,
                         toolChoice: "none" as const,
-                        instructions: `${instructions}\n\nThe bounded browser phase is over. Do not investigate further. Give the final claim verdict now, beginning with the required Verdict line.`,
+                        instructions: decision.humanHelpExpired
+                          ? `${instructions}\n\nThe browser is closed because human help expired. Do not investigate further. Briefly report what happened, what remains blocked, and a useful next message for this attempt.`
+                          : `${instructions}\n\nThe bounded browser phase is over. Do not investigate further. Briefly report what you accomplished, what remains uncertain, and what the operator should try next.`,
                       };
                     case "none":
                       return undefined;
@@ -552,26 +527,9 @@ export const generateResponse = internalAction({
       );
       await streamResult.consumeStream();
       streamErrors.throwIfCaptured();
-      const persistedExpiredHandoffResult = isClaimTestGeneration
-        ? await persistExpiredHumanHandoffResult(await streamResult.steps, async (message) => {
-            await scoutAgent.saveMessage(ctx, {
-              threadId: args.threadId,
-              userId: args.userId,
-              promptMessageId: args.promptMessageId,
-              message,
-              skipEmbeddings: true,
-            });
-          })
-        : false;
-      const parsedOutcome = claimTestContext
-        ? persistedExpiredHandoffResult
-          ? ({ verdict: "inconclusive" } as const)
-          : parseClaimTestOutcome(await streamResult.text)
-        : null;
       generationResult = {
         kind: "completed",
         usage: tokenUsage(await streamResult.totalUsage),
-        ...(parsedOutcome === null ? {} : { claimTestOutcome: parsedOutcome }),
       };
     } catch (error) {
       generationResult = { kind: "failed", error };
@@ -587,12 +545,9 @@ export const generateResponse = internalAction({
     let completionFailure: unknown;
     if (generationResult.kind === "completed" && !cleanupFailure) {
       try {
-        await ctx.runMutation(internal.scout.lab.completeGeneration, {
+        await ctx.runMutation(internal.scout.turns.complete, {
           promptMessageId: args.promptMessageId,
           usage: generationResult.usage,
-          ...(generationResult.claimTestOutcome === undefined
-            ? {}
-            : { claimTestOutcome: generationResult.claimTestOutcome }),
           ...(browserUsage?.creditsBilled === null || browserUsage?.creditsBilled === undefined
             ? {}
             : { firecrawlCredits: browserUsage.creditsBilled }),
@@ -615,7 +570,7 @@ export const generateResponse = internalAction({
     );
     let terminalError = failureDetails.terminalError;
     try {
-      await ctx.runMutation(internal.scout.lab.failGeneration, {
+      await ctx.runMutation(internal.scout.turns.fail, {
         promptMessageId: args.promptMessageId,
         failure: failureDetails.failure,
         ...("usage" in failureDetails ? { usage: failureDetails.usage } : {}),

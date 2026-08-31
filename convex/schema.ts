@@ -2,26 +2,23 @@ import { authTables } from "@convex-dev/auth/server";
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import {
-  claimTestBrowserActionValidator,
-  claimTestBrowserOperationStateValidator,
-  claimTestBrowserSessionLifecycleValidator,
-  claimTestBrowserViewportValidator,
-} from "./claimTestBrowserModel";
-import { claimTestHumanHandoffValidator } from "./claimTestHumanHandoffsModel";
-import {
-  claimTestAccountCreationValidator,
-  claimTestBrowserProfileValidator,
-  claimTestRunStateValidator,
-} from "./claimTestRunModel";
-import { productClaimSnapshotValidator, productInvestigationValidator } from "./productsModel";
+  taskBrowserActionValidator,
+  taskBrowserOperationStateValidator,
+  taskBrowserSessionLifecycleValidator,
+  taskBrowserViewportValidator,
+} from "./taskBrowserModel";
+import { taskHumanHandoffValidator } from "./taskHumanHandoffsModel";
+import { taskBrowserProfileValidator } from "./taskAttemptModel";
+import { productInvestigationValidator } from "./productsModel";
 import { productInvestigationActivityFieldsValidator } from "./productsInvestigationActivityModel";
 import { scoutServiceAccountFieldsValidator, scoutWebsiteIdentityValidator } from "./scout/model";
-import { scoutModelValidator, scoutTokenUsageValidator } from "./scout/models";
+import { scoutModelValidator, scoutTurnStateValidator } from "./scout/models";
 
-const claimTestServiceAccountProvenanceValidator = v.object({
-  runId: v.id("claimTestRuns"),
-  generationId: v.id("scoutLabGenerations"),
-  sessionId: v.id("claimTestBrowserSessions"),
+const taskServiceAccountProvenanceValidator = v.object({
+  taskId: v.id("productTasks"),
+  attemptId: v.id("taskAttempts"),
+  turnId: v.id("scoutTurns"),
+  sessionId: v.id("taskBrowserSessions"),
   recordedAt: v.number(),
   observedUrl: v.string(),
   visibleIdentity: v.string(),
@@ -78,46 +75,11 @@ export default defineSchema({
   })
     .index("by_investigation_id_and_sequence", ["investigationId", "sequence"])
     .index("by_investigation_id_and_url", ["investigationId", "url"]),
-  productClaimOverrides: defineTable(
-    v.union(
-      v.object({
-        kind: v.literal("edited"),
-        userId: v.id("users"),
-        productId: v.id("products"),
-        investigationId: v.id("productInvestigations"),
-        claimKey: v.string(),
-        claim: v.string(),
-        suggestedMysteryShop: v.string(),
-        editedAt: v.number(),
-      }),
-      v.object({
-        kind: v.literal("hidden"),
-        userId: v.id("users"),
-        productId: v.id("products"),
-        investigationId: v.id("productInvestigations"),
-        claimKey: v.string(),
-        hiddenAt: v.number(),
-      }),
-    ),
-  ).index("by_user_id_and_product_id_and_investigation_id_and_claim_key", [
-    "userId",
-    "productId",
-    "investigationId",
-    "claimKey",
-  ]),
-  productCustomClaims: defineTable({
-    userId: v.id("users"),
-    productId: v.id("products"),
-    claim: v.string(),
-    suggestedMysteryShop: v.string(),
-    createdAt: v.number(),
-    editedAt: v.optional(v.number()),
-  }).index("by_user_id_and_product_id", ["userId", "productId"]),
   scoutServiceAccounts: defineTable(
     scoutServiceAccountFieldsValidator.extend({
-      productId: v.optional(v.id("products")),
-      firstRecordedByClaimTest: v.optional(claimTestServiceAccountProvenanceValidator),
-      lastVerifiedByClaimTest: v.optional(claimTestServiceAccountProvenanceValidator),
+      productId: v.id("products"),
+      firstRecordedByTask: v.optional(taskServiceAccountProvenanceValidator),
+      lastVerifiedByTask: v.optional(taskServiceAccountProvenanceValidator),
     }).fields,
   )
     .index("by_scout_id", ["scoutId"])
@@ -156,7 +118,7 @@ export default defineSchema({
     name: v.string(),
     targetProduct: v.string(),
     targetDomain: v.string(),
-    productId: v.optional(v.id("products")),
+    productId: v.id("products"),
     objective: v.string(),
     status: v.union(v.literal("active"), v.literal("completed")),
   })
@@ -171,83 +133,58 @@ export default defineSchema({
   })
     .index("by_thread_id", ["threadId"])
     .index("by_user_id_and_created_at", ["userId", "createdAt"]),
-  scoutLabGenerations: defineTable({
+  productTasks: defineTable({
+    userId: v.id("users"),
+    productId: v.id("products"),
+    instruction: v.string(),
+  }).index("by_user_id_and_product_id", ["userId", "productId"]),
+  taskAttempts: defineTable({
+    taskId: v.id("productTasks"),
+    scoutId: v.id("scouts"),
+    threadId: v.string(),
+    browserProfile: taskBrowserProfileValidator,
+  })
+    .index("by_task_id", ["taskId"])
+    .index("by_thread_id", ["threadId"]),
+  scoutTurns: defineTable({
     threadId: v.string(),
     order: v.number(),
     promptMessageId: v.string(),
     scoutId: v.id("scouts"),
-    status: v.union(v.literal("pending"), v.literal("completed"), v.literal("failed")),
-    leaseExpiresAt: v.number(),
     model: scoutModelValidator,
     startedAt: v.number(),
-    completedAt: v.optional(v.number()),
-    failedAt: v.optional(v.number()),
-    failure: v.optional(v.string()),
-    usage: v.optional(scoutTokenUsageValidator),
-    firecrawlCredits: v.optional(v.number()),
-    firecrawlDurationMs: v.optional(v.number()),
+    state: scoutTurnStateValidator,
   })
     .index("by_prompt_message_id", ["promptMessageId"])
     .index("by_thread_id_and_order", ["threadId", "order"])
-    .index("by_scout_id_and_status", ["scoutId", "status"]),
-  claimTestRuns: defineTable({
-    userId: v.id("users"),
-    productId: v.id("products"),
-    investigationId: v.id("productInvestigations"),
-    claimKey: v.string(),
-    experimentId: v.id("scoutLabExperiments"),
-    threadId: v.string(),
-    scoutId: v.id("scouts"),
-    serviceAccountId: v.optional(v.id("scoutServiceAccounts")),
-    browserProfile: claimTestBrowserProfileValidator,
-    accountCreation: claimTestAccountCreationValidator,
-    state: claimTestRunStateValidator,
-    testedClaim: productClaimSnapshotValidator,
-  })
-    .index("by_thread_id", ["threadId"])
-    .index("by_user_id_and_product_id_and_investigation_id_and_claim_key", [
-      "userId",
-      "productId",
-      "investigationId",
-      "claimKey",
-    ])
-    .index("by_user_id_and_product_id_and_claim_key", ["userId", "productId", "claimKey"]),
-  claimTestBrowserSessions: defineTable({
-    runId: v.id("claimTestRuns"),
-    generationId: v.id("scoutLabGenerations"),
-    userId: v.id("users"),
+    .index("by_scout_id_and_state_kind", ["scoutId", "state.kind"]),
+  taskBrowserSessions: defineTable({
+    attemptId: v.id("taskAttempts"),
+    turnId: v.id("scoutTurns"),
     sequence: v.number(),
     provider: v.literal("firecrawl"),
     providerSessionId: v.string(),
     profileName: v.union(v.string(), v.null()),
-    viewport: claimTestBrowserViewportValidator,
+    viewport: taskBrowserViewportValidator,
     nextOperationSequence: v.number(),
-    lifecycle: claimTestBrowserSessionLifecycleValidator,
+    lifecycle: taskBrowserSessionLifecycleValidator,
   })
-    .index("by_run_id_and_sequence", ["runId", "sequence"])
-    .index("by_generation_id", ["generationId"])
+    .index("by_attempt_id_and_sequence", ["attemptId", "sequence"])
+    .index("by_turn_id", ["turnId"])
     .index("by_provider_and_provider_session_id", ["provider", "providerSessionId"]),
-  claimTestBrowserOperations: defineTable({
-    sessionId: v.id("claimTestBrowserSessions"),
-    runId: v.id("claimTestRuns"),
+  taskBrowserOperations: defineTable({
+    sessionId: v.id("taskBrowserSessions"),
     sequence: v.number(),
     toolCallId: v.string(),
-    action: claimTestBrowserActionValidator,
-    state: claimTestBrowserOperationStateValidator,
+    action: taskBrowserActionValidator,
+    state: taskBrowserOperationStateValidator,
   })
     .index("by_session_id_and_sequence", ["sessionId", "sequence"])
     .index("by_session_id_and_tool_call_id", ["sessionId", "toolCallId"]),
-  claimTestLiveViews: defineTable({
-    sessionId: v.id("claimTestBrowserSessions"),
-    generationId: v.id("scoutLabGenerations"),
-    runId: v.id("claimTestRuns"),
-    userId: v.id("users"),
+  taskLiveViews: defineTable({
+    sessionId: v.id("taskBrowserSessions"),
     liveViewUrl: v.string(),
     openedAt: v.number(),
-  })
-    .index("by_session_id", ["sessionId"])
-    .index("by_generation_id", ["generationId"]),
-  claimTestHumanHandoffs: defineTable(claimTestHumanHandoffValidator)
-    .index("by_session_id", ["sessionId"])
-    .index("by_generation_id", ["generationId"]),
+  }).index("by_session_id", ["sessionId"]),
+  taskHumanHandoffs: defineTable(taskHumanHandoffValidator).index("by_session_id", ["sessionId"]),
 });

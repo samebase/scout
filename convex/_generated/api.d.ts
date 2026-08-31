@@ -14,24 +14,14 @@ import type * as authConfig from "../authConfig.js";
 import type * as authEmail from "../authEmail.js";
 import type * as authEmailRateLimit from "../authEmailRateLimit.js";
 import type * as authEmails from "../authEmails.js";
-import type * as claimTestBrowserModel from "../claimTestBrowserModel.js";
-import type * as claimTestHumanHandoffs from "../claimTestHumanHandoffs.js";
-import type * as claimTestHumanHandoffsModel from "../claimTestHumanHandoffsModel.js";
-import type * as claimTestReplay from "../claimTestReplay.js";
-import type * as claimTestRunModel from "../claimTestRunModel.js";
-import type * as claimTests from "../claimTests.js";
-import type * as claimTestsModel from "../claimTestsModel.js";
 import type * as devAuth from "../devAuth.js";
 import type * as devAuthConfig from "../devAuthConfig.js";
 import type * as email from "../email.js";
 import type * as http from "../http.js";
-import type * as productClaimEdits from "../productClaimEdits.js";
 import type * as productInvestigationWorkflow from "../productInvestigationWorkflow.js";
 import type * as productResearchAgent from "../productResearchAgent.js";
 import type * as products from "../products.js";
-import type * as productsClaims from "../productsClaims.js";
 import type * as productsDomain from "../productsDomain.js";
-import type * as productsInvestigation from "../productsInvestigation.js";
 import type * as productsInvestigationActivities from "../productsInvestigationActivities.js";
 import type * as productsInvestigationActivityModel from "../productsInvestigationActivityModel.js";
 import type * as productsInvestigationInspector from "../productsInvestigationInspector.js";
@@ -42,7 +32,6 @@ import type * as productsValidation from "../productsValidation.js";
 import type * as scout_accountPasswordTool from "../scout/accountPasswordTool.js";
 import type * as scout_agent from "../scout/agent.js";
 import type * as scout_browserTelemetry from "../scout/browserTelemetry.js";
-import type * as scout_claimTestLoop from "../scout/claimTestLoop.js";
 import type * as scout_credentialCrypto from "../scout/credentialCrypto.js";
 import type * as scout_humanHandoffTool from "../scout/humanHandoffTool.js";
 import type * as scout_lab from "../scout/lab.js";
@@ -60,6 +49,15 @@ import type * as scout_serviceAccountCredentialActions from "../scout/serviceAcc
 import type * as scout_serviceAccountCredentials from "../scout/serviceAccountCredentials.js";
 import type * as scout_serviceAccountTool from "../scout/serviceAccountTool.js";
 import type * as scout_serviceAccounts from "../scout/serviceAccounts.js";
+import type * as scout_taskLoop from "../scout/taskLoop.js";
+import type * as scout_turns from "../scout/turns.js";
+import type * as taskAttemptModel from "../taskAttemptModel.js";
+import type * as taskBrowserModel from "../taskBrowserModel.js";
+import type * as taskHumanHandoffs from "../taskHumanHandoffs.js";
+import type * as taskHumanHandoffsModel from "../taskHumanHandoffsModel.js";
+import type * as taskReplay from "../taskReplay.js";
+import type * as tasks from "../tasks.js";
+import type * as tasksModel from "../tasksModel.js";
 
 import type {
   ApiFromModules,
@@ -74,24 +72,14 @@ declare const fullApi: ApiFromModules<{
   authEmail: typeof authEmail;
   authEmailRateLimit: typeof authEmailRateLimit;
   authEmails: typeof authEmails;
-  claimTestBrowserModel: typeof claimTestBrowserModel;
-  claimTestHumanHandoffs: typeof claimTestHumanHandoffs;
-  claimTestHumanHandoffsModel: typeof claimTestHumanHandoffsModel;
-  claimTestReplay: typeof claimTestReplay;
-  claimTestRunModel: typeof claimTestRunModel;
-  claimTests: typeof claimTests;
-  claimTestsModel: typeof claimTestsModel;
   devAuth: typeof devAuth;
   devAuthConfig: typeof devAuthConfig;
   email: typeof email;
   http: typeof http;
-  productClaimEdits: typeof productClaimEdits;
   productInvestigationWorkflow: typeof productInvestigationWorkflow;
   productResearchAgent: typeof productResearchAgent;
   products: typeof products;
-  productsClaims: typeof productsClaims;
   productsDomain: typeof productsDomain;
-  productsInvestigation: typeof productsInvestigation;
   productsInvestigationActivities: typeof productsInvestigationActivities;
   productsInvestigationActivityModel: typeof productsInvestigationActivityModel;
   productsInvestigationInspector: typeof productsInvestigationInspector;
@@ -102,7 +90,6 @@ declare const fullApi: ApiFromModules<{
   "scout/accountPasswordTool": typeof scout_accountPasswordTool;
   "scout/agent": typeof scout_agent;
   "scout/browserTelemetry": typeof scout_browserTelemetry;
-  "scout/claimTestLoop": typeof scout_claimTestLoop;
   "scout/credentialCrypto": typeof scout_credentialCrypto;
   "scout/humanHandoffTool": typeof scout_humanHandoffTool;
   "scout/lab": typeof scout_lab;
@@ -120,6 +107,15 @@ declare const fullApi: ApiFromModules<{
   "scout/serviceAccountCredentials": typeof scout_serviceAccountCredentials;
   "scout/serviceAccountTool": typeof scout_serviceAccountTool;
   "scout/serviceAccounts": typeof scout_serviceAccounts;
+  "scout/taskLoop": typeof scout_taskLoop;
+  "scout/turns": typeof scout_turns;
+  taskAttemptModel: typeof taskAttemptModel;
+  taskBrowserModel: typeof taskBrowserModel;
+  taskHumanHandoffs: typeof taskHumanHandoffs;
+  taskHumanHandoffsModel: typeof taskHumanHandoffsModel;
+  taskReplay: typeof taskReplay;
+  tasks: typeof tasks;
+  tasksModel: typeof tasksModel;
 }>;
 
 /**

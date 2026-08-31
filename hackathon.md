@@ -2,7 +2,7 @@
 
 - **Project:** Scout
 - **Event:** Convex All Gas Hackathon
-- **What it does:** Will test web apps through fresh-user journeys and record whether their claims hold.
+- **What it does:** Runs persistent Scout identities through operator-directed web tasks and preserves their attempts, browser sessions, and evidence.
 - **Live app:** https://usable-spider-599.eu-west-1.convex.site
 - **Repo:** private
 - **Frontend:** Convex static hosting
@@ -10,9 +10,9 @@
 - **Components:** @convex-dev/agent, @convex-dev/static-hosting, @convex-dev/workflow
 - **Convex features:** schema, tables, indexes, queries, paginated queries, realtime queries, mutations, actions, scheduled functions, HTTP actions, AI Gateway
 - **Auth:** Convex Auth
-- **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
+- **AI models:** qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-30T23:26:58Z
+- **Last updated:** 2026-08-31T14:18:59Z
 
 ## Log
 
@@ -665,7 +665,7 @@ verification, account creation, account recording, and replay. All 247 tests, th
 push, and the complete Cloudflare build path passed (`convex/scout/labGeneration.ts`,
 `convex/scout/serviceAccounts.ts`, `convex/claimTestHumanHandoffs.ts`).
 
-### 2026-08-30 - working tree
+### 2026-08-30 - 5babc67 - v129
 
 Added managed Scout passwords encrypted with AES-256-GCM in Convex. Public queries and the agent see
 only safe account metadata. An account-creation Run must bind one exact prepared service-account ID
@@ -687,3 +687,59 @@ cannot scrub provider-rendered replay or raise Firecrawl's undocumented recordin
 `docs/firecrawl-limitations.md`, `docs/scout-credential-store-decision.md`). All 272 tests, the
 Convex development push, and the
 complete Cloudflare build path passed.
+
+### 2026-08-31 - 21e0ab5 - v130
+
+Decoupled administrator-authored claims from product research. A Product can now expose, edit,
+remove, and test a manual Claim before any investigation succeeds; generated Claims remain tied to
+their completed investigation, while custom Claim Runs keep the Product → Claim → Run → Session
+hierarchy without a fabricated research record (`convex/productClaimEdits.ts`,
+`convex/claimTests.ts`, `src/components/products-workspace.tsx`). Removed the unused pre-Workflow
+investigation action instead of preserving a second implementation.
+
+A live Cloudflare run proved the path against a real account: the managed credential filled the
+signup form without exposing its password, human takeover cleared Cloudflare's CAPTCHA, Scout read
+the verification email, reached the authenticated dashboard, and recorded the created account
+against Conrad's Product account. Replay retained both browser sessions and six operations; one
+provider video remained explicitly unmatched because Firecrawl did not expose enough tab identity.
+All 272 tests and the complete Cloudflare build path passed.
+
+### 2026-08-31 - 8f538cb - v131
+
+Raised the Qwen product-research synthesis ceiling from 6,000 to 16,000 output tokens after a
+Cloudflare response spent nearly the entire smaller budget on reasoning and ended with incomplete
+JSON. Kept the checked-in synthesis path to one Convex Agent `generateText` call followed by strict
+JSON and Zod validation; no experimental `generateObject` or repair implementation remains
+(`convex/productsInvestigationWorkflow.ts`). All 272 tests and the Convex development push passed;
+a fresh Cloudflare investigation then completed live with six generated claims and seven Firecrawl
+credits.
+
+### 2026-08-31 - cc3999f - v132
+
+Clarified the operator workflow in the UI. Product controls now use Research product, Refresh
+product research, and Retry product research; each Claim exposes an Attempts list with New attempt,
+Start attempt, and Continue attempt controls (`src/components/products-workspace.tsx`,
+`src/components/claim-run-workspace.tsx`). The existing Product, Claim, Run, and Session data model
+and routes remain unchanged. Verified both Cloudflare views in the local app, and all 272 tests and
+the complete project check passed.
+
+### 2026-08-31 - 7c98f9d - v133
+
+Made product selection update inside the existing workspace instead of replacing all three panes
+with a loading state. The selected Product now comes directly from the already-subscribed realtime
+registry, removing a duplicate per-domain query (`src/components/products-workspace.tsx`). A live
+route switch rendered the next dossier within 100 ms while only its claim statuses and research
+activity loaded. All 272 tests and the complete project check passed.
+
+### 2026-08-31 - working tree
+
+Replaced the rigid Product → Claim → Run execution model with Product → Task → Attempt → Turn →
+Browser Session. A Task is one editable free-form instruction, continuing it adds a Turn to the
+same Attempt, and a clean retry creates another Attempt. Product research remains optional,
+read-only context rather than executable schema; disposable claim-test data and legacy paths were
+removed (`convex/tasks.ts`, `convex/scout/turns.ts`, `src/components/task-workspace.tsx`).
+
+A live Cloudflare Task reused Conrad Scout's profile and authenticated account, completed two
+operator-directed Turns across two browser Sessions, and retained operations and replay evidence.
+The dense three-pane workspace exposes Attempts, live/replay/transcript views, and Sessions. All 201
+tests and the complete Cloudflare build path passed.

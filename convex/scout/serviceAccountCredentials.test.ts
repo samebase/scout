@@ -108,8 +108,8 @@ describe("Scout managed-credential persistence", () => {
         serviceDomain: "example.com",
         identifier: "conrad@example.test",
         authenticationEvidence: { kind: "none" },
-        firstRecordedByClaimTest: null,
-        lastVerifiedByClaimTest: null,
+        firstRecordedByTask: null,
+        lastVerifiedByTask: null,
         managedCredential: result.managedCredential,
       },
     ]);
@@ -118,7 +118,7 @@ describe("Scout managed-credential persistence", () => {
     ).not.toContain("ciphertext");
   });
 
-  test("resolves only the exact bound service-account credential", async () => {
+  test("lists every managed credential available to one Scout", async () => {
     const { admin, scoutId } = await authenticatedBackend();
     const firstEnvelope = encryptedCredential();
     const first = await admin.mutation(credentialsApi["commitManagedRegistration"], {
@@ -136,30 +136,26 @@ describe("Scout managed-credential persistence", () => {
     });
 
     await expect(
-      admin.query(credentialsApi["getRuntimeCredential"], {
+      admin.query(credentialsApi["listRuntimeCredentialsForScout"], { scoutId }),
+    ).resolves.toEqual([
+      expect.objectContaining({
         serviceAccountId: first.serviceAccountId,
+        credentialReference: firstEnvelope.credentialReference,
+        credentialHost: "accounts.example.com",
+        identifier: "conrad@example.test",
       }),
-    ).resolves.toMatchObject({
-      serviceAccountId: first.serviceAccountId,
-      credentialReference: firstEnvelope.credentialReference,
-      credentialHost: "accounts.example.com",
-      identifier: "conrad@example.test",
-    });
-    await expect(
-      admin.query(credentialsApi["getRuntimeCredential"], {
+      expect.objectContaining({
         serviceAccountId: second.serviceAccountId,
+        credentialReference: secondEnvelope.credentialReference,
+        credentialHost: "login.other.example",
+        identifier: "other@example.test",
       }),
-    ).resolves.toMatchObject({
-      serviceAccountId: second.serviceAccountId,
-      credentialReference: secondEnvelope.credentialReference,
-      credentialHost: "login.other.example",
-      identifier: "other@example.test",
-    });
+    ]);
   });
 
-  test("rejects a bound account without a managed credential", async () => {
+  test("does not expose an account without a managed credential to the password runtime", async () => {
     const { admin, scoutId } = await authenticatedBackend();
-    const external = await admin.mutation(serviceAccountsApi["register"], {
+    await admin.mutation(serviceAccountsApi["register"], {
       scoutId,
       serviceName: "External",
       serviceDomain: "external.example",
@@ -167,10 +163,8 @@ describe("Scout managed-credential persistence", () => {
     });
 
     await expect(
-      admin.query(credentialsApi["getRuntimeCredential"], {
-        serviceAccountId: external.serviceAccountId,
-      }),
-    ).rejects.toThrow("no managed credential");
+      admin.query(credentialsApi["listRuntimeCredentialsForScout"], { scoutId }),
+    ).resolves.toEqual([]);
   });
 
   test("fails closed when the version-one key changes", async () => {

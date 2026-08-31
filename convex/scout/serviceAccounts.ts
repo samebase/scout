@@ -17,10 +17,11 @@ const MAX_OBSERVED_URL_LENGTH = 2_048;
 const MAX_VISIBLE_EVIDENCE_LENGTH = 2_000;
 const AUTHENTICATED_SESSION_CONTROLS = new Set(["sign out", "log out", "logout", "signoff"]);
 
-const claimTestAccountProvenancePublicValidator = v.object({
-  runId: v.id("claimTestRuns"),
-  generationId: v.id("scoutLabGenerations"),
-  sessionId: v.id("claimTestBrowserSessions"),
+const taskAccountProvenancePublicValidator = v.object({
+  taskId: v.id("productTasks"),
+  attemptId: v.id("taskAttempts"),
+  turnId: v.id("scoutTurns"),
+  sessionId: v.id("taskBrowserSessions"),
   recordedAt: v.number(),
   observedUrl: v.string(),
   visibleIdentity: v.string(),
@@ -35,8 +36,8 @@ const serviceAccountPublicValidator = v.object({
   serviceDomain: v.string(),
   identifier: v.string(),
   authenticationEvidence: scoutServiceAccountAuthenticationEvidenceValidator,
-  firstRecordedByClaimTest: v.union(claimTestAccountProvenancePublicValidator, v.null()),
-  lastVerifiedByClaimTest: v.union(claimTestAccountProvenancePublicValidator, v.null()),
+  firstRecordedByTask: v.union(taskAccountProvenancePublicValidator, v.null()),
+  lastVerifiedByTask: v.union(taskAccountProvenancePublicValidator, v.null()),
   managedCredential: v.optional(scoutManagedCredentialMetadataValidator),
 });
 
@@ -48,7 +49,7 @@ const serviceAccountIdResultValidator = v.object({
   serviceAccountId: v.id("scoutServiceAccounts"),
 });
 
-const claimTestServiceAccountResultValidator = serviceAccountIdResultValidator.extend({
+const taskServiceAccountResultValidator = serviceAccountIdResultValidator.extend({
   created: v.boolean(),
 });
 
@@ -113,8 +114,8 @@ function projectServiceAccount(account: Doc<"scoutServiceAccounts">) {
     serviceDomain: account.serviceDomain,
     identifier: account.identifier,
     authenticationEvidence: account.authenticationEvidence,
-    firstRecordedByClaimTest: account.firstRecordedByClaimTest ?? null,
-    lastVerifiedByClaimTest: account.lastVerifiedByClaimTest ?? null,
+    firstRecordedByTask: account.firstRecordedByTask ?? null,
+    lastVerifiedByTask: account.lastVerifiedByTask ?? null,
     ...(account.managedCredential ? { managedCredential: account.managedCredential } : {}),
   };
 }
@@ -134,22 +135,6 @@ export const list = query({
           .take(MAX_ACCOUNTS_PER_SCOUT)
       : await ctx.db.query("scoutServiceAccounts").withIndex("by_scout_id").take(MAX_ACCOUNTS);
     return accounts.map(projectServiceAccount);
-  },
-});
-
-export const forClaimTestRun = query({
-  args: { runId: v.id("claimTestRuns") },
-  returns: v.union(serviceAccountPublicValidator, v.null()),
-  handler: async (ctx, args) => {
-    const userId = await requireAppUser(ctx);
-    const run = await ctx.db.get("claimTestRuns", args.runId);
-    if (!run || run.userId !== userId) return null;
-    if (run.serviceAccountId === undefined) return null;
-    const account = await ctx.db.get("scoutServiceAccounts", run.serviceAccountId);
-    if (!account || account.scoutId !== run.scoutId || account.productId !== run.productId) {
-      throw new Error("Claim-test run has an invalid service-account binding");
-    }
-    return projectServiceAccount(account);
   },
 });
 
@@ -212,7 +197,7 @@ export const register = mutation({
   },
 });
 
-export const upsertFromClaimTest = internalMutation({
+export const recordAuthenticatedFromTask = internalMutation({
   args: {
     promptMessageId: v.string(),
     accountAccess: v.union(v.literal("created"), v.literal("recovered")),
@@ -220,44 +205,32 @@ export const upsertFromClaimTest = internalMutation({
     visibleIdentity: v.string(),
     visibleSessionControl: v.string(),
   },
-  returns: claimTestServiceAccountResultValidator,
+  returns: taskServiceAccountResultValidator,
   handler: async (ctx, args) => {
-    const generation = await ctx.db
-      .query("scoutLabGenerations")
+    const turn = await ctx.db
+      .query("scoutTurns")
       .withIndex("by_prompt_message_id", (query) =>
         query.eq("promptMessageId", args.promptMessageId),
       )
       .unique();
-    if (!generation || generation.status !== "pending") {
-      throw new Error("Active claim-test generation not found");
-    }
-    const run = await ctx.db
-      .query("claimTestRuns")
-      .withIndex("by_thread_id", (query) => query.eq("threadId", generation.threadId))
+    if (!turn || turn.state.kind !== "pending") throw new Error("Active task turn not found");
+    const attempt = await ctx.db
+      .query("taskAttempts")
+      .withIndex("by_thread_id", (query) => query.eq("threadId", turn.threadId))
       .unique();
-    if (
-      !run ||
-      run.state.kind !== "running" ||
-      run.state.generationId !== generation._id ||
-      run.scoutId !== generation.scoutId
-    ) {
-      throw new Error("Active claim-test run not found");
-    }
-    if (run.accountCreation !== "required" || run.browserProfile.kind !== "scout") {
-      throw new Error("This claim-test run cannot record a created service account");
-    }
-    if (run.serviceAccountId === undefined) {
-      throw new Error("Claim-test run has no bound managed service account");
-    }
+    if (!attempt || attempt.scoutId !== turn.scoutId)
+      throw new Error("Active task attempt not found");
+    const task = await ctx.db.get("productTasks", attempt.taskId);
+    if (!task) throw new Error("Task not found");
     const session = await ctx.db
-      .query("claimTestBrowserSessions")
-      .withIndex("by_generation_id", (query) => query.eq("generationId", generation._id))
+      .query("taskBrowserSessions")
+      .withIndex("by_turn_id", (query) => query.eq("turnId", turn._id))
       .unique();
-    if (!session || session.runId !== run._id || session.lifecycle.kind !== "active") {
-      throw new Error("Active claim-test browser session not found");
+    if (!session || session.attemptId !== attempt._id || session.lifecycle.kind !== "active") {
+      throw new Error("Active task browser session not found");
     }
     const latestOperation = await ctx.db
-      .query("claimTestBrowserOperations")
+      .query("taskBrowserOperations")
       .withIndex("by_session_id_and_sequence", (query) => query.eq("sessionId", session._id))
       .order("desc")
       .first();
@@ -283,45 +256,43 @@ export const upsertFromClaimTest = internalMutation({
     );
     const activeTab = latestOperation.state.telemetry.after.tabs.find((tab) => tab.active);
     const telemetryUrl = activeTab?.url ? observedHttpsUrl(activeTab.url) : null;
-    const product = await ctx.db.get("products", run.productId);
-    if (!product || !telemetryUrl) {
-      throw new Error("The observed product page is unavailable");
-    }
-    const boundAccount = await ctx.db.get("scoutServiceAccounts", run.serviceAccountId);
-    if (
-      !boundAccount ||
-      boundAccount.scoutId !== run.scoutId ||
-      boundAccount.productId !== product._id ||
-      boundAccount.serviceDomain !== product.domain ||
-      boundAccount.managedCredential === undefined
-    ) {
-      throw new Error("Claim-test run has an invalid service-account binding");
-    }
-    const expectedIdentifier = canonicalIdentifier(boundAccount.identifier);
     let observedDomain: string;
     try {
       observedDomain = canonicalProductDomain(observedUrl, "Observed product URL");
     } catch {
       throw new Error("The observed product page is invalid");
     }
-    if (observedDomain !== product.domain && !observedDomain.endsWith(`.${product.domain}`)) {
-      throw new Error("The observed authenticated page is not on the tested product domain");
-    }
     if (observedUrl !== telemetryUrl) {
       throw new Error("The authenticated account evidence is not from the latest product page");
-    }
-    if (!evidenceShowsIdentifier(visibleIdentity, expectedIdentifier)) {
-      throw new Error("The visible account identity does not contain the exact identifier");
     }
     if (!evidenceShowsSessionControl(visibleSessionControl)) {
       throw new Error("The visible account menu does not expose a Sign out or Log out control");
     }
 
+    const accounts = await ctx.db
+      .query("scoutServiceAccounts")
+      .withIndex("by_scout_id", (query) => query.eq("scoutId", attempt.scoutId))
+      .take(MAX_ACCOUNTS_PER_SCOUT);
+    const matchingAccounts = accounts.filter(
+      (account) =>
+        (observedDomain === account.serviceDomain ||
+          observedDomain.endsWith(`.${account.serviceDomain}`)) &&
+        evidenceShowsIdentifier(visibleIdentity, canonicalIdentifier(account.identifier)),
+    );
+    if (matchingAccounts.length !== 1) {
+      throw new Error("Visible account evidence must match exactly one Scout service account");
+    }
+    const boundAccount = matchingAccounts[0]!;
+    const product = boundAccount.productId
+      ? await ctx.db.get("products", boundAccount.productId)
+      : null;
+
     const recordedAt = Date.now();
     const evidence = { kind: "succeeded" as const, checkedAt: recordedAt };
     const provenance = {
-      runId: run._id,
-      generationId: generation._id,
+      taskId: task._id,
+      attemptId: attempt._id,
+      turnId: turn._id,
       sessionId: session._id,
       recordedAt,
       observedUrl,
@@ -330,10 +301,10 @@ export const upsertFromClaimTest = internalMutation({
       accountAccess: args.accountAccess,
     };
     await ctx.db.patch("scoutServiceAccounts", boundAccount._id, {
-      serviceName: product.name,
+      ...(product ? { serviceName: product.name } : {}),
       authenticationEvidence: evidence,
-      firstRecordedByClaimTest: boundAccount.firstRecordedByClaimTest ?? provenance,
-      lastVerifiedByClaimTest: provenance,
+      firstRecordedByTask: boundAccount.firstRecordedByTask ?? provenance,
+      lastVerifiedByTask: provenance,
     });
     return { serviceAccountId: boundAccount._id, created: false };
   },

@@ -11,8 +11,8 @@ import {
   actionElementRef,
   browserTraceMarkers,
   parseBrowserTrace,
-  type ClaimTestBrowserAction,
-  type ClaimTestBrowserTelemetry,
+  type TaskBrowserAction,
+  type TaskBrowserTelemetry,
 } from "./browserTelemetry";
 
 const MAX_TOOL_TEXT_LENGTH = 20_000;
@@ -41,8 +41,8 @@ type BrowserDependencies = {
 
 type BrowserSessionPolicy = { captureOperations: boolean };
 type BrowserOperationOutcome =
-  | { kind: "applied"; telemetry: ClaimTestBrowserTelemetry }
-  | { kind: "applied_snapshot_failed"; telemetry: ClaimTestBrowserTelemetry }
+  | { kind: "applied"; telemetry: TaskBrowserTelemetry }
+  | { kind: "applied_snapshot_failed"; telemetry: TaskBrowserTelemetry }
   | { kind: "failed_before_dispatch"; failure: string }
   | { kind: "indeterminate_after_dispatch"; failure: string };
 
@@ -54,7 +54,7 @@ type LabBrowserHarnessOptions = {
   onLiveViewClosed?: () => Promise<void>;
   onOperationPrepared?: (operation: {
     toolCallId: string;
-    action: ClaimTestBrowserAction;
+    action: TaskBrowserAction;
   }) => Promise<boolean>;
   onOperationSettled?: (operation: {
     toolCallId: string;
@@ -126,11 +126,7 @@ function shellCommand(parts: readonly string[]) {
   return parts.map(shellQuote).join(" ");
 }
 
-function traceMutationCommand(
-  parts: readonly string[],
-  action: ClaimTestBrowserAction,
-  token: string,
-) {
+function traceMutationCommand(parts: readonly string[], action: TaskBrowserAction, token: string) {
   const markers = browserTraceMarkers(token);
   const ref = actionElementRef(action);
   const beforeTabs =
@@ -392,7 +388,7 @@ export function createLabBrowserHarness(
 
   async function runInstrumentedMutation(
     parts: readonly string[],
-    action: ClaimTestBrowserAction,
+    action: TaskBrowserAction,
     toolCallId: string,
   ) {
     if (!sessionId) {
@@ -432,7 +428,7 @@ export function createLabBrowserHarness(
         throw error;
       }
       const error = new Error(
-        "The browser request failed after preparation, so its outcome is unknown. The claim test was stopped to preserve evidence integrity.",
+        "The browser request failed after preparation, so its outcome is unknown. The task was stopped to preserve evidence integrity.",
       );
       terminalTelemetryFailure = { error };
       throw error;
@@ -490,7 +486,7 @@ export function createLabBrowserHarness(
     }
     if (outcome.kind === "indeterminate_after_dispatch") {
       const error = new Error(
-        "The browser action was dispatched, but its outcome could not be observed. The claim test was stopped to preserve evidence integrity.",
+        "The browser action was dispatched, but its outcome could not be observed. The task was stopped to preserve evidence integrity.",
       );
       terminalTelemetryFailure = { error };
       throw error;
@@ -500,7 +496,7 @@ export function createLabBrowserHarness(
 
   function executeMutation(
     parts: readonly string[],
-    action: ClaimTestBrowserAction,
+    action: TaskBrowserAction,
     toolCallId = localToolCallId(),
   ) {
     const snapshot = ["agent-browser", "snapshot", "-i", "-c"].map(shellQuote).join(" ");

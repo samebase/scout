@@ -21,7 +21,7 @@ export const Route = createRootRoute({
       },
       {
         name: "description",
-        content: "Test web apps through fresh-user journeys and record whether their claims hold.",
+        content: "Give persistent Scouts open-ended product tasks and inspect what they do.",
       },
     ],
     links: [

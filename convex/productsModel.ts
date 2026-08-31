@@ -1,9 +1,7 @@
-import { v } from "convex/values";
 import { vWorkflowId } from "@convex-dev/workflow";
+import { v } from "convex/values";
 import { selectableScoutModelValidator } from "./scout/models";
 
-export const LEGACY_PRODUCT_INVESTIGATION_PROVIDER = "firecrawl-agent";
-export const LEGACY_PRODUCT_INVESTIGATION_MODEL = "spark-2";
 export const PRODUCT_INVESTIGATION_PROVIDER = "firecrawl-convex";
 export const PRODUCT_INVESTIGATION_MODEL = "qwen/qwen3.7-flash";
 export const PRODUCT_INVESTIGATION_EFFORT = "medium";
@@ -27,11 +25,6 @@ export const productClaimValidator = v.object({
   qualifiers: v.array(v.string()),
   evidenceExcerpt: v.union(v.string(), v.null()),
   pageTitle: v.union(v.string(), v.null()),
-});
-
-export const productClaimSnapshotValidator = v.object({
-  claim: v.string(),
-  suggestedMysteryShop: v.string(),
 });
 
 export const productDependencyValidator = v.object({
@@ -79,34 +72,6 @@ export const productInvestigationResultValidator = v.object({
   sources: v.array(productSourceValidator),
 });
 
-export const productGeneratedClaimPublicValidator = productClaimValidator.extend({
-  origin: v.literal("generated"),
-  claimKey: v.string(),
-  isEdited: v.boolean(),
-  editedAt: v.union(v.number(), v.null()),
-});
-
-export const productCustomClaimPublicValidator = v.object({
-  origin: v.literal("custom"),
-  claimKey: v.string(),
-  claim: v.string(),
-  category: v.literal("custom"),
-  suggestedMysteryShop: v.string(),
-  isEdited: v.boolean(),
-  editedAt: v.union(v.number(), v.null()),
-});
-
-export const productClaimPublicValidator = v.union(
-  productGeneratedClaimPublicValidator,
-  productCustomClaimPublicValidator,
-);
-
-export const productInvestigationResultPublicValidator = productInvestigationResultValidator
-  .omit("claims")
-  .extend({
-    claims: v.array(productClaimPublicValidator),
-  });
-
 export const productRetrievalMetadataValidator = v.object({
   mapCredits: v.number(),
   searchCredits: v.number(),
@@ -128,73 +93,27 @@ const investigationIdentityFields = {
   productId: v.id("products"),
   requestedByUserId: v.id("users"),
   requestedAt: v.number(),
-  effort: v.literal(PRODUCT_INVESTIGATION_EFFORT),
-  maxCredits: v.number(),
-};
-
-const legacyInvestigationBaseValidator = v.object({
-  ...investigationIdentityFields,
-  provider: v.literal(LEGACY_PRODUCT_INVESTIGATION_PROVIDER),
-  requestedModel: v.literal(LEGACY_PRODUCT_INVESTIGATION_MODEL),
-});
-
-const currentInvestigationBaseValidator = v.object({
-  ...investigationIdentityFields,
   provider: v.literal(PRODUCT_INVESTIGATION_PROVIDER),
   requestedModel: selectableScoutModelValidator,
+  effort: v.literal(PRODUCT_INVESTIGATION_EFFORT),
+  maxCredits: v.number(),
   agentThreadId: v.string(),
   workflowId: v.optional(vWorkflowId),
-});
+};
 
-export const legacyQueuedProductInvestigationValidator = legacyInvestigationBaseValidator.extend({
+const investigationBaseValidator = v.object(investigationIdentityFields);
+
+export const queuedProductInvestigationValidator = investigationBaseValidator.extend({
   status: v.literal("queued"),
 });
 
-export const legacyRunningProductInvestigationValidator = legacyInvestigationBaseValidator.extend({
-  status: v.literal("running"),
-  startedAt: v.number(),
-  providerJobId: v.string(),
-  pollCount: v.number(),
-  creditsUsed: v.optional(v.number()),
-  reportedModel: v.optional(v.string()),
-  providerExpiresAt: v.optional(v.string()),
-});
-
-export const legacyCompletedProductInvestigationValidator = legacyInvestigationBaseValidator.extend(
-  {
-    status: v.literal("completed"),
-    startedAt: v.number(),
-    completedAt: v.number(),
-    providerJobId: v.string(),
-    creditsUsed: v.number(),
-    reportedModel: v.optional(v.string()),
-    providerExpiresAt: v.optional(v.string()),
-    result: productInvestigationResultValidator,
-  },
-);
-
-export const legacyFailedProductInvestigationValidator = legacyInvestigationBaseValidator.extend({
-  status: v.literal("failed"),
-  startedAt: v.optional(v.number()),
-  failedAt: v.number(),
-  providerJobId: v.optional(v.string()),
-  creditsUsed: v.optional(v.number()),
-  reportedModel: v.optional(v.string()),
-  providerExpiresAt: v.optional(v.string()),
-  failure: v.string(),
-});
-
-export const queuedProductInvestigationValidator = currentInvestigationBaseValidator.extend({
-  status: v.literal("queued"),
-});
-
-export const runningProductInvestigationValidator = currentInvestigationBaseValidator.extend({
+export const runningProductInvestigationValidator = investigationBaseValidator.extend({
   status: v.literal("running"),
   startedAt: v.number(),
   retrieval: v.optional(productRetrievalMetadataValidator),
 });
 
-export const completedProductInvestigationValidator = currentInvestigationBaseValidator.extend({
+export const completedProductInvestigationValidator = investigationBaseValidator.extend({
   status: v.literal("completed"),
   startedAt: v.number(),
   completedAt: v.number(),
@@ -202,7 +121,7 @@ export const completedProductInvestigationValidator = currentInvestigationBaseVa
   result: productInvestigationResultValidator,
 });
 
-export const failedProductInvestigationValidator = currentInvestigationBaseValidator.extend({
+export const failedProductInvestigationValidator = investigationBaseValidator.extend({
   status: v.literal("failed"),
   startedAt: v.optional(v.number()),
   failedAt: v.number(),
@@ -211,122 +130,57 @@ export const failedProductInvestigationValidator = currentInvestigationBaseValid
 });
 
 export const productInvestigationValidator = v.union(
-  legacyQueuedProductInvestigationValidator,
-  legacyRunningProductInvestigationValidator,
-  legacyCompletedProductInvestigationValidator,
-  legacyFailedProductInvestigationValidator,
   queuedProductInvestigationValidator,
   runningProductInvestigationValidator,
   completedProductInvestigationValidator,
   failedProductInvestigationValidator,
 );
 
-const publicIdentityFields = {
+const publicInvestigationFields = {
   _id: v.id("productInvestigations"),
   requestedAt: v.number(),
+  provider: v.literal(PRODUCT_INVESTIGATION_PROVIDER),
+  requestedModel: selectableScoutModelValidator,
   effort: v.literal(PRODUCT_INVESTIGATION_EFFORT),
   maxCredits: v.number(),
 };
 
-const legacyPublicBase = {
-  ...publicIdentityFields,
-  provider: v.literal(LEGACY_PRODUCT_INVESTIGATION_PROVIDER),
-  requestedModel: v.literal(LEGACY_PRODUCT_INVESTIGATION_MODEL),
-};
-
-const currentPublicBase = {
-  ...publicIdentityFields,
-  provider: v.literal(PRODUCT_INVESTIGATION_PROVIDER),
-  requestedModel: selectableScoutModelValidator,
-};
-
-const queuedLegacyPublicValidator = v.object({
-  ...legacyPublicBase,
+const queuedProductInvestigationPublicValidator = v.object({
+  ...publicInvestigationFields,
   status: v.literal("queued"),
 });
 
-const queuedCurrentPublicValidator = v.object({
-  ...currentPublicBase,
-  status: v.literal("queued"),
-});
-
-const runningPublicFields = {
+const runningProductInvestigationPublicValidator = v.object({
+  ...publicInvestigationFields,
   status: v.literal("running"),
   startedAt: v.number(),
-  providerJobId: v.union(v.string(), v.null()),
-  pollCount: v.number(),
-  creditsUsed: v.union(v.number(), v.null()),
-  reportedModel: v.union(v.string(), v.null()),
-  providerExpiresAt: v.union(v.string(), v.null()),
-};
-
-const runningLegacyPublicValidator = v.object({
-  ...legacyPublicBase,
-  ...runningPublicFields,
-});
-
-const runningCurrentPublicValidator = v.object({
-  ...currentPublicBase,
-  ...runningPublicFields,
   stage: productInvestigationStageValidator,
+  creditsUsed: v.union(v.number(), v.null()),
 });
 
-const completedPublicFields = {
+export const completedProductInvestigationPublicValidator = v.object({
+  ...publicInvestigationFields,
   status: v.literal("completed"),
   startedAt: v.number(),
   completedAt: v.number(),
-  providerJobId: v.union(v.string(), v.null()),
   creditsUsed: v.number(),
-  reportedModel: v.union(v.string(), v.null()),
-  providerExpiresAt: v.union(v.string(), v.null()),
-  result: productInvestigationResultPublicValidator,
-};
-
-export const completedLegacyProductInvestigationPublicValidator = v.object({
-  ...legacyPublicBase,
-  ...completedPublicFields,
+  result: productInvestigationResultValidator,
 });
 
-const completedCurrentProductInvestigationPublicValidator = v.object({
-  ...currentPublicBase,
-  ...completedPublicFields,
-});
-
-export const completedProductInvestigationPublicValidator = v.union(
-  completedLegacyProductInvestigationPublicValidator,
-  completedCurrentProductInvestigationPublicValidator,
-);
-
-const failedPublicFields = {
+const failedProductInvestigationPublicValidator = v.object({
+  ...publicInvestigationFields,
   status: v.literal("failed"),
   startedAt: v.union(v.number(), v.null()),
   failedAt: v.number(),
-  providerJobId: v.union(v.string(), v.null()),
   creditsUsed: v.union(v.number(), v.null()),
-  reportedModel: v.union(v.string(), v.null()),
-  providerExpiresAt: v.union(v.string(), v.null()),
   failure: v.string(),
-};
-
-const failedLegacyPublicValidator = v.object({
-  ...legacyPublicBase,
-  ...failedPublicFields,
-});
-
-const failedCurrentPublicValidator = v.object({
-  ...currentPublicBase,
-  ...failedPublicFields,
 });
 
 export const productInvestigationPublicValidator = v.union(
-  queuedLegacyPublicValidator,
-  queuedCurrentPublicValidator,
-  runningLegacyPublicValidator,
-  runningCurrentPublicValidator,
-  completedLegacyProductInvestigationPublicValidator,
-  completedCurrentProductInvestigationPublicValidator,
-  failedLegacyPublicValidator,
-  failedCurrentPublicValidator,
+  queuedProductInvestigationPublicValidator,
+  runningProductInvestigationPublicValidator,
+  completedProductInvestigationPublicValidator,
+  failedProductInvestigationPublicValidator,
 );
 
 export const scoutAccessSummaryValidator = v.object({
@@ -345,14 +199,4 @@ export const productListItemValidator = v.object({
   experimentCount: v.number(),
   latestInvestigation: v.union(productInvestigationPublicValidator, v.null()),
   latestCompletedInvestigation: v.union(completedProductInvestigationPublicValidator, v.null()),
-});
-
-export const productClaimRouteValidator = v.object({
-  product: v.object({
-    name: v.string(),
-    domain: v.string(),
-    primaryUrl: v.string(),
-  }),
-  claim: productClaimPublicValidator,
-  completedAt: v.number(),
 });

@@ -24,7 +24,7 @@ export function createServiceAccountRecordingTool(
 ) {
   return tool({
     description:
-      "Record the account already bound to this run. First open an authenticated account menu that simultaneously shows the configured username or email and a Sign out or Log out control. State whether this run created the account or recovered an existing login, then supply both element refs. Trusted code reads the elements and verifies the visible identity against the bound account before recording it.",
+      "Record an authenticated account in this Scout's service-account inventory. First open an account menu that simultaneously shows the exact username or email and a Sign out or Log out control. State whether this attempt created the account or recovered an existing login, then supply both element refs. Trusted code reads the current URL and visible elements and accepts them only when they match exactly one account belonging to this Scout.",
     inputSchema: serviceAccountEvidenceRefsSchema,
     execute: async (evidence) => await record(serviceAccountEvidenceRefsSchema.parse(evidence)),
   });
