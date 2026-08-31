@@ -31,6 +31,7 @@ import type * as productsResearch from "../productsResearch.js";
 import type * as productsValidation from "../productsValidation.js";
 import type * as scout_accountPasswordTool from "../scout/accountPasswordTool.js";
 import type * as scout_agent from "../scout/agent.js";
+import type * as scout_attemptResolutionTool from "../scout/attemptResolutionTool.js";
 import type * as scout_browserTelemetry from "../scout/browserTelemetry.js";
 import type * as scout_credentialCrypto from "../scout/credentialCrypto.js";
 import type * as scout_humanHandoffTool from "../scout/humanHandoffTool.js";
@@ -89,6 +90,7 @@ declare const fullApi: ApiFromModules<{
   productsValidation: typeof productsValidation;
   "scout/accountPasswordTool": typeof scout_accountPasswordTool;
   "scout/agent": typeof scout_agent;
+  "scout/attemptResolutionTool": typeof scout_attemptResolutionTool;
   "scout/browserTelemetry": typeof scout_browserTelemetry;
   "scout/credentialCrypto": typeof scout_credentialCrypto;
   "scout/humanHandoffTool": typeof scout_humanHandoffTool;

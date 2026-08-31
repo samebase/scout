@@ -218,7 +218,7 @@ export const recordAuthenticatedFromTask = internalMutation({
       .query("taskAttempts")
       .withIndex("by_thread_id", (query) => query.eq("threadId", turn.threadId))
       .unique();
-    if (!attempt || attempt.scoutId !== turn.scoutId)
+    if (!attempt || attempt.scoutId !== turn.scoutId || attempt.state.kind !== "active")
       throw new Error("Active task attempt not found");
     const task = await ctx.db.get("productTasks", attempt.taskId);
     if (!task) throw new Error("Task not found");

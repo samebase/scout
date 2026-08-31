@@ -40,7 +40,8 @@ async function handoffContext(ctx: Pick<QueryCtx, "db">, sessionId: Id<"taskBrow
     !task ||
     !turn ||
     turn.threadId !== attempt.threadId ||
-    turn.scoutId !== attempt.scoutId
+    turn.scoutId !== attempt.scoutId ||
+    attempt.state.kind !== "active"
   ) {
     return null;
   }
@@ -141,7 +142,9 @@ export const request = internalMutation({
       .query("taskAttempts")
       .withIndex("by_thread_id", (index) => index.eq("threadId", turn.threadId))
       .unique();
-    if (!attempt || attempt.scoutId !== turn.scoutId) throw new Error("Task attempt not found");
+    if (!attempt || attempt.scoutId !== turn.scoutId || attempt.state.kind !== "active") {
+      throw new Error("Task attempt not found");
+    }
     const task = await ctx.db.get("productTasks", attempt.taskId);
     const session = await ctx.db
       .query("taskBrowserSessions")

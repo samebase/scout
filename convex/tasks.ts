@@ -54,6 +54,7 @@ const MAX_BROWSER_TOOL_CALL_ID_LENGTH = 200;
 const MAX_BROWSER_FAILURE_LENGTH = 2_000;
 const MAX_BROWSER_OPERATIONS = 100;
 const MAX_BROWSER_SESSIONS_PER_ATTEMPT = 50;
+const MAX_ATTEMPT_CONCLUSION_LENGTH = 500;
 const TASK_BROWSER_VIEWPORT = { width: 1_280, height: 800 } as const;
 const TASK_MODEL = DEFAULT_SCOUT_MODEL satisfies SelectableScoutModel;
 
@@ -121,6 +122,17 @@ function truncateText(value: string, maximumLength: number) {
   return characters.length <= maximumLength
     ? characters.join("")
     : `${characters.slice(0, maximumLength - 1).join("")}…`;
+}
+
+function requiredConclusion(value: string) {
+  const conclusion = value.trim().replaceAll(/\s+/g, " ");
+  if (!conclusion) throw new Error("Attempt conclusion cannot be empty");
+  if (Array.from(conclusion).length > MAX_ATTEMPT_CONCLUSION_LENGTH) {
+    throw new Error(
+      `Attempt conclusion must be ${MAX_ATTEMPT_CONCLUSION_LENGTH} characters or fewer`,
+    );
+  }
+  return conclusion;
 }
 
 async function requireOwnedTask(
@@ -218,7 +230,8 @@ async function projectAttempt(ctx: DatabaseContext, attempt: Doc<"taskAttempts">
     threadId: attempt.threadId,
     browserProfile: attempt.browserProfile,
     scout: { id: scout._id, displayName: scout.displayName },
-    state: turns.at(-1)!.state,
+    state: attempt.state,
+    latestTurnState: turns.at(-1)!.state,
     turnCount: turns.length,
     browserSessionCount: sessions.length,
   };
@@ -269,6 +282,7 @@ export const listForProduct = query({
                   createdAt: latestAttempt.createdAt,
                   scoutName: latestAttempt.scout.displayName,
                   state: latestAttempt.state,
+                  latestTurnState: latestAttempt.latestTurnState,
                 },
         };
       }),
@@ -442,6 +456,7 @@ export const startAttempt = mutation({
       scoutId: scout._id,
       threadId: createdThread.threadId,
       browserProfile,
+      state: { kind: "active" },
     });
     await enqueueTurn(ctx, {
       threadId: createdThread.threadId,
@@ -459,13 +474,22 @@ export const continueAttempt = mutation({
   handler: async (ctx, args) => {
     const userId = await requireAppUser(ctx);
     const { attempt } = await requireOwnedAttempt(ctx, { attemptId: args.attemptId, userId });
+    if (attempt.state.kind === "completed") {
+      throw new Error("A completed attempt cannot be continued");
+    }
     await requireOwnedAgentThread(ctx, attempt.threadId, userId);
     const turns = await ctx.db
       .query("scoutTurns")
       .withIndex("by_thread_id_and_order", (index) => index.eq("threadId", attempt.threadId))
       .take(MAX_TURNS_PER_ATTEMPT);
+    if (turns.some((turn) => turn.state.kind === "pending")) {
+      throw new Error("Wait for the current Turn to finish before continuing the attempt");
+    }
     if (turns.length >= MAX_TURNS_PER_ATTEMPT) {
       throw new Error(`An attempt can have at most ${MAX_TURNS_PER_ATTEMPT} turns`);
+    }
+    if (attempt.state.kind === "blocked" || attempt.state.kind === "abandoned") {
+      await ctx.db.patch("taskAttempts", attempt._id, { state: { kind: "active" } });
     }
     return {
       turnId: await enqueueTurn(ctx, {
@@ -475,6 +499,94 @@ export const continueAttempt = mutation({
         prompt: args.prompt,
       }),
     };
+  },
+});
+
+export const abandonAttempt = mutation({
+  args: { attemptId: v.id("taskAttempts"), conclusion: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const userId = await requireAppUser(ctx);
+    const { attempt } = await requireOwnedAttempt(ctx, { attemptId: args.attemptId, userId });
+    if (attempt.state.kind === "abandoned") return null;
+    if (attempt.state.kind !== "active") {
+      throw new Error("Only an active attempt can be abandoned");
+    }
+    const turns = await ctx.db
+      .query("scoutTurns")
+      .withIndex("by_thread_id_and_order", (index) => index.eq("threadId", attempt.threadId))
+      .take(MAX_TURNS_PER_ATTEMPT);
+    if (turns.some((turn) => turn.state.kind === "pending")) {
+      throw new Error("An attempt cannot be abandoned while a Turn is pending");
+    }
+    const sessions = await ctx.db
+      .query("taskBrowserSessions")
+      .withIndex("by_attempt_id_and_sequence", (index) => index.eq("attemptId", attempt._id))
+      .take(MAX_BROWSER_SESSIONS_PER_ATTEMPT);
+    for (const session of sessions) {
+      const handoff = await ctx.db
+        .query("taskHumanHandoffs")
+        .withIndex("by_session_id", (index) => index.eq("sessionId", session._id))
+        .unique();
+      if (handoff?.status === "waiting") {
+        throw new Error("An attempt cannot be abandoned while human help is pending");
+      }
+    }
+    await ctx.db.patch("taskAttempts", attempt._id, {
+      state: {
+        kind: "abandoned",
+        conclusion: requiredConclusion(args.conclusion),
+        resolvedAt: Date.now(),
+      },
+    });
+    return null;
+  },
+});
+
+export const resolveAttempt = internalMutation({
+  args: {
+    promptMessageId: v.string(),
+    state: v.union(
+      v.object({ kind: v.literal("completed"), conclusion: v.string() }),
+      v.object({ kind: v.literal("blocked"), conclusion: v.string() }),
+    ),
+  },
+  returns: v.union(
+    v.object({ kind: v.literal("completed"), conclusion: v.string(), resolvedAt: v.number() }),
+    v.object({ kind: v.literal("blocked"), conclusion: v.string(), resolvedAt: v.number() }),
+  ),
+  handler: async (ctx, args) => {
+    const turn = await ctx.db
+      .query("scoutTurns")
+      .withIndex("by_prompt_message_id", (index) =>
+        index.eq("promptMessageId", args.promptMessageId),
+      )
+      .unique();
+    if (!turn || turn.state.kind !== "pending") throw new Error("Active task Turn not found");
+    const attempt = await ctx.db
+      .query("taskAttempts")
+      .withIndex("by_thread_id", (index) => index.eq("threadId", turn.threadId))
+      .unique();
+    if (!attempt || attempt.scoutId !== turn.scoutId)
+      throw new Error("Active task Attempt not found");
+    if (attempt.state.kind === "completed" || attempt.state.kind === "blocked") {
+      return attempt.state;
+    }
+    if (attempt.state.kind !== "active") throw new Error("Task Attempt is already resolved");
+    const session = await ctx.db
+      .query("taskBrowserSessions")
+      .withIndex("by_turn_id", (index) => index.eq("turnId", turn._id))
+      .unique();
+    if (!session || session.attemptId !== attempt._id || session.lifecycle.kind !== "closed") {
+      throw new Error("Close the task browser session before resolving the Attempt");
+    }
+    const state = {
+      kind: args.state.kind,
+      conclusion: requiredConclusion(args.state.conclusion),
+      resolvedAt: Date.now(),
+    } as const;
+    await ctx.db.patch("taskAttempts", attempt._id, { state });
+    return state;
   },
 });
 
@@ -811,7 +923,7 @@ export const setBrowserSession = internalMutation({
       .query("taskAttempts")
       .withIndex("by_thread_id", (index) => index.eq("threadId", turn.threadId))
       .unique();
-    if (!attempt || attempt.scoutId !== turn.scoutId) {
+    if (!attempt || attempt.scoutId !== turn.scoutId || attempt.state.kind !== "active") {
       return { browserSessionId: null, captureOperations: false };
     }
     const existing = await ctx.db
@@ -865,7 +977,16 @@ export const prepareBrowserOperation = internalMutation({
     }
     const session = await ctx.db.get("taskBrowserSessions", args.sessionId);
     const turn = session ? await ctx.db.get("scoutTurns", session.turnId) : null;
-    if (!session || !turn || turn.state.kind !== "pending" || session.lifecycle.kind !== "active") {
+    const attempt = session ? await ctx.db.get("taskAttempts", session.attemptId) : null;
+    if (
+      !session ||
+      !turn ||
+      !attempt ||
+      attempt.scoutId !== turn.scoutId ||
+      attempt.state.kind !== "active" ||
+      turn.state.kind !== "pending" ||
+      session.lifecycle.kind !== "active"
+    ) {
       throw new Error("Active task browser session not found");
     }
     const duplicate = await ctx.db
@@ -961,7 +1082,16 @@ export const setLiveView = internalMutation({
   handler: async (ctx, args) => {
     const session = await ctx.db.get("taskBrowserSessions", args.sessionId);
     const turn = session ? await ctx.db.get("scoutTurns", session.turnId) : null;
-    if (!session || !turn || turn.state.kind !== "pending" || session.lifecycle.kind !== "active") {
+    const attempt = session ? await ctx.db.get("taskAttempts", session.attemptId) : null;
+    if (
+      !session ||
+      !turn ||
+      !attempt ||
+      attempt.scoutId !== turn.scoutId ||
+      attempt.state.kind !== "active" ||
+      turn.state.kind !== "pending" ||
+      session.lifecycle.kind !== "active"
+    ) {
       return null;
     }
     const liveViewUrl = requireFirecrawlLiveViewUrl(args.liveViewUrl);

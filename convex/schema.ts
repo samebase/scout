@@ -8,7 +8,7 @@ import {
   taskBrowserViewportValidator,
 } from "./taskBrowserModel";
 import { taskHumanHandoffValidator } from "./taskHumanHandoffsModel";
-import { taskBrowserProfileValidator } from "./taskAttemptModel";
+import { taskAttemptStateValidator, taskBrowserProfileValidator } from "./taskAttemptModel";
 import { productInvestigationValidator } from "./productsModel";
 import { productInvestigationActivityFieldsValidator } from "./productsInvestigationActivityModel";
 import { scoutServiceAccountFieldsValidator, scoutWebsiteIdentityValidator } from "./scout/model";
@@ -143,6 +143,7 @@ export default defineSchema({
     scoutId: v.id("scouts"),
     threadId: v.string(),
     browserProfile: taskBrowserProfileValidator,
+    state: taskAttemptStateValidator,
   })
     .index("by_task_id", ["taskId"])
     .index("by_thread_id", ["threadId"]),
