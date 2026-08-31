@@ -1029,10 +1029,7 @@ function ProductDetail({
   const [resetState, setResetState] = useState<ResearchResetState>({ kind: "idle" });
   const latest = product.latestInvestigation;
   const report = latest?.status === "completed" ? latest : product.latestCompletedInvestigation;
-  const claimTestStatuses = useQuery(
-    api.claimTests.listStatuses,
-    report === null ? "skip" : { domain: product.domain },
-  );
+  const claimTestStatuses = useQuery(api.claimTests.listStatuses, { domain: product.domain });
   const resetAvailable =
     (latest !== null || report !== null) &&
     latest?.status !== "queued" &&
@@ -1149,8 +1146,95 @@ function ProductDetail({
             />
           </CollapsibleContent>
         </Collapsible>
-      ) : null}
+      ) : (
+        <CustomClaims
+          claims={product.customClaims}
+          claimTestStatuses={claimTestStatuses}
+          productDomain={product.domain}
+        />
+      )}
     </article>
+  );
+}
+
+function CustomClaims({
+  claims,
+  claimTestStatuses,
+  productDomain,
+}: {
+  claims: Product["customClaims"];
+  claimTestStatuses: ClaimTestStatuses | undefined;
+  productDomain: string;
+}) {
+  const [addOpen, setAddOpen] = useState(false);
+  const claimTestStateByKey = new Map(
+    claimTestStatuses?.map(({ claimKey, state }) => [claimKey, state]),
+  );
+
+  return (
+    <section className="mt-6 border-t pt-6" aria-label="Claims">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-muted-foreground text-xs">
+          {claims.length} {claims.length === 1 ? "manual claim" : "manual claims"}
+        </p>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          aria-expanded={addOpen}
+          aria-controls="add-claim-form"
+          onClick={() => setAddOpen((open) => !open)}
+        >
+          {addOpen ? <XIcon /> : <PlusIcon />}
+          {addOpen ? "Close" : "Add claim"}
+        </Button>
+      </div>
+
+      {addOpen ? <AddClaimForm domain={productDomain} onCancel={() => setAddOpen(false)} /> : null}
+
+      {claims.length === 0 ? (
+        <div className="surface-panel border-dashed px-4 py-8 text-center">
+          <p className="text-sm font-medium">No manual claims yet.</p>
+          <p className="text-muted-foreground mt-1 text-xs">
+            Add one to run a focused test without waiting for research.
+          </p>
+        </div>
+      ) : (
+        <ul className={`surface-panel divide-y overflow-hidden ${addOpen ? "mt-4" : ""}`}>
+          {claims.map((claim) => (
+            <li key={claim.claimKey}>
+              <Link
+                to="/products/$domain/claims/$claimKey"
+                params={{ domain: productDomain, claimKey: claim.claimKey }}
+                className="group flex items-start gap-3 p-4 outline-none transition-colors hover:bg-muted/40 focus-visible:ring-3 focus-visible:ring-ring/40 @md:p-5"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block wrap-break-word text-sm font-medium leading-6">
+                    {claim.claim}
+                  </span>
+                  <span className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                    <span className="text-muted-foreground font-mono text-[0.625rem] font-medium">
+                      custom
+                    </span>
+                    <ClaimTestStatus
+                      state={
+                        claimTestStatuses === undefined
+                          ? "loading"
+                          : (claimTestStateByKey.get(claim.claimKey) ?? "untested")
+                      }
+                    />
+                  </span>
+                </span>
+                <ArrowRightIcon
+                  className="text-muted-foreground mt-0.5 size-4 shrink-0 transition-transform group-hover:translate-x-0.5"
+                  aria-hidden="true"
+                />
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

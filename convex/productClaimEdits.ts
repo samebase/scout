@@ -182,11 +182,27 @@ export async function projectClaimsForUser(
   return [...generatedClaims, ...customClaims.map(projectCustomClaim)];
 }
 
-export async function findCurrentProductInvestigation(ctx: DatabaseContext, domain: string) {
-  const product = await ctx.db
+export async function projectCustomClaimsForUser(
+  ctx: DatabaseContext,
+  args: { userId: Id<"users">; productId: Id<"products"> },
+) {
+  const customClaims = await ctx.db
+    .query("productCustomClaims")
+    .withIndex("by_user_id_and_product_id", (query) =>
+      query.eq("userId", args.userId).eq("productId", args.productId),
+    )
+    .take(MAX_CUSTOM_CLAIMS_PER_PRODUCT);
+  return customClaims.map(projectCustomClaim);
+}
+
+export async function findProductByDomain(ctx: DatabaseContext, domain: string) {
+  return await ctx.db
     .query("products")
     .withIndex("by_domain", (query) => query.eq("domain", domain))
     .unique();
+}
+
+async function completedInvestigationForProduct(ctx: DatabaseContext, product: Doc<"products">) {
   if (!product?.latestCompletedInvestigationId) return null;
   const investigation = await ctx.db.get(
     "productInvestigations",
@@ -195,7 +211,14 @@ export async function findCurrentProductInvestigation(ctx: DatabaseContext, doma
   if (investigation?.status !== "completed" || investigation.productId !== product._id) {
     return null;
   }
-  return { product, investigation };
+  return investigation;
+}
+
+export async function findCurrentProductInvestigation(ctx: DatabaseContext, domain: string) {
+  const product = await findProductByDomain(ctx, domain);
+  if (!product) return null;
+  const investigation = await completedInvestigationForProduct(ctx, product);
+  return investigation ? { product, investigation } : null;
 }
 
 export async function findCurrentProductClaim(
@@ -207,8 +230,8 @@ export async function findCurrentProductClaim(
     includeHiddenGenerated?: boolean;
   },
 ) {
-  const current = await findCurrentProductInvestigation(ctx, args.domain);
-  if (!current) return null;
+  const product = await findProductByDomain(ctx, args.domain);
+  if (!product) return null;
 
   const customClaimId = customClaimIdForRoute(ctx, args.claimKey);
   if (customClaimId) {
@@ -216,32 +239,37 @@ export async function findCurrentProductClaim(
     if (
       !customClaim ||
       customClaim.userId !== args.userId ||
-      customClaim.productId !== current.product._id
+      customClaim.productId !== product._id
     ) {
       return null;
     }
     return {
-      ...current,
+      product,
+      investigation: await completedInvestigationForProduct(ctx, product),
       kind: "custom" as const,
       customClaim,
       claim: projectCustomClaim(customClaim),
     };
   }
 
-  const baseClaim = projectClaims(current.investigation.result.claims).find(
+  const investigation = await completedInvestigationForProduct(ctx, product);
+  if (!investigation) return null;
+
+  const baseClaim = projectClaims(investigation.result.claims).find(
     (candidate) => candidate.claimKey === args.claimKey,
   );
   if (!baseClaim) return null;
   const lookup = {
     userId: args.userId,
-    productId: current.product._id,
-    investigationId: current.investigation._id,
+    productId: product._id,
+    investigationId: investigation._id,
     claimKey: baseClaim.claimKey,
   };
   const override = await claimOverride(ctx, lookup);
   if (override?.kind === "hidden" && !args.includeHiddenGenerated) return null;
   return {
-    ...current,
+    product,
+    investigation,
     kind: "generated" as const,
     baseClaim,
     override,

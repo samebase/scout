@@ -37,6 +37,8 @@ import {
   claimSnapshot,
   findCurrentProductClaim,
   findCurrentProductInvestigation,
+  findProductByDomain,
+  projectCustomClaimsForUser,
   projectClaimsForUser,
   routeClaimKey,
   runMatchesCurrentClaim,
@@ -84,7 +86,7 @@ async function runsForClaim(
   args: {
     userId: Id<"users">;
     productId: Id<"products">;
-    investigationId: Id<"productInvestigations">;
+    investigationId: Id<"productInvestigations"> | undefined;
     claim: ProjectedProductClaim;
   },
 ) {
@@ -99,6 +101,9 @@ async function runsForClaim(
       )
       .order("desc")
       .take(MAX_RUNS_PER_CLAIM);
+  }
+  if (args.investigationId === undefined) {
+    throw new Error("Generated claim is missing its investigation");
   }
   return await ctx.db
     .query("claimTestRuns")
@@ -150,7 +155,7 @@ function projectRun(
   }
   const base = {
     runId: run._id,
-    investigationId: run.investigationId,
+    investigationId: run.investigationId ?? null,
     claimKey: run.claimKey,
     threadId: run.threadId,
     experimentId: run.experimentId,
@@ -425,7 +430,7 @@ export const start = mutation({
     const existingRuns = await runsForClaim(ctx, {
       userId,
       productId: current.product._id,
-      investigationId: current.investigation._id,
+      investigationId: current.investigation?._id,
       claim: current.claim,
     });
     const previousRun = existingRuns[0] ?? null;
@@ -522,8 +527,8 @@ export const start = mutation({
     const runId = await ctx.db.insert("claimTestRuns", {
       userId,
       productId: current.product._id,
-      investigationId: current.investigation._id,
       claimKey: current.claim.claimKey,
+      ...(current.investigation === null ? {} : { investigationId: current.investigation._id }),
       experimentId,
       threadId: createdThread.threadId,
       scoutId: scout._id,
@@ -613,7 +618,7 @@ export const listRuns = query({
     const runs = await runsForClaim(ctx, {
       userId,
       productId: current.product._id,
-      investigationId: current.investigation._id,
+      investigationId: current.investigation?._id,
       claim: current.claim,
     });
     return await Promise.all(
@@ -679,22 +684,24 @@ export const listStatuses = query({
     const userId = await requireAppUser(ctx);
     const domain = routeProductDomain(args.domain);
     if (domain === null) return [];
+    const product = await findProductByDomain(ctx, domain);
+    if (!product) return [];
     const current = await findCurrentProductInvestigation(ctx, domain);
-    if (!current) return [];
-
-    const claims = await projectClaimsForUser(ctx, {
-      userId,
-      productId: current.product._id,
-      investigationId: current.investigation._id,
-      claims: current.investigation.result.claims,
-    });
+    const claims = current
+      ? await projectClaimsForUser(ctx, {
+          userId,
+          productId: product._id,
+          investigationId: current.investigation._id,
+          claims: current.investigation.result.claims,
+        })
+      : await projectCustomClaimsForUser(ctx, { userId, productId: product._id });
 
     return await Promise.all(
       claims.map(async (claim) => {
         const run = await latestRunForClaim(ctx, {
           userId,
-          productId: current.product._id,
-          investigationId: current.investigation._id,
+          productId: product._id,
+          investigationId: current?.investigation._id,
           claim,
         });
         if (!run) {

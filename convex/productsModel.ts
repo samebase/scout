@@ -341,6 +341,7 @@ export const productListItemValidator = v.object({
   name: v.string(),
   domain: v.string(),
   primaryUrl: v.string(),
+  customClaims: v.array(productCustomClaimPublicValidator),
   scoutAccess: v.array(scoutAccessSummaryValidator),
   experimentCount: v.number(),
   latestInvestigation: v.union(productInvestigationPublicValidator, v.null()),
@@ -354,5 +355,5 @@ export const productClaimRouteValidator = v.object({
     primaryUrl: v.string(),
   }),
   claim: productClaimPublicValidator,
-  completedAt: v.number(),
+  completedAt: v.union(v.number(), v.null()),
 });

@@ -31,7 +31,6 @@ import type * as productResearchAgent from "../productResearchAgent.js";
 import type * as products from "../products.js";
 import type * as productsClaims from "../productsClaims.js";
 import type * as productsDomain from "../productsDomain.js";
-import type * as productsInvestigation from "../productsInvestigation.js";
 import type * as productsInvestigationActivities from "../productsInvestigationActivities.js";
 import type * as productsInvestigationActivityModel from "../productsInvestigationActivityModel.js";
 import type * as productsInvestigationInspector from "../productsInvestigationInspector.js";
@@ -91,7 +90,6 @@ declare const fullApi: ApiFromModules<{
   products: typeof products;
   productsClaims: typeof productsClaims;
   productsDomain: typeof productsDomain;
-  productsInvestigation: typeof productsInvestigation;
   productsInvestigationActivities: typeof productsInvestigationActivities;
   productsInvestigationActivityModel: typeof productsInvestigationActivityModel;
   productsInvestigationInspector: typeof productsInvestigationInspector;

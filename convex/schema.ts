@@ -193,7 +193,7 @@ export default defineSchema({
   claimTestRuns: defineTable({
     userId: v.id("users"),
     productId: v.id("products"),
-    investigationId: v.id("productInvestigations"),
+    investigationId: v.optional(v.id("productInvestigations")),
     claimKey: v.string(),
     experimentId: v.id("scoutLabExperiments"),
     threadId: v.string(),

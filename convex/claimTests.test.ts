@@ -314,6 +314,7 @@ describe("Claim-test verdict parsing", () => {
 describe("Claim tests", () => {
   it("keeps custom claims owner-scoped and product-scoped across investigations", async () => {
     const { backend, userId, admin } = await authenticatedBackend();
+    await insertScout(backend);
     const otherUserId = await backend.run(
       async (ctx) => await ctx.db.insert("users", { email: ADMIN_EMAIL }),
     );
@@ -322,13 +323,38 @@ describe("Claim tests", () => {
       url: "example.test",
       name: "Example",
     });
+    const customClaimKey = await admin.mutation(api.products.createClaim, {
+      domain: "https://www.example.test/product",
+      claim: "  A workspace can be duplicated without publishing it.  ",
+      suggestedMysteryShop: "  Open a private workspace and look for Duplicate.  ",
+    });
+    expect(customClaimKey).toMatch(/^custom-/);
     await expect(
-      admin.mutation(api.products.createClaim, {
+      admin.query(api.products.getClaimByDomain, {
         domain: "example.test",
-        claim: "A claim before research",
-        suggestedMysteryShop: "",
+        claimKey: customClaimKey,
       }),
-    ).rejects.toThrow("A completed investigation is required");
+    ).resolves.toMatchObject({
+      completedAt: null,
+      claim: { claimKey: customClaimKey, origin: "custom" },
+    });
+    const runBeforeResearch = await admin.mutation(api.claimTests.start, {
+      domain: "example.test",
+      claimKey: customClaimKey,
+      ...FRESH_RUN,
+    });
+    await expect(
+      backend.run(async (ctx) => await ctx.db.get("claimTestRuns", runBeforeResearch.runId)),
+    ).resolves.toMatchObject({
+      productId: product.productId,
+      claimKey: customClaimKey,
+    });
+    await expect(
+      backend.run(async (ctx) => {
+        const run = await ctx.db.get("claimTestRuns", runBeforeResearch.runId);
+        return run?.investigationId;
+      }),
+    ).resolves.toBeNull();
     const first = await insertCompletedInvestigation(backend, {
       userId,
       productId: product.productId,
@@ -337,15 +363,17 @@ describe("Claim tests", () => {
     const generatedClaimKey = first.claimKeys[0];
     if (!generatedClaimKey) throw new Error("Expected a generated claim key");
 
-    const customClaimKey = await admin.mutation(api.products.createClaim, {
-      domain: "https://www.example.test/product",
-      claim: "  A workspace can be duplicated without publishing it.  ",
-      suggestedMysteryShop: "  Open a private workspace and look for Duplicate.  ",
-    });
-    expect(customClaimKey).toMatch(/^custom-/);
-
     const firstProduct = await admin.query(api.products.getByDomain, {
       domain: "example.test",
+    });
+    expect(firstProduct?.customClaims).toContainEqual({
+      origin: "custom",
+      claimKey: customClaimKey,
+      claim: "A workspace can be duplicated without publishing it.",
+      category: "custom",
+      suggestedMysteryShop: "Open a private workspace and look for Duplicate.",
+      isEdited: false,
+      editedAt: null,
     });
     const customClaim = firstProduct?.latestCompletedInvestigation?.result.claims.find(
       (candidate) => candidate.claimKey === customClaimKey,

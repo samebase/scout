@@ -18,10 +18,11 @@ import {
   customClaimRouteKey,
   editedTestInstructions,
   findCurrentProductClaim,
-  findCurrentProductInvestigation,
+  findProductByDomain,
   MAX_CUSTOM_CLAIMS_PER_PRODUCT,
   MAX_EDITED_CLAIM_LENGTH,
   projectCustomClaim,
+  projectCustomClaimsForUser,
   projectClaimsForUser,
   requiredEditedClaimText,
   routeClaimKey,
@@ -293,10 +294,13 @@ function latestAuthenticationEvidence(accounts: Doc<"scoutServiceAccounts">[]) {
 }
 
 async function projectProduct(ctx: QueryCtx, product: Doc<"products">, userId: Id<"users">) {
-  const accounts = await ctx.db
-    .query("scoutServiceAccounts")
-    .withIndex("by_product_id", (q) => q.eq("productId", product._id))
-    .take(MAX_ACCOUNTS_PER_PRODUCT);
+  const [accounts, customClaims] = await Promise.all([
+    ctx.db
+      .query("scoutServiceAccounts")
+      .withIndex("by_product_id", (q) => q.eq("productId", product._id))
+      .take(MAX_ACCOUNTS_PER_PRODUCT),
+    projectCustomClaimsForUser(ctx, { userId, productId: product._id }),
+  ]);
   const accountsByScout = new Map<Id<"scouts">, Doc<"scoutServiceAccounts">[]>();
   for (const account of accounts) {
     const scoutAccounts = accountsByScout.get(account.scoutId) ?? [];
@@ -341,6 +345,7 @@ async function projectProduct(ctx: QueryCtx, product: Doc<"products">, userId: I
     name: product.name,
     domain: product.domain,
     primaryUrl: product.primaryUrl,
+    customClaims,
     scoutAccess,
     experimentCount: experiments.length,
     latestInvestigation:
@@ -491,7 +496,7 @@ export const getClaimByDomain = query({
             primaryUrl: current.product.primaryUrl,
           },
           claim: current.claim,
-          completedAt: current.investigation.completedAt,
+          completedAt: current.investigation?.completedAt ?? null,
         }
       : null;
   },
@@ -583,14 +588,12 @@ export const createClaim = mutation({
   handler: async (ctx, args) => {
     const userId = await requireAppUser(ctx);
     const domain = canonicalProductDomain(args.domain, "Product domain");
-    const current = await findCurrentProductInvestigation(ctx, domain);
-    if (!current) {
-      throw new Error("A completed investigation is required before adding a claim");
-    }
+    const product = await findProductByDomain(ctx, domain);
+    if (!product) throw new Error("Product not found");
     const existing = await ctx.db
       .query("productCustomClaims")
       .withIndex("by_user_id_and_product_id", (query) =>
-        query.eq("userId", userId).eq("productId", current.product._id),
+        query.eq("userId", userId).eq("productId", product._id),
       )
       .take(MAX_CUSTOM_CLAIMS_PER_PRODUCT);
     if (existing.length >= MAX_CUSTOM_CLAIMS_PER_PRODUCT) {
@@ -601,7 +604,7 @@ export const createClaim = mutation({
     const now = Date.now();
     const customClaimId = await ctx.db.insert("productCustomClaims", {
       userId,
-      productId: current.product._id,
+      productId: product._id,
       claim: requiredEditedClaimText(args.claim, "Claim", MAX_EDITED_CLAIM_LENGTH),
       suggestedMysteryShop: editedTestInstructions(args.suggestedMysteryShop),
       createdAt: now,

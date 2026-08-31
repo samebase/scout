@@ -20,7 +20,7 @@ const MAX_BROWSER_OPERATIONS_PER_SESSION = 100;
 
 const claimTestRunBaseValidator = v.object({
   runId: v.id("claimTestRuns"),
-  investigationId: v.id("productInvestigations"),
+  investigationId: v.union(v.id("productInvestigations"), v.null()),
   claimKey: v.string(),
   threadId: v.string(),
   experimentId: v.id("scoutLabExperiments"),
