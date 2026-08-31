@@ -688,7 +688,7 @@ cannot scrub provider-rendered replay or raise Firecrawl's undocumented recordin
 Convex development push, and the
 complete Cloudflare build path passed.
 
-### 2026-08-31 - working tree
+### 2026-08-31 - 21e0ab5 - v130
 
 Decoupled administrator-authored claims from product research. A Product can now expose, edit,
 remove, and test a manual Claim before any investigation succeeds; generated Claims remain tied to
@@ -703,3 +703,12 @@ the verification email, reached the authenticated dashboard, and recorded the cr
 against Conrad's Product account. Replay retained both browser sessions and six operations; one
 provider video remained explicitly unmatched because Firecrawl did not expose enough tab identity.
 All 272 tests and the complete Cloudflare build path passed.
+
+### 2026-08-31 - working tree
+
+Raised the Qwen product-research synthesis ceiling from 6,000 to 16,000 output tokens after a
+Cloudflare response spent nearly the entire smaller budget on reasoning and ended with incomplete
+JSON. Kept the checked-in synthesis path to one Convex Agent `generateText` call followed by strict
+JSON and Zod validation; no experimental `generateObject` or repair implementation remains
+(`convex/productsInvestigationWorkflow.ts`). All 272 tests and the Convex development push passed;
+a fresh Cloudflare investigation is still required to prove the larger budget live.

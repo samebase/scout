@@ -41,7 +41,7 @@ const SEARCH_TIMEOUT_MS = 15_000;
 const SCRAPE_TIMEOUT_MS = 20_000;
 const SYNTHESIS_TIMEOUT_MS = 90_000;
 const FIRECRAWL_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1_000;
-const SYNTHESIS_MAX_OUTPUT_TOKENS = 6_000;
+const SYNTHESIS_MAX_OUTPUT_TOKENS = 16_000;
 
 const researchCandidateValidator = v.object({
   url: v.string(),
