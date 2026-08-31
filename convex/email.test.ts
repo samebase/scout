@@ -71,6 +71,18 @@ describe("Cloudflare email sending", () => {
     });
   });
 
+  it("passes an abort signal to Cloudflare", async () => {
+    const controller = new AbortController();
+    const fetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      successfulResponse(),
+    );
+    vi.stubGlobal("fetch", fetch);
+
+    await sendEmail(sendArgs, { signal: controller.signal });
+
+    expect(fetch.mock.calls[0]?.[1]?.signal).toBe(controller.signal);
+  });
+
   it("requires both Cloudflare email settings", async () => {
     vi.stubEnv("CLOUDFLARE_EMAIL_API_TOKEN", "");
     const fetch = vi.fn();

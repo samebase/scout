@@ -15,22 +15,29 @@ type ToolError = { readonly toolName: string };
 
 export type TaskLoopState =
   | "working"
-  | "working_after_handoff"
   | "awaiting_handoff"
   | "awaiting_snapshot"
   | "closing"
   | "closing_after_expiry"
+  | "closing_after_failure"
   | "resolving"
   | "final";
 
 export type TaskLoopDecision =
-  | { kind: "none"; nextState: "working" | "working_after_handoff" }
+  | { kind: "none"; nextState: "working" }
   | { kind: "request_human_help"; nextState: "awaiting_handoff" }
   | { kind: "browser_snapshot"; nextState: "awaiting_snapshot" }
-  | { kind: "browser_close"; nextState: "closing" | "closing_after_expiry" }
+  | {
+      kind: "browser_close";
+      nextState: "closing" | "closing_after_expiry" | "closing_after_failure";
+    }
   | { kind: "resolve_attempt"; nextState: "resolving" }
   | { kind: "resolution_failed"; nextState: "final" }
-  | { kind: "final"; nextState: "final"; humanHelpExpired: boolean };
+  | {
+      kind: "final";
+      nextState: "final";
+      humanHelpOutcome: "none" | "expired" | "failed";
+    };
 
 export function createSingleUseHumanHandoffArm() {
   let armed = false;
@@ -117,6 +124,7 @@ export function detectsHumanGate(output: unknown) {
 export function humanHandoffOutcome(output: unknown) {
   if (!isRecord(output)) return null;
   if (output["resumed"] === true) return "resumed" as const;
+  if (output["status"] === "failed") return "failed" as const;
   if (output["resumed"] === false || output["status"] === "expired") {
     return "expired" as const;
   }
@@ -132,13 +140,16 @@ function decisionAfterHandoff(result: ToolResult | null): TaskLoopDecision | nul
   if (outcome === "expired") {
     return { kind: "browser_close", nextState: "closing_after_expiry" };
   }
+  if (outcome === "failed") {
+    return { kind: "browser_close", nextState: "closing_after_failure" };
+  }
   return null;
 }
 
 function decisionAfterBrowserClose(result: ToolResult | null): TaskLoopDecision | null {
   if (result?.toolName !== "browser_close") return null;
   if (!isRecord(result.output) || result.output["success"] !== true) {
-    return { kind: "final", nextState: "final", humanHelpExpired: false };
+    return { kind: "final", nextState: "final", humanHelpOutcome: "none" };
   }
   return { kind: "resolve_attempt", nextState: "resolving" };
 }
@@ -147,23 +158,24 @@ export function decideTaskStep(args: {
   state: TaskLoopState;
   stepNumber: number;
   normalCloseStep: number;
-  handoffCloseStep: number;
   previousToolResult: ToolResult | null;
   previousToolError?: ToolError | null;
 }): TaskLoopDecision {
   switch (args.state) {
     case "final":
-      return { kind: "final", nextState: "final", humanHelpExpired: false };
+      return { kind: "final", nextState: "final", humanHelpOutcome: "none" };
     case "closing":
       return (
         decisionAfterBrowserClose(args.previousToolResult) ?? {
           kind: "final",
           nextState: "final",
-          humanHelpExpired: false,
+          humanHelpOutcome: "none",
         }
       );
     case "closing_after_expiry":
-      return { kind: "final", nextState: "final", humanHelpExpired: true };
+      return { kind: "final", nextState: "final", humanHelpOutcome: "expired" };
+    case "closing_after_failure":
+      return { kind: "final", nextState: "final", humanHelpOutcome: "failed" };
     case "resolving":
       if (
         args.previousToolError?.toolName === "resolve_attempt" ||
@@ -171,29 +183,21 @@ export function decideTaskStep(args: {
       ) {
         return { kind: "resolution_failed", nextState: "final" };
       }
-      return { kind: "final", nextState: "final", humanHelpExpired: false };
+      return { kind: "final", nextState: "final", humanHelpOutcome: "none" };
     case "awaiting_handoff": {
       const afterHandoff = decisionAfterHandoff(args.previousToolResult);
       if (afterHandoff) return afterHandoff;
       return { kind: "browser_close", nextState: "closing_after_expiry" };
     }
     case "awaiting_snapshot":
-      return args.stepNumber >= args.handoffCloseStep
-        ? { kind: "browser_close", nextState: "closing" }
-        : { kind: "none", nextState: "working_after_handoff" };
-    case "working_after_handoff":
-      if (args.previousToolResult?.toolName === "browser_close") {
-        return (
-          decisionAfterBrowserClose(args.previousToolResult) ?? {
-            kind: "final",
-            nextState: "final",
-            humanHelpExpired: false,
-          }
-        );
+      if (
+        args.previousToolResult?.toolName !== "browser_snapshot" ||
+        !isRecord(args.previousToolResult.output) ||
+        args.previousToolResult.output["success"] !== true
+      ) {
+        return { kind: "browser_close", nextState: "closing_after_failure" };
       }
-      return args.stepNumber >= args.handoffCloseStep
-        ? { kind: "browser_close", nextState: "closing" }
-        : { kind: "none", nextState: "working_after_handoff" };
+      return { kind: "browser_close", nextState: "closing" };
     case "working": {
       const afterHandoff = decisionAfterHandoff(args.previousToolResult);
       if (afterHandoff) return afterHandoff;
@@ -202,7 +206,7 @@ export function decideTaskStep(args: {
           decisionAfterBrowserClose(args.previousToolResult) ?? {
             kind: "final",
             nextState: "final",
-            humanHelpExpired: false,
+            humanHelpOutcome: "none",
           }
         );
       }

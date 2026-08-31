@@ -41,6 +41,16 @@ local backend.
 
 Open the local URL printed by Vite.
 
+## Configure public handoff links
+
+Human-help emails use the deployment's `CONVEX_SITE_URL` by default. If operators should open a
+different canonical app origin, set `SCOUT_PUBLIC_APP_URL` to that exact HTTPS origin, with no path,
+query, or fragment:
+
+```sh
+pnpm exec convex env set SCOUT_PUBLIC_APP_URL
+```
+
 ## Configure managed credentials
 
 Managed service-account registration requires one 32-byte master key in the Convex deployment.

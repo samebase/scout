@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { internal } from "../_generated/api";
 import { internalMutation } from "../_generated/server";
-import { expireTaskHumanHandoffForTurn } from "../taskHumanHandoffsModel";
+import { failTaskHumanHandoffForTurn } from "../taskHumanHandoffsModel";
 import { scoutTokenUsageValidator } from "./models";
 
 export const TURN_START_TIMEOUT_MS = 5 * 60 * 1_000;
@@ -22,6 +22,7 @@ export const start = internalMutation({
 
     const now = Date.now();
     if (turn.state.leaseExpiresAt <= now) {
+      await failTaskHumanHandoffForTurn(ctx, turn._id);
       await ctx.db.patch("scoutTurns", turn._id, {
         state: { kind: "failed", failedAt: now, failure: EXPIRED_TURN_FAILURE },
       });
@@ -47,7 +48,7 @@ export const expire = internalMutation({
     if (!turn || turn.state.kind !== "pending" || turn.state.leaseExpiresAt > Date.now()) {
       return null;
     }
-    await expireTaskHumanHandoffForTurn(ctx, turn._id);
+    await failTaskHumanHandoffForTurn(ctx, turn._id);
     await ctx.db.patch("scoutTurns", turn._id, {
       state: {
         kind: "failed",
@@ -76,7 +77,7 @@ export const complete = internalMutation({
       .unique();
     if (!turn) throw new Error("Scout turn not found");
     if (turn.state.kind !== "pending") return null;
-    await expireTaskHumanHandoffForTurn(ctx, turn._id);
+    await failTaskHumanHandoffForTurn(ctx, turn._id);
     await ctx.db.patch("scoutTurns", turn._id, {
       state: {
         kind: "completed",
@@ -110,7 +111,7 @@ export const fail = internalMutation({
       .unique();
     if (!turn) throw new Error("Scout turn not found");
     if (turn.state.kind !== "pending") return null;
-    await expireTaskHumanHandoffForTurn(ctx, turn._id);
+    await failTaskHumanHandoffForTurn(ctx, turn._id);
     await ctx.db.patch("scoutTurns", turn._id, {
       state: {
         kind: "failed",

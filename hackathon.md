@@ -755,8 +755,7 @@ The Task workspace now shows resolution and current activity independently and e
 operator abandon action only when no Turn or handoff is pending. Scout can resolve work only after a
 persisted browser close, and a failed resolution write fails the Turn instead of reporting success.
 All 211 tests, the complete project check, and the Convex development push passed.
-
-### 2026-09-01 - working tree
+### 2026-09-01 - 25d71cd - v139
 
 Removed Firecrawl's never-active `about:blank` bootstrap recording from reconstructed replay
 timelines when a real web recording starts alongside it. Replay now selects the sole correlated
@@ -764,3 +763,16 @@ track before the first telemetry sample, so video begins immediately without an 
 misleading tab-change error; a blank tab that Scout actually activated remains available. Added
 focused regression coverage and passed all 211 tests plus the complete project check
 (`src/lib/taskReplayTimeline.ts`, `src/lib/taskReplayTimeline.test.ts`).
+
+### 2026-08-31 - working tree
+
+Replaced raw browser-takeover links with a first-party, short-lived handoff page bound to the exact
+Task Attempt, Turn, browser Session, and operator. Convex stores only a capability digest, derives
+ownership through the bound records on every access, and revalidates the exact active Firecrawl
+session before exposing its current interactive view (`convex/taskHumanHandoffs.ts`,
+`convex/taskHumanHandoffAccess.ts`, `src/components/human-handoff-page.tsx`).
+
+Bound the action lifecycle to one email, one atomic Continue, one verified same-session snapshot,
+and immediate browser close before Attempt resolution. Email and Firecrawl requests have transport
+deadlines; expiry and delivery failure close without inventing a result. All 246 tests and the
+complete Cloudflare production build passed.

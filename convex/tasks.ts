@@ -21,6 +21,10 @@ import {
   taskBrowserViewportValidator,
 } from "./taskBrowserModel";
 import {
+  failTaskHumanHandoffForSession,
+  failTaskHumanHandoffForTurn,
+} from "./taskHumanHandoffsModel";
+import {
   taskBrowserProfileSelectionValidator,
   taskBrowserProfileValidator,
 } from "./taskAttemptModel";
@@ -166,6 +170,7 @@ async function requireAvailableScout(ctx: MutationCtx, scoutId: Id<"scouts">, no
   if (!pending) return scout;
   if (pending.state.kind !== "pending") throw new Error("Scout turn state is invalid");
   if (pending.state.leaseExpiresAt > now) throw new Error("Scout is already working");
+  await failTaskHumanHandoffForTurn(ctx, pending._id);
   await ctx.db.patch("scoutTurns", pending._id, {
     state: { kind: "failed", failedAt: now, failure: EXPIRED_TURN_FAILURE },
   });
@@ -1063,6 +1068,7 @@ export const closeBrowserSessionRecord = internalMutation({
   handler: async (ctx, args) => {
     const session = await ctx.db.get("taskBrowserSessions", args.sessionId);
     if (!session || session.lifecycle.kind === "closed") return null;
+    await failTaskHumanHandoffForSession(ctx, session._id);
     await ctx.db.patch("taskBrowserSessions", session._id, {
       lifecycle: {
         kind: "closed",

@@ -15,6 +15,7 @@ const DEFAULT_RETRY_DELAY_MS = 1_000;
 const DELETE_TIMEOUT_MS = 15_000;
 const CLOSE_CONFIRMATION_TIMEOUT_MS = 15_000;
 const REPLAY_TIMEOUT_MS = 15_000;
+const EXECUTION_TRANSPORT_GRACE_MS = 5_000;
 const MAX_REPLAY_PAGES = 20;
 const MAX_REPLAY_PLAYLIST_LENGTH = 1_000_000;
 const REPLAY_PAGE_ID_PATTERN = /^\d{1,3}$/;
@@ -41,6 +42,11 @@ export type BrowserReplayPage = {
   pageUrl: string | null;
   startTimeMs: number;
   endTimeMs: number;
+};
+
+export type ActiveBrowserSession = {
+  sessionId: string;
+  interactiveLiveViewUrl: string | null;
 };
 
 function headers() {
@@ -211,6 +217,37 @@ export async function createBrowserSession(profileName?: string) {
   }
 }
 
+export async function findActiveBrowserSession(
+  providerSessionId: string,
+): Promise<ActiveBrowserSession | null> {
+  const response = requireRecord(
+    await withBoundedRetry(
+      "read",
+      async () =>
+        await fetchJson("Firecrawl", `${FIRECRAWL_BASE_URL}/browser?status=active`, {
+          headers: headers(),
+          signal: AbortSignal.timeout(REPLAY_TIMEOUT_MS),
+        }),
+    ),
+    "Firecrawl",
+  );
+  if (response["success"] !== true || !Array.isArray(response["sessions"])) {
+    throw new Error("Firecrawl returned an invalid browser session list");
+  }
+  let match: Record<string, unknown> | null = null;
+  for (const candidate of response["sessions"]) {
+    const session = requireRecord(candidate, "Firecrawl browser session");
+    if (session["id"] !== providerSessionId) continue;
+    if (match !== null) throw new Error("Firecrawl returned a duplicate browser session");
+    match = session;
+  }
+  if (match === null || match["status"] !== "active") return null;
+  return {
+    sessionId: providerSessionId,
+    interactiveLiveViewUrl: optionalFirecrawlLiveViewUrl(match["interactiveLiveViewUrl"]),
+  };
+}
+
 export async function listBrowserReplayPages(sessionId: string) {
   const response = requireRecord(
     await withBoundedRetry(
@@ -268,6 +305,7 @@ async function executeBrowserInteraction(
   sessionId: string,
   body: Record<string, unknown>,
   operation: BrowserOperation,
+  timeoutSeconds: number,
 ): Promise<BrowserInteraction> {
   const response = requireRecord(
     await withBoundedRetry(
@@ -280,6 +318,7 @@ async function executeBrowserInteraction(
             method: "POST",
             headers: headers(),
             body: JSON.stringify(body),
+            signal: AbortSignal.timeout(timeoutSeconds * 1_000 + EXECUTION_TRANSPORT_GRACE_MS),
           },
         ),
     ),
@@ -299,6 +338,7 @@ export async function executeBrowserCode(
     sessionId,
     { code, language, timeout: timeoutSeconds },
     operation,
+    timeoutSeconds,
   );
 }
 

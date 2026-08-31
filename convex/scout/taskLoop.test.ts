@@ -56,7 +56,6 @@ describe("task human gate detection", () => {
         state: "working",
         stepNumber: 5,
         normalCloseStep: 18,
-        handoffCloseStep: 20,
         previousToolResult: { toolName: "get_thread", output: dataDomeOutput },
       }),
     ).toEqual({ kind: "none", nextState: "working" });
@@ -96,7 +95,6 @@ describe("task loop decisions", () => {
       previousToolResult,
       stepNumber,
       normalCloseStep: 18,
-      handoffCloseStep: 20,
     });
   }
 
@@ -116,9 +114,18 @@ describe("task loop decisions", () => {
     expect(
       decide(snapshot.nextState, {
         toolName: "browser_snapshot",
-        output: { output: '- heading "Welcome"' },
+        output: { success: true, output: '- heading "Welcome"' },
       }),
-    ).toEqual({ kind: "none", nextState: "working_after_handoff" });
+    ).toEqual({ kind: "browser_close", nextState: "closing" });
+  });
+
+  it("closes without resolving when the post-handoff snapshot fails", () => {
+    expect(
+      decide("awaiting_snapshot", {
+        toolName: "browser_snapshot",
+        output: { success: false, error: "provider unavailable" },
+      }),
+    ).toEqual({ kind: "browser_close", nextState: "closing_after_failure" });
   });
 
   it("closes and reports an expired handoff without inventing a verdict", () => {
@@ -132,7 +139,18 @@ describe("task loop decisions", () => {
         toolName: "browser_close",
         output: { success: true },
       }),
-    ).toEqual({ kind: "final", nextState: "final", humanHelpExpired: true });
+    ).toEqual({ kind: "final", nextState: "final", humanHelpOutcome: "expired" });
+  });
+
+  it("closes and reports a failed handoff without resolving the Attempt", () => {
+    const close = decide("awaiting_handoff", {
+      toolName: "request_human_help",
+      output: { resumed: false, status: "failed" },
+    });
+    expect(close).toEqual({ kind: "browser_close", nextState: "closing_after_failure" });
+    expect(
+      decide(close.nextState, { toolName: "browser_close", output: { success: true } }),
+    ).toEqual({ kind: "final", nextState: "final", humanHelpOutcome: "failed" });
   });
 
   it("forces one outcome after a successful ordinary browser close", () => {
@@ -143,14 +161,14 @@ describe("task loop decisions", () => {
         toolName: "resolve_attempt",
         output: { kind: "blocked", conclusion: "The gate remained", resolvedAt: 1 },
       }),
-    ).toEqual({ kind: "final", nextState: "final", humanHelpExpired: false });
+    ).toEqual({ kind: "final", nextState: "final", humanHelpOutcome: "none" });
   });
 
   it("does not resolve after an unsuccessful browser close", () => {
     expect(decide("closing", { toolName: "browser_close", output: { success: false } })).toEqual({
       kind: "final",
       nextState: "final",
-      humanHelpExpired: false,
+      humanHelpOutcome: "none",
     });
   });
 
@@ -172,29 +190,26 @@ describe("task loop decisions", () => {
         state: "resolving",
         stepNumber: 20,
         normalCloseStep: 18,
-        handoffCloseStep: 20,
         previousToolResult: null,
         previousToolError: immediatelyPrecedingToolError(steps),
       }),
     ).toEqual({ kind: "resolution_failed", nextState: "final" });
   });
 
-  it("reserves enough late steps for handoff, snapshot, close, and final", () => {
+  it("closes immediately after the verified post-handoff snapshot", () => {
     const handoff = decide("working", { toolName: "browser_snapshot", output: dataDomeOutput }, 18);
     const snapshot = decide(
       handoff.nextState,
       { toolName: "request_human_help", output: { resumed: true } },
       19,
     );
-    const resumedWork = decide(
-      snapshot.nextState,
-      { toolName: "browser_snapshot", output: { output: '- heading "Account"' } },
-      19,
-    );
     const close = decide(
-      resumedWork.nextState,
-      { toolName: "browser_click", output: { output: '- heading "Account"' } },
-      20,
+      snapshot.nextState,
+      {
+        toolName: "browser_snapshot",
+        output: { success: true, output: '- heading "Account"' },
+      },
+      19,
     );
     const resolution = decide(
       close.nextState,
@@ -206,17 +221,9 @@ describe("task loop decisions", () => {
       output: { kind: "completed", conclusion: "Done", resolvedAt: 1 },
     });
 
-    expect([
-      handoff.kind,
-      snapshot.kind,
-      resumedWork.kind,
-      close.kind,
-      resolution.kind,
-      final.kind,
-    ]).toEqual([
+    expect([handoff.kind, snapshot.kind, close.kind, resolution.kind, final.kind]).toEqual([
       "request_human_help",
       "browser_snapshot",
-      "none",
       "browser_close",
       "resolve_attempt",
       "final",

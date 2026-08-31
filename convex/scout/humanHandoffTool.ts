@@ -4,8 +4,9 @@ import { sendEmail, type SendEmailArgs } from "../email";
 
 const MAX_HANDOFF_REASON_LENGTH = 500;
 const STATUS_POLL_INTERVAL_MS = 2_000;
+const EMAIL_DELIVERY_TIMEOUT_MS = 15_000;
 
-type HumanHandoffStatus = "waiting" | "continued" | "expired" | "missing";
+type HumanHandoffStatus = "waiting" | "continued" | "expired" | "failed" | "missing";
 
 type HumanHandoffRequest<HandoffId> = {
   handoffId: HandoffId;
@@ -13,7 +14,7 @@ type HumanHandoffRequest<HandoffId> = {
   recipientEmail: string;
   productName: string;
   scoutName: string;
-  interactiveLiveViewUrl: string;
+  handoffUrl: string;
   expiresAt: number;
 };
 
@@ -21,12 +22,15 @@ type HumanHandoffCallbacks<HandoffId> = {
   request: (reason: string) => Promise<HumanHandoffRequest<HandoffId>>;
   getStatus: (handoffId: HandoffId) => Promise<HumanHandoffStatus>;
   expire: (handoffId: HandoffId) => Promise<HumanHandoffStatus>;
+  failDelivery: (handoffId: HandoffId) => Promise<HumanHandoffStatus>;
+  closeBrowser: () => Promise<void>;
 };
 
 type HumanHandoffDependencies = {
-  sendEmail: (args: SendEmailArgs) => Promise<void>;
+  sendEmail: typeof sendEmail;
   sleep: (milliseconds: number) => Promise<void>;
   now: () => number;
+  timeoutSignal?: (milliseconds: number) => AbortSignal;
 };
 
 const defaultDependencies: HumanHandoffDependencies = {
@@ -34,6 +38,7 @@ const defaultDependencies: HumanHandoffDependencies = {
   sleep: async (milliseconds) =>
     await new Promise<void>((resolve) => setTimeout(resolve, milliseconds)),
   now: Date.now,
+  timeoutSignal: (milliseconds) => AbortSignal.timeout(milliseconds),
 };
 
 function emailHeader(value: string) {
@@ -43,9 +48,23 @@ function emailHeader(value: string) {
     .slice(0, 120);
 }
 
+function stoppedHandoffResult(outcome: "expired" | "failed") {
+  return outcome === "failed"
+    ? {
+        resumed: false,
+        status: "failed" as const,
+        message:
+          "The human-help request failed. Stop this browser path and explain how the operator can resume the still-active attempt.",
+      }
+    : {
+        resumed: false,
+        message:
+          "The human-help request expired. Stop this browser path and explain how the operator can resume the still-active attempt.",
+      };
+}
+
 export function humanHandoffEmail<HandoffId>(
   request: HumanHandoffRequest<HandoffId>,
-  reason: string,
 ): SendEmailArgs {
   const scoutName = emailHeader(request.scoutName) || "Scout";
   const productName = emailHeader(request.productName) || "the product";
@@ -54,14 +73,12 @@ export function humanHandoffEmail<HandoffId>(
     subject: `${scoutName} needs help with ${productName}`,
     text: `${scoutName} reached a step that requires a person while testing ${productName}.
 
-Reason: ${reason}
-
-Open this temporary browser link and complete only the requested human check:
-${request.interactiveLiveViewUrl}
+Open this temporary Scout link and complete only the requested human check:
+${request.handoffUrl}
 
 For the most reliable drag controls, open the link on a desktop computer. Mobile drag controls may be unreliable.
 
-Then return to the already-open Scout task and press Continue. This request expires in about five minutes.`,
+Then press Continue Scout on the handoff page. This request expires in no more than five minutes.`,
   };
 }
 
@@ -76,20 +93,48 @@ export function createHumanHandoffTool<HandoffId>(
       reason: z.string().trim().min(1).max(MAX_HANDOFF_REASON_LENGTH),
     }),
     execute: async ({ reason }) => {
+      const stop = async (outcome: "expired" | "failed") => {
+        await callbacks.closeBrowser();
+        return stoppedHandoffResult(outcome);
+      };
       const request = await callbacks.request(reason);
       if (request.created) {
         try {
-          await dependencies.sendEmail(humanHandoffEmail(request, reason));
+          const remainingMs = request.expiresAt - dependencies.now();
+          if (remainingMs <= 0) {
+            throw new Error("The human-help request expired before email delivery started");
+          }
+          const timeoutSignal =
+            dependencies.timeoutSignal ?? ((milliseconds) => AbortSignal.timeout(milliseconds));
+          await dependencies.sendEmail(humanHandoffEmail(request), {
+            signal: timeoutSignal(Math.min(EMAIL_DELIVERY_TIMEOUT_MS, remainingMs)),
+          });
         } catch (emailError) {
           try {
-            await callbacks.expire(request.handoffId);
-          } catch (expirationError) {
+            const status = await callbacks.failDelivery(request.handoffId);
+            if (status === "continued") {
+              return {
+                resumed: true,
+                message:
+                  "The operator finished the human-only step. Inspect the current browser state before continuing.",
+              };
+            }
+            if (status === "expired") {
+              return await stop("expired");
+            }
+            if (status === "missing") {
+              throw new Error("The human-help request disappeared after email delivery failed");
+            }
+            if (status === "failed") {
+              return await stop("failed");
+            }
+            throw new Error("The failed email delivery left the human-help request waiting");
+          } catch (failureError) {
             throw new AggregateError(
-              [emailError, expirationError],
-              "Scout could not email the human-help request or close it",
+              [emailError, failureError],
+              "Scout could not email the human-help request or mark it failed",
             );
           }
-          throw new Error("Scout could not email the human-help request", { cause: emailError });
         }
       }
 
@@ -103,11 +148,10 @@ export function createHumanHandoffTool<HandoffId>(
           };
         }
         if (status === "expired") {
-          return {
-            resumed: false,
-            message:
-              "The human-help request expired. Stop this browser path and explain how the operator can resume the still-active attempt.",
-          };
+          return await stop("expired");
+        }
+        if (status === "failed") {
+          return await stop("failed");
         }
         if (status === "missing") {
           throw new Error("The human-help request disappeared while Scout was waiting");
@@ -127,18 +171,13 @@ export function createHumanHandoffTool<HandoffId>(
       if (finalStatus === "missing") {
         throw new Error("The human-help request disappeared while Scout was waiting");
       }
-      if (finalStatus === "expired") {
-        return {
-          resumed: false,
-          message:
-            "The human-help request expired. Stop this browser path and explain how the operator can resume the still-active attempt.",
-        };
+      if (finalStatus === "failed") {
+        return await stop("failed");
       }
-      return {
-        resumed: false,
-        message:
-          "The human-help request expired. Stop this browser path and explain how the operator can resume the still-active attempt.",
-      };
+      if (finalStatus === "expired") {
+        return await stop("expired");
+      }
+      return await stop("expired");
     },
   });
 }

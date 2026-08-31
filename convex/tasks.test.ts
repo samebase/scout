@@ -354,10 +354,10 @@ describe("Product Tasks", () => {
       await ctx.db.insert("taskHumanHandoffs", {
         sessionId,
         reason: "CAPTCHA",
-        requestedAt: Date.now(),
+        requestedAt: Date.now() - 2_000,
         status: "waiting",
-        interactiveLiveViewUrl: "https://firecrawl.example/live/captcha",
-        expiresAt: Date.now() + 1000,
+        expiresAt: Date.now() - 1_000,
+        accessTokenHash: "a".repeat(64),
       });
       return sessionId;
     });
@@ -380,5 +380,58 @@ describe("Product Tasks", () => {
         latestTurnState: expect.objectContaining({ kind: "completed" }),
       }),
     ]);
+  });
+
+  it("fails a waiting handoff when reclaiming an expired Scout lease", async () => {
+    const { backend, admin, scoutId, productId } = await setup();
+    const firstTask = await admin.mutation(api.tasks.create, {
+      productId,
+      instruction: "Open the signup page.",
+    });
+    const started = await admin.mutation(api.tasks.startAttempt, {
+      taskId: firstTask.taskId,
+      scoutId,
+      browserProfile: { kind: "fresh" },
+    });
+    const attempts = await admin.query(api.tasks.listAttempts, { taskId: firstTask.taskId });
+    const turn = await taskTurn(backend, attempts[0]!.threadId);
+    const handoffId = await backend.run(async (ctx) => {
+      await ctx.db.patch(turn!._id, {
+        state: { kind: "pending", leaseExpiresAt: Date.now() - 1 },
+      });
+      const sessionId = await ctx.db.insert("taskBrowserSessions", {
+        attemptId: started.attemptId,
+        turnId: turn!._id,
+        sequence: 1,
+        provider: "firecrawl",
+        providerSessionId: "expired-lease-session",
+        profileName: null,
+        viewport: { width: 1_280, height: 800 },
+        nextOperationSequence: 1,
+        lifecycle: { kind: "active", openedAtMs: Date.now() },
+      });
+      return await ctx.db.insert("taskHumanHandoffs", {
+        sessionId,
+        reason: "CAPTCHA",
+        requestedAt: Date.now(),
+        expiresAt: Date.now() + 60_000,
+        accessTokenHash: "a".repeat(64),
+        status: "waiting",
+      });
+    });
+    const secondTask = await admin.mutation(api.tasks.create, {
+      productId,
+      instruction: "Run a second check.",
+    });
+
+    await admin.mutation(api.tasks.startAttempt, {
+      taskId: secondTask.taskId,
+      scoutId,
+      browserProfile: { kind: "fresh" },
+    });
+
+    await expect(backend.query(internal.taskHumanHandoffs.getStatus, { handoffId })).resolves.toBe(
+      "failed",
+    );
   });
 });

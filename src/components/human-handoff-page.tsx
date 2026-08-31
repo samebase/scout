@@ -1,0 +1,265 @@
+import { Link } from "@tanstack/react-router";
+import {
+  Authenticated,
+  AuthLoading,
+  Unauthenticated,
+  useAction,
+  useConvexAuth,
+} from "convex/react";
+import type { FunctionReturnType } from "convex/server";
+import { ExternalLinkIcon, HandIcon, LoaderCircleIcon, RotateCwIcon } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { api } from "../../convex/_generated/api";
+import { AuthPanel } from "#components/auth-panel";
+import { Button } from "#components/ui/button";
+import { consumeHumanHandoffAccessToken, humanHandoffIsTopLevel } from "#lib/human-handoff-access";
+
+type HandoffPage = FunctionReturnType<typeof api.taskHumanHandoffAccess.load>;
+type PageState =
+  | { kind: "loading" }
+  | { kind: "ready"; page: HandoffPage }
+  | { kind: "failed"; message: string };
+
+const dateTime = new Intl.DateTimeFormat(undefined, {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
+
+function errorMessage(error: unknown, fallback: string) {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
+export function HumanHandoffPage({ handoffId }: { handoffId: string }) {
+  const loadHandoff = useAction(api.taskHumanHandoffAccess.load);
+  const continueHandoff = useAction(api.taskHumanHandoffAccess.continueHandoff);
+  const { isLoading: authLoading, isAuthenticated } = useConvexAuth();
+  const [accessToken, setAccessToken] = useState<string | null | undefined>(undefined);
+  const [state, setState] = useState<PageState>({ kind: "loading" });
+  const [continuing, setContinuing] = useState(false);
+
+  useEffect(() => {
+    if (!humanHandoffIsTopLevel(window)) {
+      setState({ kind: "failed", message: "Open this handoff in a top-level browser tab." });
+      return;
+    }
+    try {
+      setAccessToken(consumeHumanHandoffAccessToken(window));
+    } catch {
+      setState({
+        kind: "failed",
+        message: "Scout could not remove the private handoff key from browser history.",
+      });
+    }
+  }, []);
+
+  const load = useCallback(async () => {
+    if (accessToken === undefined || authLoading) return;
+    setState({ kind: "loading" });
+    try {
+      const page = await loadHandoff({
+        handoffId,
+        ...(accessToken === null ? {} : { accessToken }),
+      });
+      setState({ kind: "ready", page });
+    } catch (error) {
+      setState({ kind: "failed", message: errorMessage(error, "Could not load this handoff.") });
+    }
+  }, [accessToken, authLoading, handoffId, loadHandoff]);
+
+  useEffect(() => {
+    void load();
+  }, [isAuthenticated, load]);
+
+  useEffect(() => {
+    if (state.kind !== "ready" || state.page.status !== "waiting") return;
+    const refresh = () => void load();
+    const expiryTimer = window.setTimeout(
+      refresh,
+      Math.max(0, state.page.expiresAt - state.page.serverNow),
+    );
+    window.addEventListener("focus", refresh);
+    return () => {
+      window.clearTimeout(expiryTimer);
+      window.removeEventListener("focus", refresh);
+    };
+  }, [load, state]);
+
+  const submit = async () => {
+    if (accessToken === undefined || continuing || !humanHandoffIsTopLevel(window)) return;
+    setContinuing(true);
+    try {
+      const page = await continueHandoff({
+        handoffId,
+        ...(accessToken === null ? {} : { accessToken }),
+      });
+      setState({ kind: "ready", page });
+    } catch (error) {
+      setState({
+        kind: "failed",
+        message: errorMessage(error, "Scout could not continue from this handoff."),
+      });
+    } finally {
+      setContinuing(false);
+    }
+  };
+
+  return (
+    <main className="mx-auto flex min-h-[100dvh] w-full max-w-6xl flex-col p-4 sm:p-6">
+      <header className="mb-4 flex items-center gap-2">
+        <span className="grid size-8 place-items-center rounded-md bg-amber-100 text-amber-800">
+          <HandIcon className="size-4" aria-hidden="true" />
+        </span>
+        <div>
+          <p className="text-sm font-semibold">Scout human handoff</p>
+          <p className="text-muted-foreground text-xs">Complete only the requested human step.</p>
+        </div>
+      </header>
+
+      {state.kind === "loading" ? (
+        <HandoffNotice
+          icon={<LoaderCircleIcon className="size-5 animate-spin" />}
+          title="Loading secure handoff"
+        >
+          Scout is checking the exact browser session and your access.
+        </HandoffNotice>
+      ) : state.kind === "failed" ? (
+        <HandoffNotice title="Handoff unavailable">
+          <p>{state.message}</p>
+          {accessToken === undefined ? null : (
+            <Button className="mt-4" size="sm" variant="outline" onClick={() => void load()}>
+              <RotateCwIcon /> Retry
+            </Button>
+          )}
+        </HandoffNotice>
+      ) : (
+        <HandoffState page={state.page} continuing={continuing} onContinue={() => void submit()} />
+      )}
+    </main>
+  );
+}
+
+function HandoffState({
+  page,
+  continuing,
+  onContinue,
+}: {
+  page: HandoffPage;
+  continuing: boolean;
+  onContinue: () => void;
+}) {
+  if (page.status === "invalid") {
+    return (
+      <HandoffNotice title="This handoff is not available">
+        The link is invalid, no longer authorizes access, or belongs to another account.
+      </HandoffNotice>
+    );
+  }
+  if (page.status === "waiting") {
+    return (
+      <section
+        className="surface-panel flex min-h-0 flex-1 flex-col overflow-hidden"
+        aria-label="Active human handoff"
+      >
+        <div className="flex flex-wrap items-center gap-3 border-b px-4 py-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold">{page.scoutName} needs your help</p>
+            <p className="text-muted-foreground mt-0.5 text-xs">{page.reason}</p>
+          </div>
+          <time
+            className="text-muted-foreground text-xs"
+            dateTime={new Date(page.expiresAt).toISOString()}
+          >
+            Expires {dateTime.format(page.expiresAt)}
+          </time>
+          <Button asChild size="sm" variant="outline">
+            <a
+              href={page.interactiveLiveViewUrl}
+              target="_blank"
+              rel="noreferrer noopener"
+              referrerPolicy="no-referrer"
+            >
+              Open browser in a new tab <ExternalLinkIcon />
+            </a>
+          </Button>
+          <Button size="sm" disabled={continuing} onClick={onContinue}>
+            {continuing ? <LoaderCircleIcon className="animate-spin" /> : null}
+            {continuing ? "Continuing Scout" : "I completed the check. Continue Scout"}
+          </Button>
+        </div>
+        <p className="border-b px-4 py-2 text-xs text-muted-foreground">
+          If you use the new tab, close it before returning control to Scout.
+        </p>
+        <iframe
+          className="min-h-[32rem] flex-1 border-0"
+          src={page.interactiveLiveViewUrl}
+          title="Interactive Scout browser"
+          referrerPolicy="no-referrer"
+          sandbox="allow-forms allow-same-origin allow-scripts"
+        />
+      </section>
+    );
+  }
+
+  const title =
+    page.status === "continued"
+      ? "Control returned to Scout"
+      : page.status === "expired"
+        ? "This handoff expired"
+        : "This handoff failed";
+  const message =
+    page.status === "continued"
+      ? "The current browser was released back to Scout. Return to the attempt for its latest status."
+      : page.status === "expired"
+        ? "The five-minute handoff window ended. Resume the active attempt to try again."
+        : page.failure === "delivery_failed"
+          ? "Scout could not deliver the secure link. Resume the active attempt to try again."
+          : "The bound browser session ended. Resume the active attempt to try again.";
+  return (
+    <HandoffNotice title={title}>
+      <p>{message}</p>
+      {page.destination ? (
+        <Button asChild className="mt-4" size="sm">
+          <Link to="/products/$domain/tasks/$taskId/attempts/$attemptId" params={page.destination}>
+            Return to attempt
+          </Link>
+        </Button>
+      ) : (
+        <div className="mt-6 max-w-md text-left">
+          <AuthLoading>
+            <p className="text-muted-foreground text-sm">Checking your account…</p>
+          </AuthLoading>
+          <Unauthenticated>
+            <p className="mb-3 text-sm">Sign in to return to the exact Task attempt.</p>
+            <AuthPanel />
+          </Unauthenticated>
+          <Authenticated>
+            <p className="text-sm">
+              This account does not own the Task. Switch to its owner account to return to the
+              attempt.
+            </p>
+          </Authenticated>
+        </div>
+      )}
+    </HandoffNotice>
+  );
+}
+
+function HandoffNotice({
+  children,
+  icon,
+  title,
+}: {
+  children: React.ReactNode;
+  icon?: React.ReactNode;
+  title: string;
+}) {
+  return (
+    <section className="surface-panel grid flex-1 place-items-center p-6 text-center" role="status">
+      <div className="max-w-lg">
+        {icon ? <span className="mx-auto mb-3 grid size-10 place-items-center">{icon}</span> : null}
+        <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
+        <div className="text-muted-foreground mt-2 text-sm leading-6">{children}</div>
+      </div>
+    </section>
+  );
+}

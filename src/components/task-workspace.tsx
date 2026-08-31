@@ -812,7 +812,7 @@ function LiveView({
       </MainStatus>
     );
   if (session === undefined) return <MainStatus>Loading browser session</MainStatus>;
-  if (handoff) return <HumanHandoffView handoff={handoff} session={session} />;
+  if (handoff) return <HumanHandoffView handoff={handoff} />;
   if (session.lifecycle.kind === "closed")
     return <MainStatus>Session closed — open Replay to watch it</MainStatus>;
   if (!liveViewUrl) return <MainStatus>Connecting to live browser</MainStatus>;
@@ -850,26 +850,7 @@ function BrowserFrame({ session, url }: { session: BrowserSessionDetail; url: st
   );
 }
 
-function HumanHandoffView({
-  handoff,
-  session,
-}: {
-  handoff: HumanHandoff;
-  session: BrowserSessionDetail;
-}) {
-  const continueHandoff = useMutation(api.taskHumanHandoffs.continueHandoff);
-  const [state, setState] = useState<ActionState>({ kind: "idle" });
-  const submit = async () => {
-    setState({ kind: "working" });
-    try {
-      const continued = await continueHandoff({ handoffId: handoff.handoffId });
-      setState(
-        continued ? { kind: "idle" } : { kind: "failed", message: "This handoff has expired." },
-      );
-    } catch (error) {
-      setState({ kind: "failed", message: actionError(error, "Could not continue Scout") });
-    }
-  };
+export function HumanHandoffView({ handoff }: { handoff: HumanHandoff }) {
   return (
     <section className="task-browser" aria-label="Human handoff">
       <div className="task-handoff">
@@ -883,35 +864,26 @@ function HumanHandoffView({
         >
           {handoff.reason}
         </span>
-        <Button asChild size="xs" variant="outline">
-          <a href={handoff.url} target="_blank" rel="noreferrer">
-            Open
-            <ExternalLinkIcon data-icon="inline-end" />
-          </a>
-        </Button>
-        <Button
-          type="button"
-          size="xs"
-          disabled={state.kind === "working"}
-          onClick={() => void submit()}
+        <time
+          className="text-muted-foreground text-[10px]"
+          dateTime={new Date(handoff.expiresAt).toISOString()}
         >
-          {state.kind === "working" ? <LoaderCircleIcon className="animate-spin" /> : null}Done —
-          continue Scout
+          Expires {compactDate.format(handoff.expiresAt)}
+        </time>
+        <Button asChild size="xs" variant="outline">
+          <a href={`/handoff/${encodeURIComponent(handoff.handoffId)}`}>Open secure handoff</a>
         </Button>
       </div>
-      <div className="task-browser-narrow">
-        <a href={handoff.url} target="_blank" rel="noreferrer">
-          Open human handoff
-        </a>
+      <div className="grid flex-1 place-items-center px-6 py-12 text-center">
+        <div className="max-w-sm">
+          <HandIcon className="mx-auto size-8 text-amber-600" aria-hidden="true" />
+          <p className="mt-3 text-sm font-medium">A person needs to complete this step.</p>
+          <p className="text-muted-foreground mt-1 text-xs leading-5">
+            Open the secure first-party handoff to control the current browser and explicitly
+            continue Scout.
+          </p>
+        </div>
       </div>
-      <iframe
-        src={handoff.url}
-        title={`Interactive browser session ${session.sequence}`}
-        referrerPolicy="no-referrer"
-        sandbox="allow-forms allow-same-origin allow-scripts"
-        className="task-browser-frame"
-      />
-      {state.kind === "failed" ? <InlineError>{state.message}</InlineError> : null}
     </section>
   );
 }

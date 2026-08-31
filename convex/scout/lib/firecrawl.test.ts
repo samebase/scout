@@ -3,6 +3,7 @@ import {
   closeBrowserSession,
   createBrowserSession,
   executeBrowserCode,
+  findActiveBrowserSession,
   getBrowserReplayPlaylist,
   listBrowserReplayPages,
 } from "./firecrawl";
@@ -93,6 +94,48 @@ describe("standalone Firecrawl Browser Sandbox", () => {
       streamWebView: true,
       profile: { name: "scout-conrad", saveChanges: true },
     });
+  });
+
+  test("selects the exact active session and returns its current interactive URL", async () => {
+    responses.push(
+      jsonResponse({
+        success: true,
+        sessions: [
+          {
+            id: "session-other",
+            status: "active",
+            interactiveLiveViewUrl: "https://liveview.firecrawl.dev/other?signature=private",
+          },
+          {
+            id: "session-1",
+            status: "active",
+            interactiveLiveViewUrl: "https://liveview.firecrawl.dev/session-1?signature=fresh",
+          },
+        ],
+      }),
+    );
+
+    await expect(findActiveBrowserSession("session-1")).resolves.toEqual({
+      sessionId: "session-1",
+      interactiveLiveViewUrl: "https://liveview.firecrawl.dev/session-1?signature=fresh",
+    });
+    expect(requests[0]?.url).toBe("https://api.firecrawl.dev/v2/browser?status=active");
+  });
+
+  test("rejects duplicate records for the bound provider session", async () => {
+    responses.push(
+      jsonResponse({
+        success: true,
+        sessions: [
+          { id: "session-1", status: "active" },
+          { id: "session-1", status: "active" },
+        ],
+      }),
+    );
+
+    await expect(findActiveBrowserSession("session-1")).rejects.toThrow(
+      "duplicate browser session",
+    );
   });
 
   test("loads replay metadata without exposing URL credentials or query parameters", async () => {
@@ -219,6 +262,39 @@ describe("standalone Firecrawl Browser Sandbox", () => {
       language: "bash",
       timeout: 30,
     });
+    expect(requests[0]?.init?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  test("aborts a never-settling execute request", async () => {
+    const controller = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(controller.signal);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async (_input: string | URL | Request, init?: RequestInit) =>
+          await new Promise<Response>((_resolve, reject) => {
+            const signal = init?.signal;
+            const abort = () => reject(signal?.reason ?? new Error("request aborted"));
+            if (signal?.aborted) {
+              abort();
+            } else {
+              signal?.addEventListener("abort", abort, { once: true });
+            }
+          }),
+      ),
+    );
+
+    const execution = executeBrowserCode(
+      "session-1",
+      "agent-browser snapshot -i",
+      30,
+      "bash",
+      "mutate",
+    );
+    controller.abort(new Error("execution transport deadline"));
+
+    await expect(execution).rejects.toThrow("execution transport deadline");
+    expect(timeout).toHaveBeenCalledWith(35_000);
   });
 
   test.each([
