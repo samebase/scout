@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-31T14:18:59Z
+- **Last updated:** 2026-08-31T16:31:12Z
 
 ## Log
 
@@ -731,7 +731,7 @@ registry, removing a duplicate per-domain query (`src/components/products-worksp
 route switch rendered the next dossier within 100 ms while only its claim statuses and research
 activity loaded. All 272 tests and the complete project check passed.
 
-### 2026-08-31 - working tree
+### 2026-08-31 - aa29a55 - v134
 
 Replaced the rigid Product → Claim → Run execution model with Product → Task → Attempt → Turn →
 Browser Session. A Task is one editable free-form instruction, continuing it adds a Turn to the
@@ -743,3 +743,15 @@ A live Cloudflare Task reused Conrad Scout's profile and authenticated account, 
 operator-directed Turns across two browser Sessions, and retained operations and replay evidence.
 The dense three-pane workspace exposes Attempts, live/replay/transcript views, and Sessions. All 201
 tests and the complete Cloudflare build path passed.
+
+### 2026-08-31 - working tree
+
+Added an explicit resolution to every Task Attempt: active, completed, blocked, or abandoned, with a
+short conclusion for terminal outcomes. Resolution remains separate from Turn activity, so CAPTCHA
+handoffs and failed Turns do not falsely end an Attempt; blocked and abandoned Attempts can resume,
+while completed work starts a new Attempt (`convex/tasks.ts`, `convex/scout/taskLoop.ts`).
+
+The Task workspace now shows resolution and current activity independently and exposes a reversible
+operator abandon action only when no Turn or handoff is pending. Scout can resolve work only after a
+persisted browser close, and a failed resolution write fails the Turn instead of reporting success.
+All 211 tests, the complete project check, and the Convex development push passed.

@@ -106,7 +106,7 @@ export function createHumanHandoffTool<HandoffId>(
           return {
             resumed: false,
             message:
-              "The human-help request expired. Mark the result Inconclusive, stop this browser path, and explain what remains blocked.",
+              "The human-help request expired. Stop this browser path and explain how the operator can resume the still-active attempt.",
           };
         }
         if (status === "missing") {
@@ -131,13 +131,13 @@ export function createHumanHandoffTool<HandoffId>(
         return {
           resumed: false,
           message:
-            "The human-help request expired. Mark the result Inconclusive, stop this browser path, and explain what remains blocked.",
+            "The human-help request expired. Stop this browser path and explain how the operator can resume the still-active attempt.",
         };
       }
       return {
         resumed: false,
         message:
-          "The human-help request expired. Mark the result Inconclusive, stop this browser path, and explain what remains blocked.",
+          "The human-help request expired. Stop this browser path and explain how the operator can resume the still-active attempt.",
       };
     },
   });

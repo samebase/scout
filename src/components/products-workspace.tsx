@@ -742,6 +742,11 @@ function TaskRow({ domain, task }: { domain: string; task: ProductTask }) {
           </span>
           <span className="text-muted-foreground mt-2 flex flex-wrap items-center gap-2 text-xs">
             <TaskState state={task.latestAttempt?.state.kind ?? "not_started"} />
+            {task.latestAttempt?.latestTurnState.kind === "pending" ? (
+              <TaskActivity label="Running" dot="bg-blue-500 animate-pulse" />
+            ) : task.latestAttempt?.latestTurnState.kind === "failed" ? (
+              <TaskActivity label="Turn failed" dot="bg-destructive" />
+            ) : null}
             <span>
               {task.attemptCount} {task.attemptCount === 1 ? "attempt" : "attempts"}
             </span>
@@ -757,16 +762,30 @@ function TaskRow({ domain, task }: { domain: string; task: ProductTask }) {
   );
 }
 
-function TaskState({ state }: { state: "not_started" | "pending" | "completed" | "failed" }) {
+function TaskState({
+  state,
+}: {
+  state: "not_started" | "active" | "completed" | "blocked" | "abandoned";
+}) {
   const values = {
     not_started: ["Not started", "bg-muted-foreground"],
-    pending: ["Active", "bg-blue-500"],
+    active: ["Active", "bg-blue-500"],
     completed: ["Completed", "bg-emerald-500"],
-    failed: ["Failed", "bg-destructive"],
+    blocked: ["Blocked", "bg-amber-500"],
+    abandoned: ["Abandoned", "bg-muted-foreground"],
   } as const;
   const [label, dot] = values[state];
   return (
     <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
+      <span className={`size-1.5 rounded-full ${dot}`} aria-hidden="true" />
+      {label}
+    </span>
+  );
+}
+
+function TaskActivity({ label, dot }: { label: string; dot: string }) {
+  return (
+    <span className="inline-flex items-center gap-1">
       <span className={`size-1.5 rounded-full ${dot}`} aria-hidden="true" />
       {label}
     </span>

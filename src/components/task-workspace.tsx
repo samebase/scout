@@ -379,9 +379,14 @@ function AttemptsPane({
                   </time>
                   <span className="truncate">{attempt.scout.displayName}</span>
                 </span>
-                <code className="text-muted-foreground mt-1 block truncate text-[9px]">
-                  {attempt.attemptId}
-                </code>
+                <span className="text-muted-foreground mt-1 flex items-center gap-2 text-[9px]">
+                  <code className="min-w-0 flex-1 truncate">{attempt.attemptId}</code>
+                  {attempt.latestTurnState.kind === "pending" ? (
+                    <AttemptActivity label="Running" dot="bg-blue-500 animate-pulse" />
+                  ) : attempt.latestTurnState.kind === "failed" ? (
+                    <AttemptActivity label="Turn failed" dot="bg-destructive" />
+                  ) : null}
+                </span>
               </Link>
             </li>
           );
@@ -710,20 +715,69 @@ function StartAttemptForm({
 
 function AttemptMetadata({ attempt }: { attempt: Attempt }) {
   return (
-    <dl className="task-metadata">
-      <Metadata label="State" value={stateLabel(attempt.state.kind)} />
-      <Metadata label="Scout" value={attempt.scout.displayName} />
-      <Metadata
-        label="Browser"
-        value={
-          attempt.browserProfile.kind === "fresh" ? "Fresh" : attempt.browserProfile.profileName
-        }
-      />
-      <Metadata
-        label="Turns / sessions"
-        value={`${attempt.turnCount} / ${attempt.browserSessionCount}`}
-      />
-    </dl>
+    <>
+      <dl className="task-metadata">
+        <Metadata label="Resolution" value={stateLabel(attempt.state.kind)} />
+        <Metadata label="Activity" value={turnStateLabel(attempt.latestTurnState.kind)} />
+        <Metadata label="Scout" value={attempt.scout.displayName} />
+        <Metadata
+          label="Browser"
+          value={
+            attempt.browserProfile.kind === "fresh" ? "Fresh" : attempt.browserProfile.profileName
+          }
+        />
+        <Metadata
+          label="Turns / sessions"
+          value={`${attempt.turnCount} / ${attempt.browserSessionCount}`}
+        />
+      </dl>
+      {attempt.state.kind === "active" ? null : (
+        <div className="border-b px-2 py-2">
+          <p className="text-muted-foreground font-mono text-[9px] uppercase tracking-wide">
+            Conclusion
+          </p>
+          <p className="mt-1 text-xs leading-5">{attempt.state.conclusion}</p>
+        </div>
+      )}
+      {attempt.state.kind === "active" && attempt.latestTurnState.kind !== "pending" ? (
+        <AbandonAttempt attempt={attempt} />
+      ) : null}
+    </>
+  );
+}
+
+function AbandonAttempt({ attempt }: { attempt: Attempt }) {
+  const abandonAttempt = useMutation(api.tasks.abandonAttempt);
+  const [state, setState] = useState<ActionState>({ kind: "idle" });
+  const abandon = async () => {
+    if (state.kind === "working") return;
+    setState({ kind: "working" });
+    try {
+      await abandonAttempt({
+        attemptId: attempt.attemptId,
+        conclusion: "Stopped by operator.",
+      });
+      setState({ kind: "idle" });
+    } catch (error) {
+      setState({ kind: "failed", message: actionError(error, "Could not abandon attempt") });
+    }
+  };
+  return (
+    <div className="flex items-center justify-end gap-2 border-b px-2 py-1.5">
+      {state.kind === "failed" ? (
+        <span className="text-destructive mr-auto text-[10px]">{state.message}</span>
+      ) : null}
+      <Button
+        type="button"
+        size="xs"
+        variant="ghost"
+        disabled={state.kind === "working"}
+        onClick={() => void abandon()}
+      >
+        {state.kind === "working" ? <LoaderCircleIcon className="animate-spin" /> : <XIcon />}
+        {state.kind === "working" ? "Abandoning" : "Abandon attempt"}
+      </Button>
+    </div>
   );
 }
 
@@ -754,7 +808,7 @@ function LiveView({
   if (!sessionSummary)
     return (
       <MainStatus>
-        {attempt.state.kind === "pending" ? "Waiting for browser" : "No browser session"}
+        {attempt.latestTurnState.kind === "pending" ? "Waiting for browser" : "No browser session"}
       </MainStatus>
     );
   if (session === undefined) return <MainStatus>Loading browser session</MainStatus>;
@@ -874,7 +928,7 @@ function ReplayView({
   if (!sessionSummary)
     return (
       <MainStatus>
-        {attempt.state.kind === "pending" ? "Waiting for browser" : "No browser session"}
+        {attempt.latestTurnState.kind === "pending" ? "Waiting for browser" : "No browser session"}
       </MainStatus>
     );
   if (session === undefined) return <MainStatus>Loading browser session</MainStatus>;
@@ -888,7 +942,7 @@ function Transcript({ attempt, messages }: { attempt: Attempt; messages: readonl
     <section className="task-transcript" aria-label="Task transcript">
       {messages.length === 0 ? (
         <PaneStatus>
-          {attempt.state.kind === "pending" ? "Scout is starting" : "No messages"}
+          {attempt.latestTurnState.kind === "pending" ? "Scout is starting" : "No messages"}
         </PaneStatus>
       ) : (
         <ol className="space-y-5">
@@ -899,7 +953,9 @@ function Transcript({ attempt, messages }: { attempt: Attempt; messages: readonl
           ))}
         </ol>
       )}
-      {attempt.state.kind !== "pending" ? <ContinueAttempt attempt={attempt} /> : null}
+      {attempt.latestTurnState.kind !== "pending" && attempt.state.kind !== "completed" ? (
+        <ContinueAttempt attempt={attempt} />
+      ) : null}
     </section>
   );
 }
@@ -923,7 +979,7 @@ function ContinueAttempt({ attempt }: { attempt: Attempt }) {
   return (
     <form className="mt-6 border-t pt-4" onSubmit={(event) => void submit(event)}>
       <label className="text-xs font-semibold" htmlFor="task-follow-up">
-        Message Scout
+        {attempt.state.kind === "active" ? "Message Scout" : "Resume attempt"}
       </label>
       <Textarea
         id="task-follow-up"
@@ -931,7 +987,11 @@ function ContinueAttempt({ attempt }: { attempt: Attempt }) {
         rows={3}
         value={prompt}
         disabled={state.kind === "working"}
-        placeholder="Continue this attempt…"
+        placeholder={
+          attempt.state.kind === "active"
+            ? "Continue this attempt…"
+            : "Tell Scout what changed or how to continue…"
+        }
         onChange={(event) => setPrompt(event.currentTarget.value)}
       />
       <div className="mt-2 flex justify-end">
@@ -974,7 +1034,7 @@ function SessionsPane({
   if (sessions.length === 0)
     return (
       <PaneStatus>
-        {attempt.state.kind === "pending" ? "Waiting for browser" : "No sessions"}
+        {attempt.latestTurnState.kind === "pending" ? "Waiting for browser" : "No sessions"}
       </PaneStatus>
     );
   return (
@@ -1121,19 +1181,31 @@ function selectSession(
 }
 
 function stateDot(kind: Attempt["state"]["kind"]) {
-  return kind === "pending"
-    ? "bg-blue-500"
-    : kind === "completed"
-      ? "bg-emerald-500"
-      : "bg-destructive";
+  if (kind === "active") return "bg-blue-500";
+  if (kind === "completed") return "bg-emerald-500";
+  if (kind === "blocked") return "bg-amber-500";
+  return "bg-muted-foreground";
 }
 
 function stateLabel(kind: string) {
-  return kind === "pending" ? "Active" : kind.charAt(0).toUpperCase() + kind.slice(1);
+  return kind.charAt(0).toUpperCase() + kind.slice(1);
+}
+
+function turnStateLabel(kind: Attempt["latestTurnState"]["kind"]) {
+  return kind === "pending" ? "Running" : kind === "completed" ? "Turn completed" : "Turn failed";
 }
 
 function StatusDot({ className }: { className: string }) {
   return <span className={cn("size-1.5 shrink-0 rounded-full", className)} aria-hidden="true" />;
+}
+
+function AttemptActivity({ label, dot }: { label: string; dot: string }) {
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1">
+      <span className={cn("size-1.5 rounded-full", dot)} aria-hidden="true" />
+      {label}
+    </span>
+  );
 }
 
 function PaneStatus({ children }: { children: string }) {

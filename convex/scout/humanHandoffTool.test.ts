@@ -92,7 +92,7 @@ describe("human handoff tool", () => {
     expect(expiration).toHaveBeenCalledWith("handoff-1");
   });
 
-  test("returns an inconclusive instruction after the request expires", async () => {
+  test("keeps the Attempt active after the request expires", async () => {
     const output = await createHumanHandoffTool(
       {
         request: vi.fn(async () => request()),
@@ -108,7 +108,8 @@ describe("human handoff tool", () => {
 
     expect(output).toMatchObject({ resumed: false });
     expect(JSON.stringify(output)).not.toContain(interactiveLiveViewUrl);
-    expect(JSON.stringify(output)).toContain("Inconclusive");
+    expect(JSON.stringify(output)).toContain("still-active attempt");
+    expect(JSON.stringify(output)).not.toContain("Inconclusive");
   });
 
   test("observes a continuation committed before the final atomic expiry", async () => {

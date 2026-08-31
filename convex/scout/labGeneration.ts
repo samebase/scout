@@ -9,8 +9,10 @@ import { env, internalAction } from "../_generated/server";
 import { SCOUT_AGENT_INSTRUCTIONS, scoutAgent } from "./agent";
 import { createAccountPasswordFillTool, requirePasswordInputType } from "./accountPasswordTool";
 import {
+  createSingleUseAttemptResolutionArm,
   createSingleUseHumanHandoffArm,
   decideTaskStep,
+  immediatelyPrecedingToolError,
   immediatelyPrecedingToolResult,
   type TaskLoopState,
 } from "./taskLoop";
@@ -25,10 +27,11 @@ import {
 import { diagnosticMessage } from "./lib/redaction";
 import { scoutLanguageModel, scoutModelValidator, type ScoutTokenUsage } from "./models";
 import { createServiceAccountRecordingTool } from "./serviceAccountTool";
+import { createAttemptResolutionTool } from "./attemptResolutionTool";
 
 const MAX_GENERATION_STEPS = 24;
 const TASK_CLOSE_STEP = 18;
-const TASK_HANDOFF_CLOSE_STEP = MAX_GENERATION_STEPS - 2;
+const TASK_HANDOFF_CLOSE_STEP = MAX_GENERATION_STEPS - 4;
 const AGENT_MAIL_CLOSE_TIMEOUT_MS = 1_000;
 
 type LabBrowser = ReturnType<typeof createLabBrowserHarness>;
@@ -315,6 +318,7 @@ export const generateResponse = internalAction({
         scout.agentMail.inboxId,
       );
       const humanHandoffArm = createSingleUseHumanHandoffArm();
+      const attemptResolutionArm = createSingleUseAttemptResolutionArm();
       const humanHandoffTools = isTaskTurn
         ? {
             request_human_help: createHumanHandoffTool({
@@ -445,6 +449,18 @@ export const generateResponse = internalAction({
               ),
             }
           : {};
+      const attemptResolutionTools = isTaskTurn
+        ? {
+            resolve_attempt: createAttemptResolutionTool(
+              async (resolution) =>
+                await ctx.runMutation(internal.tasks.resolveAttempt, {
+                  promptMessageId: args.promptMessageId,
+                  state: resolution,
+                }),
+              attemptResolutionArm.consume,
+            ),
+          }
+        : {};
 
       const tools = {
         ...browser.tools,
@@ -452,13 +468,14 @@ export const generateResponse = internalAction({
         ...humanHandoffTools,
         ...accountPasswordTools,
         ...serviceAccountTools,
+        ...attemptResolutionTools,
       };
       let taskLoopState: TaskLoopState = "working";
       const passwordInstructions = managedCredentialInstructions(runtimeCredentials);
       const taskInstructions =
         runtimeContext.kind === "lab"
           ? ""
-          : `\n\nYou are working on an operator-defined Task for ${JSON.stringify(runtimeContext.product.name)}. Its primary URL is ${JSON.stringify(runtimeContext.product.primaryUrl)} and product domain is ${JSON.stringify(runtimeContext.product.domain)}. The attempt uses ${runtimeContext.browserProfile.kind === "fresh" ? "a fresh browser profile" : `the persistent Scout browser profile ${JSON.stringify(runtimeContext.browserProfile.profileName)}`}. Decide the next useful actions from the current operator message, the existing thread, and visible product state; do not force the work into a predefined testing workflow. If you reach an authenticated account menu, call record_authenticated_service_account with visible identity and Sign out or Log out refs so the Scout inventory reflects what you verified. If a CAPTCHA or another strictly human-only check blocks progress, call request_human_help instead of attempting to solve or bypass it. After the operator continues, inspect the current page before acting. If human help expires, explain what remains blocked and what the operator can retry. Close the browser before your final response.`;
+          : `\n\nYou are working on an operator-defined Task for ${JSON.stringify(runtimeContext.product.name)}. Its primary URL is ${JSON.stringify(runtimeContext.product.primaryUrl)} and product domain is ${JSON.stringify(runtimeContext.product.domain)}. The attempt uses ${runtimeContext.browserProfile.kind === "fresh" ? "a fresh browser profile" : `the persistent Scout browser profile ${JSON.stringify(runtimeContext.browserProfile.profileName)}`}. Decide the next useful actions from the current operator message, the existing thread, and visible product state; do not force the work into a predefined testing workflow. If you reach an authenticated account menu, call record_authenticated_service_account with visible identity and Sign out or Log out refs so the Scout inventory reflects what you verified. If a CAPTCHA or another strictly human-only check blocks progress, call request_human_help instead of attempting to solve or bypass it. After the operator continues, inspect the current page before acting. If human help expires, say that its window expired and explain how the operator can resume this still-active attempt. Close the browser before your final response. After a successful browser close, resolve the attempt once as completed when the objective is achieved or blocked when it is not, with a short evidence-based conclusion. Human-help expiry is not a resolution; leave the attempt active.`;
       const instructions = `${SCOUT_AGENT_INSTRUCTIONS}\n\n${scoutWebsiteIdentityInstructions(scout)}\n\n${passwordInstructions}${taskInstructions}`;
       const streamErrors = createStreamErrorCapture();
       const streamResult = await scoutAgent.streamText(
@@ -479,6 +496,7 @@ export const generateResponse = internalAction({
                     stepNumber,
                     normalCloseStep: TASK_CLOSE_STEP,
                     handoffCloseStep: TASK_HANDOFF_CLOSE_STEP,
+                    previousToolError: immediatelyPrecedingToolError(steps),
                     previousToolResult: immediatelyPrecedingToolResult(steps),
                   });
                   taskLoopState = decision.nextState;
@@ -502,12 +520,23 @@ export const generateResponse = internalAction({
                         activeTools: ["browser_close"] as const,
                         toolChoice: { type: "tool", toolName: "browser_close" } as const,
                       };
+                    case "resolve_attempt":
+                      attemptResolutionArm.arm();
+                      return {
+                        activeTools: ["resolve_attempt"] as const,
+                        toolChoice: {
+                          type: "tool",
+                          toolName: "resolve_attempt",
+                        } as const,
+                      };
+                    case "resolution_failed":
+                      throw new Error("Scout could not persist the Attempt conclusion");
                     case "final":
                       return {
                         activeTools: [] as const,
                         toolChoice: "none" as const,
                         instructions: decision.humanHelpExpired
-                          ? `${instructions}\n\nThe browser is closed because human help expired. Do not investigate further. Briefly report what happened, what remains blocked, and a useful next message for this attempt.`
+                          ? `${instructions}\n\nThe browser is closed because human help expired. Do not investigate further or resolve the attempt. Briefly report what happened and a useful message for resuming this still-active attempt.`
                           : `${instructions}\n\nThe bounded browser phase is over. Do not investigate further. Briefly report what you accomplished, what remains uncertain, and what the operator should try next.`,
                       };
                     case "none":

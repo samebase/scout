@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { taskBrowserProfileValidator } from "./taskAttemptModel";
+import { taskAttemptStateValidator, taskBrowserProfileValidator } from "./taskAttemptModel";
 import {
   taskBrowserOperationValidator,
   taskBrowserSessionLifecycleValidator,
@@ -17,7 +17,8 @@ export const taskSummaryValidator = v.object({
       attemptId: v.id("taskAttempts"),
       createdAt: v.number(),
       scoutName: v.string(),
-      state: scoutTurnStateValidator,
+      state: taskAttemptStateValidator,
+      latestTurnState: scoutTurnStateValidator,
     }),
     v.null(),
   ),
@@ -43,7 +44,8 @@ export const taskAttemptSummaryValidator = v.object({
     id: v.id("scouts"),
     displayName: v.string(),
   }),
-  state: scoutTurnStateValidator,
+  state: taskAttemptStateValidator,
+  latestTurnState: scoutTurnStateValidator,
   turnCount: v.number(),
   browserSessionCount: v.number(),
 });

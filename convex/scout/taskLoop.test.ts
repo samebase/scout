@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
   decideTaskStep,
+  createSingleUseAttemptResolutionArm,
   createSingleUseHumanHandoffArm,
   detectsHumanGate,
+  immediatelyPrecedingToolError,
   immediatelyPrecedingToolResult,
   type TaskLoopState,
 } from "./taskLoop";
@@ -54,7 +56,7 @@ describe("task human gate detection", () => {
         state: "working",
         stepNumber: 5,
         normalCloseStep: 18,
-        handoffCloseStep: 22,
+        handoffCloseStep: 20,
         previousToolResult: { toolName: "get_thread", output: dataDomeOutput },
       }),
     ).toEqual({ kind: "none", nextState: "working" });
@@ -94,7 +96,7 @@ describe("task loop decisions", () => {
       previousToolResult,
       stepNumber,
       normalCloseStep: 18,
-      handoffCloseStep: 22,
+      handoffCloseStep: 20,
     });
   }
 
@@ -133,6 +135,50 @@ describe("task loop decisions", () => {
     ).toEqual({ kind: "final", nextState: "final", humanHelpExpired: true });
   });
 
+  it("forces one outcome after a successful ordinary browser close", () => {
+    const close = decide("working", { toolName: "browser_close", output: { success: true } });
+    expect(close).toEqual({ kind: "resolve_attempt", nextState: "resolving" });
+    expect(
+      decide(close.nextState, {
+        toolName: "resolve_attempt",
+        output: { kind: "blocked", conclusion: "The gate remained", resolvedAt: 1 },
+      }),
+    ).toEqual({ kind: "final", nextState: "final", humanHelpExpired: false });
+  });
+
+  it("does not resolve after an unsuccessful browser close", () => {
+    expect(decide("closing", { toolName: "browser_close", output: { success: false } })).toEqual({
+      kind: "final",
+      nextState: "final",
+      humanHelpExpired: false,
+    });
+  });
+
+  it("fails instead of completing when attempt resolution errors", () => {
+    const steps = [
+      {
+        toolResults: [],
+        content: [
+          {
+            type: "tool-error",
+            toolName: "resolve_attempt",
+          },
+        ],
+      },
+    ];
+    expect(immediatelyPrecedingToolError(steps)).toEqual({ toolName: "resolve_attempt" });
+    expect(
+      decideTaskStep({
+        state: "resolving",
+        stepNumber: 20,
+        normalCloseStep: 18,
+        handoffCloseStep: 20,
+        previousToolResult: null,
+        previousToolError: immediatelyPrecedingToolError(steps),
+      }),
+    ).toEqual({ kind: "resolution_failed", nextState: "final" });
+  });
+
   it("reserves enough late steps for handoff, snapshot, close, and final", () => {
     const handoff = decide("working", { toolName: "browser_snapshot", output: dataDomeOutput }, 18);
     const snapshot = decide(
@@ -143,24 +189,36 @@ describe("task loop decisions", () => {
     const resumedWork = decide(
       snapshot.nextState,
       { toolName: "browser_snapshot", output: { output: '- heading "Account"' } },
-      20,
+      19,
     );
     const close = decide(
       resumedWork.nextState,
       { toolName: "browser_click", output: { output: '- heading "Account"' } },
-      22,
+      20,
     );
-    const final = decide(
+    const resolution = decide(
       close.nextState,
       { toolName: "browser_close", output: { success: true } },
-      23,
+      21,
     );
+    const final = decide(resolution.nextState, {
+      toolName: "resolve_attempt",
+      output: { kind: "completed", conclusion: "Done", resolvedAt: 1 },
+    });
 
-    expect([handoff.kind, snapshot.kind, resumedWork.kind, close.kind, final.kind]).toEqual([
+    expect([
+      handoff.kind,
+      snapshot.kind,
+      resumedWork.kind,
+      close.kind,
+      resolution.kind,
+      final.kind,
+    ]).toEqual([
       "request_human_help",
       "browser_snapshot",
       "none",
       "browser_close",
+      "resolve_attempt",
       "final",
     ]);
   });
@@ -174,6 +232,15 @@ describe("task loop decisions", () => {
 
   it("arms exactly one detector-authorized human escalation", () => {
     const arm = createSingleUseHumanHandoffArm();
+
+    expect(arm.consume()).toBe(false);
+    arm.arm();
+    expect(arm.consume()).toBe(true);
+    expect(arm.consume()).toBe(false);
+  });
+
+  it("arms exactly one post-close attempt resolution", () => {
+    const arm = createSingleUseAttemptResolutionArm();
 
     expect(arm.consume()).toBe(false);
     arm.arm();
