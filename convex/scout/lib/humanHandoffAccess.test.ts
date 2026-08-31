@@ -8,6 +8,12 @@ import {
 } from "./humanHandoffAccess";
 
 describe("human handoff bearer", () => {
+  test("requires SITE_URL only when creating a handoff", () => {
+    expect(() => humanHandoffOrigin(undefined)).toThrow(
+      "SITE_URL is required to create a human handoff",
+    );
+  });
+
   test("creates a random 256-bit token and persists only its digest", () => {
     const first = createHumanHandoffAccessToken();
     const second = createHumanHandoffAccessToken();
@@ -25,7 +31,11 @@ describe("human handoff bearer", () => {
     "https://scout.example/?query=1",
     "https://scout.example/#fragment",
   ])("rejects an untrusted application origin: %s", (origin) => {
-    expect(() => humanHandoffOrigin(origin)).toThrow("secure public origin");
+    expect(() => humanHandoffOrigin(origin)).toThrow("secure application origin");
+  });
+
+  test("allows the local Convex Auth site URL during development", () => {
+    expect(humanHandoffOrigin("http://localhost:5173")).toBe("http://localhost:5173");
   });
 
   test("puts the bearer in the fragment of a first-party URL", () => {

@@ -341,9 +341,7 @@ export const generateResponse = internalAction({
                   );
                 }
                 const accessToken = createHumanHandoffAccessToken();
-                const appOrigin = humanHandoffOrigin(
-                  env.SCOUT_PUBLIC_APP_URL ?? env.CONVEX_SITE_URL,
-                );
+                const appOrigin = humanHandoffOrigin(env.SITE_URL);
                 const request = await ctx.runMutation(internal.taskHumanHandoffs.request, {
                   promptMessageId: args.promptMessageId,
                   reason,

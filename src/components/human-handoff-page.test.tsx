@@ -95,6 +95,7 @@ describe("HumanHandoffPage", () => {
     expect(frame.getAttribute("referrerpolicy")).toBe("no-referrer");
     expect(frame.getAttribute("sandbox")).toBe("allow-forms allow-same-origin allow-scripts");
     expect(screen.getByText("Complete GitHub's CAPTCHA.")).toBeTruthy();
+    expect(screen.getByText("Expires in 01:00")).toBeTruthy();
     const fallback = screen.getByRole("link", { name: /Open browser in a new tab/i });
     expect(fallback.getAttribute("href")).toBe(providerUrl);
     expect(fallback.getAttribute("rel")).toBe("noreferrer noopener");

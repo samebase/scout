@@ -41,15 +41,12 @@ local backend.
 
 Open the local URL printed by Vite.
 
-## Configure public handoff links
+## Public handoff links
 
-Human-help emails use the deployment's `CONVEX_SITE_URL` by default. If operators should open a
-different canonical app origin, set `SCOUT_PUBLIC_APP_URL` to that exact HTTPS origin, with no path,
-query, or fragment:
-
-```sh
-pnpm exec convex env set SCOUT_PUBLIC_APP_URL
-```
+Human-help emails reuse Convex Auth's `SITE_URL` as the canonical app origin. Local development
+normally sets it to `http://localhost:5173`, so emailed handoff links work when opened on the same
+computer. To open them from another device, point `SITE_URL` at an HTTPS preview deployment or
+tunnel that serves this frontend and connects to the same Convex deployment.
 
 ## Configure managed credentials
 

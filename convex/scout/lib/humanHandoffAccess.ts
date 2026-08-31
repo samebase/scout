@@ -19,7 +19,10 @@ export function hashHumanHandoffAccessToken(value: string) {
   return createHash("sha256").update(value).digest("hex");
 }
 
-export function humanHandoffOrigin(value: string) {
+export function humanHandoffOrigin(value: string | undefined) {
+  if (value === undefined) {
+    throw new Error("SITE_URL is required to create a human handoff");
+  }
   const parsed = new URL(value);
   const loopback = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
   if (
@@ -30,7 +33,7 @@ export function humanHandoffOrigin(value: string) {
     parsed.search ||
     parsed.hash
   ) {
-    throw new Error("SCOUT_PUBLIC_APP_URL must be a secure public origin");
+    throw new Error("SITE_URL must be a secure application origin");
   }
   return parsed.origin;
 }

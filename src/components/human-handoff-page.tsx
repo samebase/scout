@@ -25,6 +25,32 @@ const dateTime = new Intl.DateTimeFormat(undefined, {
   timeStyle: "short",
 });
 
+function handoffCountdown(remainingMilliseconds: number) {
+  const totalSeconds = Math.max(0, Math.ceil(remainingMilliseconds / 1_000));
+  const minutes = Math.floor(totalSeconds / 60)
+    .toString()
+    .padStart(2, "0");
+  const seconds = (totalSeconds % 60).toString().padStart(2, "0");
+  return `${minutes}:${seconds}`;
+}
+
+function HandoffCountdown({ expiresAt, serverNow }: { expiresAt: number; serverNow: number }) {
+  const initialRemaining = Math.max(0, expiresAt - serverNow);
+  const [remaining, setRemaining] = useState(initialRemaining);
+
+  useEffect(() => {
+    const startedAt = Date.now();
+    const update = () => {
+      setRemaining(Math.max(0, initialRemaining - (Date.now() - startedAt)));
+    };
+    update();
+    const interval = window.setInterval(update, 1_000);
+    return () => window.clearInterval(interval);
+  }, [initialRemaining]);
+
+  return handoffCountdown(remaining);
+}
+
 function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
 }
@@ -166,10 +192,11 @@ function HandoffState({
             <p className="text-muted-foreground mt-0.5 text-xs">{page.reason}</p>
           </div>
           <time
-            className="text-muted-foreground text-xs"
+            className="text-muted-foreground text-xs tabular-nums"
             dateTime={new Date(page.expiresAt).toISOString()}
+            title={`Expires ${dateTime.format(page.expiresAt)}`}
           >
-            Expires {dateTime.format(page.expiresAt)}
+            Expires in <HandoffCountdown expiresAt={page.expiresAt} serverNow={page.serverNow} />
           </time>
           <Button asChild size="sm" variant="outline">
             <a

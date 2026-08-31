@@ -764,7 +764,7 @@ misleading tab-change error; a blank tab that Scout actually activated remains a
 focused regression coverage and passed all 211 tests plus the complete project check
 (`src/lib/taskReplayTimeline.ts`, `src/lib/taskReplayTimeline.test.ts`).
 
-### 2026-08-31 - working tree
+### 2026-08-31 - 346335b - v138
 
 Replaced raw browser-takeover links with a first-party, short-lived handoff page bound to the exact
 Task Attempt, Turn, browser Session, and operator. Convex stores only a capability digest, derives
@@ -776,3 +776,15 @@ Bound the action lifecycle to one email, one atomic Continue, one verified same-
 and immediate browser close before Attempt resolution. Email and Firecrawl requests have transport
 deadlines; expiry and delivery failure close without inventing a result. All 246 tests and the
 complete Cloudflare production build passed.
+
+### 2026-08-31 - working tree
+
+Reused Convex Auth's `SITE_URL` as the one application origin for human-handoff links. The value is
+validated when a handoff is created instead of blocking fresh Convex preview deployments that have
+not configured the feature yet. Qwen-facing integer inputs now accept either JSON numbers or
+decimal strings for browser waits and AgentMail limits, then normalize them before execution
+(`convex/convex.config.ts`, `convex/scout/labGeneration.ts`, `convex/scout/labTools.ts`).
+
+Added a second-by-second expiry countdown to the secure handoff page. All 254 tests, the complete
+Cloudflare build path, and the Convex development push passed
+(`src/components/human-handoff-page.tsx`).
