@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5.6-sol, openai/gpt-5.6-luna and qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-31T11:32:53Z
+- **Last updated:** 2026-08-31T11:44:01Z
 
 ## Log
 
@@ -714,7 +714,7 @@ JSON and Zod validation; no experimental `generateObject` or repair implementati
 a fresh Cloudflare investigation then completed live with six generated claims and seven Firecrawl
 credits.
 
-### 2026-08-31 - working tree
+### 2026-08-31 - cc3999f - v132
 
 Clarified the operator workflow in the UI. Product controls now use Research product, Refresh
 product research, and Retry product research; each Claim exposes an Attempts list with New attempt,
@@ -722,3 +722,11 @@ Start attempt, and Continue attempt controls (`src/components/products-workspace
 `src/components/claim-run-workspace.tsx`). The existing Product, Claim, Run, and Session data model
 and routes remain unchanged. Verified both Cloudflare views in the local app, and all 272 tests and
 the complete project check passed.
+
+### 2026-08-31 - working tree
+
+Made product selection update inside the existing workspace instead of replacing all three panes
+with a loading state. The selected Product now comes directly from the already-subscribed realtime
+registry, removing a duplicate per-domain query (`src/components/products-workspace.tsx`). A live
+route switch rendered the next dossier within 100 ms while only its claim statuses and research
+activity loaded. All 272 tests and the complete project check passed.

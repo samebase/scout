@@ -89,10 +89,6 @@ const formatResizeHandleValueText: SidebarLayoutResizeHandleValueTextFormatter =
 export function ProductsWorkspace({ domain }: { domain?: string }) {
   const navigate = useNavigate();
   const products = useQuery(api.products.list, {});
-  const routedProduct = useQuery(
-    api.products.getByDomain,
-    domain === undefined ? "skip" : { domain },
-  );
   const syncKnownProducts = useMutation(api.products.syncKnownProducts);
   const { setMobilePane } = useSidebarActions();
   const syncPromise = useRef<Promise<void> | null>(null);
@@ -132,12 +128,9 @@ export function ProductsWorkspace({ domain }: { domain?: string }) {
     };
   }, [syncKnownProducts]);
 
-  const loading =
-    products === undefined ||
-    syncState.kind === "syncing" ||
-    (domain !== undefined && routedProduct === undefined);
+  const loading = products === undefined || syncState.kind === "syncing";
   const loadedProducts = products ?? [];
-  const selectedProduct = domain === undefined ? undefined : (routedProduct ?? undefined);
+  const selectedProduct = loadedProducts.find((product) => product.domain === domain);
   const selectedInvestigationId = selectedProduct?.latestInvestigation?._id;
   const inspector = useQuery(
     api.productsInvestigationInspector.get,
@@ -235,7 +228,7 @@ export function ProductsWorkspace({ domain }: { domain?: string }) {
                 selectedProduct={selectedProduct}
                 inspector={inspector}
                 hasProducts={loadedProducts.length > 0}
-                selectionMissing={domain !== undefined && routedProduct === null}
+                selectionMissing={domain !== undefined && !loading && selectedProduct === undefined}
                 syncState={syncState}
                 onAddCancel={closeAdd}
                 onAddFinished={finishAdd}
