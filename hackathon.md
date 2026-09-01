@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-08-31T16:31:12Z
+- **Last updated:** 2026-09-01T10:07:41Z
 
 ## Log
 
@@ -744,7 +744,7 @@ operator-directed Turns across two browser Sessions, and retained operations and
 The dense three-pane workspace exposes Attempts, live/replay/transcript views, and Sessions. All 201
 tests and the complete Cloudflare build path passed.
 
-### 2026-08-31 - working tree
+### 2026-08-31 - a22bcf1 - v136
 
 Added an explicit resolution to every Task Attempt: active, completed, blocked, or abandoned, with a
 short conclusion for terminal outcomes. Resolution remains separate from Turn activity, so CAPTCHA
@@ -755,3 +755,12 @@ The Task workspace now shows resolution and current activity independently and e
 operator abandon action only when no Turn or handoff is pending. Scout can resolve work only after a
 persisted browser close, and a failed resolution write fails the Turn instead of reporting success.
 All 211 tests, the complete project check, and the Convex development push passed.
+
+### 2026-09-01 - working tree
+
+Removed Firecrawl's never-active `about:blank` bootstrap recording from reconstructed replay
+timelines when a real web recording starts alongside it. Replay now selects the sole correlated
+track before the first telemetry sample, so video begins immediately without an unmatched tab or
+misleading tab-change error; a blank tab that Scout actually activated remains available. Added
+focused regression coverage and passed all 211 tests plus the complete project check
+(`src/lib/taskReplayTimeline.ts`, `src/lib/taskReplayTimeline.test.ts`).
