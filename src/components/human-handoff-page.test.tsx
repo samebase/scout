@@ -2,7 +2,7 @@
 
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { ReactNode } from "react";
+import { StrictMode, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { HumanHandoffPage } from "./human-handoff-page";
 
@@ -69,12 +69,30 @@ beforeEach(() => {
   testState.auth = { isLoading: false, isAuthenticated: false };
   testState.load.mockReset();
   testState.continueHandoff.mockReset();
+  window.sessionStorage.clear();
   window.history.replaceState({}, "", `/handoff/handoff-1#access=${accessToken}`);
 });
 
 afterEach(() => cleanup());
 
 describe("HumanHandoffPage", () => {
+  test("keeps the emailed bearer while opening without an authenticated owner", async () => {
+    testState.load.mockResolvedValue(waitingPage());
+
+    render(
+      <StrictMode>
+        <HumanHandoffPage handoffId="handoff-1" />
+      </StrictMode>,
+    );
+
+    expect(await screen.findByTitle("Interactive Scout browser")).toBeTruthy();
+    expect(testState.load).toHaveBeenCalled();
+    expect(testState.load.mock.calls).toEqual(
+      expect.arrayContaining([[{ handoffId: "handoff-1", accessToken }]]),
+    );
+    expect(testState.load).not.toHaveBeenCalledWith({ handoffId: "handoff-1" });
+  });
+
   test("scrubs the bearer before loading and continues only after the explicit click", async () => {
     testState.load.mockImplementation(async () => {
       expect(window.location.hash).toBe("");

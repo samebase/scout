@@ -802,7 +802,7 @@ text. A live Samebase checkpoint run proved email handoff creation, the two inde
 human completion, Continue, final snapshot capture, browser closure, and continuation enqueueing.
 The complete project check passed with all 252 tests.
 
-### 2026-09-01 - working tree
+### 2026-09-01 - 7ed1a3e - v141
 
 Made post-handoff Attempt resolution provider-portable and consistent with the Task hierarchy. Qwen
 now receives a clean final-judge step with only `resolve_attempt` available instead of a forced
@@ -814,3 +814,14 @@ Removed the focus refresh that could detach the Continue button before its click
 fresh Chrome and Gmail run completed the Samebase human checkpoint with one Continue click, two
 Turns, one closed Browser Session, replay, and a persisted Completed conclusion. The complete
 project check passed with all 253 tests (`src/components/human-handoff-page.tsx`).
+
+### 2026-09-01 - working tree
+
+Fixed private handoff links for logged-out browsers. The page now retains the emailed bearer in
+per-tab session storage after removing it from the address bar, so repeated React effects and page
+reloads cannot silently fall back to owner authentication (`src/lib/human-handoff-access.ts`).
+
+Added a strict-effects regression that reproduced the anonymous failure before the fix. A fresh
+emailed handoff then completed live in a clean browser with its transcript and final conclusion
+preserved. All 254 tests and the complete Cloudflare build path passed
+(`src/components/human-handoff-page.test.tsx`).

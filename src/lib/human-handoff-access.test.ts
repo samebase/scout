@@ -5,9 +5,16 @@ const token = `hh1_${"a".repeat(43)}`;
 
 function browser(hash: string) {
   const replaceState = vi.fn();
+  const values = new Map<string, string>();
+  const sessionStorage = {
+    getItem: vi.fn((key: string) => values.get(key) ?? null),
+    removeItem: vi.fn((key: string) => values.delete(key)),
+    setItem: vi.fn((key: string, value: string) => values.set(key, value)),
+  };
   return {
     location: { hash, pathname: "/handoff/handoff-1", search: "" },
     history: { replaceState, state: { test: true } },
+    sessionStorage,
     replaceState,
   };
 }
@@ -18,6 +25,9 @@ describe("human handoff browser access", () => {
 
     expect(consumeHumanHandoffAccessToken(fixture)).toBe(token);
     expect(fixture.replaceState).toHaveBeenCalledWith({ test: true }, "", "/handoff/handoff-1");
+
+    fixture.location.hash = "";
+    expect(consumeHumanHandoffAccessToken(fixture)).toBe(token);
   });
 
   test.each([
