@@ -4,7 +4,15 @@ import { createServiceAccountRecordingTool } from "./serviceAccountTool";
 const toolOptions = { toolCallId: "tool-1", messages: [], context: {} };
 
 describe("Scout service-account recording tool", () => {
-  it("passes only account access and visible evidence refs to trusted code", async () => {
+  const identityTarget = { kind: "text", text: "conrad@example.test", exact: true } as const;
+  const sessionControlTarget = {
+    kind: "role",
+    role: "button",
+    name: "Sign out",
+    exact: true,
+  } as const;
+
+  it("passes only account access and visible evidence targets to trusted code", async () => {
     const record = vi.fn(async () => ({ serviceAccountId: "account-1", created: false }));
     const recordingTool = createServiceAccountRecordingTool(record);
 
@@ -13,8 +21,8 @@ describe("Scout service-account recording tool", () => {
         {
           accountAccess: "created",
           loginMethod: { kind: "managed_password" },
-          identityRef: "@e3",
-          sessionControlRef: "@e4",
+          identityTarget,
+          sessionControlTarget,
         },
         toolOptions,
       ),
@@ -22,8 +30,8 @@ describe("Scout service-account recording tool", () => {
     expect(record).toHaveBeenCalledWith({
       accountAccess: "created",
       loginMethod: { kind: "managed_password" },
-      identityRef: "@e3",
-      sessionControlRef: "@e4",
+      identityTarget,
+      sessionControlTarget,
     });
   });
 
@@ -33,14 +41,14 @@ describe("Scout service-account recording tool", () => {
     const invalidInput: {
       accountAccess: "created";
       loginMethod: { kind: "managed_password" };
-      identityRef: string;
-      sessionControlRef: string;
+      identityTarget: typeof identityTarget;
+      sessionControlTarget: typeof sessionControlTarget;
       identifier: string;
     } = {
       accountAccess: "created",
       loginMethod: { kind: "managed_password" },
-      identityRef: "@e3",
-      sessionControlRef: "@e4",
+      identityTarget,
+      sessionControlTarget,
       identifier: "other@example.test",
     };
 
@@ -60,8 +68,8 @@ describe("Scout service-account recording tool", () => {
           providerServiceDomain: "github.com",
           providerIdentifier: "conrad-scout",
         },
-        identityRef: "@e3",
-        sessionControlRef: "@e4",
+        identityTarget,
+        sessionControlTarget,
       },
       toolOptions,
     );
@@ -73,8 +81,8 @@ describe("Scout service-account recording tool", () => {
         providerServiceDomain: "github.com",
         providerIdentifier: "conrad-scout",
       },
-      identityRef: "@e3",
-      sessionControlRef: "@e4",
+      identityTarget,
+      sessionControlTarget,
     });
   });
 });

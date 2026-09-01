@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-01T21:53:25Z
+- **Last updated:** 2026-09-01T23:54:36Z
 
 ## Log
 
@@ -859,7 +859,7 @@ for OAuth. The full project check passed with all 250 tests, and the Convex deve
 local UI verification succeeded
 (`convex/scout/serviceAccountCredentials.ts`, `src/routes/scouts.$slug.tsx`).
 
-### 2026-09-01 - working tree
+### 2026-09-01 - 0df04a8 - v150
 
 Replaced every Scout-owned Firecrawl HTTP transport with the official `firecrawl` Node SDK for
 Browser Sandbox, Map, Search, and Scrape. Scout keeps its product-level URL safety, credentials,
@@ -876,3 +876,18 @@ from successful API requests, and ambiguous closes are reconciled through the SD
 local Convex development push, all 231 tests, and the complete Cloudflare build passed
 (`convex/scout/lib/firecrawlReplay.ts`, `convex/taskReplay.ts`,
 `src/components/task-replay.tsx`).
+
+### 2026-09-01 - working tree
+
+Replaced the shell-command browser dialect with one sandboxed `browser_execute` tool that accepts
+ordinary Playwright JavaScript. Trusted Playwright over Firecrawl's CDP connection still captures
+accessible page state and tab telemetry, fills managed credentials without exposing them to the
+model, and validates authenticated-account evidence (`convex/scout/labTools.ts`,
+`convex/scout/playwrightBrowser.ts`, `convex/scout/browserTarget.ts`).
+
+Removed the coordinate click reconstruction and the old custom browser-tool surface. Each remote
+snippet now has isolated scope and a structured per-call result, while an explicit Firecrawl 429 is
+the only automatically retried execution because it is rejected before dispatch. Live Samebase
+runs exercised the persistent Scout profile, dashboard navigation, GitHub OAuth tabs, replay, and
+provider rate limiting. All 195 tests and the complete Cloudflare build passed
+(`convex/taskBrowserModel.ts`, `src/components/task-replay.tsx`).

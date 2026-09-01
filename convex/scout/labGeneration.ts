@@ -487,10 +487,10 @@ export const generateResponse = internalAction({
       const serviceAccountTools = isTaskTurn
         ? {
             record_authenticated_service_account: createServiceAccountRecordingTool(
-              async ({ accountAccess, identityRef, loginMethod, sessionControlRef }) => {
+              async ({ accountAccess, identityTarget, loginMethod, sessionControlTarget }) => {
                 const [identity, sessionControl, currentUrl] = await Promise.all([
-                  activeBrowser.actions.getElement(identityRef),
-                  activeBrowser.actions.getElement(sessionControlRef),
+                  activeBrowser.actions.getElement(identityTarget),
+                  activeBrowser.actions.getElement(sessionControlTarget),
                   activeBrowser.actions.getPage("url"),
                 ]);
                 if (!identity.success || !sessionControl.success || !currentUrl.success) {
@@ -517,7 +517,7 @@ export const generateResponse = internalAction({
         runtimeCredentials.length > 0
           ? {
               fill_account_password: createAccountPasswordFillTool(
-                async ({ passwordRef, passwordConfirmationRef }) => {
+                async ({ passwordTarget, passwordConfirmationTarget }, toolCallId) => {
                   const currentUrl = await activeBrowser.actions.getPage("url");
                   if (!currentUrl.success) {
                     throw new Error("The current browser URL could not be verified");
@@ -538,16 +538,16 @@ export const generateResponse = internalAction({
                   }
                   assertCredentialBrowserUrl(currentUrl.output, runtimeCredential.credentialHost);
                   const passwordField = await activeBrowser.actions.getElementAttribute(
-                    passwordRef,
+                    passwordTarget,
                     "type",
                   );
                   if (!passwordField.success) {
                     throw new Error("The configured password field could not be verified");
                   }
                   requirePasswordInputType(passwordField.output);
-                  if (passwordConfirmationRef) {
+                  if (passwordConfirmationTarget) {
                     const confirmationField = await activeBrowser.actions.getElementAttribute(
-                      passwordConfirmationRef,
+                      passwordConfirmationTarget,
                       "type",
                     );
                     if (!confirmationField.success) {
@@ -568,20 +568,18 @@ export const generateResponse = internalAction({
                     throw new Error("Managed password fill is unavailable");
                   }
                   activeBrowser.actions.registerSensitiveValue(password);
-                  const passwordResult = await activeBrowser.actions.fill(passwordRef, password);
+                  const passwordResult = await activeBrowser.actions.fillManagedPassword(
+                    {
+                      passwordTarget,
+                      ...(passwordConfirmationTarget ? { passwordConfirmationTarget } : {}),
+                    },
+                    password,
+                    toolCallId,
+                  );
                   if (!passwordResult.success) {
                     throw new Error("The configured account password could not be filled");
                   }
-                  if (passwordConfirmationRef) {
-                    const confirmationResult = await activeBrowser.actions.fill(
-                      passwordConfirmationRef,
-                      password,
-                    );
-                    if (!confirmationResult.success) {
-                      throw new Error("The configured account password confirmation failed");
-                    }
-                  }
-                  return { filledFields: passwordConfirmationRef ? 2 : 1 };
+                  return { filledFields: passwordConfirmationTarget ? 2 : 1 };
                 },
               ),
             }
@@ -613,7 +611,7 @@ export const generateResponse = internalAction({
       const taskInstructions =
         runtimeContext.kind === "lab"
           ? ""
-          : `\n\nYou are working on an operator-defined Task for ${JSON.stringify(runtimeContext.product.name)}. Its primary URL is ${JSON.stringify(runtimeContext.product.primaryUrl)} and product domain is ${JSON.stringify(runtimeContext.product.domain)}. The attempt uses ${runtimeContext.browserProfile.kind === "fresh" ? "a fresh browser profile" : `the persistent Scout browser profile ${JSON.stringify(runtimeContext.browserProfile.profileName)}`}. Decide the next useful actions from the current operator message, the existing thread, and visible product state; do not force the work into a predefined testing workflow. If you reach an authenticated account menu, call record_authenticated_service_account with a visible known Scout username or email—not a team or workspace name—and Sign out or Log out refs while the browser is still open so the Scout inventory reflects what you verified. If a CAPTCHA or another strictly human-only check blocks progress, call request_human_help instead of attempting to solve or bypass it. That tool sends a durable handoff and pauses this Turn; do not poll or keep working after it. Close the browser only after any account recording, then give an ordinary final response. After a successful browser close, resolve the attempt once as completed when the objective is achieved or blocked when it is not, with an evidence-based conclusion under 500 characters.`;
+          : `\n\nYou are working on an operator-defined Task for ${JSON.stringify(runtimeContext.product.name)}. Its primary URL is ${JSON.stringify(runtimeContext.product.primaryUrl)} and product domain is ${JSON.stringify(runtimeContext.product.domain)}. The attempt uses ${runtimeContext.browserProfile.kind === "fresh" ? "a fresh browser profile" : `the persistent Scout browser profile ${JSON.stringify(runtimeContext.browserProfile.profileName)}`}. Decide the next useful actions from the current operator message, the existing thread, and visible product state; do not force the work into a predefined testing workflow. Use browser_execute to write ordinary Playwright JavaScript against the provided page object. Prefer semantic locators. Use the accessibility snapshot returned by each call as your default observation, and combine the checks needed to identify and perform one coherent next step instead of making separate exploratory calls. If you reach an authenticated account menu, call record_authenticated_service_account with a visible known Scout username or email—not a team or workspace name—and a visible Sign out or Log out control while the browser is still open so the Scout inventory reflects what you verified. If a CAPTCHA or another strictly human-only check blocks progress, call request_human_help instead of attempting to solve or bypass it. That tool sends a durable handoff and pauses this Turn; do not poll or keep working after it. Close the browser only after any account recording, then give an ordinary final response. After a successful browser close, resolve the attempt once as completed when the objective is achieved or blocked when it is not, with an evidence-based conclusion under 500 characters.`;
       const instructions = `${SCOUT_AGENT_INSTRUCTIONS}\n\n${scoutWebsiteIdentityInstructions(scout)}\n\n${passwordInstructions}\n\n${loginInstructions}${taskInstructions}`;
       const streamErrors = createStreamErrorCapture();
       const streamResult = await scoutAgent.streamText(

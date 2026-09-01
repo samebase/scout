@@ -1,6 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
 import {
-  activeClickAt,
   activePageIdAt,
   activeTabAt,
   buildReplayTimeline,
@@ -26,7 +25,7 @@ function operation(args: {
   });
   return {
     sequence: args.sequence,
-    action: { kind: args.kind ?? "click" },
+    action: { kind: args.kind ?? "execute" },
     state: {
       kind: "applied",
       telemetry: {
@@ -39,11 +38,6 @@ function operation(args: {
         after: {
           capturedAtMs: args.afterMs,
           tabs: [tab(args.afterTarget, args.afterUrl ?? args.url)],
-        },
-        pointer: {
-          tabId: args.beforeTarget,
-          ref: "@e1",
-          box: { x: 10, y: 20, width: 80, height: 40 },
         },
       },
     },
@@ -88,7 +82,7 @@ describe("task replay timeline", () => {
     expect(timeline.pageIdByTabId.get("target-b")).toBe("2");
     expect(activeTabAt(timeline.points, 1_500)).toBe("target-a");
     expect(activeTabAt(timeline.points, 2_100)).toBe("target-b");
-    expect(activeClickAt(timeline.events, "target-a", 10)).toMatchObject({ ref: "@e1" });
+    expect(timeline.events).toHaveLength(2);
     expect(timeline.transitions).toContainEqual({
       sequence: 2,
       earliestTimeMs: 2_005,

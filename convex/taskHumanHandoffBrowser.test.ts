@@ -36,7 +36,11 @@ describe("handed-off browser cleanup", () => {
     const result = await finishHandedOffBrowser(
       { providerSessionId: "session-1", captureEvidence: true },
       {
-        find: vi.fn(async () => ({ sessionId: "session-1", interactiveLiveViewUrl: null })),
+        find: vi.fn(async () => ({
+          sessionId: "session-1",
+          cdpUrl: "wss://browser.firecrawl.dev/cdp?token=secret",
+          interactiveLiveViewUrl: null,
+        })),
         captureSnapshot: vi.fn(async () => {
           throw new Error("snapshot failed");
         }),
@@ -48,26 +52,22 @@ describe("handed-off browser cleanup", () => {
     expect(result.evidence).toContain("snapshot failed");
   });
 
-  it("does not treat a nonzero snapshot command as successful evidence", async () => {
+  it("stores a Playwright snapshot as evidence", async () => {
     const close = vi.fn(async () => stoppedBrowser());
     const result = await finishHandedOffBrowser(
       { providerSessionId: "session-1", captureEvidence: true },
       {
-        find: vi.fn(async () => ({ sessionId: "session-1", interactiveLiveViewUrl: null })),
-        captureSnapshot: vi.fn(async () => ({
-          success: true,
-          stdout: "partial output",
-          stderr: "snapshot failed",
-          exitCode: 1,
-          killed: false,
-          error: "Execution failed",
+        find: vi.fn(async () => ({
+          sessionId: "session-1",
+          cdpUrl: "wss://browser.firecrawl.dev/cdp?token=secret",
+          interactiveLiveViewUrl: null,
         })),
+        captureSnapshot: vi.fn(async () => '- button "Continue" [ref=e1]'),
         close,
       },
     );
 
-    expect(result.evidence).toContain("snapshot failed");
-    expect(result.evidence).not.toContain("partial output");
+    expect(result.evidence).toBe('- button "Continue" [ref=e1]');
     expect(close).toHaveBeenCalledExactlyOnceWith("session-1");
   });
 

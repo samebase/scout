@@ -17,11 +17,6 @@ type ReplayTelemetry = {
   dispatchedAtMs: number;
   returnedAtMs: number;
   after: { capturedAtMs: number; tabs: ReplayTabObservation[] };
-  pointer: {
-    tabId: string;
-    ref: string;
-    box: { x: number; y: number; width: number; height: number };
-  } | null;
 };
 
 export type ReplayOperation = {
@@ -57,7 +52,6 @@ export type ReplayActionEvent = {
   timeMs: number;
   kind: string;
   tabId: string | null;
-  pointer: ReplayTelemetry["pointer"];
 };
 
 export type ReplayTimeline = {
@@ -251,7 +245,6 @@ export function buildReplayTimeline(
       timeMs: remoteToTimeline(telemetry.dispatchedAtMs),
       kind: operation.action.kind,
       tabId: beforeTabId,
-      pointer: telemetry.pointer,
     });
   }
   points.sort((left, right) => left.timeMs - right.timeMs);
@@ -298,25 +291,4 @@ export function activePageIdAt(timeline: ReplayTimeline, timeMs: number) {
       page.relativeEndMs >= timeMs,
   );
   return candidates.length === 1 ? (candidates[0]?.pageId ?? null) : null;
-}
-
-export function activeClickAt(
-  events: readonly ReplayActionEvent[],
-  tabId: string | null,
-  timeMs: number,
-) {
-  if (!tabId) return null;
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const event = events[index];
-    if (!event || timeMs - event.timeMs > 700) return null;
-    if (
-      event.timeMs <= timeMs &&
-      event.tabId === tabId &&
-      event.pointer &&
-      event.kind === "click"
-    ) {
-      return event.pointer;
-    }
-  }
-  return null;
 }

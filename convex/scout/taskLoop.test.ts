@@ -38,7 +38,7 @@ describe("task human gate detection", () => {
         text: 'Iframe "DataDome Device Check" from the user prompt',
         toolResults: [
           {
-            toolName: "browser_snapshot",
+            toolName: "browser_execute",
             output: { output: '- heading "Create your account"' },
           },
         ],
@@ -65,19 +65,19 @@ describe("task human gate detection", () => {
     const previous = immediatelyPrecedingToolResult([
       {
         toolResults: [
-          { toolName: "browser_snapshot", output: dataDomeOutput },
+          { toolName: "browser_execute", output: dataDomeOutput },
           { toolName: "get_thread", output: dataDomeOutput },
         ],
       },
     ]);
 
-    expect(previous).toEqual({ toolName: "browser_snapshot", output: dataDomeOutput });
+    expect(previous).toEqual({ toolName: "browser_execute", output: dataDomeOutput });
   });
 
   it("does not scan an older step for a human gate", () => {
     expect(
       immediatelyPrecedingToolResult([
-        { toolResults: [{ toolName: "browser_snapshot", output: dataDomeOutput }] },
+        { toolResults: [{ toolName: "browser_execute", output: dataDomeOutput }] },
         { toolResults: [{ toolName: "get_thread", output: { output: "mail" } }] },
       ]),
     ).toBeNull();
@@ -99,7 +99,7 @@ describe("task loop decisions", () => {
   }
 
   it("forces human help immediately after a browser result exposes a gate", () => {
-    expect(decide("working", { toolName: "browser_snapshot", output: dataDomeOutput })).toEqual({
+    expect(decide("working", { toolName: "browser_execute", output: dataDomeOutput })).toEqual({
       kind: "request_human_help",
       nextState: "final",
     });

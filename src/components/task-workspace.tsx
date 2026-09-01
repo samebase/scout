@@ -1120,21 +1120,11 @@ function AttemptFooter({
 function operationTarget(operation: BrowserOperation) {
   switch (operation.action.kind) {
     case "open":
-    case "navigate":
       return operation.action.url;
-    case "click":
-    case "fill":
-    case "type":
-    case "select":
-    case "check":
-      return operation.action.ref;
-    case "press":
-      return operation.action.key;
-    case "switch_tab":
-      return operation.action.tabId;
-    case "back":
-    case "reload":
-      return "";
+    case "execute":
+      return operation.action.code.split("\n", 1)[0] ?? "";
+    case "managed_password_fill":
+      return `${operation.action.fieldCount} password field${operation.action.fieldCount === 1 ? "" : "s"}`;
     default: {
       const exhaustive: never = operation.action;
       return exhaustive;

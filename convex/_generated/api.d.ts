@@ -32,7 +32,7 @@ import type * as productsValidation from "../productsValidation.js";
 import type * as scout_accountPasswordTool from "../scout/accountPasswordTool.js";
 import type * as scout_agent from "../scout/agent.js";
 import type * as scout_attemptResolutionTool from "../scout/attemptResolutionTool.js";
-import type * as scout_browserTelemetry from "../scout/browserTelemetry.js";
+import type * as scout_browserTarget from "../scout/browserTarget.js";
 import type * as scout_credentialCrypto from "../scout/credentialCrypto.js";
 import type * as scout_humanHandoffTool from "../scout/humanHandoffTool.js";
 import type * as scout_lab from "../scout/lab.js";
@@ -46,6 +46,7 @@ import type * as scout_lib_humanHandoffAccess from "../scout/lib/humanHandoffAcc
 import type * as scout_lib_redaction from "../scout/lib/redaction.js";
 import type * as scout_model from "../scout/model.js";
 import type * as scout_models from "../scout/models.js";
+import type * as scout_playwrightBrowser from "../scout/playwrightBrowser.js";
 import type * as scout_scouts from "../scout/scouts.js";
 import type * as scout_serviceAccountCredentialActions from "../scout/serviceAccountCredentialActions.js";
 import type * as scout_serviceAccountCredentials from "../scout/serviceAccountCredentials.js";
@@ -96,7 +97,7 @@ declare const fullApi: ApiFromModules<{
   "scout/accountPasswordTool": typeof scout_accountPasswordTool;
   "scout/agent": typeof scout_agent;
   "scout/attemptResolutionTool": typeof scout_attemptResolutionTool;
-  "scout/browserTelemetry": typeof scout_browserTelemetry;
+  "scout/browserTarget": typeof scout_browserTarget;
   "scout/credentialCrypto": typeof scout_credentialCrypto;
   "scout/humanHandoffTool": typeof scout_humanHandoffTool;
   "scout/lab": typeof scout_lab;
@@ -110,6 +111,7 @@ declare const fullApi: ApiFromModules<{
   "scout/lib/redaction": typeof scout_lib_redaction;
   "scout/model": typeof scout_model;
   "scout/models": typeof scout_models;
+  "scout/playwrightBrowser": typeof scout_playwrightBrowser;
   "scout/scouts": typeof scout_scouts;
   "scout/serviceAccountCredentialActions": typeof scout_serviceAccountCredentialActions;
   "scout/serviceAccountCredentials": typeof scout_serviceAccountCredentials;

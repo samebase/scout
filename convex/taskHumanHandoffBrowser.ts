@@ -4,13 +4,10 @@ import type { Firecrawl } from "firecrawl";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalAction } from "./_generated/server";
-import {
-  closeFirecrawlBrowserSession,
-  createFirecrawlClient,
-  firecrawlBrowserExecutionSucceeded,
-} from "./scout/lib/firecrawl";
+import { closeFirecrawlBrowserSession, createFirecrawlClient } from "./scout/lib/firecrawl";
 import { optionalFirecrawlLiveViewUrl } from "./scout/lib/firecrawlLiveView";
 import { diagnosticMessage } from "./scout/lib/redaction";
+import { connectPlaywrightBrowser } from "./scout/playwrightBrowser";
 
 const MAX_HANDOFF_EVIDENCE_LENGTH = 20_000;
 
@@ -23,12 +20,13 @@ function boundedEvidence(value: string) {
 
 type BrowserFinishDependencies = {
   find: (providerSessionId: string) => Promise<ActiveBrowserSession | null>;
-  captureSnapshot: (providerSessionId: string) => ReturnType<Firecrawl["browserExecute"]>;
+  captureSnapshot: (cdpUrl: string) => Promise<string>;
   close: (providerSessionId: string) => ReturnType<Firecrawl["deleteBrowser"]>;
 };
 
 type ActiveBrowserSession = {
   sessionId: string;
+  cdpUrl: string;
   interactiveLiveViewUrl: string | null;
 };
 
@@ -46,6 +44,7 @@ async function findActiveBrowserSessionWith(
   return session
     ? {
         sessionId: session.id,
+        cdpUrl: session.cdpUrl,
         interactiveLiveViewUrl: optionalFirecrawlLiveViewUrl(session.interactiveLiveViewUrl),
       }
     : null;
@@ -60,12 +59,7 @@ function browserFinishDependencies(): BrowserFinishDependencies {
   return {
     find: async (providerSessionId) =>
       await findActiveBrowserSessionWith(firecrawl, providerSessionId),
-    captureSnapshot: async (providerSessionId) =>
-      await firecrawl.browserExecute(providerSessionId, {
-        code: "agent-browser snapshot -i",
-        language: "bash",
-        timeout: 60,
-      }),
+    captureSnapshot: async (cdpUrl) => await (await connectPlaywrightBrowser(cdpUrl)).snapshot(),
     close: async (providerSessionId) =>
       await closeFirecrawlBrowserSession(firecrawl, providerSessionId),
   };
@@ -91,10 +85,7 @@ export async function finishHandedOffBrowser(
   }
   if (active && args.captureEvidence) {
     try {
-      const snapshot = await dependencies.captureSnapshot(args.providerSessionId);
-      evidence = firecrawlBrowserExecutionSucceeded(snapshot)
-        ? boundedEvidence(snapshot.stdout ?? snapshot.result ?? snapshot.output ?? "")
-        : `The post-handoff browser snapshot failed: ${boundedEvidence(snapshot.stderr || snapshot.error || "Unknown provider failure")}`;
+      evidence = boundedEvidence(await dependencies.captureSnapshot(active.cdpUrl));
     } catch (error) {
       evidence = `The post-handoff browser snapshot failed: ${boundedEvidence(diagnosticMessage(error))}`;
     }

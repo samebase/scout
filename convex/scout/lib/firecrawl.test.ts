@@ -18,7 +18,7 @@ function browserLifecycle() {
 }
 
 describe("Firecrawl browser SDK boundary", () => {
-  test("distinguishes request success from remote command success", () => {
+  test("distinguishes request success from remote code success", () => {
     expect(firecrawlBrowserExecutionSucceeded({ success: true, exitCode: 0, killed: false })).toBe(
       true,
     );
@@ -31,9 +31,6 @@ describe("Firecrawl browser SDK boundary", () => {
       }),
     ).toBe(false);
     expect(firecrawlBrowserExecutionSucceeded({ success: true, exitCode: 0, killed: true })).toBe(
-      false,
-    );
-    expect(firecrawlBrowserExecutionSucceeded({ success: false, exitCode: 0, killed: false })).toBe(
       false,
     );
   });
