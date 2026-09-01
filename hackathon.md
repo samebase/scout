@@ -859,7 +859,7 @@ for OAuth. The full project check passed with all 250 tests, and the Convex deve
 local UI verification succeeded
 (`convex/scout/serviceAccountCredentials.ts`, `src/routes/scouts.$slug.tsx`).
 
-### 2026-09-01 - working tree
+### 2026-09-01 - d584c39 - v149
 
 Moved Cloudflare branch deploys to Worker Previews and one trigger-scoped `CONVEX_DEPLOY_KEY` name.
 Preview Convex deploys, Auth variables, and seed data now use the same branch name. The stable
