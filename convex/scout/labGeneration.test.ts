@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   assertCredentialBrowserUrl,
   managedCredentialInstructions,
+  serviceAccountLoginInstructions,
   scoutWebsiteIdentityInstructions,
 } from "./labGeneration";
 
@@ -33,5 +34,30 @@ describe("Scout runtime instructions", () => {
     ).not.toThrow();
     expect(() => assertCredentialBrowserUrl("https://evil.test", "github.com")).toThrow();
     expect(() => assertCredentialBrowserUrl("http://github.com", "github.com")).toThrow();
+  });
+
+  it("describes OAuth through the exact provider service account", () => {
+    const instructions = serviceAccountLoginInstructions([
+      {
+        serviceAccountId: "github-account",
+        serviceName: "GitHub",
+        serviceDomain: "github.com",
+        identifier: "conrad-scout",
+        loginMethod: {
+          kind: "managed_password",
+          credentialHost: "github.com",
+          createdAt: 1,
+        },
+      },
+      {
+        serviceAccountId: "convex-account",
+        serviceName: "Convex",
+        serviceDomain: "convex.dev",
+        identifier: "conrad@example.test",
+        loginMethod: { kind: "oauth", providerAccountId: "github-account" },
+      },
+    ]);
+
+    expect(instructions).toContain('OAuth through GitHub at github.com as "conrad-scout"');
   });
 });

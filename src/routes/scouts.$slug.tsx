@@ -242,16 +242,9 @@ function ServiceAccountsSection({
                   </dd>
                 </div>
                 <div className="min-w-0">
-                  <dt className="text-muted-foreground text-xs">Password</dt>
+                  <dt className="text-muted-foreground text-xs">Login</dt>
                   <dd className="mt-1">
-                    {account.managedCredential ? (
-                      <span>
-                        Managed · Prepared{" "}
-                        <EvidenceTime timestamp={account.managedCredential.createdAt} />
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">External</span>
-                    )}
+                    <LoginMethod account={account} accounts={accounts} />
                   </dd>
                 </div>
               </dl>
@@ -261,6 +254,40 @@ function ServiceAccountsSection({
       )}
     </section>
   );
+}
+
+function LoginMethod({
+  account,
+  accounts,
+}: {
+  account: ServiceAccount;
+  accounts: ServiceAccount[];
+}) {
+  const loginMethod = account.loginMethod;
+  switch (loginMethod.kind) {
+    case "managed_password":
+      return (
+        <span>
+          Managed password · <EvidenceTime timestamp={loginMethod.createdAt} />
+        </span>
+      );
+    case "oauth": {
+      const provider = accounts.find(
+        (candidate) => candidate._id === loginMethod.providerAccountId,
+      );
+      return provider ? (
+        <span>
+          {provider.serviceName} · {provider.identifier}
+        </span>
+      ) : (
+        <span className="text-destructive">Provider account missing</span>
+      );
+    }
+    default: {
+      const exhaustive: never = loginMethod;
+      return exhaustive;
+    }
+  }
 }
 
 function AccountRegistrationForm({
