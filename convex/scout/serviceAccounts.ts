@@ -1,12 +1,18 @@
 import { v } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
-import { internalMutation, mutation, query } from "../_generated/server";
+import {
+  internalMutation,
+  internalQuery,
+  mutation,
+  query,
+  type MutationCtx,
+} from "../_generated/server";
 import { requireAppUser } from "../access";
 import { canonicalProductDomain, ensureProduct } from "../productsDomain";
 import {
-  scoutManagedCredentialMetadataValidator,
   scoutServiceAccountAuthenticationEvidenceValidator,
   scoutServiceAccountFieldsValidator,
+  scoutServiceAccountLoginMethodValidator,
 } from "./model";
 
 const MAX_ACCOUNTS = 200;
@@ -36,14 +42,32 @@ const serviceAccountPublicValidator = v.object({
   serviceDomain: v.string(),
   identifier: v.string(),
   authenticationEvidence: scoutServiceAccountAuthenticationEvidenceValidator,
+  loginMethod: scoutServiceAccountLoginMethodValidator,
   firstRecordedByTask: v.union(taskAccountProvenancePublicValidator, v.null()),
   lastVerifiedByTask: v.union(taskAccountProvenancePublicValidator, v.null()),
-  managedCredential: v.optional(scoutManagedCredentialMetadataValidator),
 });
 
-const serviceAccountRegistrationValidator = scoutServiceAccountFieldsValidator
+const oauthServiceAccountRegistrationValidator = scoutServiceAccountFieldsValidator
   .omit("authenticationEvidence")
-  .omit("managedCredential");
+  .omit("loginMethod")
+  .extend({ providerAccountId: v.id("scoutServiceAccounts") });
+
+const observedLoginMethodValidator = v.union(
+  v.object({ kind: v.literal("managed_password") }),
+  v.object({
+    kind: v.literal("oauth"),
+    providerServiceDomain: v.string(),
+    providerIdentifier: v.string(),
+  }),
+);
+
+const runtimeServiceAccountValidator = v.object({
+  serviceAccountId: v.id("scoutServiceAccounts"),
+  serviceName: v.string(),
+  serviceDomain: v.string(),
+  identifier: v.string(),
+  loginMethod: scoutServiceAccountLoginMethodValidator,
+});
 
 const serviceAccountIdResultValidator = v.object({
   serviceAccountId: v.id("scoutServiceAccounts"),
@@ -114,10 +138,60 @@ function projectServiceAccount(account: Doc<"scoutServiceAccounts">) {
     serviceDomain: account.serviceDomain,
     identifier: account.identifier,
     authenticationEvidence: account.authenticationEvidence,
+    loginMethod: account.loginMethod,
     firstRecordedByTask: account.firstRecordedByTask ?? null,
     lastVerifiedByTask: account.lastVerifiedByTask ?? null,
-    ...(account.managedCredential ? { managedCredential: account.managedCredential } : {}),
   };
+}
+
+async function requireOAuthProvider(
+  ctx: Pick<MutationCtx, "db">,
+  args: { scoutId: Doc<"scouts">["_id"]; providerAccountId: Doc<"scoutServiceAccounts">["_id"] },
+) {
+  const providerAccount = await ctx.db.get("scoutServiceAccounts", args.providerAccountId);
+  if (!providerAccount || providerAccount.scoutId !== args.scoutId) {
+    throw new Error("OAuth provider account must belong to the same Scout");
+  }
+  return providerAccount;
+}
+
+async function resolveObservedLoginMethod(
+  ctx: Pick<MutationCtx, "db">,
+  scoutId: Doc<"scouts">["_id"],
+  loginMethod: typeof observedLoginMethodValidator.type,
+) {
+  if (loginMethod.kind === "managed_password") {
+    return { kind: "managed_password" as const };
+  }
+  const providerServiceDomain = canonicalProductDomain(
+    loginMethod.providerServiceDomain,
+    "OAuth provider service domain",
+  );
+  const providerIdentifier = canonicalIdentifier(loginMethod.providerIdentifier);
+  const providerAccount = await ctx.db
+    .query("scoutServiceAccounts")
+    .withIndex("by_scout_id_and_service_domain_and_identifier", (query) =>
+      query
+        .eq("scoutId", scoutId)
+        .eq("serviceDomain", providerServiceDomain)
+        .eq("identifier", providerIdentifier),
+    )
+    .unique();
+  if (!providerAccount) {
+    throw new Error("OAuth provider account is not registered to this Scout");
+  }
+  return { kind: "oauth" as const, providerAccountId: providerAccount._id };
+}
+
+function loginMethodsMatch(
+  stored: Doc<"scoutServiceAccounts">["loginMethod"],
+  observed: Awaited<ReturnType<typeof resolveObservedLoginMethod>>,
+) {
+  if (stored.kind !== observed.kind) return false;
+  return (
+    stored.kind === "managed_password" ||
+    (observed.kind === "oauth" && stored.providerAccountId === observed.providerAccountId)
+  );
 }
 
 export const list = query({
@@ -138,8 +212,26 @@ export const list = query({
   },
 });
 
-export const register = mutation({
-  args: serviceAccountRegistrationValidator.fields,
+export const listRuntimeForScout = internalQuery({
+  args: { scoutId: v.id("scouts") },
+  returns: v.array(runtimeServiceAccountValidator),
+  handler: async (ctx, args) => {
+    const accounts = await ctx.db
+      .query("scoutServiceAccounts")
+      .withIndex("by_scout_id", (query) => query.eq("scoutId", args.scoutId))
+      .take(MAX_ACCOUNTS_PER_SCOUT);
+    return accounts.map((account) => ({
+      serviceAccountId: account._id,
+      serviceName: account.serviceName,
+      serviceDomain: account.serviceDomain,
+      identifier: account.identifier,
+      loginMethod: account.loginMethod,
+    }));
+  },
+});
+
+export const registerOauth = mutation({
+  args: oauthServiceAccountRegistrationValidator.fields,
   returns: serviceAccountIdResultValidator,
   handler: async (ctx, args) => {
     await requireAppUser(ctx);
@@ -147,6 +239,10 @@ export const register = mutation({
     if (!scout) {
       throw new Error("Scout not found");
     }
+    await requireOAuthProvider(ctx, {
+      scoutId: args.scoutId,
+      providerAccountId: args.providerAccountId,
+    });
 
     const serviceName = requiredText(args.serviceName, "Service name", MAX_SERVICE_NAME_LENGTH);
     const serviceDomain = canonicalProductDomain(args.serviceDomain, "Service domain");
@@ -192,6 +288,7 @@ export const register = mutation({
         serviceDomain,
         identifier,
         authenticationEvidence: { kind: "none" },
+        loginMethod: { kind: "oauth", providerAccountId: args.providerAccountId },
       }),
     };
   },
@@ -204,6 +301,7 @@ export const recordAuthenticatedFromTask = internalMutation({
     observedUrl: v.string(),
     visibleIdentity: v.string(),
     visibleSessionControl: v.string(),
+    loginMethod: observedLoginMethodValidator,
   },
   returns: taskServiceAccountResultValidator,
   handler: async (ctx, args) => {
@@ -279,14 +377,10 @@ export const recordAuthenticatedFromTask = internalMutation({
           observedDomain.endsWith(`.${account.serviceDomain}`)) &&
         evidenceShowsIdentifier(visibleIdentity, canonicalIdentifier(account.identifier)),
     );
-    if (matchingAccounts.length !== 1) {
+    if (matchingAccounts.length > 1) {
       throw new Error("Visible account evidence must match exactly one Scout service account");
     }
-    const boundAccount = matchingAccounts[0]!;
-    const product = boundAccount.productId
-      ? await ctx.db.get("products", boundAccount.productId)
-      : null;
-
+    const loginMethod = await resolveObservedLoginMethod(ctx, attempt.scoutId, args.loginMethod);
     const recordedAt = Date.now();
     const evidence = { kind: "succeeded" as const, checkedAt: recordedAt };
     const provenance = {
@@ -300,12 +394,70 @@ export const recordAuthenticatedFromTask = internalMutation({
       visibleSessionControl,
       accountAccess: args.accountAccess,
     };
-    await ctx.db.patch("scoutServiceAccounts", boundAccount._id, {
-      ...(product ? { serviceName: product.name } : {}),
-      authenticationEvidence: evidence,
-      firstRecordedByTask: boundAccount.firstRecordedByTask ?? provenance,
-      lastVerifiedByTask: provenance,
-    });
-    return { serviceAccountId: boundAccount._id, created: false };
+    const boundAccount = matchingAccounts[0];
+    if (boundAccount) {
+      if (!loginMethodsMatch(boundAccount.loginMethod, loginMethod)) {
+        throw new Error("Observed login method does not match the registered service account");
+      }
+      if (loginMethod.kind === "oauth" && loginMethod.providerAccountId === boundAccount._id) {
+        throw new Error("A service account cannot authenticate through itself");
+      }
+      const accountProduct = await ctx.db.get("products", boundAccount.productId);
+      await ctx.db.patch("scoutServiceAccounts", boundAccount._id, {
+        ...(accountProduct ? { serviceName: accountProduct.name } : {}),
+        authenticationEvidence: evidence,
+        firstRecordedByTask: boundAccount.firstRecordedByTask ?? provenance,
+        lastVerifiedByTask: provenance,
+      });
+      return { serviceAccountId: boundAccount._id, created: false };
+    }
+
+    const taskProduct = await ctx.db.get("products", task.productId);
+    if (!taskProduct) throw new Error("Task product not found");
+    if (loginMethod.kind === "managed_password") {
+      throw new Error("A managed-password account must be registered before it is used");
+    }
+    const taskProductDomain = canonicalProductDomain(taskProduct.domain, "Task product domain");
+    if (observedDomain !== taskProductDomain && !observedDomain.endsWith(`.${taskProductDomain}`)) {
+      throw new Error("No Scout service account is registered for the observed product");
+    }
+    const scout = await ctx.db.get("scouts", attempt.scoutId);
+    if (!scout) throw new Error("Scout not found");
+    const knownIdentifiers = [
+      scout.agentMail.address,
+      ...accounts.map((account) => account.identifier),
+    ]
+      .map(canonicalIdentifier)
+      .filter((identifier, index, identifiers) => identifiers.indexOf(identifier) === index);
+    const accountIdentifier = knownIdentifiers.find((identifier) =>
+      evidenceShowsIdentifier(visibleIdentity, identifier),
+    );
+    if (!accountIdentifier) {
+      throw new Error("Visible account identity does not match this Scout");
+    }
+    if (accounts.length >= MAX_ACCOUNTS_PER_SCOUT) {
+      throw new Error(`A Scout can have at most ${MAX_ACCOUNTS_PER_SCOUT} service accounts`);
+    }
+    const allAccounts = await ctx.db
+      .query("scoutServiceAccounts")
+      .withIndex("by_scout_id")
+      .take(MAX_ACCOUNTS);
+    if (allAccounts.length >= MAX_ACCOUNTS) {
+      throw new Error(`Service account inventory can contain at most ${MAX_ACCOUNTS} accounts`);
+    }
+    return {
+      serviceAccountId: await ctx.db.insert("scoutServiceAccounts", {
+        scoutId: attempt.scoutId,
+        productId: taskProduct._id,
+        serviceName: taskProduct.name,
+        serviceDomain: taskProductDomain,
+        identifier: accountIdentifier,
+        authenticationEvidence: evidence,
+        loginMethod,
+        firstRecordedByTask: provenance,
+        lastVerifiedByTask: provenance,
+      }),
+      created: true,
+    };
   },
 });

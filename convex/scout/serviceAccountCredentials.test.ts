@@ -110,7 +110,7 @@ describe("Scout managed-credential persistence", () => {
         authenticationEvidence: { kind: "none" },
         firstRecordedByTask: null,
         lastVerifiedByTask: null,
-        managedCredential: result.managedCredential,
+        loginMethod: result.loginMethod,
       },
     ]);
     expect(
@@ -153,18 +153,29 @@ describe("Scout managed-credential persistence", () => {
     ]);
   });
 
-  test("does not expose an account without a managed credential to the password runtime", async () => {
+  test("does not expose an OAuth account to the password runtime", async () => {
     const { admin, scoutId } = await authenticatedBackend();
-    await admin.mutation(serviceAccountsApi["register"], {
+    const provider = await admin.mutation(credentialsApi["commitManagedRegistration"], {
+      ...registration(scoutId),
+      serviceName: "GitHub",
+      serviceDomain: "github.com",
+      credentialHost: "github.com",
+      identifier: "conrad-scout",
+      encryptedCredential: encryptedCredential(),
+    });
+    await admin.mutation(serviceAccountsApi["registerOauth"], {
       scoutId,
       serviceName: "External",
       serviceDomain: "external.example",
       identifier: "external@example.test",
+      providerAccountId: provider.serviceAccountId,
     });
 
-    await expect(
-      admin.query(credentialsApi["listRuntimeCredentialsForScout"], { scoutId }),
-    ).resolves.toEqual([]);
+    const credentials = await admin.query(credentialsApi["listRuntimeCredentialsForScout"], {
+      scoutId,
+    });
+    expect(credentials).toHaveLength(1);
+    expect(credentials[0]).toMatchObject({ serviceAccountId: provider.serviceAccountId });
   });
 
   test("fails closed when the version-one key changes", async () => {

@@ -14,7 +14,7 @@ import {
   SCOUT_CREDENTIAL_FORMAT_VERSION,
   SCOUT_CREDENTIAL_KEY_VERSION,
 } from "./credentialCrypto";
-import { scoutManagedCredentialMetadataValidator } from "./model";
+import { scoutManagedPasswordLoginMethodValidator } from "./model";
 
 type NormalizedRegistration = {
   scoutId: Id<"scouts">;
@@ -26,9 +26,8 @@ type NormalizedRegistration = {
 
 type ManagedRegistrationResult = {
   serviceAccountId: Id<"scoutServiceAccounts">;
-  managedCredential: {
-    kind: "managed";
-    status: "prepared";
+  loginMethod: {
+    kind: "managed_password";
     credentialHost: string;
     createdAt: number;
   };
@@ -44,7 +43,7 @@ export const registerManaged = action({
   },
   returns: v.object({
     serviceAccountId: v.id("scoutServiceAccounts"),
-    managedCredential: scoutManagedCredentialMetadataValidator,
+    loginMethod: scoutManagedPasswordLoginMethodValidator,
   }),
   handler: async (ctx, args): Promise<ManagedRegistrationResult> => {
     const registration: NormalizedRegistration = await ctx.runQuery(

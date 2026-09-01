@@ -150,6 +150,16 @@ type RuntimeManagedCredential = {
   authenticationTag: string;
 };
 
+type RuntimeServiceAccount = {
+  serviceAccountId: string;
+  serviceName: string;
+  serviceDomain: string;
+  identifier: string;
+  loginMethod:
+    | { kind: "managed_password"; credentialHost: string; createdAt: number }
+    | { kind: "oauth"; providerAccountId: string };
+};
+
 export function managedCredentialInstructions(
   credentials: ReadonlyArray<Pick<RuntimeManagedCredential, "credentialHost" | "identifier">>,
 ) {
@@ -160,6 +170,26 @@ export function managedCredentialInstructions(
     .map((credential) => `- ${credential.credentialHost}: ${JSON.stringify(credential.identifier)}`)
     .join("\n");
   return `This Scout has managed credential capabilities for these exact HTTPS login hosts:\n${available}\nThe capabilities expose no password values. Fill identifiers and other non-secret fields normally. On one of those exact hosts, call fill_account_password for visible password fields. Trusted code chooses the credential from the current URL and fills it without returning it. Submit separately. Never invent, request, inspect, repeat, or put a password into a generic browser tool.`;
+}
+
+export function serviceAccountLoginInstructions(accounts: ReadonlyArray<RuntimeServiceAccount>) {
+  if (accounts.length === 0) {
+    return "This Scout has no registered service accounts.";
+  }
+  const byId = new Map(accounts.map((account) => [account.serviceAccountId, account]));
+  const inventory = accounts
+    .map((account) => {
+      if (account.loginMethod.kind === "managed_password") {
+        return `- ${account.serviceName} at ${account.serviceDomain} as ${JSON.stringify(account.identifier)}: managed password`;
+      }
+      const provider = byId.get(account.loginMethod.providerAccountId);
+      if (!provider) {
+        throw new Error("OAuth login method references a missing Scout service account");
+      }
+      return `- ${account.serviceName} at ${account.serviceDomain} as ${JSON.stringify(account.identifier)}: OAuth through ${provider.serviceName} at ${provider.serviceDomain} as ${JSON.stringify(provider.identifier)}`;
+    })
+    .join("\n");
+  return `This Scout's registered service-account login methods are:\n${inventory}\nWhen recording an authenticated account, report the method actually used. For OAuth, provide the exact provider service domain and identifier shown above so trusted code can bind the relationship to that account.`;
 }
 
 export function decryptRuntimeManagedPassword(
@@ -332,6 +362,10 @@ export const generateResponse = internalAction({
         internal.scout.serviceAccountCredentials.listRuntimeCredentialsForScout,
         { scoutId },
       );
+      const runtimeServiceAccounts = await ctx.runQuery(
+        internal.scout.serviceAccounts.listRuntimeForScout,
+        { scoutId },
+      );
       const browserProfileName =
         runtimeContext.kind === "task"
           ? runtimeContext.browserProfile.kind === "scout"
@@ -453,7 +487,7 @@ export const generateResponse = internalAction({
       const serviceAccountTools = isTaskTurn
         ? {
             record_authenticated_service_account: createServiceAccountRecordingTool(
-              async ({ accountAccess, identityRef, sessionControlRef }) => {
+              async ({ accountAccess, identityRef, loginMethod, sessionControlRef }) => {
                 const [identity, sessionControl, currentUrl] = await Promise.all([
                   activeBrowser.actions.getElement(identityRef),
                   activeBrowser.actions.getElement(sessionControlRef),
@@ -469,6 +503,7 @@ export const generateResponse = internalAction({
                   {
                     promptMessageId: args.promptMessageId,
                     accountAccess,
+                    loginMethod,
                     observedUrl: currentUrl.output,
                     visibleIdentity: identity.output,
                     visibleSessionControl: sessionControl.output,
@@ -574,11 +609,12 @@ export const generateResponse = internalAction({
       };
       let taskLoopState: TaskLoopState = "working";
       const passwordInstructions = managedCredentialInstructions(runtimeCredentials);
+      const loginInstructions = serviceAccountLoginInstructions(runtimeServiceAccounts);
       const taskInstructions =
         runtimeContext.kind === "lab"
           ? ""
-          : `\n\nYou are working on an operator-defined Task for ${JSON.stringify(runtimeContext.product.name)}. Its primary URL is ${JSON.stringify(runtimeContext.product.primaryUrl)} and product domain is ${JSON.stringify(runtimeContext.product.domain)}. The attempt uses ${runtimeContext.browserProfile.kind === "fresh" ? "a fresh browser profile" : `the persistent Scout browser profile ${JSON.stringify(runtimeContext.browserProfile.profileName)}`}. Decide the next useful actions from the current operator message, the existing thread, and visible product state; do not force the work into a predefined testing workflow. If you reach an authenticated account menu, call record_authenticated_service_account with visible identity and Sign out or Log out refs so the Scout inventory reflects what you verified. If a CAPTCHA or another strictly human-only check blocks progress, call request_human_help instead of attempting to solve or bypass it. That tool sends a durable handoff and pauses this Turn; do not poll or keep working after it. Close the browser before an ordinary final response. After a successful browser close, resolve the attempt once as completed when the objective is achieved or blocked when it is not, with a short evidence-based conclusion.`;
-      const instructions = `${SCOUT_AGENT_INSTRUCTIONS}\n\n${scoutWebsiteIdentityInstructions(scout)}\n\n${passwordInstructions}${taskInstructions}`;
+          : `\n\nYou are working on an operator-defined Task for ${JSON.stringify(runtimeContext.product.name)}. Its primary URL is ${JSON.stringify(runtimeContext.product.primaryUrl)} and product domain is ${JSON.stringify(runtimeContext.product.domain)}. The attempt uses ${runtimeContext.browserProfile.kind === "fresh" ? "a fresh browser profile" : `the persistent Scout browser profile ${JSON.stringify(runtimeContext.browserProfile.profileName)}`}. Decide the next useful actions from the current operator message, the existing thread, and visible product state; do not force the work into a predefined testing workflow. If you reach an authenticated account menu, call record_authenticated_service_account with a visible known Scout username or email—not a team or workspace name—and Sign out or Log out refs while the browser is still open so the Scout inventory reflects what you verified. If a CAPTCHA or another strictly human-only check blocks progress, call request_human_help instead of attempting to solve or bypass it. That tool sends a durable handoff and pauses this Turn; do not poll or keep working after it. Close the browser only after any account recording, then give an ordinary final response. After a successful browser close, resolve the attempt once as completed when the objective is achieved or blocked when it is not, with an evidence-based conclusion under 500 characters.`;
+      const instructions = `${SCOUT_AGENT_INSTRUCTIONS}\n\n${scoutWebsiteIdentityInstructions(scout)}\n\n${passwordInstructions}\n\n${loginInstructions}${taskInstructions}`;
       const streamErrors = createStreamErrorCapture();
       const streamResult = await scoutAgent.streamText(
         ctx,

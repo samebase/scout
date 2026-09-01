@@ -12,6 +12,7 @@ describe("Scout service-account recording tool", () => {
       recordingTool.execute(
         {
           accountAccess: "created",
+          loginMethod: { kind: "managed_password" },
           identityRef: "@e3",
           sessionControlRef: "@e4",
         },
@@ -20,6 +21,7 @@ describe("Scout service-account recording tool", () => {
     ).resolves.toEqual({ serviceAccountId: "account-1", created: false });
     expect(record).toHaveBeenCalledWith({
       accountAccess: "created",
+      loginMethod: { kind: "managed_password" },
       identityRef: "@e3",
       sessionControlRef: "@e4",
     });
@@ -30,11 +32,13 @@ describe("Scout service-account recording tool", () => {
     const recordingTool = createServiceAccountRecordingTool(record);
     const legacyInput: {
       accountAccess: "created";
+      loginMethod: { kind: "managed_password" };
       identityRef: string;
       sessionControlRef: string;
       identifier: string;
     } = {
       accountAccess: "created",
+      loginMethod: { kind: "managed_password" },
       identityRef: "@e3",
       sessionControlRef: "@e4",
       identifier: "other@example.test",
@@ -42,5 +46,35 @@ describe("Scout service-account recording tool", () => {
 
     await expect(recordingTool.execute(legacyInput, toolOptions)).rejects.toThrow();
     expect(record).not.toHaveBeenCalled();
+  });
+
+  it("passes an exact OAuth provider account identity to trusted code", async () => {
+    const record = vi.fn(async () => ({ serviceAccountId: "account-1", created: true }));
+    const recordingTool = createServiceAccountRecordingTool(record);
+
+    await recordingTool.execute(
+      {
+        accountAccess: "created",
+        loginMethod: {
+          kind: "oauth",
+          providerServiceDomain: "github.com",
+          providerIdentifier: "conrad-scout",
+        },
+        identityRef: "@e3",
+        sessionControlRef: "@e4",
+      },
+      toolOptions,
+    );
+
+    expect(record).toHaveBeenCalledWith({
+      accountAccess: "created",
+      loginMethod: {
+        kind: "oauth",
+        providerServiceDomain: "github.com",
+        providerIdentifier: "conrad-scout",
+      },
+      identityRef: "@e3",
+      sessionControlRef: "@e4",
+    });
   });
 });

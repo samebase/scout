@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import { internalMutation, internalQuery, type QueryCtx } from "../_generated/server";
 import { requireAppUser } from "../access";
 import { canonicalCredentialHost, canonicalProductDomain, ensureProduct } from "../productsDomain";
-import { scoutManagedCredentialMetadataValidator } from "./model";
+import { scoutManagedPasswordLoginMethodValidator } from "./model";
 
 const MAX_ACCOUNTS = 200;
 const MAX_ACCOUNTS_PER_SCOUT = 50;
@@ -41,7 +41,7 @@ const encryptedCredentialValidator = v.object({
 
 const managedRegistrationResultValidator = v.object({
   serviceAccountId: v.id("scoutServiceAccounts"),
-  managedCredential: scoutManagedCredentialMetadataValidator,
+  loginMethod: scoutManagedPasswordLoginMethodValidator,
 });
 
 const runtimeCredentialValidator = v.object({
@@ -109,7 +109,7 @@ async function requireRegistrationAvailable(
       query.eq("scoutId", registration.scoutId).eq("serviceDomain", registration.serviceDomain),
     )
     .take(MAX_ACCOUNTS_PER_SCOUT);
-  if (serviceAccounts.some((account) => account.managedCredential !== undefined)) {
+  if (serviceAccounts.some((account) => account.loginMethod.kind === "managed_password")) {
     throw new Error("This Scout already has a managed credential for the service");
   }
 
@@ -217,9 +217,8 @@ export const commitManagedRegistration = internalMutation({
       name: registration.serviceName,
       domain: registration.serviceDomain,
     });
-    const managedCredential = {
-      kind: "managed" as const,
-      status: "prepared" as const,
+    const loginMethod = {
+      kind: "managed_password" as const,
       credentialHost: registration.credentialHost,
       createdAt,
     };
@@ -230,7 +229,7 @@ export const commitManagedRegistration = internalMutation({
       serviceDomain: registration.serviceDomain,
       identifier: registration.identifier,
       authenticationEvidence: { kind: "none" },
-      managedCredential,
+      loginMethod,
     });
     await ctx.db.insert("scoutManagedCredentials", {
       credentialReference,
@@ -247,7 +246,7 @@ export const commitManagedRegistration = internalMutation({
       authenticationTag,
       createdAt,
     });
-    return { serviceAccountId, managedCredential };
+    return { serviceAccountId, loginMethod };
   },
 });
 
@@ -261,7 +260,7 @@ export const listRuntimeCredentialsForScout = internalQuery({
       .take(MAX_ACCOUNTS_PER_SCOUT);
     const credentials: Array<typeof runtimeCredentialValidator.type> = [];
     for (const account of accounts) {
-      if (!account.managedCredential) continue;
+      if (account.loginMethod.kind !== "managed_password") continue;
       const credential = await ctx.db
         .query("scoutManagedCredentials")
         .withIndex("by_service_account_id", (query) => query.eq("serviceAccountId", account._id))
@@ -269,9 +268,9 @@ export const listRuntimeCredentialsForScout = internalQuery({
       if (
         !credential ||
         credential.scoutId !== account.scoutId ||
-        credential.credentialHost !== account.managedCredential.credentialHost ||
+        credential.credentialHost !== account.loginMethod.credentialHost ||
         credential.identifier !== account.identifier ||
-        credential.createdAt !== account.managedCredential.createdAt
+        credential.createdAt !== account.loginMethod.createdAt
       ) {
         throw new Error("Managed credential has an invalid service-account binding");
       }

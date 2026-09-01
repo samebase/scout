@@ -20,12 +20,19 @@ export const scoutServiceAccountAuthenticationEvidenceValidator = v.union(
   }),
 );
 
-export const scoutManagedCredentialMetadataValidator = v.object({
-  kind: v.literal("managed"),
-  status: v.literal("prepared"),
+export const scoutManagedPasswordLoginMethodValidator = v.object({
+  kind: v.literal("managed_password"),
   credentialHost: v.string(),
   createdAt: v.number(),
 });
+
+export const scoutServiceAccountLoginMethodValidator = v.union(
+  scoutManagedPasswordLoginMethodValidator,
+  v.object({
+    kind: v.literal("oauth"),
+    providerAccountId: v.id("scoutServiceAccounts"),
+  }),
+);
 
 export const scoutServiceAccountFieldsValidator = v.object({
   scoutId: v.id("scouts"),
@@ -33,5 +40,5 @@ export const scoutServiceAccountFieldsValidator = v.object({
   serviceDomain: v.string(),
   identifier: v.string(),
   authenticationEvidence: scoutServiceAccountAuthenticationEvidenceValidator,
-  managedCredential: v.optional(scoutManagedCredentialMetadataValidator),
+  loginMethod: scoutServiceAccountLoginMethodValidator,
 });
