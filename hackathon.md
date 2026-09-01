@@ -777,7 +777,7 @@ and immediate browser close before Attempt resolution. Email and Firecrawl reque
 deadlines; expiry and delivery failure close without inventing a result. All 246 tests and the
 complete Cloudflare production build passed.
 
-### 2026-08-31 - working tree
+### 2026-08-31 - b7a0d87 - v139
 
 Reused Convex Auth's `SITE_URL` as the one application origin for human-handoff links. The value is
 validated when a handoff is created instead of blocking fresh Convex preview deployments that have
@@ -788,3 +788,16 @@ decimal strings for browser waits and AgentMail limits, then normalize them befo
 Added a second-by-second expiry countdown to the secure handoff page. All 254 tests, the complete
 Cloudflare build path, and the Convex development push passed
 (`src/components/human-handoff-page.tsx`).
+
+### 2026-09-01 - working tree
+
+Separated handoff delivery from live control: an unopened private link now remains claimable for 45
+minutes, while its first valid open atomically starts a separate five-minute control window. A
+durable Convex Workflow waits without holding the Scout action open, then snapshots and closes the
+same Firecrawl browser before enqueueing the continuation Turn (`convex/taskHumanHandoffs.ts`,
+`convex/taskHumanHandoffLifecycle.ts`, `convex/scout/labGeneration.ts`).
+
+Removed the model-dependent forced handoff transition after Qwen exposed it as literal tool-call
+text. A live Samebase checkpoint run proved email handoff creation, the two independent timers,
+human completion, Continue, final snapshot capture, browser closure, and continuation enqueueing.
+The complete project check passed with all 252 tests.

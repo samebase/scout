@@ -22,16 +22,38 @@ function tokenHash(accessToken: string | undefined) {
   return isHumanHandoffAccessToken(accessToken) ? hashHumanHandoffAccessToken(accessToken) : null;
 }
 
+function accessInput(args: { handoffId: string; accessToken?: string }) {
+  const hash = tokenHash(args.accessToken);
+  return hash === null
+    ? null
+    : {
+        handoffId: args.handoffId,
+        ...(hash === undefined ? {} : { accessTokenHash: hash }),
+      };
+}
+
+async function verifiedSession(
+  providerSessionId: string,
+): Promise<{ sessionId: string; interactiveLiveViewUrl: string } | null> {
+  try {
+    const session = await findActiveBrowserSession(providerSessionId);
+    return session?.interactiveLiveViewUrl
+      ? {
+          sessionId: session.sessionId,
+          interactiveLiveViewUrl: session.interactiveLiveViewUrl,
+        }
+      : null;
+  } catch {
+    throw new Error("Scout could not verify the live browser. Try again.");
+  }
+}
+
 export const load = action({
   args: accessArgs,
   returns: taskHumanHandoffPageValidator,
   handler: async (ctx, args): Promise<HandoffPage> => {
-    const hash = tokenHash(args.accessToken);
-    if (hash === null) return { status: "invalid" };
-    const access = {
-      handoffId: args.handoffId,
-      ...(hash === undefined ? {} : { accessTokenHash: hash }),
-    };
+    const access = accessInput(args);
+    if (!access) return { status: "invalid" };
     const prepare = async () =>
       await ctx.runQuery(internal.taskHumanHandoffs.prepareAccess, {
         ...access,
@@ -46,45 +68,43 @@ export const load = action({
     }
     if (prepared.status === "due") return { status: "invalid" };
     if (prepared.status === "broken") {
-      return await ctx.runMutation(internal.taskHumanHandoffs.failAccess, {
-        ...access,
-      });
+      return await ctx.runMutation(internal.taskHumanHandoffs.failAccess, access);
     }
-    if (prepared.status !== "waiting") return prepared;
+    if (prepared.status !== "available" && prepared.status !== "active") return prepared;
 
-    let activeSession;
-    try {
-      activeSession = await findActiveBrowserSession(prepared.providerSessionId);
-    } catch {
-      throw new Error("Scout could not verify the live browser. Try again.");
-    }
-    if (activeSession === null) {
-      return await ctx.runMutation(internal.taskHumanHandoffs.failAccess, {
-        ...access,
-      });
-    }
-    if (activeSession.interactiveLiveViewUrl === null) {
-      throw new Error("Scout could not verify the interactive browser. Try again.");
+    let activeSession = await verifiedSession(prepared.providerSessionId);
+    if (!activeSession) {
+      return await ctx.runMutation(internal.taskHumanHandoffs.failAccess, access);
     }
 
-    prepared = await prepare();
-    if (prepared.status === "due") {
-      await ctx.runMutation(internal.taskHumanHandoffs.expire, {
-        handoffId: prepared.handoffId,
-      });
-      prepared = await prepare();
+    if (prepared.status === "available") {
+      prepared = await ctx.runMutation(internal.taskHumanHandoffs.claimAuthorized, access);
+      if (prepared.status === "due") {
+        await ctx.runMutation(internal.taskHumanHandoffs.expire, {
+          handoffId: prepared.handoffId,
+        });
+        prepared = await prepare();
+      }
+      if (prepared.status === "broken") {
+        return await ctx.runMutation(internal.taskHumanHandoffs.failAccess, access);
+      }
+      if (
+        prepared.status === "invalid" ||
+        prepared.status === "continued" ||
+        prepared.status === "expired" ||
+        prepared.status === "failed"
+      ) {
+        return prepared;
+      }
+      if (prepared.status !== "active") return { status: "invalid" };
     }
-    if (prepared.status === "due") return { status: "invalid" };
-    if (prepared.status === "broken") {
-      return await ctx.runMutation(internal.taskHumanHandoffs.failAccess, {
-        ...access,
-      });
-    }
-    if (prepared.status !== "waiting") return prepared;
+
     if (prepared.providerSessionId !== activeSession.sessionId) {
-      return await ctx.runMutation(internal.taskHumanHandoffs.failAccess, {
-        ...access,
-      });
+      return await ctx.runMutation(internal.taskHumanHandoffs.failAccess, access);
+    }
+    activeSession = await verifiedSession(prepared.providerSessionId);
+    if (!activeSession) {
+      return await ctx.runMutation(internal.taskHumanHandoffs.failAccess, access);
     }
     return {
       status: "waiting",
@@ -103,13 +123,9 @@ export const continueHandoff = action({
   args: accessArgs,
   returns: taskHumanHandoffPageValidator,
   handler: async (ctx, args): Promise<HandoffPage> => {
-    const hash = tokenHash(args.accessToken);
-    if (hash === null) return { status: "invalid" };
-    const access = {
-      handoffId: args.handoffId,
-      ...(hash === undefined ? {} : { accessTokenHash: hash }),
-    };
-    const prepared = await ctx.runQuery(internal.taskHumanHandoffs.prepareAccess, {
+    const access = accessInput(args);
+    if (!access) return { status: "invalid" };
+    let prepared = await ctx.runQuery(internal.taskHumanHandoffs.prepareAccess, {
       ...access,
       now: Date.now(),
     });
@@ -117,34 +133,38 @@ export const continueHandoff = action({
       await ctx.runMutation(internal.taskHumanHandoffs.expire, {
         handoffId: prepared.handoffId,
       });
-      return await ctx.runMutation(internal.taskHumanHandoffs.continueAuthorized, {
-        ...access,
-      });
+      return await ctx.runMutation(internal.taskHumanHandoffs.continueAuthorized, access);
     }
     if (prepared.status === "broken") {
-      return await ctx.runMutation(internal.taskHumanHandoffs.failAccess, {
-        ...access,
-      });
+      return await ctx.runMutation(internal.taskHumanHandoffs.failAccess, access);
     }
-    if (prepared.status !== "waiting") return prepared;
+    if (prepared.status !== "available" && prepared.status !== "active") return prepared;
 
-    let activeSession;
-    try {
-      activeSession = await findActiveBrowserSession(prepared.providerSessionId);
-    } catch {
-      throw new Error("Scout could not verify the live browser. Try again.");
+    const activeSession = await verifiedSession(prepared.providerSessionId);
+    if (!activeSession || activeSession.sessionId !== prepared.providerSessionId) {
+      return await ctx.runMutation(internal.taskHumanHandoffs.failAccess, access);
     }
-    if (
-      activeSession === null ||
-      activeSession.sessionId !== prepared.providerSessionId ||
-      activeSession.interactiveLiveViewUrl === null
-    ) {
-      return await ctx.runMutation(internal.taskHumanHandoffs.failAccess, {
-        ...access,
-      });
+    if (prepared.status === "available") {
+      prepared = await ctx.runMutation(internal.taskHumanHandoffs.claimAuthorized, access);
+      if (prepared.status === "broken") {
+        return await ctx.runMutation(internal.taskHumanHandoffs.failAccess, access);
+      }
+      if (prepared.status === "due") {
+        await ctx.runMutation(internal.taskHumanHandoffs.expire, {
+          handoffId: prepared.handoffId,
+        });
+        return await ctx.runMutation(internal.taskHumanHandoffs.continueAuthorized, access);
+      }
+      if (
+        prepared.status === "invalid" ||
+        prepared.status === "continued" ||
+        prepared.status === "expired" ||
+        prepared.status === "failed"
+      ) {
+        return prepared;
+      }
+      if (prepared.status !== "active") return { status: "invalid" };
     }
-    return await ctx.runMutation(internal.taskHumanHandoffs.continueAuthorized, {
-      ...access,
-    });
+    return await ctx.runMutation(internal.taskHumanHandoffs.continueAuthorized, access);
   },
 });

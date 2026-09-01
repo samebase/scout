@@ -1,7 +1,10 @@
 import { v } from "convex/values";
 import { internal } from "../_generated/api";
 import { internalMutation } from "../_generated/server";
-import { failTaskHumanHandoffForTurn } from "../taskHumanHandoffsModel";
+import {
+  failTaskHumanHandoffForTurn,
+  signalTaskHumanHandoffScoutPaused,
+} from "../taskHumanHandoffsModel";
 import { scoutTokenUsageValidator } from "./models";
 
 export const TURN_START_TIMEOUT_MS = 5 * 60 * 1_000;
@@ -89,6 +92,53 @@ export const complete = internalMutation({
           : { firecrawlDurationMs: args.firecrawlDurationMs }),
       },
     });
+    return null;
+  },
+});
+
+export const completeHumanHandoffPause = internalMutation({
+  args: {
+    promptMessageId: v.string(),
+    usage: scoutTokenUsageValidator,
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const turn = await ctx.db
+      .query("scoutTurns")
+      .withIndex("by_prompt_message_id", (query) =>
+        query.eq("promptMessageId", args.promptMessageId),
+      )
+      .unique();
+    if (!turn) throw new Error("Scout turn not found");
+    if (turn.state.kind !== "pending") return null;
+    const session = await ctx.db
+      .query("taskBrowserSessions")
+      .withIndex("by_turn_id", (query) => query.eq("turnId", turn._id))
+      .unique();
+    const handoff = session
+      ? await ctx.db
+          .query("taskHumanHandoffs")
+          .withIndex("by_session_id", (query) => query.eq("sessionId", session._id))
+          .unique()
+      : null;
+    if (
+      !session ||
+      session.lifecycle.kind !== "active" ||
+      !handoff ||
+      (handoff.status !== "available" &&
+        handoff.status !== "active" &&
+        handoff.status !== "continued")
+    ) {
+      throw new Error("Active task human handoff not found");
+    }
+    await ctx.db.patch("scoutTurns", turn._id, {
+      state: {
+        kind: "completed",
+        completedAt: Date.now(),
+        usage: args.usage,
+      },
+    });
+    await signalTaskHumanHandoffScoutPaused(ctx, handoff);
     return null;
   },
 });

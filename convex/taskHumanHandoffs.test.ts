@@ -1,17 +1,19 @@
 /// <reference types="vite/client" />
 
 import { convexTest } from "convex-test";
+import workflowTest from "@convex-dev/workflow/test";
 import { describe, expect, test } from "vite-plus/test";
 import { api, internal } from "./_generated/api";
 import { ADMIN_EMAIL } from "./authConfig";
 import schema from "./schema";
-import { HUMAN_HANDOFF_TURN_LEASE_RESERVE_MS } from "./taskHumanHandoffs";
+import { HUMAN_HANDOFF_ACTIVE_MS, HUMAN_HANDOFF_CLAIM_MS } from "./taskHumanHandoffs";
 
 const modules = import.meta.glob("./**/*.ts");
 const accessTokenHash = "a".repeat(64);
 
-async function setupContext(leaseDurationMs = 8 * 60 * 1_000) {
+async function setupContext() {
   const backend = convexTest(schema, modules);
+  workflowTest.register(backend);
   const ids = await backend.run(async (ctx) => {
     const userId = await ctx.db.insert("users", { email: ADMIN_EMAIL });
     const productId = await ctx.db.insert("products", {
@@ -46,7 +48,7 @@ async function setupContext(leaseDurationMs = 8 * 60 * 1_000) {
       scoutId,
       model: "qwen/qwen3.7-flash",
       startedAt: Date.now(),
-      state: { kind: "pending", leaseExpiresAt: Date.now() + leaseDurationMs },
+      state: { kind: "pending", leaseExpiresAt: Date.now() + 8 * 60 * 1_000 },
     });
     const sessionId = await ctx.db.insert("taskBrowserSessions", {
       attemptId,
@@ -67,8 +69,7 @@ async function setupContext(leaseDurationMs = 8 * 60 * 1_000) {
 
 async function setup() {
   const context = await setupContext();
-  const { backend } = context;
-  const requested = await backend.mutation(internal.taskHumanHandoffs.request, {
+  const requested = await context.backend.mutation(internal.taskHumanHandoffs.request, {
     promptMessageId: "prompt-1",
     reason: "  GitHub   requires a CAPTCHA.  ",
     accessTokenHash,
@@ -76,23 +77,35 @@ async function setup() {
   return { ...context, requested };
 }
 
+async function claim(
+  backend: Awaited<ReturnType<typeof setup>>["backend"],
+  handoffId: Awaited<ReturnType<typeof setup>>["requested"]["handoffId"],
+) {
+  return await backend.mutation(internal.taskHumanHandoffs.claimAuthorized, {
+    handoffId,
+    accessTokenHash,
+  });
+}
+
 describe("task human handoffs", () => {
-  test("stores only a digest and authorizes either the exact bearer or task owner", async () => {
+  test("stores a private 45-minute link without starting the control timer", async () => {
     const { backend, owner, requested, sessionId, taskId, attemptId } = await setup();
     const row = await backend.run(async (ctx) => await ctx.db.get(requested.handoffId));
+    if (!row || row.status !== "available") throw new Error("Available handoff not found");
 
     expect(row).toMatchObject({
       reason: "GitHub requires a CAPTCHA.",
       accessTokenHash,
-      status: "waiting",
+      status: "available",
     });
+    expect(row.claimExpiresAt - row.requestedAt).toBe(HUMAN_HANDOFF_CLAIM_MS);
     expect(JSON.stringify(row)).not.toContain("hh1_");
-    expect(JSON.stringify(row)).not.toContain("liveview.firecrawl.dev");
     await expect(owner.query(api.taskHumanHandoffs.active, { sessionId })).resolves.toEqual({
       handoffId: requested.handoffId,
       reason: "GitHub requires a CAPTCHA.",
-      requestedAt: row!.requestedAt,
-      expiresAt: row!.expiresAt,
+      requestedAt: row.requestedAt,
+      expiresAt: row.claimExpiresAt,
+      phase: "unclaimed",
     });
     await expect(
       backend.query(internal.taskHumanHandoffs.prepareAccess, {
@@ -101,166 +114,113 @@ describe("task human handoffs", () => {
         now: Date.now(),
       }),
     ).resolves.toEqual({ status: "invalid" });
-    const bearerPage = await backend.query(internal.taskHumanHandoffs.prepareAccess, {
-      handoffId: requested.handoffId,
-      accessTokenHash,
-      now: Date.now(),
-    });
-    expect(bearerPage).toMatchObject({
-      status: "waiting",
+    await expect(
+      backend.query(internal.taskHumanHandoffs.prepareAccess, {
+        handoffId: requested.handoffId,
+        accessTokenHash,
+        now: Date.now(),
+      }),
+    ).resolves.toMatchObject({
+      status: "available",
       providerSessionId: "provider-session-1",
     });
-    expect(bearerPage).not.toHaveProperty("destination");
     await expect(
       owner.query(internal.taskHumanHandoffs.prepareAccess, {
         handoffId: requested.handoffId,
         now: Date.now(),
       }),
     ).resolves.toMatchObject({
-      status: "waiting",
+      status: "available",
       destination: { domain: "github.com", taskId, attemptId },
     });
   });
 
-  test("continues once and returns the same terminal result on replay", async () => {
-    const { backend, requested } = await setup();
-    const args = { handoffId: requested.handoffId, accessTokenHash };
+  test("first valid open starts a separate five-minute control window", async () => {
+    const { backend, owner, requested, sessionId } = await setup();
+    const before = Date.now();
+    const claimed = await claim(backend, requested.handoffId);
+    expect(claimed).toMatchObject({ status: "active", expiresAt: expect.any(Number) });
+    if (claimed.status !== "active") throw new Error("Handoff was not claimed");
+    expect(claimed.expiresAt).toBeGreaterThanOrEqual(before + HUMAN_HANDOFF_ACTIVE_MS);
+    expect(claimed.expiresAt).toBeLessThanOrEqual(Date.now() + HUMAN_HANDOFF_ACTIVE_MS);
+    await expect(owner.query(api.taskHumanHandoffs.active, { sessionId })).resolves.toMatchObject({
+      expiresAt: claimed.expiresAt,
+      phase: "claimed",
+    });
+  });
 
+  test("continuation is atomic and replays the same terminal page", async () => {
+    const { backend, requested } = await setup();
+    await claim(backend, requested.handoffId);
+    const args = { handoffId: requested.handoffId, accessTokenHash };
     const [first, second] = await Promise.all([
       backend.mutation(internal.taskHumanHandoffs.continueAuthorized, args),
       backend.mutation(internal.taskHumanHandoffs.continueAuthorized, args),
     ]);
-
     expect(first).toMatchObject({ status: "continued", continuedAt: expect.any(Number) });
     expect(second).toEqual(first);
   });
 
-  test("caps the handoff before the action limit and rejects continuation after the Turn lease", async () => {
+  test("completing the Scout turn preserves the available browser handoff", async () => {
     const { backend, requested, turnId } = await setup();
-    const turn = await backend.run(async (ctx) => await ctx.db.get(turnId));
-    expect(turn?.state.kind).toBe("pending");
-    if (!turn || turn.state.kind !== "pending") throw new Error("Pending Turn not found");
-    expect(requested.expiresAt).toBe(
-      turn.state.leaseExpiresAt - HUMAN_HANDOFF_TURN_LEASE_RESERVE_MS,
-    );
-
-    await backend.run(async (ctx) => {
-      await ctx.db.patch(turnId, {
-        state: { kind: "pending", leaseExpiresAt: Date.now() - 1 },
-      });
+    await backend.mutation(internal.scout.turns.completeHumanHandoffPause, {
+      promptMessageId: "prompt-1",
+      usage: {},
     });
-    await expect(
-      backend.mutation(internal.taskHumanHandoffs.continueAuthorized, {
-        handoffId: requested.handoffId,
-        accessTokenHash,
-      }),
-    ).resolves.toMatchObject({ status: "failed", failure: "browser_ended" });
-  });
-
-  test("rejects a handoff after the action-safe deadline", async () => {
-    const { backend } = await setupContext(HUMAN_HANDOFF_TURN_LEASE_RESERVE_MS - 1);
-
-    await expect(
-      backend.mutation(internal.taskHumanHandoffs.request, {
-        promptMessageId: "prompt-1",
-        reason: "GitHub requires a CAPTCHA.",
-        accessTokenHash: "b".repeat(64),
-      }),
-    ).rejects.toThrow("Too little task runtime remains for human help");
-  });
-
-  test("a click after the deadline expires atomically and never continues", async () => {
-    const { backend, requested } = await setup();
-    const now = Date.now();
-    await backend.run(async (ctx) => {
-      await ctx.db.patch(requested.handoffId, {
-        expiresAt: now - 1,
-      });
-    });
-
-    const result = await backend.mutation(internal.taskHumanHandoffs.continueAuthorized, {
-      handoffId: requested.handoffId,
-      accessTokenHash,
-    });
-
-    expect(result).toMatchObject({ status: "expired", expiredAt: expect.any(Number) });
     await expect(
       backend.query(internal.taskHumanHandoffs.getStatus, {
         handoffId: requested.handoffId,
+      }),
+    ).resolves.toBe("available");
+    const turn = await backend.run(async (ctx) => await ctx.db.get(turnId));
+    expect(turn?.state.kind).toBe("completed");
+  });
+
+  test("unopened and claimed windows expire independently", async () => {
+    const unopened = await setup();
+    await unopened.backend.run(async (ctx) => {
+      await ctx.db.patch(unopened.requested.handoffId, { claimExpiresAt: Date.now() - 1 });
+    });
+    await expect(
+      unopened.backend.mutation(internal.taskHumanHandoffs.expire, {
+        handoffId: unopened.requested.handoffId,
       }),
     ).resolves.toBe("expired");
-  });
-
-  test("turn completion fails a waiting handoff but cannot overwrite continuation", async () => {
-    const waiting = await setup();
-    await waiting.backend.mutation(internal.scout.turns.complete, {
-      promptMessageId: "prompt-1",
-      usage: {},
-    });
-    await expect(
-      waiting.backend.query(internal.taskHumanHandoffs.getStatus, {
-        handoffId: waiting.requested.handoffId,
-      }),
-    ).resolves.toBe("failed");
-
-    const continued = await setup();
-    await continued.backend.mutation(internal.taskHumanHandoffs.continueAuthorized, {
-      handoffId: continued.requested.handoffId,
+    const unopenedPage = await unopened.backend.query(internal.taskHumanHandoffs.prepareAccess, {
+      handoffId: unopened.requested.handoffId,
       accessTokenHash,
+      now: Date.now(),
     });
-    await continued.backend.mutation(internal.scout.turns.complete, {
-      promptMessageId: "prompt-1",
-      usage: {},
+    expect(unopenedPage).toMatchObject({ status: "expired", claimed: false });
+
+    const opened = await setup();
+    await claim(opened.backend, opened.requested.handoffId);
+    await opened.backend.run(async (ctx) => {
+      await ctx.db.patch(opened.requested.handoffId, { expiresAt: Date.now() - 1 });
     });
     await expect(
-      continued.backend.query(internal.taskHumanHandoffs.getStatus, {
-        handoffId: continued.requested.handoffId,
+      opened.backend.mutation(internal.taskHumanHandoffs.expire, {
+        handoffId: opened.requested.handoffId,
       }),
-    ).resolves.toBe("continued");
+    ).resolves.toBe("expired");
+    const openedPage = await opened.backend.query(internal.taskHumanHandoffs.prepareAccess, {
+      handoffId: opened.requested.handoffId,
+      accessTokenHash,
+      now: Date.now(),
+    });
+    expect(openedPage).toMatchObject({ status: "expired", claimed: true });
   });
 
-  test("stale Turn startup settles its waiting handoff", async () => {
-    const { backend, requested, turnId } = await setup();
-    await backend.run(async (ctx) => {
-      await ctx.db.patch(turnId, {
-        state: { kind: "pending", leaseExpiresAt: Date.now() - 1 },
-      });
+  test("an unexpected turn failure fails the open handoff", async () => {
+    const { backend, requested } = await setup();
+    await backend.mutation(internal.scout.turns.fail, {
+      promptMessageId: "prompt-1",
+      failure: "generation failed",
     });
-
-    await expect(
-      backend.mutation(internal.scout.turns.start, { promptMessageId: "prompt-1" }),
-    ).resolves.toBe(false);
     await expect(
       backend.query(internal.taskHumanHandoffs.getStatus, {
         handoffId: requested.handoffId,
       }),
     ).resolves.toBe("failed");
-  });
-
-  test("deadline expiry wins over later delivery and browser failures", async () => {
-    for (const settle of ["delivery", "turn"] as const) {
-      const { backend, requested } = await setup();
-      await backend.run(async (ctx) => {
-        await ctx.db.patch(requested.handoffId, {
-          expiresAt: Date.now() - 1,
-        });
-      });
-
-      if (settle === "delivery") {
-        await backend.mutation(internal.taskHumanHandoffs.failDelivery, {
-          handoffId: requested.handoffId,
-        });
-      } else {
-        await backend.mutation(internal.scout.turns.complete, {
-          promptMessageId: "prompt-1",
-          usage: {},
-        });
-      }
-      await expect(
-        backend.query(internal.taskHumanHandoffs.getStatus, {
-          handoffId: requested.handoffId,
-        }),
-      ).resolves.toBe("expired");
-    }
   });
 });

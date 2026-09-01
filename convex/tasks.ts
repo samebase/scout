@@ -23,6 +23,8 @@ import {
 import {
   failTaskHumanHandoffForSession,
   failTaskHumanHandoffForTurn,
+  handoffClaim,
+  handoffCommon,
 } from "./taskHumanHandoffsModel";
 import {
   taskBrowserProfileSelectionValidator,
@@ -184,6 +186,7 @@ async function enqueueTurn(
     userId: Id<"users">;
     scoutId: Id<"scouts">;
     prompt: string;
+    mode: "normal" | "handoff_continuation";
   },
 ) {
   const prompt = requiredInstruction(args.prompt);
@@ -210,6 +213,7 @@ async function enqueueTurn(
     userId: args.userId,
     promptMessageId: saved.messageId,
     model: TASK_MODEL,
+    mode: { kind: args.mode },
   });
   await ctx.scheduler.runAt(leaseExpiresAt, internal.scout.turns.expire, { turnId });
   return turnId;
@@ -468,6 +472,7 @@ export const startAttempt = mutation({
       userId,
       scoutId: scout._id,
       prompt: task.instruction,
+      mode: "normal",
     });
     return { attemptId };
   },
@@ -502,8 +507,62 @@ export const continueAttempt = mutation({
         userId,
         scoutId: attempt.scoutId,
         prompt: args.prompt,
+        mode: "normal",
       }),
     };
+  },
+});
+
+export const resumeHumanHandoff = internalMutation({
+  args: {
+    sessionId: v.id("taskBrowserSessions"),
+    evidence: v.string(),
+  },
+  returns: v.id("scoutTurns"),
+  handler: async (ctx, args) => {
+    const session = await ctx.db.get("taskBrowserSessions", args.sessionId);
+    const handoff = session
+      ? await ctx.db
+          .query("taskHumanHandoffs")
+          .withIndex("by_session_id", (index) => index.eq("sessionId", session._id))
+          .unique()
+      : null;
+    if (!session || !handoff) throw new Error("Task human handoff is unavailable");
+    if (handoff.status === "resumed") return handoff.continuationTurnId;
+    if (handoff.status !== "continued") {
+      throw new Error("Task human handoff is not ready to resume");
+    }
+    const attempt = await ctx.db.get("taskAttempts", session.attemptId);
+    const task = attempt ? await ctx.db.get("productTasks", attempt.taskId) : null;
+    if (!attempt || !task || attempt.state.kind !== "active") {
+      throw new Error("Active task attempt not found for human handoff");
+    }
+    const turns = await ctx.db
+      .query("scoutTurns")
+      .withIndex("by_thread_id_and_order", (index) => index.eq("threadId", attempt.threadId))
+      .take(MAX_TURNS_PER_ATTEMPT);
+    if (turns.some((turn) => turn.state.kind === "pending")) {
+      throw new Error("The Scout has not finished pausing for human help");
+    }
+    if (turns.length >= MAX_TURNS_PER_ATTEMPT) {
+      throw new Error(`An attempt can have at most ${MAX_TURNS_PER_ATTEMPT} turns`);
+    }
+    const evidence = args.evidence.trim() || "No post-handoff browser evidence was available.";
+    const continuationTurnId = await enqueueTurn(ctx, {
+      threadId: attempt.threadId,
+      userId: task.userId,
+      scoutId: attempt.scoutId,
+      mode: "handoff_continuation",
+      prompt: `The operator completed the requested human-only browser step. Use this final browser snapshot as evidence, then resolve the Attempt without opening another browser session:\n\n${evidence}`,
+    });
+    await ctx.db.replace("taskHumanHandoffs", handoff._id, {
+      ...handoffCommon(handoff),
+      ...handoffClaim(handoff),
+      status: "resumed",
+      continuedAt: handoff.continuedAt,
+      continuationTurnId,
+    });
+    return continuationTurnId;
   },
 });
 
@@ -533,7 +592,7 @@ export const abandonAttempt = mutation({
         .query("taskHumanHandoffs")
         .withIndex("by_session_id", (index) => index.eq("sessionId", session._id))
         .unique();
-      if (handoff?.status === "waiting") {
+      if (handoff?.status === "available" || handoff?.status === "active") {
         throw new Error("An attempt cannot be abandoned while human help is pending");
       }
     }
@@ -901,6 +960,26 @@ export const replayData = internalQuery({
         state: operation.state,
       })),
     };
+  },
+});
+
+export const handoffBrowserSession = internalQuery({
+  args: { sessionId: v.id("taskBrowserSessions") },
+  returns: v.union(
+    v.object({
+      providerSessionId: v.string(),
+      lifecycle: taskBrowserSessionLifecycleValidator,
+    }),
+    v.null(),
+  ),
+  handler: async (ctx, args) => {
+    const session = await ctx.db.get("taskBrowserSessions", args.sessionId);
+    return session
+      ? {
+          providerSessionId: session.providerSessionId,
+          lifecycle: session.lifecycle,
+        }
+      : null;
   },
 });
 

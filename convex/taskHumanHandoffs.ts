@@ -6,19 +6,23 @@ import { internalMutation, internalQuery, query } from "./_generated/server";
 import { getAppUserId, requireAppUser } from "./access";
 import {
   activeTaskHumanHandoffValidator,
+  expiredHandoff,
+  failedHandoff,
+  handoffClaim,
+  handoffCommon,
+  handoffDeadline,
   requestedTaskHumanHandoffValidator,
+  signalTaskHumanHandoffOutcome,
   taskHumanHandoffDestinationValidator,
   taskHumanHandoffFailureValidator,
   taskHumanHandoffPageValidator,
   taskHumanHandoffStatusValidator,
-  terminalTaskHandoffIdentity,
 } from "./taskHumanHandoffsModel";
+import { taskHumanHandoffWorkflow } from "./taskHumanHandoffWorkflow";
 
-const HUMAN_HANDOFF_WAIT_MS = 5 * 60 * 1_000;
+export const HUMAN_HANDOFF_CLAIM_MS = 45 * 60 * 1_000;
+export const HUMAN_HANDOFF_ACTIVE_MS = 5 * 60 * 1_000;
 const HUMAN_HANDOFF_ACCESS_GRACE_MS = 10 * 60 * 1_000;
-// The Turn lease extends one minute past the Node action's hard limit. Keeping six
-// minutes in reserve ends handoff waiting five minutes before that hard limit.
-export const HUMAN_HANDOFF_TURN_LEASE_RESERVE_MS = 6 * 60 * 1_000;
 const MAX_HANDOFF_REASON_LENGTH = 500;
 const ACCESS_TOKEN_HASH_PATTERN = /^[a-f0-9]{64}$/;
 
@@ -42,7 +46,13 @@ const preparedAccessValidator = v.union(
   v.object({ status: v.literal("due"), handoffId: v.id("taskHumanHandoffs") }),
   v.object({ status: v.literal("broken"), handoffId: v.id("taskHumanHandoffs") }),
   v.object({
-    status: v.literal("waiting"),
+    status: v.literal("available"),
+    ...pageContextFields,
+    claimExpiresAt: v.number(),
+    providerSessionId: v.string(),
+  }),
+  v.object({
+    status: v.literal("active"),
     ...pageContextFields,
     expiresAt: v.number(),
     providerSessionId: v.string(),
@@ -56,6 +66,7 @@ const preparedAccessValidator = v.union(
     status: v.literal("expired"),
     ...pageContextFields,
     expiredAt: v.number(),
+    claimed: v.boolean(),
   }),
   v.object({
     status: v.literal("failed"),
@@ -102,14 +113,10 @@ async function handoffContext(ctx: Pick<QueryCtx, "db">, handoff: Doc<"taskHuman
   return { session, attempt, task, turn };
 }
 
-function resourcesAreActive(
-  context: NonNullable<Awaited<ReturnType<typeof handoffContext>>>,
-  now: number,
-) {
+function resourcesAreActive(context: NonNullable<Awaited<ReturnType<typeof handoffContext>>>) {
   return (
     context.attempt.state.kind === "active" &&
-    context.turn.state.kind === "pending" &&
-    context.turn.state.leaseExpiresAt > now &&
+    context.turn.state.kind !== "failed" &&
     context.session.lifecycle.kind === "active"
   );
 }
@@ -126,7 +133,7 @@ async function authorizedHandoff(ctx: DatabaseCtx, args: AccessArgs, now: number
   const bearerAuthorized =
     args.accessTokenHash !== undefined &&
     ACCESS_TOKEN_HASH_PATTERN.test(args.accessTokenHash) &&
-    handoff.expiresAt + HUMAN_HANDOFF_ACCESS_GRACE_MS > now &&
+    handoffDeadline(handoff) + HUMAN_HANDOFF_ACCESS_GRACE_MS > now &&
     handoff.accessTokenHash === args.accessTokenHash;
   return ownerAuthorized || bearerAuthorized ? { handoff, ownerAuthorized } : null;
 }
@@ -167,12 +174,19 @@ async function terminalPage(
   const context = await pageContext(ctx, handoff, ownerAuthorized);
   if (!context) return { status: "invalid" as const };
   switch (handoff.status) {
-    case "waiting":
-      throw new Error("Waiting handoff is not terminal");
+    case "available":
+    case "active":
+      throw new Error("Active handoff is not terminal");
     case "continued":
+    case "resumed":
       return { ...context, status: "continued" as const, continuedAt: handoff.continuedAt };
     case "expired":
-      return { ...context, status: "expired" as const, expiredAt: handoff.expiredAt };
+      return {
+        ...context,
+        status: "expired" as const,
+        expiredAt: handoff.expiredAt,
+        claimed: handoff.claimed,
+      };
     case "failed":
       return {
         ...context,
@@ -184,7 +198,7 @@ async function terminalPage(
 }
 
 function requestResult(args: {
-  handoff: Extract<Doc<"taskHumanHandoffs">, { status: "waiting" }>;
+  handoff: Extract<Doc<"taskHumanHandoffs">, { status: "available" }>;
   created: boolean;
   recipientEmail: string;
   productName: string;
@@ -196,8 +210,36 @@ function requestResult(args: {
     recipientEmail: args.recipientEmail,
     productName: args.productName,
     scoutName: args.scoutName,
-    expiresAt: args.handoff.expiresAt,
+    claimExpiresAt: args.handoff.claimExpiresAt,
   };
+}
+
+async function activePreparedAccess(
+  ctx: Pick<QueryCtx, "db">,
+  handoff: Extract<Doc<"taskHumanHandoffs">, { status: "available" | "active" }>,
+  ownerAuthorized: boolean,
+  now: number,
+) {
+  const context = await pageContext(ctx, handoff, ownerAuthorized);
+  if (!context) return { status: "invalid" as const };
+  if (handoffDeadline(handoff) <= now) return { status: "due" as const, handoffId: handoff._id };
+  const resources = await handoffContext(ctx, handoff);
+  if (!resources || !resourcesAreActive(resources)) {
+    return { status: "broken" as const, handoffId: handoff._id };
+  }
+  return handoff.status === "available"
+    ? {
+        ...context,
+        status: "available" as const,
+        claimExpiresAt: handoff.claimExpiresAt,
+        providerSessionId: resources.session.providerSessionId,
+      }
+    : {
+        ...context,
+        status: "active" as const,
+        expiresAt: handoff.expiresAt,
+        providerSessionId: resources.session.providerSessionId,
+      };
 }
 
 export const active = query({
@@ -210,15 +252,21 @@ export const active = query({
       .withIndex("by_session_id", (index) => index.eq("sessionId", args.sessionId))
       .unique();
     const now = Date.now();
-    if (!handoff || handoff.status !== "waiting" || handoff.expiresAt <= now) return null;
-    const context = await handoffContext(ctx, handoff);
-    if (!context || context.task.userId !== userId || !resourcesAreActive(context, now))
+    if (
+      !handoff ||
+      (handoff.status !== "available" && handoff.status !== "active") ||
+      handoffDeadline(handoff) <= now
+    ) {
       return null;
+    }
+    const context = await handoffContext(ctx, handoff);
+    if (!context || context.task.userId !== userId || !resourcesAreActive(context)) return null;
     return {
       handoffId: handoff._id,
       reason: handoff.reason,
       requestedAt: handoff.requestedAt,
-      expiresAt: handoff.expiresAt,
+      expiresAt: handoffDeadline(handoff),
+      phase: handoff.status === "available" ? ("unclaimed" as const) : ("claimed" as const),
     };
   },
 });
@@ -276,7 +324,7 @@ export const request = internalMutation({
       .query("taskHumanHandoffs")
       .withIndex("by_session_id", (index) => index.eq("sessionId", session._id))
       .unique();
-    if (existing?.status === "waiting" && existing.accessTokenHash === tokenHash) {
+    if (existing?.status === "available" && existing.accessTokenHash === tokenHash) {
       return requestResult({
         handoff: existing,
         created: false,
@@ -287,22 +335,24 @@ export const request = internalMutation({
     }
     if (existing) throw new Error("Task human handoff has already ended");
 
-    const actionSafeDeadline = turn.state.leaseExpiresAt - HUMAN_HANDOFF_TURN_LEASE_RESERVE_MS;
-    if (actionSafeDeadline <= requestedAt) {
-      throw new Error("Too little task runtime remains for human help");
-    }
-    const expiresAt = Math.min(requestedAt + HUMAN_HANDOFF_WAIT_MS, actionSafeDeadline);
+    const workflowId = await taskHumanHandoffWorkflow.start(
+      ctx,
+      internal.taskHumanHandoffLifecycle.waitForOutcome,
+      { sessionId: session._id },
+    );
+    const claimExpiresAt = requestedAt + HUMAN_HANDOFF_CLAIM_MS;
     const handoffId: Id<"taskHumanHandoffs"> = await ctx.db.insert("taskHumanHandoffs", {
       sessionId: session._id,
       reason,
       requestedAt,
-      expiresAt,
+      claimExpiresAt,
       accessTokenHash: tokenHash,
-      status: "waiting",
+      workflowId,
+      status: "available",
     });
-    await ctx.scheduler.runAt(expiresAt, internal.taskHumanHandoffs.expire, { handoffId });
+    await ctx.scheduler.runAt(claimExpiresAt, internal.taskHumanHandoffs.expire, { handoffId });
     const handoff = await ctx.db.get("taskHumanHandoffs", handoffId);
-    if (!handoff || handoff.status !== "waiting") {
+    if (!handoff || handoff.status !== "available") {
       throw new Error("Task human handoff could not be created");
     }
     return requestResult({
@@ -322,20 +372,47 @@ export const prepareAccess = internalQuery({
     const authorized = await authorizedHandoff(ctx, args, args.now);
     if (!authorized) return { status: "invalid" as const };
     const { handoff, ownerAuthorized } = authorized;
-    const context = await pageContext(ctx, handoff, ownerAuthorized);
-    if (!context) return { status: "invalid" as const };
-    if (handoff.status !== "waiting") return await terminalPage(ctx, handoff, ownerAuthorized);
-    if (handoff.expiresAt <= args.now) return { status: "due" as const, handoffId: handoff._id };
+    if (handoff.status === "available" || handoff.status === "active") {
+      return await activePreparedAccess(ctx, handoff, ownerAuthorized, args.now);
+    }
+    return await terminalPage(ctx, handoff, ownerAuthorized);
+  },
+});
+
+export const claimAuthorized = internalMutation({
+  args: accessArgsValidator,
+  returns: preparedAccessValidator,
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const authorized = await authorizedHandoff(ctx, args, now);
+    if (!authorized) return { status: "invalid" as const };
+    const { handoff, ownerAuthorized } = authorized;
+    if (handoff.status !== "available") {
+      if (handoff.status === "active") {
+        return await activePreparedAccess(ctx, handoff, ownerAuthorized, now);
+      }
+      return await terminalPage(ctx, handoff, ownerAuthorized);
+    }
+    if (handoff.claimExpiresAt <= now) {
+      return { status: "due" as const, handoffId: handoff._id };
+    }
     const resources = await handoffContext(ctx, handoff);
-    if (!resources || !resourcesAreActive(resources, args.now)) {
+    if (!resources || !resourcesAreActive(resources)) {
       return { status: "broken" as const, handoffId: handoff._id };
     }
-    return {
-      ...context,
-      status: "waiting" as const,
-      expiresAt: handoff.expiresAt,
-      providerSessionId: resources.session.providerSessionId,
-    };
+    const expiresAt = now + HUMAN_HANDOFF_ACTIVE_MS;
+    await ctx.db.replace("taskHumanHandoffs", handoff._id, {
+      ...handoffCommon(handoff),
+      status: "active",
+      claimedAt: now,
+      expiresAt,
+    });
+    await ctx.scheduler.runAt(expiresAt, internal.taskHumanHandoffs.expire, {
+      handoffId: handoff._id,
+    });
+    const claimed = await ctx.db.get("taskHumanHandoffs", handoff._id);
+    if (!claimed || claimed.status !== "active") return { status: "invalid" as const };
+    return await activePreparedAccess(ctx, claimed, ownerAuthorized, now);
   },
 });
 
@@ -347,34 +424,48 @@ export const continueAuthorized = internalMutation({
     const authorized = await authorizedHandoff(ctx, args, now);
     if (!authorized) return { status: "invalid" as const };
     const { handoff, ownerAuthorized } = authorized;
-    if (handoff.status !== "waiting") return await terminalPage(ctx, handoff, ownerAuthorized);
+    if (handoff.status !== "active") {
+      if (handoff.status === "available") return { status: "invalid" as const };
+      return await terminalPage(ctx, handoff, ownerAuthorized);
+    }
     const context = await pageContext(ctx, handoff, ownerAuthorized);
     if (!context) return { status: "invalid" as const };
     if (handoff.expiresAt <= now) {
-      const expired = {
-        ...terminalTaskHandoffIdentity(handoff),
-        status: "expired" as const,
+      await ctx.db.replace("taskHumanHandoffs", handoff._id, {
+        ...handoffCommon(handoff),
+        ...handoffClaim(handoff),
+        status: "expired",
         expiredAt: now,
-      };
-      await ctx.db.replace("taskHumanHandoffs", handoff._id, expired);
-      return { ...context, status: "expired" as const, expiredAt: now };
+        claimed: true,
+      });
+      await signalTaskHumanHandoffOutcome(ctx, handoff, "expired");
+      return { ...context, status: "expired" as const, expiredAt: now, claimed: true };
     }
     const resources = await handoffContext(ctx, handoff);
-    if (!resources || !resourcesAreActive(resources, now)) {
-      const failed = {
-        ...terminalTaskHandoffIdentity(handoff),
+    if (!resources || !resourcesAreActive(resources)) {
+      await ctx.db.replace("taskHumanHandoffs", handoff._id, {
+        ...handoffCommon(handoff),
+        ...handoffClaim(handoff),
+        status: "failed",
+        failedAt: now,
+        failure: "browser_ended",
+        claimed: true,
+      });
+      await signalTaskHumanHandoffOutcome(ctx, handoff, "failed");
+      return {
+        ...context,
         status: "failed" as const,
         failedAt: now,
         failure: "browser_ended" as const,
       };
-      await ctx.db.replace("taskHumanHandoffs", handoff._id, failed);
-      return { ...context, status: "failed" as const, failedAt: now, failure: failed.failure };
     }
     await ctx.db.replace("taskHumanHandoffs", handoff._id, {
-      ...terminalTaskHandoffIdentity(handoff),
+      ...handoffCommon(handoff),
+      ...handoffClaim(handoff),
       status: "continued",
       continuedAt: now,
     });
+    await signalTaskHumanHandoffOutcome(ctx, handoff, "continued");
     return { ...context, status: "continued" as const, continuedAt: now };
   },
 });
@@ -387,23 +478,27 @@ export const failAccess = internalMutation({
     const authorized = await authorizedHandoff(ctx, args, now);
     if (!authorized) return { status: "invalid" as const };
     const { handoff, ownerAuthorized } = authorized;
-    if (handoff.status !== "waiting") return await terminalPage(ctx, handoff, ownerAuthorized);
+    if (handoff.status !== "available" && handoff.status !== "active") {
+      return await terminalPage(ctx, handoff, ownerAuthorized);
+    }
     const context = await pageContext(ctx, handoff, ownerAuthorized);
     if (!context) return { status: "invalid" as const };
-    if (handoff.expiresAt <= now) {
-      await ctx.db.replace("taskHumanHandoffs", handoff._id, {
-        ...terminalTaskHandoffIdentity(handoff),
-        status: "expired",
+    if (handoffDeadline(handoff) <= now) {
+      await ctx.db.replace("taskHumanHandoffs", handoff._id, expiredHandoff(handoff, now));
+      await signalTaskHumanHandoffOutcome(ctx, handoff, "expired");
+      return {
+        ...context,
+        status: "expired" as const,
         expiredAt: now,
-      });
-      return { ...context, status: "expired" as const, expiredAt: now };
+        claimed: handoff.status === "active",
+      };
     }
-    await ctx.db.replace("taskHumanHandoffs", handoff._id, {
-      ...terminalTaskHandoffIdentity(handoff),
-      status: "failed",
-      failedAt: now,
-      failure: "browser_ended",
-    });
+    await ctx.db.replace(
+      "taskHumanHandoffs",
+      handoff._id,
+      failedHandoff(handoff, { failedAt: now, failure: "browser_ended" }),
+    );
+    await signalTaskHumanHandoffOutcome(ctx, handoff, "failed");
     return {
       ...context,
       status: "failed" as const,
@@ -419,22 +514,26 @@ export const failDelivery = internalMutation({
   handler: async (ctx, args) => {
     const handoff = await ctx.db.get("taskHumanHandoffs", args.handoffId);
     if (!handoff) return "missing";
-    if (handoff.status !== "waiting") return handoff.status;
+    if (handoff.status !== "available") return handoff.status;
     const now = Date.now();
-    if (handoff.expiresAt <= now) {
+    if (handoff.claimExpiresAt <= now) {
       await ctx.db.replace("taskHumanHandoffs", handoff._id, {
-        ...terminalTaskHandoffIdentity(handoff),
+        ...handoffCommon(handoff),
         status: "expired",
         expiredAt: now,
+        claimed: false,
       });
+      await signalTaskHumanHandoffOutcome(ctx, handoff, "expired");
       return "expired";
     }
     await ctx.db.replace("taskHumanHandoffs", handoff._id, {
-      ...terminalTaskHandoffIdentity(handoff),
+      ...handoffCommon(handoff),
       status: "failed",
       failedAt: now,
       failure: "delivery_failed",
+      claimed: false,
     });
+    await signalTaskHumanHandoffOutcome(ctx, handoff, "failed");
     return "failed";
   },
 });
@@ -454,14 +553,11 @@ export const expire = internalMutation({
   handler: async (ctx, args) => {
     const handoff = await ctx.db.get("taskHumanHandoffs", args.handoffId);
     if (!handoff) return "missing";
-    if (handoff.status !== "waiting") return handoff.status;
+    if (handoff.status !== "available" && handoff.status !== "active") return handoff.status;
     const now = Date.now();
-    if (now < handoff.expiresAt) return "waiting";
-    await ctx.db.replace("taskHumanHandoffs", handoff._id, {
-      ...terminalTaskHandoffIdentity(handoff),
-      status: "expired",
-      expiredAt: now,
-    });
+    if (now < handoffDeadline(handoff)) return handoff.status;
+    await ctx.db.replace("taskHumanHandoffs", handoff._id, expiredHandoff(handoff, now));
+    await signalTaskHumanHandoffOutcome(ctx, handoff, "expired");
     return "expired";
   },
 });

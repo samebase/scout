@@ -36,7 +36,7 @@ export type TaskLoopDecision =
   | {
       kind: "final";
       nextState: "final";
-      humanHelpOutcome: "none" | "expired" | "failed";
+      humanHelpOutcome: "none" | "waiting" | "expired" | "failed";
     };
 
 export function createSingleUseHumanHandoffArm() {
@@ -116,6 +116,7 @@ export function detectsHumanGate(output: unknown) {
     /\b(?:h|re)?captcha\b/i.test(text) ||
     /\bdatadome\b/i.test(text) ||
     /\bverify(?:[ -]+that)?[ -]+you(?:'re|[ -]+are)?[ -]+(?:a[ -]+)?human\b/i.test(text) ||
+    /\bhuman[ -]+checkpoint\b/i.test(text) ||
     /\bhuman[ -]verification\b/i.test(text) ||
     /\bdevice[ -]verification\b/i.test(text)
   );
@@ -124,6 +125,7 @@ export function detectsHumanGate(output: unknown) {
 export function humanHandoffOutcome(output: unknown) {
   if (!isRecord(output)) return null;
   if (output["resumed"] === true) return "resumed" as const;
+  if (output["status"] === "waiting") return "waiting" as const;
   if (output["status"] === "failed") return "failed" as const;
   if (output["resumed"] === false || output["status"] === "expired") {
     return "expired" as const;
@@ -136,6 +138,9 @@ function decisionAfterHandoff(result: ToolResult | null): TaskLoopDecision | nul
   const outcome = humanHandoffOutcome(result.output);
   if (outcome === "resumed") {
     return { kind: "browser_snapshot", nextState: "awaiting_snapshot" };
+  }
+  if (outcome === "waiting") {
+    return { kind: "final", nextState: "final", humanHelpOutcome: "waiting" };
   }
   if (outcome === "expired") {
     return { kind: "browser_close", nextState: "closing_after_expiry" };

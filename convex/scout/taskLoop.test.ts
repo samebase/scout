@@ -26,6 +26,7 @@ describe("task human gate detection", () => {
     "Verify you are human",
     "verify-you-are-human",
     "Verify that you're a human",
+    "Human checkpoint",
     "Human verification required",
     "Device verification",
   ])("recognizes %s", (output) => {
@@ -117,6 +118,15 @@ describe("task loop decisions", () => {
         output: { success: true, output: '- heading "Welcome"' },
       }),
     ).toEqual({ kind: "browser_close", nextState: "closing" });
+  });
+
+  it("pauses without closing the browser after durable human help is sent", () => {
+    expect(
+      decide("awaiting_handoff", {
+        toolName: "request_human_help",
+        output: { resumed: false, status: "waiting" },
+      }),
+    ).toEqual({ kind: "final", nextState: "final", humanHelpOutcome: "waiting" });
   });
 
   it("closes without resolving when the post-handoff snapshot fails", () => {

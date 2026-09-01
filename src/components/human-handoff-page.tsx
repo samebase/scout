@@ -214,7 +214,8 @@ function HandoffState({
           </Button>
         </div>
         <p className="border-b px-4 py-2 text-xs text-muted-foreground">
-          If you use the new tab, close it before returning control to Scout.
+          This five-minute timer started when the handoff first opened. If you use the new tab,
+          close it before returning control to Scout.
         </p>
         <iframe
           className="min-h-[32rem] flex-1 border-0"
@@ -237,7 +238,9 @@ function HandoffState({
     page.status === "continued"
       ? "The current browser was released back to Scout. Return to the attempt for its latest status."
       : page.status === "expired"
-        ? "The five-minute handoff window ended. Resume the active attempt to try again."
+        ? page.claimed
+          ? "The five-minute control window ended. Resume the active attempt to try again."
+          : "The private link was not opened within 45 minutes. Resume the active attempt to try again."
         : page.failure === "delivery_failed"
           ? "Scout could not deliver the secure link. Resume the active attempt to try again."
           : "The bound browser session ended. Resume the active attempt to try again.";

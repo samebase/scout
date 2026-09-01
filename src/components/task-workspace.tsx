@@ -868,7 +868,8 @@ export function HumanHandoffView({ handoff }: { handoff: HumanHandoff }) {
           className="text-muted-foreground text-[10px]"
           dateTime={new Date(handoff.expiresAt).toISOString()}
         >
-          Expires {compactDate.format(handoff.expiresAt)}
+          {handoff.phase === "unclaimed" ? "Open by" : "Control ends"}{" "}
+          {compactDate.format(handoff.expiresAt)}
         </time>
         <Button asChild size="xs" variant="outline">
           <a href={`/handoff/${encodeURIComponent(handoff.handoffId)}`}>Open secure handoff</a>
@@ -879,8 +880,9 @@ export function HumanHandoffView({ handoff }: { handoff: HumanHandoff }) {
           <HandIcon className="mx-auto size-8 text-amber-600" aria-hidden="true" />
           <p className="mt-3 text-sm font-medium">A person needs to complete this step.</p>
           <p className="text-muted-foreground mt-1 text-xs leading-5">
-            Open the secure first-party handoff to control the current browser and explicitly
-            continue Scout.
+            {handoff.phase === "unclaimed"
+              ? "The private link remains available for 45 minutes. Opening it starts a separate five-minute control window."
+              : "The five-minute control window is active. Complete the human step and explicitly continue Scout."}
           </p>
         </div>
       </div>

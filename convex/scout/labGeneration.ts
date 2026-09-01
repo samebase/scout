@@ -18,7 +18,11 @@ import {
 } from "./taskLoop";
 import { requireOwnedAgentThread } from "./labAccess";
 import { createLabBrowserHarness, selectAgentMailTools } from "./labTools";
-import { createHumanHandoffTool } from "./humanHandoffTool";
+import {
+  beginHumanHandoff,
+  createHumanHandoffTool,
+  type HumanHandoffCallbacks,
+} from "./humanHandoffTool";
 import {
   createHumanHandoffAccessToken,
   hashHumanHandoffAccessToken,
@@ -210,6 +214,10 @@ export const generateResponse = internalAction({
     userId: v.id("users"),
     promptMessageId: v.string(),
     model: scoutModelValidator,
+    mode: v.union(
+      v.object({ kind: v.literal("normal") }),
+      v.object({ kind: v.literal("handoff_continuation") }),
+    ),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -224,6 +232,7 @@ export const generateResponse = internalAction({
     let browser: LabBrowser | undefined;
     let browserSessionId: Id<"taskBrowserSessions"> | null = null;
     let interactiveLiveViewUrl: string | null = null;
+    let humanHandoffWaiting = false;
     let generationResult: GenerationResult;
 
     try {
@@ -326,9 +335,9 @@ export const generateResponse = internalAction({
       if (!activeBrowser) throw new Error("Browser harness was not initialized");
       const humanHandoffArm = createSingleUseHumanHandoffArm();
       const attemptResolutionArm = createSingleUseAttemptResolutionArm();
-      const humanHandoffTools = isTaskTurn
-        ? {
-            request_human_help: createHumanHandoffTool({
+      const humanHandoffCallbacks: HumanHandoffCallbacks<Id<"taskHumanHandoffs">> | null =
+        isTaskTurn
+          ? {
               request: async (reason) => {
                 if (!humanHandoffArm.consume()) {
                   throw new Error(
@@ -352,16 +361,16 @@ export const generateResponse = internalAction({
                   handoffUrl: humanHandoffUrl(appOrigin, request.handoffId, accessToken),
                 };
               },
-              getStatus: async (handoffId) =>
-                await ctx.runQuery(internal.taskHumanHandoffs.getStatus, { handoffId }),
-              expire: async (handoffId) =>
-                await ctx.runMutation(internal.taskHumanHandoffs.expire, { handoffId }),
               failDelivery: async (handoffId) =>
                 await ctx.runMutation(internal.taskHumanHandoffs.failDelivery, { handoffId }),
-              closeBrowser: async () => {
-                await activeBrowser.close();
+              onWaiting: () => {
+                humanHandoffWaiting = true;
               },
-            }),
+            }
+          : null;
+      const humanHandoffTools = humanHandoffCallbacks
+        ? {
+            request_human_help: createHumanHandoffTool(humanHandoffCallbacks),
           }
         : {};
       const serviceAccountTools = isTaskTurn
@@ -491,7 +500,7 @@ export const generateResponse = internalAction({
       const taskInstructions =
         runtimeContext.kind === "lab"
           ? ""
-          : `\n\nYou are working on an operator-defined Task for ${JSON.stringify(runtimeContext.product.name)}. Its primary URL is ${JSON.stringify(runtimeContext.product.primaryUrl)} and product domain is ${JSON.stringify(runtimeContext.product.domain)}. The attempt uses ${runtimeContext.browserProfile.kind === "fresh" ? "a fresh browser profile" : `the persistent Scout browser profile ${JSON.stringify(runtimeContext.browserProfile.profileName)}`}. Decide the next useful actions from the current operator message, the existing thread, and visible product state; do not force the work into a predefined testing workflow. If you reach an authenticated account menu, call record_authenticated_service_account with visible identity and Sign out or Log out refs so the Scout inventory reflects what you verified. If a CAPTCHA or another strictly human-only check blocks progress, call request_human_help instead of attempting to solve or bypass it. After the operator continues, use the forced current-page snapshot as final evidence and do not take further browser actions. If human help expires, say that its window expired and explain how the operator can resume this still-active attempt. Close the browser before your final response. After a successful browser close, resolve the attempt once as completed when the objective is achieved or blocked when it is not, with a short evidence-based conclusion. Human-help expiry is not a resolution; leave the attempt active.`;
+          : `\n\nYou are working on an operator-defined Task for ${JSON.stringify(runtimeContext.product.name)}. Its primary URL is ${JSON.stringify(runtimeContext.product.primaryUrl)} and product domain is ${JSON.stringify(runtimeContext.product.domain)}. The attempt uses ${runtimeContext.browserProfile.kind === "fresh" ? "a fresh browser profile" : `the persistent Scout browser profile ${JSON.stringify(runtimeContext.browserProfile.profileName)}`}. Decide the next useful actions from the current operator message, the existing thread, and visible product state; do not force the work into a predefined testing workflow. If you reach an authenticated account menu, call record_authenticated_service_account with visible identity and Sign out or Log out refs so the Scout inventory reflects what you verified. If a CAPTCHA or another strictly human-only check blocks progress, call request_human_help instead of attempting to solve or bypass it. That tool sends a durable handoff and pauses this Turn; do not poll or keep working after it. Close the browser before an ordinary final response. After a successful browser close, resolve the attempt once as completed when the objective is achieved or blocked when it is not, with a short evidence-based conclusion.`;
       const instructions = `${SCOUT_AGENT_INSTRUCTIONS}\n\n${scoutWebsiteIdentityInstructions(scout)}\n\n${passwordInstructions}${taskInstructions}`;
       const streamErrors = createStreamErrorCapture();
       const streamResult = await scoutAgent.streamText(
@@ -506,7 +515,18 @@ export const generateResponse = internalAction({
           onError: streamErrors.onError,
           ...(isTaskTurn
             ? {
-                prepareStep: ({ steps, stepNumber }) => {
+                prepareStep: async ({ steps, stepNumber }) => {
+                  if (args.mode.kind === "handoff_continuation" && stepNumber === 0) {
+                    taskLoopState = "resolving";
+                    attemptResolutionArm.arm();
+                    return {
+                      activeTools: ["resolve_attempt"] as const,
+                      toolChoice: {
+                        type: "tool",
+                        toolName: "resolve_attempt",
+                      } as const,
+                    };
+                  }
                   const decision = decideTaskStep({
                     state: taskLoopState,
                     stepNumber,
@@ -518,12 +538,18 @@ export const generateResponse = internalAction({
                   switch (decision.kind) {
                     case "request_human_help":
                       humanHandoffArm.arm();
+                      if (humanHandoffCallbacks === null) {
+                        throw new Error("Human help is unavailable outside a Task turn");
+                      }
+                      await beginHumanHandoff(
+                        humanHandoffCallbacks,
+                        "The live browser reached a human-only checkpoint.",
+                      );
+                      taskLoopState = "final";
                       return {
-                        activeTools: ["request_human_help"] as const,
-                        toolChoice: {
-                          type: "tool",
-                          toolName: "request_human_help",
-                        } as const,
+                        activeTools: [] as const,
+                        toolChoice: "none" as const,
+                        instructions: `${instructions}\n\nHuman help was requested successfully. The browser remains open under the durable handoff. Do not investigate, close the browser, or resolve the attempt. Briefly state that Scout is paused and will resume after the operator returns control.`,
                       };
                     case "browser_snapshot":
                       return {
@@ -551,11 +577,13 @@ export const generateResponse = internalAction({
                         activeTools: [] as const,
                         toolChoice: "none" as const,
                         instructions:
-                          decision.humanHelpOutcome === "expired"
-                            ? `${instructions}\n\nThe browser is closed because human help expired. Do not investigate further or resolve the attempt. Briefly report what happened and a useful message for resuming this still-active attempt.`
-                            : decision.humanHelpOutcome === "failed"
-                              ? `${instructions}\n\nThe browser is closed because the secure human handoff failed. Do not investigate further or resolve the attempt. Briefly report what happened and a useful message for resuming this still-active attempt.`
-                              : `${instructions}\n\nThe bounded browser phase is over. Do not investigate further. Briefly report what you accomplished, what remains uncertain, and what the operator should try next.`,
+                          decision.humanHelpOutcome === "waiting"
+                            ? `${instructions}\n\nHuman help was requested successfully. The browser remains open under the durable handoff. Do not investigate, close the browser, or resolve the attempt. Briefly state that Scout is paused and will resume after the operator returns control.`
+                            : decision.humanHelpOutcome === "expired"
+                              ? `${instructions}\n\nThe browser is closed because human help expired. Do not investigate further or resolve the attempt. Briefly report what happened and a useful message for resuming this still-active attempt.`
+                              : decision.humanHelpOutcome === "failed"
+                                ? `${instructions}\n\nThe browser is closed because the secure human handoff failed. Do not investigate further or resolve the attempt. Briefly report what happened and a useful message for resuming this still-active attempt.`
+                                : `${instructions}\n\nThe bounded browser phase is over. Do not investigate further. Briefly report what you accomplished, what remains uncertain, and what the operator should try next.`,
                       };
                     case "none":
                       return undefined;
@@ -582,27 +610,37 @@ export const generateResponse = internalAction({
       generationResult = { kind: "failed", error };
     }
 
+    const preserveBrowserForHandoff = generationResult.kind === "completed" && humanHandoffWaiting;
     let browserUsage: LabBrowserUsage = undefined;
     let cleanupFailure: unknown;
-    try {
-      browserUsage = await closeGenerationBrowser(browser);
-    } catch (error) {
-      cleanupFailure = error;
+    if (!preserveBrowserForHandoff) {
+      try {
+        browserUsage = await closeGenerationBrowser(browser);
+      } catch (error) {
+        cleanupFailure = error;
+      }
     }
     let completionFailure: unknown;
     if (generationResult.kind === "completed" && !cleanupFailure) {
       try {
-        await ctx.runMutation(internal.scout.turns.complete, {
-          promptMessageId: args.promptMessageId,
-          usage: generationResult.usage,
-          ...(browserUsage?.creditsBilled === null || browserUsage?.creditsBilled === undefined
-            ? {}
-            : { firecrawlCredits: browserUsage.creditsBilled }),
-          ...(browserUsage?.sessionDurationMs === null ||
-          browserUsage?.sessionDurationMs === undefined
-            ? {}
-            : { firecrawlDurationMs: browserUsage.sessionDurationMs }),
-        });
+        if (preserveBrowserForHandoff) {
+          await ctx.runMutation(internal.scout.turns.completeHumanHandoffPause, {
+            promptMessageId: args.promptMessageId,
+            usage: generationResult.usage,
+          });
+        } else {
+          await ctx.runMutation(internal.scout.turns.complete, {
+            promptMessageId: args.promptMessageId,
+            usage: generationResult.usage,
+            ...(browserUsage?.creditsBilled === null || browserUsage?.creditsBilled === undefined
+              ? {}
+              : { firecrawlCredits: browserUsage.creditsBilled }),
+            ...(browserUsage?.sessionDurationMs === null ||
+            browserUsage?.sessionDurationMs === undefined
+              ? {}
+              : { firecrawlDurationMs: browserUsage.sessionDurationMs }),
+          });
+        }
         await closeAgentMailBestEffort(agentMailClient);
         return null;
       } catch (error) {

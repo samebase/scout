@@ -428,6 +428,7 @@ export const sendMessage = mutation({
       userId,
       promptMessageId: messageId,
       model,
+      mode: { kind: "normal" },
     });
     await ctx.scheduler.runAt(leaseExpiresAt, internal.scout.turns.expire, { turnId });
     return null;

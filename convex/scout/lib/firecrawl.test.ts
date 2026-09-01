@@ -67,7 +67,12 @@ describe("standalone Firecrawl Browser Sandbox", () => {
     });
     expect(requests[0]?.url).toBe("https://api.firecrawl.dev/v2/interact");
     expect(requests[0]?.init?.method).toBe("POST");
-    expect(requestBody(requests[0])).toEqual({ recordSession: true, streamWebView: true });
+    expect(requestBody(requests[0])).toEqual({
+      recordSession: true,
+      streamWebView: true,
+      ttl: 3_600,
+      activityTtl: 3_600,
+    });
   });
 
   test("returns validated read-only and interactive live views for a writable named profile", async () => {
@@ -92,6 +97,8 @@ describe("standalone Firecrawl Browser Sandbox", () => {
     expect(requestBody(requests[0])).toEqual({
       recordSession: true,
       streamWebView: true,
+      ttl: 3_600,
+      activityTtl: 3_600,
       profile: { name: "scout-conrad", saveChanges: true },
     });
   });

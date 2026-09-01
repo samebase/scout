@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 
 import agentTest from "@convex-dev/agent/test";
+import workflowTest from "@convex-dev/workflow/test";
 import { convexTest } from "convex-test";
 import { describe, expect, it } from "vite-plus/test";
 import { api, internal } from "./_generated/api";
@@ -13,6 +14,7 @@ const modules = import.meta.glob("./**/*.ts");
 function testBackend() {
   const backend = convexTest(schema, modules);
   agentTest.register(backend);
+  workflowTest.register(backend);
   return backend;
 }
 
@@ -339,7 +341,7 @@ describe("Product Tasks", () => {
     const attempts = await admin.query(api.tasks.listAttempts, { taskId: task.taskId });
     const turn = await taskTurn(backend, attempts[0]!.threadId);
     expect(turn).not.toBeNull();
-    const sessionId = await backend.run(async (ctx) => {
+    await backend.run(async (ctx) => {
       const sessionId = await ctx.db.insert("taskBrowserSessions", {
         attemptId: started.attemptId,
         turnId: turn!._id,
@@ -351,25 +353,17 @@ describe("Product Tasks", () => {
         nextOperationSequence: 1,
         lifecycle: { kind: "active", openedAtMs: Date.now() },
       });
-      await ctx.db.insert("taskHumanHandoffs", {
-        sessionId,
-        reason: "CAPTCHA",
-        requestedAt: Date.now() - 2_000,
-        status: "waiting",
-        expiresAt: Date.now() - 1_000,
-        accessTokenHash: "a".repeat(64),
-      });
       return sessionId;
     });
-    const handoff = await backend.run(
-      async (ctx) =>
-        await ctx.db
-          .query("taskHumanHandoffs")
-          .withIndex("by_session_id", (index) => index.eq("sessionId", sessionId))
-          .unique(),
-    );
-    expect(handoff).not.toBeNull();
-    await admin.mutation(internal.taskHumanHandoffs.expire, { handoffId: handoff!._id });
+    const handoff = await backend.mutation(internal.taskHumanHandoffs.request, {
+      promptMessageId: turn!.promptMessageId,
+      reason: "CAPTCHA",
+      accessTokenHash: "a".repeat(64),
+    });
+    await backend.run(async (ctx) => {
+      await ctx.db.patch(handoff.handoffId, { claimExpiresAt: Date.now() - 1_000 });
+    });
+    await admin.mutation(internal.taskHumanHandoffs.expire, { handoffId: handoff.handoffId });
     await admin.mutation(internal.scout.turns.complete, {
       promptMessageId: turn!.promptMessageId,
       usage: {},
@@ -395,11 +389,8 @@ describe("Product Tasks", () => {
     });
     const attempts = await admin.query(api.tasks.listAttempts, { taskId: firstTask.taskId });
     const turn = await taskTurn(backend, attempts[0]!.threadId);
-    const handoffId = await backend.run(async (ctx) => {
-      await ctx.db.patch(turn!._id, {
-        state: { kind: "pending", leaseExpiresAt: Date.now() - 1 },
-      });
-      const sessionId = await ctx.db.insert("taskBrowserSessions", {
+    await backend.run(async (ctx) => {
+      await ctx.db.insert("taskBrowserSessions", {
         attemptId: started.attemptId,
         turnId: turn!._id,
         sequence: 1,
@@ -410,13 +401,15 @@ describe("Product Tasks", () => {
         nextOperationSequence: 1,
         lifecycle: { kind: "active", openedAtMs: Date.now() },
       });
-      return await ctx.db.insert("taskHumanHandoffs", {
-        sessionId,
-        reason: "CAPTCHA",
-        requestedAt: Date.now(),
-        expiresAt: Date.now() + 60_000,
-        accessTokenHash: "a".repeat(64),
-        status: "waiting",
+    });
+    const handoff = await backend.mutation(internal.taskHumanHandoffs.request, {
+      promptMessageId: turn!.promptMessageId,
+      reason: "CAPTCHA",
+      accessTokenHash: "a".repeat(64),
+    });
+    await backend.run(async (ctx) => {
+      await ctx.db.patch(turn!._id, {
+        state: { kind: "pending", leaseExpiresAt: Date.now() - 1 },
       });
     });
     const secondTask = await admin.mutation(api.tasks.create, {
@@ -430,8 +423,8 @@ describe("Product Tasks", () => {
       browserProfile: { kind: "fresh" },
     });
 
-    await expect(backend.query(internal.taskHumanHandoffs.getStatus, { handoffId })).resolves.toBe(
-      "failed",
-    );
+    await expect(
+      backend.query(internal.taskHumanHandoffs.getStatus, { handoffId: handoff.handoffId }),
+    ).resolves.toBe("failed");
   });
 });

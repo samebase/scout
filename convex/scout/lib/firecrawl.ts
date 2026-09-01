@@ -187,6 +187,8 @@ export async function createBrowserSession(profileName?: string) {
           body: JSON.stringify({
             recordSession: true,
             streamWebView: true,
+            ttl: 3_600,
+            activityTtl: 3_600,
             ...(profileName ? { profile: { name: profileName, saveChanges: true } } : {}),
           }),
         }),
