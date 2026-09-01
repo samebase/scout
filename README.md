@@ -96,6 +96,10 @@ code after a newer commit reaches the same branch. `convex deploy --cmd` supplie
 interface. The scripts under those names can change without changing the Cloudflare configuration.
 Outside Workers Builds, `pnpm run build` runs only the app build.
 
+Enable Preview builds for non-production branches, but keep the Preview command set to
+`pnpm run deploy:preview`. Cloudflare can still show an **Enable Worker Previews** banner because it
+cannot inspect the package script. The repository adapter already runs `wrangler preview`.
+
 `pnpm run deploy:convex` provides a separate manual production deployment to Convex Static Hosting.
 For an automatic `main` deployment, the Cloudflare deploy command publishes the Worker first, then
 uploads the same `dist/client` files to Convex Static Hosting. Preview and dry-run deployments do

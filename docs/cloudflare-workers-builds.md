@@ -66,6 +66,12 @@ Wrangler uses the Git branch as the Preview name. Its `--name` option names the 
 Worker. The repository adapter reads `WRANGLER_CI_OVERRIDE_NAME` and passes the Worker through
 `--worker-name`. This avoids a hard-coded name in `wrangler.jsonc`.
 
+Enable Preview builds for non-production branches. Cloudflare can still show an **Enable Worker
+Previews** banner when the Preview command is `pnpm run deploy:preview`. Cloudflare documents this
+button as a command change from an old deploy command to `npx wrangler preview`. The Builds API has
+no separate Worker Previews flag. Keep `pnpm run deploy:preview` because its repository adapter
+already runs `wrangler preview`.
+
 Worker Previews is a private beta. The Cloudflare account must have access to run the preview
 deploy command.
 
