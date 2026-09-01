@@ -2,7 +2,6 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   decideTaskStep,
   createSingleUseAttemptResolutionArm,
-  createSingleUseHumanHandoffArm,
   detectsHumanGate,
   immediatelyPrecedingToolError,
   immediatelyPrecedingToolResult,
@@ -102,65 +101,17 @@ describe("task loop decisions", () => {
   it("forces human help immediately after a browser result exposes a gate", () => {
     expect(decide("working", { toolName: "browser_snapshot", output: dataDomeOutput })).toEqual({
       kind: "request_human_help",
-      nextState: "awaiting_handoff",
+      nextState: "final",
     });
   });
 
-  it("forces exactly one snapshot after a resumed handoff", () => {
-    const snapshot = decide("awaiting_handoff", {
-      toolName: "request_human_help",
-      output: { resumed: true },
-    });
-    expect(snapshot).toEqual({ kind: "browser_snapshot", nextState: "awaiting_snapshot" });
+  it("stops after the model requests human help", () => {
     expect(
-      decide(snapshot.nextState, {
-        toolName: "browser_snapshot",
-        output: { success: true, output: '- heading "Welcome"' },
-      }),
-    ).toEqual({ kind: "browser_close", nextState: "closing" });
-  });
-
-  it("pauses without closing the browser after durable human help is sent", () => {
-    expect(
-      decide("awaiting_handoff", {
+      decide("working", {
         toolName: "request_human_help",
-        output: { resumed: false, status: "waiting" },
+        output: { status: "waiting" },
       }),
     ).toEqual({ kind: "final", nextState: "final", humanHelpOutcome: "waiting" });
-  });
-
-  it("closes without resolving when the post-handoff snapshot fails", () => {
-    expect(
-      decide("awaiting_snapshot", {
-        toolName: "browser_snapshot",
-        output: { success: false, error: "provider unavailable" },
-      }),
-    ).toEqual({ kind: "browser_close", nextState: "closing_after_failure" });
-  });
-
-  it("closes and reports an expired handoff without inventing a verdict", () => {
-    const close = decide("awaiting_handoff", {
-      toolName: "request_human_help",
-      output: { resumed: false },
-    });
-    expect(close).toEqual({ kind: "browser_close", nextState: "closing_after_expiry" });
-    expect(
-      decide(close.nextState, {
-        toolName: "browser_close",
-        output: { success: true },
-      }),
-    ).toEqual({ kind: "final", nextState: "final", humanHelpOutcome: "expired" });
-  });
-
-  it("closes and reports a failed handoff without resolving the Attempt", () => {
-    const close = decide("awaiting_handoff", {
-      toolName: "request_human_help",
-      output: { resumed: false, status: "failed" },
-    });
-    expect(close).toEqual({ kind: "browser_close", nextState: "closing_after_failure" });
-    expect(
-      decide(close.nextState, { toolName: "browser_close", output: { success: true } }),
-    ).toEqual({ kind: "final", nextState: "final", humanHelpOutcome: "failed" });
   });
 
   it("forces one outcome after a successful ordinary browser close", () => {
@@ -206,54 +157,11 @@ describe("task loop decisions", () => {
     ).toEqual({ kind: "resolution_failed", nextState: "final" });
   });
 
-  it("closes immediately after the verified post-handoff snapshot", () => {
-    const handoff = decide("working", { toolName: "browser_snapshot", output: dataDomeOutput }, 18);
-    const snapshot = decide(
-      handoff.nextState,
-      { toolName: "request_human_help", output: { resumed: true } },
-      19,
-    );
-    const close = decide(
-      snapshot.nextState,
-      {
-        toolName: "browser_snapshot",
-        output: { success: true, output: '- heading "Account"' },
-      },
-      19,
-    );
-    const resolution = decide(
-      close.nextState,
-      { toolName: "browser_close", output: { success: true } },
-      21,
-    );
-    const final = decide(resolution.nextState, {
-      toolName: "resolve_attempt",
-      output: { kind: "completed", conclusion: "Done", resolvedAt: 1 },
-    });
-
-    expect([handoff.kind, snapshot.kind, close.kind, resolution.kind, final.kind]).toEqual([
-      "request_human_help",
-      "browser_snapshot",
-      "browser_close",
-      "resolve_attempt",
-      "final",
-    ]);
-  });
-
   it("keeps the ordinary cost-neutral close at step 18", () => {
     expect(decide("working", null, 18)).toEqual({
       kind: "browser_close",
       nextState: "closing",
     });
-  });
-
-  it("arms exactly one detector-authorized human escalation", () => {
-    const arm = createSingleUseHumanHandoffArm();
-
-    expect(arm.consume()).toBe(false);
-    arm.arm();
-    expect(arm.consume()).toBe(true);
-    expect(arm.consume()).toBe(false);
   });
 
   it("arms exactly one post-close attempt resolution", () => {

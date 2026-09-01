@@ -32,17 +32,10 @@ function accessInput(args: { handoffId: string; accessToken?: string }) {
       };
 }
 
-async function verifiedSession(
-  providerSessionId: string,
-): Promise<{ sessionId: string; interactiveLiveViewUrl: string } | null> {
+async function interactiveLiveViewUrl(providerSessionId: string): Promise<string | null> {
   try {
     const session = await findActiveBrowserSession(providerSessionId);
-    return session?.interactiveLiveViewUrl
-      ? {
-          sessionId: session.sessionId,
-          interactiveLiveViewUrl: session.interactiveLiveViewUrl,
-        }
-      : null;
+    return session?.interactiveLiveViewUrl ?? null;
   } catch {
     throw new Error("Scout could not verify the live browser. Try again.");
   }
@@ -72,8 +65,8 @@ export const load = action({
     }
     if (prepared.status !== "available" && prepared.status !== "active") return prepared;
 
-    let activeSession = await verifiedSession(prepared.providerSessionId);
-    if (!activeSession) {
+    let liveViewUrl = await interactiveLiveViewUrl(prepared.providerSessionId);
+    if (!liveViewUrl) {
       return await ctx.runMutation(internal.taskHumanHandoffs.failAccess, access);
     }
 
@@ -99,11 +92,8 @@ export const load = action({
       if (prepared.status !== "active") return { status: "invalid" };
     }
 
-    if (prepared.providerSessionId !== activeSession.sessionId) {
-      return await ctx.runMutation(internal.taskHumanHandoffs.failAccess, access);
-    }
-    activeSession = await verifiedSession(prepared.providerSessionId);
-    if (!activeSession) {
+    liveViewUrl = await interactiveLiveViewUrl(prepared.providerSessionId);
+    if (!liveViewUrl) {
       return await ctx.runMutation(internal.taskHumanHandoffs.failAccess, access);
     }
     return {
@@ -114,7 +104,7 @@ export const load = action({
       ...(prepared.destination === undefined ? {} : { destination: prepared.destination }),
       expiresAt: prepared.expiresAt,
       serverNow: Date.now(),
-      interactiveLiveViewUrl: activeSession.interactiveLiveViewUrl,
+      interactiveLiveViewUrl: liveViewUrl,
     };
   },
 });
@@ -140,8 +130,8 @@ export const continueHandoff = action({
     }
     if (prepared.status !== "available" && prepared.status !== "active") return prepared;
 
-    const activeSession = await verifiedSession(prepared.providerSessionId);
-    if (!activeSession || activeSession.sessionId !== prepared.providerSessionId) {
+    const liveViewUrl = await interactiveLiveViewUrl(prepared.providerSessionId);
+    if (!liveViewUrl) {
       return await ctx.runMutation(internal.taskHumanHandoffs.failAccess, access);
     }
     if (prepared.status === "available") {

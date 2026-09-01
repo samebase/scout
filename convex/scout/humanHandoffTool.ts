@@ -76,7 +76,6 @@ export async function beginHumanHandoff<HandoffId>(
   }
   callbacks.onWaiting();
   return {
-    resumed: false,
     status: "waiting" as const,
     message:
       "The human-help email was sent. Scout is paused durably and will resume after the operator returns control.",

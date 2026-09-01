@@ -52,7 +52,7 @@ import { EXPIRED_TURN_FAILURE, TURN_START_TIMEOUT_MS } from "./scout/turns";
 
 const MAX_TASKS_PER_PRODUCT = 100;
 const MAX_ATTEMPTS_PER_TASK = 50;
-const MAX_TURNS_PER_ATTEMPT = 50;
+export const MAX_TURNS_PER_ATTEMPT = 50;
 const MAX_TASK_INSTRUCTION_LENGTH = 16_000;
 const MAX_THREAD_TITLE_LENGTH = 80;
 const MAX_BROWSER_SESSION_ID_LENGTH = 200;
@@ -63,6 +63,8 @@ const MAX_BROWSER_SESSIONS_PER_ATTEMPT = 50;
 const MAX_ATTEMPT_CONCLUSION_LENGTH = 500;
 const TASK_BROWSER_VIEWPORT = { width: 1_280, height: 800 } as const;
 const TASK_MODEL = DEFAULT_SCOUT_MODEL satisfies SelectableScoutModel;
+const HANDOFF_CONTINUATION_PREFIX =
+  "The operator completed the requested human-only browser step. Use this final browser snapshot as evidence, then resolve the Attempt without opening another browser session:";
 
 type DatabaseContext = Pick<QueryCtx, "db">;
 
@@ -113,6 +115,19 @@ function requiredInstruction(value: string) {
     throw new Error(`Task instruction must be ${MAX_TASK_INSTRUCTION_LENGTH} characters or fewer`);
   }
   return instruction;
+}
+
+export function handoffContinuationInstruction(value: string) {
+  const evidence = value.trim() || "No post-handoff browser evidence was available.";
+  const separator = "\n\n";
+  const availableCharacters =
+    MAX_TASK_INSTRUCTION_LENGTH - Array.from(HANDOFF_CONTINUATION_PREFIX).length - separator.length;
+  const characters = Array.from(evidence);
+  const boundedEvidence =
+    characters.length <= availableCharacters
+      ? evidence
+      : `${characters.slice(0, availableCharacters - 1).join("")}…`;
+  return requiredInstruction(`${HANDOFF_CONTINUATION_PREFIX}${separator}${boundedEvidence}`);
 }
 
 function titleFromInstruction(instruction: string) {
@@ -191,7 +206,6 @@ async function enqueueTurn(
 ) {
   const prompt = requiredInstruction(args.prompt);
   const now = Date.now();
-  await requireAvailableScout(ctx, args.scoutId, now);
   const saved = await scoutAgent.saveMessage(ctx, {
     threadId: args.threadId,
     userId: args.userId,
@@ -244,6 +258,29 @@ async function projectAttempt(ctx: DatabaseContext, attempt: Doc<"taskAttempts">
     turnCount: turns.length,
     browserSessionCount: sessions.length,
   };
+}
+
+async function requireNoActiveBrowserWork(ctx: DatabaseContext, attemptId: Id<"taskAttempts">) {
+  const sessions = await ctx.db
+    .query("taskBrowserSessions")
+    .withIndex("by_attempt_id_and_sequence", (index) => index.eq("attemptId", attemptId))
+    .take(MAX_BROWSER_SESSIONS_PER_ATTEMPT);
+  for (const session of sessions) {
+    if (session.lifecycle.kind === "active") {
+      throw new Error("Wait for the active browser session to finish");
+    }
+    const handoff = await ctx.db
+      .query("taskHumanHandoffs")
+      .withIndex("by_session_id", (index) => index.eq("sessionId", session._id))
+      .unique();
+    if (
+      handoff?.status === "available" ||
+      handoff?.status === "active" ||
+      handoff?.status === "continued"
+    ) {
+      throw new Error("Wait for the human handoff to finish");
+    }
+  }
 }
 
 export const listForProduct = query({
@@ -398,6 +435,7 @@ export const remove = mutation({
       if (turns.some((turn) => turn.state.kind === "pending")) {
         throw new Error("Wait for the active attempt to finish before deleting this task");
       }
+      await requireNoActiveBrowserWork(ctx, attempt._id);
       const sessions = await ctx.db
         .query("taskBrowserSessions")
         .withIndex("by_attempt_id_and_sequence", (index) => index.eq("attemptId", attempt._id))
@@ -498,6 +536,8 @@ export const continueAttempt = mutation({
     if (turns.length >= MAX_TURNS_PER_ATTEMPT) {
       throw new Error(`An attempt can have at most ${MAX_TURNS_PER_ATTEMPT} turns`);
     }
+    await requireNoActiveBrowserWork(ctx, attempt._id);
+    await requireAvailableScout(ctx, attempt.scoutId, Date.now());
     if (attempt.state.kind === "blocked" || attempt.state.kind === "abandoned") {
       await ctx.db.patch("taskAttempts", attempt._id, { state: { kind: "active" } });
     }
@@ -547,13 +587,12 @@ export const resumeHumanHandoff = internalMutation({
     if (turns.length >= MAX_TURNS_PER_ATTEMPT) {
       throw new Error(`An attempt can have at most ${MAX_TURNS_PER_ATTEMPT} turns`);
     }
-    const evidence = args.evidence.trim() || "No post-handoff browser evidence was available.";
     const continuationTurnId = await enqueueTurn(ctx, {
       threadId: attempt.threadId,
       userId: task.userId,
       scoutId: attempt.scoutId,
       mode: "handoff_continuation",
-      prompt: `The operator completed the requested human-only browser step. Use this final browser snapshot as evidence, then resolve the Attempt without opening another browser session:\n\n${evidence}`,
+      prompt: handoffContinuationInstruction(args.evidence),
     });
     await ctx.db.replace("taskHumanHandoffs", handoff._id, {
       ...handoffCommon(handoff),
@@ -583,19 +622,7 @@ export const abandonAttempt = mutation({
     if (turns.some((turn) => turn.state.kind === "pending")) {
       throw new Error("An attempt cannot be abandoned while a Turn is pending");
     }
-    const sessions = await ctx.db
-      .query("taskBrowserSessions")
-      .withIndex("by_attempt_id_and_sequence", (index) => index.eq("attemptId", attempt._id))
-      .take(MAX_BROWSER_SESSIONS_PER_ATTEMPT);
-    for (const session of sessions) {
-      const handoff = await ctx.db
-        .query("taskHumanHandoffs")
-        .withIndex("by_session_id", (index) => index.eq("sessionId", session._id))
-        .unique();
-      if (handoff?.status === "available" || handoff?.status === "active") {
-        throw new Error("An attempt cannot be abandoned while human help is pending");
-      }
-    }
+    await requireNoActiveBrowserWork(ctx, attempt._id);
     await ctx.db.patch("taskAttempts", attempt._id, {
       state: {
         kind: "abandoned",

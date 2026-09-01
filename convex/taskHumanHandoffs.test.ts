@@ -167,11 +167,8 @@ describe("task human handoffs", () => {
       promptMessageId: "prompt-1",
       usage: {},
     });
-    await expect(
-      backend.query(internal.taskHumanHandoffs.getStatus, {
-        handoffId: requested.handoffId,
-      }),
-    ).resolves.toBe("available");
+    const handoff = await backend.run(async (ctx) => await ctx.db.get(requested.handoffId));
+    expect(handoff?.status).toBe("available");
     const turn = await backend.run(async (ctx) => await ctx.db.get(turnId));
     expect(turn?.state.kind).toBe("completed");
   });
@@ -217,10 +214,37 @@ describe("task human handoffs", () => {
       promptMessageId: "prompt-1",
       failure: "generation failed",
     });
+    const handoff = await backend.run(async (ctx) => await ctx.db.get(requested.handoffId));
+    expect(handoff?.status).toBe("failed");
+  });
+
+  test("reserves a Turn for the post-handoff conclusion", async () => {
+    const { backend } = await setupContext();
+    await backend.run(async (ctx) => {
+      const scout = await ctx.db
+        .query("scouts")
+        .withIndex("by_slug", (index) => index.eq("slug", "conrad"))
+        .unique();
+      if (!scout) throw new Error("Scout not found");
+      for (let order = 1; order < 50; order += 1) {
+        await ctx.db.insert("scoutTurns", {
+          threadId: "thread-1",
+          order,
+          promptMessageId: `prompt-${order + 1}`,
+          scoutId: scout._id,
+          model: "qwen/qwen3.7-flash",
+          startedAt: order,
+          state: { kind: "completed", completedAt: order, usage: {} },
+        });
+      }
+    });
+
     await expect(
-      backend.query(internal.taskHumanHandoffs.getStatus, {
-        handoffId: requested.handoffId,
+      backend.mutation(internal.taskHumanHandoffs.request, {
+        promptMessageId: "prompt-1",
+        reason: "CAPTCHA",
+        accessTokenHash,
       }),
-    ).resolves.toBe("failed");
+    ).rejects.toThrow("no Turn available");
   });
 });

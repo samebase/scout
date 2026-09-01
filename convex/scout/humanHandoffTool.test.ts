@@ -44,7 +44,7 @@ describe("human handoff tool", () => {
     expect(email?.text).not.toContain("GitHub requires a CAPTCHA");
     expect(email?.text).not.toContain("attacker.test");
     expect(onWaiting).toHaveBeenCalledOnce();
-    expect(output).toMatchObject({ resumed: false, status: "waiting" });
+    expect(output).toMatchObject({ status: "waiting" });
     expect(JSON.stringify(output)).not.toContain(handoffUrl);
   });
 

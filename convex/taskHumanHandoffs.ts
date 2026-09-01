@@ -19,6 +19,7 @@ import {
   taskHumanHandoffStatusValidator,
 } from "./taskHumanHandoffsModel";
 import { taskHumanHandoffWorkflow } from "./taskHumanHandoffWorkflow";
+import { MAX_TURNS_PER_ATTEMPT } from "./tasks";
 
 export const HUMAN_HANDOFF_CLAIM_MS = 45 * 60 * 1_000;
 export const HUMAN_HANDOFF_ACTIVE_MS = 5 * 60 * 1_000;
@@ -102,9 +103,6 @@ async function handoffContext(ctx: Pick<QueryCtx, "db">, handoff: Doc<"taskHuman
     !attempt ||
     !task ||
     !turn ||
-    session.attemptId !== attempt._id ||
-    session.turnId !== turn._id ||
-    attempt.taskId !== task._id ||
     attempt.threadId !== turn.threadId ||
     attempt.scoutId !== turn.scoutId
   ) {
@@ -251,12 +249,7 @@ export const active = query({
       .query("taskHumanHandoffs")
       .withIndex("by_session_id", (index) => index.eq("sessionId", args.sessionId))
       .unique();
-    const now = Date.now();
-    if (
-      !handoff ||
-      (handoff.status !== "available" && handoff.status !== "active") ||
-      handoffDeadline(handoff) <= now
-    ) {
+    if (!handoff || (handoff.status !== "available" && handoff.status !== "active")) {
       return null;
     }
     const context = await handoffContext(ctx, handoff);
@@ -297,6 +290,13 @@ export const request = internalMutation({
       .unique();
     if (!attempt || attempt.scoutId !== turn.scoutId || attempt.state.kind !== "active") {
       throw new Error("Active task attempt not found");
+    }
+    const turns = await ctx.db
+      .query("scoutTurns")
+      .withIndex("by_thread_id_and_order", (index) => index.eq("threadId", attempt.threadId))
+      .take(MAX_TURNS_PER_ATTEMPT);
+    if (turns.length >= MAX_TURNS_PER_ATTEMPT) {
+      throw new Error("The Task Attempt has no Turn available for handoff continuation");
     }
     const task = await ctx.db.get("productTasks", attempt.taskId);
     const session = await ctx.db
@@ -535,15 +535,6 @@ export const failDelivery = internalMutation({
     });
     await signalTaskHumanHandoffOutcome(ctx, handoff, "failed");
     return "failed";
-  },
-});
-
-export const getStatus = internalQuery({
-  args: { handoffId: v.id("taskHumanHandoffs") },
-  returns: taskHumanHandoffStatusValidator,
-  handler: async (ctx, args) => {
-    const handoff = await ctx.db.get("taskHumanHandoffs", args.handoffId);
-    return handoff?.status ?? "missing";
   },
 });
 
