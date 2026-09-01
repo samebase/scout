@@ -23,6 +23,15 @@ type RunOptions = {
 
 type RunConvex = (args: string[], options?: RunOptions) => Promise<RunResult>;
 
+type ConvexDeploymentTarget =
+  | {
+      kind: "selected";
+    }
+  | {
+      kind: "preview";
+      previewName: string;
+    };
+
 export function buildConvexCliCommand(args: string[], options: RunOptions = {}) {
   const stdio: "inherit" | ["ignore", "pipe", "pipe"] =
     options.stdio === "pipe" ? ["ignore", "pipe", "pipe"] : "inherit";
@@ -67,8 +76,24 @@ function runConvexCli(args: string[], options: RunOptions = {}) {
   });
 }
 
-async function readConvexEnv(name: string, env: NodeJS.ProcessEnv, runConvex: RunConvex) {
-  const result = await runConvex(["env", "get", name], {
+function deploymentSelectorArgs(target: ConvexDeploymentTarget) {
+  switch (target.kind) {
+    case "selected":
+      return [];
+    case "preview":
+      return ["--preview-name", target.previewName];
+    default:
+      return target satisfies never;
+  }
+}
+
+async function readConvexEnv(
+  name: string,
+  target: ConvexDeploymentTarget,
+  env: NodeJS.ProcessEnv,
+  runConvex: RunConvex,
+) {
+  const result = await runConvex(["env", "get", name, ...deploymentSelectorArgs(target)], {
     allowFailure: true,
     env,
     stdio: "pipe",
@@ -100,16 +125,21 @@ function generateAuthKeys() {
 async function setConvexEnv(
   name: string,
   value: string,
+  target: ConvexDeploymentTarget,
   env: NodeJS.ProcessEnv,
   runConvex: RunConvex,
 ) {
-  await runConvex(["env", "set", "--", name, value], {
+  await runConvex(["env", "set", ...deploymentSelectorArgs(target), "--", name, value], {
     env,
     sensitive: true,
   });
 }
 
-async function seedLocalWorktreePasswordAccount(env: NodeJS.ProcessEnv, runConvex: RunConvex) {
+async function seedLocalWorktreePasswordAccount(
+  env: NodeJS.ProcessEnv,
+  target: ConvexDeploymentTarget,
+  runConvex: RunConvex,
+) {
   if (env["SCOUT_LOCAL_WORKTREE_AUTH"] !== "true") {
     return;
   }
@@ -120,19 +150,42 @@ async function seedLocalWorktreePasswordAccount(env: NodeJS.ProcessEnv, runConve
     throw new Error("The local worktree account credentials are missing.");
   }
 
-  await setConvexEnv("DEV_SEED_AUTH_ENABLED", "true", env, runConvex);
-  await setConvexEnv("DEV_SEED_AUTH_EMAIL", email, env, runConvex);
-  await setConvexEnv("DEV_SEED_AUTH_PASSWORD", password, env, runConvex);
-  await runConvex(["run", "devAuth:seedPasswordAccount", "{}"], { env });
+  await setConvexEnv("DEV_SEED_AUTH_ENABLED", "true", target, env, runConvex);
+  await setConvexEnv("DEV_SEED_AUTH_EMAIL", email, target, env, runConvex);
+  await setConvexEnv("DEV_SEED_AUTH_PASSWORD", password, target, env, runConvex);
+  await runConvex(
+    ["run", "devAuth:seedPasswordAccount", "{}", ...deploymentSelectorArgs(target)],
+    { env },
+  );
   console.log(`Local worktree account ready: ${email}`);
 }
 
-export async function ensureConvexAuth(
-  env: NodeJS.ProcessEnv,
-  runConvex: RunConvex = runConvexCli,
-) {
-  const existingPrivateKey = await readConvexEnv("JWT_PRIVATE_KEY", env, runConvex);
-  const existingJwks = await readConvexEnv("JWKS", env, runConvex);
+export function parseConvexDeploymentTarget(args: readonly string[]): ConvexDeploymentTarget {
+  if (args.length === 0) {
+    return { kind: "selected" };
+  }
+
+  const [flag, previewName, ...extraArgs] = args;
+  if (flag !== "--preview-name" || !previewName || extraArgs.length > 0) {
+    throw new Error("Usage: node ./scripts/ensure-convex-auth.ts [--preview-name <preview-name>]");
+  }
+
+  return { kind: "preview", previewName };
+}
+
+export async function ensureConvexAuth(args: {
+  env: NodeJS.ProcessEnv;
+  runConvex?: RunConvex;
+  target: ConvexDeploymentTarget;
+}) {
+  const runConvex = args.runConvex ?? runConvexCli;
+  const existingPrivateKey = await readConvexEnv(
+    "JWT_PRIVATE_KEY",
+    args.target,
+    args.env,
+    runConvex,
+  );
+  const existingJwks = await readConvexEnv("JWKS", args.target, args.env, runConvex);
 
   if (existingPrivateKey && existingJwks) {
     console.log("Convex Auth keys already configured.");
@@ -140,15 +193,18 @@ export async function ensureConvexAuth(
     throw new Error("JWT_PRIVATE_KEY and JWKS must be configured together.");
   } else {
     const keys = generateAuthKeys();
-    await setConvexEnv("JWT_PRIVATE_KEY", keys.JWT_PRIVATE_KEY, env, runConvex);
-    await setConvexEnv("JWKS", keys.JWKS, env, runConvex);
+    await setConvexEnv("JWT_PRIVATE_KEY", keys.JWT_PRIVATE_KEY, args.target, args.env, runConvex);
+    await setConvexEnv("JWKS", keys.JWKS, args.target, args.env, runConvex);
     console.log("Convex Auth keys configured.");
   }
 
-  await seedLocalWorktreePasswordAccount(env, runConvex);
+  await seedLocalWorktreePasswordAccount(args.env, args.target, runConvex);
 }
 
 const entrypoint = process.argv[1];
 if (entrypoint && import.meta.url === pathToFileURL(entrypoint).href) {
-  await ensureConvexAuth(process.env);
+  await ensureConvexAuth({
+    env: process.env,
+    target: parseConvexDeploymentTarget(process.argv.slice(2)),
+  });
 }

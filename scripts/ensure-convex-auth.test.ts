@@ -2,7 +2,11 @@ import process from "node:process";
 
 import { describe, expect, it } from "vite-plus/test";
 
-import { buildConvexCliCommand, ensureConvexAuth } from "./ensure-convex-auth.ts";
+import {
+  buildConvexCliCommand,
+  ensureConvexAuth,
+  parseConvexDeploymentTarget,
+} from "./ensure-convex-auth.ts";
 
 describe("ensure-convex-auth", () => {
   it("runs the Convex JavaScript entrypoint through Node without a shell", () => {
@@ -20,9 +24,13 @@ describe("ensure-convex-auth", () => {
   it("sets both auth keys when direct Convex reads return empty values", async () => {
     const calls: string[][] = [];
 
-    await ensureConvexAuth({}, async (args) => {
-      calls.push(args);
-      return { code: 0, stdout: "", stderr: "" };
+    await ensureConvexAuth({
+      env: {},
+      target: { kind: "selected" },
+      runConvex: async (args) => {
+        calls.push(args);
+        return { code: 0, stdout: "", stderr: "" };
+      },
     });
 
     expect(calls.slice(0, 2)).toEqual([
@@ -36,17 +44,17 @@ describe("ensure-convex-auth", () => {
     expect(calls[2]?.[4]).toBeTruthy();
     expect(calls[3]?.[4]).toBeTruthy();
   });
-
   it("seeds the password account only for local worktree development", async () => {
     const calls: string[][] = [];
 
-    await ensureConvexAuth(
-      {
+    await ensureConvexAuth({
+      env: {
         SCOUT_LOCAL_WORKTREE_AUTH: "true",
         VITE_LOCAL_WORKTREE_PASSWORD_EMAIL: "nicu.dev@gmail.com",
         VITE_LOCAL_WORKTREE_PASSWORD_VALUE: "pass1234",
       },
-      async (args) => {
+      target: { kind: "selected" },
+      runConvex: async (args) => {
         calls.push(args);
         return {
           code: 0,
@@ -54,7 +62,7 @@ describe("ensure-convex-auth", () => {
           stderr: "",
         };
       },
-    );
+    });
 
     expect(calls).toEqual([
       ["env", "get", "JWT_PRIVATE_KEY"],
@@ -64,5 +72,45 @@ describe("ensure-convex-auth", () => {
       ["env", "set", "--", "DEV_SEED_AUTH_PASSWORD", "pass1234"],
       ["run", "devAuth:seedPasswordAccount", "{}"],
     ]);
+  });
+
+  it("targets every auth operation at the named Preview", async () => {
+    const calls: string[][] = [];
+
+    await ensureConvexAuth({
+      env: {},
+      target: parseConvexDeploymentTarget(["--preview-name", "feature-branch"]),
+      runConvex: async (args) => {
+        calls.push(args);
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    });
+
+    expect(calls.slice(0, 2)).toEqual([
+      ["env", "get", "JWT_PRIVATE_KEY", "--preview-name", "feature-branch"],
+      ["env", "get", "JWKS", "--preview-name", "feature-branch"],
+    ]);
+    expect(calls[2]?.slice(0, 6)).toEqual([
+      "env",
+      "set",
+      "--preview-name",
+      "feature-branch",
+      "--",
+      "JWT_PRIVATE_KEY",
+    ]);
+    expect(calls[3]?.slice(0, 6)).toEqual([
+      "env",
+      "set",
+      "--preview-name",
+      "feature-branch",
+      "--",
+      "JWKS",
+    ]);
+    expect(calls[2]?.[6]).toBeTruthy();
+    expect(calls[3]?.[6]).toBeTruthy();
+  });
+
+  it("rejects unsupported command arguments", () => {
+    expect(() => parseConvexDeploymentTarget(["--prod"])).toThrow("Usage:");
   });
 });

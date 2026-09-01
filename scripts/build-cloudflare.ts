@@ -1,152 +1,138 @@
 /// <reference types="node" />
 import { spawn } from "node:child_process";
 import process from "node:process";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
-const CONVEX_DEPLOY_KEY = "CONVEX_DEPLOY_KEY";
-const PREVIEW_CONVEX_DEPLOY_KEY = "PREVIEW_CONVEX_DEPLOY_KEY";
-const WORKERS_BUILD_COMMAND = "vp run build:app && node ./scripts/verify-current-branch-head.ts";
+const vitePlusEntrypoint = fileURLToPath(import.meta.resolve("vite-plus/bin"));
+const ensureConvexAuthEntrypoint = fileURLToPath(
+  new URL("./ensure-convex-auth.ts", import.meta.url),
+);
+const WORKERS_BUILD_COMMAND = "pnpm run build:app && node ./scripts/verify-current-branch-head.ts";
 
-type DeployKeyName = typeof CONVEX_DEPLOY_KEY | typeof PREVIEW_CONVEX_DEPLOY_KEY;
-type ConvexDeployPlan =
+type CloudflareBuildPlan =
   | {
-      kind: "deploy";
-      deployKey: string;
-      deployKeyName: typeof CONVEX_DEPLOY_KEY;
-      args: readonly string[];
+      kind: "app";
+      buildArgs: readonly string[];
     }
   | {
-      kind: "previewDeploy";
-      deployKey: string;
-      deployKeyName: typeof PREVIEW_CONVEX_DEPLOY_KEY;
-      args: readonly string[];
+      kind: "production";
+      authArgs: readonly string[];
+      deployArgs: readonly string[];
+    }
+  | {
+      kind: "preview";
+      authArgs: readonly string[];
+      deployArgs: readonly string[];
+      previewName: string;
       seedArgs: readonly string[];
-    }
-  | {
-      kind: "frontendOnly";
     };
 
-function run(command: string, args: readonly string[], env?: NodeJS.ProcessEnv) {
+type RunNode = (
+  entrypoint: string,
+  args: readonly string[],
+  env: NodeJS.ProcessEnv,
+) => Promise<void>;
+
+function runNode(entrypoint: string, args: readonly string[], env: NodeJS.ProcessEnv) {
   return new Promise<void>((resolve, reject) => {
-    const child = spawn(command, [...args], {
+    const child = spawn(process.execPath, [entrypoint, ...args], {
       env,
-      shell: process.platform === "win32",
       stdio: "inherit",
     });
 
     child.on("error", reject);
-    child.on("close", (code) => {
+    child.on("close", (code, signal) => {
+      if (signal) {
+        reject(new Error(`${entrypoint} exited with signal ${signal}`));
+        return;
+      }
       if (code === 0) {
         resolve();
         return;
       }
 
-      reject(new Error(`${command} ${args.join(" ")} failed with exit code ${code ?? 1}`));
+      reject(new Error(`${entrypoint} failed with exit code ${code ?? 1}`));
     });
   });
 }
 
-function isEnabled(value: string | undefined) {
-  return value === "1" || value === "true";
-}
-
 function isWorkersBuild(env: NodeJS.ProcessEnv) {
-  return isEnabled(env["WORKERS_CI"]);
+  return env["WORKERS_CI"] === "1" || env["WORKERS_CI"] === "true";
 }
 
-function readDeployKey(args: {
-  env: NodeJS.ProcessEnv;
-  deployKeyName: DeployKeyName;
-  branch: string;
-}) {
-  const deployKey = args.env[args.deployKeyName];
-  if (deployKey) {
-    return deployKey;
+function readWorkersBuildBranch(env: NodeJS.ProcessEnv) {
+  const branch = env["WORKERS_CI_BRANCH"];
+  if (!branch) {
+    throw new Error("Workers Builds must provide WORKERS_CI_BRANCH before Convex deploys.");
+  }
+  return branch;
+}
+
+function requireConvexDeployKey(env: NodeJS.ProcessEnv, branch: string) {
+  if (env["CONVEX_DEPLOY_KEY"]) {
+    return;
   }
 
-  if (args.deployKeyName === CONVEX_DEPLOY_KEY) {
-    throw new Error(
-      `Set ${CONVEX_DEPLOY_KEY} in Cloudflare Workers build variables for ${args.branch}. Use a Convex production deploy key with exactly deployment:deploy, deployment:env:view, deployment:env:write, and deployment:data:view.`,
-    );
-  }
-
+  const keyKind =
+    branch === "main"
+      ? "production deploy key with deployment:deploy, deployment:env:view, deployment:env:write, and deployment:data:view permissions"
+      : "project Preview deploy key";
   throw new Error(
-    `Set ${PREVIEW_CONVEX_DEPLOY_KEY} in Cloudflare Workers build variables for ${args.branch}. Use a Convex project Preview deploy key.`,
+    `Set CONVEX_DEPLOY_KEY in the Cloudflare build settings for ${branch}. Use a Convex ${keyKind}.`,
   );
 }
 
-async function ensureConvexAuth(env: NodeJS.ProcessEnv) {
-  await run("node", ["./scripts/ensure-convex-auth.ts"], env);
-}
-
-export function selectConvexDeployPlan(env: NodeJS.ProcessEnv): ConvexDeployPlan {
-  const branch = env["WORKERS_CI_BRANCH"];
-
-  if (!branch) {
-    if (isWorkersBuild(env)) {
-      throw new Error(
-        "Set WORKERS_CI_BRANCH in Cloudflare Workers build variables to prevent unintended production Convex deploys.",
-      );
-    }
-
-    if (env[CONVEX_DEPLOY_KEY] || env[PREVIEW_CONVEX_DEPLOY_KEY]) {
-      throw new Error(
-        `Set WORKERS_CI_BRANCH to choose ${CONVEX_DEPLOY_KEY} or ${PREVIEW_CONVEX_DEPLOY_KEY}, or unset both keys for a frontend-only local build.`,
-      );
-    }
-
-    return { kind: "frontendOnly" };
+export function selectCloudflareBuildPlan(env: NodeJS.ProcessEnv): CloudflareBuildPlan {
+  if (!isWorkersBuild(env)) {
+    return {
+      kind: "app",
+      buildArgs: ["run", "build:app"],
+    };
   }
 
-  if (branch !== "main") {
+  const branch = readWorkersBuildBranch(env);
+  requireConvexDeployKey(env, branch);
+
+  if (branch === "main") {
     return {
-      kind: "previewDeploy",
-      deployKeyName: PREVIEW_CONVEX_DEPLOY_KEY,
-      deployKey: readDeployKey({
-        env,
-        branch,
-        deployKeyName: PREVIEW_CONVEX_DEPLOY_KEY,
-      }),
-      args: ["exec", "convex", "deploy", "--preview-name", branch, "--cmd", WORKERS_BUILD_COMMAND],
-      seedArgs: ["exec", "convex", "run", "devAuth:seedPasswordAccount", "--preview-name", branch],
+      kind: "production",
+      deployArgs: ["exec", "convex", "deploy", "--cmd", WORKERS_BUILD_COMMAND],
+      authArgs: [],
     };
   }
 
   return {
-    kind: "deploy",
-    deployKeyName: CONVEX_DEPLOY_KEY,
-    deployKey: readDeployKey({
-      env,
+    kind: "preview",
+    previewName: branch,
+    deployArgs: [
+      "exec",
+      "convex",
+      "deploy",
+      "--preview-name",
       branch,
-      deployKeyName: CONVEX_DEPLOY_KEY,
-    }),
-    args: ["exec", "convex", "deploy", "--cmd", WORKERS_BUILD_COMMAND],
+      "--cmd",
+      WORKERS_BUILD_COMMAND,
+    ],
+    authArgs: ["--preview-name", branch],
+    seedArgs: ["exec", "convex", "run", "devAuth:seedPasswordAccount", "--preview-name", branch],
   };
 }
 
 export async function main(
   env: NodeJS.ProcessEnv = process.env,
-  runCommand = run,
-  ensureAuth = ensureConvexAuth,
+  runNodeCommand: RunNode = runNode,
 ) {
-  const plan = selectConvexDeployPlan(env);
+  const plan = selectCloudflareBuildPlan(env);
 
-  if (plan.kind === "frontendOnly") {
-    console.warn(
-      `${CONVEX_DEPLOY_KEY} and ${PREVIEW_CONVEX_DEPLOY_KEY} are not set; building static assets without deploying Convex.`,
-    );
-    await runCommand("vp", ["run", "build:app"]);
+  if (plan.kind === "app") {
+    await runNodeCommand(vitePlusEntrypoint, plan.buildArgs, env);
     return;
   }
 
-  const convexEnv = {
-    ...env,
-    CONVEX_DEPLOY_KEY: plan.deployKey,
-  };
-  await runCommand("vp", plan.args, convexEnv);
-  await ensureAuth(convexEnv);
-  if (plan.kind === "previewDeploy") {
-    await runCommand("vp", plan.seedArgs, convexEnv);
+  await runNodeCommand(vitePlusEntrypoint, plan.deployArgs, env);
+  await runNodeCommand(ensureConvexAuthEntrypoint, plan.authArgs, env);
+  if (plan.kind === "preview") {
+    await runNodeCommand(vitePlusEntrypoint, plan.seedArgs, env);
   }
 }
 

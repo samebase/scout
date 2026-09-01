@@ -876,7 +876,6 @@ from successful API requests, and ambiguous closes are reconciled through the SD
 local Convex development push, all 231 tests, and the complete Cloudflare build passed
 (`convex/scout/lib/firecrawlReplay.ts`, `convex/taskReplay.ts`,
 `src/components/task-replay.tsx`).
-
 ### 2026-09-02 - d80c3e9
 
 Replaced the shell-based browser layer with Playwright and verified that Conrad can complete Samebase
@@ -996,10 +995,19 @@ Inbox reads use minimal inputs and omit empty pagination values (`convex/scout/b
 Resumed browsers restore password masking; password edits wait for browser closure (`convex/scout/accountTools.ts`, `convex/scout/serviceAccounts.ts`).
 Account recording explains mismatches between visible names and saved login identifiers (`convex/scout/serviceAccounts.ts`).
 
-### 2026-09-05 - working tree
+### 2026-09-05 - ffbab14 - v174
 
 Added optional games, research, and email guides that Scout selects through `load_skills`.
 Active guidance stays separate from conversation summaries and survives compaction and later turns,
 with follow-ups retaining their guides automatically. Selections and full instructions are visible
 in Model calls (`convex/scout/skills.ts`,
 `convex/scout/chats.ts`, `convex/scout/generation.ts`).
+
+### 2026-09-05 - working tree
+
+Moved Cloudflare branch deploys to Worker Previews and one trigger-scoped `CONVEX_DEPLOY_KEY` name.
+Preview Convex deploys, Auth variables, and seed data now use the same branch name. The stable
+`build`, `deploy`, and `deploy:preview` commands remain the Cloudflare interface, while production
+deploys still upload the built frontend to Convex Static Hosting after Wrangler succeeds
+(`package.json`, `scripts/build-cloudflare.ts`, `scripts/deploy-production.ts`,
+`scripts/deploy-worker-preview.ts`, `scripts/ensure-convex-auth.ts`).
