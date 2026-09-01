@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-01T15:26:53Z
+- **Last updated:** 2026-09-01T17:49:08Z
 
 ## Log
 
@@ -842,7 +842,7 @@ handoff claim, Continue, browser close, and a second Turn without a second brows
 judge request then recorded an upstream Convex AI Gateway HTTP 502 after three retries rather than
 misreporting success.
 
-### 2026-09-01 - working tree
+### 2026-09-01 - f0d6bb2 - v147
 
 Made every Scout service account declare how it can be used: either an encrypted managed password
 or OAuth through one exact service-account record belonging to the same Scout. Account recording
@@ -858,3 +858,12 @@ paths. The Scout detail page now shows each direct password or the concrete prov
 for OAuth. The full project check passed with all 250 tests, and the Convex development push plus
 local UI verification succeeded
 (`convex/scout/serviceAccountCredentials.ts`, `src/routes/scouts.$slug.tsx`).
+
+### 2026-09-01 - working tree
+
+Moved Cloudflare branch deploys to Worker Previews and one trigger-scoped `CONVEX_DEPLOY_KEY` name.
+Preview Convex deploys, Auth variables, and seed data now use the same branch name. The stable
+`build`, `deploy`, and `deploy:preview` commands remain the Cloudflare interface, while production
+deploys still upload the built frontend to Convex Static Hosting after Wrangler succeeds
+(`package.json`, `scripts/build-cloudflare.ts`, `scripts/deploy-production.ts`,
+`scripts/deploy-worker-preview.ts`, `scripts/ensure-convex-auth.ts`).
