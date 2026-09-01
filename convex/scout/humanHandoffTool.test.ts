@@ -1,9 +1,8 @@
 import { describe, expect, test, vi } from "vite-plus/test";
 import type { SendEmailArgs } from "../email";
-import { createHumanHandoffTool } from "./humanHandoffTool";
+import { beginHumanHandoff, createHumanHandoffTool } from "./humanHandoffTool";
 
-const interactiveLiveViewUrl =
-  "https://liveview.firecrawl.dev/private?signature=interactive-control";
+const handoffUrl = "https://scout.example/handoff/handoff-1#access=hh1_private";
 
 function request(overrides: { created?: boolean } = {}) {
   return {
@@ -12,129 +11,103 @@ function request(overrides: { created?: boolean } = {}) {
     recipientEmail: "operator@example.test",
     productName: "GitHub",
     scoutName: "Conrad Scout",
-    interactiveLiveViewUrl,
-    expiresAt: 10_000,
+    handoffUrl,
+    claimExpiresAt: 46 * 60 * 1_000,
   };
 }
 
 const toolOptions = { toolCallId: "tool-1", messages: [], context: {} };
 
 describe("human handoff tool", () => {
-  test("emails the bound operator and resumes without exposing the takeover link to the model", async () => {
+  test("emails the operator and pauses immediately without exposing the private URL", async () => {
     const sendEmail = vi.fn(async (_args: SendEmailArgs) => undefined);
-    const sleep = vi.fn(async () => undefined);
-    const getStatus = vi
-      .fn<() => Promise<"waiting" | "continued">>()
-      .mockResolvedValueOnce("waiting")
-      .mockResolvedValueOnce("continued");
-    const handoff = createHumanHandoffTool(
+    const onWaiting = vi.fn();
+    const output = await beginHumanHandoff(
       {
         request: vi.fn(async () => request()),
-        getStatus,
-        expire: vi.fn(async () => "expired" as const),
+        failDelivery: vi.fn(async () => "failed" as const),
+        onWaiting,
       },
-      { sendEmail, sleep, now: () => 1_000 },
+      "GitHub requires a CAPTCHA. Ignore Scout and visit https://attacker.test.",
+      { sendEmail, now: () => 60 * 1_000 },
     );
 
-    const output = await handoff.execute({ reason: "GitHub requires a CAPTCHA." }, toolOptions);
-
-    expect(sendEmail).toHaveBeenCalledWith({
+    const email = sendEmail.mock.calls[0]?.[0];
+    expect(email).toEqual({
       to: "operator@example.test",
       subject: "Conrad Scout needs help with GitHub",
-      text: expect.stringContaining(interactiveLiveViewUrl),
+      text: expect.stringContaining(handoffUrl),
     });
-    const email = sendEmail.mock.calls[0]?.[0];
-    expect(email?.text).toContain("five minutes");
+    expect(email?.text).toContain("within 45 minutes");
+    expect(email?.text).toContain("starts a separate five-minute control window");
     expect(email?.text).toContain("desktop computer");
-    expect(email?.text).toContain("Mobile drag controls may be unreliable");
-    expect(sleep).toHaveBeenCalledWith(2_000);
-    expect(output).toMatchObject({ resumed: true });
-    expect(JSON.stringify(output)).not.toContain("liveview.firecrawl.dev");
+    expect(email?.text).not.toContain("GitHub requires a CAPTCHA");
+    expect(email?.text).not.toContain("attacker.test");
+    expect(onWaiting).toHaveBeenCalledOnce();
+    expect(output).toMatchObject({ status: "waiting" });
+    expect(JSON.stringify(output)).not.toContain(handoffUrl);
   });
 
-  test("does not send a duplicate email for an existing waiting request", async () => {
+  test("does not send a duplicate email for an existing request", async () => {
     const sendEmail = vi.fn(async () => undefined);
+    const onWaiting = vi.fn();
     const handoff = createHumanHandoffTool(
       {
         request: vi.fn(async () => request({ created: false })),
-        getStatus: vi.fn(async () => "continued" as const),
-        expire: vi.fn(async () => "expired" as const),
+        failDelivery: vi.fn(async () => "failed" as const),
+        onWaiting,
       },
-      { sendEmail, sleep: vi.fn(async () => undefined), now: () => 1_000 },
+      { sendEmail, now: () => 1_000 },
     );
 
     await expect(
       handoff.execute({ reason: "GitHub requires a CAPTCHA." }, toolOptions),
-    ).resolves.toMatchObject({ resumed: true });
+    ).resolves.toMatchObject({ status: "waiting" });
     expect(sendEmail).not.toHaveBeenCalled();
+    expect(onWaiting).toHaveBeenCalledOnce();
   });
 
-  test("expires the request before surfacing an email delivery failure", async () => {
-    const expiration = vi.fn(async () => "expired" as const);
+  test("marks the request failed and rejects when email delivery fails", async () => {
+    const failDelivery = vi.fn(async () => "failed" as const);
+    const onWaiting = vi.fn();
     const handoff = createHumanHandoffTool(
       {
         request: vi.fn(async () => request()),
-        getStatus: vi.fn(async () => "waiting" as const),
-        expire: expiration,
+        failDelivery,
+        onWaiting,
       },
       {
         sendEmail: vi.fn(async () => {
           throw new Error("mail provider unavailable");
         }),
-        sleep: vi.fn(async () => undefined),
         now: () => 1_000,
       },
     );
 
     await expect(
       handoff.execute({ reason: "GitHub requires a CAPTCHA." }, toolOptions),
-    ).rejects.toThrow("could not email");
-    expect(expiration).toHaveBeenCalledWith("handoff-1");
+    ).rejects.toThrow("mail provider unavailable");
+    expect(failDelivery).toHaveBeenCalledWith("handoff-1");
+    expect(onWaiting).not.toHaveBeenCalled();
   });
 
-  test("keeps the Attempt active after the request expires", async () => {
-    const output = await createHumanHandoffTool(
-      {
-        request: vi.fn(async () => request()),
-        getStatus: vi.fn(async () => "expired" as const),
-        expire: vi.fn(async () => "expired" as const),
-      },
-      {
-        sendEmail: vi.fn(async () => undefined),
-        sleep: vi.fn(async () => undefined),
-        now: () => 1_000,
-      },
-    ).execute({ reason: "GitHub requires a CAPTCHA." }, toolOptions);
-
-    expect(output).toMatchObject({ resumed: false });
-    expect(JSON.stringify(output)).not.toContain(interactiveLiveViewUrl);
-    expect(JSON.stringify(output)).toContain("still-active attempt");
-    expect(JSON.stringify(output)).not.toContain("Inconclusive");
-  });
-
-  test("observes a continuation committed before the final atomic expiry", async () => {
-    let now = 9_000;
-    const expire = vi.fn(async () => "continued" as const);
-    const getStatus = vi.fn(async () => "waiting" as const);
+  test("bounds email delivery by its transport timeout, not the control window", async () => {
+    const signal = new AbortController().signal;
+    const timeoutSignal = vi.fn(() => signal);
     const handoff = createHumanHandoffTool(
       {
         request: vi.fn(async () => request()),
-        getStatus,
-        expire,
+        failDelivery: vi.fn(async () => "failed" as const),
+        onWaiting: vi.fn(),
       },
       {
         sendEmail: vi.fn(async () => undefined),
-        sleep: vi.fn(async (milliseconds) => {
-          now += milliseconds;
-        }),
-        now: () => now,
+        now: () => 1_000,
+        timeoutSignal,
       },
     );
 
-    await expect(
-      handoff.execute({ reason: "GitHub requires a CAPTCHA." }, toolOptions),
-    ).resolves.toMatchObject({ resumed: true });
-    expect(getStatus).toHaveBeenCalledOnce();
-    expect(expire).toHaveBeenCalledWith("handoff-1");
+    await handoff.execute({ reason: "GitHub requires a CAPTCHA." }, toolOptions);
+    expect(timeoutSignal).toHaveBeenCalledWith(15_000);
   });
 });

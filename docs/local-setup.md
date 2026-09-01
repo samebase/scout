@@ -41,6 +41,13 @@ local backend.
 
 Open the local URL printed by Vite.
 
+## Public handoff links
+
+Human-help emails reuse Convex Auth's `SITE_URL` as the canonical app origin. Local development
+normally sets it to `http://localhost:5173`, so emailed handoff links work when opened on the same
+computer. To open them from another device, point `SITE_URL` at an HTTPS preview deployment or
+tunnel that serves this frontend and connects to the same Convex deployment.
+
 ## Configure managed credentials
 
 Managed service-account registration requires one 32-byte master key in the Convex deployment.

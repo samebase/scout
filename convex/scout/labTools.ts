@@ -21,6 +21,7 @@ const MAX_CSS_SELECTOR_LENGTH = 1_000;
 const MAX_BROWSER_CLOSE_ATTEMPTS = 2;
 const SNAPSHOT_FAILED_AFTER_MUTATION = "__SCOUT_SNAPSHOT_FAILED_AFTER_MUTATION__";
 const SNAPSHOT_FAILED_AFTER_MUTATION_EXIT_CODE = 86;
+const POSITIVE_DECIMAL_INTEGER_PATTERN = /^[1-9]\d*$/;
 
 const agentMailToolNames = ["list_messages", "search_messages", "get_thread"] as const;
 
@@ -81,6 +82,27 @@ function boundedText(value: string, label: string, maxLength = MAX_TOOL_TEXT_LEN
     throw new Error(`${label} must be ${maxLength} characters or fewer`);
   }
   return text;
+}
+
+function modelPositiveInteger(maximum: number) {
+  return z.union([
+    z.number().int().min(1).max(maximum),
+    z
+      .string()
+      .max(String(maximum).length)
+      .regex(POSITIVE_DECIMAL_INTEGER_PATTERN)
+      .refine((value) => Number(value) <= maximum, {
+        message: `Expected an integer between 1 and ${maximum}`,
+      }),
+  ]);
+}
+
+function numericModelValue(value: number | string) {
+  return typeof value === "number" ? value : Number(value);
+}
+
+function normalizeMessageLimit<T extends { limit?: number | string | undefined }>(input: T) {
+  return input.limit === undefined ? input : { ...input, limit: numericModelValue(input.limit) };
 }
 
 function elementRef(value: string) {
@@ -275,7 +297,7 @@ function convertAgentMailOutput(
 }
 
 const messageFilters = {
-  limit: z.number().int().min(1).max(100).optional(),
+  limit: modelPositiveInteger(100).optional(),
   pageToken: z.string().optional(),
   before: z.string().optional(),
   after: z.string().optional(),
@@ -302,7 +324,13 @@ export function selectAgentMailTools(tools: ToolSet, inboxId: string) {
         includeTrash: z.boolean().optional(),
       }),
       execute: async (input, options) =>
-        await executeAgentMailTool(tools, "list_messages", inboxId, input, options),
+        await executeAgentMailTool(
+          tools,
+          "list_messages",
+          inboxId,
+          normalizeMessageLimit(input),
+          options,
+        ),
       toModelOutput: async (options) =>
         await convertAgentMailOutput(tools, "list_messages", options),
     }),
@@ -314,7 +342,13 @@ export function selectAgentMailTools(tools: ToolSet, inboxId: string) {
         q: z.string().min(1).max(MAX_TOOL_TEXT_LENGTH),
       }),
       execute: async (input, options) =>
-        await executeAgentMailTool(tools, "search_messages", inboxId, input, options),
+        await executeAgentMailTool(
+          tools,
+          "search_messages",
+          inboxId,
+          normalizeMessageLimit(input),
+          options,
+        ),
       toModelOutput: async (options) =>
         await convertAgentMailOutput(tools, "search_messages", options),
     }),
@@ -841,7 +875,7 @@ export function createLabBrowserHarness(
         }),
         z.object({
           kind: z.literal("milliseconds"),
-          duration: z.number().int().min(1).max(10_000),
+          duration: modelPositiveInteger(10_000),
         }),
       ]),
       execute: async (input) => {
@@ -851,7 +885,7 @@ export function createLabBrowserHarness(
           case "load":
             return await actions.waitForLoad(input.state);
           case "milliseconds":
-            return await actions.waitForMilliseconds(input.duration);
+            return await actions.waitForMilliseconds(numericModelValue(input.duration));
         }
       },
     }),

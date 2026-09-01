@@ -21,6 +21,12 @@ import {
   taskBrowserViewportValidator,
 } from "./taskBrowserModel";
 import {
+  failTaskHumanHandoffForSession,
+  failTaskHumanHandoffForTurn,
+  handoffClaim,
+  handoffCommon,
+} from "./taskHumanHandoffsModel";
+import {
   taskBrowserProfileSelectionValidator,
   taskBrowserProfileValidator,
 } from "./taskAttemptModel";
@@ -46,7 +52,7 @@ import { EXPIRED_TURN_FAILURE, TURN_START_TIMEOUT_MS } from "./scout/turns";
 
 const MAX_TASKS_PER_PRODUCT = 100;
 const MAX_ATTEMPTS_PER_TASK = 50;
-const MAX_TURNS_PER_ATTEMPT = 50;
+export const MAX_TURNS_PER_ATTEMPT = 50;
 const MAX_TASK_INSTRUCTION_LENGTH = 16_000;
 const MAX_THREAD_TITLE_LENGTH = 80;
 const MAX_BROWSER_SESSION_ID_LENGTH = 200;
@@ -57,6 +63,8 @@ const MAX_BROWSER_SESSIONS_PER_ATTEMPT = 50;
 const MAX_ATTEMPT_CONCLUSION_LENGTH = 500;
 const TASK_BROWSER_VIEWPORT = { width: 1_280, height: 800 } as const;
 const TASK_MODEL = DEFAULT_SCOUT_MODEL satisfies SelectableScoutModel;
+const HANDOFF_CONTINUATION_PREFIX =
+  "The operator completed the requested human-only browser step. Use this final browser snapshot as evidence, then resolve the Attempt without opening another browser session:";
 
 type DatabaseContext = Pick<QueryCtx, "db">;
 
@@ -107,6 +115,19 @@ function requiredInstruction(value: string) {
     throw new Error(`Task instruction must be ${MAX_TASK_INSTRUCTION_LENGTH} characters or fewer`);
   }
   return instruction;
+}
+
+export function handoffContinuationInstruction(value: string) {
+  const evidence = value.trim() || "No post-handoff browser evidence was available.";
+  const separator = "\n\n";
+  const availableCharacters =
+    MAX_TASK_INSTRUCTION_LENGTH - Array.from(HANDOFF_CONTINUATION_PREFIX).length - separator.length;
+  const characters = Array.from(evidence);
+  const boundedEvidence =
+    characters.length <= availableCharacters
+      ? evidence
+      : `${characters.slice(0, availableCharacters - 1).join("")}…`;
+  return requiredInstruction(`${HANDOFF_CONTINUATION_PREFIX}${separator}${boundedEvidence}`);
 }
 
 function titleFromInstruction(instruction: string) {
@@ -166,6 +187,7 @@ async function requireAvailableScout(ctx: MutationCtx, scoutId: Id<"scouts">, no
   if (!pending) return scout;
   if (pending.state.kind !== "pending") throw new Error("Scout turn state is invalid");
   if (pending.state.leaseExpiresAt > now) throw new Error("Scout is already working");
+  await failTaskHumanHandoffForTurn(ctx, pending._id);
   await ctx.db.patch("scoutTurns", pending._id, {
     state: { kind: "failed", failedAt: now, failure: EXPIRED_TURN_FAILURE },
   });
@@ -179,11 +201,11 @@ async function enqueueTurn(
     userId: Id<"users">;
     scoutId: Id<"scouts">;
     prompt: string;
+    mode: "normal" | "handoff_continuation";
   },
 ) {
   const prompt = requiredInstruction(args.prompt);
   const now = Date.now();
-  await requireAvailableScout(ctx, args.scoutId, now);
   const saved = await scoutAgent.saveMessage(ctx, {
     threadId: args.threadId,
     userId: args.userId,
@@ -205,6 +227,7 @@ async function enqueueTurn(
     userId: args.userId,
     promptMessageId: saved.messageId,
     model: TASK_MODEL,
+    mode: { kind: args.mode },
   });
   await ctx.scheduler.runAt(leaseExpiresAt, internal.scout.turns.expire, { turnId });
   return turnId;
@@ -235,6 +258,29 @@ async function projectAttempt(ctx: DatabaseContext, attempt: Doc<"taskAttempts">
     turnCount: turns.length,
     browserSessionCount: sessions.length,
   };
+}
+
+async function requireNoActiveBrowserWork(ctx: DatabaseContext, attemptId: Id<"taskAttempts">) {
+  const sessions = await ctx.db
+    .query("taskBrowserSessions")
+    .withIndex("by_attempt_id_and_sequence", (index) => index.eq("attemptId", attemptId))
+    .take(MAX_BROWSER_SESSIONS_PER_ATTEMPT);
+  for (const session of sessions) {
+    if (session.lifecycle.kind === "active") {
+      throw new Error("Wait for the active browser session to finish");
+    }
+    const handoff = await ctx.db
+      .query("taskHumanHandoffs")
+      .withIndex("by_session_id", (index) => index.eq("sessionId", session._id))
+      .unique();
+    if (
+      handoff?.status === "available" ||
+      handoff?.status === "active" ||
+      handoff?.status === "continued"
+    ) {
+      throw new Error("Wait for the human handoff to finish");
+    }
+  }
 }
 
 export const listForProduct = query({
@@ -389,6 +435,7 @@ export const remove = mutation({
       if (turns.some((turn) => turn.state.kind === "pending")) {
         throw new Error("Wait for the active attempt to finish before deleting this task");
       }
+      await requireNoActiveBrowserWork(ctx, attempt._id);
       const sessions = await ctx.db
         .query("taskBrowserSessions")
         .withIndex("by_attempt_id_and_sequence", (index) => index.eq("attemptId", attempt._id))
@@ -463,6 +510,7 @@ export const startAttempt = mutation({
       userId,
       scoutId: scout._id,
       prompt: task.instruction,
+      mode: "normal",
     });
     return { attemptId };
   },
@@ -488,6 +536,8 @@ export const continueAttempt = mutation({
     if (turns.length >= MAX_TURNS_PER_ATTEMPT) {
       throw new Error(`An attempt can have at most ${MAX_TURNS_PER_ATTEMPT} turns`);
     }
+    await requireNoActiveBrowserWork(ctx, attempt._id);
+    await requireAvailableScout(ctx, attempt.scoutId, Date.now());
     if (attempt.state.kind === "blocked" || attempt.state.kind === "abandoned") {
       await ctx.db.patch("taskAttempts", attempt._id, { state: { kind: "active" } });
     }
@@ -497,8 +547,61 @@ export const continueAttempt = mutation({
         userId,
         scoutId: attempt.scoutId,
         prompt: args.prompt,
+        mode: "normal",
       }),
     };
+  },
+});
+
+export const resumeHumanHandoff = internalMutation({
+  args: {
+    sessionId: v.id("taskBrowserSessions"),
+    evidence: v.string(),
+  },
+  returns: v.id("scoutTurns"),
+  handler: async (ctx, args) => {
+    const session = await ctx.db.get("taskBrowserSessions", args.sessionId);
+    const handoff = session
+      ? await ctx.db
+          .query("taskHumanHandoffs")
+          .withIndex("by_session_id", (index) => index.eq("sessionId", session._id))
+          .unique()
+      : null;
+    if (!session || !handoff) throw new Error("Task human handoff is unavailable");
+    if (handoff.status === "resumed") return handoff.continuationTurnId;
+    if (handoff.status !== "continued") {
+      throw new Error("Task human handoff is not ready to resume");
+    }
+    const attempt = await ctx.db.get("taskAttempts", session.attemptId);
+    const task = attempt ? await ctx.db.get("productTasks", attempt.taskId) : null;
+    if (!attempt || !task || attempt.state.kind !== "active") {
+      throw new Error("Active task attempt not found for human handoff");
+    }
+    const turns = await ctx.db
+      .query("scoutTurns")
+      .withIndex("by_thread_id_and_order", (index) => index.eq("threadId", attempt.threadId))
+      .take(MAX_TURNS_PER_ATTEMPT);
+    if (turns.some((turn) => turn.state.kind === "pending")) {
+      throw new Error("The Scout has not finished pausing for human help");
+    }
+    if (turns.length >= MAX_TURNS_PER_ATTEMPT) {
+      throw new Error(`An attempt can have at most ${MAX_TURNS_PER_ATTEMPT} turns`);
+    }
+    const continuationTurnId = await enqueueTurn(ctx, {
+      threadId: attempt.threadId,
+      userId: task.userId,
+      scoutId: attempt.scoutId,
+      mode: "handoff_continuation",
+      prompt: handoffContinuationInstruction(args.evidence),
+    });
+    await ctx.db.replace("taskHumanHandoffs", handoff._id, {
+      ...handoffCommon(handoff),
+      ...handoffClaim(handoff),
+      status: "resumed",
+      continuedAt: handoff.continuedAt,
+      continuationTurnId,
+    });
+    return continuationTurnId;
   },
 });
 
@@ -519,19 +622,7 @@ export const abandonAttempt = mutation({
     if (turns.some((turn) => turn.state.kind === "pending")) {
       throw new Error("An attempt cannot be abandoned while a Turn is pending");
     }
-    const sessions = await ctx.db
-      .query("taskBrowserSessions")
-      .withIndex("by_attempt_id_and_sequence", (index) => index.eq("attemptId", attempt._id))
-      .take(MAX_BROWSER_SESSIONS_PER_ATTEMPT);
-    for (const session of sessions) {
-      const handoff = await ctx.db
-        .query("taskHumanHandoffs")
-        .withIndex("by_session_id", (index) => index.eq("sessionId", session._id))
-        .unique();
-      if (handoff?.status === "waiting") {
-        throw new Error("An attempt cannot be abandoned while human help is pending");
-      }
-    }
+    await requireNoActiveBrowserWork(ctx, attempt._id);
     await ctx.db.patch("taskAttempts", attempt._id, {
       state: {
         kind: "abandoned",
@@ -573,11 +664,11 @@ export const resolveAttempt = internalMutation({
       return attempt.state;
     }
     if (attempt.state.kind !== "active") throw new Error("Task Attempt is already resolved");
-    const session = await ctx.db
+    const sessions = await ctx.db
       .query("taskBrowserSessions")
-      .withIndex("by_turn_id", (index) => index.eq("turnId", turn._id))
-      .unique();
-    if (!session || session.attemptId !== attempt._id || session.lifecycle.kind !== "closed") {
+      .withIndex("by_attempt_id_and_sequence", (index) => index.eq("attemptId", attempt._id))
+      .take(MAX_BROWSER_SESSIONS_PER_ATTEMPT);
+    if (sessions.length === 0 || sessions.some((session) => session.lifecycle.kind !== "closed")) {
       throw new Error("Close the task browser session before resolving the Attempt");
     }
     const state = {
@@ -899,6 +990,26 @@ export const replayData = internalQuery({
   },
 });
 
+export const handoffBrowserSession = internalQuery({
+  args: { sessionId: v.id("taskBrowserSessions") },
+  returns: v.union(
+    v.object({
+      providerSessionId: v.string(),
+      lifecycle: taskBrowserSessionLifecycleValidator,
+    }),
+    v.null(),
+  ),
+  handler: async (ctx, args) => {
+    const session = await ctx.db.get("taskBrowserSessions", args.sessionId);
+    return session
+      ? {
+          providerSessionId: session.providerSessionId,
+          lifecycle: session.lifecycle,
+        }
+      : null;
+  },
+});
+
 export const setBrowserSession = internalMutation({
   args: { promptMessageId: v.string(), providerSessionId: v.string() },
   returns: v.object({
@@ -1063,6 +1174,7 @@ export const closeBrowserSessionRecord = internalMutation({
   handler: async (ctx, args) => {
     const session = await ctx.db.get("taskBrowserSessions", args.sessionId);
     if (!session || session.lifecycle.kind === "closed") return null;
+    await failTaskHumanHandoffForSession(ctx, session._id);
     await ctx.db.patch("taskBrowserSessions", session._id, {
       lifecycle: {
         kind: "closed",

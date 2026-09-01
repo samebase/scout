@@ -13,6 +13,10 @@ export type SendEmailArgs = {
   subject: string;
 } & EmailContent;
 
+export type SendEmailOptions = {
+  signal?: AbortSignal;
+};
+
 type CloudflareEmailResponse =
   | { kind: "accepted"; permanentBounces: string[] }
   | { kind: "rejected"; errors: { code: string | number; message: string }[] };
@@ -65,7 +69,10 @@ function parseCloudflareEmailResponse(payload: unknown): CloudflareEmailResponse
   return null;
 }
 
-export async function sendEmail(args: SendEmailArgs): Promise<void> {
+export async function sendEmail(
+  args: SendEmailArgs,
+  options: SendEmailOptions = {},
+): Promise<void> {
   const accountId = env.CLOUDFLARE_EMAIL_ACCOUNT_ID?.trim();
   const token = env.CLOUDFLARE_EMAIL_API_TOKEN?.trim();
 
@@ -90,6 +97,7 @@ export async function sendEmail(args: SendEmailArgs): Promise<void> {
         text: args.text,
         html: args.html,
       }),
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
     },
   );
 

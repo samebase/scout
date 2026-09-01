@@ -44,6 +44,11 @@ keeps preview builds from falling back to the production key.
 Non-production builds pass `WORKERS_CI_BRANCH` to Convex as the stable preview
 name, so repeated commits reuse one preview deployment, URL, and data.
 
+A preview deployment that sends human-handoff emails must set Convex Auth's `SITE_URL` to the
+matching Cloudflare preview Worker origin. Preview builds intentionally do not upload assets to
+Convex Static Hosting, so their `CONVEX_SITE_URL` is not a usable frontend origin. Production should
+also set `SITE_URL` to its canonical app origin.
+
 Cloudflare may build more than one commit from the same branch concurrently.
 Stable naming does not order those builds: without another check, an older build
 that finishes last can replace newer Convex functions. After building the app

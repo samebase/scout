@@ -756,7 +756,7 @@ operator abandon action only when no Turn or handoff is pending. Scout can resol
 persisted browser close, and a failed resolution write fails the Turn instead of reporting success.
 All 211 tests, the complete project check, and the Convex development push passed.
 
-### 2026-09-01 - working tree
+### 2026-09-01 - 25d71cd - v139
 
 Removed Firecrawl's never-active `about:blank` bootstrap recording from reconstructed replay
 timelines when a real web recording starts alongside it. Replay now selects the sole correlated
@@ -764,3 +764,80 @@ track before the first telemetry sample, so video begins immediately without an 
 misleading tab-change error; a blank tab that Scout actually activated remains available. Added
 focused regression coverage and passed all 211 tests plus the complete project check
 (`src/lib/taskReplayTimeline.ts`, `src/lib/taskReplayTimeline.test.ts`).
+
+### 2026-08-31 - e7bc32a - v140
+
+Replaced raw browser-takeover links with a first-party, short-lived handoff page bound to the exact
+Task Attempt, Turn, browser Session, and operator. Convex stores only a capability digest, derives
+ownership through the bound records on every access, and revalidates the exact active Firecrawl
+session before exposing its current interactive view (`convex/taskHumanHandoffs.ts`,
+`convex/taskHumanHandoffAccess.ts`, `src/components/human-handoff-page.tsx`).
+
+Bound the action lifecycle to one email, one atomic Continue, one verified same-session snapshot,
+and immediate browser close before Attempt resolution. Email and Firecrawl requests have transport
+deadlines; expiry and delivery failure close without inventing a result. All 246 tests and the
+complete Cloudflare production build passed.
+
+### 2026-08-31 - cf19e93 - v141
+
+Reused Convex Auth's `SITE_URL` as the one application origin for human-handoff links. The value is
+validated when a handoff is created instead of blocking fresh Convex preview deployments that have
+not configured the feature yet. Qwen-facing integer inputs now accept either JSON numbers or
+decimal strings for browser waits and AgentMail limits, then normalize them before execution
+(`convex/convex.config.ts`, `convex/scout/labGeneration.ts`, `convex/scout/labTools.ts`).
+
+Added a second-by-second expiry countdown to the secure handoff page. All 254 tests, the complete
+Cloudflare build path, and the Convex development push passed
+(`src/components/human-handoff-page.tsx`).
+
+### 2026-09-01 - f0c0565 - v142
+
+Separated handoff delivery from live control: an unopened private link now remains claimable for 45
+minutes, while its first valid open atomically starts a separate five-minute control window. A
+durable Convex Workflow waits without holding the Scout action open, then snapshots and closes the
+same Firecrawl browser before enqueueing the continuation Turn (`convex/taskHumanHandoffs.ts`,
+`convex/taskHumanHandoffLifecycle.ts`, `convex/scout/labGeneration.ts`).
+
+Removed the model-dependent forced handoff transition after Qwen exposed it as literal tool-call
+text. A live Samebase checkpoint run proved email handoff creation, the two independent timers,
+human completion, Continue, final snapshot capture, browser closure, and continuation enqueueing.
+The complete project check passed with all 252 tests.
+
+### 2026-09-01 - 69e0fcd - v143
+
+Made post-handoff Attempt resolution provider-portable and consistent with the Task hierarchy. Qwen
+now receives a clean final-judge step with only `resolve_attempt` available instead of a forced
+tool-choice request rejected by the provider. Resolution verifies that every Browser Session for
+the Attempt is closed rather than requiring the continuation Turn to own one
+(`convex/scout/labGeneration.ts`, `convex/tasks.ts`).
+
+Removed the focus refresh that could detach the Continue button before its click reached React. A
+fresh Chrome and Gmail run completed the Samebase human checkpoint with one Continue click, two
+Turns, one closed Browser Session, replay, and a persisted Completed conclusion. The complete
+project check passed with all 253 tests (`src/components/human-handoff-page.tsx`).
+
+### 2026-09-01 - 36f9201 - v144
+
+Fixed private handoff links for logged-out browsers. The page now retains the emailed bearer in
+per-tab session storage after removing it from the address bar, so repeated React effects and page
+reloads cannot silently fall back to owner authentication (`src/lib/human-handoff-access.ts`).
+
+Added a strict-effects regression that reproduced the anonymous failure before the fix. A fresh
+emailed handoff then completed live in a clean browser with its transcript and final conclusion
+preserved. All 254 tests and the complete Cloudflare build path passed
+(`src/components/human-handoff-page.test.tsx`).
+
+### 2026-09-01 - working tree
+
+Reduced the handoff lifecycle to one durable boundary: after Continue, the Workflow waits until
+Scout has persisted its paused Turn, then captures and closes the existing browser once and enqueues
+a browserless final-judge Turn. Removed the competing in-stream handoff states, post-handoff browser
+reopen path, and dead compatibility outputs (`convex/taskHumanHandoffLifecycle.ts`,
+`convex/scout/taskLoop.ts`, `convex/scout/labGeneration.ts`).
+
+Browser cleanup now survives provider inspection and snapshot errors, continuation prompts are
+bounded at the real Task limit, and destructive operator actions cannot race an active browser or
+handoff. All 254 tests and the complete Cloudflare build passed. A live Samebase checkpoint verified
+handoff claim, Continue, browser close, and a second Turn without a second browser; its final Qwen
+judge request then recorded an upstream Convex AI Gateway HTTP 502 after three retries rather than
+misreporting success.

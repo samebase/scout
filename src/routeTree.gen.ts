@@ -14,6 +14,7 @@ import { Route as LabRouteImport } from './routes/lab'
 import { Route as ProductsRouteImport } from './routes/products'
 import { Route as ScoutsRouteImport } from './routes/scouts'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as HandoffHandoffIdRouteImport } from './routes/handoff.$handoffId'
 import { Route as ProductsIndexRouteImport } from './routes/products.index'
 import { Route as ProductsDomainRouteImport } from './routes/products.$domain'
 import { Route as ScoutsIndexRouteImport } from './routes/scouts.index'
@@ -46,6 +47,11 @@ const ScoutsRoute = ScoutsRouteImport.update({
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HandoffHandoffIdRoute = HandoffHandoffIdRouteImport.update({
+  id: '/handoff/$handoffId',
+  path: '/handoff/$handoffId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProductsIndexRoute = ProductsIndexRouteImport.update({
@@ -98,6 +104,7 @@ export interface FileRoutesByFullPath {
   '/products': typeof ProductsRouteWithChildren
   '/scouts': typeof ScoutsRouteWithChildren
   '/settings': typeof SettingsRoute
+  '/handoff/$handoffId': typeof HandoffHandoffIdRoute
   '/products/$domain': typeof ProductsDomainRouteWithChildren
   '/scouts/$slug': typeof ScoutsSlugRoute
   '/products/': typeof ProductsIndexRoute
@@ -111,6 +118,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/lab': typeof LabRoute
   '/settings': typeof SettingsRoute
+  '/handoff/$handoffId': typeof HandoffHandoffIdRoute
   '/scouts/$slug': typeof ScoutsSlugRoute
   '/products': typeof ProductsIndexRoute
   '/scouts': typeof ScoutsIndexRoute
@@ -125,6 +133,7 @@ export interface FileRoutesById {
   '/products': typeof ProductsRouteWithChildren
   '/scouts': typeof ScoutsRouteWithChildren
   '/settings': typeof SettingsRoute
+  '/handoff/$handoffId': typeof HandoffHandoffIdRoute
   '/products/$domain': typeof ProductsDomainRouteWithChildren
   '/scouts/$slug': typeof ScoutsSlugRoute
   '/products/': typeof ProductsIndexRoute
@@ -142,6 +151,7 @@ export interface FileRouteTypes {
     | '/products'
     | '/scouts'
     | '/settings'
+    | '/handoff/$handoffId'
     | '/products/$domain'
     | '/scouts/$slug'
     | '/products/'
@@ -155,6 +165,7 @@ export interface FileRouteTypes {
     | '/'
     | '/lab'
     | '/settings'
+    | '/handoff/$handoffId'
     | '/scouts/$slug'
     | '/products'
     | '/scouts'
@@ -168,6 +179,7 @@ export interface FileRouteTypes {
     | '/products'
     | '/scouts'
     | '/settings'
+    | '/handoff/$handoffId'
     | '/products/$domain'
     | '/scouts/$slug'
     | '/products/'
@@ -184,6 +196,7 @@ export interface RootRouteChildren {
   ProductsRoute: typeof ProductsRouteWithChildren
   ScoutsRoute: typeof ScoutsRouteWithChildren
   SettingsRoute: typeof SettingsRoute
+  HandoffHandoffIdRoute: typeof HandoffHandoffIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -221,6 +234,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/handoff/$handoffId': {
+      id: '/handoff/$handoffId'
+      path: '/handoff/$handoffId'
+      fullPath: '/handoff/$handoffId'
+      preLoaderRoute: typeof HandoffHandoffIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/products/': {
@@ -346,6 +366,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProductsRoute: ProductsRouteWithChildren,
   ScoutsRoute: ScoutsRouteWithChildren,
   SettingsRoute: SettingsRoute,
+  HandoffHandoffIdRoute: HandoffHandoffIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

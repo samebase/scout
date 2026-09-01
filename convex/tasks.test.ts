@@ -1,18 +1,21 @@
 /// <reference types="vite/client" />
 
 import agentTest from "@convex-dev/agent/test";
+import workflowTest from "@convex-dev/workflow/test";
 import { convexTest } from "convex-test";
 import { describe, expect, it } from "vite-plus/test";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { ADMIN_EMAIL } from "./authConfig";
 import schema from "./schema";
+import { handoffContinuationInstruction } from "./tasks";
 
 const modules = import.meta.glob("./**/*.ts");
 
 function testBackend() {
   const backend = convexTest(schema, modules);
   agentTest.register(backend);
+  workflowTest.register(backend);
   return backend;
 }
 
@@ -77,6 +80,13 @@ async function insertClosedTaskSession(
 }
 
 describe("Product Tasks", () => {
+  it("bounds the complete handoff continuation prompt", () => {
+    const instruction = handoffContinuationInstruction("🔎".repeat(20_000));
+
+    expect(Array.from(instruction)).toHaveLength(16_000);
+    expect(instruction.endsWith("…")).toBe(true);
+  });
+
   it("stores one editable instruction and creates a fresh Agent attempt", async () => {
     const { backend, admin, scoutId, productId } = await setup();
     const task = await admin.mutation(api.tasks.create, {
@@ -245,6 +255,47 @@ describe("Product Tasks", () => {
     ).rejects.toThrow("Active task Turn not found");
   });
 
+  it("resolves a continuation Turn after an earlier browser session closes", async () => {
+    const { backend, admin, scoutId, productId } = await setup();
+    const task = await admin.mutation(api.tasks.create, {
+      productId,
+      instruction: "Complete the human checkpoint and confirm the result.",
+    });
+    const started = await admin.mutation(api.tasks.startAttempt, {
+      taskId: task.taskId,
+      scoutId,
+      browserProfile: { kind: "fresh" },
+    });
+    const attempts = await admin.query(api.tasks.listAttempts, { taskId: task.taskId });
+    const firstTurn = await taskTurn(backend, attempts[0]!.threadId);
+    expect(firstTurn).not.toBeNull();
+    await insertClosedTaskSession(backend, {
+      attemptId: started.attemptId,
+      turnId: firstTurn!._id,
+    });
+    await admin.mutation(internal.scout.turns.complete, {
+      promptMessageId: firstTurn!.promptMessageId,
+      usage: {},
+    });
+    await admin.mutation(api.tasks.continueAttempt, {
+      attemptId: started.attemptId,
+      prompt: "The checkpoint is complete. Resolve this attempt.",
+    });
+    const continuationTurn = await taskTurn(backend, attempts[0]!.threadId);
+    expect(continuationTurn?._id).not.toBe(firstTurn!._id);
+
+    await expect(
+      admin.mutation(internal.tasks.resolveAttempt, {
+        promptMessageId: continuationTurn!.promptMessageId,
+        state: { kind: "completed", conclusion: "The checkpoint completion was verified." },
+      }),
+    ).resolves.toEqual({
+      kind: "completed",
+      conclusion: "The checkpoint completion was verified.",
+      resolvedAt: expect.any(Number),
+    });
+  });
+
   it("reopens blocked and abandoned Attempts only when their Turn is no longer pending", async () => {
     const { backend, admin, scoutId, productId } = await setup();
     const task = await admin.mutation(api.tasks.create, {
@@ -339,7 +390,7 @@ describe("Product Tasks", () => {
     const attempts = await admin.query(api.tasks.listAttempts, { taskId: task.taskId });
     const turn = await taskTurn(backend, attempts[0]!.threadId);
     expect(turn).not.toBeNull();
-    const sessionId = await backend.run(async (ctx) => {
+    await backend.run(async (ctx) => {
       const sessionId = await ctx.db.insert("taskBrowserSessions", {
         attemptId: started.attemptId,
         turnId: turn!._id,
@@ -351,25 +402,17 @@ describe("Product Tasks", () => {
         nextOperationSequence: 1,
         lifecycle: { kind: "active", openedAtMs: Date.now() },
       });
-      await ctx.db.insert("taskHumanHandoffs", {
-        sessionId,
-        reason: "CAPTCHA",
-        requestedAt: Date.now(),
-        status: "waiting",
-        interactiveLiveViewUrl: "https://firecrawl.example/live/captcha",
-        expiresAt: Date.now() + 1000,
-      });
       return sessionId;
     });
-    const handoff = await backend.run(
-      async (ctx) =>
-        await ctx.db
-          .query("taskHumanHandoffs")
-          .withIndex("by_session_id", (index) => index.eq("sessionId", sessionId))
-          .unique(),
-    );
-    expect(handoff).not.toBeNull();
-    await admin.mutation(internal.taskHumanHandoffs.expire, { handoffId: handoff!._id });
+    const handoff = await backend.mutation(internal.taskHumanHandoffs.request, {
+      promptMessageId: turn!.promptMessageId,
+      reason: "CAPTCHA",
+      accessTokenHash: "a".repeat(64),
+    });
+    await backend.run(async (ctx) => {
+      await ctx.db.patch(handoff.handoffId, { claimExpiresAt: Date.now() - 1_000 });
+    });
+    await admin.mutation(internal.taskHumanHandoffs.expire, { handoffId: handoff.handoffId });
     await admin.mutation(internal.scout.turns.complete, {
       promptMessageId: turn!.promptMessageId,
       usage: {},
@@ -380,5 +423,109 @@ describe("Product Tasks", () => {
         latestTurnState: expect.objectContaining({ kind: "completed" }),
       }),
     ]);
+  });
+
+  it("does not mutate an Attempt while its handed-off browser is still active", async () => {
+    const { backend, admin, scoutId, productId } = await setup();
+    const task = await admin.mutation(api.tasks.create, {
+      productId,
+      instruction: "Open the signup page and stop at the human checkpoint.",
+    });
+    const started = await admin.mutation(api.tasks.startAttempt, {
+      taskId: task.taskId,
+      scoutId,
+      browserProfile: { kind: "fresh" },
+    });
+    const attempts = await admin.query(api.tasks.listAttempts, { taskId: task.taskId });
+    const turn = await taskTurn(backend, attempts[0]!.threadId);
+    await backend.run(async (ctx) => {
+      await ctx.db.insert("taskBrowserSessions", {
+        attemptId: started.attemptId,
+        turnId: turn!._id,
+        sequence: 1,
+        provider: "firecrawl",
+        providerSessionId: "active-handoff-session",
+        profileName: null,
+        viewport: { width: 1_280, height: 800 },
+        nextOperationSequence: 1,
+        lifecycle: { kind: "active", openedAtMs: Date.now() },
+      });
+    });
+    await backend.mutation(internal.taskHumanHandoffs.request, {
+      promptMessageId: turn!.promptMessageId,
+      reason: "CAPTCHA",
+      accessTokenHash: "a".repeat(64),
+    });
+    await backend.mutation(internal.scout.turns.completeHumanHandoffPause, {
+      promptMessageId: turn!.promptMessageId,
+      usage: {},
+    });
+
+    await expect(
+      admin.mutation(api.tasks.continueAttempt, {
+        attemptId: started.attemptId,
+        prompt: "Continue manually.",
+      }),
+    ).rejects.toThrow("active browser session");
+    await expect(
+      admin.mutation(api.tasks.abandonAttempt, {
+        attemptId: started.attemptId,
+        conclusion: "Abandon it.",
+      }),
+    ).rejects.toThrow("active browser session");
+    await expect(admin.mutation(api.tasks.remove, { taskId: task.taskId })).rejects.toThrow(
+      "active browser session",
+    );
+  });
+
+  it("fails a waiting handoff when reclaiming an expired Scout lease", async () => {
+    const { backend, admin, scoutId, productId } = await setup();
+    const firstTask = await admin.mutation(api.tasks.create, {
+      productId,
+      instruction: "Open the signup page.",
+    });
+    const started = await admin.mutation(api.tasks.startAttempt, {
+      taskId: firstTask.taskId,
+      scoutId,
+      browserProfile: { kind: "fresh" },
+    });
+    const attempts = await admin.query(api.tasks.listAttempts, { taskId: firstTask.taskId });
+    const turn = await taskTurn(backend, attempts[0]!.threadId);
+    await backend.run(async (ctx) => {
+      await ctx.db.insert("taskBrowserSessions", {
+        attemptId: started.attemptId,
+        turnId: turn!._id,
+        sequence: 1,
+        provider: "firecrawl",
+        providerSessionId: "expired-lease-session",
+        profileName: null,
+        viewport: { width: 1_280, height: 800 },
+        nextOperationSequence: 1,
+        lifecycle: { kind: "active", openedAtMs: Date.now() },
+      });
+    });
+    const handoff = await backend.mutation(internal.taskHumanHandoffs.request, {
+      promptMessageId: turn!.promptMessageId,
+      reason: "CAPTCHA",
+      accessTokenHash: "a".repeat(64),
+    });
+    await backend.run(async (ctx) => {
+      await ctx.db.patch(turn!._id, {
+        state: { kind: "pending", leaseExpiresAt: Date.now() - 1 },
+      });
+    });
+    const secondTask = await admin.mutation(api.tasks.create, {
+      productId,
+      instruction: "Run a second check.",
+    });
+
+    await admin.mutation(api.tasks.startAttempt, {
+      taskId: secondTask.taskId,
+      scoutId,
+      browserProfile: { kind: "fresh" },
+    });
+
+    const failedHandoff = await backend.run(async (ctx) => await ctx.db.get(handoff.handoffId));
+    expect(failedHandoff?.status).toBe("failed");
   });
 });

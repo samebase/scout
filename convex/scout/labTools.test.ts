@@ -1,4 +1,5 @@
 import { tool, type ToolSet } from "ai";
+import { safeValidateTypes } from "@ai-sdk/provider-utils";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { browserTraceMarkers } from "./browserTelemetry";
@@ -575,6 +576,41 @@ describe("Lab browser harness", () => {
     expect(deps.executeCode).not.toHaveBeenCalled();
   });
 
+  test("accepts a decimal string for a fixed wait and normalizes it before execution", async () => {
+    const deps = dependencies();
+    const browser = createLabBrowserHarness({}, deps);
+    const input = { kind: "milliseconds", duration: "2000" } as const;
+    const validation = await safeValidateTypes({
+      value: input,
+      schema: browser.tools.browser_wait.inputSchema,
+    });
+    expect(validation).toMatchObject({ success: true, value: input });
+    if (!validation.success) throw validation.error;
+
+    await expect(
+      browser.tools.browser_wait.execute(validation.value, {
+        toolCallId: "tool-wait",
+        messages: [],
+        context: undefined,
+      }),
+    ).resolves.toMatchObject({ success: true, output: "Waited 2000ms locally" });
+
+    expect(deps.sleep).toHaveBeenCalledWith(2_000);
+  });
+
+  test.each(["0", "2.5", "10001", "2000ms", " 2000"])(
+    "rejects an invalid decimal-string wait duration: %s",
+    async (duration) => {
+      const browser = createLabBrowserHarness({}, dependencies());
+      await expect(
+        safeValidateTypes({
+          value: { kind: "milliseconds", duration },
+          schema: browser.tools.browser_wait.inputSchema,
+        }),
+      ).resolves.toMatchObject({ success: false });
+    },
+  );
+
   test("rejects invalid refs and non-HTTPS navigation before contacting Firecrawl", async () => {
     const deps = dependencies();
     const browser = createLabBrowserHarness({}, deps);
@@ -768,7 +804,7 @@ describe("AgentMail Lab catalog", () => {
     const options = { toolCallId: "tool-1", messages: [], context: undefined };
 
     expect(Object.keys(selected)).toEqual(["list_messages", "search_messages", "get_thread"]);
-    await selected.list_messages.execute({ limit: 5 }, options);
+    await selected.list_messages.execute({ limit: "5" }, options);
     await selected.search_messages.execute({ q: "verification" }, options);
     await selected.get_thread.execute({ threadId: "thread-1" }, options);
     if (!selected.list_messages.toModelOutput) {

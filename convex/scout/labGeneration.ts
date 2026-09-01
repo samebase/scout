@@ -5,12 +5,11 @@ import { isStepCount, type LanguageModelUsage } from "ai";
 import { v } from "convex/values";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
-import { env, internalAction } from "../_generated/server";
+import { env, internalAction, type ActionCtx } from "../_generated/server";
 import { SCOUT_AGENT_INSTRUCTIONS, scoutAgent } from "./agent";
 import { createAccountPasswordFillTool, requirePasswordInputType } from "./accountPasswordTool";
 import {
   createSingleUseAttemptResolutionArm,
-  createSingleUseHumanHandoffArm,
   decideTaskStep,
   immediatelyPrecedingToolError,
   immediatelyPrecedingToolResult,
@@ -18,21 +17,37 @@ import {
 } from "./taskLoop";
 import { requireOwnedAgentThread } from "./labAccess";
 import { createLabBrowserHarness, selectAgentMailTools } from "./labTools";
-import { createHumanHandoffTool } from "./humanHandoffTool";
+import {
+  beginHumanHandoff,
+  createHumanHandoffTool,
+  type HumanHandoffCallbacks,
+} from "./humanHandoffTool";
+import {
+  createHumanHandoffAccessToken,
+  hashHumanHandoffAccessToken,
+  humanHandoffOrigin,
+  humanHandoffUrl,
+} from "./lib/humanHandoffAccess";
 import {
   credentialKeyFingerprint,
   decodeCredentialMasterKey,
   decryptCredential,
 } from "./credentialCrypto";
 import { diagnosticMessage } from "./lib/redaction";
-import { scoutLanguageModel, scoutModelValidator, type ScoutTokenUsage } from "./models";
+import {
+  scoutLanguageModel,
+  scoutModelValidator,
+  type ScoutModel,
+  type ScoutTokenUsage,
+} from "./models";
 import { createServiceAccountRecordingTool } from "./serviceAccountTool";
 import { createAttemptResolutionTool } from "./attemptResolutionTool";
 
 const MAX_GENERATION_STEPS = 24;
 const TASK_CLOSE_STEP = 18;
-const TASK_HANDOFF_CLOSE_STEP = MAX_GENERATION_STEPS - 4;
 const AGENT_MAIL_CLOSE_TIMEOUT_MS = 1_000;
+const HANDOFF_RESOLUTION_INSTRUCTIONS =
+  "Act only as the final judge for this Task attempt. The browser is already closed. Review the objective and evidence in the conversation, then call resolve_attempt. Choose completed only when the objective is achieved with sufficient evidence; otherwise choose blocked. Give a short evidence-based conclusion.";
 
 type LabBrowser = ReturnType<typeof createLabBrowserHarness>;
 type LabBrowserUsage = Awaited<ReturnType<LabBrowser["close"]>>;
@@ -199,12 +214,88 @@ function tokenUsage(usage: LanguageModelUsage): ScoutTokenUsage {
   };
 }
 
+async function generateHandoffContinuation(
+  ctx: ActionCtx,
+  args: {
+    threadId: string;
+    userId: Id<"users">;
+    promptMessageId: string;
+    model: ScoutModel;
+  },
+) {
+  let resolutionPersisted = false;
+  try {
+    await requireOwnedAgentThread(ctx, args.threadId, args.userId);
+    const streamErrors = createStreamErrorCapture();
+    const streamResult = await scoutAgent.streamText(
+      ctx,
+      { threadId: args.threadId, userId: args.userId },
+      {
+        promptMessageId: args.promptMessageId,
+        model: scoutLanguageModel(args.model),
+        instructions: HANDOFF_RESOLUTION_INSTRUCTIONS,
+        tools: {
+          resolve_attempt: createAttemptResolutionTool(
+            async (resolution) => {
+              const result = await ctx.runMutation(internal.tasks.resolveAttempt, {
+                promptMessageId: args.promptMessageId,
+                state: resolution,
+              });
+              resolutionPersisted = true;
+              return result;
+            },
+            () => true,
+          ),
+        },
+        toolChoice: { type: "tool", toolName: "resolve_attempt" },
+        stopWhen: isStepCount(1),
+        onError: streamErrors.onError,
+      },
+      {
+        saveStreamDeltas: {
+          returnImmediately: true,
+          chunking: "word",
+          throttleMs: 100,
+        },
+      },
+    );
+    await streamResult.consumeStream();
+    streamErrors.throwIfCaptured();
+    if (!resolutionPersisted) {
+      throw new Error("Scout ended without persisting the Attempt conclusion");
+    }
+    await ctx.runMutation(internal.scout.turns.complete, {
+      promptMessageId: args.promptMessageId,
+      usage: tokenUsage(await streamResult.totalUsage),
+    });
+    return null;
+  } catch (error) {
+    let terminalError = error;
+    try {
+      await ctx.runMutation(internal.scout.turns.fail, {
+        promptMessageId: args.promptMessageId,
+        failure: diagnosticMessage(error),
+      });
+    } catch (persistenceError) {
+      terminalError = new AggregateError(
+        [error, persistenceError],
+        "Handoff continuation failed and its failure state could not be recorded",
+      );
+    }
+    throw terminalError;
+  }
+}
+
 export const generateResponse = internalAction({
   args: {
     threadId: v.string(),
     userId: v.id("users"),
     promptMessageId: v.string(),
     model: scoutModelValidator,
+    mode: v.union(
+      v.object({ kind: v.literal("normal") }),
+      v.object({ kind: v.literal("handoff_continuation") }),
+    ),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -214,11 +305,15 @@ export const generateResponse = internalAction({
     if (!started) {
       return null;
     }
+    if (args.mode.kind === "handoff_continuation") {
+      return await generateHandoffContinuation(ctx, args);
+    }
 
     let agentMailClient: MCPClient | undefined;
     let browser: LabBrowser | undefined;
     let browserSessionId: Id<"taskBrowserSessions"> | null = null;
     let interactiveLiveViewUrl: string | null = null;
+    let humanHandoffWaiting = false;
     let generationResult: GenerationResult;
 
     try {
@@ -317,37 +412,44 @@ export const generateResponse = internalAction({
         await agentMailClient.tools(),
         scout.agentMail.inboxId,
       );
-      const humanHandoffArm = createSingleUseHumanHandoffArm();
+      const activeBrowser = browser;
+      if (!activeBrowser) throw new Error("Browser harness was not initialized");
       const attemptResolutionArm = createSingleUseAttemptResolutionArm();
-      const humanHandoffTools = isTaskTurn
-        ? {
-            request_human_help: createHumanHandoffTool({
+      let attemptResolutionRequired = false;
+      let attemptResolutionPersisted = false;
+      const humanHandoffCallbacks: HumanHandoffCallbacks<Id<"taskHumanHandoffs">> | null =
+        isTaskTurn
+          ? {
               request: async (reason) => {
-                if (!humanHandoffArm.consume()) {
-                  throw new Error(
-                    "Human help is available only after Scout detects a human-only browser gate",
-                  );
-                }
                 if (interactiveLiveViewUrl === null) {
                   throw new Error(
                     "The current browser session has no interactive human-takeover link",
                   );
                 }
-                return await ctx.runMutation(internal.taskHumanHandoffs.request, {
+                const accessToken = createHumanHandoffAccessToken();
+                const appOrigin = humanHandoffOrigin(env.SITE_URL);
+                const request = await ctx.runMutation(internal.taskHumanHandoffs.request, {
                   promptMessageId: args.promptMessageId,
                   reason,
-                  interactiveLiveViewUrl,
+                  accessTokenHash: hashHumanHandoffAccessToken(accessToken),
                 });
+                return {
+                  ...request,
+                  handoffUrl: humanHandoffUrl(appOrigin, request.handoffId, accessToken),
+                };
               },
-              getStatus: async (handoffId) =>
-                await ctx.runQuery(internal.taskHumanHandoffs.getStatus, { handoffId }),
-              expire: async (handoffId) =>
-                await ctx.runMutation(internal.taskHumanHandoffs.expire, { handoffId }),
-            }),
+              failDelivery: async (handoffId) =>
+                await ctx.runMutation(internal.taskHumanHandoffs.failDelivery, { handoffId }),
+              onWaiting: () => {
+                humanHandoffWaiting = true;
+              },
+            }
+          : null;
+      const humanHandoffTools = humanHandoffCallbacks
+        ? {
+            request_human_help: createHumanHandoffTool(humanHandoffCallbacks),
           }
         : {};
-      const activeBrowser = browser;
-      if (!activeBrowser) throw new Error("Browser harness was not initialized");
       const serviceAccountTools = isTaskTurn
         ? {
             record_authenticated_service_account: createServiceAccountRecordingTool(
@@ -451,14 +553,14 @@ export const generateResponse = internalAction({
           : {};
       const attemptResolutionTools = isTaskTurn
         ? {
-            resolve_attempt: createAttemptResolutionTool(
-              async (resolution) =>
-                await ctx.runMutation(internal.tasks.resolveAttempt, {
-                  promptMessageId: args.promptMessageId,
-                  state: resolution,
-                }),
-              attemptResolutionArm.consume,
-            ),
+            resolve_attempt: createAttemptResolutionTool(async (resolution) => {
+              const result = await ctx.runMutation(internal.tasks.resolveAttempt, {
+                promptMessageId: args.promptMessageId,
+                state: resolution,
+              });
+              attemptResolutionPersisted = true;
+              return result;
+            }, attemptResolutionArm.consume),
           }
         : {};
 
@@ -475,7 +577,7 @@ export const generateResponse = internalAction({
       const taskInstructions =
         runtimeContext.kind === "lab"
           ? ""
-          : `\n\nYou are working on an operator-defined Task for ${JSON.stringify(runtimeContext.product.name)}. Its primary URL is ${JSON.stringify(runtimeContext.product.primaryUrl)} and product domain is ${JSON.stringify(runtimeContext.product.domain)}. The attempt uses ${runtimeContext.browserProfile.kind === "fresh" ? "a fresh browser profile" : `the persistent Scout browser profile ${JSON.stringify(runtimeContext.browserProfile.profileName)}`}. Decide the next useful actions from the current operator message, the existing thread, and visible product state; do not force the work into a predefined testing workflow. If you reach an authenticated account menu, call record_authenticated_service_account with visible identity and Sign out or Log out refs so the Scout inventory reflects what you verified. If a CAPTCHA or another strictly human-only check blocks progress, call request_human_help instead of attempting to solve or bypass it. After the operator continues, inspect the current page before acting. If human help expires, say that its window expired and explain how the operator can resume this still-active attempt. Close the browser before your final response. After a successful browser close, resolve the attempt once as completed when the objective is achieved or blocked when it is not, with a short evidence-based conclusion. Human-help expiry is not a resolution; leave the attempt active.`;
+          : `\n\nYou are working on an operator-defined Task for ${JSON.stringify(runtimeContext.product.name)}. Its primary URL is ${JSON.stringify(runtimeContext.product.primaryUrl)} and product domain is ${JSON.stringify(runtimeContext.product.domain)}. The attempt uses ${runtimeContext.browserProfile.kind === "fresh" ? "a fresh browser profile" : `the persistent Scout browser profile ${JSON.stringify(runtimeContext.browserProfile.profileName)}`}. Decide the next useful actions from the current operator message, the existing thread, and visible product state; do not force the work into a predefined testing workflow. If you reach an authenticated account menu, call record_authenticated_service_account with visible identity and Sign out or Log out refs so the Scout inventory reflects what you verified. If a CAPTCHA or another strictly human-only check blocks progress, call request_human_help instead of attempting to solve or bypass it. That tool sends a durable handoff and pauses this Turn; do not poll or keep working after it. Close the browser before an ordinary final response. After a successful browser close, resolve the attempt once as completed when the objective is achieved or blocked when it is not, with a short evidence-based conclusion.`;
       const instructions = `${SCOUT_AGENT_INSTRUCTIONS}\n\n${scoutWebsiteIdentityInstructions(scout)}\n\n${passwordInstructions}${taskInstructions}`;
       const streamErrors = createStreamErrorCapture();
       const streamResult = await scoutAgent.streamText(
@@ -490,30 +592,29 @@ export const generateResponse = internalAction({
           onError: streamErrors.onError,
           ...(isTaskTurn
             ? {
-                prepareStep: ({ steps, stepNumber }) => {
+                prepareStep: async ({ steps, stepNumber }) => {
                   const decision = decideTaskStep({
                     state: taskLoopState,
                     stepNumber,
                     normalCloseStep: TASK_CLOSE_STEP,
-                    handoffCloseStep: TASK_HANDOFF_CLOSE_STEP,
                     previousToolError: immediatelyPrecedingToolError(steps),
                     previousToolResult: immediatelyPrecedingToolResult(steps),
                   });
                   taskLoopState = decision.nextState;
                   switch (decision.kind) {
                     case "request_human_help":
-                      humanHandoffArm.arm();
+                      if (humanHandoffCallbacks === null) {
+                        throw new Error("Human help is unavailable outside a Task turn");
+                      }
+                      await beginHumanHandoff(
+                        humanHandoffCallbacks,
+                        "The live browser reached a human-only checkpoint.",
+                      );
+                      taskLoopState = "final";
                       return {
-                        activeTools: ["request_human_help"] as const,
-                        toolChoice: {
-                          type: "tool",
-                          toolName: "request_human_help",
-                        } as const,
-                      };
-                    case "browser_snapshot":
-                      return {
-                        activeTools: ["browser_snapshot"] as const,
-                        toolChoice: { type: "tool", toolName: "browser_snapshot" } as const,
+                        activeTools: [] as const,
+                        toolChoice: "none" as const,
+                        instructions: `${instructions}\n\nHuman help was requested successfully. The browser remains open under the durable handoff. Do not investigate, close the browser, or resolve the attempt. Briefly state that Scout is paused and will resume after the operator returns control.`,
                       };
                     case "browser_close":
                       return {
@@ -521,13 +622,11 @@ export const generateResponse = internalAction({
                         toolChoice: { type: "tool", toolName: "browser_close" } as const,
                       };
                     case "resolve_attempt":
+                      attemptResolutionRequired = true;
                       attemptResolutionArm.arm();
                       return {
                         activeTools: ["resolve_attempt"] as const,
-                        toolChoice: {
-                          type: "tool",
-                          toolName: "resolve_attempt",
-                        } as const,
+                        instructions: HANDOFF_RESOLUTION_INSTRUCTIONS,
                       };
                     case "resolution_failed":
                       throw new Error("Scout could not persist the Attempt conclusion");
@@ -535,9 +634,10 @@ export const generateResponse = internalAction({
                       return {
                         activeTools: [] as const,
                         toolChoice: "none" as const,
-                        instructions: decision.humanHelpExpired
-                          ? `${instructions}\n\nThe browser is closed because human help expired. Do not investigate further or resolve the attempt. Briefly report what happened and a useful message for resuming this still-active attempt.`
-                          : `${instructions}\n\nThe bounded browser phase is over. Do not investigate further. Briefly report what you accomplished, what remains uncertain, and what the operator should try next.`,
+                        instructions:
+                          decision.humanHelpOutcome === "waiting"
+                            ? `${instructions}\n\nHuman help was requested successfully. The browser remains open under the durable handoff. Do not investigate, close the browser, or resolve the attempt. Briefly state that Scout is paused and will resume after the operator returns control.`
+                            : `${instructions}\n\nThe bounded browser phase is over. Do not investigate further. Briefly report what you accomplished, what remains uncertain, and what the operator should try next.`,
                       };
                     case "none":
                       return undefined;
@@ -556,6 +656,9 @@ export const generateResponse = internalAction({
       );
       await streamResult.consumeStream();
       streamErrors.throwIfCaptured();
+      if (attemptResolutionRequired && !attemptResolutionPersisted) {
+        throw new Error("Scout ended without persisting the Attempt conclusion");
+      }
       generationResult = {
         kind: "completed",
         usage: tokenUsage(await streamResult.totalUsage),
@@ -564,27 +667,37 @@ export const generateResponse = internalAction({
       generationResult = { kind: "failed", error };
     }
 
+    const preserveBrowserForHandoff = generationResult.kind === "completed" && humanHandoffWaiting;
     let browserUsage: LabBrowserUsage = undefined;
     let cleanupFailure: unknown;
-    try {
-      browserUsage = await closeGenerationBrowser(browser);
-    } catch (error) {
-      cleanupFailure = error;
+    if (!preserveBrowserForHandoff) {
+      try {
+        browserUsage = await closeGenerationBrowser(browser);
+      } catch (error) {
+        cleanupFailure = error;
+      }
     }
     let completionFailure: unknown;
     if (generationResult.kind === "completed" && !cleanupFailure) {
       try {
-        await ctx.runMutation(internal.scout.turns.complete, {
-          promptMessageId: args.promptMessageId,
-          usage: generationResult.usage,
-          ...(browserUsage?.creditsBilled === null || browserUsage?.creditsBilled === undefined
-            ? {}
-            : { firecrawlCredits: browserUsage.creditsBilled }),
-          ...(browserUsage?.sessionDurationMs === null ||
-          browserUsage?.sessionDurationMs === undefined
-            ? {}
-            : { firecrawlDurationMs: browserUsage.sessionDurationMs }),
-        });
+        if (preserveBrowserForHandoff) {
+          await ctx.runMutation(internal.scout.turns.completeHumanHandoffPause, {
+            promptMessageId: args.promptMessageId,
+            usage: generationResult.usage,
+          });
+        } else {
+          await ctx.runMutation(internal.scout.turns.complete, {
+            promptMessageId: args.promptMessageId,
+            usage: generationResult.usage,
+            ...(browserUsage?.creditsBilled === null || browserUsage?.creditsBilled === undefined
+              ? {}
+              : { firecrawlCredits: browserUsage.creditsBilled }),
+            ...(browserUsage?.sessionDurationMs === null ||
+            browserUsage?.sessionDurationMs === undefined
+              ? {}
+              : { firecrawlDurationMs: browserUsage.sessionDurationMs }),
+          });
+        }
         await closeAgentMailBestEffort(agentMailClient);
         return null;
       } catch (error) {
