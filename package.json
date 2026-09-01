@@ -16,7 +16,6 @@
     "deploy:convex": "vp run samebase-scout#deploy:convex",
     "deploy:preview": "vp run samebase-scout#deploy:preview",
     "deploy:dry-run": "vp run samebase-scout#deploy:dry-run",
-    "deploy:preview:dry-run": "vp run samebase-scout#deploy:preview:dry-run",
     "preview": "vp run samebase-scout#preview",
     "check": "vp check && vp run typecheck && vp test",
     "typecheck": "tsc --project tsconfig.node.json && vp run --filter \"!scout-workspace\" typecheck",

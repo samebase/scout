@@ -879,7 +879,6 @@ from successful API requests, and ambiguous closes are reconciled through the SD
 local Convex development push, all 231 tests, and the complete Cloudflare build passed
 (`convex/scout/lib/firecrawlReplay.ts`, `convex/taskReplay.ts`,
 `src/components/task-replay.tsx`).
-
 ### 2026-09-02 - d80c3e9
 
 Replaced the shell-based browser layer with Playwright and verified that Conrad can complete Samebase
@@ -1986,8 +1985,16 @@ Allow research refresh after Firecrawl confirms the previous job was already can
 even when its status still says processing. Show remaining provider failures with their
 method, path, HTTP status, and code (`apps/scout/convex/tasks/siteResearch.ts`).
 
-### 2026-09-26 - working tree - v317
+### 2026-09-26 - 1b85c6b - v317
 
 Fixed homepage tabs crashing with "Aw, Snap!" after a few minutes of animation. Each replanned
 trail surface kept the previous one alive through a shared closure, growing the heap by about
 374 KB per frame until Chrome's 4 GB limit (`apps/scout/src/lib/terrain-trail-motion.ts`).
+### 2026-09-29 - working tree - v318
+
+Moved Cloudflare branch deploys to Worker Previews and one trigger-scoped `CONVEX_DEPLOY_KEY` name.
+Preview Convex deploys, Auth variables, and seed data now use the same branch name. The stable
+`build`, `deploy`, and `deploy:preview` commands remain the Cloudflare interface, while production
+and preview builds retain verified Convex Static Hosting publication before Cloudflare.
+(`apps/scout/package.json`, `apps/scout/scripts/build-cloudflare.ts`,
+`apps/scout/scripts/deploy-worker-preview.ts`, `apps/scout/scripts/ensure-convex-auth.ts`).
