@@ -162,6 +162,10 @@ Set each Convex preview's `SITE_URL` to its frontend origin for signup verificat
 interface. Their implementation can change without changing the Cloudflare configuration.
 Outside Workers Builds, `pnpm run build` runs only the app build.
 
+Enable Preview builds for non-production branches, but keep the Preview command set to
+`pnpm run deploy:preview`. Cloudflare can still show an **Enable Worker Previews** banner because it
+cannot inspect the package script. The repository adapter already runs `wrangler preview`.
+
 `pnpm run deploy:convex` provides a separate manual production deployment to Convex Static Hosting.
 Automatic builds upload and verify `apps/scout/dist/client` on the selected Convex deployment
 immediately after its backend push, then publish Cloudflare. Preview and dry-run deployments do

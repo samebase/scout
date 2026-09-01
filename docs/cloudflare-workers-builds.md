@@ -115,8 +115,16 @@ referenced assets available, not on a client reload or the host preserving that 
 The repository does not hard-code a Worker name. The command checks the current branch head
 before it publishes, as the production deploy command does.
 
-Enable Worker Previews on the connected Worker before switching an existing preview trigger.
-Use `pnpm run deploy:preview` as the preview deploy command.
+Enable Preview builds for non-production branches. Cloudflare can still show an **Enable Worker
+Previews** banner when the Preview command is `pnpm run deploy:preview`. Cloudflare documents this
+button as a command change from an old deploy command to `npx wrangler preview`. The Builds API has
+no separate Worker Previews flag. Keep `pnpm run deploy:preview` because its repository adapter
+already runs `wrangler preview`.
+
+Configure safe runtime variables, secrets, and bindings in Runtime **Previews Base** before you
+share a Preview URL. A new Preview copies the Base settings when it is created. A later Base change
+does not update an existing Preview. Production runtime settings do not become Preview settings
+automatically.
 
 ## Local Checks
 
