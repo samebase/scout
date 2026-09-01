@@ -160,7 +160,7 @@ describe("task replay timeline", () => {
     });
   });
 
-  test("keeps an unmatched provider page available for inspection", () => {
+  test("hides Firecrawl's inactive bootstrap page and starts on the correlated recording", () => {
     const active = operation({
       sequence: 1,
       beforeMs: 1_000,
@@ -181,22 +181,21 @@ describe("task replay timeline", () => {
 
     const timeline = buildReplayTimeline(
       [
-        { pageId: "blank", pageUrl: null, startTimeMs: 0, endTimeMs: 3_000 },
+        { pageId: "0", pageUrl: null, startTimeMs: 0, endTimeMs: 12_000 },
         {
-          pageId: "pricing",
+          pageId: "1",
           pageUrl: "https://samebase.com/pricing",
-          startTimeMs: 1_800,
+          startTimeMs: 0,
           endTimeMs: 12_000,
         },
       ],
       [active],
     );
 
-    expect(timeline.pages.map((page) => page.pageId)).toEqual(["blank", "pricing"]);
-    expect(timeline.pages[0]?.binding).toEqual({ kind: "unmatched" });
-    expect(timeline.pageIdByTabId.get("t2")).toBe("pricing");
-    expect(activePageIdAt(timeline, 0)).toBeNull();
-    expect(activePageIdAt(timeline, 2_000)).toBe("pricing");
+    expect(timeline.pages.map((page) => page.pageId)).toEqual(["1"]);
+    expect(timeline.pageIdByTabId.get("t2")).toBe("1");
+    expect(activePageIdAt(timeline, 0)).toBe("1");
+    expect(activePageIdAt(timeline, 2_000)).toBe("1");
   });
 
   test("keeps a blank page when Scout activates it", () => {
@@ -210,6 +209,21 @@ describe("task replay timeline", () => {
       beforeUrl: "about:blank",
       kind: "switch_tab",
     });
+    if (activeBlank.state.kind !== "applied") throw new Error("Expected applied operation");
+    activeBlank.state.telemetry.before.tabs = [
+      {
+        tabId: "t1",
+        title: "about:blank",
+        url: null,
+        active: true,
+      },
+    ];
+    activeBlank.state.telemetry.after.tabs.unshift({
+      tabId: "t1",
+      title: "about:blank",
+      url: null,
+      active: false,
+    });
 
     const timeline = buildReplayTimeline(
       [
@@ -217,7 +231,7 @@ describe("task replay timeline", () => {
         {
           pageId: "pricing",
           pageUrl: "https://samebase.com/pricing",
-          startTimeMs: 500,
+          startTimeMs: 0,
           endTimeMs: 2_000,
         },
       ],
