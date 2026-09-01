@@ -1,12 +1,15 @@
+"use node";
+
 import { tool, type ToolExecutionOptions, type ToolSet } from "ai";
+import { type BrowserExecuteResponse, type Firecrawl } from "firecrawl";
 import { z } from "zod";
 import {
-  closeBrowserSession,
-  createBrowserSession,
-  executeBrowserCode,
-  type BrowserInteraction,
-  type BrowserOperation,
+  closeFirecrawlBrowserSession,
+  createFirecrawlClient,
+  firecrawlBrowserExecutionSucceeded,
 } from "./lib/firecrawl";
+import { optionalFirecrawlLiveViewUrl } from "./lib/firecrawlLiveView";
+import { diagnosticMessage } from "./lib/redaction";
 import {
   actionElementRef,
   browserTraceMarkers,
@@ -18,7 +21,6 @@ import {
 const MAX_TOOL_TEXT_LENGTH = 20_000;
 const MAX_TOOL_OUTPUT_LENGTH = 20_000;
 const MAX_CSS_SELECTOR_LENGTH = 1_000;
-const MAX_BROWSER_CLOSE_ATTEMPTS = 2;
 const SNAPSHOT_FAILED_AFTER_MUTATION = "__SCOUT_SNAPSHOT_FAILED_AFTER_MUTATION__";
 const SNAPSHOT_FAILED_AFTER_MUTATION_EXIT_CODE = 86;
 const POSITIVE_DECIMAL_INTEGER_PATTERN = /^[1-9]\d*$/;
@@ -29,13 +31,12 @@ type BrowserStopResult = {
   success: boolean;
   sessionDurationMs: number | null;
   creditsBilled: number | null;
-  replayAvailable: boolean;
 };
 
 type BrowserDependencies = {
-  createSession: typeof createBrowserSession;
-  executeCode: typeof executeBrowserCode;
-  closeSession: typeof closeBrowserSession;
+  browser: Firecrawl["browser"];
+  browserExecute: Firecrawl["browserExecute"];
+  deleteBrowser: Firecrawl["deleteBrowser"];
   sleep: (milliseconds: number) => Promise<void>;
   traceToken: () => string;
 };
@@ -64,14 +65,18 @@ type LabBrowserHarnessOptions = {
   onSessionClosed?: (result: BrowserStopResult) => Promise<void>;
 };
 
-const defaultBrowserDependencies: BrowserDependencies = {
-  createSession: createBrowserSession,
-  executeCode: executeBrowserCode,
-  closeSession: closeBrowserSession,
-  sleep: async (milliseconds) =>
-    await new Promise<void>((resolve) => setTimeout(resolve, milliseconds)),
-  traceToken: () => crypto.randomUUID().replaceAll("-", ""),
-};
+function defaultBrowserDependencies(): BrowserDependencies {
+  const firecrawl = createFirecrawlClient({ maxRetries: 1 });
+  return {
+    browser: async (options) => await firecrawl.browser(options),
+    browserExecute: async (sessionId, options) =>
+      await firecrawl.browserExecute(sessionId, options),
+    deleteBrowser: async (sessionId) => await closeFirecrawlBrowserSession(firecrawl, sessionId),
+    sleep: async (milliseconds) =>
+      await new Promise<void>((resolve) => setTimeout(resolve, milliseconds)),
+    traceToken: () => crypto.randomUUID().replaceAll("-", ""),
+  };
+}
 
 function boundedText(value: string, label: string, maxLength = MAX_TOOL_TEXT_LENGTH) {
   const text = value.trim();
@@ -210,38 +215,48 @@ function redactSensitiveValues(value: string, sensitiveValues: ReadonlySet<strin
 }
 
 function browserOutput(
-  interaction: BrowserInteraction,
+  interaction: BrowserExecuteResponse,
   sensitiveValues: ReadonlySet<string>,
   outputOverride?: string,
 ) {
-  const output = outputOverride ?? (interaction.stdout || interaction.result || interaction.output);
+  const output =
+    outputOverride ?? (interaction.stdout || interaction.result || interaction.output || "");
+  const error = interaction.error?.trim();
   return {
-    success: interaction.success,
+    success: firecrawlBrowserExecutionSucceeded(interaction),
     output: redactSensitiveValues(output, sensitiveValues).slice(0, MAX_TOOL_OUTPUT_LENGTH),
-    error: interaction.error
-      ? redactSensitiveValues(interaction.error, sensitiveValues).slice(0, MAX_TOOL_OUTPUT_LENGTH)
+    error: error
+      ? redactSensitiveValues(error, sensitiveValues).slice(0, MAX_TOOL_OUTPUT_LENGTH)
       : null,
-    exitCode: interaction.exitCode,
-    killed: interaction.killed,
-    replayAvailable: interaction.replayAvailable,
+    exitCode: interaction.exitCode ?? null,
+    killed: interaction.killed ?? false,
   };
 }
 
-function interactionFailure(interaction: BrowserInteraction) {
-  if (interaction.killed) return "Browser provider command timed out";
-  return interaction.exitCode === null
-    ? "Browser provider command failed"
-    : `Browser provider command failed with exit code ${interaction.exitCode}`;
+function interactionFailure(
+  interaction: BrowserExecuteResponse,
+  sensitiveValues: ReadonlySet<string>,
+) {
+  const exitCode: number | null | undefined = interaction.exitCode;
+  const summary = interaction.killed
+    ? "Browser provider command timed out"
+    : exitCode === undefined || exitCode === null
+      ? "Browser provider command failed"
+      : `Browser provider command failed with exit code ${exitCode}`;
+  const detail = interaction.error?.trim();
+  return detail
+    ? `${summary}: ${redactSensitiveValues(diagnosticMessage(detail), sensitiveValues)}`
+    : summary;
 }
 
 function browserMutationOutput(
-  interaction: BrowserInteraction,
+  interaction: BrowserExecuteResponse,
   sensitiveValues: ReadonlySet<string>,
 ) {
   const base = browserOutput(interaction, sensitiveValues);
   if (
     interaction.exitCode !== SNAPSHOT_FAILED_AFTER_MUTATION_EXIT_CODE ||
-    !interaction.stderr.includes(SNAPSHOT_FAILED_AFTER_MUTATION)
+    !interaction.stderr?.includes(SNAPSHOT_FAILED_AFTER_MUTATION)
   ) {
     return base;
   }
@@ -251,7 +266,7 @@ function browserMutationOutput(
     output:
       "Mutation applied, but the compact post-action snapshot failed. Inspect the current page before continuing and do not retry the mutation.",
     stderr: redactSensitiveValues(
-      interaction.stderr.replaceAll(SNAPSHOT_FAILED_AFTER_MUTATION, "").trim(),
+      (interaction.stderr ?? "").replaceAll(SNAPSHOT_FAILED_AFTER_MUTATION, "").trim(),
       sensitiveValues,
     ).slice(0, MAX_TOOL_OUTPUT_LENGTH),
     error: "PostActionSnapshotFailed",
@@ -367,13 +382,12 @@ export function selectAgentMailTools(tools: ToolSet, inboxId: string) {
 
 export function createLabBrowserHarness(
   options: LabBrowserHarnessOptions = {},
-  dependencies: BrowserDependencies = defaultBrowserDependencies,
+  dependencies: BrowserDependencies = defaultBrowserDependencies(),
 ) {
   let sessionId: string | undefined;
   let closePromise: Promise<BrowserStopResult | undefined> | undefined;
   let stopResult: BrowserStopResult | undefined;
-  let terminalCloseFailure: { error: unknown } | undefined;
-  let closeAttempts = 0;
+  let closeCallbacksComplete = false;
   let pendingOpenCount = 0;
   let captureOperations = false;
   let localToolCallSequence = 0;
@@ -390,21 +404,19 @@ export function createLabBrowserHarness(
     return result;
   }
 
-  function execute(parts: readonly string[], operation: BrowserOperation, timeoutSeconds = 60) {
+  function execute(parts: readonly string[], timeoutSeconds = 60) {
     return serialized(async () => {
       if (!sessionId) {
         throw new Error("Open a browser session before using it");
       }
       const command = shellCommand(parts);
-      let interaction: BrowserInteraction;
+      let interaction: BrowserExecuteResponse;
       try {
-        interaction = await dependencies.executeCode(
-          sessionId,
-          command,
-          timeoutSeconds,
-          "bash",
-          operation,
-        );
+        interaction = await dependencies.browserExecute(sessionId, {
+          code: command,
+          language: "bash",
+          timeout: timeoutSeconds,
+        });
       } catch (error) {
         if (sensitiveValues.size > 0) {
           throw new Error("Browser provider request failed after managed credential use");
@@ -441,19 +453,20 @@ export function createLabBrowserHarness(
     }
     const token = dependencies.traceToken();
     const markers = browserTraceMarkers(token);
-    let interaction: BrowserInteraction;
+    let interaction: BrowserExecuteResponse;
     try {
-      interaction = await dependencies.executeCode(
-        sessionId,
-        traceMutationCommand(parts, action, token),
-        60,
-        "bash",
-        "mutate",
-      );
-    } catch {
+      interaction = await dependencies.browserExecute(sessionId, {
+        code: traceMutationCommand(parts, action, token),
+        language: "bash",
+        timeout: 60,
+      });
+    } catch (caught) {
+      const detail = redactSensitiveValues(diagnosticMessage(caught), sensitiveValues).trim();
       const outcome: BrowserOperationOutcome = {
         kind: "indeterminate_after_dispatch",
-        failure: "Browser provider transport failed; dispatch status is unknown",
+        failure: detail
+          ? `Browser provider transport failed: ${detail}; dispatch status is unknown`
+          : "Browser provider transport failed; dispatch status is unknown",
       };
       try {
         await options.onOperationSettled({ toolCallId, outcome });
@@ -471,30 +484,33 @@ export function createLabBrowserHarness(
     let parsed: ReturnType<typeof parseBrowserTrace> | undefined;
     let traceFailure: string | undefined;
     try {
-      parsed = parseBrowserTrace(interaction.stdout, token, action);
+      parsed = parseBrowserTrace(interaction.stdout ?? "", token, action);
     } catch (error) {
       parsed = undefined;
       traceFailure =
         error instanceof Error ? error.message : "Browser telemetry could not be parsed";
     }
 
-    const dispatchObserved = interaction.stderr.includes(markers.dispatch);
+    const dispatchObserved = interaction.stderr?.includes(markers.dispatch) === true;
     let outcome: BrowserOperationOutcome;
     if (
       parsed &&
       interaction.exitCode === SNAPSHOT_FAILED_AFTER_MUTATION_EXIT_CODE &&
-      interaction.stderr.includes(SNAPSHOT_FAILED_AFTER_MUTATION)
+      interaction.stderr?.includes(SNAPSHOT_FAILED_AFTER_MUTATION)
     ) {
       outcome = { kind: "applied_snapshot_failed", telemetry: parsed.telemetry };
-    } else if (interaction.success && parsed) {
+    } else if (firecrawlBrowserExecutionSucceeded(interaction) && parsed) {
       outcome = { kind: "applied", telemetry: parsed.telemetry };
     } else if (dispatchObserved) {
       outcome = {
         kind: "indeterminate_after_dispatch",
-        failure: traceFailure ?? interactionFailure(interaction),
+        failure: traceFailure ?? interactionFailure(interaction, sensitiveValues),
       };
     } else {
-      outcome = { kind: "failed_before_dispatch", failure: interactionFailure(interaction) };
+      outcome = {
+        kind: "failed_before_dispatch",
+        failure: interactionFailure(interaction, sensitiveValues),
+      };
     }
 
     try {
@@ -543,9 +559,13 @@ export function createLabBrowserHarness(
       if (captureOperations) {
         return await runInstrumentedMutation(parts, action, toolCallId);
       }
-      let interaction: BrowserInteraction;
+      let interaction: BrowserExecuteResponse;
       try {
-        interaction = await dependencies.executeCode(sessionId, code, 60, "bash", "mutate");
+        interaction = await dependencies.browserExecute(sessionId, {
+          code,
+          language: "bash",
+          timeout: 60,
+        });
       } catch (error) {
         if (sensitiveValues.size > 0) {
           throw new Error("Browser provider request failed after managed credential use");
@@ -567,15 +587,34 @@ export function createLabBrowserHarness(
       }
 
       const targetUrl = httpsUrl(url);
-      const session = await dependencies.createSession(options.profileName);
-      sessionId = session.sessionId;
-      const policy = await options.onSessionAvailable?.(session.sessionId);
-      captureOperations = policy?.captureOperations === true;
-      if (session.liveViewUrl !== null) {
-        await options.onLiveViewAvailable?.(session.liveViewUrl);
+      const session = await dependencies.browser({
+        streamWebView: true,
+        ttl: 3_600,
+        activityTtl: 3_600,
+        ...(options.profileName
+          ? { profile: { name: options.profileName, saveChanges: true } }
+          : {}),
+      });
+      if (!session.success || !session.id) {
+        throw new Error(session.error?.trim() || "Firecrawl did not create a browser session");
       }
-      if (session.interactiveLiveViewUrl !== null) {
-        await options.onInteractiveLiveViewAvailable?.(session.interactiveLiveViewUrl);
+      let liveViewUrl: string | null;
+      let interactiveLiveViewUrl: string | null;
+      try {
+        liveViewUrl = optionalFirecrawlLiveViewUrl(session.liveViewUrl);
+        interactiveLiveViewUrl = optionalFirecrawlLiveViewUrl(session.interactiveLiveViewUrl);
+      } catch (error) {
+        await dependencies.deleteBrowser(session.id);
+        throw error;
+      }
+      sessionId = session.id;
+      const policy = await options.onSessionAvailable?.(session.id);
+      captureOperations = policy?.captureOperations === true;
+      if (liveViewUrl !== null) {
+        await options.onLiveViewAvailable?.(liveViewUrl);
+      }
+      if (interactiveLiveViewUrl !== null) {
+        await options.onInteractiveLiveViewAvailable?.(interactiveLiveViewUrl);
       }
       if (captureOperations) {
         return await runInstrumentedMutation(
@@ -584,17 +623,15 @@ export function createLabBrowserHarness(
           toolCallId,
         );
       }
-      const snapshot = await dependencies.executeCode(
-        sessionId,
-        `${shellCommand(["agent-browser", "open", targetUrl])} && ${shellCommand([
+      const snapshot = await dependencies.browserExecute(sessionId, {
+        code: `${shellCommand(["agent-browser", "open", targetUrl])} && ${shellCommand([
           "agent-browser",
           "snapshot",
           "-i",
         ])}`,
-        60,
-        "bash",
-        "mutate",
-      );
+        language: "bash",
+        timeout: 60,
+      });
       return browserOutput(snapshot, sensitiveValues);
     });
     void opening.then(
@@ -612,46 +649,44 @@ export function createLabBrowserHarness(
     if (terminalTelemetryFailure && stopResult) {
       return Promise.reject(terminalTelemetryFailure.error);
     }
-    if (stopResult) {
+    if (stopResult && closeCallbacksComplete) {
       return Promise.resolve(stopResult);
-    }
-    if (terminalCloseFailure) {
-      return Promise.reject(terminalCloseFailure.error);
     }
     if (closePromise) {
       return closePromise;
     }
-    if (!sessionId && pendingOpenCount === 0) {
+    if (!sessionId && !stopResult && pendingOpenCount === 0) {
       return Promise.resolve(undefined);
     }
     const pendingClose = serialized(async () => {
-      if (!sessionId) {
+      if (!sessionId && !stopResult) {
         return undefined;
       }
-      closeAttempts += 1;
-      const sessionToClose = sessionId;
-      let result: BrowserStopResult;
       try {
-        result = await dependencies.closeSession(sessionToClose);
-        if (!result.success) {
-          throw new Error("Firecrawl did not stop the browser session");
+        if (!stopResult) {
+          const activeSessionId = sessionId;
+          if (!activeSessionId) return undefined;
+          const stopped = await dependencies.deleteBrowser(activeSessionId);
+          if (!stopped.success) {
+            throw new Error(stopped.error?.trim() || "Firecrawl did not stop the browser session");
+          }
+          stopResult = {
+            success: true,
+            sessionDurationMs: stopped.sessionDurationMs ?? null,
+            creditsBilled: stopped.creditsBilled ?? null,
+          };
+          sessionId = undefined;
         }
-        await options.onSessionClosed?.(result);
+        await options.onSessionClosed?.(stopResult);
         await options.onLiveViewClosed?.();
+        closeCallbacksComplete = true;
       } catch (error) {
-        const reportedError =
-          sensitiveValues.size > 0 ? new Error("Managed browser cleanup failed") : error;
-        if (closeAttempts >= MAX_BROWSER_CLOSE_ATTEMPTS) {
-          terminalCloseFailure = { error: reportedError };
-        }
-        throw reportedError;
+        throw sensitiveValues.size > 0 ? new Error("Managed browser cleanup failed") : error;
       }
-      sessionId = undefined;
-      stopResult = result;
       if (terminalTelemetryFailure) {
         throw terminalTelemetryFailure.error;
       }
-      return result;
+      return stopResult;
     });
     closePromise = pendingClose;
     void pendingClose.then(
@@ -670,7 +705,7 @@ export function createLabBrowserHarness(
       if (!value) throw new Error("Sensitive browser values cannot be empty");
       sensitiveValues.add(value);
     },
-    snapshot: async () => await execute(["agent-browser", "snapshot", "-i"], "read"),
+    snapshot: async () => await execute(["agent-browser", "snapshot", "-i"]),
     navigate: async (url: string, toolCallId?: string) => {
       const targetUrl = httpsUrl(url);
       return await executeMutation(
@@ -727,25 +762,21 @@ export function createLabBrowserHarness(
         toolCallId,
       );
     },
-    getPage: async (kind: "url" | "title") => await execute(["agent-browser", "get", kind], "read"),
+    getPage: async (kind: "url" | "title") => await execute(["agent-browser", "get", kind]),
     getElement: async (ref: string) =>
-      await execute(["agent-browser", "get", "text", elementRef(ref)], "read"),
+      await execute(["agent-browser", "get", "text", elementRef(ref)]),
     getElementAttribute: async (ref: string, attribute: "type") =>
-      await execute(["agent-browser", "get", "attr", elementRef(ref), attribute], "read"),
+      await execute(["agent-browser", "get", "attr", elementRef(ref), attribute]),
     getCount: async (selector: string) =>
-      await execute(
-        [
-          "agent-browser",
-          "get",
-          "count",
-          boundedText(selector, "CSS selector", MAX_CSS_SELECTOR_LENGTH),
-        ],
-        "read",
-      ),
-    waitForText: async (text: string) =>
-      await execute(["agent-browser", "wait", "--text", text], "read"),
+      await execute([
+        "agent-browser",
+        "get",
+        "count",
+        boundedText(selector, "CSS selector", MAX_CSS_SELECTOR_LENGTH),
+      ]),
+    waitForText: async (text: string) => await execute(["agent-browser", "wait", "--text", text]),
     waitForLoad: async (state: "domcontentloaded" | "networkidle") =>
-      await execute(["agent-browser", "wait", "--load", state], "read"),
+      await execute(["agent-browser", "wait", "--load", state]),
     waitForMilliseconds: async (duration: number) =>
       await serialized(async () => {
         await dependencies.sleep(duration);
@@ -755,10 +786,9 @@ export function createLabBrowserHarness(
           error: null,
           exitCode: 0,
           killed: false,
-          replayAvailable: false,
         };
       }),
-    listTabs: async () => await execute(["agent-browser", "--json", "tab"], "read"),
+    listTabs: async () => await execute(["agent-browser", "--json", "tab"]),
     switchTab: async (tabId: string, toolCallId?: string) => {
       const targetTabId = browserTabId(tabId);
       return await executeMutation(

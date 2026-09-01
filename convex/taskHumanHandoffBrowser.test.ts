@@ -6,7 +6,6 @@ function stoppedBrowser() {
     success: true,
     sessionDurationMs: 12_000,
     creditsBilled: 4,
-    replayAvailable: true,
   };
 }
 
@@ -19,7 +18,7 @@ describe("handed-off browser cleanup", () => {
         find: vi.fn(async () => {
           throw new Error("provider read failed");
         }),
-        execute: vi.fn(),
+        captureSnapshot: vi.fn(),
         close,
       },
     );
@@ -38,7 +37,7 @@ describe("handed-off browser cleanup", () => {
       { providerSessionId: "session-1", captureEvidence: true },
       {
         find: vi.fn(async () => ({ sessionId: "session-1", interactiveLiveViewUrl: null })),
-        execute: vi.fn(async () => {
+        captureSnapshot: vi.fn(async () => {
           throw new Error("snapshot failed");
         }),
         close,
@@ -49,13 +48,36 @@ describe("handed-off browser cleanup", () => {
     expect(result.evidence).toContain("snapshot failed");
   });
 
+  it("does not treat a nonzero snapshot command as successful evidence", async () => {
+    const close = vi.fn(async () => stoppedBrowser());
+    const result = await finishHandedOffBrowser(
+      { providerSessionId: "session-1", captureEvidence: true },
+      {
+        find: vi.fn(async () => ({ sessionId: "session-1", interactiveLiveViewUrl: null })),
+        captureSnapshot: vi.fn(async () => ({
+          success: true,
+          stdout: "partial output",
+          stderr: "snapshot failed",
+          exitCode: 1,
+          killed: false,
+          error: "Execution failed",
+        })),
+        close,
+      },
+    );
+
+    expect(result.evidence).toContain("snapshot failed");
+    expect(result.evidence).not.toContain("partial output");
+    expect(close).toHaveBeenCalledExactlyOnceWith("session-1");
+  });
+
   it("records an already-ended provider session without closing it again", async () => {
     const close = vi.fn(async () => stoppedBrowser());
     const result = await finishHandedOffBrowser(
       { providerSessionId: "session-1", captureEvidence: true },
       {
         find: vi.fn(async () => null),
-        execute: vi.fn(),
+        captureSnapshot: vi.fn(),
         close,
       },
     );

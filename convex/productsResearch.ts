@@ -1,3 +1,4 @@
+import type { Document, MapData, SearchData, SearchResultWeb } from "firecrawl";
 import { z } from "zod";
 import type { ProductInvestigationResult } from "./productsValidation";
 import { parseProductInvestigationResult } from "./productsValidation";
@@ -8,7 +9,7 @@ export const MAX_RESEARCH_PAGES = 6;
 export const MAX_RESEARCH_PAGE_CHARACTERS = 8_000;
 export const MAX_RESEARCH_PROMPT_CHARACTERS = 36_000;
 export const MAX_RESEARCH_FIRECRAWL_CREDITS = 9;
-export const FIRECRAWL_SEARCH_FALLBACK_CREDITS = 2;
+export const FIRECRAWL_SEARCH_BUDGET_CREDITS = 2;
 export const MAX_RESEARCH_SYNTHESIS_TEXT_CHARACTERS = 32_000;
 
 const MAX_MAP_RESPONSE_LINKS = 100;
@@ -163,32 +164,6 @@ export type ProductRetrievalMetadata = {
   scrapedPageCount: number;
 };
 
-export type FirecrawlSearchResults = {
-  candidates: ResearchCandidate[];
-  creditsUsed: number;
-};
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function requireRecord(value: unknown, label: string) {
-  if (!isRecord(value)) {
-    throw new Error(`${label} must be an object`);
-  }
-  return value;
-}
-
-function requireBoundedArray(value: unknown, label: string, maximumLength: number) {
-  if (!Array.isArray(value)) {
-    throw new Error(`${label} must be an array`);
-  }
-  if (value.length > maximumLength) {
-    throw new Error(`${label} exceeds ${maximumLength} items`);
-  }
-  return value;
-}
-
 function boundedProviderText(value: unknown, maximumLength: number) {
   if (typeof value !== "string") return null;
   const text = value.trim();
@@ -223,18 +198,17 @@ export function normalizeFirstPartyResearchUrl(value: unknown, productDomain: st
   return parsed.href;
 }
 
-function parseCandidate(value: unknown, productDomain: string): ResearchCandidate | null {
-  if (typeof value === "string") {
-    const url = normalizeFirstPartyResearchUrl(value, productDomain);
-    return url ? { url, title: null, description: null } : null;
-  }
-  if (!isRecord(value)) return null;
-  const url = normalizeFirstPartyResearchUrl(value["url"], productDomain);
+function parseCandidate(
+  value: SearchResultWeb | Document,
+  productDomain: string,
+): ResearchCandidate | null {
+  if (!("url" in value)) return null;
+  const url = normalizeFirstPartyResearchUrl(value.url, productDomain);
   if (!url) return null;
   return {
     url,
-    title: boundedProviderText(value["title"], MAX_TITLE_LENGTH),
-    description: boundedProviderText(value["description"], MAX_DESCRIPTION_LENGTH),
+    title: boundedProviderText(value.title, MAX_TITLE_LENGTH),
+    description: boundedProviderText(value.description, MAX_DESCRIPTION_LENGTH),
   };
 }
 
@@ -255,55 +229,29 @@ function dedupeCandidates(candidates: ResearchCandidate[]) {
   return [...byUrl.values()];
 }
 
-export function parseFirecrawlMapResponse(value: unknown, productDomain: string) {
-  const input = requireRecord(value, "Firecrawl Map response");
-  if (input["success"] !== true) {
-    throw new Error("Firecrawl Map was unsuccessful");
+export function researchCandidatesFromMap(value: MapData, productDomain: string) {
+  if (value.links.length > MAX_MAP_RESPONSE_LINKS) {
+    throw new Error(`Firecrawl Map exceeds ${MAX_MAP_RESPONSE_LINKS} links`);
   }
-  const links = requireBoundedArray(input["links"], "Firecrawl Map links", MAX_MAP_RESPONSE_LINKS);
   const candidates: ResearchCandidate[] = [];
-  for (const link of links) {
+  for (const link of value.links) {
     const candidate = parseCandidate(link, productDomain);
     if (candidate) candidates.push(candidate);
   }
   return dedupeCandidates(candidates);
 }
 
-function searchCredits(value: unknown) {
-  if (value === undefined || value === null) return FIRECRAWL_SEARCH_FALLBACK_CREDITS;
-  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
-    throw new Error("Firecrawl Search creditsUsed is invalid");
+export function researchCandidatesFromSearch(value: SearchData, productDomain: string) {
+  const web = value.web ?? [];
+  if (web.length > MAX_SEARCH_RESPONSE_RESULTS) {
+    throw new Error(`Firecrawl Search exceeds ${MAX_SEARCH_RESPONSE_RESULTS} web results`);
   }
-  const credits = Math.ceil(value);
-  if (credits > MAX_RESEARCH_FIRECRAWL_CREDITS - DEFAULT_MAP_CREDITS) {
-    throw new Error("Firecrawl Search exhausted the investigation credit ceiling");
-  }
-  return credits;
-}
-
-export function parseFirecrawlSearchResponse(
-  value: unknown,
-  productDomain: string,
-): FirecrawlSearchResults {
-  const input = requireRecord(value, "Firecrawl Search response");
-  if (input["success"] !== true) {
-    throw new Error("Firecrawl Search was unsuccessful");
-  }
-  const data = requireRecord(input["data"], "Firecrawl Search data");
-  const web = requireBoundedArray(
-    data["web"],
-    "Firecrawl Search web results",
-    MAX_SEARCH_RESPONSE_RESULTS,
-  );
   const candidates: ResearchCandidate[] = [];
   for (const result of web) {
     const candidate = parseCandidate(result, productDomain);
     if (candidate) candidates.push(candidate);
   }
-  return {
-    candidates: dedupeCandidates(candidates),
-    creditsUsed: searchCredits(input["creditsUsed"]),
-  };
+  return dedupeCandidates(candidates);
 }
 
 type ResearchCategory =
@@ -422,31 +370,25 @@ export function hasAdequateResearchCoverage(candidates: readonly ResearchCandida
   return candidates.length >= 4 && categories.size >= 3;
 }
 
-export function parseFirecrawlScrapeResponse(
-  value: unknown,
+export function researchPageFromScrape(
+  value: Document,
   requested: ResearchCandidate,
   productDomain: string,
 ): ScrapedResearchPage {
-  const input = requireRecord(value, "Firecrawl Scrape response");
-  if (input["success"] !== true) {
-    throw new Error("Firecrawl Scrape was unsuccessful");
-  }
-  const data = requireRecord(input["data"], "Firecrawl Scrape data");
-  if (typeof data["markdown"] !== "string" || !data["markdown"].trim()) {
+  if (!value.markdown?.trim()) {
     throw new Error("Firecrawl Scrape returned no markdown");
   }
-  const metadata = isRecord(data["metadata"]) ? data["metadata"] : null;
-  const reportedUrl = metadata?.["sourceURL"] ?? metadata?.["url"] ?? requested.url;
+  const reportedUrl = value.metadata?.sourceURL ?? value.metadata?.url ?? requested.url;
   const url = normalizeFirstPartyResearchUrl(reportedUrl, productDomain);
   if (!url) throw new Error("Firecrawl Scrape returned an unsafe source URL");
   const title =
-    boundedProviderText(metadata?.["title"], MAX_TITLE_LENGTH) ??
+    boundedProviderText(value.metadata?.title, MAX_TITLE_LENGTH) ??
     requested.title ??
     new URL(url).hostname;
   return {
     url,
     title,
-    markdown: data["markdown"].trim().slice(0, MAX_RESEARCH_PAGE_CHARACTERS),
+    markdown: value.markdown.trim().slice(0, MAX_RESEARCH_PAGE_CHARACTERS),
   };
 }
 

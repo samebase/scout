@@ -25,36 +25,42 @@ reuse and review, but Firecrawl-rendered live view or replay may capture the bro
 field is populated. Scout cannot retroactively scrub provider pixels or prove that provider logs
 exclude Execute request bodies.
 
-The public [Create Session API](https://docs.firecrawl.dev/api-reference/endpoint/browser-create)
-documents `streamWebView`, but it does not document `recordSession` or promise that Execute request
-bodies are excluded from provider logs. A malicious site could also transform or split a password
-before reflecting it, beyond Scout's exact-value scrubber.
+The public [Browser Sandbox documentation](https://docs.firecrawl.dev/features/browser) documents
+`streamWebView`, but it does not promise that Execute request bodies are excluded from provider
+logs. A malicious site could also transform or split a password before reflecting it, beyond
+Scout's exact-value scrubber.
 
 A stricter future design needs either a Firecrawl-native opaque secret API or a custom CDP broker.
 The broker would authenticate in a private disposable browser, close the credential-bearing
 document, transfer only allowlisted authentication cookies, and expose a separate clean browser to
 the model.
 
-## 2. Replay and video quality
+## 2. Replay boundary
 
-Scout does not record or encode claim-test video. It fetches Firecrawl's replay page metadata and
-serves the HLS playlist produced by Firecrawl. Firecrawl's public browser documentation exposes no
-recording resolution, bitrate, frame-rate, codec, or quality setting that Scout can request, and the
-existing HLS replay requests take no quality input. Player behavior can affect rendition selection
-and display, but it cannot reconstruct detail absent from the available source.
+The official Firecrawl Node SDK creates, executes, lists, and deletes Browser Sandbox sessions. It
+does not expose replay methods. Firecrawl's current API implementation records Browser sessions by
+default and registers two replay routes: one returns recorded-page metadata and one returns that
+page's HLS playlist. Scout keeps those two GET requests in
+`convex/scout/lib/firecrawlReplay.ts`. Every other Firecrawl request goes through the official SDK.
 
-Likely improvement paths include:
+The relevant Firecrawl source is the
+[v2 route registration](https://github.com/firecrawl/firecrawl/blob/main/apps/api/src/routes/v2.ts)
+and the
+[replay controller](https://github.com/firecrawl/firecrawl/blob/main/apps/api/src/controllers/v2/browser-replay.ts).
+The routes are absent from Firecrawl's public Browser documentation, Node SDK, and
+[published OpenAPI specification](https://github.com/firecrawl/firecrawl-docs/blob/main/v1/api-reference/v2-openapi.json).
+They are real server endpoints, but they remain an undocumented provider boundary. If Firecrawl adds
+replay to its SDK, that implementation should replace the isolated client.
 
-- Firecrawl adding or enabling a higher-quality recording option;
-- Scout transcoding a higher-quality source, if Firecrawl provides one; or
-- replacing provider replay with a custom CDP screen recorder.
-
-For the hackathon, Scout keeps the provider replay as evidence and documents that source capture
-quality is upstream of Scout's player.
+Scout does not record or encode the video. It reconstructs a shared timeline from recorded-page
+timestamps and Scout's browser-operation telemetry, then plays Firecrawl's HLS playlists. `hls.js`
+provides playback in browsers without native HLS support; browsers with native HLS use their built-in
+player. Firecrawl exposes no replay resolution, bitrate, frame-rate, codec, or quality setting that
+Scout can request.
 
 ## Short reviewer answer
 
 Scout owns credential storage and the model boundary, but Firecrawl remains trusted for the moment
-of browser entry. Scout also displays Firecrawl's HLS replay as supplied, with no documented
-recording-quality control. Both are known provider boundaries with clear upgrade paths rather than
-hidden claims of stronger guarantees.
+of browser entry. Scout also displays Firecrawl's HLS replay as supplied, with no documented quality
+control. Its model-output redaction and structured telemetry do not make provider-side browser
+pixels or request bodies secret.

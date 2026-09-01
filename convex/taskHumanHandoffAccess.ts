@@ -4,7 +4,7 @@ import { type Infer, v } from "convex/values";
 import { internal } from "./_generated/api";
 import { action } from "./_generated/server";
 import { taskHumanHandoffPageValidator } from "./taskHumanHandoffsModel";
-import { findActiveBrowserSession } from "./scout/lib/firecrawl";
+import { findActiveBrowserSession } from "./taskHumanHandoffBrowser";
 import {
   hashHumanHandoffAccessToken,
   isHumanHandoffAccessToken,
