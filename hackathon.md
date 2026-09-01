@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-01T10:07:41Z
+- **Last updated:** 2026-09-01T15:26:53Z
 
 ## Log
 
@@ -827,7 +827,7 @@ emailed handoff then completed live in a clean browser with its transcript and f
 preserved. All 254 tests and the complete Cloudflare build path passed
 (`src/components/human-handoff-page.test.tsx`).
 
-### 2026-09-01 - working tree
+### 2026-09-01 - 2b872e1 - v145
 
 Reduced the handoff lifecycle to one durable boundary: after Continue, the Workflow waits until
 Scout has persisted its paused Turn, then captures and closes the existing browser once and enqueues
@@ -841,3 +841,20 @@ handoff. All 254 tests and the complete Cloudflare build passed. A live Samebase
 handoff claim, Continue, browser close, and a second Turn without a second browser; its final Qwen
 judge request then recorded an upstream Convex AI Gateway HTTP 502 after three retries rather than
 misreporting success.
+
+### 2026-09-01 - working tree
+
+Made every Scout service account declare how it can be used: either an encrypted managed password
+or OAuth through one exact service-account record belonging to the same Scout. Account recording
+can add a newly observed Task-product account only from trusted browser identity evidence, resolves
+OAuth provider details to the stored account ID, and rejects unknown or mismatched login methods
+(`convex/scout/model.ts`, `convex/scout/serviceAccounts.ts`,
+`convex/scout/serviceAccountTool.ts`).
+
+Migrated the development inventory to the required union and removed the previous optional
+credential shape and temporary migration. Deleted the unused manual OAuth registration mutation,
+leaving managed-credential registration and evidence-backed Task recording as the only creation
+paths. The Scout detail page now shows each direct password or the concrete provider account used
+for OAuth. The full project check passed with all 250 tests, and the Convex development push plus
+local UI verification succeeded
+(`convex/scout/serviceAccountCredentials.ts`, `src/routes/scouts.$slug.tsx`).
