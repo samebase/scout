@@ -6,8 +6,11 @@ import {
   taskBrowserSessionLifecycleValidator,
   taskBrowserViewportValidator,
 } from "./taskBrowserModel";
-import { getBrowserReplayPlaylist, listBrowserReplayPages } from "./scout/lib/firecrawl";
-import { ProviderHttpError } from "./scout/lib/http";
+import {
+  getBrowserReplayPlaylist,
+  isFirecrawlReplayNotReady,
+  listBrowserReplayPages,
+} from "./scout/lib/firecrawlReplay";
 
 const replayPageValidator = v.object({
   pageId: v.string(),
@@ -40,10 +43,6 @@ type ReplayPlaylistResult =
   | { status: "processing" | "unavailable" }
   | { status: "ready"; playlist: string };
 
-function replayIsProcessing(error: unknown) {
-  return error instanceof ProviderHttpError && error.status === 404;
-}
-
 export const listPages = action({
   args: {
     sessionId: v.id("taskBrowserSessions"),
@@ -60,21 +59,20 @@ export const listPages = action({
   ),
   handler: async (ctx, args): Promise<ReplayPagesResult> => {
     const replayData = await ctx.runQuery(internal.tasks.replayData, args);
-    if (!replayData) return { status: "unavailable" } as const;
+    if (!replayData) return { status: "unavailable" };
 
     try {
       const pages = await listBrowserReplayPages(replayData.providerSessionId);
-      return pages.length > 0
-        ? ({
-            status: "ready",
-            pages,
-            viewport: replayData.viewport,
-            lifecycle: replayData.lifecycle,
-            operations: replayData.operations,
-          } as const)
-        : ({ status: "processing" } as const);
+      if (pages.length === 0) return { status: "processing" };
+      return {
+        status: "ready",
+        pages,
+        viewport: replayData.viewport,
+        lifecycle: replayData.lifecycle,
+        operations: replayData.operations,
+      };
     } catch (error) {
-      if (replayIsProcessing(error)) return { status: "processing" } as const;
+      if (isFirecrawlReplayNotReady(error)) return { status: "processing" };
       throw new Error("Firecrawl replay could not be loaded");
     }
   },
@@ -96,15 +94,15 @@ export const loadPlaylist = action({
     const replayData = await ctx.runQuery(internal.tasks.replayData, {
       sessionId: args.sessionId,
     });
-    if (!replayData) return { status: "unavailable" } as const;
+    if (!replayData) return { status: "unavailable" };
 
     try {
       return {
         status: "ready",
         playlist: await getBrowserReplayPlaylist(replayData.providerSessionId, args.pageId),
-      } as const;
+      };
     } catch (error) {
-      if (replayIsProcessing(error)) return { status: "processing" } as const;
+      if (isFirecrawlReplayNotReady(error)) return { status: "processing" };
       throw new Error("Firecrawl replay could not be loaded");
     }
   },

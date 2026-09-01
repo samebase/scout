@@ -1,3 +1,5 @@
+import { vResultValidator } from "@convex-dev/workpool";
+import { vWorkflowId } from "@convex-dev/workflow";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -301,11 +303,11 @@ export const startInvestigation = mutation({
     });
     const workflowId = await productInvestigationWorkflow.start(
       ctx,
-      internal.productsInvestigationWorkflow.productResearchV1,
+      internal.products.productResearchV1,
       { investigationId },
       {
         startAsync: true,
-        onComplete: internal.productsInvestigationWorkflow.onComplete,
+        onComplete: internal.products.finishProductResearchWorkflow,
         context: { investigationId },
       },
     );
@@ -315,6 +317,88 @@ export const startInvestigation = mutation({
       latestInvestigationId: investigationId,
     });
     return { investigationId, created: true };
+  },
+});
+
+export const productResearchV1 = productInvestigationWorkflow
+  .define({
+    args: { investigationId: v.id("productInvestigations") },
+    returns: v.null(),
+  })
+  .handler(async (step, args): Promise<null> => {
+    const started = await step.runMutation(
+      internal.products.markProductResearchRunning,
+      { investigationId: args.investigationId, durableWorkflow: true },
+      { name: "Convex Workflow start investigation" },
+    );
+    if (started === null) return null;
+    const discovered = await step.runAction(
+      internal.productsInvestigationWorkflow.discoverSources,
+      {
+        investigationId: args.investigationId,
+        investigationStartedAt: started.startedAt,
+        productName: started.productName,
+        productDomain: started.productDomain,
+        primaryUrl: started.primaryUrl,
+      },
+      { name: "Scout discover first-party sources", retry: false },
+    );
+    const read = await step.runAction(
+      internal.productsInvestigationWorkflow.readSources,
+      {
+        investigationId: args.investigationId,
+        investigationStartedAt: started.startedAt,
+        productDomain: started.productDomain,
+        selected: discovered.selected,
+        retrieval: discovered.retrieval,
+      },
+      { name: "Scout read selected sources with Firecrawl", retry: false },
+    );
+    const result = await step.runAction(
+      internal.productsInvestigationWorkflow.extractClaims,
+      {
+        investigationId: args.investigationId,
+        investigationStartedAt: started.startedAt,
+        productName: started.productName,
+        productDomain: started.productDomain,
+        agentThreadId: started.agentThreadId,
+        artifactIds: read.artifactIds,
+      },
+      { name: "Convex Agent extract supported claims", retry: false },
+    );
+    await step.runMutation(
+      internal.products.completeProductResearch,
+      {
+        investigationId: args.investigationId,
+        startedAt: started.startedAt,
+        retrieval: read.retrieval,
+        result,
+      },
+      { name: "Convex save investigation report" },
+    );
+    return null;
+  });
+
+export const finishProductResearchWorkflow = internalMutation({
+  args: {
+    workflowId: vWorkflowId,
+    result: vResultValidator,
+    context: v.object({ investigationId: v.id("productInvestigations") }),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    if (args.result.kind === "failed") {
+      await ctx.runMutation(internal.products.failProductResearch, {
+        investigationId: args.context.investigationId,
+        failure: boundedInvestigationFailure(new Error(args.result.error)),
+      });
+    } else if (args.result.kind === "canceled") {
+      await ctx.runMutation(internal.products.failProductResearch, {
+        investigationId: args.context.investigationId,
+        failure: "Product investigation workflow was canceled",
+      });
+    }
+    return null;
   },
 });
 

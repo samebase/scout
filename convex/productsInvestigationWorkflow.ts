@@ -1,10 +1,10 @@
-import { vResultValidator } from "@convex-dev/workpool";
-import { vWorkflowId } from "@convex-dev/workflow";
+"use node";
+
+import type { Firecrawl, MapOptions, ScrapeOptions, SearchRequest } from "firecrawl";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { internalAction, internalMutation, type ActionCtx } from "./_generated/server";
-import { productInvestigationWorkflow } from "./productInvestigationWorkflow";
+import { internalAction, type ActionCtx } from "./_generated/server";
 import { productResearchAgent } from "./productResearchAgent";
 import {
   PRODUCT_INVESTIGATION_EFFORT,
@@ -14,7 +14,7 @@ import {
 } from "./productsModel";
 import {
   FIRECRAWL_MAP_REQUEST_LIMIT,
-  FIRECRAWL_SEARCH_FALLBACK_CREDITS,
+  FIRECRAWL_SEARCH_BUDGET_CREDITS,
   FIRECRAWL_SEARCH_REQUEST_LIMIT,
   MAX_RESEARCH_FIRECRAWL_CREDITS,
   type ProductRetrievalMetadata,
@@ -23,19 +23,16 @@ import {
   createProductRetrievalMetadata,
   hasAdequateResearchCoverage,
   hydrateProductResearchResult,
-  parseFirecrawlMapResponse,
-  parseFirecrawlScrapeResponse,
-  parseFirecrawlSearchResponse,
   parseProductResearchSynthesisText,
+  researchCandidatesFromMap,
+  researchCandidatesFromSearch,
+  researchPageFromScrape,
   requireUsableResearchPages,
   selectResearchCandidates,
 } from "./productsResearch";
 import { boundedInvestigationFailure } from "./productsValidation";
-import { fetchJson, requireEnv } from "./scout/lib/http";
+import { createFirecrawlClient } from "./scout/lib/firecrawl";
 
-const FIRECRAWL_MAP_URL = "https://api.firecrawl.dev/v2/map";
-const FIRECRAWL_SEARCH_URL = "https://api.firecrawl.dev/v2/search";
-const FIRECRAWL_SCRAPE_URL = "https://api.firecrawl.dev/v2/scrape";
 const MAP_TIMEOUT_MS = 15_000;
 const SEARCH_TIMEOUT_MS = 15_000;
 const SCRAPE_TIMEOUT_MS = 20_000;
@@ -48,13 +45,6 @@ const researchCandidateValidator = v.object({
   title: v.union(v.string(), v.null()),
   description: v.union(v.string(), v.null()),
 });
-
-function providerHeaders() {
-  return {
-    Authorization: `Bearer ${requireEnv("FIRECRAWL_API_KEY")}`,
-    "Content-Type": "application/json",
-  };
-}
 
 function searchQuery(productName: string, productDomain: string) {
   return `${productName} ${productDomain} pricing features documentation help security privacy integrations API signup access`;
@@ -165,14 +155,15 @@ export const discoverSources = internalAction({
     retrieval: productRetrievalMetadataValidator,
   }),
   handler: async (ctx, args) => {
-    const mapBody = {
-      url: args.primaryUrl,
+    const firecrawl = createFirecrawlClient();
+    const mapOptions = {
       sitemap: "include",
       includeSubdomains: true,
       ignoreQueryParameters: true,
       limit: FIRECRAWL_MAP_REQUEST_LIMIT,
       timeout: MAP_TIMEOUT_MS,
-    };
+    } satisfies MapOptions;
+    const mapCall = { url: args.primaryUrl, options: mapOptions };
     const mapAttempt: number | null = await ctx.runMutation(
       internal.productsInvestigationActivities.start,
       {
@@ -181,10 +172,10 @@ export const discoverSources = internalAction({
         key: "firecrawl_map",
         sequence: 10,
         actor: "Firecrawl",
-        operation: "POST /v2/map",
+        operation: "firecrawl.map()",
         source: {
           kind: "external",
-          request: { method: "POST", url: FIRECRAWL_MAP_URL, body: prettyJson(mapBody) },
+          request: { method: null, url: null, body: prettyJson(mapCall) },
         },
       },
     );
@@ -192,13 +183,8 @@ export const discoverSources = internalAction({
 
     let mapCandidates: ResearchCandidate[];
     try {
-      const mapResponse = await fetchJson("Firecrawl", FIRECRAWL_MAP_URL, {
-        method: "POST",
-        headers: providerHeaders(),
-        signal: AbortSignal.timeout(MAP_TIMEOUT_MS),
-        body: JSON.stringify(mapBody),
-      });
-      mapCandidates = parseFirecrawlMapResponse(mapResponse, args.productDomain);
+      const map = await firecrawl.map(args.primaryUrl, mapOptions);
+      mapCandidates = researchCandidatesFromMap(map, args.productDomain);
       await ctx.runMutation(internal.productsInvestigationActivities.complete, {
         investigationId: args.investigationId,
         investigationStartedAt: args.investigationStartedAt,
@@ -240,14 +226,14 @@ export const discoverSources = internalAction({
     });
     let searchCredits = 0;
     const query = searchQuery(args.productName, args.productDomain);
-    const searchBody = {
-      query,
+    const searchOptions = {
       limit: FIRECRAWL_SEARCH_REQUEST_LIMIT,
       sources: ["web"],
       includeDomains: [args.productDomain],
       timeout: SEARCH_TIMEOUT_MS,
       ignoreInvalidURLs: true,
-    };
+    } satisfies Omit<SearchRequest, "query">;
+    const searchCall = { query, options: searchOptions };
     if (selection.adequateCoverage) {
       await ctx.runMutation(internal.productsInvestigationActivities.skip, {
         investigationId: args.investigationId,
@@ -255,10 +241,10 @@ export const discoverSources = internalAction({
         key: "firecrawl_search",
         sequence: 30,
         actor: "Firecrawl",
-        operation: "POST /v2/search",
+        operation: "firecrawl.search()",
         source: {
           kind: "external",
-          request: { method: "POST", url: FIRECRAWL_SEARCH_URL, body: prettyJson(searchBody) },
+          request: { method: null, url: null, body: prettyJson(searchCall) },
         },
         reason: "The site map produced enough first-party source coverage.",
       });
@@ -271,30 +257,27 @@ export const discoverSources = internalAction({
           key: "firecrawl_search",
           sequence: 30,
           actor: "Firecrawl",
-          operation: "POST /v2/search",
+          operation: "firecrawl.search()",
           source: {
             kind: "external",
-            request: { method: "POST", url: FIRECRAWL_SEARCH_URL, body: prettyJson(searchBody) },
+            request: { method: null, url: null, body: prettyJson(searchCall) },
           },
         },
       );
       if (searchAttempt === null) throw new Error("Product investigation is no longer active");
       try {
-        const searchResponse = await fetchJson("Firecrawl", FIRECRAWL_SEARCH_URL, {
-          method: "POST",
-          headers: providerHeaders(),
-          signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
-          body: JSON.stringify(searchBody),
-        });
-        const search = parseFirecrawlSearchResponse(searchResponse, args.productDomain);
-        searchCredits = search.creditsUsed;
+        const searchCandidates = researchCandidatesFromSearch(
+          await firecrawl.search(query, searchOptions),
+          args.productDomain,
+        );
+        searchCredits = FIRECRAWL_SEARCH_BUDGET_CREDITS;
         await ctx.runMutation(internal.productsInvestigationActivities.complete, {
           investigationId: args.investigationId,
           investigationStartedAt: args.investigationStartedAt,
           key: "firecrawl_search",
           attempt: searchAttempt,
           metrics: [
-            { label: "Eligible first-party results", value: String(search.candidates.length) },
+            { label: "Eligible first-party results", value: String(searchCandidates.length) },
             { label: "Firecrawl credits", value: String(searchCredits) },
           ],
         });
@@ -303,12 +286,12 @@ export const discoverSources = internalAction({
           investigationStartedAt: args.investigationStartedAt,
           key: "select_sources_after_search",
           sequence: 31,
-          candidates: [...mapCandidates, ...search.candidates],
+          candidates: [...mapCandidates, ...searchCandidates],
           primaryUrl: args.primaryUrl,
           productDomain: args.productDomain,
         });
       } catch (error) {
-        searchCredits = FIRECRAWL_SEARCH_FALLBACK_CREDITS;
+        searchCredits = FIRECRAWL_SEARCH_BUDGET_CREDITS;
         await failActivity(ctx, {
           investigationId: args.investigationId,
           investigationStartedAt: args.investigationStartedAt,
@@ -339,6 +322,7 @@ export const discoverSources = internalAction({
 
 async function scrapeSource(
   ctx: ActionCtx,
+  firecrawl: Pick<Firecrawl, "scrape">,
   args: {
     investigationId: Id<"productInvestigations">;
     investigationStartedAt: number;
@@ -347,14 +331,14 @@ async function scrapeSource(
     index: number;
   },
 ) {
-  const body = {
-    url: args.candidate.url,
+  const scrapeOptions = {
     formats: ["markdown"],
     onlyMainContent: true,
     proxy: "basic",
     maxAge: FIRECRAWL_CACHE_MAX_AGE_MS,
     timeout: SCRAPE_TIMEOUT_MS,
-  };
+  } satisfies ScrapeOptions;
+  const scrapeCall = { url: args.candidate.url, options: scrapeOptions };
   const key = `firecrawl_scrape_${args.index + 1}`;
   const attempt: number | null = await ctx.runMutation(
     internal.productsInvestigationActivities.start,
@@ -364,22 +348,20 @@ async function scrapeSource(
       key,
       sequence: 40 + args.index,
       actor: "Firecrawl",
-      operation: "POST /v2/scrape",
+      operation: "firecrawl.scrape()",
       source: {
         kind: "external",
-        request: { method: "POST", url: FIRECRAWL_SCRAPE_URL, body: prettyJson(body) },
+        request: { method: null, url: null, body: prettyJson(scrapeCall) },
       },
     },
   );
   if (attempt === null) throw new Error("Product investigation is no longer active");
   try {
-    const response = await fetchJson("Firecrawl", FIRECRAWL_SCRAPE_URL, {
-      method: "POST",
-      headers: providerHeaders(),
-      signal: AbortSignal.timeout(SCRAPE_TIMEOUT_MS),
-      body: JSON.stringify(body),
-    });
-    const page = parseFirecrawlScrapeResponse(response, args.candidate, args.productDomain);
+    const page = researchPageFromScrape(
+      await firecrawl.scrape(args.candidate.url, scrapeOptions),
+      args.candidate,
+      args.productDomain,
+    );
     const artifactId: Id<"productInvestigationArtifacts"> | null = await ctx.runMutation(
       internal.productsInvestigationActivities.storeArtifact,
       {
@@ -430,6 +412,7 @@ export const readSources = internalAction({
     retrieval: productRetrievalMetadataValidator,
   }),
   handler: async (ctx, args) => {
+    const firecrawl = createFirecrawlClient();
     const existing: {
       artifactId: Id<"productInvestigationArtifacts">;
       sequence: number;
@@ -448,7 +431,7 @@ export const readSources = internalAction({
             const artifactId = existingByUrl.get(candidate.url);
             return (
               artifactId ??
-              (await scrapeSource(ctx, {
+              (await scrapeSource(ctx, firecrawl, {
                 investigationId: args.investigationId,
                 investigationStartedAt: args.investigationStartedAt,
                 candidate,
@@ -558,87 +541,5 @@ export const extractClaims = internalAction({
       });
       throw error;
     }
-  },
-});
-
-export const productResearchV1 = productInvestigationWorkflow
-  .define({
-    args: { investigationId: v.id("productInvestigations") },
-    returns: v.null(),
-  })
-  .handler(async (step, args): Promise<null> => {
-    const started = await step.runMutation(
-      internal.products.markProductResearchRunning,
-      { investigationId: args.investigationId, durableWorkflow: true },
-      { name: "Convex Workflow start investigation" },
-    );
-    if (started === null) return null;
-    const discovered = await step.runAction(
-      internal.productsInvestigationWorkflow.discoverSources,
-      {
-        investigationId: args.investigationId,
-        investigationStartedAt: started.startedAt,
-        productName: started.productName,
-        productDomain: started.productDomain,
-        primaryUrl: started.primaryUrl,
-      },
-      { name: "Scout discover first-party sources", retry: false },
-    );
-    const read = await step.runAction(
-      internal.productsInvestigationWorkflow.readSources,
-      {
-        investigationId: args.investigationId,
-        investigationStartedAt: started.startedAt,
-        productDomain: started.productDomain,
-        selected: discovered.selected,
-        retrieval: discovered.retrieval,
-      },
-      { name: "Scout read selected sources with Firecrawl", retry: false },
-    );
-    const result = await step.runAction(
-      internal.productsInvestigationWorkflow.extractClaims,
-      {
-        investigationId: args.investigationId,
-        investigationStartedAt: started.startedAt,
-        productName: started.productName,
-        productDomain: started.productDomain,
-        agentThreadId: started.agentThreadId,
-        artifactIds: read.artifactIds,
-      },
-      { name: "Convex Agent extract supported claims", retry: false },
-    );
-    await step.runMutation(
-      internal.products.completeProductResearch,
-      {
-        investigationId: args.investigationId,
-        startedAt: started.startedAt,
-        retrieval: read.retrieval,
-        result,
-      },
-      { name: "Convex save investigation report" },
-    );
-    return null;
-  });
-
-export const onComplete = internalMutation({
-  args: {
-    workflowId: vWorkflowId,
-    result: vResultValidator,
-    context: v.object({ investigationId: v.id("productInvestigations") }),
-  },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    if (args.result.kind === "failed") {
-      await ctx.runMutation(internal.products.failProductResearch, {
-        investigationId: args.context.investigationId,
-        failure: boundedInvestigationFailure(new Error(args.result.error)),
-      });
-    } else if (args.result.kind === "canceled") {
-      await ctx.runMutation(internal.products.failProductResearch, {
-        investigationId: args.context.investigationId,
-        failure: "Product investigation workflow was canceled",
-      });
-    }
-    return null;
   },
 });

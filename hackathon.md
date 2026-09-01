@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-01T15:26:53Z
+- **Last updated:** 2026-09-01T21:53:25Z
 
 ## Log
 
@@ -842,7 +842,7 @@ handoff claim, Continue, browser close, and a second Turn without a second brows
 judge request then recorded an upstream Convex AI Gateway HTTP 502 after three retries rather than
 misreporting success.
 
-### 2026-09-01 - working tree
+### 2026-09-01 - f0d6bb2 - v147
 
 Made every Scout service account declare how it can be used: either an encrypted managed password
 or OAuth through one exact service-account record belonging to the same Scout. Account recording
@@ -858,3 +858,21 @@ paths. The Scout detail page now shows each direct password or the concrete prov
 for OAuth. The full project check passed with all 250 tests, and the Convex development push plus
 local UI verification succeeded
 (`convex/scout/serviceAccountCredentials.ts`, `src/routes/scouts.$slug.tsx`).
+
+### 2026-09-01 - working tree
+
+Replaced every Scout-owned Firecrawl HTTP transport with the official `firecrawl` Node SDK for
+Browser Sandbox, Map, Search, and Scrape. Scout keeps its product-level URL safety, credentials,
+telemetry, human-handoff rules, and narrow CSS-count tool without recreating Firecrawl's HTTP,
+error, or retry stack
+(`convex/scout/lib/firecrawl.ts`, `convex/scout/labTools.ts`,
+`convex/productsInvestigationWorkflow.ts`).
+
+Preserved the replay feature, including the reconstructed cross-tab timeline and `hls.js` player.
+Firecrawl exposes the two replay GET routes in its server but not its Node SDK or public OpenAPI
+specification, so Scout isolates only those requests in one runtime-validated adapter. Browser
+mutations use one SDK attempt to avoid duplicate actions, remote process failures are distinguished
+from successful API requests, and ambiguous closes are reconciled through the SDK session list. A
+local Convex development push, all 231 tests, and the complete Cloudflare build passed
+(`convex/scout/lib/firecrawlReplay.ts`, `convex/taskReplay.ts`,
+`src/components/task-replay.tsx`).

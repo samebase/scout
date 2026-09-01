@@ -814,7 +814,7 @@ function LiveView({
   if (session === undefined) return <MainStatus>Loading browser session</MainStatus>;
   if (handoff) return <HumanHandoffView handoff={handoff} />;
   if (session.lifecycle.kind === "closed")
-    return <MainStatus>Session closed — open Replay to watch it</MainStatus>;
+    return <MainStatus>Session closed. Open Replay to watch it.</MainStatus>;
   if (!liveViewUrl) return <MainStatus>Connecting to live browser</MainStatus>;
   return <BrowserFrame session={session} url={liveViewUrl} />;
 }
