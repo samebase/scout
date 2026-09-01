@@ -335,6 +335,8 @@ export const generateResponse = internalAction({
       if (!activeBrowser) throw new Error("Browser harness was not initialized");
       const humanHandoffArm = createSingleUseHumanHandoffArm();
       const attemptResolutionArm = createSingleUseAttemptResolutionArm();
+      let attemptResolutionRequired = false;
+      let attemptResolutionPersisted = false;
       const humanHandoffCallbacks: HumanHandoffCallbacks<Id<"taskHumanHandoffs">> | null =
         isTaskTurn
           ? {
@@ -476,14 +478,14 @@ export const generateResponse = internalAction({
           : {};
       const attemptResolutionTools = isTaskTurn
         ? {
-            resolve_attempt: createAttemptResolutionTool(
-              async (resolution) =>
-                await ctx.runMutation(internal.tasks.resolveAttempt, {
-                  promptMessageId: args.promptMessageId,
-                  state: resolution,
-                }),
-              attemptResolutionArm.consume,
-            ),
+            resolve_attempt: createAttemptResolutionTool(async (resolution) => {
+              const result = await ctx.runMutation(internal.tasks.resolveAttempt, {
+                promptMessageId: args.promptMessageId,
+                state: resolution,
+              });
+              attemptResolutionPersisted = true;
+              return result;
+            }, attemptResolutionArm.consume),
           }
         : {};
 
@@ -502,6 +504,8 @@ export const generateResponse = internalAction({
           ? ""
           : `\n\nYou are working on an operator-defined Task for ${JSON.stringify(runtimeContext.product.name)}. Its primary URL is ${JSON.stringify(runtimeContext.product.primaryUrl)} and product domain is ${JSON.stringify(runtimeContext.product.domain)}. The attempt uses ${runtimeContext.browserProfile.kind === "fresh" ? "a fresh browser profile" : `the persistent Scout browser profile ${JSON.stringify(runtimeContext.browserProfile.profileName)}`}. Decide the next useful actions from the current operator message, the existing thread, and visible product state; do not force the work into a predefined testing workflow. If you reach an authenticated account menu, call record_authenticated_service_account with visible identity and Sign out or Log out refs so the Scout inventory reflects what you verified. If a CAPTCHA or another strictly human-only check blocks progress, call request_human_help instead of attempting to solve or bypass it. That tool sends a durable handoff and pauses this Turn; do not poll or keep working after it. Close the browser before an ordinary final response. After a successful browser close, resolve the attempt once as completed when the objective is achieved or blocked when it is not, with a short evidence-based conclusion.`;
       const instructions = `${SCOUT_AGENT_INSTRUCTIONS}\n\n${scoutWebsiteIdentityInstructions(scout)}\n\n${passwordInstructions}${taskInstructions}`;
+      const resolutionInstructions =
+        "Act only as the final judge for this Task attempt. The browser is already closed; do not use or discuss browser tools. Review the objective and evidence in the conversation, then call resolve_attempt. Choose completed only when the objective is achieved with sufficient evidence; otherwise choose blocked. Give a short evidence-based conclusion. Do not return ordinary prose.";
       const streamErrors = createStreamErrorCapture();
       const streamResult = await scoutAgent.streamText(
         ctx,
@@ -518,13 +522,11 @@ export const generateResponse = internalAction({
                 prepareStep: async ({ steps, stepNumber }) => {
                   if (args.mode.kind === "handoff_continuation" && stepNumber === 0) {
                     taskLoopState = "resolving";
+                    attemptResolutionRequired = true;
                     attemptResolutionArm.arm();
                     return {
                       activeTools: ["resolve_attempt"] as const,
-                      toolChoice: {
-                        type: "tool",
-                        toolName: "resolve_attempt",
-                      } as const,
+                      instructions: resolutionInstructions,
                     };
                   }
                   const decision = decideTaskStep({
@@ -562,13 +564,11 @@ export const generateResponse = internalAction({
                         toolChoice: { type: "tool", toolName: "browser_close" } as const,
                       };
                     case "resolve_attempt":
+                      attemptResolutionRequired = true;
                       attemptResolutionArm.arm();
                       return {
                         activeTools: ["resolve_attempt"] as const,
-                        toolChoice: {
-                          type: "tool",
-                          toolName: "resolve_attempt",
-                        } as const,
+                        instructions: resolutionInstructions,
                       };
                     case "resolution_failed":
                       throw new Error("Scout could not persist the Attempt conclusion");
@@ -602,6 +602,9 @@ export const generateResponse = internalAction({
       );
       await streamResult.consumeStream();
       streamErrors.throwIfCaptured();
+      if (attemptResolutionRequired && !attemptResolutionPersisted) {
+        throw new Error("Scout ended without persisting the Attempt conclusion");
+      }
       generationResult = {
         kind: "completed",
         usage: tokenUsage(await streamResult.totalUsage),

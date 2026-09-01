@@ -637,11 +637,11 @@ export const resolveAttempt = internalMutation({
       return attempt.state;
     }
     if (attempt.state.kind !== "active") throw new Error("Task Attempt is already resolved");
-    const session = await ctx.db
+    const sessions = await ctx.db
       .query("taskBrowserSessions")
-      .withIndex("by_turn_id", (index) => index.eq("turnId", turn._id))
-      .unique();
-    if (!session || session.attemptId !== attempt._id || session.lifecycle.kind !== "closed") {
+      .withIndex("by_attempt_id_and_sequence", (index) => index.eq("attemptId", attempt._id))
+      .take(MAX_BROWSER_SESSIONS_PER_ATTEMPT);
+    if (sessions.length === 0 || sessions.some((session) => session.lifecycle.kind !== "closed")) {
       throw new Error("Close the task browser session before resolving the Attempt");
     }
     const state = {

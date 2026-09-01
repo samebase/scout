@@ -98,16 +98,11 @@ export function HumanHandoffPage({ handoffId }: { handoffId: string }) {
 
   useEffect(() => {
     if (state.kind !== "ready" || state.page.status !== "waiting") return;
-    const refresh = () => void load();
     const expiryTimer = window.setTimeout(
-      refresh,
+      () => void load(),
       Math.max(0, state.page.expiresAt - state.page.serverNow),
     );
-    window.addEventListener("focus", refresh);
-    return () => {
-      window.clearTimeout(expiryTimer);
-      window.removeEventListener("focus", refresh);
-    };
+    return () => window.clearTimeout(expiryTimer);
   }, [load, state]);
 
   const submit = async () => {

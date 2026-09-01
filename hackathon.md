@@ -789,7 +789,7 @@ Added a second-by-second expiry countdown to the secure handoff page. All 254 te
 Cloudflare build path, and the Convex development push passed
 (`src/components/human-handoff-page.tsx`).
 
-### 2026-09-01 - working tree
+### 2026-09-01 - 44f7641 - v140
 
 Separated handoff delivery from live control: an unopened private link now remains claimable for 45
 minutes, while its first valid open atomically starts a separate five-minute control window. A
@@ -801,3 +801,16 @@ Removed the model-dependent forced handoff transition after Qwen exposed it as l
 text. A live Samebase checkpoint run proved email handoff creation, the two independent timers,
 human completion, Continue, final snapshot capture, browser closure, and continuation enqueueing.
 The complete project check passed with all 252 tests.
+
+### 2026-09-01 - working tree
+
+Made post-handoff Attempt resolution provider-portable and consistent with the Task hierarchy. Qwen
+now receives a clean final-judge step with only `resolve_attempt` available instead of a forced
+tool-choice request rejected by the provider. Resolution verifies that every Browser Session for
+the Attempt is closed rather than requiring the continuation Turn to own one
+(`convex/scout/labGeneration.ts`, `convex/tasks.ts`).
+
+Removed the focus refresh that could detach the Continue button before its click reached React. A
+fresh Chrome and Gmail run completed the Samebase human checkpoint with one Continue click, two
+Turns, one closed Browser Session, replay, and a persisted Completed conclusion. The complete
+project check passed with all 253 tests (`src/components/human-handoff-page.tsx`).

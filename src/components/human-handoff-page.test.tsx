@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
@@ -102,7 +102,7 @@ describe("HumanHandoffPage", () => {
     expect(testState.continueHandoff).not.toHaveBeenCalled();
 
     window.dispatchEvent(new Event("focus"));
-    await waitFor(() => expect(testState.load).toHaveBeenCalledTimes(2));
+    expect(testState.load).toHaveBeenCalledOnce();
 
     await userEvent.click(
       screen.getByRole("button", { name: "I completed the check. Continue Scout" }),

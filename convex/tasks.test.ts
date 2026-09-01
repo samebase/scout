@@ -247,6 +247,47 @@ describe("Product Tasks", () => {
     ).rejects.toThrow("Active task Turn not found");
   });
 
+  it("resolves a continuation Turn after an earlier browser session closes", async () => {
+    const { backend, admin, scoutId, productId } = await setup();
+    const task = await admin.mutation(api.tasks.create, {
+      productId,
+      instruction: "Complete the human checkpoint and confirm the result.",
+    });
+    const started = await admin.mutation(api.tasks.startAttempt, {
+      taskId: task.taskId,
+      scoutId,
+      browserProfile: { kind: "fresh" },
+    });
+    const attempts = await admin.query(api.tasks.listAttempts, { taskId: task.taskId });
+    const firstTurn = await taskTurn(backend, attempts[0]!.threadId);
+    expect(firstTurn).not.toBeNull();
+    await insertClosedTaskSession(backend, {
+      attemptId: started.attemptId,
+      turnId: firstTurn!._id,
+    });
+    await admin.mutation(internal.scout.turns.complete, {
+      promptMessageId: firstTurn!.promptMessageId,
+      usage: {},
+    });
+    await admin.mutation(api.tasks.continueAttempt, {
+      attemptId: started.attemptId,
+      prompt: "The checkpoint is complete. Resolve this attempt.",
+    });
+    const continuationTurn = await taskTurn(backend, attempts[0]!.threadId);
+    expect(continuationTurn?._id).not.toBe(firstTurn!._id);
+
+    await expect(
+      admin.mutation(internal.tasks.resolveAttempt, {
+        promptMessageId: continuationTurn!.promptMessageId,
+        state: { kind: "completed", conclusion: "The checkpoint completion was verified." },
+      }),
+    ).resolves.toEqual({
+      kind: "completed",
+      conclusion: "The checkpoint completion was verified.",
+      resolvedAt: expect.any(Number),
+    });
+  });
+
   it("reopens blocked and abandoned Attempts only when their Turn is no longer pending", async () => {
     const { backend, admin, scoutId, productId } = await setup();
     const task = await admin.mutation(api.tasks.create, {
