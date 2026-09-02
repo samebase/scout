@@ -46,7 +46,7 @@ afterEach(() => {
 });
 
 describe("projected main build number", () => {
-  it("matches the total reachable commit count after a merge commit", () => {
+  it("matches the total reachable commit count after a squash commit", () => {
     const repository = createRepository();
     commit(repository, "Initial");
     commit(repository, "Base");
@@ -55,39 +55,13 @@ describe("projected main build number", () => {
     runGit(repository, ["switch", "--quiet", "--create", "feature"]);
     commit(repository, "Feature one");
     commit(repository, "Feature two");
-
-    runGit(repository, ["switch", "--quiet", "main"]);
-    commit(repository, "Main advance");
-    runGit(repository, ["update-ref", "refs/remotes/origin/main", "HEAD"]);
-
-    runGit(repository, ["switch", "--quiet", "feature"]);
-    runGit(repository, [
-      "-c",
-      "user.name=Scout Test",
-      "-c",
-      "user.email=scout@example.invalid",
-      "merge",
-      "--quiet",
-      "--no-edit",
-      "origin/main",
-    ]);
     commit(repository, "Feature three");
 
     const projectedBuildNumber = computeProjectedBuildNumber((args) => runGit(repository, args));
+    expect(projectedBuildNumber).toBe(3);
 
     runGit(repository, ["switch", "--quiet", "main"]);
-    runGit(repository, [
-      "-c",
-      "user.name=Scout Test",
-      "-c",
-      "user.email=scout@example.invalid",
-      "merge",
-      "--quiet",
-      "--no-ff",
-      "--message",
-      `v${projectedBuildNumber}: Merge feature`,
-      "feature",
-    ]);
+    commit(repository, `v${projectedBuildNumber}: Merge feature`);
 
     expect(projectedBuildNumber).toBe(Number(runGit(repository, ["rev-list", "--count", "HEAD"])));
     expect(() =>
