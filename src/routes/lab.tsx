@@ -1,4 +1,11 @@
 import { optimisticallySendMessage, useUIMessages } from "@convex-dev/agent/react";
+import { PaneFrame } from "@samebase/sidebars/PaneFrame";
+import {
+  SidebarLayout,
+  type SidebarLayoutResizeHandleLabels,
+  type SidebarLayoutResizeHandleValueTextFormatter,
+} from "@samebase/sidebars/SidebarLayout";
+import { useSidebarActions, useSidebarLayoutPresentation } from "@samebase/sidebars/SidebarRuntime";
 import { Link, Navigate, createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
   Authenticated,
@@ -9,7 +16,7 @@ import {
   useQuery,
 } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
-import { LoaderCircleIcon, PlusIcon, SendIcon, XIcon } from "lucide-react";
+import { LoaderCircleIcon, PanelLeftIcon, PlusIcon, SendIcon, XIcon } from "lucide-react";
 import {
   type FormEvent,
   type KeyboardEvent,
@@ -21,6 +28,10 @@ import {
 } from "react";
 import { api } from "../../convex/_generated/api";
 import type { SelectableScoutModel } from "../../convex/scout/models";
+import {
+  scoutSidebarDesktopPrehydrationScript,
+  scoutSidebarMobilePrehydrationScript,
+} from "../sidebars/scoutSidebarState";
 import { ScoutRunMessageView, scoutModelLabel } from "#components/scout-run-message";
 import { Button } from "#components/ui/button";
 import { Input } from "#components/ui/input";
@@ -83,6 +94,12 @@ const DEFAULT_MODEL: SelectableScoutModel = "qwen/qwen3.7-flash";
 const UNGROUPED_SEARCH_VALUE = "ungrouped";
 const THREAD_PAGE_SIZE = 50;
 const MAX_THREADS_PER_ASSIGNMENT = 50;
+const LAB_RESIZE_HANDLE_LABELS = {
+  left: "Resize experiment navigation",
+  right: "Resize Lab details",
+} satisfies SidebarLayoutResizeHandleLabels;
+const formatResizeHandleValueText: SidebarLayoutResizeHandleValueTextFormatter = ({ widthPx }) =>
+  `${widthPx} pixels wide`;
 const threadDate = new Intl.DateTimeFormat(undefined, {
   dateStyle: "short",
   timeStyle: "short",
@@ -90,7 +107,7 @@ const threadDate = new Intl.DateTimeFormat(undefined, {
 
 function LabPage() {
   return (
-    <main className="mx-auto flex h-[calc(100dvh-4rem)] w-full max-w-[96rem] flex-col gap-4 px-3 pb-3 sm:px-4 sm:pb-4">
+    <main className="flex h-[calc(100dvh-4rem)] min-h-0 w-full flex-col">
       <AuthLoading>
         <p className="text-muted-foreground py-10 text-sm">Loading...</p>
       </AuthLoading>
@@ -112,6 +129,7 @@ function threadLabel(thread: LabThread) {
 function AgentLab() {
   const search = Route.useSearch();
   const navigate = useNavigate();
+  const { setMobilePane } = useSidebarActions();
   const experiments = useQuery(api.scout.lab.listExperiments, {});
   const threads = usePaginatedQuery(
     api.scout.lab.listThreads,
@@ -314,6 +332,7 @@ function AgentLab() {
       to: "/lab",
       search: { experiment: experimentId },
     });
+    setMobilePane("main");
   };
 
   const onNewThread = async () => {
@@ -333,6 +352,7 @@ function AgentLab() {
         to: "/lab",
         search: { experiment: selectedExperiment._id, thread: created.threadId },
       });
+      setMobilePane("main");
       setComposerState({ kind: "idle" });
     } catch {
       setComposerState(
@@ -433,231 +453,310 @@ function AgentLab() {
 
   return (
     <>
-      <header className="flex shrink-0 flex-col gap-3 py-5 sm:flex-row sm:items-end sm:justify-between sm:py-6">
-        <div>
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-2xl font-semibold tracking-[-0.035em]">Lab</h1>
-            <span className="rounded-full border bg-card px-2.5 py-1 text-xs font-medium text-muted-foreground">
-              {scoutModelLabel(selectedModel)}
-            </span>
-          </div>
-          <p className="mt-1.5 text-sm text-muted-foreground">
-            Experiments and durable Scout threads.
-          </p>
-        </div>
-        <Button
-          ref={createExperimentButton}
-          type="button"
-          size="sm"
-          aria-expanded={createExperimentOpen}
-          aria-controls="create-experiment-panel"
-          disabled={createExperimentSubmitting || availableScouts.length === 0}
-          onClick={() =>
-            createExperimentOpen ? closeCreateExperiment() : setCreateExperimentOpen(true)
-          }
-        >
-          {createExperimentOpen ? <XIcon /> : <PlusIcon />}
-          {createExperimentOpen ? "Close" : "New experiment"}
-        </Button>
-      </header>
-
-      {createExperimentOpen ? (
-        <ExperimentForm
-          scouts={availableScouts}
-          ungroupedThreads={ungroupedThreads}
-          onCancel={closeCreateExperiment}
-          onCreated={onExperimentCreated}
-          onSubmittingChange={setCreateExperimentSubmitting}
-        />
-      ) : (
-        <section
-          className="surface-panel grid min-h-0 flex-1 overflow-hidden lg:grid-cols-[19rem_minmax(0,1fr)]"
-          aria-label="Scout Lab workspace"
-        >
-          <LabNavigation
-            experiments={experiments}
-            threads={threads.status === "LoadingFirstPage" ? undefined : availableThreads}
-            canLoadMore={threads.status === "CanLoadMore"}
-            isLoadingMore={threads.status === "LoadingMore"}
-            selectedExperimentId={selectedExperiment?._id}
-            selectedThreadId={threadId}
-            showingUngrouped={showingUngrouped}
-            onLoadMore={() => threads.loadMore(THREAD_PAGE_SIZE)}
-            onNavigate={resetForNavigation}
+      <SidebarLayout
+        addressChrome={
+          <LabChrome
+            createButtonRef={createExperimentButton}
+            createOpen={createExperimentOpen}
+            createSubmitting={createExperimentSubmitting}
+            model={selectedModel}
+            canCreateExperiment={availableScouts.length > 0}
+            onToggleCreate={() => {
+              if (createExperimentOpen) {
+                closeCreateExperiment();
+              } else {
+                setCreateExperimentOpen(true);
+              }
+              setMobilePane("main");
+            }}
           />
-          <div className="flex min-h-0 min-w-0 flex-col">
-            <ExperimentContextHeader
-              headingRef={experimentHeading}
-              assignmentButtonRef={assignmentButton}
-              experiment={selectedExperiment}
-              scout={selectedScout}
-              showingUngrouped={showingUngrouped}
-              isLoading={isLoading}
-              canCreateThread={canCreateThread}
-              isCreatingThread={composerState.kind === "creating"}
-              assignableThreadCount={assignableThreads.length}
-              assignmentOpen={assignmentOpen}
-              statusState={statusState}
-              onNewThread={() => void onNewThread()}
-              onStatusChange={(status) => void onStatusChange(status)}
-              onToggleAssignment={() => setAssignmentOpen((open) => !open)}
-            />
-            {notice ? (
-              <p
-                className={`border-b px-4 py-2 text-sm ${
-                  notice.kind === "error" ? "text-destructive" : "text-muted-foreground"
-                }`}
-                role={notice.kind === "error" ? "alert" : "status"}
-              >
-                {notice.message}
-              </p>
-            ) : null}
-            {assignmentOpen && selectedExperiment ? (
-              <AssignThreadsPanel
-                key={selectedExperiment._id}
-                experiment={selectedExperiment}
-                threads={assignableThreads}
-                onAssigned={() => {
-                  setAssignmentOpen(false);
-                  setNotice({ kind: "status", message: "Threads added to experiment." });
-                  requestAnimationFrame(() => experimentHeading.current?.focus());
-                }}
-                onCancel={() => {
-                  setAssignmentOpen(false);
-                  requestAnimationFrame(() => assignmentButton.current?.focus());
-                }}
-              />
-            ) : (
-              <>
-                <div className="min-h-0 flex-1">
-                  <MessageScrollerProvider autoScroll scrollPreviousItemPeek={48}>
-                    <MessageScroller>
-                      <MessageScrollerViewport>
-                        <MessageScrollerContent className="px-4 py-7 sm:px-7" aria-busy={isWorking}>
-                          {messages.status === "CanLoadMore" ? (
-                            <MessageScrollerItem>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="mx-auto"
-                                onClick={() => messages.loadMore(THREAD_PAGE_SIZE)}
-                              >
-                                Load earlier messages
-                              </Button>
-                            </MessageScrollerItem>
-                          ) : null}
-                          {messages.results.length === 0 ? (
-                            <EmptyTranscript
-                              title={emptyTranscript.title}
-                              description={emptyTranscript.description}
-                            />
-                          ) : null}
-                          {messages.results.map((message) => (
-                            <MessageScrollerItem
-                              key={message.key}
-                              messageId={message.id}
-                              scrollAnchor={message.role === "user"}
-                            >
-                              <ScoutRunMessageView message={message} />
-                            </MessageScrollerItem>
-                          ))}
-                        </MessageScrollerContent>
-                      </MessageScrollerViewport>
-                      <MessageScrollerButton />
-                    </MessageScroller>
-                  </MessageScrollerProvider>
-                </div>
-
-                <form
-                  className="border-t bg-[color-mix(in_oklch,var(--card)_92%,var(--background))] p-3 sm:p-4"
-                  onSubmit={(event) => void submitPrompt(event)}
-                >
-                  {selectedScout && !selectedActiveScout ? (
-                    <p className="text-muted-foreground mb-2 text-sm">
-                      Activate {selectedScout.displayName} to continue this thread.
-                    </p>
-                  ) : activeScouts.length === 0 && scouts !== undefined ? (
-                    <p className="text-muted-foreground mb-2 text-sm">
-                      Register an active scout before starting a thread.{" "}
-                      <Link to="/scouts" className="text-foreground underline underline-offset-4">
-                        Register a scout
-                      </Link>
-                    </p>
-                  ) : selectedExperiment?.status === "completed" && threadId === null ? (
-                    <p className="text-muted-foreground mb-2 text-sm">
-                      Set this experiment to Active before starting a thread.
-                    </p>
-                  ) : !selectedExperiment && threadId === null && !isLoading ? (
-                    <p className="text-muted-foreground mb-2 text-sm">
-                      Create an experiment before starting a thread.
+        }
+        formatResizeHandleValueText={formatResizeHandleValueText}
+        left={
+          <PaneFrame
+            content={
+              <div className="min-h-full bg-sidebar">
+                <ExperimentContextHeader
+                  headingRef={experimentHeading}
+                  assignmentButtonRef={assignmentButton}
+                  experiment={selectedExperiment}
+                  scout={selectedScout}
+                  showingUngrouped={showingUngrouped}
+                  isLoading={isLoading}
+                  canCreateThread={canCreateThread}
+                  isCreatingThread={composerState.kind === "creating"}
+                  assignableThreadCount={assignableThreads.length}
+                  assignmentOpen={assignmentOpen}
+                  statusState={statusState}
+                  onNewThread={() => void onNewThread()}
+                  onStatusChange={(status) => void onStatusChange(status)}
+                  onToggleAssignment={() => {
+                    setAssignmentOpen((open) => !open);
+                    setMobilePane("main");
+                  }}
+                />
+                <LabNavigation
+                  experiments={experiments}
+                  threads={threads.status === "LoadingFirstPage" ? undefined : availableThreads}
+                  canLoadMore={threads.status === "CanLoadMore"}
+                  isLoadingMore={threads.status === "LoadingMore"}
+                  selectedExperimentId={selectedExperiment?._id}
+                  selectedThreadId={threadId}
+                  showingUngrouped={showingUngrouped}
+                  onLoadMore={() => threads.loadMore(THREAD_PAGE_SIZE)}
+                  onNavigate={() => {
+                    resetForNavigation();
+                    setMobilePane("main");
+                  }}
+                />
+              </div>
+            }
+            scrollRestorationId="lab-navigation"
+          />
+        }
+        main={
+          <PaneFrame
+            content={
+              createExperimentOpen ? (
+                <ExperimentForm
+                  scouts={availableScouts}
+                  ungroupedThreads={ungroupedThreads}
+                  onCancel={closeCreateExperiment}
+                  onCreated={onExperimentCreated}
+                  onSubmittingChange={setCreateExperimentSubmitting}
+                />
+              ) : (
+                <div className="flex h-full min-h-0 min-w-0 flex-col">
+                  {notice ? (
+                    <p
+                      className={`border-b px-4 py-2 text-sm ${
+                        notice.kind === "error" ? "text-destructive" : "text-muted-foreground"
+                      }`}
+                      role={notice.kind === "error" ? "alert" : "status"}
+                    >
+                      {notice.message}
                     </p>
                   ) : null}
-                  <div className="rounded-[0.875rem] border border-input bg-card p-2 shadow-[0_4px_18px_color-mix(in_oklch,var(--foreground)_5%,transparent)] transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/25">
-                    <Textarea
-                      value={draft}
-                      onChange={(event) => setDraft(event.target.value)}
-                      onKeyDown={onComposerKeyDown}
-                      placeholder={
-                        canCompose && selectedActiveScout
-                          ? `Ask ${selectedActiveScout.displayName} to inspect, research, or explain...`
-                          : "Choose an active experiment or saved thread."
-                      }
-                      aria-label="Message Scout"
-                      rows={2}
-                      disabled={isWorking || !canCompose}
-                      className="max-h-40 min-h-14 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0 dark:bg-transparent"
+                  {assignmentOpen && selectedExperiment ? (
+                    <AssignThreadsPanel
+                      key={selectedExperiment._id}
+                      experiment={selectedExperiment}
+                      threads={assignableThreads}
+                      onAssigned={() => {
+                        setAssignmentOpen(false);
+                        setNotice({ kind: "status", message: "Threads added to experiment." });
+                        requestAnimationFrame(() => experimentHeading.current?.focus());
+                      }}
+                      onCancel={() => {
+                        setAssignmentOpen(false);
+                        requestAnimationFrame(() => assignmentButton.current?.focus());
+                      }}
                     />
-                    <div className="flex items-center justify-between gap-3 px-1 pt-1">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <label className="text-muted-foreground text-xs" htmlFor="lab-model">
-                          Model
-                        </label>
-                        <select
-                          id="lab-model"
-                          value={selectedModel}
-                          disabled={isWorking}
-                          onChange={(event) => onModelChange(event.currentTarget.value)}
-                          className="border-input bg-background h-8 min-w-0 rounded-md border px-2 text-xs"
-                        >
-                          {MODEL_OPTIONS.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
+                  ) : (
+                    <>
+                      <div className="min-h-0 flex-1">
+                        <MessageScrollerProvider autoScroll scrollPreviousItemPeek={48}>
+                          <MessageScroller>
+                            <MessageScrollerViewport>
+                              <MessageScrollerContent
+                                className="px-4 py-7 sm:px-7"
+                                aria-busy={isWorking}
+                              >
+                                {messages.status === "CanLoadMore" ? (
+                                  <MessageScrollerItem>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      className="mx-auto"
+                                      onClick={() => messages.loadMore(THREAD_PAGE_SIZE)}
+                                    >
+                                      Load earlier messages
+                                    </Button>
+                                  </MessageScrollerItem>
+                                ) : null}
+                                {messages.results.length === 0 ? (
+                                  <EmptyTranscript
+                                    title={emptyTranscript.title}
+                                    description={emptyTranscript.description}
+                                  />
+                                ) : null}
+                                {messages.results.map((message) => (
+                                  <MessageScrollerItem
+                                    key={message.key}
+                                    messageId={message.id}
+                                    scrollAnchor={message.role === "user"}
+                                  >
+                                    <ScoutRunMessageView message={message} />
+                                  </MessageScrollerItem>
+                                ))}
+                              </MessageScrollerContent>
+                            </MessageScrollerViewport>
+                            <MessageScrollerButton />
+                          </MessageScroller>
+                        </MessageScrollerProvider>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <p className="text-muted-foreground hidden text-xs sm:block">
-                          Enter to send. Shift+Enter for a new line.
-                        </p>
-                        <Button
-                          type="submit"
-                          size="icon-sm"
-                          disabled={isWorking || !canCompose || !draft.trim()}
-                          aria-label="Send message"
-                        >
-                          {composerState.kind === "sending" ? (
-                            <LoaderCircleIcon className="animate-spin" />
-                          ) : (
-                            <SendIcon />
-                          )}
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                  {composerState.kind === "failed" ? (
-                    <p className="text-destructive mt-2 text-sm" role="alert">
-                      {composerState.message}
-                    </p>
-                  ) : null}
-                </form>
-              </>
-            )}
-          </div>
-        </section>
-      )}
+
+                      <form
+                        className="border-t bg-[color-mix(in_oklch,var(--card)_92%,var(--background))] p-3 sm:p-4"
+                        onSubmit={(event) => void submitPrompt(event)}
+                      >
+                        {selectedScout && !selectedActiveScout ? (
+                          <p className="text-muted-foreground mb-2 text-sm">
+                            Activate {selectedScout.displayName} to continue this thread.
+                          </p>
+                        ) : activeScouts.length === 0 && scouts !== undefined ? (
+                          <p className="text-muted-foreground mb-2 text-sm">
+                            Register an active scout before starting a thread.{" "}
+                            <Link
+                              to="/scouts"
+                              className="text-foreground underline underline-offset-4"
+                            >
+                              Register a scout
+                            </Link>
+                          </p>
+                        ) : selectedExperiment?.status === "completed" && threadId === null ? (
+                          <p className="text-muted-foreground mb-2 text-sm">
+                            Set this experiment to Active before starting a thread.
+                          </p>
+                        ) : !selectedExperiment && threadId === null && !isLoading ? (
+                          <p className="text-muted-foreground mb-2 text-sm">
+                            Create an experiment before starting a thread.
+                          </p>
+                        ) : null}
+                        <div className="rounded-[0.875rem] border border-input bg-card p-2 shadow-[0_4px_18px_color-mix(in_oklch,var(--foreground)_5%,transparent)] transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/25">
+                          <Textarea
+                            value={draft}
+                            onChange={(event) => setDraft(event.target.value)}
+                            onKeyDown={onComposerKeyDown}
+                            placeholder={
+                              canCompose && selectedActiveScout
+                                ? `Ask ${selectedActiveScout.displayName} to inspect, research, or explain...`
+                                : "Choose an active experiment or saved thread."
+                            }
+                            aria-label="Message Scout"
+                            rows={2}
+                            disabled={isWorking || !canCompose}
+                            className="max-h-40 min-h-14 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0 dark:bg-transparent"
+                          />
+                          <div className="flex items-center justify-between gap-3 px-1 pt-1">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <label className="text-muted-foreground text-xs" htmlFor="lab-model">
+                                Model
+                              </label>
+                              <select
+                                id="lab-model"
+                                value={selectedModel}
+                                disabled={isWorking}
+                                onChange={(event) => onModelChange(event.currentTarget.value)}
+                                className="border-input bg-background h-8 min-w-0 rounded-md border px-2 text-xs"
+                              >
+                                {MODEL_OPTIONS.map((option) => (
+                                  <option key={option.value} value={option.value}>
+                                    {option.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <p className="text-muted-foreground hidden text-xs sm:block">
+                                Enter to send. Shift+Enter for a new line.
+                              </p>
+                              <Button
+                                type="submit"
+                                size="icon-sm"
+                                disabled={isWorking || !canCompose || !draft.trim()}
+                                aria-label="Send message"
+                              >
+                                {composerState.kind === "sending" ? (
+                                  <LoaderCircleIcon className="animate-spin" />
+                                ) : (
+                                  <SendIcon />
+                                )}
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                        {composerState.kind === "failed" ? (
+                          <p className="text-destructive mt-2 text-sm" role="alert">
+                            {composerState.message}
+                          </p>
+                        ) : null}
+                      </form>
+                    </>
+                  )}
+                </div>
+              )
+            }
+            scrollRestorationId={`lab-thread:${threadId ?? "empty"}`}
+          />
+        }
+        resizeHandleLabels={LAB_RESIZE_HANDLE_LABELS}
+      />
+      <script
+        suppressHydrationWarning
+        dangerouslySetInnerHTML={{ __html: scoutSidebarDesktopPrehydrationScript }}
+      />
+      <script
+        suppressHydrationWarning
+        dangerouslySetInnerHTML={{ __html: scoutSidebarMobilePrehydrationScript }}
+      />
     </>
+  );
+}
+
+function LabChrome({
+  createButtonRef,
+  createOpen,
+  createSubmitting,
+  model,
+  canCreateExperiment,
+  onToggleCreate,
+}: {
+  createButtonRef: RefObject<HTMLButtonElement | null>;
+  createOpen: boolean;
+  createSubmitting: boolean;
+  model: SelectableScoutModel;
+  canCreateExperiment: boolean;
+  onToggleCreate: () => void;
+}) {
+  const { setMobilePane, toggleLeftPane } = useSidebarActions();
+  const { isMobile, leftDesktopOpen, mobilePane } = useSidebarLayoutPresentation();
+  const navigationShown = isMobile ? mobilePane === "left" : leftDesktopOpen;
+
+  return (
+    <div className="flex h-12 min-w-0 items-center gap-2 px-2 sm:px-4">
+      <Button
+        type="button"
+        size="icon-sm"
+        variant="ghost"
+        aria-label={navigationShown ? "Hide Lab navigation" : "Show Lab navigation"}
+        aria-pressed={navigationShown}
+        onClick={() =>
+          isMobile ? setMobilePane(navigationShown ? "main" : "left") : toggleLeftPane()
+        }
+      >
+        <PanelLeftIcon />
+      </Button>
+      <div className="min-w-0 flex-1">
+        <h1 className="truncate text-sm font-semibold">Lab</h1>
+        <p className="text-muted-foreground hidden truncate text-xs sm:block">
+          Experiments and durable Scout threads · {scoutModelLabel(model)}
+        </p>
+      </div>
+      <Button
+        ref={createButtonRef}
+        type="button"
+        size="sm"
+        aria-expanded={createOpen}
+        aria-controls="create-experiment-panel"
+        disabled={createSubmitting || !canCreateExperiment}
+        onClick={onToggleCreate}
+      >
+        {createOpen ? <XIcon /> : <PlusIcon />}
+        {createOpen ? "Close" : "New experiment"}
+      </Button>
+    </div>
   );
 }
 
@@ -685,7 +784,7 @@ function LabNavigation({
   if (experiments === undefined || threads === undefined) {
     return (
       <nav
-        className="max-h-28 overflow-y-auto border-b bg-sidebar p-4 text-sm text-muted-foreground lg:max-h-none lg:border-r lg:border-b-0"
+        className="bg-sidebar p-4 text-sm text-muted-foreground"
         aria-label="Lab experiments"
         aria-busy="true"
       >
@@ -697,10 +796,7 @@ function LabNavigation({
   const ungroupedThreads = threads.filter((thread) => thread.experimentId === null);
 
   return (
-    <nav
-      className="max-h-28 overflow-y-auto border-b bg-sidebar lg:max-h-none lg:border-r lg:border-b-0"
-      aria-label="Lab experiments"
-    >
+    <nav className="bg-sidebar" aria-label="Lab experiments">
       <ul className="divide-y">
         {experiments.map((experiment) => {
           const experimentThreads = threads.filter(
@@ -864,14 +960,16 @@ function ExperimentContextHeader({
   onToggleAssignment: () => void;
 }) {
   if (isLoading) {
-    return <p className="text-muted-foreground border-b px-4 py-3 text-sm">Loading context...</p>;
+    return <p className="text-muted-foreground border-b px-3 py-3 text-sm">Loading context...</p>;
   }
 
   if (!experiment) {
     return (
-      <div className="border-b px-4 py-3">
-        <h2 className="font-medium">{showingUngrouped ? "Ungrouped history" : "No experiment"}</h2>
-        <p className="text-muted-foreground mt-1 text-sm">
+      <div className="border-b bg-sidebar px-3 py-3">
+        <h2 className="text-sm font-semibold">
+          {showingUngrouped ? "Ungrouped history" : "No experiment"}
+        </h2>
+        <p className="text-muted-foreground mt-1 text-xs leading-relaxed">
           {showingUngrouped
             ? "Create an experiment to group these saved threads."
             : "Create an experiment to start a product test."}
@@ -890,65 +988,71 @@ function ExperimentContextHeader({
       : null;
 
   return (
-    <div className="max-h-40 overflow-y-auto border-b bg-card px-4 py-3.5 sm:px-5 lg:max-h-48">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <h2 ref={headingRef} tabIndex={-1} className="wrap-break-word font-medium outline-none">
-            {experiment.name}
-          </h2>
-          <p className="text-muted-foreground mt-1 wrap-break-word text-sm whitespace-pre-wrap">
-            {experiment.objective}
-          </p>
+    <div className="border-b bg-sidebar px-3 py-3">
+      <h2
+        ref={headingRef}
+        tabIndex={-1}
+        className="wrap-break-word text-sm font-semibold outline-none"
+      >
+        {experiment.name}
+      </h2>
+      <p className="text-muted-foreground mt-1 wrap-break-word text-xs leading-relaxed whitespace-pre-wrap">
+        {experiment.objective}
+      </p>
+      <dl className="mt-2 grid gap-1 text-xs">
+        <div className="grid min-w-0 grid-cols-[3rem_minmax(0,1fr)] gap-1.5">
+          <dt className="text-muted-foreground">Scout</dt>
+          <dd className="wrap-break-word">{scout?.displayName ?? "Unavailable"}</dd>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <label className="flex items-center gap-2 text-xs">
-            <span className="text-muted-foreground">Status</span>
-            <select
-              value={experiment.status}
-              disabled={statusSaving}
-              onChange={(event) => {
-                const status = event.currentTarget.value;
-                if (status === "active" || status === "completed") {
-                  onStatusChange(status);
-                }
-              }}
-              className="border-input bg-card h-8 rounded-[0.5rem] border px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/25"
-            >
-              <option value="active">Active</option>
-              <option value="completed">Completed</option>
-            </select>
-          </label>
-          {assignableThreadCount > 0 ? (
-            <Button
-              ref={assignmentButtonRef}
-              type="button"
-              variant="outline"
-              size="sm"
-              aria-expanded={assignmentOpen}
-              aria-controls="assign-threads-panel"
-              onClick={onToggleAssignment}
-            >
-              {assignmentOpen ? "Close history" : "Add history"}
-            </Button>
-          ) : null}
-          <Button type="button" size="sm" disabled={!canCreateThread} onClick={onNewThread}>
-            {isCreatingThread ? <LoaderCircleIcon className="animate-spin" /> : <PlusIcon />}
-            New thread
-          </Button>
-        </div>
-      </div>
-      <dl className="text-muted-foreground mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs">
-        <div className="flex min-w-0 gap-1.5">
-          <dt>Scout</dt>
-          <dd className="text-foreground wrap-break-word">{scout?.displayName ?? "Unavailable"}</dd>
-        </div>
-        <div className="flex min-w-0 gap-1.5">
-          <dt>Target</dt>
-          <dd className="text-foreground wrap-break-word">
+        <div className="grid min-w-0 grid-cols-[3rem_minmax(0,1fr)] gap-1.5">
+          <dt className="text-muted-foreground">Target</dt>
+          <dd className="wrap-break-word">
             {experiment.targetProduct} at {experiment.targetDomain}
           </dd>
         </div>
       </dl>
+      <label className="mt-3 flex items-center justify-between gap-2 text-xs">
+        <span className="text-muted-foreground">Status</span>
+        <select
+          value={experiment.status}
+          disabled={statusSaving}
+          onChange={(event) => {
+            const status = event.currentTarget.value;
+            if (status === "active" || status === "completed") {
+              onStatusChange(status);
+            }
+          }}
+          className="border-input bg-card h-8 min-w-28 rounded-[0.5rem] border px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/25"
+        >
+          <option value="active">Active</option>
+          <option value="completed">Completed</option>
+        </select>
+      </label>
+      <div className="mt-2 flex gap-2">
+        {assignableThreadCount > 0 ? (
+          <Button
+            ref={assignmentButtonRef}
+            type="button"
+            variant="outline"
+            size="sm"
+            aria-expanded={assignmentOpen}
+            aria-controls="assign-threads-panel"
+            onClick={onToggleAssignment}
+          >
+            {assignmentOpen ? "Close history" : "Add history"}
+          </Button>
+        ) : null}
+        <Button
+          type="button"
+          size="sm"
+          className="min-w-0 flex-1"
+          disabled={!canCreateThread}
+          onClick={onNewThread}
+        >
+          {isCreatingThread ? <LoaderCircleIcon className="animate-spin" /> : <PlusIcon />}
+          New thread
+        </Button>
+      </div>
       {statusFailure ? (
         <p className="text-destructive mt-2 text-sm" role="alert">
           {statusFailure}

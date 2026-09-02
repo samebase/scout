@@ -933,7 +933,7 @@ selectable for comparisons while Qwen remains the default. All 211 tests and the
 build passed (`convex/scout/toolCallRepair.ts`, `convex/scout/toolArgumentProbe.ts`,
 `convex/scout/models.ts`, `src/components/scout-run-message.tsx`, `src/routes/lab.tsx`).
 
-### 2026-09-02 - working tree
+### 2026-09-02 - 6f2697a - v155
 
 Made schema-aware input repair visible on each affected transcript tool row. Repaired calls carry
 only the JSON-parsed top-level field names through existing AI SDK and Convex Agent metadata, avoiding
@@ -944,3 +944,11 @@ A deterministic provider-stream test proves repaired metadata survives into UI m
 Qwen probes sent native JSON values and correctly remained unmarked, showing the earlier
 stringification behavior is intermittent. All 215 tests and the complete Cloudflare build passed
 (`convex/scout/toolCallRepair.ts`, `src/components/scout-run-message.tsx`).
+
+### 2026-09-02 - working tree
+
+Moved Lab experiment context, status, and thread actions into the existing resizable navigation
+sidebar. Lab now uses the same `@samebase/sidebars` workspace shell as Tasks and Products, so the
+experiment and thread list remains reachable through the compact-layout drawer instead of consuming
+message space above every thread. The running app passed a visual browser check, sidebar toggle
+check, the complete test suite, and the Cloudflare build (`src/routes/lab.tsx`).
