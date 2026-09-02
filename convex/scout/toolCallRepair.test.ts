@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
-import { repairStringifiedTopLevelValues } from "./toolCallRepair";
+import type { LanguageModelV4StreamPart } from "@ai-sdk/provider";
+import { streamText, tool } from "ai";
+import { convertArrayToReadableStream, MockLanguageModelV4 } from "ai/test";
+import { z } from "zod";
+import { repairStringifiedToolInput, repairStringifiedTopLevelValues } from "./toolCallRepair";
 
 const mixedInputSchema = {
   type: "object",
@@ -33,12 +37,15 @@ describe("Scout tool-call repair", () => {
         mixedInputSchema,
       ),
     ).toEqual({
-      text: "123",
-      count: 30,
-      enabled: true,
-      target: { kind: "role" },
-      tags: ["alpha", "beta"],
-      empty: null,
+      input: {
+        text: "123",
+        count: 30,
+        enabled: true,
+        target: { kind: "role" },
+        tags: ["alpha", "beta"],
+        empty: null,
+      },
+      fields: ["count", "enabled", "target", "tags", "empty"],
     });
   });
 
@@ -56,5 +63,61 @@ describe("Scout tool-call repair", () => {
 
   it("leaves malformed JSON for the original validator to reject", () => {
     expect(repairStringifiedTopLevelValues({ count: "thirty" }, mixedInputSchema)).toBeNull();
+  });
+
+  it("keeps repair metadata on the UI message stream", async () => {
+    const model = new MockLanguageModelV4({
+      doStream: {
+        stream: convertArrayToReadableStream([
+          { type: "stream-start", warnings: [] },
+          {
+            type: "tool-call",
+            toolCallId: "tool-1",
+            toolName: "example",
+            input: JSON.stringify({ count: "30" }),
+          },
+          {
+            type: "finish",
+            finishReason: { unified: "tool-calls", raw: undefined },
+            usage: {
+              inputTokens: {
+                total: 1,
+                noCache: 1,
+                cacheRead: undefined,
+                cacheWrite: undefined,
+              },
+              outputTokens: { total: 1, text: 1, reasoning: undefined },
+            },
+          },
+        ] satisfies LanguageModelV4StreamPart[]),
+      },
+    });
+    const result = streamText({
+      model,
+      tools: {
+        example: tool({
+          inputSchema: z.object({ count: z.number() }),
+          execute: async ({ count }) => count,
+        }),
+      },
+      repairToolCall: repairStringifiedToolInput,
+      prompt: "Call the example tool",
+    });
+    const chunks = [];
+    for await (const chunk of result.toUIMessageStream()) chunks.push(chunk);
+
+    expect(chunks).toContainEqual(
+      expect.objectContaining({
+        type: "tool-input-available",
+        providerMetadata: {
+          scout: {
+            inputRepair: {
+              method: "json-parse",
+              fields: ["count"],
+            },
+          },
+        },
+      }),
+    );
   });
 });

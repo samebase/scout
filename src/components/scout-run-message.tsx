@@ -22,6 +22,7 @@ type ToolSnapshot = {
   input?: unknown;
   output?: unknown;
   error?: unknown;
+  repairedInputFields: string[];
 };
 
 const tokenNumber = new Intl.NumberFormat();
@@ -233,7 +234,14 @@ function ToolActivity({ tool }: { tool: ToolSnapshot }) {
             {isError ? <CircleAlertIcon /> : isComplete ? <CheckCircle2Icon /> : <WrenchIcon />}
           </MarkerIcon>
           <MarkerContent className="flex flex-1 items-baseline justify-between gap-3">
-            <span className="font-mono text-xs">{tool.name}</span>
+            <span className="flex min-w-0 items-baseline gap-2">
+              <span className="font-mono text-xs">{tool.name}</span>
+              {tool.repairedInputFields.length > 0 ? (
+                <span className="shrink-0 text-[0.6875rem] font-medium text-amber-700 dark:text-amber-400">
+                  JSON parsed
+                </span>
+              ) : null}
+            </span>
             <span
               className={
                 isError
@@ -249,6 +257,9 @@ function ToolActivity({ tool }: { tool: ToolSnapshot }) {
       </CollapsibleTrigger>
       <CollapsibleContent className="pt-3">
         <dl className="grid gap-3 border-t pt-3">
+          {tool.repairedInputFields.length > 0 ? (
+            <ToolValue label="JSON-parsed fields" value={tool.repairedInputFields.join(", ")} />
+          ) : null}
           {tool.input !== undefined ? <ToolValue label="Input" value={tool.input} /> : null}
           {tool.output !== undefined && outputFailure === undefined ? (
             <ToolValue label="Output" value={tool.output} />
@@ -311,6 +322,19 @@ export function toolOutputFailure(value: unknown) {
     : undefined;
 }
 
+export function repairedToolInputFields(record: object | null) {
+  if (!record) return [];
+  const metadata = asRecord(
+    ownValue(record, "callProviderMetadata") ?? ownValue(record, "providerMetadata"),
+  );
+  const scout = metadata ? asRecord(field(metadata, "scout")) : null;
+  const repair = scout ? asRecord(field(scout, "inputRepair")) : null;
+  const fields = repair ? field(repair, "fields") : undefined;
+  return Array.isArray(fields)
+    ? fields.filter((value): value is string => typeof value === "string")
+    : [];
+}
+
 function toolSnapshot(record: object | null, type: string): ToolSnapshot | null {
   if (!record || (type !== "dynamic-tool" && !type.startsWith("tool-"))) return null;
   const rawToolName = field(record, "toolName");
@@ -324,6 +348,7 @@ function toolSnapshot(record: object | null, type: string): ToolSnapshot | null 
     input: ownValue(record, "input") ?? ownValue(record, "args"),
     output: ownValue(record, "output") ?? ownValue(record, "result"),
     error: ownValue(record, "errorText") ?? ownValue(record, "error"),
+    repairedInputFields: repairedToolInputFields(record),
   };
 }
 

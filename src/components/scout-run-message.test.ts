@@ -1,6 +1,11 @@
 import { describe, expect, test } from "vite-plus/test";
 import type { Id } from "../../convex/_generated/dataModel";
-import { countGenerationSteps, formatRunMetadata, toolOutputFailure } from "./scout-run-message";
+import {
+  countGenerationSteps,
+  formatRunMetadata,
+  repairedToolInputFields,
+  toolOutputFailure,
+} from "./scout-run-message";
 
 describe("Scout transcript metadata", () => {
   test("shows the model cost estimate alongside the recorded token usage", () => {
@@ -36,6 +41,25 @@ describe("Scout transcript metadata", () => {
 });
 
 describe("Scout tool results", () => {
+  test("reports fields repaired from stringified JSON tool arguments", () => {
+    expect(
+      repairedToolInputFields({
+        callProviderMetadata: {
+          scout: {
+            inputRepair: {
+              method: "json-parse",
+              fields: ["limit", "ascending"],
+            },
+          },
+        },
+      }),
+    ).toEqual(["limit", "ascending"]);
+  });
+
+  test("does not mark native tool arguments as repaired", () => {
+    expect(repairedToolInputFields({ callProviderMetadata: { qwen: {} } })).toEqual([]);
+  });
+
   test("keeps finalized AI SDK tool-input failures classified as errors", () => {
     const failure =
       "AI_InvalidToolInputError: Invalid input for tool fill_account_password: expected object, received string";

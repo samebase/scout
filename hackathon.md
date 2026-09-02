@@ -918,7 +918,7 @@ validated query parameters, so refreshes and attempt navigation preserve the ope
 `src/components/task-workspace.tsx`, `src/lib/taskWorkspaceSearch.ts`). All 204 tests and the complete
 Cloudflare build passed.
 
-### 2026-09-02 - working tree
+### 2026-09-02 - 21e5da8 - v154
 
 Kept finalized tool failures visibly red in the transcript by classifying error-shaped AI SDK
 outputs after streaming completes. Added one schema-aware AI SDK repair hook for Qwen's stringified
@@ -932,3 +932,15 @@ number and boolean inputs and reached Playwright with a repaired password-target
 selectable for comparisons while Qwen remains the default. All 211 tests and the complete Cloudflare
 build passed (`convex/scout/toolCallRepair.ts`, `convex/scout/toolArgumentProbe.ts`,
 `convex/scout/models.ts`, `src/components/scout-run-message.tsx`, `src/routes/lab.tsx`).
+
+### 2026-09-02 - working tree
+
+Made schema-aware input repair visible on each affected transcript tool row. Repaired calls carry
+only the JSON-parsed top-level field names through existing AI SDK and Convex Agent metadata, avoiding
+a new table and avoiding duplicate raw or potentially sensitive arguments. Expanded tool details show
+the same field names, while calls that arrived with native JSON remain unmarked.
+
+A deterministic provider-stream test proves repaired metadata survives into UI message chunks. Fresh
+Qwen probes sent native JSON values and correctly remained unmarked, showing the earlier
+stringification behavior is intermittent. All 215 tests and the complete Cloudflare build passed
+(`convex/scout/toolCallRepair.ts`, `src/components/scout-run-message.tsx`).

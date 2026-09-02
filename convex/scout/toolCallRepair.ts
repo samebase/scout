@@ -38,16 +38,16 @@ export function repairStringifiedTopLevelValues(input: unknown, schema: unknown)
   const properties = schema["properties"];
   if (!isRecord(properties)) return null;
 
-  let changed = false;
+  const fields: string[] = [];
   const repaired: Record<string, unknown> = { ...input };
   for (const [name, value] of Object.entries(input)) {
     if (typeof value !== "string" || !rejectsString(properties[name])) continue;
     const parsed = parseJson(value);
     if (!parsed.success || typeof parsed.value === "string") continue;
     repaired[name] = parsed.value;
-    changed = true;
+    fields.push(name);
   }
-  return changed ? repaired : null;
+  return fields.length > 0 ? { input: repaired, fields } : null;
 }
 
 export const repairStringifiedToolInput: ToolCallRepairFunction<ToolSet> = async ({
@@ -66,6 +66,16 @@ export const repairStringifiedToolInput: ToolCallRepairFunction<ToolSet> = async
     ? null
     : {
         ...toolCall,
-        input: JSON.stringify(repairedInput),
+        input: JSON.stringify(repairedInput.input),
+        providerMetadata: {
+          ...toolCall.providerMetadata,
+          scout: {
+            ...toolCall.providerMetadata?.["scout"],
+            inputRepair: {
+              method: "json-parse",
+              fields: repairedInput.fields,
+            },
+          },
+        },
       };
 };
