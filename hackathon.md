@@ -877,87 +877,10 @@ local Convex development push, all 231 tests, and the complete Cloudflare build 
 (`convex/scout/lib/firecrawlReplay.ts`, `convex/taskReplay.ts`,
 `src/components/task-replay.tsx`).
 
-### 2026-09-01 - 63c3be6 - v151
-
-Replaced the shell-command browser dialect with one sandboxed `browser_execute` tool that accepts
-ordinary Playwright JavaScript. Trusted Playwright over Firecrawl's CDP connection still captures
-accessible page state and tab telemetry, fills managed credentials without exposing them to the
-model, and validates authenticated-account evidence (`convex/scout/labTools.ts`,
-`convex/scout/playwrightBrowser.ts`, `convex/scout/browserTarget.ts`).
-
-Removed the coordinate click reconstruction and the old custom browser-tool surface. Each remote
-snippet now has isolated scope and a structured per-call result, while an explicit Firecrawl 429 is
-the only automatically retried execution because it is rejected before dispatch. Live Samebase
-runs exercised the persistent Scout profile, dashboard navigation, GitHub OAuth tabs, replay, and
-provider rate limiting. All 195 tests and the complete Cloudflare build passed
-(`convex/taskBrowserModel.ts`, `src/components/task-replay.tsx`).
-
-### 2026-09-02 - 696c5ec - v152
-
-Exercised the Playwright browser path through a complete Samebase onboarding with the Scout's own
-GitHub, Convex, and Cloudflare OAuth accounts. The agent handled every authorization autonomously,
-recorded the authenticated Samebase account, reached app creation, and required no human handoff.
-
-Made `resolve_attempt` the single Task finish action so it closes the browser and persists the
-verdict together. Removed the separate close/arm lifecycle and provider-incompatible forced tool
-choices, flattened Qwen-facing account evidence without compatibility parsing, retried transient
-persistent-profile writer conflicts, and kept direct browser close only in Lab. All 199 tests and
-the complete Cloudflare production build passed (`convex/scout/labGeneration.ts`,
-`convex/scout/taskLoop.ts`, `convex/scout/serviceAccountTool.ts`, `convex/scout/labTools.ts`).
-
-### 2026-09-02 - 24adb16 - v153
-
-Removed the hidden 18-step Task cutoff and made 30 generations the single safety ceiling, allowing
-the agent to finish longer browser flows before it must resolve the Attempt. Transcript metadata now
-preserves completed-step usage after later failures and shows the provider-reported model cost while
-keeping Firecrawl credits separate. The same footer counts the generation-step boundaries already
-stored in each message, while the operations pane shows up to three lines of each Playwright command
-before truncating it. The selected Live, Replay, or Transcript view and browser session now live in
-validated query parameters, so refreshes and attempt navigation preserve the operator's location
-(`convex/scout/labGeneration.ts`, `src/components/scout-run-message.tsx`,
-`src/components/task-workspace.tsx`, `src/lib/taskWorkspaceSearch.ts`). All 204 tests and the complete
-Cloudflare build passed.
-
-### 2026-09-02 - 21e5da8 - v154
-
-Kept finalized tool failures visibly red in the transcript by classifying error-shaped AI SDK
-outputs after streaming completes. Added one schema-aware AI SDK repair hook for Qwen's stringified
-top-level numbers, booleans, objects, arrays, and nulls, then removed the password-specific parser
-and AgentMail's older number-or-string workaround so tool schemas remain strict. A Lab-only argument
-probe preserves the raw provider values for repeatable Qwen and Luna comparisons.
-
-Live probes confirmed Qwen preserves ordinary strings but JSON-stringifies every tested non-string
-value, while Luna sends native JSON types. Qwen then completed a strict AgentMail call with repaired
-number and boolean inputs and reached Playwright with a repaired password-target object. Luna remains
-selectable for comparisons while Qwen remains the default. All 211 tests and the complete Cloudflare
-build passed (`convex/scout/toolCallRepair.ts`, `convex/scout/toolArgumentProbe.ts`,
-`convex/scout/models.ts`, `src/components/scout-run-message.tsx`, `src/routes/lab.tsx`).
-
-### 2026-09-02 - 6f2697a - v155
-
-Made schema-aware input repair visible on each affected transcript tool row. Repaired calls carry
-only the JSON-parsed top-level field names through existing AI SDK and Convex Agent metadata, avoiding
-a new table and avoiding duplicate raw or potentially sensitive arguments. Expanded tool details show
-the same field names, while calls that arrived with native JSON remain unmarked.
-
-A deterministic provider-stream test proves repaired metadata survives into UI message chunks. Fresh
-Qwen probes sent native JSON values and correctly remained unmarked, showing the earlier
-stringification behavior is intermittent. All 215 tests and the complete Cloudflare build passed
-(`convex/scout/toolCallRepair.ts`, `src/components/scout-run-message.tsx`).
-
-### 2026-09-02 - d14d0b5 - v156
-
-Moved Lab experiment context, status, and thread actions into the existing resizable navigation
-sidebar. Lab now uses the same `@samebase/sidebars` workspace shell as Tasks and Products, so the
-experiment and thread list remains reachable through the compact-layout drawer instead of consuming
-message space above every thread. The running app passed a visual browser check, sidebar toggle
-check, the complete test suite, and the Cloudflare build (`src/routes/lab.tsx`).
-
 ### 2026-09-02 - working tree
 
-Closed the remaining Playwright review gaps without adding another browser abstraction. The trusted
-observer now follows a focused existing tab after `bringToFront()`, current-page accessibility text
-survives noisy tool-output truncation, and Firecrawl WebSocket control URLs are removed from shared
-diagnostics. Completed generation failures retain their detailed red error state in the transcript.
-The full project check passed with all 217 tests (`convex/scout/playwrightBrowser.ts`,
-`convex/scout/labTools.ts`, `src/components/scout-run-message.tsx`).
+Replaced the shell-based browser layer with Playwright and verified that Conrad can complete Samebase
+onboarding and account deletion without human help. Longer attempts now expose steps and cost, retain
+transcript location and errors, and visibly repair malformed provider tool arguments. Lab gained a
+compact sidebar for repeatable model comparisons (`convex/scout`, `src/components/task-workspace.tsx`,
+`src/routes/lab.tsx`).
