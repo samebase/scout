@@ -36,6 +36,7 @@ import { ServiceIcon } from "#components/service-icon";
 import { TaskReplay } from "#components/task-replay";
 import { Button } from "#components/ui/button";
 import { Textarea } from "#components/ui/textarea";
+import type { TaskWorkspaceSearch, TaskWorkspaceView } from "#lib/taskWorkspaceSearch";
 import { cn } from "#lib/utils";
 
 type Task = NonNullable<FunctionReturnType<typeof api.tasks.get>>;
@@ -46,13 +47,8 @@ type BrowserOperation = BrowserSessionDetail["operations"][number];
 type HumanHandoff = NonNullable<FunctionReturnType<typeof api.taskHumanHandoffs.active>>;
 type TaskMessage = FunctionReturnType<typeof api.tasks.listMessages>["page"][number];
 
-type MainMode = "live" | "replay" | "transcript";
+type MainMode = TaskWorkspaceView;
 type ActionState = { kind: "idle" | "working" } | { kind: "failed"; message: string };
-type ModeSelection = {
-  attemptId: string | undefined;
-  sessionId: string | undefined;
-  mode: MainMode;
-};
 
 const TASK_RESIZE_HANDLE_LABELS = {
   left: "Resize attempts pane",
@@ -72,11 +68,15 @@ const compactDate = new Intl.DateTimeFormat(undefined, {
 export function TaskWorkspace({
   attemptId,
   domain,
+  search,
   taskId,
+  onSearchChange,
 }: {
   attemptId?: string;
   domain: string;
+  search: TaskWorkspaceSearch;
   taskId: string;
+  onSearchChange: (search: TaskWorkspaceSearch) => void;
 }) {
   const navigate = useNavigate();
   const typedTaskId = taskId as Id<"productTasks">;
@@ -92,10 +92,9 @@ export function TaskWorkspace({
     api.tasks.listTurns,
     selectedAttempt ? { attemptId: selectedAttempt.attemptId } : "skip",
   );
-  const [pinnedSessionId, setPinnedSessionId] = useState<Id<"taskBrowserSessions"> | null>(null);
   const selectedSessionSummary = useMemo(
-    () => selectSession(sessions, pinnedSessionId),
-    [pinnedSessionId, sessions],
+    () => selectSession(sessions, search.session),
+    [search.session, sessions],
   );
   const selectedSession = useQuery(
     api.tasks.getBrowserSession,
@@ -116,15 +115,9 @@ export function TaskWorkspace({
       : "skip",
     { initialNumItems: 50, stream: true },
   );
-  const [modeSelection, setModeSelection] = useState<ModeSelection | null>(null);
   const [startOpen, setStartOpen] = useState(false);
   const defaultMode = selectedSessionSummary?.lifecycle.kind === "closed" ? "replay" : "live";
-  const mode =
-    modeSelection !== null &&
-    modeSelection.attemptId === attemptId &&
-    modeSelection.sessionId === selectedSessionSummary?.sessionId
-      ? modeSelection.mode
-      : defaultMode;
+  const mode = search.view ?? defaultMode;
 
   useEffect(() => {
     const latest = attempts?.[0];
@@ -132,12 +125,12 @@ export function TaskWorkspace({
     void navigate({
       to: "/products/$domain/tasks/$taskId/attempts/$attemptId",
       params: { domain, taskId, attemptId: latest.attemptId },
+      search,
       replace: true,
     });
-  }, [attemptId, attempts, domain, navigate, task?.product.domain, taskId]);
+  }, [attemptId, attempts, domain, navigate, search, task?.product.domain, taskId]);
 
   useEffect(() => {
-    setPinnedSessionId(null);
     setStartOpen(false);
   }, [attemptId]);
 
@@ -167,6 +160,7 @@ export function TaskWorkspace({
                 attemptId={typedAttemptId}
                 attempts={attempts}
                 domain={domain}
+                view={search.view}
                 taskId={taskId}
               />
             }
@@ -197,13 +191,7 @@ export function TaskWorkspace({
               <ModeHeader
                 disabled={!selectedAttempt}
                 mode={selectedAttempt ? mode : "transcript"}
-                onModeChange={(nextMode) =>
-                  setModeSelection({
-                    attemptId,
-                    sessionId: selectedSessionSummary?.sessionId,
-                    mode: nextMode,
-                  })
-                }
+                onModeChange={(nextMode) => onSearchChange({ ...search, view: nextMode })}
               />
             }
             scrollRestorationId={`task-main:${taskId}:${attemptId ?? "new"}`}
@@ -217,7 +205,7 @@ export function TaskWorkspace({
                 selectedSession={selectedSession ?? undefined}
                 selectedSessionId={selectedSessionSummary?.sessionId}
                 sessions={sessions}
-                onSelect={setPinnedSessionId}
+                onSelect={(sessionId) => onSearchChange({ ...search, session: sessionId })}
               />
             }
             footer={<AttemptFooter attempt={selectedAttempt} turns={turns} />}
@@ -339,11 +327,13 @@ function AttemptsPane({
   attemptId,
   attempts,
   domain,
+  view,
   taskId,
 }: {
   attemptId: Id<"taskAttempts"> | undefined;
   attempts: Attempt[] | undefined;
   domain: string;
+  view: MainMode | undefined;
   taskId: string;
 }) {
   const { setMobilePane } = useSidebarActions();
@@ -359,6 +349,7 @@ function AttemptsPane({
               <Link
                 to="/products/$domain/tasks/$taskId/attempts/$attemptId"
                 params={{ domain, taskId, attemptId: attempt.attemptId }}
+                search={view === undefined ? {} : { view }}
                 className="task-attempt-row"
                 data-selected={selected ? "" : undefined}
                 aria-current={selected ? "page" : undefined}
@@ -1079,7 +1070,7 @@ function OperationRow({ operation }: { operation: BrowserOperation }) {
       </span>
       <span className="min-w-0">
         <span className="block truncate text-[11px] font-medium">{operation.action.kind}</span>
-        <span className="text-muted-foreground block truncate font-mono text-[9px]">
+        <span className="text-muted-foreground line-clamp-3 whitespace-pre-wrap break-words font-mono text-[9px]">
           {operationTarget(operation)}
         </span>
       </span>
@@ -1120,21 +1111,11 @@ function AttemptFooter({
 function operationTarget(operation: BrowserOperation) {
   switch (operation.action.kind) {
     case "open":
-    case "navigate":
       return operation.action.url;
-    case "click":
-    case "fill":
-    case "type":
-    case "select":
-    case "check":
-      return operation.action.ref;
-    case "press":
-      return operation.action.key;
-    case "switch_tab":
-      return operation.action.tabId;
-    case "back":
-    case "reload":
-      return "";
+    case "execute":
+      return operation.action.code;
+    case "managed_password_fill":
+      return `${operation.action.fieldCount} password field${operation.action.fieldCount === 1 ? "" : "s"}`;
     default: {
       const exhaustive: never = operation.action;
       return exhaustive;
@@ -1142,10 +1123,7 @@ function operationTarget(operation: BrowserOperation) {
   }
 }
 
-function selectSession(
-  sessions: BrowserSession[] | undefined,
-  pinned: Id<"taskBrowserSessions"> | null,
-) {
+function selectSession(sessions: BrowserSession[] | undefined, pinned: string | undefined) {
   if (!sessions?.length) return undefined;
   const pinnedSession = pinned
     ? sessions.find((session) => session.sessionId === pinned)

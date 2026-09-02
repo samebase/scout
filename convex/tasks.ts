@@ -60,7 +60,6 @@ const MAX_BROWSER_TOOL_CALL_ID_LENGTH = 200;
 const MAX_BROWSER_FAILURE_LENGTH = 2_000;
 const MAX_BROWSER_OPERATIONS = 100;
 const MAX_BROWSER_SESSIONS_PER_ATTEMPT = 50;
-const MAX_ATTEMPT_CONCLUSION_LENGTH = 500;
 const TASK_BROWSER_VIEWPORT = { width: 1_280, height: 800 } as const;
 const TASK_MODEL = DEFAULT_SCOUT_MODEL satisfies SelectableScoutModel;
 const HANDOFF_CONTINUATION_PREFIX =
@@ -148,11 +147,6 @@ function truncateText(value: string, maximumLength: number) {
 function requiredConclusion(value: string) {
   const conclusion = value.trim().replaceAll(/\s+/g, " ");
   if (!conclusion) throw new Error("Attempt conclusion cannot be empty");
-  if (Array.from(conclusion).length > MAX_ATTEMPT_CONCLUSION_LENGTH) {
-    throw new Error(
-      `Attempt conclusion must be ${MAX_ATTEMPT_CONCLUSION_LENGTH} characters or fewer`,
-    );
-  }
   return conclusion;
 }
 

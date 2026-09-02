@@ -1,5 +1,8 @@
 {
   "$schema": "./node_modules/convex/schemas/convex.schema.json",
+  "node": {
+    "externalPackages": ["playwright-core"]
+  },
   "aiFiles": {
     "skills": {
       "agents": ["codex"]

@@ -5,12 +5,7 @@ import { LoaderCircleIcon, PauseIcon, PlayIcon, RotateCcwIcon } from "lucide-rea
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import { Button } from "#components/ui/button";
-import {
-  activeClickAt,
-  activePageIdAt,
-  activeTabAt,
-  buildReplayTimeline,
-} from "#lib/taskReplayTimeline";
+import { activePageIdAt, buildReplayTimeline } from "#lib/taskReplayTimeline";
 
 type ReplayPagesResult = FunctionReturnType<typeof api.taskReplay.listPages>;
 type ReplayReady = Extract<ReplayPagesResult, { status: "ready" }>;
@@ -153,7 +148,6 @@ function TaskReplayPlayer({
   const playbackAnchorRef = useRef({ currentTimeMs: 0, performanceMs: 0 });
   const [playing, setPlaying] = useState(false);
   const [manualPageId, setManualPageId] = useState<string | null>(null);
-  const [mediaAspectRatios, setMediaAspectRatios] = useState<Record<string, number>>({});
   const [failedMediaPageIds, setFailedMediaPageIds] = useState<string[]>([]);
   const timeline = useMemo(
     () => buildReplayTimeline(replay.pages, replay.operations),
@@ -252,17 +246,9 @@ function TaskReplayPlayer({
     }
   };
 
-  const activeTabId = activeTabAt(timeline.points, currentTimeMs);
   const automaticPageId = activePageIdAt(timeline, currentTimeMs);
   const activePageId = manualPageId ?? automaticPageId;
   const activePage = timeline.pages.find((page) => page.pageId === activePageId) ?? null;
-  const pointer = activeClickAt(timeline.events, activeTabId, currentTimeMs);
-  const viewportAspectRatio = replay.viewport.width / replay.viewport.height;
-  const activeMediaAspectRatio = activePageId ? mediaAspectRatios[activePageId] : undefined;
-  const pointerIsAccurate =
-    pointer !== null &&
-    activeMediaAspectRatio !== undefined &&
-    Math.abs(activeMediaAspectRatio - viewportAspectRatio) / viewportAspectRatio < 0.02;
 
   const togglePlayback = () => {
     if (currentTimeRef.current >= timeline.durationMs) seek(0);
@@ -308,11 +294,6 @@ function TaskReplayPlayer({
               key={page.pageId}
               active={page.pageId === activePageId}
               localTimeSeconds={Math.max(0, currentTimeMs - page.relativeStartMs) / 1_000}
-              onAspectRatio={(ratio) =>
-                setMediaAspectRatios((current) =>
-                  current[page.pageId] === ratio ? current : { ...current, [page.pageId]: ratio },
-                )
-              }
               onFailure={reportMediaFailure}
               pageId={page.pageId}
               playing={playing}
@@ -329,16 +310,6 @@ function TaskReplayPlayer({
             A tab change was recorded, but Firecrawl did not expose enough identity data to match it
             to one video track.
           </div>
-        ) : null}
-        {pointerIsAccurate && pointer ? (
-          <span
-            className="pointer-events-none absolute z-20 size-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-primary/50 shadow-[0_0_0_4px_rgba(0,0,0,0.35)] motion-safe:animate-ping"
-            style={{
-              left: `${((pointer.box.x + pointer.box.width / 2) / replay.viewport.width) * 100}%`,
-              top: `${((pointer.box.y + pointer.box.height / 2) / replay.viewport.height) * 100}%`,
-            }}
-            aria-hidden="true"
-          />
         ) : null}
       </div>
 
@@ -446,7 +417,6 @@ function TaskReplayPlayer({
 function TaskReplayTrack({
   active,
   localTimeSeconds,
-  onAspectRatio,
   onFailure,
   pageId,
   playing,
@@ -454,7 +424,6 @@ function TaskReplayTrack({
 }: {
   active: boolean;
   localTimeSeconds: number;
-  onAspectRatio: (ratio: number) => void;
   onFailure: (pageId: string) => void;
   pageId: string;
   playing: boolean;
@@ -541,12 +510,6 @@ function TaskReplayTrack({
       onError={() => {
         setFailed(true);
         onFailure(pageId);
-      }}
-      onLoadedMetadata={(event) => {
-        const video = event.currentTarget;
-        if (video.videoWidth > 0 && video.videoHeight > 0) {
-          onAspectRatio(video.videoWidth / video.videoHeight);
-        }
       }}
       className={`absolute inset-0 block size-full object-contain transition-opacity duration-150 motion-reduce:transition-none ${
         active && !failed ? "opacity-100" : "pointer-events-none opacity-0"

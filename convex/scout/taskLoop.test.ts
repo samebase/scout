@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
   decideTaskStep,
-  createSingleUseAttemptResolutionArm,
   detectsHumanGate,
   immediatelyPrecedingToolError,
   immediatelyPrecedingToolResult,
@@ -38,7 +37,7 @@ describe("task human gate detection", () => {
         text: 'Iframe "DataDome Device Check" from the user prompt',
         toolResults: [
           {
-            toolName: "browser_snapshot",
+            toolName: "browser_execute",
             output: { output: '- heading "Create your account"' },
           },
         ],
@@ -54,8 +53,6 @@ describe("task human gate detection", () => {
     expect(
       decideTaskStep({
         state: "working",
-        stepNumber: 5,
-        normalCloseStep: 18,
         previousToolResult: { toolName: "get_thread", output: dataDomeOutput },
       }),
     ).toEqual({ kind: "none", nextState: "working" });
@@ -65,19 +62,19 @@ describe("task human gate detection", () => {
     const previous = immediatelyPrecedingToolResult([
       {
         toolResults: [
-          { toolName: "browser_snapshot", output: dataDomeOutput },
+          { toolName: "browser_execute", output: dataDomeOutput },
           { toolName: "get_thread", output: dataDomeOutput },
         ],
       },
     ]);
 
-    expect(previous).toEqual({ toolName: "browser_snapshot", output: dataDomeOutput });
+    expect(previous).toEqual({ toolName: "browser_execute", output: dataDomeOutput });
   });
 
   it("does not scan an older step for a human gate", () => {
     expect(
       immediatelyPrecedingToolResult([
-        { toolResults: [{ toolName: "browser_snapshot", output: dataDomeOutput }] },
+        { toolResults: [{ toolName: "browser_execute", output: dataDomeOutput }] },
         { toolResults: [{ toolName: "get_thread", output: { output: "mail" } }] },
       ]),
     ).toBeNull();
@@ -88,18 +85,15 @@ describe("task loop decisions", () => {
   function decide(
     state: TaskLoopState,
     previousToolResult: { toolName: string; output: unknown } | null,
-    stepNumber = 5,
   ) {
     return decideTaskStep({
       state,
       previousToolResult,
-      stepNumber,
-      normalCloseStep: 18,
     });
   }
 
   it("forces human help immediately after a browser result exposes a gate", () => {
-    expect(decide("working", { toolName: "browser_snapshot", output: dataDomeOutput })).toEqual({
+    expect(decide("working", { toolName: "browser_execute", output: dataDomeOutput })).toEqual({
       kind: "request_human_help",
       nextState: "final",
     });
@@ -114,23 +108,23 @@ describe("task loop decisions", () => {
     ).toEqual({ kind: "final", nextState: "final", humanHelpOutcome: "waiting" });
   });
 
-  it("forces one outcome after a successful ordinary browser close", () => {
-    const close = decide("working", { toolName: "browser_close", output: { success: true } });
-    expect(close).toEqual({ kind: "resolve_attempt", nextState: "resolving" });
+  it("finishes after a persisted Attempt resolution", () => {
     expect(
-      decide(close.nextState, {
+      decide("working", {
         toolName: "resolve_attempt",
         output: { kind: "blocked", conclusion: "The gate remained", resolvedAt: 1 },
       }),
     ).toEqual({ kind: "final", nextState: "final", humanHelpOutcome: "none" });
   });
 
-  it("does not resolve after an unsuccessful browser close", () => {
-    expect(decide("closing", { toolName: "browser_close", output: { success: false } })).toEqual({
-      kind: "final",
-      nextState: "final",
-      humanHelpOutcome: "none",
-    });
+  it("resolves after browser startup exhausts its internal retries", () => {
+    expect(
+      decideTaskStep({
+        state: "working",
+        previousToolResult: null,
+        previousToolError: { toolName: "browser_open" },
+      }),
+    ).toEqual({ kind: "resolve_attempt", nextState: "resolving" });
   });
 
   it("fails instead of completing when attempt resolution errors", () => {
@@ -149,27 +143,13 @@ describe("task loop decisions", () => {
     expect(
       decideTaskStep({
         state: "resolving",
-        stepNumber: 20,
-        normalCloseStep: 18,
         previousToolResult: null,
         previousToolError: immediatelyPrecedingToolError(steps),
       }),
     ).toEqual({ kind: "resolution_failed", nextState: "final" });
   });
 
-  it("keeps the ordinary cost-neutral close at step 18", () => {
-    expect(decide("working", null, 18)).toEqual({
-      kind: "browser_close",
-      nextState: "closing",
-    });
-  });
-
-  it("arms exactly one post-close attempt resolution", () => {
-    const arm = createSingleUseAttemptResolutionArm();
-
-    expect(arm.consume()).toBe(false);
-    arm.arm();
-    expect(arm.consume()).toBe(true);
-    expect(arm.consume()).toBe(false);
+  it("does not preempt ordinary browser work before the generation hard limit", () => {
+    expect(decide("working", null)).toEqual({ kind: "none", nextState: "working" });
   });
 });

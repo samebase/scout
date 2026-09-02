@@ -22,12 +22,15 @@ type ToolSnapshot = {
   input?: unknown;
   output?: unknown;
   error?: unknown;
+  repairedInputFields: string[];
 };
 
 const tokenNumber = new Intl.NumberFormat();
 
 export function scoutModelLabel(model: string) {
   switch (model) {
+    case "openai/gpt-5.6-luna":
+      return "Luna";
     case "qwen/qwen3.7-flash":
       return "Qwen 3.7 Flash";
     default:
@@ -58,19 +61,19 @@ export function ScoutRunMessageView({
             showText={showText}
           />
         ))}
-        {message.status === "failed" ? (
-          <Marker className="text-destructive" role="status">
-            <MarkerIcon>
-              <CircleAlertIcon />
-            </MarkerIcon>
-            <MarkerContent>Generation failed.</MarkerContent>
-          </Marker>
-        ) : metadata?.failure ? (
+        {metadata?.failure ? (
           <Marker className="text-destructive" role="status">
             <MarkerIcon>
               <CircleAlertIcon />
             </MarkerIcon>
             <MarkerContent>Generation failed: {metadata.failure}</MarkerContent>
+          </Marker>
+        ) : message.status === "failed" ? (
+          <Marker className="text-destructive" role="status">
+            <MarkerIcon>
+              <CircleAlertIcon />
+            </MarkerIcon>
+            <MarkerContent>Generation failed.</MarkerContent>
           </Marker>
         ) : null}
         {!metadata?.failure && (message.status === "pending" || message.status === "streaming") ? (
@@ -79,22 +82,35 @@ export function ScoutRunMessageView({
             Scout is working
           </MessageFooter>
         ) : metadata ? (
-          <MessageFooter>{formatRunMetadata(metadata)}</MessageFooter>
+          <MessageFooter>
+            {formatRunMetadata(metadata, countGenerationSteps(message.parts))}
+          </MessageFooter>
         ) : null}
       </MessageContent>
     </Message>
   );
 }
 
-export function formatRunMetadata(metadata: ScoutRunMetadata) {
+export function countGenerationSteps(parts: ScoutRunMessage["parts"]) {
+  return parts.reduce((count, part) => {
+    const record = asRecord(part);
+    return record && field(record, "type") === "step-start" ? count + 1 : count;
+  }, 0);
+}
+
+export function formatRunMetadata(metadata: ScoutRunMetadata, generationSteps: number) {
   const parts: string[] = [];
   if (metadata.scout?.displayName) parts.push(metadata.scout.displayName);
   if (metadata.model) parts.push(scoutModelLabel(metadata.model));
+  parts.push(`${tokenNumber.format(generationSteps)} ${generationSteps === 1 ? "step" : "steps"}`);
   if (metadata.usage?.promptTokens !== undefined) {
     parts.push(`${tokenNumber.format(metadata.usage.promptTokens)} input`);
   }
   if (metadata.usage?.completionTokens !== undefined) {
     parts.push(`${tokenNumber.format(metadata.usage.completionTokens)} output`);
+  }
+  if (metadata.usage?.costUsd !== undefined) {
+    parts.push(formatEstimatedModelCostUsd(metadata.usage.costUsd));
   }
   if (
     metadata.usage?.promptTokens === undefined &&
@@ -117,6 +133,16 @@ export function formatRunMetadata(metadata: ScoutRunMetadata) {
 
 function formatDuration(durationMs: number) {
   return durationMs < 1000 ? `${Math.round(durationMs)} ms` : `${(durationMs / 1000).toFixed(1)} s`;
+}
+
+function formatEstimatedModelCostUsd(cost: number) {
+  const maximumFractionDigits = cost < 0.01 ? 6 : cost < 1 ? 4 : 2;
+  return `~${new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: Math.min(2, maximumFractionDigits),
+    maximumFractionDigits,
+  }).format(cost)} model`;
 }
 
 function MessagePart({
@@ -189,20 +215,41 @@ function MessagePart({
 }
 
 function ToolActivity({ tool }: { tool: ToolSnapshot }) {
-  const isError = tool.state.includes("error") || tool.error !== undefined;
+  const outputFailure = toolOutputFailure(tool.output);
+  const isError =
+    tool.state.includes("error") || tool.error !== undefined || outputFailure !== undefined;
   const isComplete = tool.state === "output-available";
 
   return (
-    <Collapsible className="rounded-[0.75rem] border bg-muted/35 px-3 py-2.5">
+    <Collapsible
+      className={
+        isError
+          ? "border-destructive/50 bg-destructive/5 rounded-[0.75rem] border px-3 py-2.5"
+          : "rounded-[0.75rem] border bg-muted/35 px-3 py-2.5"
+      }
+    >
       <CollapsibleTrigger className="group/tool flex w-full items-center gap-2 text-left">
         <Marker className={isError ? "text-destructive" : "text-foreground"}>
           <MarkerIcon>
             {isError ? <CircleAlertIcon /> : isComplete ? <CheckCircle2Icon /> : <WrenchIcon />}
           </MarkerIcon>
           <MarkerContent className="flex flex-1 items-baseline justify-between gap-3">
-            <span className="font-mono text-xs">{tool.name}</span>
-            <span className="text-muted-foreground text-[0.6875rem]">
-              {tool.state.replaceAll("-", " ")}
+            <span className="flex min-w-0 items-baseline gap-2">
+              <span className="font-mono text-xs">{tool.name}</span>
+              {tool.repairedInputFields.length > 0 ? (
+                <span className="shrink-0 text-[0.6875rem] font-medium text-amber-700 dark:text-amber-400">
+                  JSON parsed
+                </span>
+              ) : null}
+            </span>
+            <span
+              className={
+                isError
+                  ? "text-destructive text-[0.6875rem]"
+                  : "text-muted-foreground text-[0.6875rem]"
+              }
+            >
+              {isError ? "error" : tool.state.replaceAll("-", " ")}
             </span>
           </MarkerContent>
         </Marker>
@@ -210,10 +257,17 @@ function ToolActivity({ tool }: { tool: ToolSnapshot }) {
       </CollapsibleTrigger>
       <CollapsibleContent className="pt-3">
         <dl className="grid gap-3 border-t pt-3">
+          {tool.repairedInputFields.length > 0 ? (
+            <ToolValue label="JSON-parsed fields" value={tool.repairedInputFields.join(", ")} />
+          ) : null}
           {tool.input !== undefined ? <ToolValue label="Input" value={tool.input} /> : null}
-          {tool.output !== undefined ? <ToolValue label="Output" value={tool.output} /> : null}
+          {tool.output !== undefined && outputFailure === undefined ? (
+            <ToolValue label="Output" value={tool.output} />
+          ) : null}
           {tool.error !== undefined ? (
             <ToolValue label="Error" value={tool.error} destructive />
+          ) : outputFailure !== undefined ? (
+            <ToolValue label="Error" value={outputFailure} destructive />
           ) : null}
         </dl>
       </CollapsibleContent>
@@ -241,11 +295,44 @@ function ToolValue({
       >
         {label}
       </dt>
-      <dd className="mt-1 overflow-x-auto rounded-md bg-background p-2 font-mono text-[0.6875rem] leading-relaxed whitespace-pre-wrap break-words">
+      <dd
+        className={`mt-1 overflow-x-auto rounded-md bg-background p-2 font-mono text-[0.6875rem] leading-relaxed whitespace-pre-wrap break-words${destructive ? " text-destructive" : ""}`}
+      >
         {formatValue(value)}
       </dd>
     </div>
   );
+}
+
+export function toolOutputFailure(value: unknown) {
+  if (value instanceof Error) return value.message;
+  if (typeof value === "string") {
+    const message = value.trim();
+    return /^(?:[A-Za-z_$][\w$]*Error|Error):/.test(message) ||
+      /^An error occurred\.?$/i.test(message)
+      ? value
+      : undefined;
+  }
+  const record = asRecord(value);
+  if (!record) return undefined;
+  if (field(record, "success") === false || field(record, "isError") === true) return value;
+  const error = ownValue(record, "error");
+  return error !== undefined && error !== null && error !== false && error !== ""
+    ? value
+    : undefined;
+}
+
+export function repairedToolInputFields(record: object | null) {
+  if (!record) return [];
+  const metadata = asRecord(
+    ownValue(record, "callProviderMetadata") ?? ownValue(record, "providerMetadata"),
+  );
+  const scout = metadata ? asRecord(field(metadata, "scout")) : null;
+  const repair = scout ? asRecord(field(scout, "inputRepair")) : null;
+  const fields = repair ? field(repair, "fields") : undefined;
+  return Array.isArray(fields)
+    ? fields.filter((value): value is string => typeof value === "string")
+    : [];
 }
 
 function toolSnapshot(record: object | null, type: string): ToolSnapshot | null {
@@ -261,6 +348,7 @@ function toolSnapshot(record: object | null, type: string): ToolSnapshot | null 
     input: ownValue(record, "input") ?? ownValue(record, "args"),
     output: ownValue(record, "output") ?? ownValue(record, "result"),
     error: ownValue(record, "errorText") ?? ownValue(record, "error"),
+    repairedInputFields: repairedToolInputFields(record),
   };
 }
 

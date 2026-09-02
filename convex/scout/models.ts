@@ -1,13 +1,14 @@
 import { convexGateway } from "@convex-dev/ai-sdk-provider";
 import { type Infer, v } from "convex/values";
 
+const lunaModelValidator = v.literal("openai/gpt-5.6-luna");
 const qwen37FlashModelValidator = v.literal("qwen/qwen3.7-flash");
 
-export const selectableScoutModelValidator = qwen37FlashModelValidator;
+export const selectableScoutModelValidator = v.union(lunaModelValidator, qwen37FlashModelValidator);
 
 export type SelectableScoutModel = Infer<typeof selectableScoutModelValidator>;
 
-export const scoutModelValidator = qwen37FlashModelValidator;
+export const scoutModelValidator = v.union(lunaModelValidator, qwen37FlashModelValidator);
 
 export type ScoutModel = Infer<typeof scoutModelValidator>;
 
@@ -17,6 +18,7 @@ export const scoutTokenUsageValidator = v.object({
   totalTokens: v.optional(v.number()),
   reasoningTokens: v.optional(v.number()),
   cachedInputTokens: v.optional(v.number()),
+  costUsd: v.optional(v.number()),
 });
 
 export type ScoutTokenUsage = Infer<typeof scoutTokenUsageValidator>;

@@ -1,8 +1,11 @@
 "use node";
 
 import { tool, type ToolExecutionOptions, type ToolSet } from "ai";
-import { type BrowserExecuteResponse, type Firecrawl } from "firecrawl";
+import { type Infer } from "convex/values";
+import { SdkError, type BrowserExecuteResponse, type Firecrawl } from "firecrawl";
 import { z } from "zod";
+import { taskBrowserActionValidator } from "../taskBrowserModel";
+import { browserTargetSchema, type BrowserTarget } from "./browserTarget";
 import {
   closeFirecrawlBrowserSession,
   createFirecrawlClient,
@@ -11,21 +14,19 @@ import {
 import { optionalFirecrawlLiveViewUrl } from "./lib/firecrawlLiveView";
 import { diagnosticMessage } from "./lib/redaction";
 import {
-  actionElementRef,
-  browserTraceMarkers,
-  parseBrowserTrace,
-  type TaskBrowserAction,
+  connectPlaywrightBrowser,
+  type PlaywrightBrowser,
   type TaskBrowserTelemetry,
-} from "./browserTelemetry";
+} from "./playwrightBrowser";
 
 const MAX_TOOL_TEXT_LENGTH = 20_000;
 const MAX_TOOL_OUTPUT_LENGTH = 20_000;
-const MAX_CSS_SELECTOR_LENGTH = 1_000;
-const SNAPSHOT_FAILED_AFTER_MUTATION = "__SCOUT_SNAPSHOT_FAILED_AFTER_MUTATION__";
-const SNAPSHOT_FAILED_AFTER_MUTATION_EXIT_CODE = 86;
-const POSITIVE_DECIMAL_INTEGER_PATTERN = /^[1-9]\d*$/;
+const PLAYWRIGHT_RESULT_PREFIX = "__SCOUT_PLAYWRIGHT_RESULT__";
+const PROFILE_WRITE_RETRY_DELAYS_MS = [10_000, 10_000, 10_000] as const;
 
 const agentMailToolNames = ["list_messages", "search_messages", "get_thread"] as const;
+
+type TaskBrowserAction = Infer<typeof taskBrowserActionValidator>;
 
 type BrowserStopResult = {
   success: boolean;
@@ -37,8 +38,9 @@ type BrowserDependencies = {
   browser: Firecrawl["browser"];
   browserExecute: Firecrawl["browserExecute"];
   deleteBrowser: Firecrawl["deleteBrowser"];
+  connect: (cdpUrl: string) => Promise<PlaywrightBrowser>;
+  now: () => number;
   sleep: (milliseconds: number) => Promise<void>;
-  traceToken: () => string;
 };
 
 type BrowserSessionPolicy = { captureOperations: boolean };
@@ -72,10 +74,55 @@ function defaultBrowserDependencies(): BrowserDependencies {
     browserExecute: async (sessionId, options) =>
       await firecrawl.browserExecute(sessionId, options),
     deleteBrowser: async (sessionId) => await closeFirecrawlBrowserSession(firecrawl, sessionId),
+    connect: connectPlaywrightBrowser,
+    now: Date.now,
     sleep: async (milliseconds) =>
-      await new Promise<void>((resolve) => setTimeout(resolve, milliseconds)),
-    traceToken: () => crypto.randomUUID().replaceAll("-", ""),
+      await new Promise((resolve) => setTimeout(resolve, milliseconds)),
   };
+}
+
+function firecrawlRateLimitDelay(error: unknown) {
+  if (!(error instanceof SdkError) || error.status !== 429) return null;
+  const match = /retry after (\d+)s/i.exec(error.message);
+  const seconds = match?.[1] ? Number(match[1]) : 10;
+  return Math.min(Math.max(seconds, 1), 30) * 1_000 + 250;
+}
+
+function firecrawlProfileWriterBusy(error: unknown) {
+  return (
+    error instanceof SdkError &&
+    /another session is currently writing to this profile/i.test(error.message)
+  );
+}
+
+async function createFirecrawlBrowserWithProfileRetry(
+  dependencies: BrowserDependencies,
+  options: NonNullable<Parameters<Firecrawl["browser"]>[0]>,
+) {
+  for (const delay of PROFILE_WRITE_RETRY_DELAYS_MS) {
+    try {
+      return await dependencies.browser(options);
+    } catch (error) {
+      if (!options.profile || !firecrawlProfileWriterBusy(error)) throw error;
+      await dependencies.sleep(delay);
+    }
+  }
+  return await dependencies.browser(options);
+}
+
+async function executePlaywrightWithRateLimitRetry(
+  dependencies: BrowserDependencies,
+  sessionId: string,
+  options: Parameters<Firecrawl["browserExecute"]>[1],
+) {
+  try {
+    return await dependencies.browserExecute(sessionId, options);
+  } catch (error) {
+    const delay = firecrawlRateLimitDelay(error);
+    if (delay === null) throw error;
+    await dependencies.sleep(delay);
+    return await dependencies.browserExecute(sessionId, options);
+  }
 }
 
 function boundedText(value: string, label: string, maxLength = MAX_TOOL_TEXT_LENGTH) {
@@ -87,34 +134,6 @@ function boundedText(value: string, label: string, maxLength = MAX_TOOL_TEXT_LEN
     throw new Error(`${label} must be ${maxLength} characters or fewer`);
   }
   return text;
-}
-
-function modelPositiveInteger(maximum: number) {
-  return z.union([
-    z.number().int().min(1).max(maximum),
-    z
-      .string()
-      .max(String(maximum).length)
-      .regex(POSITIVE_DECIMAL_INTEGER_PATTERN)
-      .refine((value) => Number(value) <= maximum, {
-        message: `Expected an integer between 1 and ${maximum}`,
-      }),
-  ]);
-}
-
-function numericModelValue(value: number | string) {
-  return typeof value === "number" ? value : Number(value);
-}
-
-function normalizeMessageLimit<T extends { limit?: number | string | undefined }>(input: T) {
-  return input.limit === undefined ? input : { ...input, limit: numericModelValue(input.limit) };
-}
-
-function elementRef(value: string) {
-  if (!/^@e\d+$/.test(value)) {
-    throw new Error("Element ref must look like @e1");
-  }
-  return value;
 }
 
 function httpsUrl(value: string) {
@@ -135,50 +154,6 @@ function telemetryUrl(value: string) {
   url.search = "";
   url.hash = "";
   return url.toString();
-}
-
-function browserTabId(value: string) {
-  const tabId = boundedText(value, "Browser tab ID", 100);
-  if (!/^t[1-9]\d*$/.test(tabId)) {
-    throw new Error("Browser tab ID must look like t1");
-  }
-  return tabId;
-}
-
-function shellQuote(value: string) {
-  return `'${value.replaceAll("'", `'"'"'`)}'`;
-}
-
-function shellCommand(parts: readonly string[]) {
-  return parts.map(shellQuote).join(" ");
-}
-
-function traceMutationCommand(parts: readonly string[], action: TaskBrowserAction, token: string) {
-  const markers = browserTraceMarkers(token);
-  const ref = actionElementRef(action);
-  const beforeTabs =
-    action.kind === "open"
-      ? shellCommand(["printf", "%s\\n", '{"success":true,"data":{"tabs":[]}}'])
-      : shellCommand(["agent-browser", "--json", "tab"]);
-  const commands = [
-    ...(ref === null ? [] : [shellCommand(["agent-browser", "scrollintoview", ref])]),
-    shellCommand(["printf", "%s\\n", markers.begin]),
-    shellCommand(["node", "-p", "Date.now()"]),
-    beforeTabs,
-    ...(ref === null ? [] : [shellCommand(["agent-browser", "--json", "get", "box", ref])]),
-    shellCommand(["node", "-p", "Date.now()"]),
-    `${shellCommand(["printf", "%s\\n", markers.dispatch])} >&2`,
-    `${shellCommand(parts)} >/dev/null`,
-    ...(action.kind === "open"
-      ? [`${shellCommand(["agent-browser", "set", "viewport", "1280", "800"])} >/dev/null`]
-      : []),
-    shellCommand(["node", "-p", "Date.now()"]),
-    shellCommand(["agent-browser", "--json", "tab"]),
-    shellCommand(["printf", "%s\\n", markers.end]),
-  ];
-  const snapshot = shellCommand(["agent-browser", "snapshot", "-i", "-c"]);
-  const sentinel = shellCommand(["printf", "%s\\n", SNAPSHOT_FAILED_AFTER_MUTATION]);
-  return `${commands.join(" && ")} && { ${snapshot} || { ${sentinel} >&2; exit ${SNAPSHOT_FAILED_AFTER_MUTATION_EXIT_CODE}; }; }`;
 }
 
 function redactProviderUrls(value: string) {
@@ -214,64 +189,123 @@ function redactSensitiveValues(value: string, sensitiveValues: ReadonlySet<strin
   return redactProviderUrls(redacted);
 }
 
-function browserOutput(
-  interaction: BrowserExecuteResponse,
-  sensitiveValues: ReadonlySet<string>,
-  outputOverride?: string,
-) {
-  const output =
-    outputOverride ?? (interaction.stdout || interaction.result || interaction.output || "");
-  const error = interaction.error?.trim();
+function browserOutput(output: string, sensitiveValues: ReadonlySet<string>) {
   return {
-    success: firecrawlBrowserExecutionSucceeded(interaction),
+    success: true,
     output: redactSensitiveValues(output, sensitiveValues).slice(0, MAX_TOOL_OUTPUT_LENGTH),
-    error: error
-      ? redactSensitiveValues(error, sensitiveValues).slice(0, MAX_TOOL_OUTPUT_LENGTH)
-      : null,
-    exitCode: interaction.exitCode ?? null,
-    killed: interaction.killed ?? false,
   };
 }
 
-function interactionFailure(
-  interaction: BrowserExecuteResponse,
-  sensitiveValues: ReadonlySet<string>,
-) {
-  const exitCode: number | null | undefined = interaction.exitCode;
-  const summary = interaction.killed
-    ? "Browser provider command timed out"
-    : exitCode === undefined || exitCode === null
-      ? "Browser provider command failed"
-      : `Browser provider command failed with exit code ${exitCode}`;
-  const detail = interaction.error?.trim();
+function browserFailure(error: unknown, sensitiveValues: ReadonlySet<string>) {
+  if (sensitiveValues.size > 0) {
+    return "Browser operation failed after managed credential use";
+  }
+  return redactSensitiveValues(diagnosticMessage(error), sensitiveValues).slice(
+    0,
+    MAX_TOOL_OUTPUT_LENGTH,
+  );
+}
+
+function executionOutput(response: BrowserExecuteResponse, sensitiveValues: ReadonlySet<string>) {
+  return redactSensitiveValues(
+    response.stdout || response.result || response.output || "",
+    sensitiveValues,
+  ).slice(0, MAX_TOOL_OUTPUT_LENGTH);
+}
+
+function executionFailure(response: BrowserExecuteResponse, sensitiveValues: ReadonlySet<string>) {
+  const detail = [response.error, response.stderr]
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value))
+    .join("\n");
+  const summary = response.killed
+    ? "Playwright execution timed out"
+    : response.exitCode === undefined || response.exitCode === null
+      ? "Playwright execution failed"
+      : `Playwright execution failed with exit code ${response.exitCode}`;
   return detail
-    ? `${summary}: ${redactSensitiveValues(diagnosticMessage(detail), sensitiveValues)}`
+    ? `${summary}: ${redactSensitiveValues(detail, sensitiveValues)}`.slice(
+        0,
+        MAX_TOOL_OUTPUT_LENGTH,
+      )
     : summary;
 }
 
-function browserMutationOutput(
-  interaction: BrowserExecuteResponse,
+function scopedPlaywrightExecution(code: string, toolCallId: string) {
+  const marker = `${PLAYWRIGHT_RESULT_PREFIX}${toolCallId}:`;
+  return {
+    marker,
+    code: `await (async () => {
+  const logs = [];
+  const originalLog = console.log;
+  const display = (value) => {
+    if (typeof value === "string") return value;
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  };
+  console.log = (...values) => {
+    logs.push(values.map(display).join(" "));
+  };
+  try {
+    const value = await (async () => {
+${code}
+    })();
+    if (value !== undefined) logs.push(display(value));
+    return ${JSON.stringify(marker)} + JSON.stringify({ ok: true, output: logs.join("\\n") });
+  } catch (error) {
+    const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
+    return ${JSON.stringify(marker)} + JSON.stringify({
+      ok: false,
+      output: logs.join("\\n"),
+      error: message,
+    });
+  } finally {
+    console.log = originalLog;
+  }
+})()`,
+  };
+}
+
+function parsedPlaywrightExecution(
+  response: BrowserExecuteResponse,
+  markers: ReturnType<typeof scopedPlaywrightExecution>,
   sensitiveValues: ReadonlySet<string>,
 ) {
-  const base = browserOutput(interaction, sensitiveValues);
-  if (
-    interaction.exitCode !== SNAPSHOT_FAILED_AFTER_MUTATION_EXIT_CODE ||
-    !interaction.stderr?.includes(SNAPSHOT_FAILED_AFTER_MUTATION)
-  ) {
-    return base;
+  const rawResult = response.result || response.stdout || response.output || "";
+  if (!rawResult.startsWith(markers.marker)) {
+    const success = firecrawlBrowserExecutionSucceeded(response);
+    return {
+      success,
+      output: executionOutput(response, sensitiveValues),
+      error: success ? null : executionFailure(response, sensitiveValues),
+    };
   }
+
+  const serializedResult = rawResult.slice(markers.marker.length);
+  const result: unknown = JSON.parse(serializedResult);
+  if (
+    typeof result !== "object" ||
+    result === null ||
+    typeof Reflect.get(result, "ok") !== "boolean"
+  ) {
+    throw new Error("Firecrawl returned an invalid Playwright execution result");
+  }
+  const success = Reflect.get(result, "ok") === true;
+  const error = Reflect.get(result, "error");
+  const output = Reflect.get(result, "output");
   return {
-    ...base,
-    success: false,
+    success,
     output:
-      "Mutation applied, but the compact post-action snapshot failed. Inspect the current page before continuing and do not retry the mutation.",
-    stderr: redactSensitiveValues(
-      (interaction.stderr ?? "").replaceAll(SNAPSHOT_FAILED_AFTER_MUTATION, "").trim(),
-      sensitiveValues,
-    ).slice(0, MAX_TOOL_OUTPUT_LENGTH),
-    error: "PostActionSnapshotFailed",
-    mutationApplied: true,
-    doNotRetry: true,
+      typeof output === "string"
+        ? redactSensitiveValues(output, sensitiveValues).slice(0, MAX_TOOL_OUTPUT_LENGTH)
+        : "",
+    error:
+      success || typeof error !== "string"
+        ? null
+        : redactSensitiveValues(error, sensitiveValues).slice(0, MAX_TOOL_OUTPUT_LENGTH),
   };
 }
 
@@ -312,7 +346,7 @@ function convertAgentMailOutput(
 }
 
 const messageFilters = {
-  limit: modelPositiveInteger(100).optional(),
+  limit: z.number().int().min(1).max(100).optional(),
   pageToken: z.string().optional(),
   before: z.string().optional(),
   after: z.string().optional(),
@@ -339,13 +373,7 @@ export function selectAgentMailTools(tools: ToolSet, inboxId: string) {
         includeTrash: z.boolean().optional(),
       }),
       execute: async (input, options) =>
-        await executeAgentMailTool(
-          tools,
-          "list_messages",
-          inboxId,
-          normalizeMessageLimit(input),
-          options,
-        ),
+        await executeAgentMailTool(tools, "list_messages", inboxId, input, options),
       toModelOutput: async (options) =>
         await convertAgentMailOutput(tools, "list_messages", options),
     }),
@@ -357,13 +385,7 @@ export function selectAgentMailTools(tools: ToolSet, inboxId: string) {
         q: z.string().min(1).max(MAX_TOOL_TEXT_LENGTH),
       }),
       execute: async (input, options) =>
-        await executeAgentMailTool(
-          tools,
-          "search_messages",
-          inboxId,
-          normalizeMessageLimit(input),
-          options,
-        ),
+        await executeAgentMailTool(tools, "search_messages", inboxId, input, options),
       toModelOutput: async (options) =>
         await convertAgentMailOutput(tools, "search_messages", options),
     }),
@@ -385,6 +407,7 @@ export function createLabBrowserHarness(
   dependencies: BrowserDependencies = defaultBrowserDependencies(),
 ) {
   let sessionId: string | undefined;
+  let playwright: PlaywrightBrowser | undefined;
   let closePromise: Promise<BrowserStopResult | undefined> | undefined;
   let stopResult: BrowserStopResult | undefined;
   let closeCallbacksComplete = false;
@@ -404,26 +427,20 @@ export function createLabBrowserHarness(
     return result;
   }
 
-  function execute(parts: readonly string[], timeoutSeconds = 60) {
+  function activeBrowser() {
+    if (!sessionId || !playwright) {
+      throw new Error("Open a browser session before using it");
+    }
+    return playwright;
+  }
+
+  function read(operation: (browser: PlaywrightBrowser) => Promise<string>) {
     return serialized(async () => {
-      if (!sessionId) {
-        throw new Error("Open a browser session before using it");
-      }
-      const command = shellCommand(parts);
-      let interaction: BrowserExecuteResponse;
       try {
-        interaction = await dependencies.browserExecute(sessionId, {
-          code: command,
-          language: "bash",
-          timeout: timeoutSeconds,
-        });
+        return browserOutput(await operation(activeBrowser()), sensitiveValues);
       } catch (error) {
-        if (sensitiveValues.size > 0) {
-          throw new Error("Browser provider request failed after managed credential use");
-        }
-        throw error;
+        throw new Error(browserFailure(error, sensitiveValues));
       }
-      return browserOutput(interaction, sensitiveValues);
     });
   }
 
@@ -432,147 +449,261 @@ export function createLabBrowserHarness(
     return `local-${localToolCallSequence}`;
   }
 
-  async function runInstrumentedMutation(
-    parts: readonly string[],
+  async function settle(toolCallId: string, outcome: BrowserOperationOutcome) {
+    try {
+      await options.onOperationSettled?.({ toolCallId, outcome });
+    } catch (error) {
+      terminalTelemetryFailure = { error };
+      throw error;
+    }
+  }
+
+  async function prepareTelemetry(
+    browser: PlaywrightBrowser,
     action: TaskBrowserAction,
+  ): Promise<TaskBrowserTelemetry["before"]> {
+    return action.kind === "open"
+      ? { capturedAtMs: dependencies.now(), tabs: [] }
+      : await browser.observe();
+  }
+
+  function postActionSnapshotFailed(error: unknown) {
+    return {
+      ...browserOutput("", sensitiveValues),
+      success: false,
+      output:
+        "The browser action completed, but the post-action snapshot failed. Inspect the current page before continuing and do not retry the action.",
+      error: `PostActionSnapshotFailed: ${browserFailure(error, sensitiveValues)}`,
+      mutationApplied: true,
+      doNotRetry: true,
+    };
+  }
+
+  async function performMutation(
+    action: TaskBrowserAction,
+    operation: (browser: PlaywrightBrowser) => Promise<void>,
     toolCallId: string,
   ) {
-    if (!sessionId) {
-      throw new Error("Open a browser session before using it");
+    const browser = activeBrowser();
+    if (terminalTelemetryFailure) throw terminalTelemetryFailure.error;
+
+    if (!captureOperations) {
+      try {
+        await operation(browser);
+      } catch (error) {
+        throw new Error(browserFailure(error, sensitiveValues));
+      }
+      try {
+        return browserOutput(await browser.snapshot(), sensitiveValues);
+      } catch (error) {
+        return postActionSnapshotFailed(error);
+      }
     }
-    if (terminalTelemetryFailure) {
-      throw terminalTelemetryFailure.error;
-    }
+
     if (!options.onOperationPrepared || !options.onOperationSettled) {
       throw new Error("Browser operation capture is not configured");
     }
-
     const prepared = await options.onOperationPrepared({ toolCallId, action });
     if (!prepared) {
       throw new Error("Browser tool call was already prepared and will not be dispatched again");
     }
-    const token = dependencies.traceToken();
-    const markers = browserTraceMarkers(token);
-    let interaction: BrowserExecuteResponse;
-    try {
-      interaction = await dependencies.browserExecute(sessionId, {
-        code: traceMutationCommand(parts, action, token),
-        language: "bash",
-        timeout: 60,
-      });
-    } catch (caught) {
-      const detail = redactSensitiveValues(diagnosticMessage(caught), sensitiveValues).trim();
-      const outcome: BrowserOperationOutcome = {
-        kind: "indeterminate_after_dispatch",
-        failure: detail
-          ? `Browser provider transport failed: ${detail}; dispatch status is unknown`
-          : "Browser provider transport failed; dispatch status is unknown",
-      };
-      try {
-        await options.onOperationSettled({ toolCallId, outcome });
-      } catch (error) {
-        terminalTelemetryFailure = { error };
-        throw error;
-      }
-      const error = new Error(
-        "The browser request failed after preparation, so its outcome is unknown. The task was stopped to preserve evidence integrity.",
-      );
-      terminalTelemetryFailure = { error };
-      throw error;
-    }
 
-    let parsed: ReturnType<typeof parseBrowserTrace> | undefined;
-    let traceFailure: string | undefined;
+    let preparedTelemetry: Awaited<ReturnType<typeof prepareTelemetry>>;
     try {
-      parsed = parseBrowserTrace(interaction.stdout ?? "", token, action);
+      preparedTelemetry = await prepareTelemetry(browser, action);
     } catch (error) {
-      parsed = undefined;
-      traceFailure =
-        error instanceof Error ? error.message : "Browser telemetry could not be parsed";
+      const failure = browserFailure(error, sensitiveValues);
+      await settle(toolCallId, { kind: "failed_before_dispatch", failure });
+      throw new Error(failure);
     }
 
-    const dispatchObserved = interaction.stderr?.includes(markers.dispatch) === true;
-    let outcome: BrowserOperationOutcome;
-    if (
-      parsed &&
-      interaction.exitCode === SNAPSHOT_FAILED_AFTER_MUTATION_EXIT_CODE &&
-      interaction.stderr?.includes(SNAPSHOT_FAILED_AFTER_MUTATION)
-    ) {
-      outcome = { kind: "applied_snapshot_failed", telemetry: parsed.telemetry };
-    } else if (firecrawlBrowserExecutionSucceeded(interaction) && parsed) {
-      outcome = { kind: "applied", telemetry: parsed.telemetry };
-    } else if (dispatchObserved) {
-      outcome = {
-        kind: "indeterminate_after_dispatch",
-        failure: traceFailure ?? interactionFailure(interaction, sensitiveValues),
+    const dispatchedAtMs = dependencies.now();
+    try {
+      await operation(browser);
+    } catch (error) {
+      const failure = browserFailure(error, sensitiveValues);
+      await settle(toolCallId, { kind: "indeterminate_after_dispatch", failure });
+      const terminalError = new Error(
+        `Browser action failed after dispatch and its outcome is unknown: ${failure}`,
+      );
+      terminalTelemetryFailure = { error: terminalError };
+      throw terminalError;
+    }
+
+    const returnedAtMs = dependencies.now();
+    let telemetry: TaskBrowserTelemetry;
+    try {
+      telemetry = {
+        version: 1,
+        before: preparedTelemetry,
+        dispatchedAtMs,
+        returnedAtMs,
+        after: await browser.observe(),
       };
-    } else {
-      outcome = {
-        kind: "failed_before_dispatch",
-        failure: interactionFailure(interaction, sensitiveValues),
-      };
+    } catch (error) {
+      const failure = `Browser action completed, but telemetry capture failed: ${browserFailure(error, sensitiveValues)}`;
+      await settle(toolCallId, { kind: "indeterminate_after_dispatch", failure });
+      const terminalError = new Error(failure);
+      terminalTelemetryFailure = { error: terminalError };
+      throw terminalError;
     }
 
     try {
-      await options.onOperationSettled({ toolCallId, outcome });
+      const snapshot = await browser.snapshot();
+      await settle(toolCallId, { kind: "applied", telemetry });
+      return browserOutput(snapshot, sensitiveValues);
     } catch (error) {
-      terminalTelemetryFailure = { error };
-      throw error;
+      await settle(toolCallId, { kind: "applied_snapshot_failed", telemetry });
+      return postActionSnapshotFailed(error);
     }
-
-    if (outcome.kind === "applied") {
-      return browserOutput(interaction, sensitiveValues, parsed?.modelOutput ?? "");
-    }
-    if (outcome.kind === "applied_snapshot_failed") {
-      return {
-        ...browserOutput(interaction, sensitiveValues, ""),
-        success: false,
-        output:
-          "Mutation applied, but the compact post-action snapshot failed. Inspect the current page before continuing and do not retry the mutation.",
-        error: "PostActionSnapshotFailed",
-        mutationApplied: true,
-        doNotRetry: true,
-      };
-    }
-    if (outcome.kind === "indeterminate_after_dispatch") {
-      const error = new Error(
-        "The browser action was dispatched, but its outcome could not be observed. The task was stopped to preserve evidence integrity.",
-      );
-      terminalTelemetryFailure = { error };
-      throw error;
-    }
-    return browserOutput(interaction, sensitiveValues, "Action failed before browser dispatch.");
   }
 
-  function executeMutation(
-    parts: readonly string[],
+  function mutate(
     action: TaskBrowserAction,
+    operation: (browser: PlaywrightBrowser) => Promise<void>,
     toolCallId = localToolCallId(),
   ) {
-    const snapshot = ["agent-browser", "snapshot", "-i", "-c"].map(shellQuote).join(" ");
-    const sentinel = ["printf", "%s\\n", SNAPSHOT_FAILED_AFTER_MUTATION].map(shellQuote).join(" ");
-    const code = `${shellCommand(parts)} && { ${snapshot} || { ${sentinel} >&2; exit ${SNAPSHOT_FAILED_AFTER_MUTATION_EXIT_CODE}; }; }`;
+    return serialized(async () => await performMutation(action, operation, toolCallId));
+  }
+
+  function executeCode(code: string, toolCallId = localToolCallId()) {
+    const source = boundedText(code, "Playwright code");
+    const scopedExecution = scopedPlaywrightExecution(source, toolCallId);
     return serialized(async () => {
-      if (!sessionId) {
-        throw new Error("Open a browser session before using it");
-      }
+      const browser = activeBrowser();
+      const activeSessionId = sessionId;
+      if (!activeSessionId) throw new Error("Open a browser session before using it");
+      const action: TaskBrowserAction = { kind: "execute", code: source };
       if (captureOperations) {
-        return await runInstrumentedMutation(parts, action, toolCallId);
+        if (!options.onOperationPrepared || !options.onOperationSettled) {
+          throw new Error("Browser operation capture is not configured");
+        }
+        const prepared = await options.onOperationPrepared({ toolCallId, action });
+        if (!prepared) {
+          throw new Error(
+            "Browser tool call was already prepared and will not be dispatched again",
+          );
+        }
       }
-      let interaction: BrowserExecuteResponse;
+
+      let before: TaskBrowserTelemetry["before"];
       try {
-        interaction = await dependencies.browserExecute(sessionId, {
-          code,
-          language: "bash",
+        before = await browser.observe();
+      } catch (error) {
+        const failure = browserFailure(error, sensitiveValues);
+        if (captureOperations) {
+          await settle(toolCallId, { kind: "failed_before_dispatch", failure });
+        }
+        throw new Error(failure);
+      }
+
+      const dispatchedAtMs = dependencies.now();
+      let response: BrowserExecuteResponse;
+      try {
+        response = await executePlaywrightWithRateLimitRetry(dependencies, activeSessionId, {
+          code: scopedExecution.code,
+          language: "node",
           timeout: 60,
         });
       } catch (error) {
-        if (sensitiveValues.size > 0) {
-          throw new Error("Browser provider request failed after managed credential use");
+        const returnedAtMs = dependencies.now();
+        const failure = `Firecrawl Playwright request failed: ${browserFailure(error, sensitiveValues)}`;
+        let after = before;
+        try {
+          after = await browser.observe();
+        } catch {
+          // The provider failure is already the useful diagnostic.
         }
-        throw error;
+        if (captureOperations) {
+          await settle(toolCallId, {
+            kind: "indeterminate_after_dispatch",
+            failure,
+          });
+        }
+        const snapshot = await browser.snapshot().catch(() => "");
+        return {
+          success: false,
+          output: snapshot ? `Current page:\n${snapshot}` : "",
+          error: failure,
+          dispatchedAtMs,
+          returnedAtMs,
+          browserStateObserved: after !== before,
+        };
       }
-      return browserMutationOutput(interaction, sensitiveValues);
+
+      const returnedAtMs = dependencies.now();
+      let after: TaskBrowserTelemetry["after"];
+      try {
+        after = await browser.observe();
+      } catch (error) {
+        const failure = `Playwright code returned, but browser observation failed: ${browserFailure(error, sensitiveValues)}`;
+        if (captureOperations) {
+          await settle(toolCallId, { kind: "indeterminate_after_dispatch", failure });
+        }
+        return {
+          success: false,
+          output: executionOutput(response, sensitiveValues),
+          error: failure,
+        };
+      }
+
+      const telemetry: TaskBrowserTelemetry = {
+        version: 1,
+        before,
+        dispatchedAtMs,
+        returnedAtMs,
+        after,
+      };
+      const execution = parsedPlaywrightExecution(response, scopedExecution, sensitiveValues);
+      const succeeded = execution.success;
+      let snapshot: string;
+      try {
+        snapshot = await browser.snapshot();
+      } catch (error) {
+        if (captureOperations) {
+          await settle(
+            toolCallId,
+            succeeded
+              ? { kind: "applied_snapshot_failed", telemetry }
+              : {
+                  kind: "indeterminate_after_dispatch",
+                  failure: execution.error ?? "Playwright execution failed",
+                },
+          );
+        }
+        return succeeded
+          ? postActionSnapshotFailed(error)
+          : {
+              success: false,
+              output: execution.output,
+              error: execution.error,
+            };
+      }
+
+      if (captureOperations) {
+        await settle(
+          toolCallId,
+          succeeded
+            ? { kind: "applied", telemetry }
+            : {
+                kind: "indeterminate_after_dispatch",
+                failure: execution.error ?? "Playwright execution failed",
+              },
+        );
+      }
+      return {
+        success: succeeded,
+        output: [
+          `Current page:\n${redactSensitiveValues(snapshot, sensitiveValues)}`,
+          execution.output,
+        ]
+          .filter(Boolean)
+          .join("\n\n")
+          .slice(0, MAX_TOOL_OUTPUT_LENGTH),
+        error: execution.error,
+        exitCode: response.exitCode ?? null,
+        killed: response.killed ?? false,
+      };
     });
   }
 
@@ -587,7 +718,7 @@ export function createLabBrowserHarness(
       }
 
       const targetUrl = httpsUrl(url);
-      const session = await dependencies.browser({
+      const session = await createFirecrawlBrowserWithProfileRetry(dependencies, {
         streamWebView: true,
         ttl: 3_600,
         activityTtl: 3_600,
@@ -595,7 +726,7 @@ export function createLabBrowserHarness(
           ? { profile: { name: options.profileName, saveChanges: true } }
           : {}),
       });
-      if (!session.success || !session.id) {
+      if (!session.success || !session.id || !session.cdpUrl) {
         throw new Error(session.error?.trim() || "Firecrawl did not create a browser session");
       }
       let liveViewUrl: string | null;
@@ -607,7 +738,15 @@ export function createLabBrowserHarness(
         await dependencies.deleteBrowser(session.id);
         throw error;
       }
+      let connected: PlaywrightBrowser;
+      try {
+        connected = await dependencies.connect(session.cdpUrl);
+      } catch (error) {
+        await dependencies.deleteBrowser(session.id);
+        throw new Error(`Playwright could not connect to Firecrawl: ${diagnosticMessage(error)}`);
+      }
       sessionId = session.id;
+      playwright = connected;
       const policy = await options.onSessionAvailable?.(session.id);
       captureOperations = policy?.captureOperations === true;
       if (liveViewUrl !== null) {
@@ -616,23 +755,11 @@ export function createLabBrowserHarness(
       if (interactiveLiveViewUrl !== null) {
         await options.onInteractiveLiveViewAvailable?.(interactiveLiveViewUrl);
       }
-      if (captureOperations) {
-        return await runInstrumentedMutation(
-          ["agent-browser", "open", targetUrl],
-          { kind: "open", url: telemetryUrl(targetUrl) },
-          toolCallId,
-        );
-      }
-      const snapshot = await dependencies.browserExecute(sessionId, {
-        code: `${shellCommand(["agent-browser", "open", targetUrl])} && ${shellCommand([
-          "agent-browser",
-          "snapshot",
-          "-i",
-        ])}`,
-        language: "bash",
-        timeout: 60,
-      });
-      return browserOutput(snapshot, sensitiveValues);
+      return await performMutation(
+        { kind: "open", url: telemetryUrl(targetUrl) },
+        async (browser) => await browser.navigate(targetUrl),
+        toolCallId,
+      );
     });
     void opening.then(
       () => {
@@ -676,6 +803,7 @@ export function createLabBrowserHarness(
             creditsBilled: stopped.creditsBilled ?? null,
           };
           sessionId = undefined;
+          playwright = undefined;
         }
         await options.onSessionClosed?.(stopResult);
         await options.onLiveViewClosed?.();
@@ -705,240 +833,65 @@ export function createLabBrowserHarness(
       if (!value) throw new Error("Sensitive browser values cannot be empty");
       sensitiveValues.add(value);
     },
-    snapshot: async () => await execute(["agent-browser", "snapshot", "-i"]),
-    navigate: async (url: string, toolCallId?: string) => {
-      const targetUrl = httpsUrl(url);
-      return await executeMutation(
-        ["agent-browser", "open", targetUrl],
-        { kind: "navigate", url: telemetryUrl(targetUrl) },
+    snapshot: async () => await read(async (browser) => await browser.snapshot()),
+    executeCode,
+    getPage: async (kind: "url" | "title") =>
+      await read(async (browser) => await browser.getPage(kind)),
+    getElement: async (target: BrowserTarget) => {
+      const parsedTarget = browserTargetSchema.parse(target);
+      return await read(async (browser) => await browser.getElement(parsedTarget));
+    },
+    getElementAttribute: async (target: BrowserTarget, attribute: "type") => {
+      const parsedTarget = browserTargetSchema.parse(target);
+      return await read(
+        async (browser) => await browser.getElementAttribute(parsedTarget, attribute),
+      );
+    },
+    fillManagedPassword: async (
+      targets: { passwordTarget: BrowserTarget; passwordConfirmationTarget?: BrowserTarget },
+      password: string,
+      toolCallId?: string,
+    ) => {
+      const passwordTarget = browserTargetSchema.parse(targets.passwordTarget);
+      const passwordConfirmationTarget = targets.passwordConfirmationTarget
+        ? browserTargetSchema.parse(targets.passwordConfirmationTarget)
+        : undefined;
+      return await mutate(
+        {
+          kind: "managed_password_fill",
+          fieldCount: passwordConfirmationTarget ? 2 : 1,
+        },
+        async (browser) => {
+          await browser.fill(passwordTarget, password);
+          if (passwordConfirmationTarget) {
+            await browser.fill(passwordConfirmationTarget, password);
+          }
+        },
         toolCallId,
       );
     },
-    click: async (ref: string, toolCallId?: string) => {
-      const targetRef = elementRef(ref);
-      return await executeMutation(
-        ["agent-browser", "click", targetRef],
-        { kind: "click", ref: targetRef },
-        toolCallId,
-      );
-    },
-    fill: async (ref: string, text: string, toolCallId?: string) => {
-      const targetRef = elementRef(ref);
-      return await executeMutation(
-        ["agent-browser", "fill", targetRef, text],
-        { kind: "fill", ref: targetRef, characterCount: Array.from(text).length },
-        toolCallId,
-      );
-    },
-    type: async (ref: string, text: string, toolCallId?: string) => {
-      const targetRef = elementRef(ref);
-      return await executeMutation(
-        ["agent-browser", "type", targetRef, text],
-        { kind: "type", ref: targetRef, characterCount: Array.from(text).length },
-        toolCallId,
-      );
-    },
-    press: async (key: string, toolCallId?: string) => {
-      const boundedKey = boundedText(key, "Key");
-      return await executeMutation(
-        ["agent-browser", "press", boundedKey],
-        { kind: "press", key: boundedKey },
-        toolCallId,
-      );
-    },
-    select: async (ref: string, value: string, toolCallId?: string) => {
-      const targetRef = elementRef(ref);
-      return await executeMutation(
-        ["agent-browser", "select", targetRef, value],
-        { kind: "select", ref: targetRef },
-        toolCallId,
-      );
-    },
-    check: async (ref: string, toolCallId?: string) => {
-      const targetRef = elementRef(ref);
-      return await executeMutation(
-        ["agent-browser", "check", targetRef],
-        { kind: "check", ref: targetRef },
-        toolCallId,
-      );
-    },
-    getPage: async (kind: "url" | "title") => await execute(["agent-browser", "get", kind]),
-    getElement: async (ref: string) =>
-      await execute(["agent-browser", "get", "text", elementRef(ref)]),
-    getElementAttribute: async (ref: string, attribute: "type") =>
-      await execute(["agent-browser", "get", "attr", elementRef(ref), attribute]),
-    getCount: async (selector: string) =>
-      await execute([
-        "agent-browser",
-        "get",
-        "count",
-        boundedText(selector, "CSS selector", MAX_CSS_SELECTOR_LENGTH),
-      ]),
-    waitForText: async (text: string) => await execute(["agent-browser", "wait", "--text", text]),
-    waitForLoad: async (state: "domcontentloaded" | "networkidle") =>
-      await execute(["agent-browser", "wait", "--load", state]),
-    waitForMilliseconds: async (duration: number) =>
-      await serialized(async () => {
-        await dependencies.sleep(duration);
-        return {
-          success: true,
-          output: `Waited ${duration}ms locally`,
-          error: null,
-          exitCode: 0,
-          killed: false,
-        };
-      }),
-    listTabs: async () => await execute(["agent-browser", "--json", "tab"]),
-    switchTab: async (tabId: string, toolCallId?: string) => {
-      const targetTabId = browserTabId(tabId);
-      return await executeMutation(
-        ["agent-browser", "tab", targetTabId],
-        { kind: "switch_tab", tabId: targetTabId },
-        toolCallId,
-      );
-    },
-    back: async (toolCallId?: string) =>
-      await executeMutation(["agent-browser", "back"], { kind: "back" }, toolCallId),
-    reload: async (toolCallId?: string) =>
-      await executeMutation(["agent-browser", "reload"], { kind: "reload" }, toolCallId),
   };
 
   const tools = {
     browser_open: tool({
       description:
-        "Open one admin-configured Firecrawl browser session at an HTTPS URL and return an interactive accessibility snapshot. The session identity and provider URLs stay outside the model.",
+        "Open one admin-configured Firecrawl browser session through Playwright at an HTTPS URL and return an interactive accessibility snapshot. Call once per Turn; startup handles transient provider conflicts internally. The session identity and provider URLs stay outside the model.",
       inputSchema: z.object({
         url: z.string().url().describe("HTTPS page to open"),
       }),
       execute: async ({ url }, execution) => await open(url, execution.toolCallId),
     }),
-    browser_snapshot: tool({
+    browser_execute: tool({
       description:
-        "Explicitly recover the current page state when prior output failed, was missing, or still showed loading. Successful atomic mutations already return a compact interactive snapshot.",
-      inputSchema: z.object({}),
-      execute: actions.snapshot,
-    }),
-    browser_navigate: tool({
-      description: "Navigate the current browser session to another HTTPS URL.",
-      inputSchema: z.object({ url: z.string().url() }),
-      execute: async ({ url }, execution) => await actions.navigate(url, execution.toolCallId),
-    }),
-    browser_click: tool({
-      description: "Click an element ref from the latest browser snapshot.",
-      inputSchema: z.object({ ref: z.string().describe("Element ref such as @e3") }),
-      execute: async ({ ref }, execution) => await actions.click(ref, execution.toolCallId),
-    }),
-    browser_fill: tool({
-      description: "Replace the value of a form field selected by element ref.",
+        "Run JavaScript with Playwright's provided page object inside Firecrawl's Node sandbox. Await every Playwright operation. For a popup or new tab, select its Page from page.context().pages() by URL or title, call bringToFront() on it, and then act on it instead of assuming page changed. If clicking is expected to close a popup, wait for and inspect the opener rather than waiting on the closing popup. Prefer semantic locators such as page.getByRole(), page.getByLabel(), or page.getByText(); add .filter({ visible: true }).first() when responsive layouts contain duplicate hidden controls. Use console.log() only for values absent from the automatically returned page snapshot. Keep each call to one coherent browser step, combining the checks needed to select and perform that step. Never enter a password here; use fill_account_password.",
       inputSchema: z.object({
-        ref: z.string().describe("Element ref such as @e3"),
-        text: z.string().max(MAX_TOOL_TEXT_LENGTH),
+        code: z
+          .string()
+          .min(1)
+          .max(MAX_TOOL_TEXT_LENGTH)
+          .describe("JavaScript body executed with Playwright page available"),
       }),
-      execute: async ({ ref, text }, execution) =>
-        await actions.fill(ref, text, execution.toolCallId),
-    }),
-    browser_type: tool({
-      description: "Type text into an element without first replacing its current value.",
-      inputSchema: z.object({
-        ref: z.string().describe("Element ref such as @e3"),
-        text: z.string().max(MAX_TOOL_TEXT_LENGTH),
-      }),
-      execute: async ({ ref, text }, execution) =>
-        await actions.type(ref, text, execution.toolCallId),
-    }),
-    browser_press: tool({
-      description: "Press one keyboard key or key combination in the focused page.",
-      inputSchema: z.object({ key: z.string().min(1).max(100) }),
-      execute: async ({ key }, execution) => await actions.press(key, execution.toolCallId),
-    }),
-    browser_select: tool({
-      description: "Select an option in a select control by element ref and value.",
-      inputSchema: z.object({
-        ref: z.string().describe("Element ref such as @e3"),
-        value: z.string().max(MAX_TOOL_TEXT_LENGTH),
-      }),
-      execute: async ({ ref, value }, execution) =>
-        await actions.select(ref, value, execution.toolCallId),
-    }),
-    browser_check: tool({
-      description: "Set a checkbox or radio control to checked.",
-      inputSchema: z.object({ ref: z.string().describe("Element ref such as @e3") }),
-      execute: async ({ ref }, execution) => await actions.check(ref, execution.toolCallId),
-    }),
-    browser_get: tool({
-      description:
-        "Read the current URL/title or the text of one element ref. Use kind count narrowly to count elements matching one precise CSS selector when accessibility output omits repeated visual semantics.",
-      inputSchema: z.discriminatedUnion("kind", [
-        z.object({ kind: z.literal("url") }),
-        z.object({ kind: z.literal("title") }),
-        z.object({ kind: z.literal("text"), ref: z.string() }),
-        z.object({
-          kind: z.literal("count"),
-          selector: z
-            .string()
-            .min(1)
-            .max(MAX_CSS_SELECTOR_LENGTH)
-            .describe(
-              "Precise CSS selector for repeated visual semantics absent from accessibility output",
-            ),
-        }),
-      ]),
-      execute: async (input) => {
-        switch (input.kind) {
-          case "url":
-          case "title":
-            return await actions.getPage(input.kind);
-          case "text":
-            return await actions.getElement(input.ref);
-          case "count":
-            return await actions.getCount(input.selector);
-        }
-      },
-    }),
-    browser_wait: tool({
-      description: "Wait for visible text, a page-load state, or a short fixed duration.",
-      inputSchema: z.discriminatedUnion("kind", [
-        z.object({ kind: z.literal("text"), text: z.string().min(1).max(1_000) }),
-        z.object({
-          kind: z.literal("load"),
-          state: z.enum(["domcontentloaded", "networkidle"]),
-        }),
-        z.object({
-          kind: z.literal("milliseconds"),
-          duration: modelPositiveInteger(10_000),
-        }),
-      ]),
-      execute: async (input) => {
-        switch (input.kind) {
-          case "text":
-            return await actions.waitForText(input.text);
-          case "load":
-            return await actions.waitForLoad(input.state);
-          case "milliseconds":
-            return await actions.waitForMilliseconds(numericModelValue(input.duration));
-        }
-      },
-    }),
-    browser_back: tool({
-      description: "Navigate back once in browser history.",
-      inputSchema: z.object({}),
-      execute: async (_input, execution) => await actions.back(execution.toolCallId),
-    }),
-    browser_reload: tool({
-      description: "Reload the current page.",
-      inputSchema: z.object({}),
-      execute: async (_input, execution) => await actions.reload(execution.toolCallId),
-    }),
-    browser_tabs: tool({
-      description:
-        "List every open browser tab with its stable target ID and current active state. Use after a click may have opened a new tab.",
-      inputSchema: z.object({}),
-      execute: actions.listTabs,
-    }),
-    browser_switch_tab: tool({
-      description: "Switch to a tab ID returned by browser_tabs and return the new page snapshot.",
-      inputSchema: z.object({ tabId: z.string().describe("Browser tab ID such as t2") }),
-      execute: async ({ tabId }, execution) => await actions.switchTab(tabId, execution.toolCallId),
+      execute: async ({ code }, execution) => await actions.executeCode(code, execution.toolCallId),
     }),
     browser_close: tool({
       description:

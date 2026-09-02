@@ -61,33 +61,12 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
 
 ## Hackathon log
 
-- Before each commit, run `$convex-hackathon-skill`. If it updates `hackathon.md`, include that file
-  in the commit.
-- After the skill runs, apply this repository-specific override to each new committed log entry.
-  Use the heading format `### YYYY-MM-DD - <short-sha> - v<N>`, where `N` is the referenced commit's
-  total reachable commit count. This preserves `### YYYY-MM-DD - <short-sha>` as the parseable start
-  of the line. Leave a `working tree` entry unversioned until it points to a commit. Do not backfill
-  or otherwise rewrite earlier entries solely to add the version suffix or move an existing
-  paragraph prefix.
-- Keep at most one `working tree` entry in `hackathon.md`. Before the skill adds any new pending
-  evidence, the next substantive commit must replace that label with the recorded commit's short
-  SHA and append `- v<N>` to its heading. This applies within the same pull request or a later one.
-- Do not create or require a commit solely to finalize the Hackathon log during ordinary pull
-  request work. Include the resolution in the next substantive commit. A pull request may merge
-  with one `working tree` entry; if it does not end with one, the next pull request has no prior log
-  entry to resolve.
-- Reserve the exact unversioned subject `chore(hackathon): finalize log` for final submission cleanup
-  when no later substantive commit is expected. That commit may change only `hackathon.md`, receives
-  a `v<N>:` prefix during numbering, and does not receive its own log entry.
-- After any rebase or commit-subject rewrite, run the skill again and replace every affected logged
-  SHA with the corresponding reachable commit. Update an affected heading's `- v<N>` suffix to
-  match that commit, preserve the required heading prefix, and fold the repairs into the substantive
-  commits being rewritten instead of adding a log-only repair commit.
-- Verify every committed SHA in `hackathon.md` with an ancestry check against `HEAD`. For each entry
-  using the new heading format, verify that `v<N>` matches the referenced commit. Do not require a
-  version suffix on entries that predate this rule. Object existence alone is insufficient because
-  obsolete pre-rebase commits can remain in Git's object database.
-- Do not merge while more than one `working tree` entry exists.
+- Run `$convex-hackathon-skill` when finishing a meaningful pull request or product milestone, not
+  before every commit. Group related work into one entry and keep it to two to six lines. Do not copy
+  PR summaries, test output, rejected approaches, or review notes into the log.
+- Keep at most one `working tree` entry. On the next meaningful update, replace it with the previous
+  pull request's merge-commit short SHA and `v<N>`. Do not create log-only commits except when
+  finalizing the submission.
 
 ## Cross-platform automation
 

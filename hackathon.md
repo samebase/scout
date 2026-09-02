@@ -10,9 +10,9 @@
 - **Components:** @convex-dev/agent, @convex-dev/static-hosting, @convex-dev/workflow
 - **Convex features:** schema, tables, indexes, queries, paginated queries, realtime queries, mutations, actions, scheduled functions, HTTP actions, AI Gateway
 - **Auth:** Convex Auth
-- **AI models:** qwen/qwen3.7-flash (Convex AI Gateway)
+- **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-01T21:53:25Z
+- **Last updated:** 2026-09-02T14:13:02Z
 
 ## Log
 
@@ -859,7 +859,7 @@ for OAuth. The full project check passed with all 250 tests, and the Convex deve
 local UI verification succeeded
 (`convex/scout/serviceAccountCredentials.ts`, `src/routes/scouts.$slug.tsx`).
 
-### 2026-09-01 - working tree
+### 2026-09-01 - 0df04a8 - v150
 
 Replaced every Scout-owned Firecrawl HTTP transport with the official `firecrawl` Node SDK for
 Browser Sandbox, Map, Search, and Scrape. Scout keeps its product-level URL safety, credentials,
@@ -876,3 +876,11 @@ from successful API requests, and ambiguous closes are reconciled through the SD
 local Convex development push, all 231 tests, and the complete Cloudflare build passed
 (`convex/scout/lib/firecrawlReplay.ts`, `convex/taskReplay.ts`,
 `src/components/task-replay.tsx`).
+
+### 2026-09-02 - working tree
+
+Replaced the shell-based browser layer with Playwright and verified that Conrad can complete Samebase
+onboarding and account deletion without human help. Longer attempts now expose steps and cost, retain
+transcript location and errors, and visibly repair malformed provider tool arguments. Lab gained a
+compact sidebar for repeatable model comparisons (`convex/scout`, `src/components/task-workspace.tsx`,
+`src/routes/lab.tsx`).

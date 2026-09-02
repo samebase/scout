@@ -143,7 +143,6 @@ async function insertTaskBrowserEvidence(
           },
         ],
       },
-      pointer: null,
     };
     await ctx.db.insert("taskBrowserOperations", {
       sessionId,

@@ -2,16 +2,8 @@ import { v } from "convex/values";
 
 export const taskBrowserActionValidator = v.union(
   v.object({ kind: v.literal("open"), url: v.string() }),
-  v.object({ kind: v.literal("navigate"), url: v.string() }),
-  v.object({ kind: v.literal("click"), ref: v.string() }),
-  v.object({ kind: v.literal("fill"), ref: v.string(), characterCount: v.number() }),
-  v.object({ kind: v.literal("type"), ref: v.string(), characterCount: v.number() }),
-  v.object({ kind: v.literal("press"), key: v.string() }),
-  v.object({ kind: v.literal("select"), ref: v.string() }),
-  v.object({ kind: v.literal("check"), ref: v.string() }),
-  v.object({ kind: v.literal("back") }),
-  v.object({ kind: v.literal("reload") }),
-  v.object({ kind: v.literal("switch_tab"), tabId: v.string() }),
+  v.object({ kind: v.literal("execute"), code: v.string() }),
+  v.object({ kind: v.literal("managed_password_fill"), fieldCount: v.number() }),
 );
 
 export const taskBrowserTabValidator = v.object({
@@ -26,24 +18,12 @@ export const taskBrowserObservationValidator = v.object({
   tabs: v.array(taskBrowserTabValidator),
 });
 
-export const taskBrowserPointerValidator = v.object({
-  tabId: v.string(),
-  ref: v.string(),
-  box: v.object({
-    x: v.number(),
-    y: v.number(),
-    width: v.number(),
-    height: v.number(),
-  }),
-});
-
 export const taskBrowserTelemetryValidator = v.object({
   version: v.literal(1),
   before: taskBrowserObservationValidator,
   dispatchedAtMs: v.number(),
   returnedAtMs: v.number(),
   after: taskBrowserObservationValidator,
-  pointer: v.union(taskBrowserPointerValidator, v.null()),
 });
 
 export const taskBrowserOutcomeValidator = v.union(
