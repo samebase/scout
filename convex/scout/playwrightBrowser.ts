@@ -72,7 +72,18 @@ class ConnectedPlaywrightBrowser implements PlaywrightBrowser {
   }
 
   async initialize() {
+    await this.refreshActivePage(this.context.pages());
     await this.activePage.setViewportSize(VIEWPORT);
+  }
+
+  private async refreshActivePage(pages: Page[]) {
+    for (const page of pages.toReversed()) {
+      const focused = await page.evaluate(() => document.hasFocus()).catch(() => false);
+      if (focused) {
+        this.activePage = page;
+        return;
+      }
+    }
   }
 
   private tabId(page: Page) {
@@ -149,6 +160,7 @@ class ConnectedPlaywrightBrowser implements PlaywrightBrowser {
   async observe() {
     const pages = this.context.pages().filter((page) => !page.isClosed());
     if (pages.length === 0) throw new Error("The browser has no open tab");
+    await this.refreshActivePage(pages);
     if (this.activePage.isClosed()) this.activePage = pages.at(-1) ?? pages[0];
     return {
       capturedAtMs: Date.now(),

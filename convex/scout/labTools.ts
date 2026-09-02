@@ -694,8 +694,8 @@ export function createLabBrowserHarness(
       return {
         success: succeeded,
         output: [
-          execution.output,
           `Current page:\n${redactSensitiveValues(snapshot, sensitiveValues)}`,
+          execution.output,
         ]
           .filter(Boolean)
           .join("\n\n")
@@ -883,7 +883,7 @@ export function createLabBrowserHarness(
     }),
     browser_execute: tool({
       description:
-        "Run JavaScript with Playwright's provided page object inside Firecrawl's Node sandbox. Await every Playwright operation. For a popup or new tab, select its Page from page.context().pages() by URL or title instead of assuming page changed. If clicking is expected to close a popup, wait for and inspect the opener rather than waiting on the closing popup. Prefer semantic locators such as page.getByRole(), page.getByLabel(), or page.getByText(); add .filter({ visible: true }).first() when responsive layouts contain duplicate hidden controls. Use console.log() only for values absent from the automatically returned page snapshot. Keep each call to one coherent browser step, combining the checks needed to select and perform that step. Never enter a password here; use fill_account_password.",
+        "Run JavaScript with Playwright's provided page object inside Firecrawl's Node sandbox. Await every Playwright operation. For a popup or new tab, select its Page from page.context().pages() by URL or title, call bringToFront() on it, and then act on it instead of assuming page changed. If clicking is expected to close a popup, wait for and inspect the opener rather than waiting on the closing popup. Prefer semantic locators such as page.getByRole(), page.getByLabel(), or page.getByText(); add .filter({ visible: true }).first() when responsive layouts contain duplicate hidden controls. Use console.log() only for values absent from the automatically returned page snapshot. Keep each call to one coherent browser step, combining the checks needed to select and perform that step. Never enter a password here; use fill_account_password.",
       inputSchema: z.object({
         code: z
           .string()

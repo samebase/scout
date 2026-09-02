@@ -61,19 +61,19 @@ export function ScoutRunMessageView({
             showText={showText}
           />
         ))}
-        {message.status === "failed" ? (
-          <Marker className="text-destructive" role="status">
-            <MarkerIcon>
-              <CircleAlertIcon />
-            </MarkerIcon>
-            <MarkerContent>Generation failed.</MarkerContent>
-          </Marker>
-        ) : metadata?.failure ? (
+        {metadata?.failure ? (
           <Marker className="text-destructive" role="status">
             <MarkerIcon>
               <CircleAlertIcon />
             </MarkerIcon>
             <MarkerContent>Generation failed: {metadata.failure}</MarkerContent>
+          </Marker>
+        ) : message.status === "failed" ? (
+          <Marker className="text-destructive" role="status">
+            <MarkerIcon>
+              <CircleAlertIcon />
+            </MarkerIcon>
+            <MarkerContent>Generation failed.</MarkerContent>
           </Marker>
         ) : null}
         {!metadata?.failure && (message.status === "pending" || message.status === "streaming") ? (

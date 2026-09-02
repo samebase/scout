@@ -101,6 +101,7 @@ describe("Scout runtime instructions", () => {
 
   it("selects popup pages explicitly and records accounts before optional onboarding", () => {
     expect(SCOUT_AGENT_INSTRUCTIONS).toContain("page.context().pages()");
+    expect(SCOUT_AGENT_INSTRUCTIONS).toContain("bringToFront()");
     expect(SCOUT_AGENT_INSTRUCTIONS).toContain(
       "record the account before continuing with optional onboarding",
     );

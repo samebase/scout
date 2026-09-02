@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-02T13:14:41Z
+- **Last updated:** 2026-09-02T14:13:02Z
 
 ## Log
 
@@ -945,10 +945,19 @@ Qwen probes sent native JSON values and correctly remained unmarked, showing the
 stringification behavior is intermittent. All 215 tests and the complete Cloudflare build passed
 (`convex/scout/toolCallRepair.ts`, `src/components/scout-run-message.tsx`).
 
-### 2026-09-02 - working tree
+### 2026-09-02 - d14d0b5 - v156
 
 Moved Lab experiment context, status, and thread actions into the existing resizable navigation
 sidebar. Lab now uses the same `@samebase/sidebars` workspace shell as Tasks and Products, so the
 experiment and thread list remains reachable through the compact-layout drawer instead of consuming
 message space above every thread. The running app passed a visual browser check, sidebar toggle
 check, the complete test suite, and the Cloudflare build (`src/routes/lab.tsx`).
+
+### 2026-09-02 - working tree
+
+Closed the remaining Playwright review gaps without adding another browser abstraction. The trusted
+observer now follows a focused existing tab after `bringToFront()`, current-page accessibility text
+survives noisy tool-output truncation, and Firecrawl WebSocket control URLs are removed from shared
+diagnostics. Completed generation failures retain their detailed red error state in the transcript.
+The full project check passed with all 217 tests (`convex/scout/playwrightBrowser.ts`,
+`convex/scout/labTools.ts`, `src/components/scout-run-message.tsx`).

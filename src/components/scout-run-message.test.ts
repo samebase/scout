@@ -1,13 +1,50 @@
+// @vitest-environment happy-dom
+
+import { cleanup, render, screen } from "@testing-library/react";
 import { describe, expect, test } from "vite-plus/test";
+import { afterEach } from "vite-plus/test";
 import type { Id } from "../../convex/_generated/dataModel";
 import {
+  ScoutRunMessageView,
   countGenerationSteps,
   formatRunMetadata,
   repairedToolInputFields,
   toolOutputFailure,
 } from "./scout-run-message";
 
+afterEach(() => cleanup());
+
 describe("Scout transcript metadata", () => {
+  test("keeps the stored failure visible after generation finishes", () => {
+    render(
+      ScoutRunMessageView({
+        message: {
+          id: "message-1",
+          _creationTime: 1,
+          key: "message-1",
+          order: 1,
+          stepOrder: 0,
+          status: "failed",
+          role: "assistant",
+          parts: [],
+          text: "",
+          metadata: {
+            model: "qwen/qwen3.7-flash",
+            scout: {
+              id: "scout" as Id<"scouts">,
+              displayName: "Conrad Scout",
+            },
+            failure: "Tool input did not match its schema",
+          },
+        },
+      }),
+    );
+
+    const failure = screen.getByRole("status");
+    expect(failure.textContent).toBe("Generation failed: Tool input did not match its schema");
+    expect(failure.className).toContain("text-destructive");
+  });
+
   test("shows the model cost estimate alongside the recorded token usage", () => {
     expect(
       formatRunMetadata(

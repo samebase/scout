@@ -2,7 +2,8 @@ import { chromium, type BrowserContext, type Locator, type Page } from "playwrig
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { connectPlaywrightBrowser } from "./playwrightBrowser";
 
-function fakePage(url: string, snapshot: string) {
+function fakePage(url: string, snapshot: string, initiallyFocused = false) {
+  const focus = { current: initiallyFocused };
   const fill = vi.fn(async () => undefined);
   const filter = vi.fn();
   const first = vi.fn();
@@ -21,6 +22,7 @@ function fakePage(url: string, snapshot: string) {
   } as unknown as Locator;
   const getByRole = vi.fn(() => semanticLocator);
   const page = {
+    evaluate: vi.fn(async () => focus.current),
     getByRole,
     goto: vi.fn(async () => null),
     isClosed: () => false,
@@ -29,7 +31,7 @@ function fakePage(url: string, snapshot: string) {
     title: vi.fn(async () => url),
     url: () => url,
   } as unknown as Page;
-  return { ariaSnapshot, fill, filter, getByRole, page };
+  return { ariaSnapshot, fill, filter, focus, getByRole, page };
 }
 
 afterEach(() => {
@@ -97,5 +99,33 @@ describe("trusted Playwright observer", () => {
         expect.objectContaining({ active: true, tabId: "t2" }),
       ],
     });
+  });
+
+  test("follows the focused page when existing tabs change places", async () => {
+    const initial = fakePage("https://samebase.com/", "initial", true);
+    const dashboard = fakePage("https://dashboard.convex.dev/", "dashboard");
+    const pages = [initial.page, dashboard.page];
+    const context = {
+      on: vi.fn(),
+      pages: () => pages,
+      setDefaultNavigationTimeout: vi.fn(),
+      setDefaultTimeout: vi.fn(),
+    } as unknown as BrowserContext;
+    vi.spyOn(chromium, "connectOverCDP").mockResolvedValue({
+      contexts: () => [context],
+    } as never);
+    const browser = await connectPlaywrightBrowser("wss://browser.firecrawl.dev/cdp");
+
+    initial.focus.current = false;
+    dashboard.focus.current = true;
+
+    await expect(browser.observe()).resolves.toEqual({
+      capturedAtMs: expect.any(Number),
+      tabs: [
+        expect.objectContaining({ active: false, title: "https://samebase.com/" }),
+        expect.objectContaining({ active: true, title: "https://dashboard.convex.dev/" }),
+      ],
+    });
+    await expect(browser.snapshot()).resolves.toBe("dashboard");
   });
 });

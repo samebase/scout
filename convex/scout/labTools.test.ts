@@ -160,6 +160,24 @@ describe("Lab browser harness", () => {
     expect(result.output).toContain('textbox "Email"');
   });
 
+  test("keeps the current page when Playwright output reaches the response limit", async () => {
+    const deps = dependencies();
+    deps.browserExecute.mockResolvedValueOnce({
+      success: true,
+      stdout: "x".repeat(20_000),
+      exitCode: 0,
+      killed: false,
+    });
+    const browser = createLabBrowserHarness({}, deps);
+    await browser.open("https://example.com");
+
+    const result = await browser.actions.executeCode("console.log('noisy')");
+
+    expect(result.output.startsWith("Current page:\n")).toBe(true);
+    expect(result.output).toContain('textbox "Email"');
+    expect(result.output).toHaveLength(20_000);
+  });
+
   test("records failed code without killing the rest of the browser session", async () => {
     const playwright = runtime();
     const deps = dependencies(playwright);
