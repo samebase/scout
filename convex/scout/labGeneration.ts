@@ -42,8 +42,7 @@ import {
 import { createServiceAccountRecordingTool } from "./serviceAccountTool";
 import { createAttemptResolutionTool } from "./attemptResolutionTool";
 
-const MAX_GENERATION_STEPS = 24;
-const TASK_CLOSE_STEP = 18;
+const MAX_GENERATION_STEPS = 30;
 const AGENT_MAIL_CLOSE_TIMEOUT_MS = 1_000;
 const HANDOFF_RESOLUTION_INSTRUCTIONS =
   "Act only as the final judge for this Task attempt. Review the objective and evidence in the conversation, then call resolve_attempt as your final action. It closes any open browser and persists the verdict. Choose completed only when the objective is achieved with sufficient evidence; otherwise choose blocked. Give a short evidence-based conclusion.";
@@ -52,7 +51,7 @@ type LabBrowser = ReturnType<typeof createLabBrowserHarness>;
 type LabBrowserUsage = Awaited<ReturnType<LabBrowser["close"]>>;
 type GenerationResult =
   | { kind: "completed"; usage: ScoutTokenUsage }
-  | { kind: "failed"; error: unknown };
+  | { kind: "failed"; error: unknown; usage?: ScoutTokenUsage };
 
 export function generationFailureDetails(
   generationResult: GenerationResult,
@@ -70,9 +69,9 @@ export function generationFailureDetails(
         ? `Browser cleanup failed: ${diagnosticMessage(cleanupFailure)}`
         : diagnosticMessage(terminalError);
 
-  return generationResult.kind === "completed"
-    ? { failure, terminalError, usage: generationResult.usage }
-    : { failure, terminalError };
+  return generationResult.usage === undefined
+    ? { failure, terminalError }
+    : { failure, terminalError, usage: generationResult.usage };
 }
 
 export function createStreamErrorCapture() {
@@ -229,7 +228,8 @@ function requireSecret(value: string | undefined, name: string) {
   return value;
 }
 
-function tokenUsage(usage: LanguageModelUsage): ScoutTokenUsage {
+export function tokenUsage(usage: LanguageModelUsage): ScoutTokenUsage {
+  const rawCost = usage.raw?.["cost"];
   return {
     ...(usage.inputTokens === undefined ? {} : { promptTokens: usage.inputTokens }),
     ...(usage.outputTokens === undefined ? {} : { completionTokens: usage.outputTokens }),
@@ -240,6 +240,36 @@ function tokenUsage(usage: LanguageModelUsage): ScoutTokenUsage {
     ...(usage.inputTokenDetails.cacheReadTokens === undefined
       ? {}
       : { cachedInputTokens: usage.inputTokenDetails.cacheReadTokens }),
+    ...(typeof rawCost === "number" && Number.isFinite(rawCost) && rawCost >= 0
+      ? { costUsd: rawCost }
+      : {}),
+  };
+}
+
+function addOptionalNumbers(left: number | undefined, right: number | undefined) {
+  if (left === undefined) return right;
+  if (right === undefined) return left;
+  return left + right;
+}
+
+export function addScoutTokenUsage(
+  total: ScoutTokenUsage | undefined,
+  next: ScoutTokenUsage,
+): ScoutTokenUsage {
+  if (total === undefined) return next;
+  const promptTokens = addOptionalNumbers(total.promptTokens, next.promptTokens);
+  const completionTokens = addOptionalNumbers(total.completionTokens, next.completionTokens);
+  const totalTokens = addOptionalNumbers(total.totalTokens, next.totalTokens);
+  const reasoningTokens = addOptionalNumbers(total.reasoningTokens, next.reasoningTokens);
+  const cachedInputTokens = addOptionalNumbers(total.cachedInputTokens, next.cachedInputTokens);
+  const costUsd = addOptionalNumbers(total.costUsd, next.costUsd);
+  return {
+    ...(promptTokens === undefined ? {} : { promptTokens }),
+    ...(completionTokens === undefined ? {} : { completionTokens }),
+    ...(totalTokens === undefined ? {} : { totalTokens }),
+    ...(reasoningTokens === undefined ? {} : { reasoningTokens }),
+    ...(cachedInputTokens === undefined ? {} : { cachedInputTokens }),
+    ...(costUsd === undefined ? {} : { costUsd }),
   };
 }
 
@@ -253,6 +283,7 @@ async function generateHandoffContinuation(
   },
 ) {
   let resolutionPersisted = false;
+  let accumulatedUsage: ScoutTokenUsage | undefined;
   try {
     await requireOwnedAgentThread(ctx, args.threadId, args.userId);
     const streamErrors = createStreamErrorCapture();
@@ -275,6 +306,9 @@ async function generateHandoffContinuation(
         },
         stopWhen: isStepCount(1),
         onError: streamErrors.onError,
+        onStepEnd: ({ usage }) => {
+          accumulatedUsage = addScoutTokenUsage(accumulatedUsage, tokenUsage(usage));
+        },
       },
       {
         saveStreamDeltas: {
@@ -291,7 +325,7 @@ async function generateHandoffContinuation(
     }
     await ctx.runMutation(internal.scout.turns.complete, {
       promptMessageId: args.promptMessageId,
-      usage: tokenUsage(await streamResult.totalUsage),
+      usage: accumulatedUsage ?? tokenUsage(await streamResult.totalUsage),
     });
     return null;
   } catch (error) {
@@ -300,6 +334,7 @@ async function generateHandoffContinuation(
       await ctx.runMutation(internal.scout.turns.fail, {
         promptMessageId: args.promptMessageId,
         failure: diagnosticMessage(error),
+        ...(accumulatedUsage === undefined ? {} : { usage: accumulatedUsage }),
       });
     } catch (persistenceError) {
       terminalError = new AggregateError(
@@ -342,6 +377,7 @@ export const generateResponse = internalAction({
     let isTaskTurn = false;
     let attemptResolutionPersisted = false;
     let generationResult: GenerationResult;
+    let accumulatedUsage: ScoutTokenUsage | undefined;
 
     try {
       await requireOwnedAgentThread(ctx, args.threadId, args.userId);
@@ -634,13 +670,14 @@ export const generateResponse = internalAction({
           tools,
           stopWhen: isStepCount(MAX_GENERATION_STEPS),
           onError: streamErrors.onError,
+          onStepEnd: ({ usage }) => {
+            accumulatedUsage = addScoutTokenUsage(accumulatedUsage, tokenUsage(usage));
+          },
           ...(isTaskTurn
             ? {
-                prepareStep: async ({ steps, stepNumber }) => {
+                prepareStep: async ({ steps }) => {
                   const decision = decideTaskStep({
                     state: taskLoopState,
-                    stepNumber,
-                    normalCloseStep: TASK_CLOSE_STEP,
                     previousToolError: immediatelyPrecedingToolError(steps),
                     previousToolResult: immediatelyPrecedingToolResult(steps),
                   });
@@ -695,10 +732,14 @@ export const generateResponse = internalAction({
       streamErrors.throwIfCaptured();
       generationResult = {
         kind: "completed",
-        usage: tokenUsage(await streamResult.totalUsage),
+        usage: accumulatedUsage ?? tokenUsage(await streamResult.totalUsage),
       };
     } catch (error) {
-      generationResult = { kind: "failed", error };
+      generationResult = {
+        kind: "failed",
+        error,
+        ...(accumulatedUsage === undefined ? {} : { usage: accumulatedUsage }),
+      };
     }
 
     const preserveBrowserForHandoff = generationResult.kind === "completed" && humanHandoffWaiting;

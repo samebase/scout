@@ -53,8 +53,6 @@ describe("task human gate detection", () => {
     expect(
       decideTaskStep({
         state: "working",
-        stepNumber: 5,
-        normalCloseStep: 18,
         previousToolResult: { toolName: "get_thread", output: dataDomeOutput },
       }),
     ).toEqual({ kind: "none", nextState: "working" });
@@ -87,13 +85,10 @@ describe("task loop decisions", () => {
   function decide(
     state: TaskLoopState,
     previousToolResult: { toolName: string; output: unknown } | null,
-    stepNumber = 5,
   ) {
     return decideTaskStep({
       state,
       previousToolResult,
-      stepNumber,
-      normalCloseStep: 18,
     });
   }
 
@@ -126,8 +121,6 @@ describe("task loop decisions", () => {
     expect(
       decideTaskStep({
         state: "working",
-        stepNumber: 2,
-        normalCloseStep: 18,
         previousToolResult: null,
         previousToolError: { toolName: "browser_open" },
       }),
@@ -150,18 +143,13 @@ describe("task loop decisions", () => {
     expect(
       decideTaskStep({
         state: "resolving",
-        stepNumber: 20,
-        normalCloseStep: 18,
         previousToolResult: null,
         previousToolError: immediatelyPrecedingToolError(steps),
       }),
     ).toEqual({ kind: "resolution_failed", nextState: "final" });
   });
 
-  it("requires a bounded Attempt resolution at step 18", () => {
-    expect(decide("working", null, 18)).toEqual({
-      kind: "resolve_attempt",
-      nextState: "resolving",
-    });
+  it("does not preempt ordinary browser work before the generation hard limit", () => {
+    expect(decide("working", null)).toEqual({ kind: "none", nextState: "working" });
   });
 });

@@ -1,11 +1,79 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
+  addScoutTokenUsage,
   assertCredentialBrowserUrl,
+  generationFailureDetails,
   managedCredentialInstructions,
   serviceAccountLoginInstructions,
   scoutWebsiteIdentityInstructions,
+  tokenUsage,
 } from "./labGeneration";
 import { SCOUT_AGENT_INSTRUCTIONS } from "./agent";
+
+describe("Scout generation usage", () => {
+  it("keeps the model cost reported by the Convex AI Gateway", () => {
+    expect(
+      tokenUsage({
+        inputTokens: 4_000,
+        inputTokenDetails: {
+          noCacheTokens: 4_000,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+        },
+        outputTokens: 100,
+        outputTokenDetails: { textTokens: 40, reasoningTokens: 60 },
+        totalTokens: 4_100,
+        raw: { cost: 0.000132 },
+      }),
+    ).toEqual({
+      promptTokens: 4_000,
+      completionTokens: 100,
+      totalTokens: 4_100,
+      reasoningTokens: 60,
+      cachedInputTokens: 0,
+      costUsd: 0.000132,
+    });
+  });
+
+  it("adds usage and provider-reported cost across model steps", () => {
+    const usage = addScoutTokenUsage(
+      { promptTokens: 4_000, completionTokens: 100, totalTokens: 4_100, costUsd: 0.0001 },
+      {
+        promptTokens: 8_000,
+        completionTokens: 200,
+        totalTokens: 8_200,
+        cachedInputTokens: 3_000,
+        costUsd: 0.0002,
+      },
+    );
+    expect(usage).toMatchObject({
+      promptTokens: 12_000,
+      completionTokens: 300,
+      totalTokens: 12_300,
+      cachedInputTokens: 3_000,
+    });
+    expect(usage.costUsd).toBeCloseTo(0.0003);
+  });
+
+  it("retains completed-step usage when a later generation step fails", () => {
+    const error = new Error("final step failed");
+    expect(
+      generationFailureDetails(
+        {
+          kind: "failed",
+          error,
+          usage: { promptTokens: 12_000, completionTokens: 300, costUsd: 0.0003 },
+        },
+        undefined,
+        undefined,
+      ),
+    ).toEqual({
+      failure: "final step failed",
+      terminalError: error,
+      usage: { promptTokens: 12_000, completionTokens: 300, costUsd: 0.0003 },
+    });
+  });
+});
 
 describe("Scout runtime instructions", () => {
   it("describes the Scout identity as an owned resource", () => {

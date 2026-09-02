@@ -79,22 +79,35 @@ export function ScoutRunMessageView({
             Scout is working
           </MessageFooter>
         ) : metadata ? (
-          <MessageFooter>{formatRunMetadata(metadata)}</MessageFooter>
+          <MessageFooter>
+            {formatRunMetadata(metadata, countGenerationSteps(message.parts))}
+          </MessageFooter>
         ) : null}
       </MessageContent>
     </Message>
   );
 }
 
-export function formatRunMetadata(metadata: ScoutRunMetadata) {
+export function countGenerationSteps(parts: ScoutRunMessage["parts"]) {
+  return parts.reduce((count, part) => {
+    const record = asRecord(part);
+    return record && field(record, "type") === "step-start" ? count + 1 : count;
+  }, 0);
+}
+
+export function formatRunMetadata(metadata: ScoutRunMetadata, generationSteps: number) {
   const parts: string[] = [];
   if (metadata.scout?.displayName) parts.push(metadata.scout.displayName);
   if (metadata.model) parts.push(scoutModelLabel(metadata.model));
+  parts.push(`${tokenNumber.format(generationSteps)} ${generationSteps === 1 ? "step" : "steps"}`);
   if (metadata.usage?.promptTokens !== undefined) {
     parts.push(`${tokenNumber.format(metadata.usage.promptTokens)} input`);
   }
   if (metadata.usage?.completionTokens !== undefined) {
     parts.push(`${tokenNumber.format(metadata.usage.completionTokens)} output`);
+  }
+  if (metadata.usage?.costUsd !== undefined) {
+    parts.push(formatEstimatedModelCostUsd(metadata.usage.costUsd));
   }
   if (
     metadata.usage?.promptTokens === undefined &&
@@ -117,6 +130,16 @@ export function formatRunMetadata(metadata: ScoutRunMetadata) {
 
 function formatDuration(durationMs: number) {
   return durationMs < 1000 ? `${Math.round(durationMs)} ms` : `${(durationMs / 1000).toFixed(1)} s`;
+}
+
+function formatEstimatedModelCostUsd(cost: number) {
+  const maximumFractionDigits = cost < 0.01 ? 6 : cost < 1 ? 4 : 2;
+  return `~${new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: Math.min(2, maximumFractionDigits),
+    maximumFractionDigits,
+  }).format(cost)} model`;
 }
 
 function MessagePart({

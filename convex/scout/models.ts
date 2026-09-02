@@ -17,6 +17,7 @@ export const scoutTokenUsageValidator = v.object({
   totalTokens: v.optional(v.number()),
   reasoningTokens: v.optional(v.number()),
   cachedInputTokens: v.optional(v.number()),
+  costUsd: v.optional(v.number()),
 });
 
 export type ScoutTokenUsage = Infer<typeof scoutTokenUsageValidator>;

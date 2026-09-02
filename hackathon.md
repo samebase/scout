@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-02T00:46:00Z
+- **Last updated:** 2026-09-02T12:09:34Z
 
 ## Log
 
@@ -892,7 +892,7 @@ runs exercised the persistent Scout profile, dashboard navigation, GitHub OAuth 
 provider rate limiting. All 195 tests and the complete Cloudflare build passed
 (`convex/taskBrowserModel.ts`, `src/components/task-replay.tsx`).
 
-### 2026-09-02 - working tree
+### 2026-09-02 - 696c5ec - v152
 
 Exercised the Playwright browser path through a complete Samebase onboarding with the Scout's own
 GitHub, Convex, and Cloudflare OAuth accounts. The agent handled every authorization autonomously,
@@ -904,3 +904,16 @@ choices, flattened Qwen-facing account evidence without compatibility parsing, r
 persistent-profile writer conflicts, and kept direct browser close only in Lab. All 199 tests and
 the complete Cloudflare production build passed (`convex/scout/labGeneration.ts`,
 `convex/scout/taskLoop.ts`, `convex/scout/serviceAccountTool.ts`, `convex/scout/labTools.ts`).
+
+### 2026-09-02 - working tree
+
+Removed the hidden 18-step Task cutoff and made 30 generations the single safety ceiling, allowing
+the agent to finish longer browser flows before it must resolve the Attempt. Transcript metadata now
+preserves completed-step usage after later failures and shows the provider-reported model cost while
+keeping Firecrawl credits separate. The same footer counts the generation-step boundaries already
+stored in each message, while the operations pane shows up to three lines of each Playwright command
+before truncating it. The selected Live, Replay, or Transcript view and browser session now live in
+validated query parameters, so refreshes and attempt navigation preserve the operator's location
+(`convex/scout/labGeneration.ts`, `src/components/scout-run-message.tsx`,
+`src/components/task-workspace.tsx`, `src/lib/taskWorkspaceSearch.ts`). All 204 tests and the complete
+Cloudflare build passed.

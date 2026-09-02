@@ -88,8 +88,6 @@ function decisionAfterHandoff(result: ToolResult | null): TaskLoopDecision | nul
 
 export function decideTaskStep(args: {
   state: TaskLoopState;
-  stepNumber: number;
-  normalCloseStep: number;
   previousToolResult: ToolResult | null;
   previousToolError?: ToolError | null;
 }): TaskLoopDecision {
@@ -119,9 +117,7 @@ export function decideTaskStep(args: {
       if (args.previousToolError?.toolName === "browser_open") {
         return { kind: "resolve_attempt", nextState: "resolving" };
       }
-      return args.stepNumber >= args.normalCloseStep
-        ? { kind: "resolve_attempt", nextState: "resolving" }
-        : { kind: "none", nextState: "working" };
+      return { kind: "none", nextState: "working" };
     }
   }
 }
