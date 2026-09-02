@@ -4,15 +4,7 @@ import { createServiceAccountRecordingTool } from "./serviceAccountTool";
 const toolOptions = { toolCallId: "tool-1", messages: [], context: {} };
 
 describe("Scout service-account recording tool", () => {
-  const identityTarget = { kind: "text", text: "conrad@example.test", exact: true } as const;
-  const sessionControlTarget = {
-    kind: "role",
-    role: "button",
-    name: "Sign out",
-    exact: true,
-  } as const;
-
-  it("passes only account access and visible evidence targets to trusted code", async () => {
+  it("normalizes flat managed-password evidence for trusted code", async () => {
     const record = vi.fn(async () => ({ serviceAccountId: "account-1", created: false }));
     const recordingTool = createServiceAccountRecordingTool(record);
 
@@ -20,9 +12,9 @@ describe("Scout service-account recording tool", () => {
       recordingTool.execute(
         {
           accountAccess: "created",
-          loginMethod: { kind: "managed_password" },
-          identityTarget,
-          sessionControlTarget,
+          loginMethod: "managed_password",
+          identityText: "conrad@example.test",
+          sessionControlText: "Sign out",
         },
         toolOptions,
       ),
@@ -30,8 +22,8 @@ describe("Scout service-account recording tool", () => {
     expect(record).toHaveBeenCalledWith({
       accountAccess: "created",
       loginMethod: { kind: "managed_password" },
-      identityTarget,
-      sessionControlTarget,
+      identityText: "conrad@example.test",
+      sessionControlText: "Sign out",
     });
   });
 
@@ -40,15 +32,15 @@ describe("Scout service-account recording tool", () => {
     const recordingTool = createServiceAccountRecordingTool(record);
     const invalidInput: {
       accountAccess: "created";
-      loginMethod: { kind: "managed_password" };
-      identityTarget: typeof identityTarget;
-      sessionControlTarget: typeof sessionControlTarget;
+      loginMethod: "managed_password";
+      identityText: string;
+      sessionControlText: string;
       identifier: string;
     } = {
       accountAccess: "created",
-      loginMethod: { kind: "managed_password" },
-      identityTarget,
-      sessionControlTarget,
+      loginMethod: "managed_password",
+      identityText: "conrad@example.test",
+      sessionControlText: "Sign out",
       identifier: "other@example.test",
     };
 
@@ -63,13 +55,11 @@ describe("Scout service-account recording tool", () => {
     await recordingTool.execute(
       {
         accountAccess: "created",
-        loginMethod: {
-          kind: "oauth",
-          providerServiceDomain: "github.com",
-          providerIdentifier: "conrad-scout",
-        },
-        identityTarget,
-        sessionControlTarget,
+        loginMethod: "oauth",
+        oauthProviderServiceDomain: "github.com",
+        oauthProviderIdentifier: "conrad-scout",
+        identityText: "conrad@example.test",
+        sessionControlText: "Sign out",
       },
       toolOptions,
     );
@@ -81,8 +71,26 @@ describe("Scout service-account recording tool", () => {
         providerServiceDomain: "github.com",
         providerIdentifier: "conrad-scout",
       },
-      identityTarget,
-      sessionControlTarget,
+      identityText: "conrad@example.test",
+      sessionControlText: "Sign out",
     });
+  });
+
+  it("requires an exact provider account for OAuth", async () => {
+    const record = vi.fn(async () => ({ serviceAccountId: "account-1", created: true }));
+    const recordingTool = createServiceAccountRecordingTool(record);
+
+    await expect(
+      recordingTool.execute(
+        {
+          accountAccess: "created",
+          loginMethod: "oauth",
+          identityText: "conrad@example.test",
+          sessionControlText: "Sign out",
+        },
+        toolOptions,
+      ),
+    ).rejects.toThrow("OAuth account recording requires the provider domain and identifier");
+    expect(record).not.toHaveBeenCalled();
   });
 });

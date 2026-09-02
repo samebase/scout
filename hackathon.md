@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-01T23:54:36Z
+- **Last updated:** 2026-09-02T00:46:00Z
 
 ## Log
 
@@ -877,7 +877,7 @@ local Convex development push, all 231 tests, and the complete Cloudflare build 
 (`convex/scout/lib/firecrawlReplay.ts`, `convex/taskReplay.ts`,
 `src/components/task-replay.tsx`).
 
-### 2026-09-01 - working tree
+### 2026-09-01 - 63c3be6 - v151
 
 Replaced the shell-command browser dialect with one sandboxed `browser_execute` tool that accepts
 ordinary Playwright JavaScript. Trusted Playwright over Firecrawl's CDP connection still captures
@@ -891,3 +891,16 @@ the only automatically retried execution because it is rejected before dispatch.
 runs exercised the persistent Scout profile, dashboard navigation, GitHub OAuth tabs, replay, and
 provider rate limiting. All 195 tests and the complete Cloudflare build passed
 (`convex/taskBrowserModel.ts`, `src/components/task-replay.tsx`).
+
+### 2026-09-02 - working tree
+
+Exercised the Playwright browser path through a complete Samebase onboarding with the Scout's own
+GitHub, Convex, and Cloudflare OAuth accounts. The agent handled every authorization autonomously,
+recorded the authenticated Samebase account, reached app creation, and required no human handoff.
+
+Made `resolve_attempt` the single Task finish action so it closes the browser and persists the
+verdict together. Removed the separate close/arm lifecycle and provider-incompatible forced tool
+choices, flattened Qwen-facing account evidence without compatibility parsing, retried transient
+persistent-profile writer conflicts, and kept direct browser close only in Lab. All 199 tests and
+the complete Cloudflare production build passed (`convex/scout/labGeneration.ts`,
+`convex/scout/taskLoop.ts`, `convex/scout/serviceAccountTool.ts`, `convex/scout/labTools.ts`).

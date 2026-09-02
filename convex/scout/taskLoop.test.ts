@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
   decideTaskStep,
-  createSingleUseAttemptResolutionArm,
   detectsHumanGate,
   immediatelyPrecedingToolError,
   immediatelyPrecedingToolResult,
@@ -114,23 +113,25 @@ describe("task loop decisions", () => {
     ).toEqual({ kind: "final", nextState: "final", humanHelpOutcome: "waiting" });
   });
 
-  it("forces one outcome after a successful ordinary browser close", () => {
-    const close = decide("working", { toolName: "browser_close", output: { success: true } });
-    expect(close).toEqual({ kind: "resolve_attempt", nextState: "resolving" });
+  it("finishes after a persisted Attempt resolution", () => {
     expect(
-      decide(close.nextState, {
+      decide("working", {
         toolName: "resolve_attempt",
         output: { kind: "blocked", conclusion: "The gate remained", resolvedAt: 1 },
       }),
     ).toEqual({ kind: "final", nextState: "final", humanHelpOutcome: "none" });
   });
 
-  it("does not resolve after an unsuccessful browser close", () => {
-    expect(decide("closing", { toolName: "browser_close", output: { success: false } })).toEqual({
-      kind: "final",
-      nextState: "final",
-      humanHelpOutcome: "none",
-    });
+  it("resolves after browser startup exhausts its internal retries", () => {
+    expect(
+      decideTaskStep({
+        state: "working",
+        stepNumber: 2,
+        normalCloseStep: 18,
+        previousToolResult: null,
+        previousToolError: { toolName: "browser_open" },
+      }),
+    ).toEqual({ kind: "resolve_attempt", nextState: "resolving" });
   });
 
   it("fails instead of completing when attempt resolution errors", () => {
@@ -157,19 +158,10 @@ describe("task loop decisions", () => {
     ).toEqual({ kind: "resolution_failed", nextState: "final" });
   });
 
-  it("keeps the ordinary cost-neutral close at step 18", () => {
+  it("requires a bounded Attempt resolution at step 18", () => {
     expect(decide("working", null, 18)).toEqual({
-      kind: "browser_close",
-      nextState: "closing",
+      kind: "resolve_attempt",
+      nextState: "resolving",
     });
-  });
-
-  it("arms exactly one post-close attempt resolution", () => {
-    const arm = createSingleUseAttemptResolutionArm();
-
-    expect(arm.consume()).toBe(false);
-    arm.arm();
-    expect(arm.consume()).toBe(true);
-    expect(arm.consume()).toBe(false);
   });
 });

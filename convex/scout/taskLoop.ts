@@ -13,12 +13,11 @@ type StepWithToolResults = {
 
 type ToolError = { readonly toolName: string };
 
-export type TaskLoopState = "working" | "closing" | "resolving" | "final";
+export type TaskLoopState = "working" | "resolving" | "final";
 
 export type TaskLoopDecision =
   | { kind: "none"; nextState: "working" }
   | { kind: "request_human_help"; nextState: "final" }
-  | { kind: "browser_close"; nextState: "closing" }
   | { kind: "resolve_attempt"; nextState: "resolving" }
   | { kind: "resolution_failed"; nextState: "final" }
   | {
@@ -26,20 +25,6 @@ export type TaskLoopDecision =
       nextState: "final";
       humanHelpOutcome: "none" | "waiting";
     };
-
-export function createSingleUseAttemptResolutionArm() {
-  let armed = false;
-  return {
-    arm: () => {
-      armed = true;
-    },
-    consume: () => {
-      if (!armed) return false;
-      armed = false;
-      return true;
-    },
-  };
-}
 
 export function immediatelyPrecedingToolResult(
   steps: readonly StepWithToolResults[],
@@ -101,14 +86,6 @@ function decisionAfterHandoff(result: ToolResult | null): TaskLoopDecision | nul
   return { kind: "final", nextState: "final", humanHelpOutcome: "waiting" };
 }
 
-function decisionAfterBrowserClose(result: ToolResult | null): TaskLoopDecision | null {
-  if (result?.toolName !== "browser_close") return null;
-  if (!isRecord(result.output) || result.output["success"] !== true) {
-    return { kind: "final", nextState: "final", humanHelpOutcome: "none" };
-  }
-  return { kind: "resolve_attempt", nextState: "resolving" };
-}
-
 export function decideTaskStep(args: {
   state: TaskLoopState;
   stepNumber: number;
@@ -119,14 +96,6 @@ export function decideTaskStep(args: {
   switch (args.state) {
     case "final":
       return { kind: "final", nextState: "final", humanHelpOutcome: "none" };
-    case "closing":
-      return (
-        decisionAfterBrowserClose(args.previousToolResult) ?? {
-          kind: "final",
-          nextState: "final",
-          humanHelpOutcome: "none",
-        }
-      );
     case "resolving":
       if (
         args.previousToolError?.toolName === "resolve_attempt" ||
@@ -138,14 +107,8 @@ export function decideTaskStep(args: {
     case "working": {
       const afterHandoff = decisionAfterHandoff(args.previousToolResult);
       if (afterHandoff) return afterHandoff;
-      if (args.previousToolResult?.toolName === "browser_close") {
-        return (
-          decisionAfterBrowserClose(args.previousToolResult) ?? {
-            kind: "final",
-            nextState: "final",
-            humanHelpOutcome: "none",
-          }
-        );
+      if (args.previousToolResult?.toolName === "resolve_attempt") {
+        return { kind: "final", nextState: "final", humanHelpOutcome: "none" };
       }
       if (
         args.previousToolResult?.toolName.startsWith("browser_") &&
@@ -153,8 +116,11 @@ export function decideTaskStep(args: {
       ) {
         return { kind: "request_human_help", nextState: "final" };
       }
+      if (args.previousToolError?.toolName === "browser_open") {
+        return { kind: "resolve_attempt", nextState: "resolving" };
+      }
       return args.stepNumber >= args.normalCloseStep
-        ? { kind: "browser_close", nextState: "closing" }
+        ? { kind: "resolve_attempt", nextState: "resolving" }
         : { kind: "none", nextState: "working" };
     }
   }

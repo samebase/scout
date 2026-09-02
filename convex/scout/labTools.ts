@@ -23,6 +23,7 @@ const MAX_TOOL_TEXT_LENGTH = 20_000;
 const MAX_TOOL_OUTPUT_LENGTH = 20_000;
 const POSITIVE_DECIMAL_INTEGER_PATTERN = /^[1-9]\d*$/;
 const PLAYWRIGHT_RESULT_PREFIX = "__SCOUT_PLAYWRIGHT_RESULT__";
+const PROFILE_WRITE_RETRY_DELAYS_MS = [10_000, 10_000, 10_000] as const;
 
 const agentMailToolNames = ["list_messages", "search_messages", "get_thread"] as const;
 
@@ -86,6 +87,28 @@ function firecrawlRateLimitDelay(error: unknown) {
   const match = /retry after (\d+)s/i.exec(error.message);
   const seconds = match?.[1] ? Number(match[1]) : 10;
   return Math.min(Math.max(seconds, 1), 30) * 1_000 + 250;
+}
+
+function firecrawlProfileWriterBusy(error: unknown) {
+  return (
+    error instanceof SdkError &&
+    /another session is currently writing to this profile/i.test(error.message)
+  );
+}
+
+async function createFirecrawlBrowserWithProfileRetry(
+  dependencies: BrowserDependencies,
+  options: NonNullable<Parameters<Firecrawl["browser"]>[0]>,
+) {
+  for (const delay of PROFILE_WRITE_RETRY_DELAYS_MS) {
+    try {
+      return await dependencies.browser(options);
+    } catch (error) {
+      if (!options.profile || !firecrawlProfileWriterBusy(error)) throw error;
+      await dependencies.sleep(delay);
+    }
+  }
+  return await dependencies.browser(options);
 }
 
 async function executePlaywrightWithRateLimitRetry(
@@ -729,7 +752,7 @@ export function createLabBrowserHarness(
       }
 
       const targetUrl = httpsUrl(url);
-      const session = await dependencies.browser({
+      const session = await createFirecrawlBrowserWithProfileRetry(dependencies, {
         streamWebView: true,
         ttl: 3_600,
         activityTtl: 3_600,
@@ -886,7 +909,7 @@ export function createLabBrowserHarness(
   const tools = {
     browser_open: tool({
       description:
-        "Open one admin-configured Firecrawl browser session through Playwright at an HTTPS URL and return an interactive accessibility snapshot. The session identity and provider URLs stay outside the model.",
+        "Open one admin-configured Firecrawl browser session through Playwright at an HTTPS URL and return an interactive accessibility snapshot. Call once per Turn; startup handles transient provider conflicts internally. The session identity and provider URLs stay outside the model.",
       inputSchema: z.object({
         url: z.string().url().describe("HTTPS page to open"),
       }),
@@ -894,7 +917,7 @@ export function createLabBrowserHarness(
     }),
     browser_execute: tool({
       description:
-        "Run JavaScript with Playwright's provided page object inside Firecrawl's Node sandbox. Await every Playwright operation. Prefer semantic locators such as page.getByRole(), page.getByLabel(), or page.getByText(); add .filter({ visible: true }).first() when responsive layouts contain duplicate hidden controls. Use console.log() only for values absent from the automatically returned page snapshot. Keep each call to one coherent browser step, combining the checks needed to select and perform that step. Never enter a password here; use fill_account_password.",
+        "Run JavaScript with Playwright's provided page object inside Firecrawl's Node sandbox. Await every Playwright operation. For a popup or new tab, select its Page from page.context().pages() by URL or title instead of assuming page changed. If clicking is expected to close a popup, wait for and inspect the opener rather than waiting on the closing popup. Prefer semantic locators such as page.getByRole(), page.getByLabel(), or page.getByText(); add .filter({ visible: true }).first() when responsive layouts contain duplicate hidden controls. Use console.log() only for values absent from the automatically returned page snapshot. Keep each call to one coherent browser step, combining the checks needed to select and perform that step. Never enter a password here; use fill_account_password.",
       inputSchema: z.object({
         code: z
           .string()

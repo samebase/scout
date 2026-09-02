@@ -5,6 +5,7 @@ import {
   serviceAccountLoginInstructions,
   scoutWebsiteIdentityInstructions,
 } from "./labGeneration";
+import { SCOUT_AGENT_INSTRUCTIONS } from "./agent";
 
 describe("Scout runtime instructions", () => {
   it("describes the Scout identity as an owned resource", () => {
@@ -15,6 +16,26 @@ describe("Scout runtime instructions", () => {
         agentMail: { inboxId: "inbox", address: "conrad@example.test" },
       }),
     ).toContain("This identity and inbox belong to the Scout");
+  });
+
+  it("treats Scout-owned OAuth as autonomous work", () => {
+    expect(SCOUT_AGENT_INSTRUCTIONS).toContain(
+      "OAuth account selection and consent for the Scout's own registered accounts are ordinary browser work",
+    );
+    expect(SCOUT_AGENT_INSTRUCTIONS).toContain("never request human help merely for authorization");
+  });
+
+  it("does not confuse an initiated operation with completion", () => {
+    expect(SCOUT_AGENT_INSTRUCTIONS).toContain(
+      "A submitted, scheduled, pending, processing, or deleting state proves initiation, not completion",
+    );
+  });
+
+  it("selects popup pages explicitly and records accounts before optional onboarding", () => {
+    expect(SCOUT_AGENT_INSTRUCTIONS).toContain("page.context().pages()");
+    expect(SCOUT_AGENT_INSTRUCTIONS).toContain(
+      "record the account before continuing with optional onboarding",
+    );
   });
 
   it("lists all exact managed login hosts without revealing passwords", () => {

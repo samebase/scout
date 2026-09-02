@@ -250,6 +250,29 @@ describe("Lab browser harness", () => {
     expect(deps.browserExecute).toHaveBeenCalledTimes(2);
   });
 
+  test("waits for a persistent profile writer before opening one session", async () => {
+    const deps = dependencies();
+    const profileBusy = new SdkError(
+      "Another session is currently writing to this profile. Only one writer is allowed at a time.",
+      409,
+    );
+    deps.browser
+      .mockRejectedValueOnce(profileBusy)
+      .mockRejectedValueOnce(profileBusy)
+      .mockResolvedValueOnce({
+        success: true,
+        id: "session-1",
+        cdpUrl: "wss://browser.firecrawl.dev/cdp?token=secret",
+      });
+    const browser = createLabBrowserHarness({ profileName: "scout-conrad" }, deps);
+
+    await expect(browser.open("https://example.com")).resolves.toMatchObject({ success: true });
+    expect(deps.sleep).toHaveBeenCalledTimes(2);
+    expect(deps.sleep).toHaveBeenNthCalledWith(1, 10_000);
+    expect(deps.sleep).toHaveBeenNthCalledWith(2, 10_000);
+    expect(deps.browser).toHaveBeenCalledTimes(3);
+  });
+
   test("fills managed passwords through trusted local Playwright without exposing them", async () => {
     const playwright = runtime();
     const browser = createLabBrowserHarness({}, dependencies(playwright));

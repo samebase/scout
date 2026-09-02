@@ -1,48 +1,76 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { browserTargetSchema } from "./browserTarget";
 
-const observedLoginMethodSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("managed_password") }).strict(),
-  z
-    .object({
-      kind: z.literal("oauth"),
-      providerServiceDomain: z
-        .string()
-        .describe("Exact product domain of the account used for OAuth, such as github.com"),
-      providerIdentifier: z
-        .string()
-        .describe("Exact username or email of the account used for OAuth"),
-    })
-    .strict(),
-]);
-
-const serviceAccountEvidenceTargetsSchema = z
+const serviceAccountEvidenceInputSchema = z
   .object({
     accountAccess: z.enum(["created", "recovered"]),
-    loginMethod: observedLoginMethodSchema.describe(
-      "How this service account was authenticated during the current task",
-    ),
-    identityTarget: browserTargetSchema.describe(
-      "Element whose visible text contains the bound account's exact identifier",
-    ),
-    sessionControlTarget: browserTargetSchema.describe(
-      "Visible Sign out, Log out, Logout, or Sign off control in the same authenticated UI",
-    ),
+    loginMethod: z
+      .enum(["managed_password", "oauth"])
+      .describe("How this service account was authenticated during the current task"),
+    oauthProviderServiceDomain: z
+      .string()
+      .optional()
+      .describe("For OAuth only, the product domain of the provider account, such as github.com"),
+    oauthProviderIdentifier: z
+      .string()
+      .optional()
+      .describe("For OAuth only, the exact username or email of the provider account"),
+    identityText: z
+      .string()
+      .min(1)
+      .describe("Exact visible Scout username or email on the authenticated product page"),
+    sessionControlText: z
+      .string()
+      .min(1)
+      .describe("Exact visible text of the Sign out, Log out, Logout, or Sign off control"),
   })
   .strict();
 
-export type ServiceAccountEvidenceTargets = z.infer<typeof serviceAccountEvidenceTargetsSchema>;
+export type ServiceAccountEvidence = {
+  accountAccess: "created" | "recovered";
+  loginMethod:
+    | { kind: "managed_password" }
+    | { kind: "oauth"; providerServiceDomain: string; providerIdentifier: string };
+  identityText: string;
+  sessionControlText: string;
+};
+
+function serviceAccountEvidence(
+  input: z.infer<typeof serviceAccountEvidenceInputSchema>,
+): ServiceAccountEvidence {
+  if (input.loginMethod === "managed_password") {
+    return {
+      accountAccess: input.accountAccess,
+      loginMethod: { kind: "managed_password" },
+      identityText: input.identityText,
+      sessionControlText: input.sessionControlText,
+    };
+  }
+  if (!input.oauthProviderServiceDomain || !input.oauthProviderIdentifier) {
+    throw new Error("OAuth account recording requires the provider domain and identifier");
+  }
+  return {
+    accountAccess: input.accountAccess,
+    loginMethod: {
+      kind: "oauth",
+      providerServiceDomain: input.oauthProviderServiceDomain,
+      providerIdentifier: input.oauthProviderIdentifier,
+    },
+    identityText: input.identityText,
+    sessionControlText: input.sessionControlText,
+  };
+}
 
 export function createServiceAccountRecordingTool(
   record: (
-    evidence: ServiceAccountEvidenceTargets,
+    evidence: ServiceAccountEvidence,
   ) => Promise<{ serviceAccountId: string; created: boolean }>,
 ) {
   return tool({
     description:
-      "Record an authenticated account in this Scout's service-account inventory before closing the browser. First open an account menu that simultaneously shows one of the Scout's known usernames or email addresses and a Sign out or Log out control; a team or workspace name is not an account identity. State whether this attempt created the account or recovered an existing login and whether it used the managed password or OAuth through another exact Scout account. Then identify both visible elements with Playwright targets. Trusted code reads the current URL and visible elements. It updates an exact existing match, or creates the missing inventory record when the observed service is this Task's product.",
-    inputSchema: serviceAccountEvidenceTargetsSchema,
-    execute: async (evidence) => await record(serviceAccountEvidenceTargetsSchema.parse(evidence)),
+      "Record an authenticated account in this Scout's service-account inventory before closing the browser. First open an account menu that simultaneously shows one of the Scout's exact known usernames or email addresses and a Sign out or Log out control; a team or workspace name is not an account identity. State whether this attempt created the account or recovered an existing login and whether it used the managed password or OAuth through another exact Scout account. For OAuth, include that provider account's exact domain and identifier. Trusted code re-reads the current URL and both visible text values. It updates an exact existing match, or creates the missing inventory record when the observed service is this Task's product.",
+    inputSchema: serviceAccountEvidenceInputSchema,
+    execute: async (input) =>
+      await record(serviceAccountEvidence(serviceAccountEvidenceInputSchema.parse(input))),
   });
 }
