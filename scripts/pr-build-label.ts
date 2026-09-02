@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Refresh the current pull request title with the total commit count that GitHub will show after
- * creating the pull request's merge commit.
+ * creating the pull request's squash commit.
  * Pass `--print-only` to show the projected title without editing the pull request.
  */
 import { execFileSync } from "node:child_process";
@@ -34,13 +34,8 @@ export function computeProjectedBuildNumber(readGitOutput: (args: string[]) => s
     "the origin/main commit count",
     1,
   );
-  const pullRequestCommitCount = parseCommitCount(
-    readGitOutput(["rev-list", "--count", "HEAD", "--not", "origin/main"]),
-    "the pull request commit count",
-    0,
-  );
 
-  return mainCount + pullRequestCommitCount + 1;
+  return mainCount + 1;
 }
 
 function computeProjectedLabel(): string {

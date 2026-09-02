@@ -877,10 +877,16 @@ local Convex development push, all 231 tests, and the complete Cloudflare build 
 (`convex/scout/lib/firecrawlReplay.ts`, `convex/taskReplay.ts`,
 `src/components/task-replay.tsx`).
 
-### 2026-09-02 - working tree
+### 2026-09-02 - d80c3e9
 
 Replaced the shell-based browser layer with Playwright and verified that Conrad can complete Samebase
 onboarding and account deletion without human help. Longer attempts now expose steps and cost, retain
 transcript location and errors, and visibly repair malformed provider tool arguments. Lab gained a
 compact sidebar for repeatable model comparisons (`convex/scout`, `src/components/task-workspace.tsx`,
 `src/routes/lab.tsx`).
+
+### 2026-09-02 - working tree
+
+Made each pull request one shipped build through squash merging. Branch commits stay unversioned,
+the pull request title projects the next main commit count, and one grouped Hackathon entry carries
+forward to the next squash commit (`AGENTS.md`, `scripts/pr-build-label.ts`).

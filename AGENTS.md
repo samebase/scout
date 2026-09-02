@@ -35,27 +35,19 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
 
 ## Main build labels
 
-- Use merge commits for pull requests into `main`. Do not squash.
+- Use squash merges so each pull request becomes one shipped commit on `main`.
 - Merge pull requests into `main` one at a time. Do not start concurrent merges.
-- Keep ordinary branch commit subjects unversioned while work is in progress locally. Do not
-  publish a pull request branch with unversioned or stale commit subjects.
+- Keep branch commit subjects unversioned. They are review checkpoints, not shipped builds.
 - Before the first pull request push and before every later pull request push, fetch `origin/main`
-  and rebase the pull request onto it. Do not merge `origin/main` into the branch. Capture the
-  old-to-new commit mapping so rewritten Hackathon references can be repaired.
-- After rebasing, rewrite every pull request commit subject with `v<N>:`, where `N` is that commit's
-  total reachable commit count. Preserve the original subject after the prefix, replacing an
-  existing version prefix instead of adding a second one. The mechanical Hackathon finalizer is
-  part of the pull request and receives a version too.
-- Treat the rebase and subject rewrite as incomplete until `hackathon.md` has been updated and every
-  committed SHA in its log headings resolves uniquely to a commit reachable from `HEAD`.
-- Push rewritten pull request history with `git push --force-with-lease`. For a new pull request, run
-  `node ./scripts/pr-build-label.ts --print-only` and create the pull request with its projected
-  `v<N>:` title. After the pull request exists, run `node ./scripts/pr-build-label.ts` after every
-  push so its title receives the next version reserved for the merge commit.
-- Repeat the rebase, commit numbering, Hackathon repair, force-push, and title refresh immediately
-  before merge if another pull request changed `main`.
-- Merge with an explicit subject matching the current versioned pull request title, for example
-  `gh pr merge <pr-number> --merge --subject "v<N>: <title>"`.
+  and rebase the pull request onto it. Do not merge `origin/main` into the branch.
+- A pull request's projected `v<N>:` label is the commit count on `origin/main` plus one, regardless
+  of how many commits the branch contains.
+- For a new pull request, run `node ./scripts/pr-build-label.ts --print-only` and use the projected
+  `v<N>:` title. After the pull request exists, run `node ./scripts/pr-build-label.ts` after branch
+  updates and immediately before merging.
+- Immediately before merging, fetch and rebase onto `origin/main`, refresh the title, then squash
+  with an explicit subject matching it, for example
+  `gh pr merge <pr-number> --squash --subject "v<N>: <title>"`.
 - Prefix a direct commit to `main` with `v<N>:`, where `N` is the commit count including that commit.
 - CI rejects a `main` commit whose subject does not start with its expected `v<N>:` label.
 
@@ -65,7 +57,7 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
   before every commit. Group related work into one entry and keep it to two to six lines. Do not copy
   PR summaries, test output, rejected approaches, or review notes into the log.
 - Keep at most one `working tree` entry. On the next meaningful update, replace it with the previous
-  pull request's merge-commit short SHA and `v<N>`. Do not create log-only commits except when
+  pull request's squash-commit short SHA. Do not create log-only commits except when
   finalizing the submission.
 
 ## Cross-platform automation
