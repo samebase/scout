@@ -28,6 +28,8 @@ const tokenNumber = new Intl.NumberFormat();
 
 export function scoutModelLabel(model: string) {
   switch (model) {
+    case "openai/gpt-5.6-luna":
+      return "Luna";
     case "qwen/qwen3.7-flash":
       return "Qwen 3.7 Flash";
     default:
@@ -212,11 +214,19 @@ function MessagePart({
 }
 
 function ToolActivity({ tool }: { tool: ToolSnapshot }) {
-  const isError = tool.state.includes("error") || tool.error !== undefined;
+  const outputFailure = toolOutputFailure(tool.output);
+  const isError =
+    tool.state.includes("error") || tool.error !== undefined || outputFailure !== undefined;
   const isComplete = tool.state === "output-available";
 
   return (
-    <Collapsible className="rounded-[0.75rem] border bg-muted/35 px-3 py-2.5">
+    <Collapsible
+      className={
+        isError
+          ? "border-destructive/50 bg-destructive/5 rounded-[0.75rem] border px-3 py-2.5"
+          : "rounded-[0.75rem] border bg-muted/35 px-3 py-2.5"
+      }
+    >
       <CollapsibleTrigger className="group/tool flex w-full items-center gap-2 text-left">
         <Marker className={isError ? "text-destructive" : "text-foreground"}>
           <MarkerIcon>
@@ -224,8 +234,14 @@ function ToolActivity({ tool }: { tool: ToolSnapshot }) {
           </MarkerIcon>
           <MarkerContent className="flex flex-1 items-baseline justify-between gap-3">
             <span className="font-mono text-xs">{tool.name}</span>
-            <span className="text-muted-foreground text-[0.6875rem]">
-              {tool.state.replaceAll("-", " ")}
+            <span
+              className={
+                isError
+                  ? "text-destructive text-[0.6875rem]"
+                  : "text-muted-foreground text-[0.6875rem]"
+              }
+            >
+              {isError ? "error" : tool.state.replaceAll("-", " ")}
             </span>
           </MarkerContent>
         </Marker>
@@ -234,9 +250,13 @@ function ToolActivity({ tool }: { tool: ToolSnapshot }) {
       <CollapsibleContent className="pt-3">
         <dl className="grid gap-3 border-t pt-3">
           {tool.input !== undefined ? <ToolValue label="Input" value={tool.input} /> : null}
-          {tool.output !== undefined ? <ToolValue label="Output" value={tool.output} /> : null}
+          {tool.output !== undefined && outputFailure === undefined ? (
+            <ToolValue label="Output" value={tool.output} />
+          ) : null}
           {tool.error !== undefined ? (
             <ToolValue label="Error" value={tool.error} destructive />
+          ) : outputFailure !== undefined ? (
+            <ToolValue label="Error" value={outputFailure} destructive />
           ) : null}
         </dl>
       </CollapsibleContent>
@@ -264,11 +284,31 @@ function ToolValue({
       >
         {label}
       </dt>
-      <dd className="mt-1 overflow-x-auto rounded-md bg-background p-2 font-mono text-[0.6875rem] leading-relaxed whitespace-pre-wrap break-words">
+      <dd
+        className={`mt-1 overflow-x-auto rounded-md bg-background p-2 font-mono text-[0.6875rem] leading-relaxed whitespace-pre-wrap break-words${destructive ? " text-destructive" : ""}`}
+      >
         {formatValue(value)}
       </dd>
     </div>
   );
+}
+
+export function toolOutputFailure(value: unknown) {
+  if (value instanceof Error) return value.message;
+  if (typeof value === "string") {
+    const message = value.trim();
+    return /^(?:[A-Za-z_$][\w$]*Error|Error):/.test(message) ||
+      /^An error occurred\.?$/i.test(message)
+      ? value
+      : undefined;
+  }
+  const record = asRecord(value);
+  if (!record) return undefined;
+  if (field(record, "success") === false || field(record, "isError") === true) return value;
+  const error = ownValue(record, "error");
+  return error !== undefined && error !== null && error !== false && error !== ""
+    ? value
+    : undefined;
 }
 
 function toolSnapshot(record: object | null, type: string): ToolSnapshot | null {

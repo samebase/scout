@@ -75,6 +75,7 @@ type StatusControlState =
 type LabNotice = { kind: "error" | "status"; message: string };
 
 const MODEL_OPTIONS = [
+  { value: "openai/gpt-5.6-luna", label: "Luna" },
   { value: "qwen/qwen3.7-flash", label: "Qwen 3.7 Flash" },
 ] satisfies readonly { value: SelectableScoutModel; label: string }[];
 

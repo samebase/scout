@@ -21,7 +21,6 @@ import {
 
 const MAX_TOOL_TEXT_LENGTH = 20_000;
 const MAX_TOOL_OUTPUT_LENGTH = 20_000;
-const POSITIVE_DECIMAL_INTEGER_PATTERN = /^[1-9]\d*$/;
 const PLAYWRIGHT_RESULT_PREFIX = "__SCOUT_PLAYWRIGHT_RESULT__";
 const PROFILE_WRITE_RETRY_DELAYS_MS = [10_000, 10_000, 10_000] as const;
 
@@ -135,27 +134,6 @@ function boundedText(value: string, label: string, maxLength = MAX_TOOL_TEXT_LEN
     throw new Error(`${label} must be ${maxLength} characters or fewer`);
   }
   return text;
-}
-
-function modelPositiveInteger(maximum: number) {
-  return z.union([
-    z.number().int().min(1).max(maximum),
-    z
-      .string()
-      .max(String(maximum).length)
-      .regex(POSITIVE_DECIMAL_INTEGER_PATTERN)
-      .refine((value) => Number(value) <= maximum, {
-        message: `Expected an integer between 1 and ${maximum}`,
-      }),
-  ]);
-}
-
-function numericModelValue(value: number | string) {
-  return typeof value === "number" ? value : Number(value);
-}
-
-function normalizeMessageLimit<T extends { limit?: number | string | undefined }>(input: T) {
-  return input.limit === undefined ? input : { ...input, limit: numericModelValue(input.limit) };
 }
 
 function httpsUrl(value: string) {
@@ -368,7 +346,7 @@ function convertAgentMailOutput(
 }
 
 const messageFilters = {
-  limit: modelPositiveInteger(100).optional(),
+  limit: z.number().int().min(1).max(100).optional(),
   pageToken: z.string().optional(),
   before: z.string().optional(),
   after: z.string().optional(),
@@ -395,13 +373,7 @@ export function selectAgentMailTools(tools: ToolSet, inboxId: string) {
         includeTrash: z.boolean().optional(),
       }),
       execute: async (input, options) =>
-        await executeAgentMailTool(
-          tools,
-          "list_messages",
-          inboxId,
-          normalizeMessageLimit(input),
-          options,
-        ),
+        await executeAgentMailTool(tools, "list_messages", inboxId, input, options),
       toModelOutput: async (options) =>
         await convertAgentMailOutput(tools, "list_messages", options),
     }),
@@ -413,13 +385,7 @@ export function selectAgentMailTools(tools: ToolSet, inboxId: string) {
         q: z.string().min(1).max(MAX_TOOL_TEXT_LENGTH),
       }),
       execute: async (input, options) =>
-        await executeAgentMailTool(
-          tools,
-          "search_messages",
-          inboxId,
-          normalizeMessageLimit(input),
-          options,
-        ),
+        await executeAgentMailTool(tools, "search_messages", inboxId, input, options),
       toModelOutput: async (options) =>
         await convertAgentMailOutput(tools, "search_messages", options),
     }),

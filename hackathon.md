@@ -10,9 +10,9 @@
 - **Components:** @convex-dev/agent, @convex-dev/static-hosting, @convex-dev/workflow
 - **Convex features:** schema, tables, indexes, queries, paginated queries, realtime queries, mutations, actions, scheduled functions, HTTP actions, AI Gateway
 - **Auth:** Convex Auth
-- **AI models:** qwen/qwen3.7-flash (Convex AI Gateway)
+- **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-02T12:09:34Z
+- **Last updated:** 2026-09-02T13:14:41Z
 
 ## Log
 
@@ -905,7 +905,7 @@ persistent-profile writer conflicts, and kept direct browser close only in Lab. 
 the complete Cloudflare production build passed (`convex/scout/labGeneration.ts`,
 `convex/scout/taskLoop.ts`, `convex/scout/serviceAccountTool.ts`, `convex/scout/labTools.ts`).
 
-### 2026-09-02 - working tree
+### 2026-09-02 - 24adb16 - v153
 
 Removed the hidden 18-step Task cutoff and made 30 generations the single safety ceiling, allowing
 the agent to finish longer browser flows before it must resolve the Attempt. Transcript metadata now
@@ -917,3 +917,18 @@ validated query parameters, so refreshes and attempt navigation preserve the ope
 (`convex/scout/labGeneration.ts`, `src/components/scout-run-message.tsx`,
 `src/components/task-workspace.tsx`, `src/lib/taskWorkspaceSearch.ts`). All 204 tests and the complete
 Cloudflare build passed.
+
+### 2026-09-02 - working tree
+
+Kept finalized tool failures visibly red in the transcript by classifying error-shaped AI SDK
+outputs after streaming completes. Added one schema-aware AI SDK repair hook for Qwen's stringified
+top-level numbers, booleans, objects, arrays, and nulls, then removed the password-specific parser
+and AgentMail's older number-or-string workaround so tool schemas remain strict. A Lab-only argument
+probe preserves the raw provider values for repeatable Qwen and Luna comparisons.
+
+Live probes confirmed Qwen preserves ordinary strings but JSON-stringifies every tested non-string
+value, while Luna sends native JSON types. Qwen then completed a strict AgentMail call with repaired
+number and boolean inputs and reached Playwright with a repaired password-target object. Luna remains
+selectable for comparisons while Qwen remains the default. All 211 tests and the complete Cloudflare
+build passed (`convex/scout/toolCallRepair.ts`, `convex/scout/toolArgumentProbe.ts`,
+`convex/scout/models.ts`, `src/components/scout-run-message.tsx`, `src/routes/lab.tsx`).

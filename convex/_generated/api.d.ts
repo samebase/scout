@@ -53,6 +53,8 @@ import type * as scout_serviceAccountCredentials from "../scout/serviceAccountCr
 import type * as scout_serviceAccountTool from "../scout/serviceAccountTool.js";
 import type * as scout_serviceAccounts from "../scout/serviceAccounts.js";
 import type * as scout_taskLoop from "../scout/taskLoop.js";
+import type * as scout_toolArgumentProbe from "../scout/toolArgumentProbe.js";
+import type * as scout_toolCallRepair from "../scout/toolCallRepair.js";
 import type * as scout_turns from "../scout/turns.js";
 import type * as taskAttemptModel from "../taskAttemptModel.js";
 import type * as taskBrowserModel from "../taskBrowserModel.js";
@@ -118,6 +120,8 @@ declare const fullApi: ApiFromModules<{
   "scout/serviceAccountTool": typeof scout_serviceAccountTool;
   "scout/serviceAccounts": typeof scout_serviceAccounts;
   "scout/taskLoop": typeof scout_taskLoop;
+  "scout/toolArgumentProbe": typeof scout_toolArgumentProbe;
+  "scout/toolCallRepair": typeof scout_toolCallRepair;
   "scout/turns": typeof scout_turns;
   taskAttemptModel: typeof taskAttemptModel;
   taskBrowserModel: typeof taskBrowserModel;

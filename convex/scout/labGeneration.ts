@@ -41,6 +41,8 @@ import {
 } from "./models";
 import { createServiceAccountRecordingTool } from "./serviceAccountTool";
 import { createAttemptResolutionTool } from "./attemptResolutionTool";
+import { createToolArgumentProbe } from "./toolArgumentProbe";
+import { repairStringifiedToolInput } from "./toolCallRepair";
 
 const MAX_GENERATION_STEPS = 30;
 const AGENT_MAIL_CLOSE_TIMEOUT_MS = 1_000;
@@ -304,6 +306,7 @@ async function generateHandoffContinuation(
             return result;
           }),
         },
+        repairToolCall: repairStringifiedToolInput,
         stopWhen: isStepCount(1),
         onError: streamErrors.onError,
         onStepEnd: ({ usage }) => {
@@ -650,6 +653,9 @@ export const generateResponse = internalAction({
         ...accountPasswordTools,
         ...serviceAccountTools,
         ...attemptResolutionTools,
+        ...(runtimeContext.kind === "lab"
+          ? { inspect_tool_arguments: createToolArgumentProbe() }
+          : {}),
       };
       let taskLoopState: TaskLoopState = "working";
       const passwordInstructions = managedCredentialInstructions(runtimeCredentials);
@@ -668,6 +674,7 @@ export const generateResponse = internalAction({
           model: scoutLanguageModel(args.model),
           instructions,
           tools,
+          repairToolCall: repairStringifiedToolInput,
           stopWhen: isStepCount(MAX_GENERATION_STEPS),
           onError: streamErrors.onError,
           onStepEnd: ({ usage }) => {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 import type { Id } from "../../convex/_generated/dataModel";
-import { countGenerationSteps, formatRunMetadata } from "./scout-run-message";
+import { countGenerationSteps, formatRunMetadata, toolOutputFailure } from "./scout-run-message";
 
 describe("Scout transcript metadata", () => {
   test("shows the model cost estimate alongside the recorded token usage", () => {
@@ -32,5 +32,25 @@ describe("Scout transcript metadata", () => {
         { type: "step-start" },
       ]),
     ).toBe(2);
+  });
+});
+
+describe("Scout tool results", () => {
+  test("keeps finalized AI SDK tool-input failures classified as errors", () => {
+    const failure =
+      "AI_InvalidToolInputError: Invalid input for tool fill_account_password: expected object, received string";
+
+    expect(toolOutputFailure(failure)).toBe(failure);
+  });
+
+  test("classifies unsuccessful structured tool output as an error", () => {
+    const failure = { success: false, error: "Playwright execution timed out" };
+
+    expect(toolOutputFailure(failure)).toBe(failure);
+  });
+
+  test("does not classify successful output with a null error field as an error", () => {
+    expect(toolOutputFailure({ success: true, error: null, output: "done" })).toBeUndefined();
+    expect(toolOutputFailure("ordinary tool output")).toBeUndefined();
   });
 });

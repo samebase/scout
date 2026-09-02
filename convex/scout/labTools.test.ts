@@ -333,7 +333,7 @@ describe("AgentMail Lab catalog", () => {
     const selected = selectAgentMailTools(allTools, "conrad@agentmail.to");
     const options = { toolCallId: "tool-1", messages: [], context: undefined };
 
-    await selected.list_messages.execute({ limit: "5" }, options);
+    await selected.list_messages.execute({ limit: 5 }, options);
     await selected.search_messages.execute({ q: "verification" }, options);
     await selected.get_thread.execute({ threadId: "thread-1" }, options);
 
