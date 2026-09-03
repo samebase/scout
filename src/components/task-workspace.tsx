@@ -899,7 +899,9 @@ function ReplayView({
   if (session === undefined) return <MainStatus>Loading browser session</MainStatus>;
   if (session.lifecycle.kind === "active")
     return <MainStatus>Replay becomes available when this session closes</MainStatus>;
-  return <TaskReplay sessionId={session.sessionId} />;
+  return (
+    <TaskReplay key={session.sessionId} source={{ kind: "task", sessionId: session.sessionId }} />
+  );
 }
 
 function Transcript({ attempt, messages }: { attempt: Attempt; messages: readonly TaskMessage[] }) {

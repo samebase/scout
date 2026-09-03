@@ -11,12 +11,20 @@ import {
   Authenticated,
   AuthLoading,
   Unauthenticated,
+  useAction,
   useMutation,
   usePaginatedQuery,
   useQuery,
 } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
-import { LoaderCircleIcon, PanelLeftIcon, PlusIcon, SendIcon, XIcon } from "lucide-react";
+import {
+  ExternalLinkIcon,
+  LoaderCircleIcon,
+  PanelLeftIcon,
+  PlusIcon,
+  SendIcon,
+  XIcon,
+} from "lucide-react";
 import {
   type FormEvent,
   type KeyboardEvent,
@@ -27,12 +35,12 @@ import {
   useState,
 } from "react";
 import { api } from "../../convex/_generated/api";
-import type { SelectableScoutModel } from "../../convex/scout/models";
 import {
   scoutSidebarDesktopPrehydrationScript,
   scoutSidebarMobilePrehydrationScript,
 } from "../sidebars/scoutSidebarState";
 import { ScoutRunMessageView, scoutModelLabel } from "#components/scout-run-message";
+import { TaskReplay } from "#components/task-replay";
 import { Button } from "#components/ui/button";
 import { Input } from "#components/ui/input";
 import {
@@ -48,12 +56,22 @@ import { Textarea } from "#components/ui/textarea";
 type LabSearch = {
   experiment?: string;
   thread?: string;
+  view?: LabView;
+  session?: string;
 };
+
+type LabView = "transcript" | "live" | "replay";
+
+function isLabView(value: unknown): value is LabView {
+  return value === "transcript" || value === "live" || value === "replay";
+}
 
 export const Route = createFileRoute("/lab")({
   validateSearch: (search: Record<string, unknown>): LabSearch => ({
     ...(typeof search["experiment"] === "string" ? { experiment: search["experiment"] } : {}),
     ...(typeof search["thread"] === "string" ? { thread: search["thread"] } : {}),
+    ...(isLabView(search["view"]) ? { view: search["view"] } : {}),
+    ...(typeof search["session"] === "string" ? { session: search["session"] } : {}),
   }),
   head: () => ({
     meta: [{ title: "Lab | Scout" }],
@@ -69,6 +87,10 @@ type ComposerState =
 
 type LabThread = FunctionReturnType<typeof api.scout.lab.listThreads>["page"][number];
 type LabExperiment = FunctionReturnType<typeof api.scout.lab.listExperiments>[number];
+type LabBrowserSession = FunctionReturnType<typeof api.scout.labBrowserSessions.list>[number];
+type LabBrowserSessionDetail = NonNullable<
+  FunctionReturnType<typeof api.scout.labBrowserSessions.get>
+>;
 type Scout = FunctionReturnType<typeof api.scout.scouts.list>[number];
 type ExperimentId = LabExperiment["_id"];
 type ExperimentStatus = LabExperiment["status"];
@@ -85,12 +107,82 @@ type StatusControlState =
 
 type LabNotice = { kind: "error" | "status"; message: string };
 
-const MODEL_OPTIONS = [
+const DRIVER_OPTIONS = [
   { value: "openai/gpt-5.6-luna", label: "Luna" },
   { value: "qwen/qwen3.7-flash", label: "Qwen 3.7 Flash" },
-] satisfies readonly { value: SelectableScoutModel; label: string }[];
+  { value: "manual", label: "Manual" },
+] as const;
 
-const DEFAULT_MODEL: SelectableScoutModel = "qwen/qwen3.7-flash";
+type LabDriver = (typeof DRIVER_OPTIONS)[number]["value"];
+type ManualToolName =
+  | "create_new_firecrawl_session"
+  | "browser_execute"
+  | "browser_close"
+  | "list_messages"
+  | "search_messages"
+  | "get_thread"
+  | "fill_account_password"
+  | "inspect_tool_arguments";
+
+const MANUAL_TOOL_OPTIONS = [
+  {
+    value: "create_new_firecrawl_session",
+    label: "Create Firecrawl session",
+    description: "Start the thread's browser and open its first HTTPS page.",
+    input: '{\n  "url": "https://samebase.com"\n}',
+  },
+  {
+    value: "browser_execute",
+    label: "Execute Playwright",
+    description: "Run ordinary Playwright JavaScript against the current page.",
+    input: '{\n  "code": "return { url: await page.url(), title: await page.title() }"\n}',
+  },
+  {
+    value: "browser_close",
+    label: "Close browser",
+    description: "Close the thread's current Firecrawl session.",
+    input: "{}",
+  },
+  {
+    value: "list_messages",
+    label: "List email",
+    description: "List messages in this Scout's inbox.",
+    input: '{\n  "limit": 10\n}',
+  },
+  {
+    value: "search_messages",
+    label: "Search email",
+    description: "Search this Scout's inbox.",
+    input: '{\n  "q": "verification"\n}',
+  },
+  {
+    value: "get_thread",
+    label: "Read email thread",
+    description: "Read one email thread by its AgentMail thread ID.",
+    input: '{\n  "threadId": ""\n}',
+  },
+  {
+    value: "fill_account_password",
+    label: "Fill account password",
+    description: "Fill the Scout's managed password into a visible password field.",
+    input:
+      '{\n  "passwordTarget": {\n    "kind": "role",\n    "role": "textbox",\n    "name": "Password",\n    "exact": true\n  }\n}',
+  },
+  {
+    value: "inspect_tool_arguments",
+    label: "Inspect argument types",
+    description: "Check the raw JSON types received by the tool boundary.",
+    input:
+      '{\n  "stringValue": "plain text",\n  "numberValue": 42,\n  "booleanValue": true,\n  "objectValue": { "label": "nested", "count": 2 },\n  "arrayValue": ["alpha", "beta"],\n  "nullValue": null\n}',
+  },
+] as const satisfies readonly {
+  value: ManualToolName;
+  label: string;
+  description: string;
+  input: string;
+}[];
+
+const DEFAULT_DRIVER: LabDriver = "qwen/qwen3.7-flash";
 const UNGROUPED_SEARCH_VALUE = "ungrouped";
 const THREAD_PAGE_SIZE = 50;
 const MAX_THREADS_PER_ASSIGNMENT = 50;
@@ -126,6 +218,18 @@ function threadLabel(thread: LabThread) {
   return title || "New thread";
 }
 
+function labDriverLabel(driver: LabDriver) {
+  return driver === "manual" ? "Manual" : scoutModelLabel(driver);
+}
+
+function selectLabBrowserSession(
+  sessions: readonly LabBrowserSession[] | undefined,
+  requestedSessionId: string | undefined,
+) {
+  if (!sessions || sessions.length === 0) return undefined;
+  return sessions.find((session) => session.sessionId === requestedSessionId) ?? sessions.at(-1);
+}
+
 function AgentLab() {
   const search = Route.useSearch();
   const navigate = useNavigate();
@@ -142,7 +246,12 @@ function AgentLab() {
   const sendMessage = useMutation(api.scout.lab.sendMessage).withOptimisticUpdate(
     optimisticallySendMessage(api.scout.lab.listMessages),
   );
-  const [selectedModel, setSelectedModel] = useState<SelectableScoutModel>(DEFAULT_MODEL);
+  const executeManualTool = useAction(api.scout.labManual.executeTool);
+  const [selectedDriver, setSelectedDriver] = useState<LabDriver>(DEFAULT_DRIVER);
+  const [selectedManualTool, setSelectedManualTool] = useState<ManualToolName>(
+    MANUAL_TOOL_OPTIONS[0].value,
+  );
+  const [manualInput, setManualInput] = useState<string>(MANUAL_TOOL_OPTIONS[0].input);
   const [draft, setDraft] = useState("");
   const [composerState, setComposerState] = useState<ComposerState>({ kind: "idle" });
   const [pendingThread, setPendingThread] = useState<PendingThread | null>(null);
@@ -198,6 +307,7 @@ function AgentLab() {
     ? availableScouts.find((scout) => scout._id === selectedScoutId)
     : undefined;
   const selectedActiveScout = selectedScout?.status === "active" ? selectedScout : undefined;
+  const manualTool = MANUAL_TOOL_OPTIONS.find((tool) => tool.value === selectedManualTool)!;
   const scoutActivity = useQuery(
     api.scout.lab.getScoutActivity,
     selectedScoutId ? { scoutId: selectedScoutId } : "skip",
@@ -206,6 +316,20 @@ function AgentLab() {
     initialNumItems: 50,
     stream: true,
   });
+  const browserSessions = useQuery(
+    api.scout.labBrowserSessions.list,
+    threadId ? { threadId } : "skip",
+  );
+  const selectedBrowserSession = selectLabBrowserSession(browserSessions, search.session);
+  const browserSession = useQuery(
+    api.scout.labBrowserSessions.get,
+    selectedBrowserSession ? { sessionId: selectedBrowserSession.sessionId } : "skip",
+  );
+  const liveView = useQuery(
+    api.scout.labBrowserSessions.liveView,
+    selectedBrowserSession ? { sessionId: selectedBrowserSession.sessionId } : "skip",
+  );
+  const view = search.view ?? "transcript";
   const isBusy = composerState.kind === "creating" || composerState.kind === "sending";
   const isActivityLoading = selectedScoutId !== undefined && scoutActivity === undefined;
   const isWorking = isBusy || isActivityLoading || scoutActivity?.active === true;
@@ -249,7 +373,11 @@ function AgentLab() {
       void navigate({
         to: "/lab",
         replace: true,
-        search: { experiment, ...(firstThread ? { thread: firstThread } : {}) },
+        search: {
+          experiment,
+          ...(firstThread ? { thread: firstThread } : {}),
+          ...(search.view ? { view: search.view } : {}),
+        },
       });
       return;
     }
@@ -262,7 +390,11 @@ function AgentLab() {
       void navigate({
         to: "/lab",
         replace: true,
-        search: { experiment: search.experiment, thread: visibleThreads[0].threadId },
+        search: {
+          experiment: search.experiment,
+          thread: visibleThreads[0].threadId,
+          ...(search.view ? { view: search.view } : {}),
+        },
       });
     }
   }, [
@@ -272,6 +404,7 @@ function AgentLab() {
     requestedExperiment,
     search.experiment,
     search.thread,
+    search.view,
     showingUngrouped,
     threads.status,
     visibleThreads,
@@ -330,7 +463,10 @@ function AgentLab() {
     );
     void navigate({
       to: "/lab",
-      search: { experiment: experimentId },
+      search: {
+        experiment: experimentId,
+        ...(search.view ? { view: search.view } : {}),
+      },
     });
     setMobilePane("main");
   };
@@ -350,7 +486,11 @@ function AgentLab() {
       });
       await navigate({
         to: "/lab",
-        search: { experiment: selectedExperiment._id, thread: created.threadId },
+        search: {
+          experiment: selectedExperiment._id,
+          thread: created.threadId,
+          ...(search.view ? { view: search.view } : {}),
+        },
       });
       setMobilePane("main");
       setComposerState({ kind: "idle" });
@@ -363,39 +503,56 @@ function AgentLab() {
     }
   };
 
-  const submitPrompt = async (event?: FormEvent<HTMLFormElement>) => {
-    event?.preventDefault();
+  const ensureSubmissionThread = async () => {
+    let activeThreadId = threadId;
+    let submissionSelectionKey = selectionKey;
+    if (!activeThreadId) {
+      if (!selectedExperiment || selectedExperiment.status !== "active") {
+        return null;
+      }
+      const created = await createThread({ experimentId: selectedExperiment._id });
+      activeThreadId = created.threadId;
+      setPendingThread({
+        threadId: created.threadId,
+        experimentId: selectedExperiment._id,
+      });
+      submissionSelectionKey = `${selectedExperiment._id}:${created.threadId}`;
+      currentSelectionKey.current = submissionSelectionKey;
+      void navigate({
+        to: "/lab",
+        search: {
+          experiment: selectedExperiment._id,
+          thread: created.threadId,
+          ...(search.view ? { view: search.view } : {}),
+        },
+      });
+    }
+    return { threadId: activeThreadId, selectionKey: submissionSelectionKey };
+  };
+
+  const submitPrompt = async () => {
     const prompt = draft.trim();
-    if (!prompt || isWorking || !selectedActiveScout || !canCompose) {
+    if (
+      selectedDriver === "manual" ||
+      !prompt ||
+      isWorking ||
+      !selectedActiveScout ||
+      !canCompose
+    ) {
       return;
     }
 
     setComposerState({ kind: "sending" });
-    let activeThreadId = threadId;
     let submissionSelectionKey = selectionKey;
     try {
-      if (!activeThreadId) {
-        if (!selectedExperiment || selectedExperiment.status !== "active") {
-          return;
-        }
-        const created = await createThread({ experimentId: selectedExperiment._id });
-        activeThreadId = created.threadId;
-        setPendingThread({
-          threadId: created.threadId,
-          experimentId: selectedExperiment._id,
-        });
-        submissionSelectionKey = `${selectedExperiment._id}:${created.threadId}`;
-        currentSelectionKey.current = submissionSelectionKey;
-        void navigate({
-          to: "/lab",
-          search: { experiment: selectedExperiment._id, thread: created.threadId },
-        });
-      }
+      const submission = await ensureSubmissionThread();
+      if (!submission) return;
+      submissionSelectionKey = submission.selectionKey;
       setDraft("");
       await sendMessage({
-        threadId: activeThreadId,
+        threadId: submission.threadId,
         prompt,
-        model: selectedModel,
+        model: selectedDriver,
       });
       setComposerState({ kind: "idle" });
     } catch {
@@ -408,6 +565,45 @@ function AgentLab() {
     }
   };
 
+  const submitManualTool = async () => {
+    if (selectedDriver !== "manual" || isWorking || !selectedActiveScout || !canCompose) {
+      return;
+    }
+
+    let input: unknown;
+    try {
+      input = JSON.parse(manualInput);
+    } catch {
+      setComposerState({ kind: "failed", message: "Tool input must be valid JSON." });
+      return;
+    }
+
+    setComposerState({ kind: "sending" });
+    let submissionSelectionKey = selectionKey;
+    try {
+      const submission = await ensureSubmissionThread();
+      if (!submission) return;
+      submissionSelectionKey = submission.selectionKey;
+      await executeManualTool({
+        threadId: submission.threadId,
+        toolName: selectedManualTool,
+        input,
+      });
+      setComposerState({ kind: "idle" });
+    } catch {
+      setComposerState(
+        currentSelectionKey.current === submissionSelectionKey
+          ? { kind: "failed", message: "The manual tool call could not be submitted." }
+          : { kind: "idle" },
+      );
+    }
+  };
+
+  const submitComposer = (event?: FormEvent<HTMLFormElement>) => {
+    event?.preventDefault();
+    void (selectedDriver === "manual" ? submitManualTool() : submitPrompt());
+  };
+
   const onComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
@@ -415,10 +611,20 @@ function AgentLab() {
     }
   };
 
-  const onModelChange = (value: string) => {
-    const option = MODEL_OPTIONS.find((candidate) => candidate.value === value);
+  const onDriverChange = (value: string) => {
+    const option = DRIVER_OPTIONS.find((candidate) => candidate.value === value);
     if (option) {
-      setSelectedModel(option.value);
+      setSelectedDriver(option.value);
+      setComposerState({ kind: "idle" });
+    }
+  };
+
+  const onManualToolChange = (value: string) => {
+    const option = MANUAL_TOOL_OPTIONS.find((candidate) => candidate.value === value);
+    if (option) {
+      setSelectedManualTool(option.value);
+      setManualInput(option.input);
+      setComposerState({ kind: "idle" });
     }
   };
 
@@ -459,7 +665,7 @@ function AgentLab() {
             createButtonRef={createExperimentButton}
             createOpen={createExperimentOpen}
             createSubmitting={createExperimentSubmitting}
-            model={selectedModel}
+            driver={selectedDriver}
             canCreateExperiment={availableScouts.length > 0}
             onToggleCreate={() => {
               if (createExperimentOpen) {
@@ -503,6 +709,7 @@ function AgentLab() {
                   selectedExperimentId={selectedExperiment?._id}
                   selectedThreadId={threadId}
                   showingUngrouped={showingUngrouped}
+                  view={search.view}
                   onLoadMore={() => threads.loadMore(THREAD_PAGE_SIZE)}
                   onNavigate={() => {
                     resetForNavigation();
@@ -516,6 +723,26 @@ function AgentLab() {
         }
         main={
           <PaneFrame
+            header={
+              <LabModeHeader
+                disabled={threadId === null || createExperimentOpen}
+                sessions={browserSessions}
+                selectedSessionId={selectedBrowserSession?.sessionId}
+                view={view}
+                onSelectSession={(sessionId) =>
+                  void navigate({
+                    to: "/lab",
+                    search: { ...search, session: sessionId },
+                  })
+                }
+                onViewChange={(nextView) =>
+                  void navigate({
+                    to: "/lab",
+                    search: { ...search, view: nextView },
+                  })
+                }
+              />
+            }
             content={
               createExperimentOpen ? (
                 <ExperimentForm
@@ -551,6 +778,17 @@ function AgentLab() {
                         setAssignmentOpen(false);
                         requestAnimationFrame(() => assignmentButton.current?.focus());
                       }}
+                    />
+                  ) : view === "live" ? (
+                    <LabLiveView
+                      liveViewUrl={liveView?.url ?? null}
+                      session={browserSession ?? undefined}
+                      sessionSummary={selectedBrowserSession}
+                    />
+                  ) : view === "replay" ? (
+                    <LabReplayView
+                      session={browserSession ?? undefined}
+                      sessionSummary={selectedBrowserSession}
                     />
                   ) : (
                     <>
@@ -599,7 +837,7 @@ function AgentLab() {
 
                       <form
                         className="border-t bg-[color-mix(in_oklch,var(--card)_92%,var(--background))] p-3 sm:p-4"
-                        onSubmit={(event) => void submitPrompt(event)}
+                        onSubmit={submitComposer}
                       >
                         {selectedScout && !selectedActiveScout ? (
                           <p className="text-muted-foreground mb-2 text-sm">
@@ -625,48 +863,98 @@ function AgentLab() {
                           </p>
                         ) : null}
                         <div className="rounded-[0.875rem] border border-input bg-card p-2 shadow-[0_4px_18px_color-mix(in_oklch,var(--foreground)_5%,transparent)] transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/25">
+                          {selectedDriver === "manual" ? (
+                            <p className="text-muted-foreground px-2 pt-1 text-xs">
+                              {manualTool.description}
+                            </p>
+                          ) : null}
                           <Textarea
-                            value={draft}
-                            onChange={(event) => setDraft(event.target.value)}
-                            onKeyDown={onComposerKeyDown}
-                            placeholder={
-                              canCompose && selectedActiveScout
-                                ? `Ask ${selectedActiveScout.displayName} to inspect, research, or explain...`
-                                : "Choose an active experiment or saved thread."
+                            value={selectedDriver === "manual" ? manualInput : draft}
+                            onChange={(event) =>
+                              selectedDriver === "manual"
+                                ? setManualInput(event.target.value)
+                                : setDraft(event.target.value)
                             }
-                            aria-label="Message Scout"
-                            rows={2}
+                            onKeyDown={selectedDriver === "manual" ? undefined : onComposerKeyDown}
+                            placeholder={
+                              selectedDriver === "manual"
+                                ? "JSON tool input"
+                                : canCompose && selectedActiveScout
+                                  ? `Ask ${selectedActiveScout.displayName} to inspect, research, or explain...`
+                                  : "Choose an active experiment or saved thread."
+                            }
+                            aria-label={
+                              selectedDriver === "manual" ? "Tool input" : "Message Scout"
+                            }
+                            rows={selectedDriver === "manual" ? 5 : 2}
                             disabled={isWorking || !canCompose}
-                            className="max-h-40 min-h-14 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0 dark:bg-transparent"
+                            className={`max-h-48 min-h-14 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0 dark:bg-transparent ${
+                              selectedDriver === "manual" ? "font-mono text-xs" : ""
+                            }`}
                           />
-                          <div className="flex items-center justify-between gap-3 px-1 pt-1">
-                            <div className="flex min-w-0 items-center gap-2">
-                              <label className="text-muted-foreground text-xs" htmlFor="lab-model">
-                                Model
+                          <div className="flex flex-wrap items-center justify-between gap-3 px-1 pt-1">
+                            <div className="flex min-w-0 flex-wrap items-center gap-2">
+                              <label className="text-muted-foreground text-xs" htmlFor="lab-driver">
+                                Driver
                               </label>
                               <select
-                                id="lab-model"
-                                value={selectedModel}
+                                id="lab-driver"
+                                value={selectedDriver}
                                 disabled={isWorking}
-                                onChange={(event) => onModelChange(event.currentTarget.value)}
+                                onChange={(event) => onDriverChange(event.currentTarget.value)}
                                 className="border-input bg-background h-8 min-w-0 rounded-md border px-2 text-xs"
                               >
-                                {MODEL_OPTIONS.map((option) => (
+                                {DRIVER_OPTIONS.map((option) => (
                                   <option key={option.value} value={option.value}>
                                     {option.label}
                                   </option>
                                 ))}
                               </select>
+                              {selectedDriver === "manual" ? (
+                                <>
+                                  <label
+                                    className="text-muted-foreground text-xs"
+                                    htmlFor="lab-manual-tool"
+                                  >
+                                    Tool
+                                  </label>
+                                  <select
+                                    id="lab-manual-tool"
+                                    value={selectedManualTool}
+                                    disabled={isWorking}
+                                    onChange={(event) =>
+                                      onManualToolChange(event.currentTarget.value)
+                                    }
+                                    className="border-input bg-background h-8 min-w-0 rounded-md border px-2 text-xs"
+                                  >
+                                    {MANUAL_TOOL_OPTIONS.map((option) => (
+                                      <option key={option.value} value={option.value}>
+                                        {option.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </>
+                              ) : null}
                             </div>
                             <div className="flex items-center gap-3">
                               <p className="text-muted-foreground hidden text-xs sm:block">
-                                Enter to send. Shift+Enter for a new line.
+                                {selectedDriver === "manual"
+                                  ? "Run one tool call."
+                                  : "Enter to send. Shift+Enter for a new line."}
                               </p>
                               <Button
                                 type="submit"
                                 size="icon-sm"
-                                disabled={isWorking || !canCompose || !draft.trim()}
-                                aria-label="Send message"
+                                disabled={
+                                  isWorking ||
+                                  !canCompose ||
+                                  (selectedDriver === "manual"
+                                    ? !manualInput.trim()
+                                    : !draft.trim())
+                                }
+                                aria-label={
+                                  selectedDriver === "manual" ? "Run tool" : "Send message"
+                                }
                               >
                                 {composerState.kind === "sending" ? (
                                   <LoaderCircleIcon className="animate-spin" />
@@ -705,18 +993,138 @@ function AgentLab() {
   );
 }
 
+function LabModeHeader({
+  disabled,
+  sessions,
+  selectedSessionId,
+  view,
+  onSelectSession,
+  onViewChange,
+}: {
+  disabled: boolean;
+  sessions: readonly LabBrowserSession[] | undefined;
+  selectedSessionId: LabBrowserSession["sessionId"] | undefined;
+  view: LabView;
+  onSelectSession: (sessionId: LabBrowserSession["sessionId"]) => void;
+  onViewChange: (view: LabView) => void;
+}) {
+  return (
+    <div className="flex h-full min-w-0">
+      <div className="task-modes min-w-0 flex-1" aria-label="Lab thread view">
+        {(["live", "replay", "transcript"] as const).map((item) => (
+          <button
+            key={item}
+            type="button"
+            data-selected={view === item ? "" : undefined}
+            disabled={disabled}
+            onClick={() => onViewChange(item)}
+          >
+            {item === "live" ? "Live" : item === "replay" ? "Replay" : "Transcript"}
+          </button>
+        ))}
+      </div>
+      {sessions && sessions.length > 1 ? (
+        <select
+          aria-label="Browser session"
+          value={selectedSessionId}
+          onChange={(event) =>
+            onSelectSession(event.currentTarget.value as LabBrowserSession["sessionId"])
+          }
+          className="border-l bg-background px-2 text-[0.6875rem] font-medium outline-none focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring/50"
+        >
+          {sessions.map((session) => (
+            <option key={session.sessionId} value={session.sessionId}>
+              Session {session.sequence}
+            </option>
+          ))}
+        </select>
+      ) : null}
+    </div>
+  );
+}
+
+function LabLiveView({
+  liveViewUrl,
+  session,
+  sessionSummary,
+}: {
+  liveViewUrl: string | null;
+  session: LabBrowserSessionDetail | undefined;
+  sessionSummary: LabBrowserSession | undefined;
+}) {
+  if (!sessionSummary) return <LabViewStatus>No browser session for this thread</LabViewStatus>;
+  if (!session) return <LabViewStatus>Loading browser session</LabViewStatus>;
+  if (session.lifecycle.kind === "closed") {
+    return <LabViewStatus>Session closed. Open Replay to watch it.</LabViewStatus>;
+  }
+  if (!liveViewUrl) return <LabViewStatus>Connecting to live browser</LabViewStatus>;
+  return (
+    <section className="task-browser" aria-label="Live browser">
+      <div className="task-browser-bar">
+        <span className="inline-flex min-w-0 items-center gap-1.5">
+          <LoaderCircleIcon className="size-3.5 animate-spin text-primary" aria-hidden="true" />
+          <span className="truncate text-xs font-medium">Live · Session {session.sequence}</span>
+        </span>
+        <Button asChild size="xs" variant="ghost">
+          <a href={liveViewUrl} target="_blank" rel="noreferrer">
+            Open
+            <ExternalLinkIcon data-icon="inline-end" />
+          </a>
+        </Button>
+      </div>
+      <div className="task-browser-narrow">
+        <a href={liveViewUrl} target="_blank" rel="noreferrer">
+          Open live browser
+        </a>
+      </div>
+      <iframe
+        src={liveViewUrl}
+        title={`Live browser session ${session.sequence}`}
+        referrerPolicy="no-referrer"
+        sandbox="allow-same-origin allow-scripts"
+        className="task-browser-frame"
+      />
+    </section>
+  );
+}
+
+function LabReplayView({
+  session,
+  sessionSummary,
+}: {
+  session: LabBrowserSessionDetail | undefined;
+  sessionSummary: LabBrowserSession | undefined;
+}) {
+  if (!sessionSummary) return <LabViewStatus>No browser session for this thread</LabViewStatus>;
+  if (!session) return <LabViewStatus>Loading browser session</LabViewStatus>;
+  if (session.lifecycle.kind === "active") {
+    return <LabViewStatus>Replay becomes available when this session closes</LabViewStatus>;
+  }
+  return (
+    <TaskReplay key={session.sessionId} source={{ kind: "lab", sessionId: session.sessionId }} />
+  );
+}
+
+function LabViewStatus({ children }: { children: ReactNode }) {
+  return (
+    <div className="grid min-h-full place-items-center px-6 py-12 text-center">
+      <p className="text-muted-foreground text-sm">{children}</p>
+    </div>
+  );
+}
+
 function LabChrome({
   createButtonRef,
   createOpen,
   createSubmitting,
-  model,
+  driver,
   canCreateExperiment,
   onToggleCreate,
 }: {
   createButtonRef: RefObject<HTMLButtonElement | null>;
   createOpen: boolean;
   createSubmitting: boolean;
-  model: SelectableScoutModel;
+  driver: LabDriver;
   canCreateExperiment: boolean;
   onToggleCreate: () => void;
 }) {
@@ -741,7 +1149,7 @@ function LabChrome({
       <div className="min-w-0 flex-1">
         <h1 className="truncate text-sm font-semibold">Lab</h1>
         <p className="text-muted-foreground hidden truncate text-xs sm:block">
-          Experiments and durable Scout threads · {scoutModelLabel(model)}
+          Experiments and durable Scout threads · {labDriverLabel(driver)}
         </p>
       </div>
       <Button
@@ -768,6 +1176,7 @@ function LabNavigation({
   selectedExperimentId,
   selectedThreadId,
   showingUngrouped,
+  view,
   onLoadMore,
   onNavigate,
 }: {
@@ -778,6 +1187,7 @@ function LabNavigation({
   selectedExperimentId: ExperimentId | undefined;
   selectedThreadId: string | null;
   showingUngrouped: boolean;
+  view: LabView | undefined;
   onLoadMore: () => void;
   onNavigate: () => void;
 }) {
@@ -807,7 +1217,10 @@ function LabNavigation({
             <li key={experiment._id} className={selected ? "bg-sidebar-accent/70" : undefined}>
               <Link
                 to="/lab"
-                search={{ experiment: experiment._id }}
+                search={{
+                  experiment: experiment._id,
+                  ...(view ? { view } : {}),
+                }}
                 aria-current={selected ? "location" : undefined}
                 onClick={onNavigate}
                 className="group block px-4 py-3 outline-none transition-colors hover:bg-sidebar-accent/55 focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-sidebar-ring/40"
@@ -830,6 +1243,7 @@ function LabNavigation({
                       experimentSearch={experiment._id}
                       thread={thread}
                       selected={thread.threadId === selectedThreadId}
+                      view={view}
                       onNavigate={onNavigate}
                     />
                   ))}
@@ -845,7 +1259,10 @@ function LabNavigation({
         <li className={showingUngrouped ? "bg-sidebar-accent/70" : undefined}>
           <Link
             to="/lab"
-            search={{ experiment: UNGROUPED_SEARCH_VALUE }}
+            search={{
+              experiment: UNGROUPED_SEARCH_VALUE,
+              ...(view ? { view } : {}),
+            }}
             aria-current={showingUngrouped ? "location" : undefined}
             onClick={onNavigate}
             className="group block px-4 py-3 outline-none transition-colors hover:bg-sidebar-accent/55 focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-sidebar-ring/40"
@@ -862,6 +1279,7 @@ function LabNavigation({
                   experimentSearch={UNGROUPED_SEARCH_VALUE}
                   thread={thread}
                   selected={showingUngrouped && thread.threadId === selectedThreadId}
+                  view={view}
                   onNavigate={onNavigate}
                 />
               ))}
@@ -896,18 +1314,24 @@ function ThreadNavigationLink({
   experimentSearch,
   thread,
   selected,
+  view,
   onNavigate,
 }: {
   experimentSearch: string;
   thread: LabThread;
   selected: boolean;
+  view: LabView | undefined;
   onNavigate: () => void;
 }) {
   return (
     <li>
       <Link
         to="/lab"
-        search={{ experiment: experimentSearch, thread: thread.threadId }}
+        search={{
+          experiment: experimentSearch,
+          thread: thread.threadId,
+          ...(view ? { view } : {}),
+        }}
         aria-current={selected ? "page" : undefined}
         onClick={onNavigate}
         className={`block border-l-2 px-4 py-2 outline-none transition-colors hover:bg-sidebar-accent/55 focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-sidebar-ring/40 ${

@@ -136,6 +136,16 @@ describe("Lab browser harness", () => {
     expect(JSON.stringify(deps.browserExecute.mock.calls)).toContain(
       "__SCOUT_PLAYWRIGHT_RESULT__tool-execute:",
     );
+    const executionRequest = deps.browserExecute.mock.calls[0] as unknown as [
+      string,
+      { code: string },
+    ];
+    expect(executionRequest[1].code).toContain(
+      'const selectedTab = {"index":0,"title":"Example","url":"https://example.com/"}',
+    );
+    expect(executionRequest[1].code).toContain(
+      'new AsyncFunction("page", "return (" + source + ");")',
+    );
     expect(onOperationPrepared).toHaveBeenCalledWith({
       toolCallId: "tool-execute",
       action: { kind: "execute", code },
@@ -156,11 +166,55 @@ describe("Lab browser harness", () => {
     expect(result).toMatchObject({
       success: true,
       output: expect.stringContaining("clicked"),
+      currentPage: expect.stringContaining('textbox "Email"'),
     });
-    expect(result.output).toContain('textbox "Email"');
   });
 
-  test("keeps the current page when Playwright output reaches the response limit", async () => {
+  test("reconnects to an existing Firecrawl session for a later execution", async () => {
+    const deps = dependencies();
+    const onSessionAvailable = vi.fn(async () => ({ captureOperations: true }));
+    const onOperationPrepared = vi.fn(async () => true);
+    const browser = createLabBrowserHarness(
+      {
+        onSessionAvailable,
+        onOperationPrepared,
+        onOperationSettled: async () => undefined,
+      },
+      deps,
+    );
+
+    await browser.attach({
+      providerSessionId: "session-existing",
+      cdpUrl: "wss://browser.firecrawl.dev/cdp?token=secret",
+    });
+    await browser.actions.executeCode("return await page.title()", "tool-reconnected");
+
+    expect(deps.browser).not.toHaveBeenCalled();
+    expect(deps.connect).toHaveBeenCalledExactlyOnceWith(
+      "wss://browser.firecrawl.dev/cdp?token=secret",
+    );
+    expect(onSessionAvailable).toHaveBeenCalledExactlyOnceWith("session-existing");
+    expect(onOperationPrepared).toHaveBeenCalledExactlyOnceWith({
+      toolCallId: "tool-reconnected",
+      action: { kind: "execute", code: "return await page.title()" },
+    });
+    expect(deps.browserExecute).toHaveBeenCalledWith(
+      "session-existing",
+      expect.objectContaining({ language: "node", timeout: 60 }),
+    );
+  });
+
+  test("exposes session lifecycle and ordinary Playwright execution", () => {
+    const browser = createLabBrowserHarness({}, dependencies());
+    expect(Object.keys(browser.tools)).toEqual([
+      "create_new_firecrawl_session",
+      "browser_execute",
+      "browser_close",
+    ]);
+    expect(browser.tools).not.toHaveProperty("browser_open");
+  });
+
+  test("keeps command output separate from the current page", async () => {
     const deps = dependencies();
     deps.browserExecute.mockResolvedValueOnce({
       success: true,
@@ -173,8 +227,7 @@ describe("Lab browser harness", () => {
 
     const result = await browser.actions.executeCode("console.log('noisy')");
 
-    expect(result.output.startsWith("Current page:\n")).toBe(true);
-    expect(result.output).toContain('textbox "Email"');
+    expect(result.currentPage).toContain('textbox "Email"');
     expect(result.output).toHaveLength(20_000);
   });
 

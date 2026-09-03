@@ -219,6 +219,7 @@ function ToolActivity({ tool }: { tool: ToolSnapshot }) {
   const isError =
     tool.state.includes("error") || tool.error !== undefined || outputFailure !== undefined;
   const isComplete = tool.state === "output-available";
+  const inputPreview = toolInputPreview(tool.name, tool.input);
 
   return (
     <Collapsible
@@ -228,32 +229,41 @@ function ToolActivity({ tool }: { tool: ToolSnapshot }) {
           : "rounded-[0.75rem] border bg-muted/35 px-3 py-2.5"
       }
     >
-      <CollapsibleTrigger className="group/tool flex w-full items-center gap-2 text-left">
-        <Marker className={isError ? "text-destructive" : "text-foreground"}>
-          <MarkerIcon>
+      <CollapsibleTrigger className="group/tool flex w-full items-start gap-2 text-left">
+        <Marker className={`items-start${isError ? " text-destructive" : " text-foreground"}`}>
+          <MarkerIcon className="mt-0.5">
             {isError ? <CircleAlertIcon /> : isComplete ? <CheckCircle2Icon /> : <WrenchIcon />}
           </MarkerIcon>
-          <MarkerContent className="flex flex-1 items-baseline justify-between gap-3">
-            <span className="flex min-w-0 items-baseline gap-2">
-              <span className="font-mono text-xs">{tool.name}</span>
-              {tool.repairedInputFields.length > 0 ? (
-                <span className="shrink-0 text-[0.6875rem] font-medium text-amber-700 dark:text-amber-400">
-                  JSON parsed
-                </span>
-              ) : null}
+          <MarkerContent className="min-w-0 flex-1">
+            <span className="flex items-baseline justify-between gap-3">
+              <span className="flex min-w-0 items-baseline gap-2">
+                <span className="font-mono text-xs">{tool.name}</span>
+                {tool.repairedInputFields.length > 0 ? (
+                  <span className="shrink-0 text-[0.6875rem] font-medium text-amber-700 dark:text-amber-400">
+                    JSON parsed
+                  </span>
+                ) : null}
+              </span>
+              <span
+                className={
+                  isError
+                    ? "text-destructive shrink-0 text-[0.6875rem]"
+                    : "text-muted-foreground shrink-0 text-[0.6875rem]"
+                }
+              >
+                {isError ? "error" : tool.state.replaceAll("-", " ")}
+              </span>
             </span>
-            <span
-              className={
-                isError
-                  ? "text-destructive text-[0.6875rem]"
-                  : "text-muted-foreground text-[0.6875rem]"
-              }
-            >
-              {isError ? "error" : tool.state.replaceAll("-", " ")}
-            </span>
+            {inputPreview ? (
+              <span
+                className={`mt-1 line-clamp-3 whitespace-pre-wrap break-words font-mono text-[0.6875rem] leading-4${isError ? " text-destructive/90" : " text-muted-foreground"}`}
+              >
+                {inputPreview}
+              </span>
+            ) : null}
           </MarkerContent>
         </Marker>
-        <ChevronRightIcon className="text-muted-foreground size-3.5 shrink-0 transition-transform group-data-[state=open]/tool:rotate-90" />
+        <ChevronRightIcon className="text-muted-foreground mt-0.5 size-3.5 shrink-0 transition-transform group-data-[state=open]/tool:rotate-90" />
       </CollapsibleTrigger>
       <CollapsibleContent className="pt-3">
         <dl className="grid gap-3 border-t pt-3">
@@ -333,6 +343,16 @@ export function repairedToolInputFields(record: object | null) {
   return Array.isArray(fields)
     ? fields.filter((value): value is string => typeof value === "string")
     : [];
+}
+
+export function toolInputPreview(toolName: string, input: unknown) {
+  if (input === undefined) return undefined;
+  const inputRecord = asRecord(input);
+  const code = inputRecord ? field(inputRecord, "code") : undefined;
+  const preview =
+    toolName === "browser_execute" && typeof code === "string" ? code : formatValue(input);
+  const trimmed = preview.trim();
+  return trimmed === "" ? undefined : trimmed;
 }
 
 function toolSnapshot(record: object | null, type: string): ToolSnapshot | null {

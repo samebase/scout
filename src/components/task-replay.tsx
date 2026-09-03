@@ -9,7 +9,7 @@ import { activePageIdAt, buildReplayTimeline } from "#lib/taskReplayTimeline";
 
 type ReplayPagesResult = FunctionReturnType<typeof api.taskReplay.listPages>;
 type ReplayReady = Extract<ReplayPagesResult, { status: "ready" }>;
-type BrowserSessionId = FunctionArgs<typeof api.taskReplay.listPages>["sessionId"];
+export type BrowserReplaySource = FunctionArgs<typeof api.taskReplay.listPages>["source"];
 
 const REPLAY_PREPARATION_RETRIES = 10;
 const REPLAY_RETRY_DELAY_MS = 2_000;
@@ -19,8 +19,9 @@ type ReplayLoadState =
   | { kind: "ready"; replay: ReplayReady }
   | { kind: "unavailable" | "delayed" | "failed" };
 
-export function TaskReplay({ sessionId }: { sessionId: BrowserSessionId }) {
+export function TaskReplay({ source }: { source: BrowserReplaySource }) {
   const listPages = useAction(api.taskReplay.listPages);
+  const replaySource = useMemo(() => source, [source.kind, source.sessionId]);
   const [requestVersion, setRequestVersion] = useState(0);
   const [state, setState] = useState<ReplayLoadState>({ kind: "loading" });
   const refresh = useCallback(() => setRequestVersion((version) => version + 1), []);
@@ -33,7 +34,7 @@ export function TaskReplay({ sessionId }: { sessionId: BrowserSessionId }) {
 
     const load = async () => {
       try {
-        const replay = await listPages({ sessionId });
+        const replay = await listPages({ source: replaySource });
         if (cancelled) return;
         if (replay.status === "ready") {
           if (replay.pages.length === 0) {
@@ -64,7 +65,7 @@ export function TaskReplay({ sessionId }: { sessionId: BrowserSessionId }) {
       cancelled = true;
       if (retryTimer !== undefined) window.clearTimeout(retryTimer);
     };
-  }, [listPages, requestVersion, sessionId]);
+  }, [listPages, replaySource, requestVersion]);
 
   return (
     <section className="task-replay" aria-labelledby="task-replay-heading">
@@ -86,7 +87,7 @@ export function TaskReplay({ sessionId }: { sessionId: BrowserSessionId }) {
           <TaskReplayPlayer
             replay={state.replay}
             requestVersion={requestVersion}
-            sessionId={sessionId}
+            source={replaySource}
           />
         </>
       ) : (
@@ -135,11 +136,11 @@ type ReplayPlaylistsState =
 function TaskReplayPlayer({
   replay,
   requestVersion,
-  sessionId,
+  source,
 }: {
   replay: ReplayReady;
   requestVersion: number;
-  sessionId: BrowserSessionId;
+  source: BrowserReplaySource;
 }) {
   const loadPlaylist = useAction(api.taskReplay.loadPlaylist);
   const [playlistState, setPlaylistState] = useState<ReplayPlaylistsState>({ kind: "loading" });
@@ -162,7 +163,7 @@ function TaskReplayPlayer({
       timeline.pages.map(async (page) => {
         for (let attempt = 0; attempt < REPLAY_PREPARATION_RETRIES; attempt += 1) {
           try {
-            const result = await loadPlaylist({ sessionId, pageId: page.pageId });
+            const result = await loadPlaylist({ source, pageId: page.pageId });
             if (result.status === "ready") {
               return [page.pageId, result.playlist] as const;
             }
@@ -195,7 +196,7 @@ function TaskReplayPlayer({
     return () => {
       cancelled = true;
     };
-  }, [loadPlaylist, requestVersion, sessionId, timeline.pages]);
+  }, [loadPlaylist, requestVersion, source, timeline.pages]);
 
   useEffect(() => {
     currentTimeRef.current = 0;
@@ -203,7 +204,7 @@ function TaskReplayPlayer({
     setPlaying(false);
     setManualPageId(null);
     setFailedMediaPageIds([]);
-  }, [sessionId, requestVersion]);
+  }, [source, requestVersion]);
 
   const reportMediaFailure = useCallback((pageId: string) => {
     setFailedMediaPageIds((current) => (current.includes(pageId) ? current : [...current, pageId]));
@@ -252,7 +253,6 @@ function TaskReplayPlayer({
 
   const togglePlayback = () => {
     if (currentTimeRef.current >= timeline.durationMs) seek(0);
-    setManualPageId(null);
     setPlaying((current) => !current);
   };
 
@@ -307,8 +307,7 @@ function TaskReplayPlayer({
           </div>
         ) : activePageId === null ? (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-neutral-950/90 px-8 text-center text-sm text-neutral-300">
-            A tab change was recorded, but Firecrawl did not expose enough identity data to match it
-            to one video track.
+            The active browser tab could not be matched to a recorded video track.
           </div>
         ) : null}
       </div>
@@ -335,7 +334,6 @@ function TaskReplayPlayer({
               step={50}
               value={currentTimeMs}
               onChange={(event) => {
-                setManualPageId(null);
                 seek(Number(event.currentTarget.value));
               }}
               aria-label="Replay position"
@@ -362,6 +360,18 @@ function TaskReplayPlayer({
         </div>
 
         <div className="mt-2 flex min-w-0 items-center gap-1 overflow-x-auto pb-1">
+          <button
+            type="button"
+            onClick={() => setManualPageId(null)}
+            className={`shrink-0 rounded-md border px-2 py-1 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 ${
+              manualPageId === null
+                ? "border-foreground/30 bg-foreground text-background"
+                : "bg-background text-muted-foreground hover:text-foreground"
+            }`}
+            aria-pressed={manualPageId === null}
+          >
+            Follow activity
+          </button>
           {timeline.pages.map((page, index) => (
             <button
               key={page.pageId}
@@ -392,7 +402,7 @@ function TaskReplayPlayer({
               : "Unmatched tab"}
           </span>
           <span>
-            {timeline.events.length} {timeline.events.length === 1 ? "action" : "actions"},{" "}
+            {timeline.actionCount} {timeline.actionCount === 1 ? "action" : "actions"},{" "}
             {timeline.pages.length} recorded {timeline.pages.length === 1 ? "tab" : "tabs"}
           </span>
         </div>
@@ -404,7 +414,7 @@ function TaskReplayPlayer({
           {timeline.transitions.length > 0
             ? `${timeline.transitions.length} ${timeline.transitions.length === 1 ? "tab change is" : "tab changes are"} shown at the first confirming sample; each marker spans the interval in which the change occurred. `
             : "No tab change was observed. "}
-          Tracks match automatically only when one URL and its start time identify one recorded tab.
+          Tracks match automatically when a URL uniquely identifies one observed browser tab.
           {failedPageIds.size > 0
             ? ` ${failedPageIds.size} ${failedPageIds.size === 1 ? "recording could" : "recordings could"} not be loaded.`
             : ""}
@@ -431,6 +441,19 @@ function TaskReplayTrack({
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [failed, setFailed] = useState(false);
+
+  const synchronizeTime = useCallback(
+    (video: HTMLVideoElement) => {
+      if (
+        active &&
+        Number.isFinite(video.duration) &&
+        Math.abs(video.currentTime - localTimeSeconds) > 0.35
+      ) {
+        video.currentTime = Math.min(localTimeSeconds, Math.max(0, video.duration));
+      }
+    },
+    [active, localTimeSeconds],
+  );
 
   useEffect(() => {
     const video = videoRef.current;
@@ -489,15 +512,13 @@ function TaskReplayTrack({
       video.pause();
       return;
     }
-    if (Number.isFinite(video.duration) && Math.abs(video.currentTime - localTimeSeconds) > 0.35) {
-      video.currentTime = Math.min(localTimeSeconds, video.duration || localTimeSeconds);
-    }
+    synchronizeTime(video);
     if (playing && video.paused) {
       void video.play().catch(() => undefined);
     } else if (!playing && !video.paused) {
       video.pause();
     }
-  }, [active, localTimeSeconds, playing]);
+  }, [active, localTimeSeconds, playing, synchronizeTime]);
 
   return (
     <video
@@ -507,6 +528,7 @@ function TaskReplayTrack({
       preload="auto"
       aria-label="Recorded Scout browser session"
       aria-hidden={!active}
+      onLoadedMetadata={(event) => synchronizeTime(event.currentTarget)}
       onError={() => {
         setFailed(true);
         onFailure(pageId);

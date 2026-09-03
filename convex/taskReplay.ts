@@ -1,9 +1,8 @@
 import { type Infer, v } from "convex/values";
 import { internal } from "./_generated/api";
-import { action } from "./_generated/server";
+import { action, type ActionCtx } from "./_generated/server";
 import {
-  taskBrowserOperationValidator,
-  taskBrowserSessionLifecycleValidator,
+  taskBrowserOperationStateValidator,
   taskBrowserViewportValidator,
 } from "./taskBrowserModel";
 import {
@@ -24,11 +23,20 @@ const replayNotReadyValidator = v.union(
   v.object({ status: v.literal("unavailable") }),
 );
 
+const replaySourceValidator = v.union(
+  v.object({ kind: v.literal("task"), sessionId: v.id("taskBrowserSessions") }),
+  v.object({ kind: v.literal("lab"), sessionId: v.id("scoutLabBrowserSessions") }),
+);
+
+const replayOperationValidator = v.object({
+  sequence: v.number(),
+  state: taskBrowserOperationStateValidator,
+});
+
 type ReplayData = {
   providerSessionId: string;
   viewport: Infer<typeof taskBrowserViewportValidator>;
-  lifecycle: Infer<typeof taskBrowserSessionLifecycleValidator>;
-  operations: Array<Infer<typeof taskBrowserOperationValidator>>;
+  operations: Array<Infer<typeof replayOperationValidator>>;
 } | null;
 type ReplayPagesResult =
   | { status: "processing" | "unavailable" }
@@ -36,7 +44,6 @@ type ReplayPagesResult =
       status: "ready";
       pages: Awaited<ReturnType<typeof listBrowserReplayPages>>;
       viewport: { width: number; height: number };
-      lifecycle: NonNullable<ReplayData>["lifecycle"];
       operations: NonNullable<ReplayData>["operations"];
     };
 type ReplayPlaylistResult =
@@ -44,21 +51,18 @@ type ReplayPlaylistResult =
   | { status: "ready"; playlist: string };
 
 export const listPages = action({
-  args: {
-    sessionId: v.id("taskBrowserSessions"),
-  },
+  args: { source: replaySourceValidator },
   returns: v.union(
     replayNotReadyValidator,
     v.object({
       status: v.literal("ready"),
       pages: v.array(replayPageValidator),
       viewport: taskBrowserViewportValidator,
-      lifecycle: taskBrowserSessionLifecycleValidator,
-      operations: v.array(taskBrowserOperationValidator),
+      operations: v.array(replayOperationValidator),
     }),
   ),
   handler: async (ctx, args): Promise<ReplayPagesResult> => {
-    const replayData = await ctx.runQuery(internal.tasks.replayData, args);
+    const replayData = await loadReplayData(ctx, args.source);
     if (!replayData) return { status: "unavailable" };
 
     try {
@@ -68,7 +72,6 @@ export const listPages = action({
         status: "ready",
         pages,
         viewport: replayData.viewport,
-        lifecycle: replayData.lifecycle,
         operations: replayData.operations,
       };
     } catch (error) {
@@ -80,7 +83,7 @@ export const listPages = action({
 
 export const loadPlaylist = action({
   args: {
-    sessionId: v.id("taskBrowserSessions"),
+    source: replaySourceValidator,
     pageId: v.string(),
   },
   returns: v.union(
@@ -91,9 +94,7 @@ export const loadPlaylist = action({
     }),
   ),
   handler: async (ctx, args): Promise<ReplayPlaylistResult> => {
-    const replayData = await ctx.runQuery(internal.tasks.replayData, {
-      sessionId: args.sessionId,
-    });
+    const replayData = await loadReplayData(ctx, args.source);
     if (!replayData) return { status: "unavailable" };
 
     try {
@@ -107,3 +108,21 @@ export const loadPlaylist = action({
     }
   },
 });
+
+async function loadReplayData(
+  ctx: ActionCtx,
+  source: Infer<typeof replaySourceValidator>,
+): Promise<ReplayData> {
+  const replayData =
+    source.kind === "task"
+      ? await ctx.runQuery(internal.tasks.replayData, { sessionId: source.sessionId })
+      : await ctx.runQuery(internal.scout.labBrowserSessions.replayData, {
+          sessionId: source.sessionId,
+        });
+  if (!replayData) return null;
+  return {
+    providerSessionId: replayData.providerSessionId,
+    viewport: replayData.viewport,
+    operations: replayData.operations.map(({ sequence, state }) => ({ sequence, state })),
+  };
+}

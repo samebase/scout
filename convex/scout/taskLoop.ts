@@ -4,7 +4,7 @@ type ToolResult = {
 };
 
 type StepWithToolResults = {
-  readonly toolResults: readonly ToolResult[];
+  readonly toolResults: readonly (ToolResult | undefined)[];
   readonly content?: readonly {
     readonly type: string;
     readonly toolName?: string;
@@ -12,6 +12,10 @@ type StepWithToolResults = {
 };
 
 type ToolError = { readonly toolName: string };
+
+function isBrowserTool(toolName: string) {
+  return toolName === "create_new_firecrawl_session" || toolName.startsWith("browser_");
+}
 
 export type TaskLoopState = "working" | "resolving" | "final";
 
@@ -34,7 +38,7 @@ export function immediatelyPrecedingToolResult(
     const result = results[index];
     if (
       result &&
-      (result.toolName.startsWith("browser_") ||
+      (isBrowserTool(result.toolName) ||
         result.toolName === "request_human_help" ||
         result.toolName === "resolve_attempt")
     ) {
@@ -64,7 +68,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function resultText(value: unknown) {
   if (typeof value === "string") return value;
   if (!isRecord(value)) return "";
-  return [value["output"], value["error"]]
+  return [value["currentPage"], value["output"], value["error"]]
     .filter((field): field is string => typeof field === "string")
     .join("\n");
 }
@@ -109,12 +113,13 @@ export function decideTaskStep(args: {
         return { kind: "final", nextState: "final", humanHelpOutcome: "none" };
       }
       if (
-        args.previousToolResult?.toolName.startsWith("browser_") &&
+        args.previousToolResult &&
+        isBrowserTool(args.previousToolResult.toolName) &&
         detectsHumanGate(args.previousToolResult.output)
       ) {
         return { kind: "request_human_help", nextState: "final" };
       }
-      if (args.previousToolError?.toolName === "browser_open") {
+      if (args.previousToolError?.toolName === "create_new_firecrawl_session") {
         return { kind: "resolve_attempt", nextState: "resolving" };
       }
       return { kind: "none", nextState: "working" };

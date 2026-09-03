@@ -4,6 +4,7 @@ import { connectPlaywrightBrowser } from "./playwrightBrowser";
 
 function fakePage(url: string, snapshot: string, initiallyFocused = false) {
   const focus = { current: initiallyFocused };
+  const location = { current: url };
   const fill = vi.fn(async () => undefined);
   const filter = vi.fn();
   const first = vi.fn();
@@ -22,16 +23,17 @@ function fakePage(url: string, snapshot: string, initiallyFocused = false) {
   } as unknown as Locator;
   const getByRole = vi.fn(() => semanticLocator);
   const page = {
+    bringToFront: vi.fn(async () => undefined),
     evaluate: vi.fn(async () => focus.current),
     getByRole,
     goto: vi.fn(async () => null),
     isClosed: () => false,
     locator: vi.fn(() => bodyLocator),
     setViewportSize: vi.fn(async () => undefined),
-    title: vi.fn(async () => url),
-    url: () => url,
+    title: vi.fn(async () => (location.current === "about:blank" ? "" : location.current)),
+    url: () => location.current,
   } as unknown as Page;
-  return { ariaSnapshot, fill, filter, focus, getByRole, page };
+  return { ariaSnapshot, fill, filter, focus, getByRole, location, page };
 }
 
 afterEach(() => {
@@ -101,6 +103,32 @@ describe("trusted Playwright observer", () => {
     });
   });
 
+  test("keeps the same tab ID when a page navigates or reloads", async () => {
+    const cloudflare = fakePage("https://dash.cloudflare.com/", "dashboard", true);
+    const pages = [cloudflare.page];
+    const context = {
+      on: vi.fn(),
+      pages: () => pages,
+      setDefaultNavigationTimeout: vi.fn(),
+      setDefaultTimeout: vi.fn(),
+    } as unknown as BrowserContext;
+    vi.spyOn(chromium, "connectOverCDP").mockResolvedValue({
+      contexts: () => [context],
+    } as never);
+    const browser = await connectPlaywrightBrowser("wss://browser.firecrawl.dev/cdp");
+
+    const before = await browser.observe();
+    cloudflare.location.current = "https://github.com/login/oauth/authorize";
+    const after = await browser.observe();
+
+    expect(before.tabs).toEqual([
+      expect.objectContaining({ tabId: "t1", url: "https://dash.cloudflare.com/" }),
+    ]);
+    expect(after.tabs).toEqual([
+      expect.objectContaining({ tabId: "t1", url: "https://github.com/login/oauth/authorize" }),
+    ]);
+  });
+
   test("follows the focused page when existing tabs change places", async () => {
     const initial = fakePage("https://samebase.com/", "initial", true);
     const dashboard = fakePage("https://dashboard.convex.dev/", "dashboard");
@@ -127,5 +155,26 @@ describe("trusted Playwright observer", () => {
       ],
     });
     await expect(browser.snapshot()).resolves.toBe("dashboard");
+  });
+
+  test("reports about:blank explicitly instead of conflating it with an unavailable URL", async () => {
+    const blank = fakePage("about:blank", "blank", true);
+    const pages = [blank.page];
+    const context = {
+      on: vi.fn(),
+      pages: () => pages,
+      setDefaultNavigationTimeout: vi.fn(),
+      setDefaultTimeout: vi.fn(),
+    } as unknown as BrowserContext;
+    vi.spyOn(chromium, "connectOverCDP").mockResolvedValue({
+      contexts: () => [context],
+    } as never);
+
+    const browser = await connectPlaywrightBrowser("wss://browser.firecrawl.dev/cdp");
+
+    await expect(browser.observe()).resolves.toEqual({
+      capturedAtMs: expect.any(Number),
+      tabs: [{ active: true, tabId: "t1", title: "", url: "about:blank" }],
+    });
   });
 });
