@@ -19,9 +19,11 @@ describe("ensure-convex-auth", () => {
 
   it("sets both auth keys when direct Convex reads return empty values", async () => {
     const calls: string[][] = [];
+    const inputs: (string | undefined)[] = [];
 
-    await ensureConvexAuth({}, async (args) => {
+    await ensureConvexAuth({}, async (args, options) => {
       calls.push(args);
+      inputs.push(options?.input);
       return { code: 0, stdout: "", stderr: "" };
     });
 
@@ -29,11 +31,11 @@ describe("ensure-convex-auth", () => {
       ["env", "get", "JWT_PRIVATE_KEY"],
       ["env", "get", "JWKS"],
     ]);
-    expect(calls.slice(2).map((args) => args.slice(0, 4))).toEqual([
-      ["env", "set", "--", "JWT_PRIVATE_KEY"],
-      ["env", "set", "--", "JWKS"],
+    expect(calls.slice(2)).toEqual([
+      ["env", "set", "JWT_PRIVATE_KEY"],
+      ["env", "set", "JWKS"],
     ]);
-    expect(calls[2]?.[4]).toBeTruthy();
-    expect(calls[3]?.[4]).toBeTruthy();
+    expect(inputs[2]).toBeTruthy();
+    expect(inputs[3]).toBeTruthy();
   });
 });

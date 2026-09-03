@@ -37,7 +37,8 @@ pnpm run dev
 Convex may ask you to sign in and choose or create a development deployment.
 The dev script also creates Convex Auth JWT keys in that development deployment
 if they are missing. In a linked Git worktree, it automatically uses an isolated
-local backend.
+local backend and a stable frontend port. The sign-in screen offers `Autofill & sign in` for a
+verified account stored only in that worktree's local database.
 
 Open the local URL printed by Vite.
 
@@ -75,16 +76,11 @@ the managed account. Set the exact host where the password form appears. The pas
 only that Scout's credential for the current HTTPS host. OAuth accounts instead refer to the exact
 provider account belonging to the same Scout; neither login method requires a Product or Task.
 
-## Force worktree mode
+## Worktree development
 
-Use the normal `pnpm run dev` command in a linked Git worktree. Use the explicit
-worktree command to force an isolated local backend in another checkout.
-
-```sh
-pnpm run dev:worktree
-```
-
-The context launcher selects `run-primary-dev.ts` or `run-worktree-dev.ts`.
+Use the normal `pnpm run dev` command in a linked Git worktree. The explicit `dev:worktree` command
+rejects the primary checkout so its development deployment never
+receives the test account. The context launcher selects `run-primary-dev.ts` or `run-worktree-dev.ts`.
 Both modes use the same Windows-safe service launcher. The three launcher files
 carry one shared content hash in their first line, and `pnpm run check` verifies
 that hash.

@@ -37,6 +37,7 @@ describe("password authentication", () => {
   it("seeds one verified development account idempotently", async () => {
     const t = convexTest(schema, modules);
     vi.stubEnv("DEV_SEED_AUTH_ENABLED", "true");
+    vi.stubEnv("CONVEX_CLOUD_URL", "http://127.0.0.1:3210");
     vi.stubEnv("DEV_SEED_AUTH_EMAIL", "preview@example.com");
     vi.stubEnv("DEV_SEED_AUTH_PASSWORD", "preview-password-123");
 
@@ -97,6 +98,7 @@ describe("password authentication", () => {
   it("blocks seed account creation and recovery flows", async () => {
     const t = convexTest(schema, modules);
     vi.stubEnv("DEV_SEED_AUTH_ENABLED", "true");
+    vi.stubEnv("CONVEX_CLOUD_URL", "http://127.0.0.1:3210");
     vi.stubEnv("DEV_SEED_AUTH_EMAIL", "preview@example.com");
     vi.stubEnv("DEV_SEED_AUTH_PASSWORD", "preview-password-123");
 
@@ -130,6 +132,17 @@ describe("password authentication", () => {
 
     await expect(t.action(internal.devAuth.seedPasswordAccount, {})).rejects.toThrow(
       "Development password account seeding is disabled in production",
+    );
+  });
+
+  it("refuses to seed any remote deployment", async () => {
+    const t = convexTest(schema, modules);
+    vi.stubEnv("CONVEX_CLOUD_URL", "https://preview.convex.cloud");
+    vi.stubEnv("DEV_SEED_AUTH_ENABLED", "true");
+    vi.stubEnv("DEV_SEED_AUTH_EMAIL", "preview@example.com");
+    vi.stubEnv("DEV_SEED_AUTH_PASSWORD", "preview-password-123");
+    await expect(t.action(internal.devAuth.seedPasswordAccount, {})).rejects.toThrow(
+      "Development password account seeding requires a local backend",
     );
   });
 

@@ -2,8 +2,16 @@ import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite-plus";
+import { resolveWorktreeKind } from "./scripts/run-context-dev.ts";
+import { worktreeAuthDefine } from "./scripts/run-worktree-dev.ts";
 
-export default defineConfig({
+export default defineConfig(({ command, mode }) => ({
+  define: worktreeAuthDefine({
+    command,
+    mode,
+    linked: command === "serve" && resolveWorktreeKind() === "linked",
+    env: process.env,
+  }),
   ssr: {
     // The published sidebar package imports its structural CSS from its JS
     // entrypoint. Bundle it for SSR so Vite handles that import instead of
@@ -39,4 +47,4 @@ export default defineConfig({
   staged: {
     "*": "vp check --fix",
   },
-});
+}));

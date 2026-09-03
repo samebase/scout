@@ -19,13 +19,18 @@ type RunOptions = {
   env?: NodeJS.ProcessEnv;
   sensitive?: boolean;
   stdio?: "inherit" | "pipe";
+  input?: string;
 };
 
 type RunConvex = (args: string[], options?: RunOptions) => Promise<RunResult>;
 
 export function buildConvexCliCommand(args: string[], options: RunOptions = {}) {
-  const stdio: "inherit" | ["ignore", "pipe", "pipe"] =
-    options.stdio === "pipe" ? ["ignore", "pipe", "pipe"] : "inherit";
+  const stdio: "inherit" | ["ignore" | "pipe", "inherit" | "pipe", "inherit" | "pipe"] =
+    options.stdio === "pipe"
+      ? [options.input === undefined ? "ignore" : "pipe", "pipe", "pipe"]
+      : options.input === undefined
+        ? "inherit"
+        : ["pipe", "inherit", "inherit"];
 
   return {
     command: process.execPath,
@@ -37,12 +42,13 @@ export function buildConvexCliCommand(args: string[], options: RunOptions = {}) 
   };
 }
 
-function runConvexCli(args: string[], options: RunOptions = {}) {
+export function runConvexCli(args: string[], options: RunOptions = {}) {
   return new Promise<RunResult>((resolve, reject) => {
     const command = buildConvexCliCommand(args, options);
     const stdoutChunks: Buffer[] = [];
     const stderrChunks: Buffer[] = [];
     const child = spawn(command.command, command.args, command.spawnOptions);
+    if (options.input !== undefined) child.stdin?.end(options.input);
 
     if (options.stdio === "pipe") {
       child.stdout?.on("data", (chunk: Buffer) => stdoutChunks.push(chunk));
@@ -103,8 +109,9 @@ async function setConvexEnv(
   env: NodeJS.ProcessEnv,
   runConvex: RunConvex,
 ) {
-  await runConvex(["env", "set", "--", name, value], {
+  await runConvex(["env", "set", name], {
     env,
+    input: value,
     sensitive: true,
   });
 }

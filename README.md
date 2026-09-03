@@ -39,14 +39,9 @@ pnpm run dev
 
 The development command starts Convex and TanStack Start together. It also creates missing Convex
 Auth JWT keys in the development deployment. In a linked Git worktree, the same command
-automatically uses an isolated local backend. Convex writes `VITE_CONVEX_URL` to `.env.local`; do
-not set it manually.
-
-To force the isolated backend outside a linked worktree, use:
-
-```sh
-pnpm run dev:worktree
-```
+automatically uses an isolated local backend, seeds a verified test account, and shows an
+`Autofill & sign in` button. It also assigns a stable frontend port for that worktree. Convex writes
+`VITE_CONVEX_URL` to `.env.local`; do not set it manually.
 
 The core workflow runs on macOS, Linux, and Windows. See
 [`docs/local-setup.md`](./docs/local-setup.md) for the local Convex setup and troubleshooting steps.
