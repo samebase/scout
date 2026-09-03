@@ -246,7 +246,7 @@ function HandoffState({
       <p>{message}</p>
       {page.destination ? (
         <Button asChild className="mt-4" size="sm">
-          <Link to="/chats" search={{ thread: page.destination.threadId, view: "transcript" }}>
+          <Link to="/chats" search={{ thread: page.destination.threadId }}>
             Return to chat
           </Link>
         </Button>

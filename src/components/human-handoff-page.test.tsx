@@ -23,13 +23,9 @@ vi.mock("convex/react", () => ({
 }));
 
 vi.mock("@tanstack/react-router", () => ({
-  Link: ({
-    children,
-    search,
-  }: {
-    children: ReactNode;
-    search: { thread: string; view: "transcript" };
-  }) => <a href={`/chats?thread=${search.thread}&view=${search.view}`}>{children}</a>,
+  Link: ({ children, search }: { children: ReactNode; search: { thread: string } }) => (
+    <a href={`/chats?thread=${search.thread}`}>{children}</a>
+  ),
 }));
 
 vi.mock("#components/auth-panel", () => ({
@@ -152,7 +148,7 @@ describe("HumanHandoffPage", () => {
 
     expect(testState.load).toHaveBeenCalledWith({ handoffId: "handoff-1" });
     expect(screen.getByRole("link", { name: "Return to chat" }).getAttribute("href")).toBe(
-      "/chats?thread=thread-1&view=transcript",
+      "/chats?thread=thread-1",
     );
   });
 
