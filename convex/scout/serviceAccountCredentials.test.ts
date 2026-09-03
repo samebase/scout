@@ -1,6 +1,7 @@
-import { anyApi } from "convex/server";
 import { convexTest } from "convex-test";
 import { describe, expect, test } from "vitest";
+import { api, internal } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
 import { ADMIN_EMAIL } from "../authConfig";
 import schema from "../schema";
 
@@ -12,8 +13,8 @@ const modules = {
     ).map(([path, module]) => [`../scout/${path.slice(2)}`, module]),
   ),
 };
-const credentialsApi = anyApi["scout"]["serviceAccountCredentials"];
-const serviceAccountsApi = anyApi["scout"]["serviceAccounts"];
+const credentialsApi = internal.scout.serviceAccountCredentials;
+const serviceAccountsApi = api.scout.serviceAccounts;
 
 function testBackend() {
   return convexTest(schema, modules);
@@ -42,7 +43,7 @@ async function authenticatedBackend() {
   };
 }
 
-function registration(scoutId: string) {
+function registration(scoutId: Id<"scouts">) {
   return {
     scoutId,
     serviceName: "Example",
@@ -84,7 +85,7 @@ describe("Scout managed-credential persistence", () => {
     ).resolves.toEqual([]);
   });
 
-  test("keeps product grouping separate from the exact credential host and projects no envelope", async () => {
+  test("registers a service without a catalog and projects no encrypted envelope", async () => {
     const { admin, scoutId } = await authenticatedBackend();
     const args = registration(scoutId);
 
@@ -108,8 +109,7 @@ describe("Scout managed-credential persistence", () => {
         serviceDomain: "example.com",
         identifier: "conrad@example.test",
         authenticationEvidence: { kind: "none" },
-        firstRecordedByTask: null,
-        lastVerifiedByTask: null,
+        lastObserved: null,
         loginMethod: result.loginMethod,
       },
     ]);
@@ -164,14 +164,8 @@ describe("Scout managed-credential persistence", () => {
       encryptedCredential: encryptedCredential(),
     });
     await backend.run(async (ctx) => {
-      const productId = await ctx.db.insert("products", {
-        name: "OAuth service",
-        domain: "oauth-service.example",
-        primaryUrl: "https://oauth-service.example",
-      });
       await ctx.db.insert("scoutServiceAccounts", {
         scoutId,
-        productId,
         serviceName: "OAuth service",
         serviceDomain: "oauth-service.example",
         identifier: "conrad@example.test",
@@ -185,6 +179,52 @@ describe("Scout managed-credential persistence", () => {
     });
     expect(credentials).toHaveLength(1);
     expect(credentials[0]).toMatchObject({ serviceAccountId: provider.serviceAccountId });
+  });
+
+  test("registering another service preserves existing ciphertext, keys, account IDs, and OAuth links", async () => {
+    const { admin, backend, scoutId } = await authenticatedBackend();
+    const provider = await admin.mutation(credentialsApi.commitManagedRegistration, {
+      ...registration(scoutId),
+      encryptedCredential: encryptedCredential(),
+    });
+    const linkedAccountId = await backend.run(
+      async (ctx) =>
+        await ctx.db.insert("scoutServiceAccounts", {
+          scoutId,
+          serviceName: "Connected service",
+          serviceDomain: "connected.example",
+          identifier: "conrad@example.test",
+          authenticationEvidence: { kind: "none" },
+          loginMethod: { kind: "oauth", providerAccountId: provider.serviceAccountId },
+        }),
+    );
+    const preservedState = async () =>
+      await backend.run(async (ctx) => ({
+        scout: await ctx.db.get("scouts", scoutId),
+        provider: await ctx.db.get("scoutServiceAccounts", provider.serviceAccountId),
+        linked: await ctx.db.get("scoutServiceAccounts", linkedAccountId),
+        credential: await ctx.db
+          .query("scoutManagedCredentials")
+          .withIndex("by_service_account_id", (query) =>
+            query.eq("serviceAccountId", provider.serviceAccountId),
+          )
+          .unique(),
+        key: await ctx.db
+          .query("scoutCredentialKeys")
+          .withIndex("by_key_version", (query) => query.eq("keyVersion", 1))
+          .unique(),
+      }));
+    const before = await preservedState();
+
+    await admin.mutation(credentialsApi.commitManagedRegistration, {
+      ...registration(scoutId),
+      serviceName: "Another service",
+      serviceDomain: "another.example",
+      credentialHost: "accounts.another.example",
+      encryptedCredential: encryptedCredential(),
+    });
+
+    expect(await preservedState()).toEqual(before);
   });
 
   test("fails closed when the version-one key changes", async () => {

@@ -70,10 +70,10 @@ independent copy of this key. Do not replace the `_V1` value after creating cred
 fingerprint checks intentionally stop reads and writes rather than mixing two keys under one
 version.
 
-Before starting a claim test that creates or recovers an account, open the selected Scout and add a
-managed account for the Product domain. Set the exact host where its password form appears. The run
-control enables account creation only when that Scout has a matching prepared account, and the
-backend binds its exact ID to the run.
+Before asking a Scout to create or recover a password-based account, open its profile and register
+the managed account. Set the exact host where the password form appears. The password tool selects
+only that Scout's credential for the current HTTPS host. OAuth accounts instead refer to the exact
+provider account belonging to the same Scout; neither login method requires a Product or Task.
 
 ## Force worktree mode
 

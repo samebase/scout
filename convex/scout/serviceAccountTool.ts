@@ -6,11 +6,11 @@ const serviceAccountEvidenceInputSchema = z
     accountAccess: z.enum(["created", "recovered"]),
     loginMethod: z
       .enum(["managed_password", "oauth"])
-      .describe("How this service account was authenticated during the current task"),
+      .describe("How this service account was authenticated in the current browser session"),
     oauthProviderServiceDomain: z
       .string()
       .optional()
-      .describe("For OAuth only, the product domain of the provider account, such as github.com"),
+      .describe("For OAuth only, the service domain of the provider account, such as github.com"),
     oauthProviderIdentifier: z
       .string()
       .optional()
@@ -18,7 +18,7 @@ const serviceAccountEvidenceInputSchema = z
     identityText: z
       .string()
       .min(1)
-      .describe("Exact visible Scout username or email on the authenticated product page"),
+      .describe("Exact visible Scout username or email on the authenticated service page"),
     sessionControlText: z
       .string()
       .min(1)
@@ -68,7 +68,7 @@ export function createServiceAccountRecordingTool(
 ) {
   return tool({
     description:
-      "Record an authenticated account in this Scout's service-account inventory before closing the browser. First open an account menu that simultaneously shows one of the Scout's exact known usernames or email addresses and a Sign out or Log out control; a team or workspace name is not an account identity. State whether this attempt created the account or recovered an existing login and whether it used the managed password or OAuth through another exact Scout account. For OAuth, include that provider account's exact domain and identifier. Trusted code re-reads the current URL and both visible text values. It updates an exact existing match, or creates the missing inventory record when the observed service is this Task's product.",
+      "Record an authenticated account in this Scout's service-account inventory before closing the browser. First open an account menu that simultaneously shows one of the Scout's exact known usernames or email addresses and a Sign out or Log out control; a team or workspace name is not an account identity. State whether the account was created or an existing login was recovered, and whether it used the managed password or OAuth through another exact Scout account. For OAuth, include that provider account's exact service domain and identifier. Trusted code re-reads the current URL and both visible text values. It updates an exact existing match or records a new OAuth account where the visible identity belongs to this Scout. Managed-password accounts must already be registered.",
     inputSchema: serviceAccountEvidenceInputSchema,
     execute: async (input) =>
       await record(serviceAccountEvidence(serviceAccountEvidenceInputSchema.parse(input))),

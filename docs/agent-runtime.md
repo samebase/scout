@@ -1,183 +1,65 @@
-# Scout agent runtime
+# Scout chats
 
-Scout is an experimental, private product-research and testing workspace. It does not define a
-public publishing model or a durable mission and execution workflow yet.
+A Scout is a persistent identity with its own inbox, browser profile, and service accounts.
+A chat is a conversation with one Scout. The user's messages define the work; there is no required
+Product, Task, Attempt, claim, or experiment.
 
-## Actors and ownership
+## Identity and accounts
 
-A Scout is a persistent hosted identity configured by an admin. It is not a model, prompt, Lab
-thread, or browser session. A Scout owns:
+Scouts outlive chats and browser sessions. Switching between Qwen, Luna, and Manual does not change
+the Scout or its accounts. A chat may use several services, such as Samebase, Cloudflare, and GitHub.
 
-- A first and last name for website forms.
-- An AgentMail inbox and address.
-- A persistent Firecrawl browser profile.
-- Third-party service accounts such as Tally or GitHub.
-- An active or inactive status.
+Every service account has an explicit login method: a managed password on an exact host, or OAuth
+through another account belonging to the same Scout. OAuth consent for the Scout's own accounts is
+ordinary agent work. Human handoff is for something the agent cannot complete, such as a CAPTCHA.
 
-The worker model is replaceable. Qwen can act as Conrad in one generation and a stronger recovery
-model can act as Conrad in the next. Both use Conrad's identity and resources. Neither model owns
-them, and changing the model does not create a new Scout.
+Managed passwords live in an encrypted table. The master key is a deployment secret, not database
+data. The model sees account metadata, not passwords or encrypted envelopes. `fill_account_password`
+checks the current HTTPS host and password input types before filling the configured credential.
+`record_authenticated_service_account` re-reads visible account identity and sign-out controls;
+its latest observation links to the chat and browser session. See
+[managed credentials](./scout-credential-store-decision.md).
 
-Selecting a Scout for a run gives the worker permission to use that Scout's inbox, browser profile,
-and existing accounts for the requested work. When a run requires account creation, the worker may
-choose a username, use the exact managed account selected before the run, read verification mail,
-and create or recover one free reversible account without requesting another approval. The worker
-never receives or generates the password. Payment, public posting, destructive changes, and other
-actions outside the run remain forbidden. A CAPTCHA or another human-only gate uses the explicit
-human handoff.
+## Chat execution
 
-This separation lets a human or a stronger manager choose the claim, worker model, and recovery
-instructions while a cheaper worker performs the browser actions. It also gives a future public
-Scout history a stable identity even when the worker model changes. Public publishing is not part
-of the current app.
+The Convex Agent component stores messages, tool calls, results, and streams. `scoutChats` binds an
+Agent thread to its owner and Scout. `scoutTurns` records each model generation's state, usage, and
+failure; it is execution metadata, not a user-facing task hierarchy.
 
-The claim-test hierarchy is:
+A message starts a generation using the selected model and the Scout's resources. The current
+runtime allows up to 30 model steps per generation. A follow-up continues the same conversation.
+It does not need a new attempt or a successful verdict from the previous generation.
 
-```text
-Product
-  Claim
-    Run
-      Worker generations
-      Browser sessions
-```
+Manual calls run the same browser, account, mail, and research tools without invoking a model.
+Their inputs and outputs appear in the same transcript. Manual browser sessions stay open between
+calls until closed or expired; a model generation can attach to that chat's open session. Automatic
+generations close their browser on completion, except when waiting for human help. A Scout's
+persistent browser profile is shared, so only one chat may hold its open browser at a time.
 
-A Run is one attempt to test one Claim. A Claim can have many Runs. Continuing a Run adds another
-worker generation on the same technical thread. Each generation may open one temporary Firecrawl
-browser session. The app persists the session metadata, operations, replay data, and result needed
-to inspect the attempt; Firecrawl still owns the remote browser session itself.
+`web_search` and `web_read` use Firecrawl's SDK for public research. Browser work uses
+`create_new_firecrawl_session`, `browser_execute`, and `browser_close`. The execution tool accepts
+JavaScript with Playwright, including normal tab operations. Its description includes the exact
+`browserState()` helper implementation. Old page observations are compacted in model context;
+the stored transcript retains the full tool results.
 
-## Known follow-ups
+## Inspection and handoff
 
-- Completing a CAPTCHA in the Firecrawl takeover window does not resume the worker by itself. The
-  operator must return to Scout and press Continue. Make that second step unmistakable, or detect a
-  completed takeover safely, before treating the handoff as finished. Do not add routine email
-  notifications for work the Scout can complete without help.
+Chats provide Transcript, Live, and Replay. The URL carries the selected chat, view, and session.
+Tool errors and generation errors remain visibly distinct from successful output. Model turns
+show token usage and estimated cost; session records show Firecrawl duration and credits when
+the provider supplies them. Manual calls have no model-token cost.
 
-## Data model
-
-Provider bindings are runtime resources owned by the Scout. They are separate from third-party
-service accounts, but all of them outlive an individual run, generation, or browser session.
-
-A Product is the canonical record for an external service known to Scout. A Product enters the
-registry when an admin adds it, a Scout service account is registered, or a Lab experiment targets
-its domain. Arbitrary mentions in model conversations do not create Products. Domains are
-canonicalized so the same service can be shared by its account inventory, experiments, and
-research.
-
-A Product investigation is a bounded, read-only collection of first-party marketing claims. It
-records source pages, qualifications, tensions, likely audiences, access requirements,
-dependencies, unknowns, and suggested mystery shops. These findings are explicitly unverified:
-only a later observed journey can establish whether a claim holds. Refreshing an investigation
-preserves the last completed result if the new attempt fails.
-
-`scoutServiceAccounts` stores the Product, Scout, account identifier, optional managed-credential
-metadata, and timestamped authentication evidence. A managed registration is `prepared`: Scout has
-generated a password, but the remote account may still need to be created or have that password set.
-The evidence describes the last real authentication check; it does not claim that the login still
-works. New registrations start with unchecked evidence. The app must record a succeeded or failed
-check only when a browser journey can attach traceable provenance, not from a manual admin
-assertion.
-
-One Scout can have many service accounts. Service accounts belong to the Scout, not to a run or Lab
-thread. Before an account-creation run starts, application code validates one exact prepared managed
-account against the selected Scout and Product and stores its ID on the run. Every later generation
-and browser session in that run reuses the same ID. Authentication evidence updates that row only;
-the runtime never discovers an account from an ambient Scout-and-domain match. A successful
-account-creation run must record authenticated evidence before it can return a successful verdict.
-
-An experiment is an admin-only Lab grouping for one Product test. It records a name, one Scout, the
-target Product, one overall objective or claim, and an active or completed status. Its status
-organizes the Lab. It is not an execution stage or workflow state.
-
-A Lab thread is one technical agent attempt inside an experiment. New threads derive their Scout
-from the selected experiment, and the Scout binding cannot change later. Threads created before
-experiments remain visible as ungrouped history until an admin explicitly assigns them to an
-experiment with the same Scout. Assignment changes only the Lab binding. It does not move or rewrite
-the Agent messages or generation records.
-
-A generation is one technical worker-model turn inside a Lab thread. It stores model, tool, status,
-and usage metadata. The generation uses the AgentMail inbox and Firecrawl profile from the thread's
-Scout. The model cannot select another identity.
-
-## Runtime boundary
-
-Convex stores Products, claim investigations, Scouts, service-account inventory, Lab experiments,
-thread bindings, generation records, and Agent component messages. A Product investigation uses
-Firecrawl to discover and scrape a small, deterministic set of first-party pages, then gives their
-bounded text to a fresh, tool-free Convex Agent thread for one structured synthesis. The backend
-resolves the Agent's opaque source identifiers to the pages that were actually retrieved, rejects
-unknown sources, and keeps an evidence excerpt only when it occurs on its cited page. Discovery,
-retrieval, and synthesis have independent limits so a failed attempt ends visibly and cannot erase
-the last completed report.
-
-The Convex AI agent separately runs each Lab generation and exposes the tools used by the Lab.
-Firecrawl owns remote browser sessions used by those Lab tools. AgentMail owns inboxes and received
-messages.
-
-The app resolves provider credentials from the bound Scout before a generation starts. This keeps
-identity selection in application code instead of model arguments.
-
-Service-account inventory stores no plaintext passwords, tokens, cookies, or live browser sessions.
-It stores the account identifier, the owning Scout, safe managed-credential metadata, and claim-test
-provenance for the first recording and latest verification. A missing account is not an inventory
-record.
-
-Managed passwords are encrypted in a separate Convex table with a deployment key that is not stored
-in the database. Public queries and the model see only safe account metadata. The model is told that
-a managed credential is prepared, along with its account identifier and exact login host, but it
-receives no password, encrypted envelope, or credential reference. It calls
-`fill_account_password` with visible password-field refs. Trusted server code resolves the account
-from the run's exact `serviceAccountId`, verifies the browser is on the configured exact HTTPS login
-host, verifies every ref is a password input, decrypts the password, registers it for output
-redaction, and fills it. The tool returns only a field count; the model submits the form separately.
-The account-recording tool likewise accepts only account access and visible element refs. Trusted
-code derives the expected identifier from the same bound account, verifies the rendered identity,
-and updates only that row.
-
-Firecrawl receives the plaintext during the fill and is part of the trusted infrastructure boundary.
-Managed runs retain their selected persistent profile, operation telemetry, replay, live view, and
-human takeover. Scout's structured operation records contain only refs and character counts, never
-field values, but provider-rendered replay or live view can still capture what the remote browser
-displayed. See
-[Scout managed credentials](./scout-credential-store-decision.md) and
+Browser sessions and operations use one shared set of tables for every chat. Provider control
+handles remain server-side. Live and replay access checks the chat owner. Replay uses Firecrawl's
+recordings rather than recording a second video in Scout; see
 [Firecrawl limitations](./firecrawl-limitations.md).
 
-## 2026-08-28 browser-agent experiment
+A human-help request pauses the model generation and leaves the remote browser open. The private
+email link allows up to 45 minutes to open it; the five-minute control window starts on first open.
+It does not require signing in. The operator finishes the check and presses Continue. A Convex
+workflow waits for the Scout to finish pausing, captures the final page, closes the browser, and
+queues a new generation in the same chat. Expiration and failure also close the browser. Normal
+chat/tool input is blocked while that handoff owns the session.
 
-A monolithic 24-step Qwen Tally creation run reached the editor but failed. A monolithic Luna run
-created and published the requested two-question form, but did not submit a response or verify the
-result. A staged Qwen run submitted the response and confirmed the dashboard count. It used 226,318
-input tokens, 3,650 output tokens, 142.1 seconds, and 5 Firecrawl credits, but did not verify the
-visual rating.
-
-The first read-only Qwen verifier confirmed the count and marker, but not the rating. It used 303,096
-input tokens, 10,255 output tokens, 152.6 seconds, and 5 credits. A raw HTML fallback then failed and
-was rejected because it exposed broad hidden-data and resource risks. A safe CSS count verifier
-independently confirmed one response, the exact marker, and 3 filled stars. It used 82,096 input
-tokens, 4,215 output tokens, 89.2 seconds, and 3 credits. Cleanup left zero active Firecrawl sessions.
-
-Default to bounded Qwen stages. Carry profile-backed provider state between fresh sessions. Use a
-stronger manager or recovery model only after evidence of no progress, and keep verification
-separate. Retain compact post-mutation snapshots, failed-run usage, browser-session provenance, and
-session cleanup. Product investigations contain marketing-source evidence. Claim-test Runs contain
-observed journey evidence.
-
-## Experimental cleanup
-
-The current model replaces the earlier standalone Runs system. The cleanup removes:
-
-- `scoutRuns` and `scoutRunEvents`.
-- The standalone browser and mail actions tied to those records.
-- The Runs route and UI.
-- Unassigned Lab history and compatibility paths for threads without a Scout.
-
-That earlier cleanup treated development Runs as disposable and did not migrate them. The current
-experiment model is different: it preserves every bound Lab thread as grouped or ungrouped history
-until an admin explicitly assigns it. The earlier cleanup preserved configured Scouts,
-authentication data, and provider environment variables.
-
-Do not add a mission planner, general orchestration framework, or mirrored provider database until
-the claim-test Runs show a concrete need. Runs, generations, browser-session records, and Scout
-service accounts are the current execution model. Do not add direct account-to-thread links;
-account-creation runs bind one exact service-account ID before execution, and continuations inherit
-that immutable run binding.
+This cleanup does not introduce a new agent harness, automatic multi-generation supervision, or
+long-running context compaction. Those can be evaluated against the simpler chat interface.

@@ -1,8 +1,8 @@
-import { anyApi } from "convex/server";
+import type { FunctionArgs } from "convex/server";
 import { convexTest } from "convex-test";
 import { describe, expect, it } from "vite-plus/test";
-import { internal } from "../_generated/api";
-import type { Id } from "../_generated/dataModel";
+import { api, internal } from "../_generated/api";
+import type { Doc, Id } from "../_generated/dataModel";
 import { ADMIN_EMAIL } from "../authConfig";
 import schema from "../schema";
 
@@ -15,7 +15,6 @@ const modules = {
     ]),
   ),
 };
-const serviceAccountsApi = anyApi["scout"]["serviceAccounts"];
 
 function testBackend() {
   return convexTest(schema, modules);
@@ -33,10 +32,7 @@ async function insertScout(backend: ReturnType<typeof testBackend>, slug: string
         websiteIdentity: { firstName: slug, lastName: "Scout" },
         slug,
         status: "active",
-        agentMail: {
-          inboxId: `${slug}-inbox`,
-          address: `${slug}@example.test`,
-        },
+        agentMail: { inboxId: `${slug}-inbox`, address: `${slug}@example.test` },
         firecrawl: { profileName: `${slug}-profile` },
       }),
   );
@@ -51,74 +47,52 @@ async function insertManagedAccount(
     identifier: string;
   },
 ) {
-  return await backend.run(async (ctx) => {
-    const productId = await ctx.db.insert("products", {
-      name: args.serviceName,
-      domain: args.serviceDomain,
-      primaryUrl: `https://${args.serviceDomain}`,
-    });
-    return await ctx.db.insert("scoutServiceAccounts", {
-      scoutId: args.scoutId,
-      productId,
-      serviceName: args.serviceName,
-      serviceDomain: args.serviceDomain,
-      identifier: args.identifier,
-      authenticationEvidence: { kind: "none" },
-      loginMethod: {
-        kind: "managed_password",
-        credentialHost: args.serviceDomain,
-        createdAt: 1,
-      },
-    });
-  });
+  return await backend.run(
+    async (ctx) =>
+      await ctx.db.insert("scoutServiceAccounts", {
+        ...args,
+        authenticationEvidence: { kind: "none" },
+        loginMethod: {
+          kind: "managed_password",
+          credentialHost: args.serviceDomain,
+          createdAt: 1,
+        },
+      }),
+  );
 }
 
 async function authenticatedBackend() {
   const backend = testBackend();
-  const adminId = await insertUser(backend, ADMIN_EMAIL);
+  const userId = await insertUser(backend, ADMIN_EMAIL);
   return {
     backend,
-    admin: backend.withIdentity({ subject: `${adminId}|test-session` }),
-    userId: adminId,
+    admin: backend.withIdentity({ subject: `${userId}|test-session` }),
+    userId,
   };
 }
 
-async function insertTaskBrowserEvidence(
-  backend: ReturnType<typeof testBackend>,
-  args: {
-    userId: Id<"users">;
-    scoutId: Id<"scouts">;
-    productId: Id<"products">;
-    observedUrl: string;
-  },
-) {
-  return await backend.run(async (ctx) => {
-    const taskId = await ctx.db.insert("productTasks", {
-      userId: args.userId,
-      productId: args.productId,
-      instruction: "Create an account.",
-    });
-    const threadId = "task-thread";
-    const attemptId = await ctx.db.insert("taskAttempts", {
-      taskId,
-      scoutId: args.scoutId,
+async function accountContext() {
+  const authenticated = await authenticatedBackend();
+  const { backend, userId } = authenticated;
+  const scoutId = await insertScout(backend, "conrad");
+  const providerAccountId = await insertManagedAccount(backend, {
+    scoutId,
+    serviceName: "GitHub",
+    serviceDomain: "github.com",
+    identifier: "conrad-scout",
+  });
+  const observedUrl = "https://dashboard.example.com/account";
+  const browser = await backend.run(async (ctx) => {
+    const threadId = crypto.randomUUID();
+    const chatId = await ctx.db.insert("scoutChats", {
       threadId,
-      browserProfile: { kind: "scout", profileName: "conrad-profile" },
-      state: { kind: "active" },
+      userId,
+      scoutId,
+      createdAt: 1,
     });
-    const promptMessageId = "prompt-message";
-    const turnId = await ctx.db.insert("scoutTurns", {
+    const sessionId = await ctx.db.insert("scoutBrowserSessions", {
       threadId,
-      order: 1,
-      promptMessageId,
-      scoutId: args.scoutId,
-      model: "qwen/qwen3.7-flash",
-      startedAt: 1,
-      state: { kind: "pending", leaseExpiresAt: 10_000 },
-    });
-    const sessionId = await ctx.db.insert("taskBrowserSessions", {
-      attemptId,
-      turnId,
+      scoutId,
       sequence: 1,
       provider: "firecrawl",
       providerSessionId: "provider-session",
@@ -127,45 +101,82 @@ async function insertTaskBrowserEvidence(
       nextOperationSequence: 2,
       lifecycle: { kind: "active", openedAtMs: 1 },
     });
-    const telemetry = {
-      version: 1 as const,
-      before: { capturedAtMs: 1, tabs: [] },
-      dispatchedAtMs: 2,
-      returnedAtMs: 3,
-      after: {
-        capturedAtMs: 3,
-        tabs: [
-          {
-            tabId: "tab-1",
-            title: "Authenticated product",
-            url: args.observedUrl,
-            active: true,
-          },
-        ],
-      },
-    };
-    await ctx.db.insert("taskBrowserOperations", {
+    const operationId = await ctx.db.insert("scoutBrowserOperations", {
       sessionId,
       sequence: 1,
       toolCallId: "browser-open",
-      action: { kind: "open", url: args.observedUrl },
-      state: { kind: "applied", settledAtMs: 3, telemetry },
+      action: { kind: "open", url: observedUrl },
+      state: {
+        kind: "applied",
+        settledAtMs: 3,
+        telemetry: {
+          version: 1,
+          before: { capturedAtMs: 1, tabs: [] },
+          dispatchedAtMs: 2,
+          returnedAtMs: 3,
+          after: {
+            capturedAtMs: 3,
+            tabs: [
+              { tabId: "tab-1", title: "Authenticated service", url: observedUrl, active: true },
+            ],
+          },
+        },
+      },
     });
-    return { promptMessageId, taskId, attemptId, turnId, sessionId };
+    return { chatId, threadId, sessionId, operationId };
+  });
+  const evidence = {
+    sessionId: browser.sessionId,
+    accountAccess: "created",
+    observedUrl,
+    visibleIdentity: "Account\nconrad@example.test",
+    visibleSessionControl: "Log out",
+    loginMethod: {
+      kind: "oauth",
+      providerServiceDomain: "github.com",
+      providerIdentifier: "conrad-scout",
+    },
+  } satisfies FunctionArgs<typeof internal.scout.serviceAccounts.recordAuthenticated>;
+  return { ...authenticated, scoutId, providerAccountId, ...browser, evidence };
+}
+
+async function fillInventory(
+  backend: ReturnType<typeof testBackend>,
+  scoutId: Id<"scouts">,
+  count: number,
+) {
+  await backend.run(async (ctx) => {
+    for (let index = 0; index < count; index += 1) {
+      await ctx.db.insert("scoutServiceAccounts", {
+        scoutId,
+        serviceName: `Service ${index}`,
+        serviceDomain: `service-${index}.example`,
+        identifier: `account-${index}`,
+        authenticationEvidence: { kind: "none" },
+        loginMethod: {
+          kind: "managed_password",
+          credentialHost: `service-${index}.example`,
+          createdAt: 1,
+        },
+      });
+    }
   });
 }
 
 describe("Scout service-account inventory", () => {
   it("rejects unauthenticated and non-admin inventory access", async () => {
     const backend = testBackend();
-    await expect(backend.query(serviceAccountsApi["list"], {})).rejects.toThrow("Not authorized");
-
+    await expect(backend.query(api.scout.serviceAccounts.list, {})).rejects.toThrow(
+      "Not authorized",
+    );
     const nonAdminId = await insertUser(backend, "person@example.com");
     const nonAdmin = backend.withIdentity({ subject: `${nonAdminId}|test-session` });
-    await expect(nonAdmin.query(serviceAccountsApi["list"], {})).rejects.toThrow("Not authorized");
+    await expect(nonAdmin.query(api.scout.serviceAccounts.list, {})).rejects.toThrow(
+      "Not authorized",
+    );
   });
 
-  it("filters accounts by Scout", async () => {
+  it("filters accounts by Scout and projects an empty observation", async () => {
     const { backend, admin } = await authenticatedBackend();
     const conradId = await insertScout(backend, "conrad");
     const adaId = await insertScout(backend, "ada");
@@ -181,290 +192,280 @@ describe("Scout service-account inventory", () => {
       serviceDomain: "github.com",
       identifier: "ada-scout",
     });
-
-    const conradAccounts = await admin.query(serviceAccountsApi["list"], { scoutId: conradId });
+    const conradAccounts = await admin.query(api.scout.serviceAccounts.list, { scoutId: conradId });
     expect(conradAccounts).toHaveLength(1);
-    expect(conradAccounts[0]).toMatchObject({ scoutId: conradId, serviceName: "Tally" });
-    const allAccounts = await admin.query(serviceAccountsApi["list"], {});
+    expect(conradAccounts[0]).toMatchObject({
+      scoutId: conradId,
+      serviceName: "Tally",
+      lastObserved: null,
+    });
+    const allAccounts = await admin.query(api.scout.serviceAccounts.list, {});
     expect(allAccounts).toHaveLength(2);
-    expect(new Set(allAccounts.map((account: { scoutId: string }) => account.scoutId))).toEqual(
+    expect(new Set(allAccounts.map((account) => account.scoutId))).toEqual(
       new Set([conradId, adaId]),
     );
   });
 
-  it("records a newly created account for the Task product", async () => {
-    const { backend, admin, userId } = await authenticatedBackend();
-    const scoutId = await insertScout(backend, "conrad");
-    const providerAccountId = await insertManagedAccount(backend, {
-      scoutId,
-      serviceName: "GitHub",
-      serviceDomain: "github.com",
-      identifier: "conrad-scout",
-    });
-    const productId = await backend.run(
-      async (ctx) =>
-        await ctx.db.insert("products", {
-          name: "Convex",
-          domain: "convex.dev",
-          primaryUrl: "https://convex.dev",
-        }),
+  it("creates and verifies an OAuth account on the observed service without a catalog", async () => {
+    const { backend, admin, scoutId, providerAccountId, threadId, sessionId, evidence } =
+      await accountContext();
+    const providerBefore = await backend.run(
+      async (ctx) => await ctx.db.get("scoutServiceAccounts", providerAccountId),
     );
-    const observedUrl = "https://dashboard.convex.dev/t/conrad-5bce5";
-    const context = await insertTaskBrowserEvidence(backend, {
-      userId,
-      scoutId,
-      productId,
-      observedUrl,
-    });
-
     const result = await backend.mutation(
-      internal.scout.serviceAccounts.recordAuthenticatedFromTask,
-      {
-        promptMessageId: context.promptMessageId,
-        accountAccess: "created",
-        observedUrl,
-        visibleIdentity: "Account\nconrad@example.test",
-        visibleSessionControl: "Log out",
-        loginMethod: {
-          kind: "oauth",
-          providerServiceDomain: "github.com",
-          providerIdentifier: "conrad-scout",
-        },
-      },
+      internal.scout.serviceAccounts.recordAuthenticated,
+      evidence,
     );
-
     expect(result).toEqual({ serviceAccountId: expect.any(String), created: true });
-    await expect(admin.query(serviceAccountsApi["list"], { scoutId })).resolves.toEqual(
+    await expect(admin.query(api.scout.serviceAccounts.list, { scoutId })).resolves.toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           _id: result.serviceAccountId,
           scoutId,
-          serviceName: "Convex",
-          serviceDomain: "convex.dev",
+          serviceName: "dashboard.example.com",
+          serviceDomain: "dashboard.example.com",
           identifier: "conrad@example.test",
           authenticationEvidence: { kind: "succeeded", checkedAt: expect.any(Number) },
           loginMethod: { kind: "oauth", providerAccountId },
-          firstRecordedByTask: expect.objectContaining({
-            taskId: context.taskId,
-            attemptId: context.attemptId,
-            turnId: context.turnId,
-            sessionId: context.sessionId,
-            observedUrl,
-            visibleIdentity: "Account\nconrad@example.test",
-            visibleSessionControl: "Log out",
+          lastObserved: {
+            threadId,
+            sessionId,
+            recordedAt: expect.any(Number),
+            observedUrl: evidence.observedUrl,
+            visibleIdentity: evidence.visibleIdentity,
+            visibleSessionControl: evidence.visibleSessionControl,
             accountAccess: "created",
-          }),
+          },
         }),
       ]),
     );
+    await expect(
+      backend.mutation(internal.scout.serviceAccounts.recordAuthenticated, {
+        ...evidence,
+        accountAccess: "recovered",
+      }),
+    ).resolves.toEqual({ serviceAccountId: result.serviceAccountId, created: false });
+    const stored = await backend.run(
+      async (ctx) => await ctx.db.get("scoutServiceAccounts", result.serviceAccountId),
+    );
+    expect(stored).toMatchObject({
+      loginMethod: { kind: "oauth", providerAccountId },
+      lastObserved: { accountAccess: "recovered" },
+    });
+    expect(
+      await backend.run(async (ctx) => await ctx.db.get("scoutServiceAccounts", providerAccountId)),
+    ).toEqual(providerBefore);
+    await expect(admin.query(api.scout.serviceAccounts.list, { scoutId })).resolves.toHaveLength(2);
   });
 
-  it("does not treat a team label as the Scout's account identity", async () => {
-    const { backend, userId } = await authenticatedBackend();
-    const scoutId = await insertScout(backend, "conrad");
-    await insertManagedAccount(backend, {
+  it("updates a connected service without changing its managed credential binding", async () => {
+    const { backend, scoutId, threadId, evidence } = await accountContext();
+    const serviceAccountId = await insertManagedAccount(backend, {
       scoutId,
-      serviceName: "GitHub",
-      serviceDomain: "github.com",
-      identifier: "conrad-scout",
+      serviceName: "Example",
+      serviceDomain: "example.com",
+      identifier: "conrad@example.test",
     });
-    const productId = await backend.run(
-      async (ctx) =>
-        await ctx.db.insert("products", {
-          name: "Convex",
-          domain: "convex.dev",
-          primaryUrl: "https://convex.dev",
-        }),
+    const before = await backend.run(
+      async (ctx) => await ctx.db.get("scoutServiceAccounts", serviceAccountId),
     );
-    const observedUrl = "https://dashboard.convex.dev/t/conrad-5bce5";
-    const context = await insertTaskBrowserEvidence(backend, {
-      userId,
-      scoutId,
-      productId,
-      observedUrl,
-    });
-
     await expect(
-      backend.mutation(internal.scout.serviceAccounts.recordAuthenticatedFromTask, {
-        promptMessageId: context.promptMessageId,
-        accountAccess: "created",
-        observedUrl,
-        visibleIdentity: "Team Settings\nconrad's team",
-        visibleSessionControl: "Log out",
-        loginMethod: {
-          kind: "oauth",
-          providerServiceDomain: "github.com",
-          providerIdentifier: "conrad-scout",
-        },
+      backend.mutation(internal.scout.serviceAccounts.recordAuthenticated, {
+        ...evidence,
+        accountAccess: "recovered",
+        loginMethod: { kind: "managed_password" },
       }),
-    ).rejects.toThrow("Visible account identity does not match this Scout");
+    ).resolves.toEqual({ serviceAccountId, created: false });
+    const after = await backend.run(
+      async (ctx) => await ctx.db.get("scoutServiceAccounts", serviceAccountId),
+    );
+    expect(after).toEqual({
+      ...before,
+      authenticationEvidence: { kind: "succeeded", checkedAt: expect.any(Number) },
+      lastObserved: {
+        threadId,
+        sessionId: evidence.sessionId,
+        recordedAt: expect.any(Number),
+        observedUrl: evidence.observedUrl,
+        visibleIdentity: evidence.visibleIdentity,
+        visibleSessionControl: evidence.visibleSessionControl,
+        accountAccess: "recovered",
+      },
+    });
   });
 
-  it("does not invent an account for a different product", async () => {
-    const { backend, userId } = await authenticatedBackend();
-    const scoutId = await insertScout(backend, "conrad");
+  it("requires an exact OAuth provider account belonging to the session's Scout", async () => {
+    const { backend, evidence } = await accountContext();
+    const otherScoutId = await insertScout(backend, "ada");
     await insertManagedAccount(backend, {
-      scoutId,
+      scoutId: otherScoutId,
       serviceName: "GitHub",
       serviceDomain: "github.com",
-      identifier: "conrad-scout",
+      identifier: "ada-scout",
     });
-    const productId = await backend.run(
+    await expect(
+      backend.mutation(internal.scout.serviceAccounts.recordAuthenticated, {
+        ...evidence,
+        loginMethod: { ...evidence.loginMethod, providerIdentifier: "ada-scout" },
+      }),
+    ).rejects.toThrow("OAuth provider account is not registered to this Scout");
+  });
+
+  it.each(["missing", "different Scout"])("rejects a chat binding that is %s", async (binding) => {
+    const { backend, chatId, evidence } = await accountContext();
+    const otherScoutId = await insertScout(backend, "ada");
+    await backend.run(async (ctx) => {
+      if (binding === "missing") await ctx.db.delete("scoutChats", chatId);
+      else await ctx.db.patch("scoutChats", chatId, { scoutId: otherScoutId });
+    });
+    await expect(
+      backend.mutation(internal.scout.serviceAccounts.recordAuthenticated, evidence),
+    ).rejects.toThrow("Browser session does not match its Scout chat");
+  });
+
+  it("rejects a closed browser session", async () => {
+    const { backend, sessionId, evidence } = await accountContext();
+    await backend.run(async (ctx) => {
+      await ctx.db.patch("scoutBrowserSessions", sessionId, {
+        lifecycle: {
+          kind: "closed",
+          openedAtMs: 1,
+          closedAtMs: 4,
+          providerDurationMs: null,
+          creditsBilled: null,
+        },
+      });
+    });
+    await expect(
+      backend.mutation(internal.scout.serviceAccounts.recordAuthenticated, evidence),
+    ).rejects.toThrow("Active Scout browser session not found");
+  });
+
+  it.each([
+    { kind: "prepared", preparedAtMs: 4 },
+    { kind: "failed_before_dispatch", settledAtMs: 4, failure: "Failed" },
+    { kind: "indeterminate_after_dispatch", settledAtMs: 4, failure: "Unknown outcome" },
+  ] satisfies Array<Doc<"scoutBrowserOperations">["state"]>)(
+    "rejects an account observation after a $kind browser operation",
+    async (state) => {
+      const { backend, operationId, evidence } = await accountContext();
+      await backend.run(async (ctx) => {
+        await ctx.db.patch("scoutBrowserOperations", operationId, { state });
+      });
+      await expect(
+        backend.mutation(internal.scout.serviceAccounts.recordAuthenticated, evidence),
+      ).rejects.toThrow("A successful service-page observation is required");
+    },
+  );
+
+  it("requires the account evidence to come from the latest observed page", async () => {
+    const { backend, evidence } = await accountContext();
+    await expect(
+      backend.mutation(internal.scout.serviceAccounts.recordAuthenticated, {
+        ...evidence,
+        observedUrl: "https://another.example/account",
+      }),
+    ).rejects.toThrow("The authenticated account evidence is not from the latest service page");
+  });
+
+  it.each([
+    {
+      visibleIdentity: "Team Settings\nconrad's team",
+      visibleSessionControl: "Log out",
+      error: "Visible account identity does not match this Scout",
+    },
+    {
+      visibleIdentity: "other@example.test",
+      visibleSessionControl: "Log out",
+      error: "Visible account identity does not match this Scout",
+    },
+    {
+      visibleIdentity: "conrad@example.test",
+      visibleSessionControl: "Settings",
+      error: "The visible account menu does not expose a Sign out or Log out control",
+    },
+  ])(
+    "rejects unsupported account evidence: $visibleIdentity / $visibleSessionControl",
+    async (input) => {
+      const { backend, evidence } = await accountContext();
+      await expect(
+        backend.mutation(internal.scout.serviceAccounts.recordAuthenticated, {
+          ...evidence,
+          visibleIdentity: input.visibleIdentity,
+          visibleSessionControl: input.visibleSessionControl,
+        }),
+      ).rejects.toThrow(input.error);
+    },
+  );
+
+  it("does not create a managed-password account from browser evidence", async () => {
+    const { backend, evidence } = await accountContext();
+    await expect(
+      backend.mutation(internal.scout.serviceAccounts.recordAuthenticated, {
+        ...evidence,
+        loginMethod: { kind: "managed_password" },
+      }),
+    ).rejects.toThrow("A managed-password account must be registered before it is used");
+  });
+
+  it("does not replace an existing OAuth provider link", async () => {
+    const { backend, scoutId, providerAccountId, evidence } = await accountContext();
+    const serviceAccountId = await backend.run(
       async (ctx) =>
-        await ctx.db.insert("products", {
-          name: "Samebase",
-          domain: "samebase.com",
-          primaryUrl: "https://samebase.com",
+        await ctx.db.insert("scoutServiceAccounts", {
+          scoutId,
+          serviceName: "Example",
+          serviceDomain: "example.com",
+          identifier: "conrad@example.test",
+          authenticationEvidence: { kind: "none" },
+          loginMethod: { kind: "oauth", providerAccountId },
         }),
     );
-    const observedUrl = "https://dashboard.convex.dev/t/conrad-5bce5";
-    const context = await insertTaskBrowserEvidence(backend, {
-      userId,
+    await insertManagedAccount(backend, {
       scoutId,
-      productId,
-      observedUrl,
+      serviceName: "GitLab",
+      serviceDomain: "gitlab.com",
+      identifier: "conrad-lab",
     });
-
+    const before = await backend.run(
+      async (ctx) => await ctx.db.get("scoutServiceAccounts", serviceAccountId),
+    );
     await expect(
-      backend.mutation(internal.scout.serviceAccounts.recordAuthenticatedFromTask, {
-        promptMessageId: context.promptMessageId,
-        accountAccess: "created",
-        observedUrl,
-        visibleIdentity: "conrad@agentmail.to",
-        visibleSessionControl: "Log out",
+      backend.mutation(internal.scout.serviceAccounts.recordAuthenticated, {
+        ...evidence,
         loginMethod: {
           kind: "oauth",
-          providerServiceDomain: "github.com",
-          providerIdentifier: "conrad-scout",
+          providerServiceDomain: "gitlab.com",
+          providerIdentifier: "conrad-lab",
         },
       }),
-    ).rejects.toThrow("No Scout service account is registered for the observed product");
+    ).rejects.toThrow("Observed login method does not match the registered service account");
+    expect(
+      await backend.run(async (ctx) => await ctx.db.get("scoutServiceAccounts", serviceAccountId)),
+    ).toEqual(before);
   });
 
   it("rejects a fifty-first account before it can disappear from a Scout list", async () => {
-    const { backend, admin, userId } = await authenticatedBackend();
-    const scoutId = await insertScout(backend, "conrad");
-    await backend.run(async (ctx) => {
-      for (let index = 0; index < 50; index += 1) {
-        const isProvider = index === 0;
-        const serviceName = isProvider ? "GitHub" : `Service ${index}`;
-        const serviceDomain = isProvider ? "github.com" : `service-${index}.example`;
-        const identifier = isProvider ? "conrad-scout" : `account-${index}`;
-        const productId = await ctx.db.insert("products", {
-          name: serviceName,
-          domain: serviceDomain,
-          primaryUrl: `https://${serviceDomain}`,
-        });
-        await ctx.db.insert("scoutServiceAccounts", {
-          scoutId,
-          productId,
-          serviceName,
-          serviceDomain,
-          identifier,
-          authenticationEvidence: { kind: "none" },
-          loginMethod: {
-            kind: "managed_password",
-            credentialHost: serviceDomain,
-            createdAt: 1,
-          },
-        });
-      }
-    });
-
-    await expect(admin.query(serviceAccountsApi["list"], { scoutId })).resolves.toHaveLength(50);
-    const productId = await backend.run(
-      async (ctx) =>
-        await ctx.db.insert("products", {
-          name: "Hidden service",
-          domain: "hidden.example",
-          primaryUrl: "https://hidden.example",
-        }),
+    const { backend, admin, scoutId, evidence } = await accountContext();
+    await fillInventory(backend, scoutId, 49);
+    await expect(admin.query(api.scout.serviceAccounts.list, { scoutId })).resolves.toHaveLength(
+      50,
     );
-    const observedUrl = "https://hidden.example/account";
-    const context = await insertTaskBrowserEvidence(backend, {
-      userId,
-      scoutId,
-      productId,
-      observedUrl,
-    });
     await expect(
-      backend.mutation(internal.scout.serviceAccounts.recordAuthenticatedFromTask, {
-        promptMessageId: context.promptMessageId,
-        accountAccess: "created",
-        observedUrl,
-        visibleIdentity: "Account\nconrad@example.test",
-        visibleSessionControl: "Log out",
-        loginMethod: {
-          kind: "oauth",
-          providerServiceDomain: "github.com",
-          providerIdentifier: "conrad-scout",
-        },
-      }),
+      backend.mutation(internal.scout.serviceAccounts.recordAuthenticated, evidence),
     ).rejects.toThrow("A Scout can have at most 50 service accounts");
   });
 
   it("rejects a two-hundred-and-first account before it can disappear from the global list", async () => {
-    const { backend, admin, userId } = await authenticatedBackend();
-    const scoutIds = await Promise.all(
-      Array.from({ length: 5 }, (_, index) => insertScout(backend, `scout-${index}`)),
-    );
-    await backend.run(async (ctx) => {
-      for (let index = 0; index < 200; index += 1) {
-        const isProvider = index === 160;
-        const serviceName = isProvider ? "GitHub" : `Service ${index}`;
-        const serviceDomain = isProvider ? "github.com" : `service-${index}.example`;
-        const identifier = isProvider ? "scout-4-provider" : `account-${index}`;
-        const productId = await ctx.db.insert("products", {
-          name: serviceName,
-          domain: serviceDomain,
-          primaryUrl: `https://${serviceDomain}`,
-        });
-        await ctx.db.insert("scoutServiceAccounts", {
-          scoutId: scoutIds[Math.floor(index / 40)],
-          productId,
-          serviceName,
-          serviceDomain,
-          identifier,
-          authenticationEvidence: { kind: "none" },
-          loginMethod: {
-            kind: "managed_password",
-            credentialHost: serviceDomain,
-            createdAt: 1,
-          },
-        });
-      }
-    });
-
-    await expect(admin.query(serviceAccountsApi["list"], {})).resolves.toHaveLength(200);
-    const scoutId = scoutIds[4];
-    const productId = await backend.run(
-      async (ctx) =>
-        await ctx.db.insert("products", {
-          name: "Hidden service",
-          domain: "hidden.example",
-          primaryUrl: "https://hidden.example",
-        }),
-    );
-    const observedUrl = "https://hidden.example/account";
-    const context = await insertTaskBrowserEvidence(backend, {
-      userId,
-      scoutId,
-      productId,
-      observedUrl,
-    });
+    const { backend, admin, scoutId, evidence } = await accountContext();
+    await fillInventory(backend, scoutId, 39);
+    for (let index = 0; index < 4; index += 1) {
+      const otherScoutId = await insertScout(backend, `scout-${index}`);
+      await fillInventory(backend, otherScoutId, 40);
+    }
+    await expect(admin.query(api.scout.serviceAccounts.list, {})).resolves.toHaveLength(200);
     await expect(
-      backend.mutation(internal.scout.serviceAccounts.recordAuthenticatedFromTask, {
-        promptMessageId: context.promptMessageId,
-        accountAccess: "created",
-        observedUrl,
-        visibleIdentity: "Account\nscout-4@example.test",
-        visibleSessionControl: "Log out",
-        loginMethod: {
-          kind: "oauth",
-          providerServiceDomain: "github.com",
-          providerIdentifier: "scout-4-provider",
-        },
-      }),
+      backend.mutation(internal.scout.serviceAccounts.recordAuthenticated, evidence),
     ).rejects.toThrow("Service account inventory can contain at most 200 accounts");
   });
 });

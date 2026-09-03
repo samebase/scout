@@ -22,5 +22,3 @@ peerDependencyRules:
   allowedVersions:
     vite: "*"
     vitest: "*"
-patchedDependencies:
-  "@convex-dev/static-hosting@0.2.1": patches/@convex-dev__static-hosting@0.2.1.patch

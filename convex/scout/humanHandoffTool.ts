@@ -1,27 +1,23 @@
 import { tool } from "ai";
+import type { Infer } from "convex/values";
 import { z } from "zod";
 import { sendEmail, type SendEmailArgs } from "../email";
+import type {
+  humanHandoffStatusValidator,
+  requestedHumanHandoffValidator,
+} from "../humanHandoffsModel";
 
 const MAX_HANDOFF_REASON_LENGTH = 500;
 const EMAIL_DELIVERY_TIMEOUT_MS = 15_000;
 
-type HumanHandoffStatus =
-  | "available"
-  | "active"
-  | "continued"
-  | "resumed"
-  | "expired"
-  | "failed"
-  | "missing";
+type HumanHandoffStatus = Infer<typeof humanHandoffStatusValidator>;
 
-type HumanHandoffRequest<HandoffId> = {
+type HumanHandoffRequest<HandoffId> = Omit<
+  Infer<typeof requestedHumanHandoffValidator>,
+  "handoffId"
+> & {
   handoffId: HandoffId;
-  created: boolean;
-  recipientEmail: string;
-  productName: string;
-  scoutName: string;
   handoffUrl: string;
-  claimExpiresAt: number;
 };
 
 export type HumanHandoffCallbacks<HandoffId> = {
@@ -93,11 +89,10 @@ export function humanHandoffEmail<HandoffId>(
   request: HumanHandoffRequest<HandoffId>,
 ): SendEmailArgs {
   const scoutName = emailHeader(request.scoutName) || "Scout";
-  const productName = emailHeader(request.productName) || "the product";
   return {
     to: request.recipientEmail,
-    subject: `${scoutName} needs help with ${productName}`,
-    text: `${scoutName} reached a step that requires a person while testing ${productName}.
+    subject: `${scoutName} needs your help`,
+    text: `${scoutName} reached a step that requires a person while working.
 
 Open this private Scout link within 45 minutes:
 ${request.handoffUrl}

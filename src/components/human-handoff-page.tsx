@@ -14,7 +14,7 @@ import { AuthPanel } from "#components/auth-panel";
 import { Button } from "#components/ui/button";
 import { consumeHumanHandoffAccessToken, humanHandoffIsTopLevel } from "#lib/human-handoff-access";
 
-type HandoffPage = FunctionReturnType<typeof api.taskHumanHandoffAccess.load>;
+type HandoffPage = FunctionReturnType<typeof api.humanHandoffAccess.load>;
 type PageState =
   | { kind: "loading" }
   | { kind: "ready"; page: HandoffPage }
@@ -56,8 +56,8 @@ function errorMessage(error: unknown, fallback: string) {
 }
 
 export function HumanHandoffPage({ handoffId }: { handoffId: string }) {
-  const loadHandoff = useAction(api.taskHumanHandoffAccess.load);
-  const continueHandoff = useAction(api.taskHumanHandoffAccess.continueHandoff);
+  const loadHandoff = useAction(api.humanHandoffAccess.load);
+  const continueHandoff = useAction(api.humanHandoffAccess.continueHandoff);
   const { isLoading: authLoading, isAuthenticated } = useConvexAuth();
   const [accessToken, setAccessToken] = useState<string | null | undefined>(undefined);
   const [state, setState] = useState<PageState>({ kind: "loading" });
@@ -231,21 +231,23 @@ function HandoffState({
         : "This handoff failed";
   const message =
     page.status === "continued"
-      ? "The current browser was released back to Scout. Return to the attempt for its latest status."
+      ? "Scout will continue in the chat."
       : page.status === "expired"
         ? page.claimed
-          ? "The five-minute control window ended. Resume the active attempt to try again."
-          : "The private link was not opened within 45 minutes. Resume the active attempt to try again."
+          ? "The five-minute control window ended. Return to the chat to try again."
+          : "The private link was not opened within 45 minutes. Return to the chat to try again."
         : page.failure === "delivery_failed"
-          ? "Scout could not deliver the secure link. Resume the active attempt to try again."
-          : "The bound browser session ended. Resume the active attempt to try again.";
+          ? "Scout could not deliver the secure link. Return to the chat to try again."
+          : page.failure === "scout_failed"
+            ? "Scout stopped before resuming. Return to the chat to try again."
+            : "The browser session ended. Return to the chat to try again.";
   return (
     <HandoffNotice title={title}>
       <p>{message}</p>
       {page.destination ? (
         <Button asChild className="mt-4" size="sm">
-          <Link to="/products/$domain/tasks/$taskId/attempts/$attemptId" params={page.destination}>
-            Return to attempt
+          <Link to="/chats" search={{ thread: page.destination.threadId, view: "transcript" }}>
+            Return to chat
           </Link>
         </Button>
       ) : (
@@ -254,14 +256,11 @@ function HandoffState({
             <p className="text-muted-foreground text-sm">Checking your account…</p>
           </AuthLoading>
           <Unauthenticated>
-            <p className="mb-3 text-sm">Sign in to return to the exact Task attempt.</p>
+            <p className="mb-3 text-sm">Sign in to return to this chat.</p>
             <AuthPanel />
           </Unauthenticated>
           <Authenticated>
-            <p className="text-sm">
-              This account does not own the Task. Switch to its owner account to return to the
-              attempt.
-            </p>
+            <p className="text-sm">Switch to the chat owner's account to return.</p>
           </Authenticated>
         </div>
       )}

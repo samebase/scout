@@ -10,33 +10,21 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as LabRouteImport } from './routes/lab'
-import { Route as ProductsRouteImport } from './routes/products'
+import { Route as ChatsRouteImport } from './routes/chats'
 import { Route as ScoutsRouteImport } from './routes/scouts'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as HandoffHandoffIdRouteImport } from './routes/handoff.$handoffId'
-import { Route as ProductsIndexRouteImport } from './routes/products.index'
-import { Route as ProductsDomainRouteImport } from './routes/products.$domain'
 import { Route as ScoutsIndexRouteImport } from './routes/scouts.index'
 import { Route as ScoutsSlugRouteImport } from './routes/scouts.$slug'
-import { Route as ProductsDomainIndexRouteImport } from './routes/products.$domain.index'
-import { Route as ProductsDomainTasksTaskIdRouteImport } from './routes/products.$domain.tasks.$taskId'
-import { Route as ProductsDomainTasksTaskIdIndexRouteImport } from './routes/products.$domain.tasks.$taskId.index'
-import { Route as ProductsDomainTasksTaskIdAttemptsAttemptIdRouteImport } from './routes/products.$domain.tasks.$taskId.attempts.$attemptId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const LabRoute = LabRouteImport.update({
-  id: '/lab',
-  path: '/lab',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ProductsRoute = ProductsRouteImport.update({
-  id: '/products',
-  path: '/products',
+const ChatsRoute = ChatsRouteImport.update({
+  id: '/chats',
+  path: '/chats',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ScoutsRoute = ScoutsRouteImport.update({
@@ -54,16 +42,6 @@ const HandoffHandoffIdRoute = HandoffHandoffIdRouteImport.update({
   path: '/handoff/$handoffId',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ProductsIndexRoute = ProductsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => ProductsRoute,
-} as any)
-const ProductsDomainRoute = ProductsDomainRouteImport.update({
-  id: '/$domain',
-  path: '/$domain',
-  getParentRoute: () => ProductsRoute,
-} as any)
 const ScoutsIndexRoute = ScoutsIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -74,126 +52,66 @@ const ScoutsSlugRoute = ScoutsSlugRouteImport.update({
   path: '/$slug',
   getParentRoute: () => ScoutsRoute,
 } as any)
-const ProductsDomainIndexRoute = ProductsDomainIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => ProductsDomainRoute,
-} as any)
-const ProductsDomainTasksTaskIdRoute =
-  ProductsDomainTasksTaskIdRouteImport.update({
-    id: '/tasks/$taskId',
-    path: '/tasks/$taskId',
-    getParentRoute: () => ProductsDomainRoute,
-  } as any)
-const ProductsDomainTasksTaskIdIndexRoute =
-  ProductsDomainTasksTaskIdIndexRouteImport.update({
-    id: '/',
-    path: '/',
-    getParentRoute: () => ProductsDomainTasksTaskIdRoute,
-  } as any)
-const ProductsDomainTasksTaskIdAttemptsAttemptIdRoute =
-  ProductsDomainTasksTaskIdAttemptsAttemptIdRouteImport.update({
-    id: '/attempts/$attemptId',
-    path: '/attempts/$attemptId',
-    getParentRoute: () => ProductsDomainTasksTaskIdRoute,
-  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/lab': typeof LabRoute
-  '/products': typeof ProductsRouteWithChildren
+  '/chats': typeof ChatsRoute
   '/scouts': typeof ScoutsRouteWithChildren
   '/settings': typeof SettingsRoute
   '/handoff/$handoffId': typeof HandoffHandoffIdRoute
-  '/products/$domain': typeof ProductsDomainRouteWithChildren
   '/scouts/$slug': typeof ScoutsSlugRoute
-  '/products/': typeof ProductsIndexRoute
   '/scouts/': typeof ScoutsIndexRoute
-  '/products/$domain/': typeof ProductsDomainIndexRoute
-  '/products/$domain/tasks/$taskId': typeof ProductsDomainTasksTaskIdRouteWithChildren
-  '/products/$domain/tasks/$taskId/': typeof ProductsDomainTasksTaskIdIndexRoute
-  '/products/$domain/tasks/$taskId/attempts/$attemptId': typeof ProductsDomainTasksTaskIdAttemptsAttemptIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/lab': typeof LabRoute
+  '/chats': typeof ChatsRoute
   '/settings': typeof SettingsRoute
   '/handoff/$handoffId': typeof HandoffHandoffIdRoute
   '/scouts/$slug': typeof ScoutsSlugRoute
-  '/products': typeof ProductsIndexRoute
   '/scouts': typeof ScoutsIndexRoute
-  '/products/$domain': typeof ProductsDomainIndexRoute
-  '/products/$domain/tasks/$taskId': typeof ProductsDomainTasksTaskIdIndexRoute
-  '/products/$domain/tasks/$taskId/attempts/$attemptId': typeof ProductsDomainTasksTaskIdAttemptsAttemptIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/lab': typeof LabRoute
-  '/products': typeof ProductsRouteWithChildren
+  '/chats': typeof ChatsRoute
   '/scouts': typeof ScoutsRouteWithChildren
   '/settings': typeof SettingsRoute
   '/handoff/$handoffId': typeof HandoffHandoffIdRoute
-  '/products/$domain': typeof ProductsDomainRouteWithChildren
   '/scouts/$slug': typeof ScoutsSlugRoute
-  '/products/': typeof ProductsIndexRoute
   '/scouts/': typeof ScoutsIndexRoute
-  '/products/$domain/': typeof ProductsDomainIndexRoute
-  '/products/$domain/tasks/$taskId': typeof ProductsDomainTasksTaskIdRouteWithChildren
-  '/products/$domain/tasks/$taskId/': typeof ProductsDomainTasksTaskIdIndexRoute
-  '/products/$domain/tasks/$taskId/attempts/$attemptId': typeof ProductsDomainTasksTaskIdAttemptsAttemptIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/lab'
-    | '/products'
+    | '/chats'
     | '/scouts'
     | '/settings'
     | '/handoff/$handoffId'
-    | '/products/$domain'
     | '/scouts/$slug'
-    | '/products/'
     | '/scouts/'
-    | '/products/$domain/'
-    | '/products/$domain/tasks/$taskId'
-    | '/products/$domain/tasks/$taskId/'
-    | '/products/$domain/tasks/$taskId/attempts/$attemptId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/lab'
+    | '/chats'
     | '/settings'
     | '/handoff/$handoffId'
     | '/scouts/$slug'
-    | '/products'
     | '/scouts'
-    | '/products/$domain'
-    | '/products/$domain/tasks/$taskId'
-    | '/products/$domain/tasks/$taskId/attempts/$attemptId'
   id:
     | '__root__'
     | '/'
-    | '/lab'
-    | '/products'
+    | '/chats'
     | '/scouts'
     | '/settings'
     | '/handoff/$handoffId'
-    | '/products/$domain'
     | '/scouts/$slug'
-    | '/products/'
     | '/scouts/'
-    | '/products/$domain/'
-    | '/products/$domain/tasks/$taskId'
-    | '/products/$domain/tasks/$taskId/'
-    | '/products/$domain/tasks/$taskId/attempts/$attemptId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  LabRoute: typeof LabRoute
-  ProductsRoute: typeof ProductsRouteWithChildren
+  ChatsRoute: typeof ChatsRoute
   ScoutsRoute: typeof ScoutsRouteWithChildren
   SettingsRoute: typeof SettingsRoute
   HandoffHandoffIdRoute: typeof HandoffHandoffIdRoute
@@ -208,18 +126,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/lab': {
-      id: '/lab'
-      path: '/lab'
-      fullPath: '/lab'
-      preLoaderRoute: typeof LabRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/products': {
-      id: '/products'
-      path: '/products'
-      fullPath: '/products'
-      preLoaderRoute: typeof ProductsRouteImport
+    '/chats': {
+      id: '/chats'
+      path: '/chats'
+      fullPath: '/chats'
+      preLoaderRoute: typeof ChatsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/scouts': {
@@ -243,20 +154,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HandoffHandoffIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/products/': {
-      id: '/products/'
-      path: '/'
-      fullPath: '/products/'
-      preLoaderRoute: typeof ProductsIndexRouteImport
-      parentRoute: typeof ProductsRoute
-    }
-    '/products/$domain': {
-      id: '/products/$domain'
-      path: '/$domain'
-      fullPath: '/products/$domain'
-      preLoaderRoute: typeof ProductsDomainRouteImport
-      parentRoute: typeof ProductsRoute
-    }
     '/scouts/': {
       id: '/scouts/'
       path: '/'
@@ -271,81 +168,8 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ScoutsSlugRouteImport
       parentRoute: typeof ScoutsRoute
     }
-    '/products/$domain/': {
-      id: '/products/$domain/'
-      path: '/'
-      fullPath: '/products/$domain/'
-      preLoaderRoute: typeof ProductsDomainIndexRouteImport
-      parentRoute: typeof ProductsDomainRoute
-    }
-    '/products/$domain/tasks/$taskId': {
-      id: '/products/$domain/tasks/$taskId'
-      path: '/tasks/$taskId'
-      fullPath: '/products/$domain/tasks/$taskId'
-      preLoaderRoute: typeof ProductsDomainTasksTaskIdRouteImport
-      parentRoute: typeof ProductsDomainRoute
-    }
-    '/products/$domain/tasks/$taskId/': {
-      id: '/products/$domain/tasks/$taskId/'
-      path: '/'
-      fullPath: '/products/$domain/tasks/$taskId/'
-      preLoaderRoute: typeof ProductsDomainTasksTaskIdIndexRouteImport
-      parentRoute: typeof ProductsDomainTasksTaskIdRoute
-    }
-    '/products/$domain/tasks/$taskId/attempts/$attemptId': {
-      id: '/products/$domain/tasks/$taskId/attempts/$attemptId'
-      path: '/attempts/$attemptId'
-      fullPath: '/products/$domain/tasks/$taskId/attempts/$attemptId'
-      preLoaderRoute: typeof ProductsDomainTasksTaskIdAttemptsAttemptIdRouteImport
-      parentRoute: typeof ProductsDomainTasksTaskIdRoute
-    }
   }
 }
-
-interface ProductsDomainTasksTaskIdRouteChildren {
-  ProductsDomainTasksTaskIdIndexRoute: typeof ProductsDomainTasksTaskIdIndexRoute
-  ProductsDomainTasksTaskIdAttemptsAttemptIdRoute: typeof ProductsDomainTasksTaskIdAttemptsAttemptIdRoute
-}
-
-const ProductsDomainTasksTaskIdRouteChildren: ProductsDomainTasksTaskIdRouteChildren =
-  {
-    ProductsDomainTasksTaskIdIndexRoute: ProductsDomainTasksTaskIdIndexRoute,
-    ProductsDomainTasksTaskIdAttemptsAttemptIdRoute:
-      ProductsDomainTasksTaskIdAttemptsAttemptIdRoute,
-  }
-
-const ProductsDomainTasksTaskIdRouteWithChildren =
-  ProductsDomainTasksTaskIdRoute._addFileChildren(
-    ProductsDomainTasksTaskIdRouteChildren,
-  )
-
-interface ProductsDomainRouteChildren {
-  ProductsDomainIndexRoute: typeof ProductsDomainIndexRoute
-  ProductsDomainTasksTaskIdRoute: typeof ProductsDomainTasksTaskIdRouteWithChildren
-}
-
-const ProductsDomainRouteChildren: ProductsDomainRouteChildren = {
-  ProductsDomainIndexRoute: ProductsDomainIndexRoute,
-  ProductsDomainTasksTaskIdRoute: ProductsDomainTasksTaskIdRouteWithChildren,
-}
-
-const ProductsDomainRouteWithChildren = ProductsDomainRoute._addFileChildren(
-  ProductsDomainRouteChildren,
-)
-
-interface ProductsRouteChildren {
-  ProductsDomainRoute: typeof ProductsDomainRouteWithChildren
-  ProductsIndexRoute: typeof ProductsIndexRoute
-}
-
-const ProductsRouteChildren: ProductsRouteChildren = {
-  ProductsDomainRoute: ProductsDomainRouteWithChildren,
-  ProductsIndexRoute: ProductsIndexRoute,
-}
-
-const ProductsRouteWithChildren = ProductsRoute._addFileChildren(
-  ProductsRouteChildren,
-)
 
 interface ScoutsRouteChildren {
   ScoutsSlugRoute: typeof ScoutsSlugRoute
@@ -362,8 +186,7 @@ const ScoutsRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  LabRoute: LabRoute,
-  ProductsRoute: ProductsRouteWithChildren,
+  ChatsRoute: ChatsRoute,
   ScoutsRoute: ScoutsRouteWithChildren,
   SettingsRoute: SettingsRoute,
   HandoffHandoffIdRoute: HandoffHandoffIdRoute,

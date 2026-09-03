@@ -1,6 +1,6 @@
 # Scout
 
-Test web apps through fresh-user journeys and record whether their claims hold.
+Give a Scout its own accounts, then work with it through chat.
 
 Live app: [usable-spider-599.eu-west-1.convex.site](https://usable-spider-599.eu-west-1.convex.site)
 
@@ -22,9 +22,9 @@ inside the repository.
 - Vite+ for development, formatting, linting, tests, and builds
 - Node.js 24 for application and automation code
 
-Scout currently has an authenticated Product registry and an admin-only Lab for testing web apps.
-An admin can collect sourced, explicitly unverified product claims, configure persistent Scout
-identities, and start model threads that use each Scout's AgentMail inbox and Firecrawl profile.
+Scout currently provides private chats with persistent Scout identities. A chat can use the Scout's
+AgentMail inbox, Firecrawl browser profile, and accounts across multiple services. Choose Qwen,
+Luna, or Manual, and inspect tool calls, Live/Replay, usage, and human handoffs in the same workspace.
 
 ## Local development
 
@@ -53,13 +53,13 @@ The core workflow runs on macOS, Linux, and Windows. See
 
 ## Checks and builds
 
-| Command                           | Purpose                                                        |
-| --------------------------------- | -------------------------------------------------------------- |
-| `pnpm run check`                  | Format, lint, type-check, test, and verify generated redirects |
-| `pnpm run build`                  | Run the complete Cloudflare build path                         |
-| `pnpm run deploy:convex`          | Build and deploy the production app to `convex.site`           |
-| `pnpm run deploy:dry-run`         | Validate a production upload without publishing it             |
-| `pnpm run deploy:preview:dry-run` | Validate a preview upload without publishing it                |
+| Command                           | Purpose                                                     |
+| --------------------------------- | ----------------------------------------------------------- |
+| `pnpm run check`                  | Format, lint, type-check, test, and verify the dev launcher |
+| `pnpm run build`                  | Run the complete Cloudflare build path                      |
+| `pnpm run deploy:convex`          | Build and deploy the production app to `convex.site`        |
+| `pnpm run deploy:dry-run`         | Validate a production upload without publishing it          |
+| `pnpm run deploy:preview:dry-run` | Validate a preview upload without publishing it             |
 
 The dry-run commands need `CLOUDFLARE_WORKER_NAME`.
 
@@ -101,12 +101,11 @@ and deploy behavior. Use the
 ## Important files
 
 - `package.json` defines the supported development, check, build, and deploy commands.
-- `prerender.config.ts` defines public prerenders and the exact aliases shared by both hosts.
-- `vite.config.ts` defines the TanStack Start SPA and prerender behavior.
+- `vite.config.ts` defines the TanStack Start SPA shell served by both hosts.
 - `wrangler.jsonc` defines Cloudflare static assets, SPA fallback, and preview URLs.
 - `scripts/build-cloudflare.ts` owns the Cloudflare build and Convex deployment selection.
 - `scripts/deploy-cloudflare.ts` owns production, preview, and dry-run uploads.
-- `docs/agent-runtime.md` describes the current Scout, Lab thread, and generation model.
+- `docs/agent-runtime.md` describes Scout ownership, chats, tools, and handoffs.
 - `convex/` contains the backend, schema, authentication, and generated Convex bindings.
 - `src/` contains the React application and routes.
 
@@ -117,10 +116,6 @@ and deploy behavior. Use the
 - `convex/_generated/ai/`, `.agents/skills/`, `skills-lock.json`, and the marked Convex sections in
   `AGENTS.md` and `CLAUDE.md` are managed by `npx convex ai-files install`.
 - The marked Vite+ section in `AGENTS.md` is managed by `vp config`.
-- `scripts/generate-cloudflare-redirects.ts` owns only the marked generated block in
-  `public/_redirects`. Custom redirect rules can stay outside that block.
-- `patches/@convex-dev__static-hosting@0.2.1.patch` adds the `rewritePath` hook used by
-  `convex/http.ts`. Remove it when the package ships an equivalent API.
 
 Do not hand-edit generated files when their source tool can update them.
 When a Convex AI-file update changes the installed source snapshot, confirm its distribution license

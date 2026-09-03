@@ -12,7 +12,9 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "#components
 import { Marker, MarkerContent, MarkerIcon } from "#components/ui/marker";
 import { Message, MessageContent, MessageFooter, MessageHeader } from "#components/ui/message";
 
-export type ScoutRunMessage = FunctionReturnType<typeof api.scout.lab.listMessages>["page"][number];
+export type ScoutRunMessage = FunctionReturnType<
+  typeof api.scout.chats.listMessages
+>["page"][number];
 
 type ScoutRunMetadata = NonNullable<ScoutRunMessage["metadata"]>;
 

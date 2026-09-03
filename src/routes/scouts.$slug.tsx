@@ -1,5 +1,5 @@
-import { Link, createFileRoute } from "@tanstack/react-router";
-import { useAction, useQuery } from "convex/react";
+import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useAction, useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { ArrowLeftIcon, LoaderCircleIcon, PlusIcon, XIcon } from "lucide-react";
 import { type FormEvent, type ReactNode, useRef, useState } from "react";
@@ -35,6 +35,9 @@ const evidenceDate = new Intl.DateTimeFormat(undefined, {
 
 function ScoutDetailPage() {
   const { slug } = Route.useParams();
+  const navigate = useNavigate();
+  const createThread = useMutation(api.scout.chats.createThread);
+  const [chatState, setChatState] = useState<RegistrationState>({ kind: "idle" });
   const scout = useQuery(api.scout.scouts.get, { slug });
   const serviceAccounts = useQuery(
     api.scout.serviceAccounts.list,
@@ -73,6 +76,16 @@ function ScoutDetailPage() {
 
   const statusLabel = scout.status === "active" ? "Active" : "Disabled";
   const statusDotClass = scout.status === "active" ? "bg-emerald-500" : "bg-muted-foreground";
+  const startChat = async () => {
+    if (scout.status !== "active" || chatState.kind === "submitting") return;
+    setChatState({ kind: "submitting" });
+    try {
+      const created = await createThread({ scoutId: scout._id });
+      await navigate({ to: "/chats", search: { thread: created.threadId } });
+    } catch {
+      setChatState({ kind: "failed", message: "Could not start the chat. Try again." });
+    }
+  };
 
   return (
     <>
@@ -92,11 +105,31 @@ function ScoutDetailPage() {
               Worker models act as {scout.displayName} using this identity and the resources below.
             </p>
           </div>
-          <span className="inline-flex shrink-0 self-start items-center gap-2 rounded-full bg-muted px-2.5 py-1 text-xs font-medium">
-            <span className={`size-2 rounded-full ${statusDotClass}`} aria-hidden="true" />
-            {statusLabel}
-          </span>
+          <div className="flex shrink-0 items-center gap-3 self-start">
+            <span className="inline-flex items-center gap-2 rounded-full bg-muted px-2.5 py-1 text-xs font-medium">
+              <span className={`size-2 rounded-full ${statusDotClass}`} aria-hidden="true" />
+              {statusLabel}
+            </span>
+            <Button
+              type="button"
+              size="sm"
+              disabled={scout.status !== "active" || chatState.kind === "submitting"}
+              onClick={() => void startChat()}
+            >
+              {chatState.kind === "submitting" ? (
+                <LoaderCircleIcon className="animate-spin" />
+              ) : (
+                <PlusIcon />
+              )}
+              {chatState.kind === "submitting" ? "Starting" : "New chat"}
+            </Button>
+          </div>
         </div>
+        {chatState.kind === "failed" ? (
+          <p className="text-destructive text-sm" role="alert">
+            {chatState.message}
+          </p>
+        ) : null}
       </header>
 
       <section aria-labelledby="scout-identity-heading">
@@ -331,7 +364,7 @@ function AccountRegistrationForm({
     if (!serviceName || !serviceDomain || !credentialHost || !identifier) {
       setState({
         kind: "failed",
-        message: "Enter a service, product domain, login host, and account identifier.",
+        message: "Enter a service, service domain, login host, and account identifier.",
       });
       return;
     }
@@ -397,7 +430,7 @@ function AccountRegistrationForm({
             onChange={(event) => updateField("serviceName", event.currentTarget.value)}
           />
         </FormField>
-        <FormField label="Product domain" htmlFor="service-account-domain">
+        <FormField label="Service domain" htmlFor="service-account-domain">
           <Input
             id="service-account-domain"
             name="serviceDomain"
@@ -516,7 +549,7 @@ function accountRegistrationError(error: unknown) {
     return "That account is already registered for this scout.";
   }
   if (message.includes("already has a managed credential")) {
-    return "This scout already has a managed password for that product.";
+    return "This Scout already has a managed password for that service.";
   }
   if (message.includes("SCOUT_CREDENTIAL_MASTER_KEY_V1")) {
     return "Managed credential encryption is not configured for this deployment.";
@@ -525,7 +558,7 @@ function accountRegistrationError(error: unknown) {
     return "Enter an exact HTTPS login host without a path, such as account.example.com.";
   }
   if (message.includes("service domain") || message.includes("Service domain")) {
-    return "Enter a valid product domain, such as example.com.";
+    return "Enter a valid service domain, such as example.com.";
   }
   return "Could not add the account. Check the values and try again.";
 }

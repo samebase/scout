@@ -27,7 +27,14 @@ describe("Scout service-account recording tool", () => {
     });
   });
 
-  it("rejects a model-supplied account identifier", async () => {
+  it.each([
+    "identifier",
+    "serviceAccountId",
+    "scoutId",
+    "sessionId",
+    "serviceDomain",
+    "observedUrl",
+  ])("rejects model-supplied account or browser scope: %s", async (field) => {
     const record = vi.fn(async () => ({ serviceAccountId: "account-1", created: false }));
     const recordingTool = createServiceAccountRecordingTool(record);
     const invalidInput: {
@@ -35,13 +42,13 @@ describe("Scout service-account recording tool", () => {
       loginMethod: "managed_password";
       identityText: string;
       sessionControlText: string;
-      identifier: string;
+      [field: string]: string;
     } = {
       accountAccess: "created",
       loginMethod: "managed_password",
       identityText: "conrad@example.test",
       sessionControlText: "Sign out",
-      identifier: "other@example.test",
+      [field]: "other@example.test",
     };
 
     await expect(recordingTool.execute(invalidInput, toolOptions)).rejects.toThrow();

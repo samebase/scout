@@ -2,7 +2,7 @@
 
 - **Project:** Scout
 - **Event:** Convex All Gas Hackathon
-- **What it does:** Runs persistent Scout identities through operator-directed web tasks and preserves their attempts, browser sessions, and evidence.
+- **What it does:** Lets users chat with persistent Scouts that use their own connected accounts, with visible tool calls, browser sessions, and replay.
 - **Live app:** https://usable-spider-599.eu-west-1.convex.site
 - **Repo:** private
 - **Frontend:** Convex static hosting
@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-03T12:23:20Z
+- **Last updated:** 2026-09-03T16:02:00Z
 
 ## Log
 
@@ -891,7 +891,7 @@ Made each pull request one shipped build through squash merging. Branch commits 
 the pull request title projects the next main commit count, and one grouped Hackathon entry carries
 forward to the next squash commit (`AGENTS.md`, `scripts/pr-build-label.ts`).
 
-### 2026-09-03 - working tree
+### 2026-09-03 - 7e215c5
 
 Added a manual Lab driver for Scout's existing browser, mail, password, and diagnostic tools. Lab
 threads now retain live views, Playwright operations, and replay while model context keeps only the
@@ -900,3 +900,10 @@ latest page snapshot; standard Playwright page APIs replace custom tab commands 
 
 Verified the flow by completing a Samebase app across GitHub, Cloudflare, and Convex, loading the
 deployed app, replaying the multi-tab session, and deleting an earlier test app.
+
+### 2026-09-03 - working tree
+
+Made Scout chats the main interface and removed products, tasks, attempts, and experiment grouping.
+Kept Scout identities and account connections, shared manual and model tools, and moved human
+handoff into chats alongside live view, replay, and usage (`convex/schema.ts`, `convex/scout/`,
+`convex/humanHandoffs.ts`, `src/routes/chats.tsx`).
