@@ -1,11 +1,11 @@
 "use node";
 
 import { createMCPClient, type MCPClient } from "@ai-sdk/mcp";
-import { validateTypes } from "@ai-sdk/provider-utils";
 import type { Message } from "@convex-dev/agent";
 import { randomUUID } from "node:crypto";
 import { type JSONValue, type ModelMessage, type ToolSet } from "ai";
 import { v } from "convex/values";
+import { z } from "zod";
 import { internal } from "../_generated/api";
 import { action, env } from "../_generated/server";
 import { findActiveBrowserSession } from "../humanHandoffBrowser";
@@ -14,6 +14,7 @@ import { scoutAgent } from "./agent";
 import { closeAgentMailBestEffort } from "./generation";
 import { createBrowserHarness, selectAgentMailTools } from "./browserTools";
 import { diagnosticMessage } from "./lib/redaction";
+import { requireRuntimeTool } from "./lib/runtimeTool";
 import { createToolArgumentProbe } from "./toolArgumentProbe";
 import { createWebTools } from "./webTools";
 
@@ -30,12 +31,13 @@ const manualToolNameValidator = v.union(
   v.literal("web_read"),
   v.literal("inspect_tool_arguments"),
 );
+const jsonValueSchema = z.json();
 
 type ManualToolName = typeof manualToolNameValidator.type;
 type Browser = ReturnType<typeof createBrowserHarness>;
 
 const manualToolOutcomeValidator = v.union(
-  v.object({ kind: v.literal("success"), output: v.any() }),
+  v.object({ kind: v.literal("success"), output: v.string() }),
   v.object({ kind: v.literal("error"), error: v.string() }),
 );
 
@@ -49,38 +51,16 @@ function requiredSecret(value: string | undefined, name: string) {
   return value;
 }
 
-function jsonValue(value: unknown, seen = new WeakSet<object>()): JSONValue {
-  if (value === null || typeof value === "string" || typeof value === "boolean") return value;
-  if (typeof value === "number") return Number.isFinite(value) ? value : value.toString();
-  if (typeof value === "bigint") return value.toString();
-  if (typeof value !== "object") return null;
-  if (seen.has(value)) return "[circular]";
-  seen.add(value);
-  if (Array.isArray(value)) {
-    const result = value.map((entry) => jsonValue(entry, seen));
-    seen.delete(value);
-    return result;
+function parseManualToolInput(value: string): JSONValue {
+  let payload: unknown;
+  try {
+    payload = JSON.parse(value);
+  } catch {
+    throw new Error("Tool input must be valid JSON");
   }
-  const result: Record<string, JSONValue> = {};
-  for (const [key, entry] of Object.entries(value)) {
-    if (entry !== undefined) result[key] = jsonValue(entry, seen);
-  }
-  seen.delete(value);
-  return result;
-}
-
-function manualToolExecutionOptions(toolCallId: string) {
-  return { toolCallId, messages: [], context: undefined };
-}
-
-async function runTool(tools: ToolSet, toolName: string, input: JSONValue, toolCallId: string) {
-  const selected = tools[toolName];
-  if (!selected) throw new Error(`Tool ${toolName} is unavailable`);
-  if (!("inputSchema" in selected)) throw new Error(`Tool ${toolName} cannot accept input`);
-  const execute: unknown = "execute" in selected ? selected.execute : undefined;
-  if (typeof execute !== "function") throw new Error(`Tool ${toolName} cannot be executed`);
-  const parsed = await validateTypes({ value: input, schema: selected.inputSchema });
-  return await Reflect.apply(execute, undefined, [parsed, manualToolExecutionOptions(toolCallId)]);
+  const parsed = jsonValueSchema.safeParse(payload);
+  if (!parsed.success) throw new Error("Tool input must be valid JSON");
+  return parsed.data;
 }
 
 function usesAgentMail(toolName: ManualToolName) {
@@ -114,7 +94,7 @@ export const executeTool = action({
   args: {
     threadId: v.string(),
     toolName: manualToolNameValidator,
-    input: v.any(),
+    input: v.string(),
   },
   returns: manualToolResultValidator,
   handler: async (ctx, args) => {
@@ -122,7 +102,7 @@ export const executeTool = action({
       threadId: args.threadId,
     });
     const toolCallId = randomUUID();
-    const input = jsonValue(args.input);
+    const input = parseManualToolInput(args.input);
     const { messageId: promptMessageId } = await scoutAgent.saveMessage(ctx, {
       threadId: args.threadId,
       userId: runtime.userId,
@@ -151,7 +131,7 @@ export const executeTool = action({
     let agentMailClient: MCPClient | undefined;
     let browser: Browser | undefined;
     let currentBrowserSessionId = runtime.browserSessionId;
-    let rawOutput: unknown;
+    let output: JSONValue = null;
     let executionError: string | undefined;
     try {
       let selectedTools: ToolSet;
@@ -263,7 +243,13 @@ export const executeTool = action({
           selectedTools = browser.tools;
         }
       }
-      rawOutput = await runTool(selectedTools, args.toolName, input, toolCallId);
+      output = jsonValueSchema.parse(
+        await requireRuntimeTool(selectedTools, args.toolName).execute(input, {
+          toolCallId,
+          messages: [],
+          context: undefined,
+        }),
+      );
     } catch (error) {
       executionError = diagnosticMessage(error);
       if (args.toolName === "create_new_firecrawl_session") {
@@ -275,7 +261,7 @@ export const executeTool = action({
 
     const outcome: typeof manualToolOutcomeValidator.type = executionError
       ? { kind: "error", error: executionError }
-      : { kind: "success", output: jsonValue(rawOutput) };
+      : { kind: "success", output: JSON.stringify(output) ?? "null" };
     const toolResultMessage = {
       role: "tool",
       content: [
@@ -291,7 +277,7 @@ export const executeTool = action({
               type: "tool-result",
               toolCallId,
               toolName: args.toolName,
-              output: { type: "json", value: jsonValue(rawOutput) },
+              output: { type: "json", value: output },
             },
       ],
     } satisfies Message;

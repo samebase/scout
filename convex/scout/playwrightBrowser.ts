@@ -9,8 +9,6 @@ const BROWSER_ACTION_TIMEOUT_MS = 60_000;
 const SNAPSHOT_TIMEOUT_MS = 30_000;
 const VIEWPORT = { width: 1280, height: 800 } as const;
 
-type PlaywrightRole = Parameters<Page["getByRole"]>[0];
-
 export type BrowserTelemetry = Infer<typeof browserTelemetryValidator>;
 export type BrowserObservation = BrowserTelemetry["before"];
 
@@ -112,7 +110,7 @@ class ConnectedPlaywrightBrowser implements PlaywrightBrowser {
     switch (target.kind) {
       case "role":
         return page
-          .getByRole(target.role as PlaywrightRole, {
+          .getByRole(target.role, {
             name: target.name,
             exact: target.exact,
           })

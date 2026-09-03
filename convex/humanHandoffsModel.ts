@@ -1,4 +1,4 @@
-import type { WorkflowId } from "@convex-dev/workflow";
+import { vWorkflowId } from "@convex-dev/workflow";
 import { type Infer, v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
@@ -15,7 +15,7 @@ const humanHandoffCommon = {
   requestedAt: v.number(),
   claimExpiresAt: v.number(),
   accessTokenHash: v.string(),
-  workflowId: v.string(),
+  workflowId: vWorkflowId,
 };
 
 const humanHandoffClaim = {
@@ -218,7 +218,7 @@ async function sendOutcome(
 ) {
   await humanHandoffWorkflow.sendEvent(ctx, {
     ...humanHandoffOutcomeEvent,
-    workflowId: handoff.workflowId as WorkflowId,
+    workflowId: handoff.workflowId,
     value: { kind },
   });
 }
@@ -287,7 +287,7 @@ export async function signalHumanHandoffScoutPaused(
 ) {
   await humanHandoffWorkflow.sendEvent(ctx, {
     ...humanHandoffScoutPausedEvent,
-    workflowId: handoff.workflowId as WorkflowId,
+    workflowId: handoff.workflowId,
     value: null,
   });
 }

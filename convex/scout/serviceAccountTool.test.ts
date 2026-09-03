@@ -1,3 +1,4 @@
+import { validateTypes } from "@ai-sdk/provider-utils";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { createServiceAccountRecordingTool } from "./serviceAccountTool";
 
@@ -8,17 +9,20 @@ describe("Scout service-account recording tool", () => {
     const record = vi.fn(async () => ({ serviceAccountId: "account-1", created: false }));
     const recordingTool = createServiceAccountRecordingTool(record);
 
-    await expect(
-      recordingTool.execute(
-        {
-          accountAccess: "created",
-          loginMethod: "managed_password",
-          identityText: "conrad@example.test",
-          sessionControlText: "Sign out",
-        },
-        toolOptions,
-      ),
-    ).resolves.toEqual({ serviceAccountId: "account-1", created: false });
+    const input = await validateTypes({
+      value: {
+        accountAccess: "created",
+        loginMethod: "managed_password",
+        identityText: "conrad@example.test",
+        sessionControlText: "Sign out",
+      },
+      schema: recordingTool.inputSchema,
+    });
+
+    await expect(recordingTool.execute(input, toolOptions)).resolves.toEqual({
+      serviceAccountId: "account-1",
+      created: false,
+    });
     expect(record).toHaveBeenCalledWith({
       accountAccess: "created",
       loginMethod: { kind: "managed_password" },
@@ -51,7 +55,9 @@ describe("Scout service-account recording tool", () => {
       [field]: "other@example.test",
     };
 
-    await expect(recordingTool.execute(invalidInput, toolOptions)).rejects.toThrow();
+    await expect(
+      validateTypes({ value: invalidInput, schema: recordingTool.inputSchema }),
+    ).rejects.toThrow();
     expect(record).not.toHaveBeenCalled();
   });
 
@@ -59,8 +65,8 @@ describe("Scout service-account recording tool", () => {
     const record = vi.fn(async () => ({ serviceAccountId: "account-1", created: true }));
     const recordingTool = createServiceAccountRecordingTool(record);
 
-    await recordingTool.execute(
-      {
+    const input = await validateTypes({
+      value: {
         accountAccess: "created",
         loginMethod: "oauth",
         oauthProviderServiceDomain: "github.com",
@@ -68,8 +74,10 @@ describe("Scout service-account recording tool", () => {
         identityText: "conrad@example.test",
         sessionControlText: "Sign out",
       },
-      toolOptions,
-    );
+      schema: recordingTool.inputSchema,
+    });
+
+    await recordingTool.execute(input, toolOptions);
 
     expect(record).toHaveBeenCalledWith({
       accountAccess: "created",
@@ -88,16 +96,16 @@ describe("Scout service-account recording tool", () => {
     const recordingTool = createServiceAccountRecordingTool(record);
 
     await expect(
-      recordingTool.execute(
-        {
+      validateTypes({
+        value: {
           accountAccess: "created",
           loginMethod: "oauth",
           identityText: "conrad@example.test",
           sessionControlText: "Sign out",
         },
-        toolOptions,
-      ),
-    ).rejects.toThrow("OAuth account recording requires the provider domain and identifier");
+        schema: recordingTool.inputSchema,
+      }),
+    ).rejects.toThrow();
     expect(record).not.toHaveBeenCalled();
   });
 });

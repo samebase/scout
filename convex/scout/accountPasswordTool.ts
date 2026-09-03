@@ -1,6 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { browserTargetSchema, type BrowserTarget } from "./browserTarget";
+import { browserTargetSchema } from "./browserTarget";
 
 const accountPasswordTargetsSchema = z.object({
   passwordTarget: browserTargetSchema.describe("Visible password field"),
@@ -9,10 +9,7 @@ const accountPasswordTargetsSchema = z.object({
     .optional(),
 });
 
-export type AccountPasswordTargets = {
-  passwordTarget: BrowserTarget;
-  passwordConfirmationTarget?: BrowserTarget | undefined;
-};
+export type AccountPasswordTargets = z.infer<typeof accountPasswordTargetsSchema>;
 
 export function requirePasswordInputType(value: string) {
   if (value.trim().toLocaleLowerCase() !== "password") {
@@ -27,7 +24,6 @@ export function createAccountPasswordFillTool(
     description:
       "Fill the configured Scout account password without revealing it. Identify the visible password field and, when present, its confirmation field with Playwright targets. Never enter a password through browser_execute.",
     inputSchema: accountPasswordTargetsSchema,
-    execute: async (targets, options) =>
-      await fill(accountPasswordTargetsSchema.parse(targets), options.toolCallId),
+    execute: async (targets, options) => await fill(targets, options.toolCallId),
   });
 }

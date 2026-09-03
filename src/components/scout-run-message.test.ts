@@ -4,16 +4,19 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { describe, expect, test } from "vite-plus/test";
 import { afterEach } from "vite-plus/test";
 import type { Id } from "../../convex/_generated/dataModel";
+import { ScoutRunMessageView, formatRunMetadata } from "./scout-run-message";
 import {
-  ScoutRunMessageView,
   countGenerationSteps,
-  formatRunMetadata,
+  parseScoutMessageParts,
   repairedToolInputFields,
   toolInputPreview,
   toolOutputFailure,
-} from "./scout-run-message";
+} from "#lib/scout-message-parts";
 
 afterEach(() => cleanup());
+
+// @ts-expect-error This isolated view fixture does not cross the Convex ID boundary.
+const scoutId: Id<"scouts"> = "scout";
 
 describe("Scout transcript metadata", () => {
   test("keeps the stored failure visible after generation finishes", () => {
@@ -32,7 +35,7 @@ describe("Scout transcript metadata", () => {
           metadata: {
             model: "qwen/qwen3.7-flash",
             scout: {
-              id: "scout" as Id<"scouts">,
+              id: scoutId,
               displayName: "Conrad Scout",
             },
             failure: "Tool input did not match its schema",
@@ -52,7 +55,7 @@ describe("Scout transcript metadata", () => {
         {
           model: "qwen/qwen3.7-flash",
           scout: {
-            id: "scout" as Id<"scouts">,
+            id: scoutId,
             displayName: "Conrad Scout",
           },
           usage: {
@@ -68,17 +71,56 @@ describe("Scout transcript metadata", () => {
 
   test("counts generation-step boundaries in the message parts", () => {
     expect(
-      countGenerationSteps([
-        { type: "text", text: "Starting" },
-        { type: "step-start" },
-        { type: "tool-browser_execute", toolCallId: "tool-1", state: "output-available" },
-        { type: "step-start" },
-      ]),
+      countGenerationSteps(
+        parseScoutMessageParts([
+          { type: "text", text: "Starting" },
+          { type: "step-start" },
+          {
+            type: "tool-browser_execute",
+            toolCallId: "tool-1",
+            state: "output-available",
+          },
+          { type: "step-start" },
+        ]),
+      ),
     ).toBe(2);
   });
 });
 
 describe("Scout tool results", () => {
+  test("parses one AI SDK tool part before the renderer reads it", () => {
+    expect(
+      parseScoutMessageParts([
+        {
+          type: "tool-browser_execute",
+          toolCallId: "tool-1",
+          state: "output-available",
+          input: { code: "return await page.title()" },
+          output: { success: true, output: "Example" },
+          callProviderMetadata: {
+            scout: {
+              inputRepair: { method: "json-parse", fields: ["code"] },
+            },
+          },
+        },
+      ]),
+    ).toEqual([
+      {
+        kind: "tool",
+        tool: {
+          name: "browser_execute",
+          state: "output-available",
+          toolCallId: "tool-1",
+          input: '{\n  "code": "return await page.title()"\n}',
+          inputPreview: "return await page.title()",
+          output: '{\n  "success": true,\n  "output": "Example"\n}',
+          error: undefined,
+          repairedInputFields: ["code"],
+        },
+      },
+    ]);
+  });
+
   test("previews Playwright code without the browser_execute input wrapper", () => {
     const code = "await page.getByRole('button', { name: 'Continue' }).click();";
 
@@ -114,7 +156,7 @@ describe("Scout tool results", () => {
   test("classifies unsuccessful structured tool output as an error", () => {
     const failure = { success: false, error: "Playwright execution timed out" };
 
-    expect(toolOutputFailure(failure)).toBe(failure);
+    expect(toolOutputFailure(failure)).toBe(JSON.stringify(failure, null, 2));
   });
 
   test("does not classify successful output with a null error field as an error", () => {

@@ -97,32 +97,29 @@ describe("Scout chats", () => {
     const result = await admin.action(api.scout.manual.executeTool, {
       threadId,
       toolName: "inspect_tool_arguments",
-      input: {
+      input: JSON.stringify({
         stringValue: "plain text",
         numberValue: 42,
         booleanValue: true,
         objectValue: { label: "nested", count: 2 },
         arrayValue: ["alpha", "beta"],
         nullValue: null,
-      },
+      }),
     });
 
-    expect(result).toMatchObject({
-      toolCallId: expect.any(String),
-      outcome: {
-        kind: "success",
-        output: {
-          received: {
-            numberValue: { type: "number", value: 42 },
-            nullValue: { type: "null", value: null },
-          },
-        },
+    expect(result.toolCallId).toEqual(expect.any(String));
+    expect(result.outcome.kind).toBe("success");
+    if (result.outcome.kind !== "success") throw new Error("Manual tool did not succeed");
+    expect(JSON.parse(result.outcome.output)).toMatchObject({
+      received: {
+        numberValue: { type: "number", value: 42 },
+        nullValue: { type: "null", value: null },
       },
     });
     const invalid = await admin.action(api.scout.manual.executeTool, {
       threadId,
       toolName: "inspect_tool_arguments",
-      input: {},
+      input: "{}",
     });
     expect(invalid).toMatchObject({
       toolCallId: expect.any(String),

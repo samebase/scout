@@ -1,3 +1,4 @@
+import { validateTypes } from "@ai-sdk/provider-utils";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { createAccountPasswordFillTool, requirePasswordInputType } from "./accountPasswordTool";
 
@@ -18,9 +19,12 @@ describe("Scout account password tool", () => {
       exact: true,
     };
 
-    await expect(
-      passwordTool.execute({ passwordTarget, passwordConfirmationTarget }, toolOptions),
-    ).resolves.toEqual({ filledFields: 2 });
+    const input = await validateTypes({
+      value: { passwordTarget, passwordConfirmationTarget },
+      schema: passwordTool.inputSchema,
+    });
+
+    await expect(passwordTool.execute(input, toolOptions)).resolves.toEqual({ filledFields: 2 });
     expect(fill).toHaveBeenCalledWith({ passwordTarget, passwordConfirmationTarget }, "tool-1");
   });
 
@@ -29,7 +33,10 @@ describe("Scout account password tool", () => {
     const passwordTool = createAccountPasswordFillTool(fill);
 
     await expect(
-      passwordTool.execute({ passwordTarget: "secret-password" } as never, toolOptions),
+      validateTypes({
+        value: { passwordTarget: "secret-password" },
+        schema: passwordTool.inputSchema,
+      }),
     ).rejects.toThrow();
     expect(fill).not.toHaveBeenCalled();
   });
