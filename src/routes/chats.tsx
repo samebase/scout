@@ -20,7 +20,9 @@ import type { FunctionArgs, FunctionReturnType } from "convex/server";
 import {
   ExternalLinkIcon,
   LoaderCircleIcon,
+  MonitorIcon,
   PanelLeftIcon,
+  PanelRightIcon,
   PlusIcon,
   SendIcon,
   TelescopeIcon,
@@ -63,20 +65,12 @@ import { Textarea } from "#components/ui/textarea";
 
 type ChatSearch = {
   thread?: string;
-  view?: ChatView;
   session?: string;
 };
-
-type ChatView = "transcript" | "live" | "replay";
-
-function isChatView(value: unknown): value is ChatView {
-  return value === "transcript" || value === "live" || value === "replay";
-}
 
 export const Route = createFileRoute("/chats")({
   validateSearch: (search: Record<string, unknown>): ChatSearch => ({
     ...(typeof search["thread"] === "string" ? { thread: search["thread"] } : {}),
-    ...(isChatView(search["view"]) ? { view: search["view"] } : {}),
     ...(typeof search["session"] === "string" ? { session: search["session"] } : {}),
   }),
   head: () => ({
@@ -190,7 +184,7 @@ const CONTEXT_PANEL_RESIZE_STEP = 48;
 const THREAD_PAGE_SIZE = 50;
 const CHAT_RESIZE_HANDLE_LABELS = {
   left: "Resize chat navigation",
-  right: "Resize chat details",
+  right: "Resize conversation",
 } satisfies SidebarLayoutResizeHandleLabels;
 const formatResizeHandleValueText: SidebarLayoutResizeHandleValueTextFormatter = ({ widthPx }) =>
   `${widthPx} pixels wide`;
@@ -316,7 +310,6 @@ function ChatsWorkspace() {
     api.humanHandoffs.active,
     selectedBrowserSession ? { sessionId: selectedBrowserSession.sessionId } : "skip",
   );
-  const view = search.view ?? "transcript";
   const isActivityLoading = selectedScoutId !== undefined && scoutActivity === undefined;
   const isWorking =
     composerState.kind === "sending" || isActivityLoading || scoutActivity?.active === true;
@@ -336,19 +329,15 @@ function ChatsWorkspace() {
   currentThreadId.current = threadId;
 
   useEffect(() => {
-    if (search.thread !== undefined || threads.status === "LoadingFirstPage") return;
-    const firstThread = availableThreads[0];
-    if (!firstThread) return;
+    if (!threadId || browserSessions === undefined) return;
+    const sessionId = selectedBrowserSession?.sessionId;
+    if (search.thread === threadId && search.session === sessionId) return;
     void navigate({
       to: "/chats",
       replace: true,
-      search: {
-        thread: firstThread.threadId,
-        ...(search.view ? { view: search.view } : {}),
-        ...(search.session ? { session: search.session } : {}),
-      },
+      search: { thread: threadId, ...(sessionId ? { session: sessionId } : {}) },
     });
-  }, [availableThreads, navigate, search.session, search.thread, search.view, threads.status]);
+  }, [browserSessions, navigate, search.session, search.thread, selectedBrowserSession, threadId]);
 
   useEffect(() => {
     if (
@@ -377,6 +366,7 @@ function ChatsWorkspace() {
   const closeCreateChat = () => {
     if (createChatSubmitting) return;
     setCreateChatOpen(false);
+    setMobilePane("right");
     requestAnimationFrame(() => createChatButton.current?.focus());
   };
 
@@ -387,7 +377,7 @@ function ChatsWorkspace() {
     setComposerState({ kind: "idle" });
     setCreateChatOpen(false);
     void navigate({ to: "/chats", search: { thread: created.threadId } });
-    setMobilePane("main");
+    setMobilePane("right");
   };
 
   const submitPrompt = async () => {
@@ -512,6 +502,229 @@ function ChatsWorkspace() {
     selectionMissing,
   });
 
+  const hasBrowser = selectedBrowserSession !== undefined && !createChatOpen;
+  const conversation = (
+    <PaneFrame
+      header={<div className="flex h-full items-center px-4 text-xs font-semibold">Chat</div>}
+      content={
+        <section aria-label="Conversation" className="flex h-full min-h-0 min-w-0 flex-col">
+          {activeHandoff ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/40 px-4 py-3">
+              <p className="text-sm">{activeHandoff.reason}</p>
+              <Button asChild size="sm" variant="outline">
+                <Link to="/handoff/$handoffId" params={{ handoffId: activeHandoff.handoffId }}>
+                  Open browser handoff
+                </Link>
+              </Button>
+            </div>
+          ) : null}
+
+          <div className="min-h-0 flex-1">
+            <MessageScrollerProvider autoScroll scrollPreviousItemPeek={48}>
+              <MessageScroller>
+                <MessageScrollerViewport>
+                  <MessageScrollerContent className="px-3 py-5 @sm:px-5" aria-busy={isWorking}>
+                    {messages.status === "CanLoadMore" ? (
+                      <MessageScrollerItem>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="mx-auto"
+                          onClick={() => messages.loadMore(THREAD_PAGE_SIZE)}
+                        >
+                          Load earlier messages
+                        </Button>
+                      </MessageScrollerItem>
+                    ) : null}
+                    {messages.results.length === 0 ? (
+                      <EmptyTranscript
+                        title={emptyTranscript.title}
+                        description={emptyTranscript.description}
+                      />
+                    ) : null}
+                    {messages.results.map((message) => (
+                      <MessageScrollerItem
+                        key={message.key}
+                        messageId={message.id}
+                        scrollAnchor={message.role === "user"}
+                      >
+                        <ScoutRunMessageView message={message} />
+                      </MessageScrollerItem>
+                    ))}
+                  </MessageScrollerContent>
+                </MessageScrollerViewport>
+                <MessageScrollerButton />
+              </MessageScroller>
+            </MessageScrollerProvider>
+          </div>
+
+          <form
+            className="chat-composer shrink-0 overflow-y-auto border-t bg-[color-mix(in_oklch,var(--card)_92%,var(--background))] p-3 @sm:p-4"
+            onSubmit={submitComposer}
+          >
+            {selectedScout && !selectedActiveScout ? (
+              <p className="text-muted-foreground mb-2 text-sm">
+                Activate {selectedScout.displayName} to continue this chat.
+              </p>
+            ) : activeScouts.length === 0 && scouts !== undefined ? (
+              <p className="text-muted-foreground mb-2 text-sm">
+                Register an active scout before starting a chat.{" "}
+                <Link to="/scouts" className="text-foreground underline underline-offset-4">
+                  Register a scout
+                </Link>
+              </p>
+            ) : null}
+            {threadId ? (
+              <details className="mb-2 rounded-lg border border-input bg-card text-xs">
+                <summary className="cursor-pointer px-3 py-2 font-medium">Agent context</summary>
+                <div
+                  role="separator"
+                  aria-label="Resize agent context"
+                  aria-orientation="horizontal"
+                  aria-valuemin={MIN_CONTEXT_PANEL_HEIGHT}
+                  aria-valuenow={Math.round(contextPanelHeight)}
+                  tabIndex={0}
+                  className="group flex h-2 touch-none cursor-row-resize items-center border-t px-3 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onKeyDown={onContextResizeKeyDown}
+                  onPointerDown={onContextResizeStart}
+                  onPointerMove={onContextResizeMove}
+                  onPointerUp={onContextResizeEnd}
+                  onPointerCancel={onContextResizeEnd}
+                >
+                  <span className="bg-border group-hover:bg-foreground/30 mx-auto h-px w-12 transition-colors" />
+                </div>
+                <div
+                  className="space-y-3 overflow-auto px-3 pb-3"
+                  style={{ height: contextPanelHeight }}
+                >
+                  <section>
+                    <h3 className="mb-1 font-medium">Instructions</h3>
+                    <pre className="text-muted-foreground whitespace-pre-wrap font-mono text-[0.6875rem] leading-relaxed">
+                      {agentContext?.instructions ?? "Loading…"}
+                    </pre>
+                  </section>
+                  <section>
+                    <h3 className="mb-1 font-medium">browser_execute</h3>
+                    <pre className="text-muted-foreground whitespace-pre-wrap font-mono text-[0.6875rem] leading-relaxed">
+                      {BROWSER_EXECUTE_DESCRIPTION}
+                    </pre>
+                  </section>
+                  <p className="text-muted-foreground">
+                    The transcript above is the conversation history supplied to the model.
+                  </p>
+                </div>
+              </details>
+            ) : null}
+            <div className="rounded-[0.875rem] border border-input bg-card p-2 shadow-[0_4px_18px_color-mix(in_oklch,var(--foreground)_5%,transparent)] transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/25">
+              {selectedDriver === "manual" ? (
+                <details className="px-2 pt-1 text-xs">
+                  <summary className="cursor-pointer text-muted-foreground">
+                    Tool instructions
+                  </summary>
+                  <pre className="max-h-48 overflow-auto whitespace-pre-wrap py-2 font-mono text-[0.6875rem]">
+                    {manualTool.description}
+                  </pre>
+                </details>
+              ) : null}
+              <Textarea
+                value={selectedDriver === "manual" ? manualInput : draft}
+                onChange={(event) =>
+                  selectedDriver === "manual"
+                    ? setManualInput(event.target.value)
+                    : setDraft(event.target.value)
+                }
+                onKeyDown={selectedDriver === "manual" ? undefined : onComposerKeyDown}
+                placeholder={
+                  selectedDriver === "manual"
+                    ? "JSON tool input"
+                    : canCompose && selectedActiveScout
+                      ? `Ask ${selectedActiveScout.displayName} to inspect, research, or explain...`
+                      : "Create or select a chat."
+                }
+                aria-label={selectedDriver === "manual" ? "Tool input" : "Message Scout"}
+                rows={selectedDriver === "manual" ? 5 : 2}
+                disabled={isWorking || !canCompose}
+                className={`max-h-48 min-h-14 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0 dark:bg-transparent ${
+                  selectedDriver === "manual" ? "font-mono text-xs" : ""
+                }`}
+              />
+              <div className="flex flex-wrap items-center justify-between gap-3 px-1 pt-1">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <label className="text-muted-foreground text-xs" htmlFor="chat-driver">
+                    Driver
+                  </label>
+                  <select
+                    id="chat-driver"
+                    value={selectedDriver}
+                    disabled={isWorking}
+                    onChange={(event) => onDriverChange(event.currentTarget.value)}
+                    className="border-input bg-background h-8 min-w-0 rounded-md border px-2 text-xs"
+                  >
+                    {DRIVER_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  {selectedDriver === "manual" ? (
+                    <>
+                      <label className="text-muted-foreground text-xs" htmlFor="chat-manual-tool">
+                        Tool
+                      </label>
+                      <select
+                        id="chat-manual-tool"
+                        value={manualTool.value}
+                        disabled={isWorking}
+                        onChange={(event) => onManualToolChange(event.currentTarget.value)}
+                        className="border-input bg-background h-8 min-w-0 rounded-md border px-2 text-xs"
+                      >
+                        {MANUAL_TOOL_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </>
+                  ) : null}
+                </div>
+                <div className="flex items-center gap-3">
+                  <p className="text-muted-foreground hidden text-xs @lg:block">
+                    {selectedDriver === "manual"
+                      ? "Run one tool call."
+                      : "Enter to send. Shift+Enter for a new line."}
+                  </p>
+                  <Button
+                    type="submit"
+                    size="icon-sm"
+                    disabled={
+                      isWorking ||
+                      !canCompose ||
+                      (selectedDriver === "manual" ? !manualInput.trim() : !draft.trim())
+                    }
+                    aria-label={selectedDriver === "manual" ? "Run tool" : "Send message"}
+                  >
+                    {composerState.kind === "sending" ? (
+                      <LoaderCircleIcon className="animate-spin" />
+                    ) : (
+                      <SendIcon />
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </div>
+            {composerState.kind === "failed" ? (
+              <p className="text-destructive mt-2 text-sm" role="alert">
+                {composerState.message}
+              </p>
+            ) : null}
+          </form>
+        </section>
+      }
+      scrollRestorationId={`chat-thread:${threadId ?? "empty"}`}
+    />
+  );
+
   return (
     <>
       <SidebarLayout
@@ -521,6 +734,7 @@ function ChatsWorkspace() {
             createOpen={createChatOpen}
             createSubmitting={createChatSubmitting}
             loadingScouts={scouts === undefined}
+            hasBrowser={hasBrowser}
             driver={selectedDriver}
             thread={selectedThread}
             scout={selectedScout}
@@ -529,8 +743,8 @@ function ChatsWorkspace() {
                 closeCreateChat();
               } else {
                 setCreateChatOpen(true);
+                setMobilePane("main");
               }
-              setMobilePane("main");
             }}
           />
         }
@@ -544,11 +758,10 @@ function ChatsWorkspace() {
                 canLoadMore={threads.status === "CanLoadMore"}
                 isLoadingMore={threads.status === "LoadingMore"}
                 selectedThreadId={threadId}
-                view={search.view}
                 onLoadMore={() => threads.loadMore(THREAD_PAGE_SIZE)}
                 onNavigate={() => {
                   resetForNavigation();
-                  setMobilePane("main");
+                  setMobilePane("right");
                 }}
               />
             }
@@ -556,23 +769,9 @@ function ChatsWorkspace() {
           />
         }
         main={
-          <PaneFrame
-            header={
-              <ChatModeHeader
-                disabled={threadId === null || createChatOpen}
-                sessions={browserSessions}
-                selectedSessionId={selectedBrowserSession?.sessionId}
-                view={view}
-                onSelectSession={(sessionId) =>
-                  void navigate({ to: "/chats", search: { ...search, session: sessionId } })
-                }
-                onViewChange={(nextView) =>
-                  void navigate({ to: "/chats", search: { ...search, view: nextView } })
-                }
-              />
-            }
-            content={
-              createChatOpen ? (
+          createChatOpen ? (
+            <PaneFrame
+              content={
                 <NewChatForm
                   scouts={activeScouts}
                   initialScoutId={selectedActiveScout?._id}
@@ -580,260 +779,36 @@ function ChatsWorkspace() {
                   onCreated={onChatCreated}
                   onSubmittingChange={setCreateChatSubmitting}
                 />
-              ) : (
-                <div className="flex h-full min-h-0 min-w-0 flex-col">
-                  {activeHandoff ? (
-                    <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/40 px-4 py-3">
-                      <p className="text-sm">{activeHandoff.reason}</p>
-                      <Button asChild size="sm" variant="outline">
-                        <Link
-                          to="/handoff/$handoffId"
-                          params={{ handoffId: activeHandoff.handoffId }}
-                        >
-                          Open browser handoff
-                        </Link>
-                      </Button>
-                    </div>
-                  ) : null}
-                  {view === "live" ? (
-                    <ChatLiveView
-                      liveViewUrl={liveView?.url ?? null}
-                      session={browserSession ?? undefined}
-                      sessionSummary={selectedBrowserSession}
-                    />
-                  ) : view === "replay" ? (
-                    <ChatReplayView
-                      session={browserSession ?? undefined}
-                      sessionSummary={selectedBrowserSession}
-                    />
-                  ) : (
-                    <>
-                      <div className="min-h-0 flex-1">
-                        <MessageScrollerProvider autoScroll scrollPreviousItemPeek={48}>
-                          <MessageScroller>
-                            <MessageScrollerViewport>
-                              <MessageScrollerContent
-                                className="px-4 py-7 sm:px-7"
-                                aria-busy={isWorking}
-                              >
-                                {messages.status === "CanLoadMore" ? (
-                                  <MessageScrollerItem>
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="sm"
-                                      className="mx-auto"
-                                      onClick={() => messages.loadMore(THREAD_PAGE_SIZE)}
-                                    >
-                                      Load earlier messages
-                                    </Button>
-                                  </MessageScrollerItem>
-                                ) : null}
-                                {messages.results.length === 0 ? (
-                                  <EmptyTranscript
-                                    title={emptyTranscript.title}
-                                    description={emptyTranscript.description}
-                                  />
-                                ) : null}
-                                {messages.results.map((message) => (
-                                  <MessageScrollerItem
-                                    key={message.key}
-                                    messageId={message.id}
-                                    scrollAnchor={message.role === "user"}
-                                  >
-                                    <ScoutRunMessageView message={message} />
-                                  </MessageScrollerItem>
-                                ))}
-                              </MessageScrollerContent>
-                            </MessageScrollerViewport>
-                            <MessageScrollerButton />
-                          </MessageScroller>
-                        </MessageScrollerProvider>
-                      </div>
-
-                      <form
-                        className="border-t bg-[color-mix(in_oklch,var(--card)_92%,var(--background))] p-3 sm:p-4"
-                        onSubmit={submitComposer}
-                      >
-                        {selectedScout && !selectedActiveScout ? (
-                          <p className="text-muted-foreground mb-2 text-sm">
-                            Activate {selectedScout.displayName} to continue this chat.
-                          </p>
-                        ) : activeScouts.length === 0 && scouts !== undefined ? (
-                          <p className="text-muted-foreground mb-2 text-sm">
-                            Register an active scout before starting a chat.{" "}
-                            <Link
-                              to="/scouts"
-                              className="text-foreground underline underline-offset-4"
-                            >
-                              Register a scout
-                            </Link>
-                          </p>
-                        ) : null}
-                        {threadId ? (
-                          <details className="mb-2 rounded-lg border border-input bg-card text-xs">
-                            <summary className="cursor-pointer px-3 py-2 font-medium">
-                              Agent context
-                            </summary>
-                            <div
-                              role="separator"
-                              aria-label="Resize agent context"
-                              aria-orientation="horizontal"
-                              aria-valuemin={MIN_CONTEXT_PANEL_HEIGHT}
-                              aria-valuenow={Math.round(contextPanelHeight)}
-                              tabIndex={0}
-                              className="group flex h-2 touch-none cursor-row-resize items-center border-t px-3 outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                              onKeyDown={onContextResizeKeyDown}
-                              onPointerDown={onContextResizeStart}
-                              onPointerMove={onContextResizeMove}
-                              onPointerUp={onContextResizeEnd}
-                              onPointerCancel={onContextResizeEnd}
-                            >
-                              <span className="bg-border group-hover:bg-foreground/30 mx-auto h-px w-12 transition-colors" />
-                            </div>
-                            <div
-                              className="space-y-3 overflow-auto px-3 pb-3"
-                              style={{ height: contextPanelHeight }}
-                            >
-                              <section>
-                                <h3 className="mb-1 font-medium">Instructions</h3>
-                                <pre className="text-muted-foreground whitespace-pre-wrap font-mono text-[0.6875rem] leading-relaxed">
-                                  {agentContext?.instructions ?? "Loading…"}
-                                </pre>
-                              </section>
-                              <section>
-                                <h3 className="mb-1 font-medium">browser_execute</h3>
-                                <pre className="text-muted-foreground whitespace-pre-wrap font-mono text-[0.6875rem] leading-relaxed">
-                                  {BROWSER_EXECUTE_DESCRIPTION}
-                                </pre>
-                              </section>
-                              <p className="text-muted-foreground">
-                                The transcript above is the conversation history supplied to the
-                                model.
-                              </p>
-                            </div>
-                          </details>
-                        ) : null}
-                        <div className="rounded-[0.875rem] border border-input bg-card p-2 shadow-[0_4px_18px_color-mix(in_oklch,var(--foreground)_5%,transparent)] transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/25">
-                          {selectedDriver === "manual" ? (
-                            <p className="text-muted-foreground px-2 pt-1 text-xs">
-                              {manualTool.description}
-                            </p>
-                          ) : null}
-                          <Textarea
-                            value={selectedDriver === "manual" ? manualInput : draft}
-                            onChange={(event) =>
-                              selectedDriver === "manual"
-                                ? setManualInput(event.target.value)
-                                : setDraft(event.target.value)
-                            }
-                            onKeyDown={selectedDriver === "manual" ? undefined : onComposerKeyDown}
-                            placeholder={
-                              selectedDriver === "manual"
-                                ? "JSON tool input"
-                                : canCompose && selectedActiveScout
-                                  ? `Ask ${selectedActiveScout.displayName} to inspect, research, or explain...`
-                                  : "Create or select a chat."
-                            }
-                            aria-label={
-                              selectedDriver === "manual" ? "Tool input" : "Message Scout"
-                            }
-                            rows={selectedDriver === "manual" ? 5 : 2}
-                            disabled={isWorking || !canCompose}
-                            className={`max-h-48 min-h-14 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0 dark:bg-transparent ${
-                              selectedDriver === "manual" ? "font-mono text-xs" : ""
-                            }`}
-                          />
-                          <div className="flex flex-wrap items-center justify-between gap-3 px-1 pt-1">
-                            <div className="flex min-w-0 flex-wrap items-center gap-2">
-                              <label
-                                className="text-muted-foreground text-xs"
-                                htmlFor="chat-driver"
-                              >
-                                Driver
-                              </label>
-                              <select
-                                id="chat-driver"
-                                value={selectedDriver}
-                                disabled={isWorking}
-                                onChange={(event) => onDriverChange(event.currentTarget.value)}
-                                className="border-input bg-background h-8 min-w-0 rounded-md border px-2 text-xs"
-                              >
-                                {DRIVER_OPTIONS.map((option) => (
-                                  <option key={option.value} value={option.value}>
-                                    {option.label}
-                                  </option>
-                                ))}
-                              </select>
-                              {selectedDriver === "manual" ? (
-                                <>
-                                  <label
-                                    className="text-muted-foreground text-xs"
-                                    htmlFor="chat-manual-tool"
-                                  >
-                                    Tool
-                                  </label>
-                                  <select
-                                    id="chat-manual-tool"
-                                    value={manualTool.value}
-                                    disabled={isWorking}
-                                    onChange={(event) =>
-                                      onManualToolChange(event.currentTarget.value)
-                                    }
-                                    className="border-input bg-background h-8 min-w-0 rounded-md border px-2 text-xs"
-                                  >
-                                    {MANUAL_TOOL_OPTIONS.map((option) => (
-                                      <option key={option.value} value={option.value}>
-                                        {option.label}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </>
-                              ) : null}
-                            </div>
-                            <div className="flex items-center gap-3">
-                              <p className="text-muted-foreground hidden text-xs sm:block">
-                                {selectedDriver === "manual"
-                                  ? "Run one tool call."
-                                  : "Enter to send. Shift+Enter for a new line."}
-                              </p>
-                              <Button
-                                type="submit"
-                                size="icon-sm"
-                                disabled={
-                                  isWorking ||
-                                  !canCompose ||
-                                  (selectedDriver === "manual"
-                                    ? !manualInput.trim()
-                                    : !draft.trim())
-                                }
-                                aria-label={
-                                  selectedDriver === "manual" ? "Run tool" : "Send message"
-                                }
-                              >
-                                {composerState.kind === "sending" ? (
-                                  <LoaderCircleIcon className="animate-spin" />
-                                ) : (
-                                  <SendIcon />
-                                )}
-                              </Button>
-                            </div>
-                          </div>
-                        </div>
-                        {composerState.kind === "failed" ? (
-                          <p className="text-destructive mt-2 text-sm" role="alert">
-                            {composerState.message}
-                          </p>
-                        ) : null}
-                      </form>
-                    </>
-                  )}
-                </div>
-              )
-            }
-            scrollRestorationId={`chat-thread:${threadId ?? "empty"}`}
-          />
+              }
+            />
+          ) : hasBrowser ? (
+            <PaneFrame
+              header={
+                browserSessions && browserSessions.length > 1 ? (
+                  <BrowserSessionPicker
+                    sessions={browserSessions}
+                    selectedSessionId={selectedBrowserSession.sessionId}
+                    onSelectSession={(sessionId) =>
+                      void navigate({
+                        to: "/chats",
+                        search: { ...search, session: sessionId },
+                      })
+                    }
+                  />
+                ) : undefined
+              }
+              content={
+                <ChatBrowserView
+                  liveViewUrl={liveView?.url ?? null}
+                  session={browserSession ?? undefined}
+                />
+              }
+            />
+          ) : (
+            conversation
+          )
         }
+        {...(hasBrowser ? { right: conversation } : {})}
         resizeHandleLabels={CHAT_RESIZE_HANDLE_LABELS}
       />
       <script
@@ -848,72 +823,47 @@ function ChatsWorkspace() {
   );
 }
 
-function ChatModeHeader({
-  disabled,
+function BrowserSessionPicker({
   sessions,
   selectedSessionId,
-  view,
   onSelectSession,
-  onViewChange,
 }: {
-  disabled: boolean;
-  sessions: readonly BrowserSession[] | undefined;
-  selectedSessionId: BrowserSession["sessionId"] | undefined;
-  view: ChatView;
+  sessions: readonly BrowserSession[];
+  selectedSessionId: BrowserSession["sessionId"];
   onSelectSession: (sessionId: BrowserSession["sessionId"]) => void;
-  onViewChange: (view: ChatView) => void;
 }) {
   return (
-    <div className="flex h-full min-w-0">
-      <div className="chat-modes min-w-0 flex-1" aria-label="Chat view">
-        {(["live", "replay", "transcript"] as const).map((item) => (
-          <button
-            key={item}
-            type="button"
-            data-selected={view === item ? "" : undefined}
-            disabled={disabled}
-            onClick={() => onViewChange(item)}
-          >
-            {item === "live" ? "Live" : item === "replay" ? "Replay" : "Transcript"}
-          </button>
-        ))}
-      </div>
-      {sessions && sessions.length > 1 ? (
-        <select
-          aria-label="Browser session"
-          value={selectedSessionId}
-          onChange={(event) => {
-            const selected = sessions.find(
-              (session) => session.sessionId === event.currentTarget.value,
-            );
-            if (selected) onSelectSession(selected.sessionId);
-          }}
-          className="border-l bg-background px-2 text-[0.6875rem] font-medium outline-none focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring/50"
-        >
-          {sessions.map((session) => (
-            <option key={session.sessionId} value={session.sessionId}>
-              Session {session.sequence}
-            </option>
-          ))}
-        </select>
-      ) : null}
-    </div>
+    <select
+      aria-label="Browser session"
+      value={selectedSessionId}
+      onChange={(event) => {
+        const selected = sessions.find(
+          (session) => session.sessionId === event.currentTarget.value,
+        );
+        if (selected) onSelectSession(selected.sessionId);
+      }}
+      className="h-full w-full bg-background px-3 text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+    >
+      {sessions.map((session) => (
+        <option key={session.sessionId} value={session.sessionId}>
+          Session {session.sequence}
+          {session.lifecycle.kind === "active" ? " · Live" : ""}
+        </option>
+      ))}
+    </select>
   );
 }
 
-function ChatLiveView({
+function ChatBrowserView({
   liveViewUrl,
   session,
-  sessionSummary,
 }: {
   liveViewUrl: string | null;
   session: BrowserSessionDetail | undefined;
-  sessionSummary: BrowserSession | undefined;
 }) {
-  if (!sessionSummary) return <ChatViewStatus>No browser session for this chat</ChatViewStatus>;
   if (!session) return <ChatViewStatus>Loading browser session</ChatViewStatus>;
   if (session.lifecycle.kind === "closed") {
-    return <ChatViewStatus>Session closed. Open Replay to watch it.</ChatViewStatus>;
+    return <BrowserReplay key={session.sessionId} sessionId={session.sessionId} />;
   }
   if (!liveViewUrl) return <ChatViewStatus>Connecting to live browser</ChatViewStatus>;
   return (
@@ -946,21 +896,6 @@ function ChatLiveView({
   );
 }
 
-function ChatReplayView({
-  session,
-  sessionSummary,
-}: {
-  session: BrowserSessionDetail | undefined;
-  sessionSummary: BrowserSession | undefined;
-}) {
-  if (!sessionSummary) return <ChatViewStatus>No browser session for this chat</ChatViewStatus>;
-  if (!session) return <ChatViewStatus>Loading browser session</ChatViewStatus>;
-  if (session.lifecycle.kind === "active") {
-    return <ChatViewStatus>Replay becomes available when this session closes</ChatViewStatus>;
-  }
-  return <BrowserReplay key={session.sessionId} sessionId={session.sessionId} />;
-}
-
 function ChatViewStatus({ children }: { children: ReactNode }) {
   return (
     <div className="grid min-h-full place-items-center px-6 py-12 text-center">
@@ -974,6 +909,7 @@ function ChatChrome({
   createOpen,
   createSubmitting,
   loadingScouts,
+  hasBrowser,
   driver,
   thread,
   scout,
@@ -983,14 +919,17 @@ function ChatChrome({
   createOpen: boolean;
   createSubmitting: boolean;
   loadingScouts: boolean;
+  hasBrowser: boolean;
   driver: ChatDriver;
   thread: ChatThread | undefined;
   scout: Scout | undefined;
   onToggleCreate: () => void;
 }) {
-  const { setMobilePane, toggleLeftPane } = useSidebarActions();
-  const { isMobile, leftDesktopOpen, mobilePane } = useSidebarLayoutPresentation();
+  const { setMobilePane, toggleLeftPane, toggleRightPane } = useSidebarActions();
+  const { isMobile, leftDesktopOpen, rightDesktopOpen, mobilePane } =
+    useSidebarLayoutPresentation();
   const navigationShown = isMobile ? mobilePane === "left" : leftDesktopOpen;
+  const conversationShown = isMobile ? mobilePane === "right" : rightDesktopOpen;
 
   return (
     <div className="flex h-12 min-w-0 items-center gap-2 px-2 sm:px-4">
@@ -1001,7 +940,9 @@ function ChatChrome({
         aria-label={navigationShown ? "Hide chats" : "Show chats"}
         aria-pressed={navigationShown}
         onClick={() =>
-          isMobile ? setMobilePane(navigationShown ? "main" : "left") : toggleLeftPane()
+          isMobile
+            ? setMobilePane(navigationShown ? (hasBrowser ? "right" : "main") : "left")
+            : toggleLeftPane()
         }
       >
         <PanelLeftIcon />
@@ -1024,6 +965,31 @@ function ChatChrome({
           {chatDriverLabel(driver)}
         </p>
       </div>
+      {hasBrowser ? (
+        <>
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            className="md:hidden"
+            aria-label="Show browser"
+            aria-pressed={mobilePane === "main"}
+            onClick={() => setMobilePane("main")}
+          >
+            <MonitorIcon />
+          </Button>
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            aria-label={conversationShown ? "Hide conversation" : "Show conversation"}
+            aria-pressed={conversationShown}
+            onClick={toggleRightPane}
+          >
+            <PanelRightIcon />
+          </Button>
+        </>
+      ) : null}
       <Button
         ref={createButtonRef}
         type="button"
@@ -1046,7 +1012,6 @@ function ChatNavigation({
   canLoadMore,
   isLoadingMore,
   selectedThreadId,
-  view,
   onLoadMore,
   onNavigate,
 }: {
@@ -1055,7 +1020,6 @@ function ChatNavigation({
   canLoadMore: boolean;
   isLoadingMore: boolean;
   selectedThreadId: string | null;
-  view: ChatView | undefined;
   onLoadMore: () => void;
   onNavigate: () => void;
 }) {
@@ -1084,7 +1048,7 @@ function ChatNavigation({
               <li key={thread.threadId}>
                 <Link
                   to="/chats"
-                  search={{ thread: thread.threadId, ...(view ? { view } : {}) }}
+                  search={{ thread: thread.threadId }}
                   aria-current={selected ? "page" : undefined}
                   onClick={onNavigate}
                   className={`block border-l-2 px-4 py-3 outline-none transition-colors hover:bg-sidebar-accent/55 focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-sidebar-ring/40 ${

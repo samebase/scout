@@ -15,20 +15,20 @@ import type {
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 const SCOUT_SIDEBAR_STORAGE_KEY = "scout_sidebar_layout_state";
-const SCOUT_SIDEBAR_STORAGE_VERSION = 1;
+const SCOUT_SIDEBAR_STORAGE_VERSION = 2;
 const SIDEBAR_WIDTH_PERSIST_DELAY_MS = 160;
 const SCOUT_SIDEBAR_PREHYDRATION_ARGS = {
   desktopStyleElementId: "scout-sidebar-layout-prehydration",
 } satisfies SidebarLayoutPrehydrationArgs;
 const SCOUT_SIDEBAR_DEFAULT_STATE = {
   leftDesktopOpen: true,
-  leftDesktopWidthPx: 280,
+  leftDesktopWidthPx: 240,
   leftMobileWidthPx: 280,
-  mobilePane: "main",
+  mobilePane: "right",
   mobileSurface: { kind: "unmerged" },
-  rightDesktopOpen: false,
-  rightDesktopWidthPx: 320,
-  rightMobileWidthPx: 320,
+  rightDesktopOpen: true,
+  rightDesktopWidthPx: 480,
+  rightMobileWidthPx: 480,
 } satisfies SidebarLayoutState;
 
 function readScoutSidebarPrehydrationState(): SidebarLayoutPrehydrationState | null {
@@ -126,7 +126,7 @@ function readScoutSidebarPrehydrationState(): SidebarLayoutPrehydrationState | n
       storedValue === null ||
       typeof storedValue !== "object" ||
       !("version" in storedValue) ||
-      storedValue.version !== 1 ||
+      storedValue.version !== 2 ||
       !("state" in storedValue)
     ) {
       return null;

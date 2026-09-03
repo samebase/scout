@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-03T16:02:00Z
+- **Last updated:** 2026-09-03T16:28:20Z
 
 ## Log
 
@@ -901,9 +901,15 @@ latest page snapshot; standard Playwright page APIs replace custom tab commands 
 Verified the flow by completing a Samebase app across GitHub, Cloudflare, and Convex, loading the
 deployed app, replaying the multi-tab session, and deleting an earlier test app.
 
-### 2026-09-03 - working tree
+### 2026-09-03 - 25dfdc6
 
 Made Scout chats the main interface and removed products, tasks, attempts, and experiment grouping.
 Kept Scout identities and account connections, shared manual and model tools, and moved human
 handoff into chats alongside live view, replay, and usage (`convex/schema.ts`, `convex/scout/`,
 `convex/humanHandoffs.ts`, `src/routes/chats.tsx`).
+
+### 2026-09-03 - working tree
+
+Put the conversation beside the browser in resizable panes. The browser changes from live to replay
+when its session closes, while the selected session stays in the URL (`src/routes/chats.tsx`,
+`src/sidebars/scoutSidebarState.ts`).
