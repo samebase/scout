@@ -16,6 +16,7 @@ import { requireAppUser } from "../access";
 import { handoffCommon, handoffClaim } from "../humanHandoffsModel";
 import { scoutAgent } from "./agent";
 import { activeBrowserForChat, requireOwnedAgentThread, scoutIsWorking } from "./chatAccess";
+import { omitNullish } from "../../shared/omitNullish";
 import {
   DEFAULT_SCOUT_MODEL,
   scoutModelValidator,
@@ -310,6 +311,8 @@ export const listMessages = query({
     }
     const metadataByOrder = new Map<number, ChatMessageMetadata>();
     for (const turn of turns) {
+      const finishedState =
+        turn.state.kind === "completed" || turn.state.kind === "failed" ? turn.state : undefined;
       const terminalAt =
         turn.state.kind === "completed"
           ? turn.state.completedAt
@@ -323,25 +326,14 @@ export const listMessages = query({
       metadataByOrder.set(turn.order, {
         model: turn.model,
         scout,
-        ...(turn.state.kind === "completed" || turn.state.kind === "failed"
-          ? turn.state.usage === undefined
-            ? {}
-            : { usage: turn.state.usage }
-          : {}),
-        ...(terminalAt === undefined
-          ? {}
-          : { durationMs: Math.max(0, terminalAt - turn.startedAt) }),
-        ...(turn.state.kind === "completed" || turn.state.kind === "failed"
-          ? turn.state.firecrawlCredits === undefined
-            ? {}
-            : { firecrawlCredits: turn.state.firecrawlCredits }
-          : {}),
-        ...(turn.state.kind === "completed" || turn.state.kind === "failed"
-          ? turn.state.firecrawlDurationMs === undefined
-            ? {}
-            : { firecrawlDurationMs: turn.state.firecrawlDurationMs }
-          : {}),
-        ...(turn.state.kind === "failed" ? { failure: turn.state.failure } : {}),
+        ...omitNullish({
+          usage: finishedState?.usage,
+          durationMs:
+            terminalAt === undefined ? undefined : Math.max(0, terminalAt - turn.startedAt),
+          firecrawlCredits: finishedState?.firecrawlCredits,
+          firecrawlDurationMs: finishedState?.firecrawlDurationMs,
+          failure: turn.state.kind === "failed" ? turn.state.failure : undefined,
+        }),
       });
     }
     const assistantOrders = new Set(

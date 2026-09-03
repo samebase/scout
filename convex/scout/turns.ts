@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { internal } from "../_generated/api";
 import { internalMutation } from "../_generated/server";
 import { failHumanHandoffForTurn, signalHumanHandoffScoutPaused } from "../humanHandoffsModel";
+import { omitNullish } from "../../shared/omitNullish";
 import { scoutTokenUsageValidator } from "./models";
 
 export const TURN_START_TIMEOUT_MS = 5 * 60 * 1_000;
@@ -83,10 +84,10 @@ export const complete = internalMutation({
         kind: "completed",
         completedAt: Date.now(),
         usage: args.usage,
-        ...(args.firecrawlCredits === undefined ? {} : { firecrawlCredits: args.firecrawlCredits }),
-        ...(args.firecrawlDurationMs === undefined
-          ? {}
-          : { firecrawlDurationMs: args.firecrawlDurationMs }),
+        ...omitNullish({
+          firecrawlCredits: args.firecrawlCredits,
+          firecrawlDurationMs: args.firecrawlDurationMs,
+        }),
       },
     });
     return null;
@@ -161,11 +162,11 @@ export const fail = internalMutation({
         kind: "failed",
         failedAt: Date.now(),
         failure: args.failure,
-        ...(args.usage === undefined ? {} : { usage: args.usage }),
-        ...(args.firecrawlCredits === undefined ? {} : { firecrawlCredits: args.firecrawlCredits }),
-        ...(args.firecrawlDurationMs === undefined
-          ? {}
-          : { firecrawlDurationMs: args.firecrawlDurationMs }),
+        ...omitNullish({
+          usage: args.usage,
+          firecrawlCredits: args.firecrawlCredits,
+          firecrawlDurationMs: args.firecrawlDurationMs,
+        }),
       },
     });
     return null;

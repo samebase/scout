@@ -10,6 +10,7 @@ import type { FunctionReturnType } from "convex/server";
 import { ExternalLinkIcon, HandIcon, LoaderCircleIcon, RotateCwIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../convex/_generated/api";
+import { omitNullish } from "../../shared/omitNullish";
 import { AuthPanel } from "#components/auth-panel";
 import { Button } from "#components/ui/button";
 import { consumeHumanHandoffAccessToken, humanHandoffIsTopLevel } from "#lib/human-handoff-access";
@@ -84,7 +85,7 @@ export function HumanHandoffPage({ handoffId }: { handoffId: string }) {
     try {
       const page = await loadHandoff({
         handoffId,
-        ...(accessToken === null ? {} : { accessToken }),
+        ...omitNullish({ accessToken }),
       });
       setState({ kind: "ready", page });
     } catch (error) {
@@ -111,7 +112,7 @@ export function HumanHandoffPage({ handoffId }: { handoffId: string }) {
     try {
       const page = await continueHandoff({
         handoffId,
-        ...(accessToken === null ? {} : { accessToken }),
+        ...omitNullish({ accessToken }),
       });
       setState({ kind: "ready", page });
     } catch (error) {
