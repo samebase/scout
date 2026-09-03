@@ -2,9 +2,10 @@ import { v } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 import { internalMutation, internalQuery, query, type MutationCtx } from "../_generated/server";
 import { requireAppUser } from "../access";
-import { canonicalProductDomain } from "../productsDomain";
+import { accountObservationValidator } from "../schema";
+import { canonicalServiceDomain } from "../serviceDomains";
 import {
-  scoutServiceAccountAuthenticationEvidenceValidator,
+  scoutServiceAccountFieldsValidator,
   scoutServiceAccountLoginMethodValidator,
 } from "./model";
 
@@ -15,28 +16,9 @@ const MAX_OBSERVED_URL_LENGTH = 2_048;
 const MAX_VISIBLE_EVIDENCE_LENGTH = 2_000;
 const AUTHENTICATED_SESSION_CONTROLS = new Set(["sign out", "log out", "logout", "signoff"]);
 
-const taskAccountProvenancePublicValidator = v.object({
-  taskId: v.id("productTasks"),
-  attemptId: v.id("taskAttempts"),
-  turnId: v.id("scoutTurns"),
-  sessionId: v.id("taskBrowserSessions"),
-  recordedAt: v.number(),
-  observedUrl: v.string(),
-  visibleIdentity: v.string(),
-  visibleSessionControl: v.string(),
-  accountAccess: v.union(v.literal("created"), v.literal("recovered")),
-});
-
-const serviceAccountPublicValidator = v.object({
+const serviceAccountPublicValidator = scoutServiceAccountFieldsValidator.extend({
   _id: v.id("scoutServiceAccounts"),
-  scoutId: v.id("scouts"),
-  serviceName: v.string(),
-  serviceDomain: v.string(),
-  identifier: v.string(),
-  authenticationEvidence: scoutServiceAccountAuthenticationEvidenceValidator,
-  loginMethod: scoutServiceAccountLoginMethodValidator,
-  firstRecordedByTask: v.union(taskAccountProvenancePublicValidator, v.null()),
-  lastVerifiedByTask: v.union(taskAccountProvenancePublicValidator, v.null()),
+  lastObserved: v.union(accountObservationValidator, v.null()),
 });
 
 const observedLoginMethodValidator = v.union(
@@ -56,7 +38,7 @@ const runtimeServiceAccountValidator = v.object({
   loginMethod: scoutServiceAccountLoginMethodValidator,
 });
 
-const taskServiceAccountResultValidator = v.object({
+const serviceAccountRecordingResultValidator = v.object({
   serviceAccountId: v.id("scoutServiceAccounts"),
   created: v.boolean(),
 });
@@ -107,7 +89,7 @@ function observedHttpsUrl(value: string) {
   const raw = requiredText(value, "Observed URL", MAX_OBSERVED_URL_LENGTH);
   const url = new URL(raw);
   if (url.protocol !== "https:" || url.username || url.password) {
-    throw new Error("Observed URL must be an HTTPS product page without credentials");
+    throw new Error("Observed URL must be an HTTPS service page without credentials");
   }
   url.search = "";
   url.hash = "";
@@ -123,8 +105,7 @@ function projectServiceAccount(account: Doc<"scoutServiceAccounts">) {
     identifier: account.identifier,
     authenticationEvidence: account.authenticationEvidence,
     loginMethod: account.loginMethod,
-    firstRecordedByTask: account.firstRecordedByTask ?? null,
-    lastVerifiedByTask: account.lastVerifiedByTask ?? null,
+    lastObserved: account.lastObserved ?? null,
   };
 }
 
@@ -136,7 +117,7 @@ async function resolveObservedLoginMethod(
   if (loginMethod.kind === "managed_password") {
     return { kind: "managed_password" as const };
   }
-  const providerServiceDomain = canonicalProductDomain(
+  const providerServiceDomain = canonicalServiceDomain(
     loginMethod.providerServiceDomain,
     "OAuth provider service domain",
   );
@@ -203,41 +184,30 @@ export const listRuntimeForScout = internalQuery({
   },
 });
 
-export const recordAuthenticatedFromTask = internalMutation({
+export const recordAuthenticated = internalMutation({
   args: {
-    promptMessageId: v.string(),
+    sessionId: v.id("scoutBrowserSessions"),
     accountAccess: v.union(v.literal("created"), v.literal("recovered")),
     observedUrl: v.string(),
     visibleIdentity: v.string(),
     visibleSessionControl: v.string(),
     loginMethod: observedLoginMethodValidator,
   },
-  returns: taskServiceAccountResultValidator,
+  returns: serviceAccountRecordingResultValidator,
   handler: async (ctx, args) => {
-    const turn = await ctx.db
-      .query("scoutTurns")
-      .withIndex("by_prompt_message_id", (query) =>
-        query.eq("promptMessageId", args.promptMessageId),
-      )
+    const session = await ctx.db.get("scoutBrowserSessions", args.sessionId);
+    if (!session || session.lifecycle.kind !== "active") {
+      throw new Error("Active Scout browser session not found");
+    }
+    const chat = await ctx.db
+      .query("scoutChats")
+      .withIndex("by_thread_id", (query) => query.eq("threadId", session.threadId))
       .unique();
-    if (!turn || turn.state.kind !== "pending") throw new Error("Active task turn not found");
-    const attempt = await ctx.db
-      .query("taskAttempts")
-      .withIndex("by_thread_id", (query) => query.eq("threadId", turn.threadId))
-      .unique();
-    if (!attempt || attempt.scoutId !== turn.scoutId || attempt.state.kind !== "active")
-      throw new Error("Active task attempt not found");
-    const task = await ctx.db.get("productTasks", attempt.taskId);
-    if (!task) throw new Error("Task not found");
-    const session = await ctx.db
-      .query("taskBrowserSessions")
-      .withIndex("by_turn_id", (query) => query.eq("turnId", turn._id))
-      .unique();
-    if (!session || session.attemptId !== attempt._id || session.lifecycle.kind !== "active") {
-      throw new Error("Active task browser session not found");
+    if (!chat || chat.scoutId !== session.scoutId) {
+      throw new Error("Browser session does not match its Scout chat");
     }
     const latestOperation = await ctx.db
-      .query("taskBrowserOperations")
+      .query("scoutBrowserOperations")
       .withIndex("by_session_id_and_sequence", (query) => query.eq("sessionId", session._id))
       .order("desc")
       .first();
@@ -247,7 +217,7 @@ export const recordAuthenticatedFromTask = internalMutation({
         latestOperation.state.kind !== "applied_snapshot_failed")
     ) {
       throw new Error(
-        "A successful product-page observation is required before recording an account",
+        "A successful service-page observation is required before recording an account",
       );
     }
     const observedUrl = observedHttpsUrl(args.observedUrl);
@@ -265,12 +235,12 @@ export const recordAuthenticatedFromTask = internalMutation({
     const telemetryUrl = activeTab?.url ? observedHttpsUrl(activeTab.url) : null;
     let observedDomain: string;
     try {
-      observedDomain = canonicalProductDomain(observedUrl, "Observed product URL");
+      observedDomain = canonicalServiceDomain(observedUrl, "Observed service URL");
     } catch {
-      throw new Error("The observed product page is invalid");
+      throw new Error("The observed service page is invalid");
     }
     if (observedUrl !== telemetryUrl) {
-      throw new Error("The authenticated account evidence is not from the latest product page");
+      throw new Error("The authenticated account evidence is not from the latest service page");
     }
     if (!evidenceShowsSessionControl(visibleSessionControl)) {
       throw new Error("The visible account menu does not expose a Sign out or Log out control");
@@ -278,7 +248,7 @@ export const recordAuthenticatedFromTask = internalMutation({
 
     const accounts = await ctx.db
       .query("scoutServiceAccounts")
-      .withIndex("by_scout_id", (query) => query.eq("scoutId", attempt.scoutId))
+      .withIndex("by_scout_id", (query) => query.eq("scoutId", chat.scoutId))
       .take(MAX_ACCOUNTS_PER_SCOUT);
     const matchingAccounts = accounts.filter(
       (account) =>
@@ -289,13 +259,11 @@ export const recordAuthenticatedFromTask = internalMutation({
     if (matchingAccounts.length > 1) {
       throw new Error("Visible account evidence must match exactly one Scout service account");
     }
-    const loginMethod = await resolveObservedLoginMethod(ctx, attempt.scoutId, args.loginMethod);
+    const loginMethod = await resolveObservedLoginMethod(ctx, chat.scoutId, args.loginMethod);
     const recordedAt = Date.now();
     const evidence = { kind: "succeeded" as const, checkedAt: recordedAt };
-    const provenance = {
-      taskId: task._id,
-      attemptId: attempt._id,
-      turnId: turn._id,
+    const lastObserved = {
+      threadId: chat.threadId,
       sessionId: session._id,
       recordedAt,
       observedUrl,
@@ -311,26 +279,17 @@ export const recordAuthenticatedFromTask = internalMutation({
       if (loginMethod.kind === "oauth" && loginMethod.providerAccountId === boundAccount._id) {
         throw new Error("A service account cannot authenticate through itself");
       }
-      const accountProduct = await ctx.db.get("products", boundAccount.productId);
       await ctx.db.patch("scoutServiceAccounts", boundAccount._id, {
-        ...(accountProduct ? { serviceName: accountProduct.name } : {}),
         authenticationEvidence: evidence,
-        firstRecordedByTask: boundAccount.firstRecordedByTask ?? provenance,
-        lastVerifiedByTask: provenance,
+        lastObserved,
       });
       return { serviceAccountId: boundAccount._id, created: false };
     }
 
-    const taskProduct = await ctx.db.get("products", task.productId);
-    if (!taskProduct) throw new Error("Task product not found");
     if (loginMethod.kind === "managed_password") {
       throw new Error("A managed-password account must be registered before it is used");
     }
-    const taskProductDomain = canonicalProductDomain(taskProduct.domain, "Task product domain");
-    if (observedDomain !== taskProductDomain && !observedDomain.endsWith(`.${taskProductDomain}`)) {
-      throw new Error("No Scout service account is registered for the observed product");
-    }
-    const scout = await ctx.db.get("scouts", attempt.scoutId);
+    const scout = await ctx.db.get("scouts", chat.scoutId);
     if (!scout) throw new Error("Scout not found");
     const knownIdentifiers = [
       scout.agentMail.address,
@@ -356,15 +315,13 @@ export const recordAuthenticatedFromTask = internalMutation({
     }
     return {
       serviceAccountId: await ctx.db.insert("scoutServiceAccounts", {
-        scoutId: attempt.scoutId,
-        productId: taskProduct._id,
-        serviceName: taskProduct.name,
-        serviceDomain: taskProductDomain,
+        scoutId: chat.scoutId,
+        serviceName: observedDomain,
+        serviceDomain: observedDomain,
         identifier: accountIdentifier,
         authenticationEvidence: evidence,
         loginMethod,
-        firstRecordedByTask: provenance,
-        lastVerifiedByTask: provenance,
+        lastObserved,
       }),
       created: true,
     };

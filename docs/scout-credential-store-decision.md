@@ -4,29 +4,36 @@
 
 **Decision date:** 2026-08-30
 
+Updated for Scout chats on 2026-09-03.
+
 ## Decision
 
 Scout generates and stores a managed password in Convex. The model receives only safe account
-metadata: the account identifier, product domain, exact login host, and the fact that a managed
+metadata: the account identifier, service domain, exact login host, and the fact that a managed
 password is prepared. Scout never intentionally supplies the model with the password, encrypted
 envelope, or credential reference. The hackathon threat model trusts Firecrawl and the target
 service not to transform the submitted password into new model-visible content.
 
-An account-creation run cannot start until application code receives one exact
-`serviceAccountId`. The backend verifies that the account is managed and belongs to the selected
-Scout and Product, then stores the ID on the run. Continuations and later browser sessions resolve
-that same ID; there is no ambient Scout-and-domain credential lookup.
+Service accounts belong to a Scout. A chat keeps its selected Scout, and its browser uses that
+Scout's persistent Firecrawl profile. Registration stores the account and encrypted password
+without creating a catalog entry or binding the account to one chat. OAuth accounts reference another
+service account owned by the same Scout.
+
+The runtime loads managed credentials for the chat's Scout. At password entry, trusted code selects
+the credential whose exact login host matches the current page. The model does not choose a
+credential reference or supply a password. A chat can use the Scout's accounts across connected
+services in the same conversation.
 
 When the agent reaches a password form, it calls the existing `fill_account_password` tool with one
-visible element ref and an optional confirmation-field ref. Trusted Node code then:
+visible Playwright target and an optional confirmation-field target. Trusted Node code then:
 
 1. requires the current page to use HTTPS on the credential's exact configured host;
-2. resolves only the supplied refs and verifies that each element has type `password`;
-3. decrypts the password using the envelope attached to the run's exact service-account ID;
+2. resolves only the supplied targets and verifies that each element has type `password`;
+3. decrypts the matching Scout credential and checks its authenticated identity fields;
 4. registers the plaintext with the browser harness before any fill so later model-visible output
    can redact the exact and URI-encoded forms;
-5. fills the verified fields through Firecrawl while persisting only refs and character counts in
-   Scout's operation telemetry; and
+5. fills the verified fields through Firecrawl while recording the field count and browser
+   telemetry without the password; and
 6. returns only the number of filled fields. The model submits the form separately.
 
 Firecrawl necessarily receives the plaintext password because its API accepts executable commands
@@ -41,7 +48,7 @@ Passwords use AES-256-GCM in a Convex Node action with:
 - a 128-bit authentication tag;
 - a 32-byte deployment key in `SCOUT_CREDENTIAL_MASTER_KEY_V1`; and
 - authenticated data binding the format, algorithm, purpose, key version and fingerprint,
-  credential reference, Scout, product domain, exact login host, and account identifier.
+  credential reference, Scout, service domain, exact login host, and account identifier.
 
 The database stores ciphertext, nonce, tag, safe bindings, and a non-secret key fingerprint. It
 does not store the master key. The first credential pins version 1 to that fingerprint. Replacing
@@ -49,24 +56,30 @@ the environment key, deleting the key registry while ciphertext remains, or chan
 metadata fails closed. Rotation is not implemented; recovery requires the original environment key
 and the Convex data backup.
 
-Public queries expose only safe service-account metadata. A registration has status `prepared`:
-the generated password exists, but the remote account may still need to be created or may already
-need that password set. Authentication evidence remains `none` until a journey can record a real
-success or failure.
+Public queries expose only safe service-account metadata. A new registration has
+`authenticationEvidence.kind` set to `none`. The generated password exists, but the remote account
+may still need to be created or have that password set. Successful account observation updates
+the authentication evidence and `lastObserved`, which identifies the chat and browser session.
 
 ## Browser and model boundary
 
-Managed-credential sessions keep the run's selected persistent Firecrawl profile, operation
-telemetry, replay, streamed live view, and human takeover. Scout's structured telemetry never stores
-form values. Provider failures after secret use are replaced with constant errors, and later
-model-visible browser output is scrubbed for the exact password and its URI-encoded representation.
-The parallel auto-submit tool and its serialized browser script were removed; the runtime has one
-password capability with the same ref-based conventions as the other browser tools.
+Managed-credential sessions keep the Scout's persistent Firecrawl profile, operation telemetry,
+replay, streamed live view, and human takeover. Managed-password operation records contain the
+field count, not the password. Password-entry failures use constant errors, and later model-visible
+browser output is scrubbed for the exact password and its URI-encoded representation. The model
+submits the form separately after `fill_account_password` succeeds.
 
-The account-recording tool accepts only whether the account was created or recovered and refs for
-the visible identity and session control. Trusted code resolves the expected identifier from the
-Run's bound `serviceAccountId`, verifies that the visible identity contains it, and updates only that
-account. The model cannot select an account by repeating an identifier.
+The `record_authenticated_service_account` tool accepts the login method, whether the account was
+created or recovered, and visible identity and session-control text. OAuth evidence also names the
+exact provider account's service domain and identifier. Trusted code re-reads the text and current
+URL from the browser. The mutation derives the Scout from the active session and chat, then checks
+the latest page observation, the visible account identity, and a Sign out or Log out control.
+
+An existing account is updated in place without changing its credential bindings or OAuth provider
+link. A new OAuth record uses the observed service domain and a known Scout username or email.
+The provider account must belong to the same Scout. Managed-password accounts must already exist.
+The model cannot supply an account ID, Scout ID, session ID, or target service domain to override this
+binding. Service-account IDs remain stable when chat history is removed.
 
 Keeping normal observability means provider-rendered replay and live view may capture the remote
 browser while a password field is populated. Scout cannot scrub Firecrawl's pixels or prove what
@@ -97,10 +110,11 @@ The relevant Convex mechanism is documented under
 
 - Back up `SCOUT_CREDENTIAL_MASTER_KEY_V1` independently from Convex. Never commit it.
 - Do not replace the `_V1` key. Add an explicit versioned rotation procedure before rotating.
-- Configure one managed account per Scout and product domain.
-- Bind the exact managed service-account ID before starting an account-creation run; never select a
-  runtime credential from an ambient Scout-and-domain match.
-- Use the exact login host for credential scope; product grouping may separately remove `www`.
+- Configure one managed account per Scout and service domain.
+- Resolve credentials only from the chat's Scout and the current page's exact HTTPS login host.
+- Use the exact login host for credential scope; service-domain normalization may remove `www`.
+- Preserve service-account IDs, OAuth provider links, ciphertext, key records, and authenticated
+  identity fields when clearing disposable chat history.
 - Treat Firecrawl and the target service as trusted during managed-password runs.
 - Do not claim that output redaction or Scout telemetry controls prove Firecrawl keeps no
   provider-side records.

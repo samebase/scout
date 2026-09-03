@@ -25,15 +25,11 @@ vi.mock("convex/react", () => ({
 vi.mock("@tanstack/react-router", () => ({
   Link: ({
     children,
-    params,
+    search,
   }: {
     children: ReactNode;
-    params: { domain: string; taskId: string; attemptId: string };
-  }) => (
-    <a href={`/products/${params.domain}/tasks/${params.taskId}/attempts/${params.attemptId}`}>
-      {children}
-    </a>
-  ),
+    search: { thread: string; view: "transcript" };
+  }) => <a href={`/chats?thread=${search.thread}&view=${search.view}`}>{children}</a>,
 }));
 
 vi.mock("#components/auth-panel", () => ({
@@ -136,7 +132,7 @@ describe("HumanHandoffPage", () => {
     expect(screen.queryByTitle("Interactive Scout browser")).toBeNull();
   });
 
-  test("lets the authenticated owner return to the exact database-derived Attempt", async () => {
+  test("lets the authenticated owner return to the database-derived chat", async () => {
     window.history.replaceState({}, "", "/handoff/handoff-1");
     testState.auth = { isLoading: false, isAuthenticated: true };
     testState.load.mockResolvedValue(waitingPage());
@@ -146,7 +142,7 @@ describe("HumanHandoffPage", () => {
       reason: "Complete GitHub's CAPTCHA.",
       continuedAt: Date.now(),
       scoutName: "Conrad Scout",
-      destination: { domain: "github.com", taskId: "task-1", attemptId: "attempt-1" },
+      destination: { threadId: "thread-1" },
     });
 
     render(<HumanHandoffPage handoffId="handoff-1" />);
@@ -155,8 +151,8 @@ describe("HumanHandoffPage", () => {
     );
 
     expect(testState.load).toHaveBeenCalledWith({ handoffId: "handoff-1" });
-    expect(screen.getByRole("link", { name: "Return to attempt" }).getAttribute("href")).toBe(
-      "/products/github.com/tasks/task-1/attempts/attempt-1",
+    expect(screen.getByRole("link", { name: "Return to chat" }).getAttribute("href")).toBe(
+      "/chats?thread=thread-1&view=transcript",
     );
   });
 
@@ -181,6 +177,26 @@ describe("HumanHandoffPage", () => {
     expect(await screen.findByText(terminal.title)).toBeTruthy();
     expect(screen.queryByTitle("Interactive Scout browser")).toBeNull();
     expect(screen.queryByRole("button", { name: /Continue Scout/ })).toBeNull();
+  });
+
+  test("explains a Scout failure without claiming it resumed", async () => {
+    testState.load.mockResolvedValue({
+      status: "failed",
+      failedAt: Date.now(),
+      failure: "scout_failed",
+      handoffId: "handoff-1",
+      reason: "Complete GitHub's CAPTCHA.",
+      scoutName: "Conrad Scout",
+      destination: { threadId: "thread-1" },
+    });
+
+    render(<HumanHandoffPage handoffId="handoff-1" />);
+
+    expect(
+      await screen.findByText("Scout stopped before resuming. Return to the chat to try again."),
+    ).toBeTruthy();
+    expect(screen.queryByTitle("Interactive Scout browser")).toBeNull();
+    expect(screen.getByRole("link", { name: "Return to chat" })).toBeTruthy();
   });
 
   test("blocks all access when embedded in another page", async () => {

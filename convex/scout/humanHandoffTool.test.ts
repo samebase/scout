@@ -9,7 +9,6 @@ function request(overrides: { created?: boolean } = {}) {
     handoffId: "handoff-1",
     created: overrides.created ?? true,
     recipientEmail: "operator@example.test",
-    productName: "GitHub",
     scoutName: "Conrad Scout",
     handoffUrl,
     claimExpiresAt: 46 * 60 * 1_000,
@@ -35,10 +34,11 @@ describe("human handoff tool", () => {
     const email = sendEmail.mock.calls[0]?.[0];
     expect(email).toEqual({
       to: "operator@example.test",
-      subject: "Conrad Scout needs help with GitHub",
+      subject: "Conrad Scout needs your help",
       text: expect.stringContaining(handoffUrl),
     });
     expect(email?.text).toContain("within 45 minutes");
+    expect(email?.text).toContain("requires a person while working");
     expect(email?.text).toContain("starts a separate five-minute control window");
     expect(email?.text).toContain("desktop computer");
     expect(email?.text).not.toContain("GitHub requires a CAPTCHA");

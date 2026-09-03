@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery, type QueryCtx } from "../_generated/server";
 import { requireAppUser } from "../access";
-import { canonicalCredentialHost, canonicalProductDomain, ensureProduct } from "../productsDomain";
+import { canonicalCredentialHost, canonicalServiceDomain } from "../serviceDomains";
 import { scoutManagedPasswordLoginMethodValidator } from "./model";
 
 const MAX_ACCOUNTS = 200;
@@ -76,7 +76,7 @@ function normalizeRegistration(args: typeof managedRegistrationArgsValidator.typ
   return {
     scoutId: args.scoutId,
     serviceName: requiredText(args.serviceName, "Service name", MAX_SERVICE_NAME_LENGTH),
-    serviceDomain: canonicalProductDomain(args.serviceDomain, "Service domain"),
+    serviceDomain: canonicalServiceDomain(args.serviceDomain),
     credentialHost,
     identifier: requiredText(args.identifier, "Account identifier", MAX_IDENTIFIER_LENGTH),
   };
@@ -213,10 +213,6 @@ export const commitManagedRegistration = internalMutation({
         createdAt,
       });
     }
-    const product = await ensureProduct(ctx, {
-      name: registration.serviceName,
-      domain: registration.serviceDomain,
-    });
     const loginMethod = {
       kind: "managed_password" as const,
       credentialHost: registration.credentialHost,
@@ -224,7 +220,6 @@ export const commitManagedRegistration = internalMutation({
     };
     const serviceAccountId = await ctx.db.insert("scoutServiceAccounts", {
       scoutId: registration.scoutId,
-      productId: product.productId,
       serviceName: registration.serviceName,
       serviceDomain: registration.serviceDomain,
       identifier: registration.identifier,

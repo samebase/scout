@@ -2,7 +2,7 @@
 
 import { type Infer } from "convex/values";
 import { chromium, type BrowserContext, type Locator, type Page } from "playwright-core";
-import { taskBrowserTelemetryValidator } from "../taskBrowserModel";
+import { browserTelemetryValidator } from "../browserModel";
 import { type BrowserTarget } from "./browserTarget";
 
 const BROWSER_ACTION_TIMEOUT_MS = 60_000;
@@ -11,8 +11,8 @@ const VIEWPORT = { width: 1280, height: 800 } as const;
 
 type PlaywrightRole = Parameters<Page["getByRole"]>[0];
 
-export type TaskBrowserTelemetry = Infer<typeof taskBrowserTelemetryValidator>;
-export type BrowserObservation = TaskBrowserTelemetry["before"];
+export type BrowserTelemetry = Infer<typeof browserTelemetryValidator>;
+export type BrowserObservation = BrowserTelemetry["before"];
 
 export type PlaywrightBrowser = {
   snapshot: () => Promise<string>;

@@ -1,10 +1,7 @@
 import { v } from "convex/values";
 import { internal } from "../_generated/api";
 import { internalMutation } from "../_generated/server";
-import {
-  failTaskHumanHandoffForTurn,
-  signalTaskHumanHandoffScoutPaused,
-} from "../taskHumanHandoffsModel";
+import { failHumanHandoffForTurn, signalHumanHandoffScoutPaused } from "../humanHandoffsModel";
 import { scoutTokenUsageValidator } from "./models";
 
 export const TURN_START_TIMEOUT_MS = 5 * 60 * 1_000;
@@ -25,7 +22,7 @@ export const start = internalMutation({
 
     const now = Date.now();
     if (turn.state.leaseExpiresAt <= now) {
-      await failTaskHumanHandoffForTurn(ctx, turn._id);
+      await failHumanHandoffForTurn(ctx, turn._id);
       await ctx.db.patch("scoutTurns", turn._id, {
         state: { kind: "failed", failedAt: now, failure: EXPIRED_TURN_FAILURE },
       });
@@ -51,7 +48,7 @@ export const expire = internalMutation({
     if (!turn || turn.state.kind !== "pending" || turn.state.leaseExpiresAt > Date.now()) {
       return null;
     }
-    await failTaskHumanHandoffForTurn(ctx, turn._id);
+    await failHumanHandoffForTurn(ctx, turn._id);
     await ctx.db.patch("scoutTurns", turn._id, {
       state: {
         kind: "failed",
@@ -80,7 +77,7 @@ export const complete = internalMutation({
       .unique();
     if (!turn) throw new Error("Scout turn not found");
     if (turn.state.kind !== "pending") return null;
-    await failTaskHumanHandoffForTurn(ctx, turn._id);
+    await failHumanHandoffForTurn(ctx, turn._id);
     await ctx.db.patch("scoutTurns", turn._id, {
       state: {
         kind: "completed",
@@ -111,25 +108,22 @@ export const completeHumanHandoffPause = internalMutation({
       .unique();
     if (!turn) throw new Error("Scout turn not found");
     if (turn.state.kind !== "pending") return null;
-    const session = await ctx.db
-      .query("taskBrowserSessions")
+    const handoff = await ctx.db
+      .query("scoutHumanHandoffs")
       .withIndex("by_turn_id", (query) => query.eq("turnId", turn._id))
       .unique();
-    const handoff = session
-      ? await ctx.db
-          .query("taskHumanHandoffs")
-          .withIndex("by_session_id", (query) => query.eq("sessionId", session._id))
-          .unique()
-      : null;
+    const session = handoff ? await ctx.db.get("scoutBrowserSessions", handoff.sessionId) : null;
     if (
       !session ||
       session.lifecycle.kind !== "active" ||
+      session.threadId !== turn.threadId ||
+      session.scoutId !== turn.scoutId ||
       !handoff ||
       (handoff.status !== "available" &&
         handoff.status !== "active" &&
         handoff.status !== "continued")
     ) {
-      throw new Error("Active task human handoff not found");
+      throw new Error("Active human handoff not found");
     }
     await ctx.db.patch("scoutTurns", turn._id, {
       state: {
@@ -138,7 +132,7 @@ export const completeHumanHandoffPause = internalMutation({
         usage: args.usage,
       },
     });
-    await signalTaskHumanHandoffScoutPaused(ctx, handoff);
+    await signalHumanHandoffScoutPaused(ctx, handoff);
     return null;
   },
 });
@@ -161,7 +155,7 @@ export const fail = internalMutation({
       .unique();
     if (!turn) throw new Error("Scout turn not found");
     if (turn.state.kind !== "pending") return null;
-    await failTaskHumanHandoffForTurn(ctx, turn._id);
+    await failHumanHandoffForTurn(ctx, turn._id);
     await ctx.db.patch("scoutTurns", turn._id, {
       state: {
         kind: "failed",
