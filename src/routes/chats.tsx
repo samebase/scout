@@ -53,6 +53,7 @@ import {
 import { ScoutRunMessageView, scoutModelLabel } from "#components/scout-run-message";
 import { AuthPanel } from "#components/auth-panel";
 import { BrowserReplay } from "#components/browser-replay";
+import { ScoutRunnerBridge } from "#components/scout-runner-bridge";
 import { Button } from "#components/ui/button";
 import {
   MessageScroller,
@@ -67,6 +68,7 @@ import { Textarea } from "#components/ui/textarea";
 const chatSearchSchema = z.object({
   thread: z.string().optional().catch(undefined),
   session: z.string().optional().catch(undefined),
+  runner: z.string().optional().catch(undefined),
 });
 const jsonValueSchema = z.json();
 
@@ -342,9 +344,21 @@ function ChatsWorkspace() {
     void navigate({
       to: "/chats",
       replace: true,
-      search: { thread: threadId, ...(sessionId ? { session: sessionId } : {}) },
+      search: {
+        thread: threadId,
+        ...(sessionId ? { session: sessionId } : {}),
+        ...(search.runner ? { runner: search.runner } : {}),
+      },
     });
-  }, [browserSessions, navigate, search.session, search.thread, selectedBrowserSession, threadId]);
+  }, [
+    browserSessions,
+    navigate,
+    search.runner,
+    search.session,
+    search.thread,
+    selectedBrowserSession,
+    threadId,
+  ]);
 
   useEffect(() => {
     if (
@@ -730,90 +744,110 @@ function ChatsWorkspace() {
 
   return (
     <>
-      <SidebarLayout
-        addressChrome={
-          <ChatChrome
-            createButtonRef={createChatButton}
-            createOpen={createChatOpen}
-            createSubmitting={createChatSubmitting}
-            loadingScouts={scouts === undefined}
-            hasBrowser={hasBrowser}
-            driver={selectedDriver}
-            thread={selectedThread}
-            scout={selectedScout}
-            onToggleCreate={() => {
-              if (createChatOpen) {
-                closeCreateChat();
-              } else {
-                setCreateChatOpen(true);
-                setMobilePane("main");
-              }
-            }}
-          />
-        }
-        formatResizeHandleValueText={formatResizeHandleValueText}
-        left={
-          <PaneFrame
-            content={
-              <ChatNavigation
-                threads={threads.status === "LoadingFirstPage" ? undefined : availableThreads}
-                scouts={availableScouts}
-                canLoadMore={threads.status === "CanLoadMore"}
-                isLoadingMore={threads.status === "LoadingMore"}
-                selectedThreadId={threadId}
-                onLoadMore={() => threads.loadMore(THREAD_PAGE_SIZE)}
-                onNavigate={() => {
-                  resetForNavigation();
-                  setMobilePane("right");
-                }}
-              />
-            }
-            scrollRestorationId="chat-navigation"
-          />
-        }
-        main={
-          createChatOpen ? (
+      {search.runner && scouts !== undefined ? (
+        <ScoutRunnerBridge
+          runnerUrl={search.runner}
+          scouts={activeScouts}
+          onPrepared={(prepared) => {
+            setPendingThread(prepared);
+            setCreateChatOpen(false);
+            void navigate({
+              to: "/chats",
+              search: {
+                thread: prepared.threadId,
+                ...(search.runner ? { runner: search.runner } : {}),
+              },
+            });
+            setMobilePane("main");
+          }}
+        />
+      ) : null}
+      <div className="min-h-0 flex-1">
+        <SidebarLayout
+          addressChrome={
+            <ChatChrome
+              createButtonRef={createChatButton}
+              createOpen={createChatOpen}
+              createSubmitting={createChatSubmitting}
+              loadingScouts={scouts === undefined}
+              hasBrowser={hasBrowser}
+              driver={selectedDriver}
+              thread={selectedThread}
+              scout={selectedScout}
+              onToggleCreate={() => {
+                if (createChatOpen) {
+                  closeCreateChat();
+                } else {
+                  setCreateChatOpen(true);
+                  setMobilePane("main");
+                }
+              }}
+            />
+          }
+          formatResizeHandleValueText={formatResizeHandleValueText}
+          left={
             <PaneFrame
               content={
-                <NewChatForm
-                  scouts={activeScouts}
-                  initialScoutId={selectedActiveScout?._id}
-                  onCancel={closeCreateChat}
-                  onCreated={onChatCreated}
-                  onSubmittingChange={setCreateChatSubmitting}
+                <ChatNavigation
+                  threads={threads.status === "LoadingFirstPage" ? undefined : availableThreads}
+                  scouts={availableScouts}
+                  canLoadMore={threads.status === "CanLoadMore"}
+                  isLoadingMore={threads.status === "LoadingMore"}
+                  selectedThreadId={threadId}
+                  onLoadMore={() => threads.loadMore(THREAD_PAGE_SIZE)}
+                  onNavigate={() => {
+                    resetForNavigation();
+                    setMobilePane("right");
+                  }}
                 />
               }
+              scrollRestorationId="chat-navigation"
             />
-          ) : hasBrowser ? (
-            <PaneFrame
-              header={
-                browserSessions && browserSessions.length > 1 ? (
-                  <BrowserSessionPicker
-                    sessions={browserSessions}
-                    selectedSessionId={selectedBrowserSession.sessionId}
-                    onSelectSession={(sessionId) =>
-                      void navigate({
-                        to: "/chats",
-                        search: { ...search, session: sessionId },
-                      })
-                    }
+          }
+          main={
+            createChatOpen ? (
+              <PaneFrame
+                content={
+                  <NewChatForm
+                    scouts={activeScouts}
+                    initialScoutId={selectedActiveScout?._id}
+                    onCancel={closeCreateChat}
+                    onCreated={onChatCreated}
+                    onSubmittingChange={setCreateChatSubmitting}
                   />
-                ) : undefined
-              }
-              content={
-                <ChatBrowserView
-                  liveViewUrl={liveView?.url ?? null}
-                  session={browserSession ?? undefined}
-                />
-              }
-            />
-          ) : (
-            conversation
-          )
-        }
-        {...(hasBrowser ? { right: conversation } : {})}
-        resizeHandleLabels={CHAT_RESIZE_HANDLE_LABELS}
-      />
+                }
+              />
+            ) : hasBrowser ? (
+              <PaneFrame
+                header={
+                  browserSessions && browserSessions.length > 1 ? (
+                    <BrowserSessionPicker
+                      sessions={browserSessions}
+                      selectedSessionId={selectedBrowserSession.sessionId}
+                      onSelectSession={(sessionId) =>
+                        void navigate({
+                          to: "/chats",
+                          search: { ...search, session: sessionId },
+                        })
+                      }
+                    />
+                  ) : undefined
+                }
+                content={
+                  <ChatBrowserView
+                    liveViewUrl={liveView?.url ?? null}
+                    session={browserSession ?? undefined}
+                  />
+                }
+              />
+            ) : (
+              conversation
+            )
+          }
+          {...(hasBrowser ? { right: conversation } : {})}
+          resizeHandleLabels={CHAT_RESIZE_HANDLE_LABELS}
+        />
+      </div>
       <script
         suppressHydrationWarning
         dangerouslySetInnerHTML={{ __html: scoutSidebarDesktopPrehydrationScript }}
