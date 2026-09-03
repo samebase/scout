@@ -1,11 +1,11 @@
 "use node";
 
-import { tool, type ToolExecutionOptions, type ToolSet } from "ai";
+import { tool, type ToolSet } from "ai";
 import { type Infer } from "convex/values";
 import { SdkError, type BrowserExecuteResponse, type Firecrawl } from "firecrawl";
 import { z } from "zod";
 import { browserActionValidator } from "../browserModel";
-import { browserTargetSchema, type BrowserTarget } from "./browserTarget";
+import { type BrowserTarget } from "./browserTarget";
 import {
   BROWSER_CLOSE_DESCRIPTION,
   BROWSER_EXECUTE_DESCRIPTION,
@@ -19,6 +19,7 @@ import {
 } from "./lib/firecrawl";
 import { optionalFirecrawlLiveViewUrl } from "./lib/firecrawlLiveView";
 import { diagnosticMessage } from "./lib/redaction";
+import { requireRuntimeTool } from "./lib/runtimeTool";
 import {
   connectPlaywrightBrowser,
   type PlaywrightBrowser,
@@ -31,8 +32,16 @@ const PLAYWRIGHT_RESULT_PREFIX = "__SCOUT_PLAYWRIGHT_RESULT__";
 const PROFILE_WRITE_RETRY_DELAYS_MS = [10_000, 10_000, 10_000] as const;
 
 const agentMailToolNames = ["list_messages", "search_messages", "get_thread"] as const;
+const playwrightExecutionResultSchema = z.discriminatedUnion("ok", [
+  z.object({ ok: z.literal(true), output: z.string() }).strict(),
+  z.object({ ok: z.literal(false), output: z.string(), error: z.string() }).strict(),
+]);
 
 type BrowserAction = Infer<typeof browserActionValidator>;
+type AgentMailTool = {
+  execute: ReturnType<typeof requireRuntimeTool>["execute"];
+  toModelOutput: NonNullable<ReturnType<typeof requireRuntimeTool>["toModelOutput"]>;
+};
 
 type BrowserStopResult = {
   success: boolean;
@@ -237,7 +246,7 @@ function executionOutput(response: BrowserExecuteResponse, sensitiveValues: Read
 function executionFailure(response: BrowserExecuteResponse, sensitiveValues: ReadonlySet<string>) {
   const detail = [response.error, response.stderr]
     .map((value) => value?.trim())
-    .filter((value): value is string => Boolean(value))
+    .filter((value) => value !== undefined && value !== "")
     .join("\n");
   const summary = response.killed
     ? "Playwright execution timed out"
@@ -343,64 +352,39 @@ function parsedPlaywrightExecution(
   }
 
   const serializedResult = rawResult.slice(markers.marker.length);
-  const result: unknown = JSON.parse(serializedResult);
-  if (
-    typeof result !== "object" ||
-    result === null ||
-    typeof Reflect.get(result, "ok") !== "boolean"
-  ) {
+  let payload: unknown;
+  try {
+    payload = JSON.parse(serializedResult);
+  } catch {
     throw new Error("Firecrawl returned an invalid Playwright execution result");
   }
-  const success = Reflect.get(result, "ok") === true;
-  const error = Reflect.get(result, "error");
-  const output = Reflect.get(result, "output");
+  const parsed = playwrightExecutionResultSchema.safeParse(payload);
+  if (!parsed.success) {
+    throw new Error("Firecrawl returned an invalid Playwright execution result");
+  }
+  const result = parsed.data;
   return {
-    success,
-    output:
-      typeof output === "string"
-        ? redactSensitiveValues(output, sensitiveValues).slice(0, MAX_TOOL_OUTPUT_LENGTH)
-        : "",
-    error:
-      success || typeof error !== "string"
-        ? null
-        : redactSensitiveValues(error, sensitiveValues).slice(0, MAX_TOOL_OUTPUT_LENGTH),
+    success: result.ok,
+    output: redactSensitiveValues(result.output, sensitiveValues).slice(0, MAX_TOOL_OUTPUT_LENGTH),
+    error: result.ok
+      ? null
+      : redactSensitiveValues(result.error, sensitiveValues).slice(0, MAX_TOOL_OUTPUT_LENGTH),
   };
 }
 
-function requireAgentMailExecutor(tools: ToolSet, name: (typeof agentMailToolNames)[number]) {
-  const execute: unknown = tools[name]?.execute;
-  if (typeof execute !== "function") {
-    throw new Error(`AgentMail MCP tool ${name} is unavailable`);
-  }
-  return execute;
-}
-
-function requireAgentMailModelOutput(tools: ToolSet, name: (typeof agentMailToolNames)[number]) {
-  const toModelOutput: unknown = tools[name]?.toModelOutput;
+function requireAgentMailTool(
+  tools: Partial<ToolSet>,
+  name: (typeof agentMailToolNames)[number],
+): AgentMailTool {
+  const selected = requireRuntimeTool(tools, name);
+  const toModelOutput = selected.toModelOutput;
   if (typeof toModelOutput !== "function") {
     throw new Error(`AgentMail MCP tool ${name} has no model-output adapter`);
   }
-  return toModelOutput;
-}
-
-function executeAgentMailTool(
-  tools: ToolSet,
-  name: (typeof agentMailToolNames)[number],
-  inboxId: string,
-  input: Record<string, unknown>,
-  options: ToolExecutionOptions<unknown>,
-) {
-  const execute = requireAgentMailExecutor(tools, name);
-  return Reflect.apply(execute, undefined, [{ ...input, inboxId }, options]);
-}
-
-function convertAgentMailOutput(
-  tools: ToolSet,
-  name: (typeof agentMailToolNames)[number],
-  options: { toolCallId: string; input: unknown; output: unknown },
-) {
-  const toModelOutput = requireAgentMailModelOutput(tools, name);
-  return Reflect.apply(toModelOutput, undefined, [options]);
+  return {
+    execute: selected.execute,
+    toModelOutput,
+  };
 }
 
 const messageFilters = {
@@ -410,11 +394,10 @@ const messageFilters = {
   after: z.string().optional(),
 };
 
-export function selectAgentMailTools(tools: ToolSet, inboxId: string) {
-  for (const name of agentMailToolNames) {
-    requireAgentMailExecutor(tools, name);
-    requireAgentMailModelOutput(tools, name);
-  }
+export function selectAgentMailTools(tools: Partial<ToolSet>, inboxId: string) {
+  const listMessages = requireAgentMailTool(tools, "list_messages");
+  const searchMessages = requireAgentMailTool(tools, "search_messages");
+  const getThread = requireAgentMailTool(tools, "get_thread");
 
   return {
     list_messages: tool({
@@ -430,10 +413,8 @@ export function selectAgentMailTools(tools: ToolSet, inboxId: string) {
         includeSpam: z.boolean().optional(),
         includeTrash: z.boolean().optional(),
       }),
-      execute: async (input, options) =>
-        await executeAgentMailTool(tools, "list_messages", inboxId, input, options),
-      toModelOutput: async (options) =>
-        await convertAgentMailOutput(tools, "list_messages", options),
+      execute: async (input, options) => await listMessages.execute({ ...input, inboxId }, options),
+      toModelOutput: (options) => listMessages.toModelOutput(options),
     }),
     search_messages: tool({
       description:
@@ -443,9 +424,8 @@ export function selectAgentMailTools(tools: ToolSet, inboxId: string) {
         q: z.string().min(1).max(MAX_TOOL_TEXT_LENGTH),
       }),
       execute: async (input, options) =>
-        await executeAgentMailTool(tools, "search_messages", inboxId, input, options),
-      toModelOutput: async (options) =>
-        await convertAgentMailOutput(tools, "search_messages", options),
+        await searchMessages.execute({ ...input, inboxId }, options),
+      toModelOutput: (options) => searchMessages.toModelOutput(options),
     }),
     get_thread: tool({
       description:
@@ -453,9 +433,8 @@ export function selectAgentMailTools(tools: ToolSet, inboxId: string) {
       inputSchema: z.object({
         threadId: z.string().min(1).max(200),
       }),
-      execute: async (input, options) =>
-        await executeAgentMailTool(tools, "get_thread", inboxId, input, options),
-      toModelOutput: async (options) => await convertAgentMailOutput(tools, "get_thread", options),
+      execute: async (input, options) => await getThread.execute({ ...input, inboxId }, options),
+      toModelOutput: (options) => getThread.toModelOutput(options),
     }),
   } satisfies ToolSet;
 }
@@ -938,34 +917,24 @@ export function createBrowserHarness(
     executeCode,
     getPage: async (kind: "url" | "title") =>
       await read(async (browser) => await browser.getPage(kind)),
-    getElement: async (target: BrowserTarget) => {
-      const parsedTarget = browserTargetSchema.parse(target);
-      return await read(async (browser) => await browser.getElement(parsedTarget));
-    },
-    getElementAttribute: async (target: BrowserTarget, attribute: "type") => {
-      const parsedTarget = browserTargetSchema.parse(target);
-      return await read(
-        async (browser) => await browser.getElementAttribute(parsedTarget, attribute),
-      );
-    },
+    getElement: async (target: BrowserTarget) =>
+      await read(async (browser) => await browser.getElement(target)),
+    getElementAttribute: async (target: BrowserTarget, attribute: "type") =>
+      await read(async (browser) => await browser.getElementAttribute(target, attribute)),
     fillManagedPassword: async (
       targets: { passwordTarget: BrowserTarget; passwordConfirmationTarget?: BrowserTarget },
       password: string,
       toolCallId?: string,
     ) => {
-      const passwordTarget = browserTargetSchema.parse(targets.passwordTarget);
-      const passwordConfirmationTarget = targets.passwordConfirmationTarget
-        ? browserTargetSchema.parse(targets.passwordConfirmationTarget)
-        : undefined;
       return await mutate(
         {
           kind: "managed_password_fill",
-          fieldCount: passwordConfirmationTarget ? 2 : 1,
+          fieldCount: targets.passwordConfirmationTarget ? 2 : 1,
         },
         async (browser) => {
-          await browser.fill(passwordTarget, password);
-          if (passwordConfirmationTarget) {
-            await browser.fill(passwordConfirmationTarget, password);
+          await browser.fill(targets.passwordTarget, password);
+          if (targets.passwordConfirmationTarget) {
+            await browser.fill(targets.passwordConfirmationTarget, password);
           }
         },
         toolCallId,

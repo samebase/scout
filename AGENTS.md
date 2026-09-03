@@ -83,6 +83,36 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
 - Run `pnpm run build` before a deploy. The real Cloudflare build path runs the complete check before
   it builds the app.
 
+## Code guardrails
+
+- Keep type gaps explicit and searchable. Do not hide them with casts, reflection, handwritten type
+  predicates, false overloads, or runtime checks added only to satisfy TypeScript.
+- Fix type errors by modeling the value honestly. When a verified dependency or test-double boundary
+  cannot be expressed, put the narrowest possible `@ts-expect-error` on the exact failing line and
+  explain the concrete runtime fact. Never use `@ts-ignore`, `@ts-nocheck`, an intermediate cast, or
+  an `unknown` round trip to launder the mismatch.
+- Validate unknown and provider-owned data once where it enters the app. Use one source-of-truth
+  schema for that boundary and derive the TypeScript type from the schema.
+- After a boundary has parsed a value, trust the resulting type. Do not repeat the same validation
+  inside business logic or tool implementations.
+- Model variants as discriminated unions with required variant-specific fields. Do not use optional
+  field bags that admit unsupported combinations.
+- Prefer inference and library-owned types. Do not create parallel interfaces for shapes already
+  owned by a schema or dependency.
+- Default properties and function arguments to required. Optionality must represent current
+  persisted data, external input, migration, or patch semantics.
+- Prefer delete-first internal refactors. Remove pass-through adapters, mirror types, compatibility
+  shims, and one-call helpers unless they protect a current invariant or a real boundary.
+- Do not shape production code for test convenience. Test behavior directly and keep the native
+  library value or error shape when it already expresses the contract.
+- Handle closed variants exhaustively so a new variant causes a compile error at every incomplete
+  branch.
+- Fail closed on invalid external data. Do not invent placeholder fallbacks or compatibility paths.
+- Give persisted and user-visible collections an explicit deterministic order with stable
+  tie-breakers.
+- `Reflect` is forbidden in authored application, automation, configuration, and test code. Use
+  direct typed access or a schema-backed boundary adapter.
+
 <!-- convex-ai-start -->
 
 This project uses [Convex](https://convex.dev) as its backend.

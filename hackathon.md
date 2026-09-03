@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-03T16:28:20Z
+- **Last updated:** 2026-09-03T19:54:52Z
 
 ## Log
 
@@ -914,8 +914,16 @@ Put the conversation beside the browser in resizable panes. The browser changes 
 when its session closes, while the selected session stays in the URL (`src/routes/chats.tsx`,
 `src/sidebars/scoutSidebarState.ts`).
 
-### 2026-09-03 - working tree - v164
+### 2026-09-03 - c6e0810 - v164
 
 Linked worktrees now reuse Samebase's local password-account flow: `pnpm run dev` starts an isolated
 anonymous Convex database, seeds the standard development account, and shows one-click sign-in only
 in that worktree (`scripts/run-worktree-dev.ts`, `src/components/auth-panel.tsx`).
+
+### 2026-09-03 - working tree
+
+Made Scout's chat and browser-tool boundaries type-safe: provider payloads and saved message parts
+are parsed once with Zod, tool variants carry required fields, and the UI renders a discriminated
+transcript instead of probing unknown objects. Removed reflection and assertion chains, and encoded
+the policy in repository instructions and Vite+ lint (`convex/scout/`, `src/`, `AGENTS.md`,
+`vite.config.ts`).

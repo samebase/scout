@@ -1,4 +1,4 @@
-import { chromium, type BrowserContext, type Locator, type Page } from "playwright-core";
+import { chromium } from "playwright-core";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { connectPlaywrightBrowser } from "./playwrightBrowser";
 
@@ -14,13 +14,13 @@ function fakePage(url: string, snapshot: string, initiallyFocused = false) {
     first,
     getAttribute: vi.fn(async () => "password"),
     innerText: vi.fn(async () => "Conrad"),
-  } as unknown as Locator;
+  };
   filter.mockReturnValue(semanticLocator);
   first.mockReturnValue(semanticLocator);
   const ariaSnapshot = vi.fn(async () => snapshot);
   const bodyLocator = {
     ariaSnapshot,
-  } as unknown as Locator;
+  };
   const getByRole = vi.fn(() => semanticLocator);
   const page = {
     bringToFront: vi.fn(async () => undefined),
@@ -32,8 +32,34 @@ function fakePage(url: string, snapshot: string, initiallyFocused = false) {
     setViewportSize: vi.fn(async () => undefined),
     title: vi.fn(async () => (location.current === "about:blank" ? "" : location.current)),
     url: () => location.current,
-  } as unknown as Page;
+  };
   return { ariaSnapshot, fill, filter, focus, getByRole, location, page };
+}
+
+type FakePage = ReturnType<typeof fakePage>["page"];
+
+function fakeContext(pages: FakePage[]) {
+  let pageListener: ((page: FakePage) => void) | undefined;
+  const context = {
+    on: vi.fn((event: string, listener: (page: FakePage) => void) => {
+      if (event === "page") pageListener = listener;
+    }),
+    pages: () => pages,
+    setDefaultNavigationTimeout: vi.fn(),
+    setDefaultTimeout: vi.fn(),
+  };
+  return {
+    context,
+    openPage: (page: FakePage) => {
+      pages.push(page);
+      pageListener?.(page);
+    },
+  };
+}
+
+function connectFakeContext(context: ReturnType<typeof fakeContext>["context"]) {
+  // @ts-expect-error This behavior test supplies only the Playwright methods the adapter exercises.
+  vi.spyOn(chromium, "connectOverCDP").mockResolvedValue({ contexts: () => [context] });
 }
 
 afterEach(() => {
@@ -44,15 +70,8 @@ describe("trusted Playwright observer", () => {
   test("captures AI snapshots and reads visible semantic targets", async () => {
     const initial = fakePage("https://samebase.com/", '- link "Go to dashboard" [ref=e1]');
     const pages = [initial.page];
-    const context = {
-      on: vi.fn(),
-      pages: () => pages,
-      setDefaultNavigationTimeout: vi.fn(),
-      setDefaultTimeout: vi.fn(),
-    } as unknown as BrowserContext;
-    vi.spyOn(chromium, "connectOverCDP").mockResolvedValue({
-      contexts: () => [context],
-    } as never);
+    const { context } = fakeContext(pages);
+    connectFakeContext(context);
 
     const browser = await connectPlaywrightBrowser("wss://browser.firecrawl.dev/cdp");
     const target = { kind: "role", role: "textbox", name: "Password", exact: true } as const;
@@ -77,22 +96,11 @@ describe("trusted Playwright observer", () => {
     const initial = fakePage("https://samebase.com/", "initial");
     const popup = fakePage("https://dashboard.convex.dev/", "popup");
     const pages = [initial.page];
-    let pageListener: ((page: Page) => void) | undefined;
-    const context = {
-      on: vi.fn((event: string, listener: (page: Page) => void) => {
-        if (event === "page") pageListener = listener;
-      }),
-      pages: () => pages,
-      setDefaultNavigationTimeout: vi.fn(),
-      setDefaultTimeout: vi.fn(),
-    } as unknown as BrowserContext;
-    vi.spyOn(chromium, "connectOverCDP").mockResolvedValue({
-      contexts: () => [context],
-    } as never);
+    const { context, openPage } = fakeContext(pages);
+    connectFakeContext(context);
     const browser = await connectPlaywrightBrowser("wss://browser.firecrawl.dev/cdp");
 
-    pages.push(popup.page);
-    pageListener?.(popup.page);
+    openPage(popup.page);
 
     await expect(browser.observe()).resolves.toEqual({
       capturedAtMs: expect.any(Number),
@@ -106,15 +114,8 @@ describe("trusted Playwright observer", () => {
   test("keeps the same tab ID when a page navigates or reloads", async () => {
     const cloudflare = fakePage("https://dash.cloudflare.com/", "dashboard", true);
     const pages = [cloudflare.page];
-    const context = {
-      on: vi.fn(),
-      pages: () => pages,
-      setDefaultNavigationTimeout: vi.fn(),
-      setDefaultTimeout: vi.fn(),
-    } as unknown as BrowserContext;
-    vi.spyOn(chromium, "connectOverCDP").mockResolvedValue({
-      contexts: () => [context],
-    } as never);
+    const { context } = fakeContext(pages);
+    connectFakeContext(context);
     const browser = await connectPlaywrightBrowser("wss://browser.firecrawl.dev/cdp");
 
     const before = await browser.observe();
@@ -133,15 +134,8 @@ describe("trusted Playwright observer", () => {
     const initial = fakePage("https://samebase.com/", "initial", true);
     const dashboard = fakePage("https://dashboard.convex.dev/", "dashboard");
     const pages = [initial.page, dashboard.page];
-    const context = {
-      on: vi.fn(),
-      pages: () => pages,
-      setDefaultNavigationTimeout: vi.fn(),
-      setDefaultTimeout: vi.fn(),
-    } as unknown as BrowserContext;
-    vi.spyOn(chromium, "connectOverCDP").mockResolvedValue({
-      contexts: () => [context],
-    } as never);
+    const { context } = fakeContext(pages);
+    connectFakeContext(context);
     const browser = await connectPlaywrightBrowser("wss://browser.firecrawl.dev/cdp");
 
     initial.focus.current = false;
@@ -160,15 +154,8 @@ describe("trusted Playwright observer", () => {
   test("reports about:blank explicitly instead of conflating it with an unavailable URL", async () => {
     const blank = fakePage("about:blank", "blank", true);
     const pages = [blank.page];
-    const context = {
-      on: vi.fn(),
-      pages: () => pages,
-      setDefaultNavigationTimeout: vi.fn(),
-      setDefaultTimeout: vi.fn(),
-    } as unknown as BrowserContext;
-    vi.spyOn(chromium, "connectOverCDP").mockResolvedValue({
-      contexts: () => [context],
-    } as never);
+    const { context } = fakeContext(pages);
+    connectFakeContext(context);
 
     const browser = await connectPlaywrightBrowser("wss://browser.firecrawl.dev/cdp");
 

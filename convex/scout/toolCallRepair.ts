@@ -1,47 +1,58 @@
 import { InvalidToolInputError, type ToolCallRepairFunction, type ToolSet } from "ai";
+import { z } from "zod";
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+const unknownRecordSchema = z.record(z.string(), z.unknown());
+const toolInputSchemaShape = z.object({ properties: unknownRecordSchema });
+const jsonSchemaShape = z.object({
+  type: z.union([z.string(), z.array(z.string())]).optional(),
+  const: z.unknown().optional(),
+  enum: z.array(z.unknown()).optional(),
+  oneOf: z.array(z.unknown()).optional(),
+  anyOf: z.array(z.unknown()).optional(),
+  allOf: z.array(z.unknown()).optional(),
+});
+const jsonValueSchema = z.json();
 
 function rejectsString(schema: unknown): boolean {
   if (schema === false) return true;
-  if (!isRecord(schema)) return false;
+  const parsed = jsonSchemaShape.safeParse(schema);
+  if (!parsed.success) return false;
 
-  const type = schema["type"];
-  if (typeof type === "string" || Array.isArray(type)) {
+  const { type } = parsed.data;
+  if (type !== undefined) {
     const types = Array.isArray(type) ? type : [type];
     return !types.includes("string");
   }
-  if (schema["const"] !== undefined) return typeof schema["const"] !== "string";
-  const values = schema["enum"];
-  if (Array.isArray(values)) return values.every((value: unknown) => typeof value !== "string");
-  const oneOf = schema["oneOf"];
-  if (Array.isArray(oneOf)) return oneOf.every(rejectsString);
-  const anyOf = schema["anyOf"];
-  if (Array.isArray(anyOf)) return anyOf.every(rejectsString);
-  const allOf = schema["allOf"];
-  if (Array.isArray(allOf)) return allOf.some(rejectsString);
+  if (parsed.data.const !== undefined) return typeof parsed.data.const !== "string";
+  if (parsed.data.enum) {
+    return parsed.data.enum.every((value) => typeof value !== "string");
+  }
+  if (parsed.data.oneOf) return parsed.data.oneOf.every(rejectsString);
+  if (parsed.data.anyOf) return parsed.data.anyOf.every(rejectsString);
+  if (parsed.data.allOf) return parsed.data.allOf.some(rejectsString);
   return false;
 }
 
 function parseJson(value: string) {
   try {
-    return { success: true as const, value: JSON.parse(value) as unknown };
+    const parsed = jsonValueSchema.safeParse(JSON.parse(value));
+    return parsed.success
+      ? { success: true as const, value: parsed.data }
+      : { success: false as const };
   } catch {
     return { success: false as const };
   }
 }
 
 export function repairStringifiedTopLevelValues(input: unknown, schema: unknown) {
-  if (!isRecord(input) || !isRecord(schema)) return null;
-  const properties = schema["properties"];
-  if (!isRecord(properties)) return null;
+  const parsedInput = unknownRecordSchema.safeParse(input);
+  const parsedSchema = toolInputSchemaShape.safeParse(schema);
+  if (!parsedInput.success || !parsedSchema.success) return null;
 
   const fields: string[] = [];
-  const repaired: Record<string, unknown> = { ...input };
-  for (const [name, value] of Object.entries(input)) {
-    if (typeof value !== "string" || !rejectsString(properties[name])) continue;
+  const repaired = { ...parsedInput.data };
+  for (const [name, value] of Object.entries(parsedInput.data)) {
+    if (typeof value !== "string" || !rejectsString(parsedSchema.data.properties[name])) continue;
     const parsed = parseJson(value);
     if (!parsed.success || typeof parsed.value === "string") continue;
     repaired[name] = parsed.value;

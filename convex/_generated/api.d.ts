@@ -44,6 +44,7 @@ import type * as scout_lib_firecrawlLiveView from "../scout/lib/firecrawlLiveVie
 import type * as scout_lib_firecrawlReplay from "../scout/lib/firecrawlReplay.js";
 import type * as scout_lib_humanHandoffAccess from "../scout/lib/humanHandoffAccess.js";
 import type * as scout_lib_redaction from "../scout/lib/redaction.js";
+import type * as scout_lib_runtimeTool from "../scout/lib/runtimeTool.js";
 import type * as scout_manual from "../scout/manual.js";
 import type * as scout_manualState from "../scout/manualState.js";
 import type * as scout_model from "../scout/model.js";
@@ -104,6 +105,7 @@ declare const fullApi: ApiFromModules<{
   "scout/lib/firecrawlReplay": typeof scout_lib_firecrawlReplay;
   "scout/lib/humanHandoffAccess": typeof scout_lib_humanHandoffAccess;
   "scout/lib/redaction": typeof scout_lib_redaction;
+  "scout/lib/runtimeTool": typeof scout_lib_runtimeTool;
   "scout/manual": typeof scout_manual;
   "scout/manualState": typeof scout_manualState;
   "scout/model": typeof scout_model;

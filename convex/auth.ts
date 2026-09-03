@@ -23,11 +23,8 @@ const basePasswordProvider = Password({
   },
 });
 
-const basePasswordOptions = (
-  basePasswordProvider as typeof basePasswordProvider & {
-    options: { authorize: typeof basePasswordProvider.authorize };
-  }
-).options;
+// @ts-expect-error Convex Auth stores this config in `options` at runtime but omits it publicly.
+const basePasswordOptions = basePasswordProvider.options;
 
 const passwordProvider = {
   ...basePasswordProvider,

@@ -1,5 +1,10 @@
 import { tool, type ToolSet } from "ai";
-import { SdkError, type BrowserCreateResponse, type BrowserExecuteResponse } from "firecrawl";
+import {
+  SdkError,
+  type BrowserCreateResponse,
+  type BrowserExecuteResponse,
+  type Firecrawl,
+} from "firecrawl";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { createBrowserHarness, selectAgentMailTools } from "./browserTools";
@@ -44,7 +49,10 @@ function dependencies(browserRuntime = runtime()) {
       }),
     ),
     browserExecute: vi.fn(
-      async (): Promise<BrowserExecuteResponse> => ({
+      async (
+        _sessionId: string,
+        _options: Parameters<Firecrawl["browserExecute"]>[1],
+      ): Promise<BrowserExecuteResponse> => ({
         success: true,
         stdout: "clicked",
         exitCode: 0,
@@ -142,18 +150,15 @@ describe("Lab browser harness", () => {
     expect(JSON.stringify(deps.browserExecute.mock.calls)).toContain(
       "__SCOUT_PLAYWRIGHT_RESULT__tool-execute:",
     );
-    const executionRequest = deps.browserExecute.mock.calls[0] as unknown as [
-      string,
-      { code: string },
-    ];
-    expect(executionRequest[1].code).toContain(
+    const executionRequest = deps.browserExecute.mock.calls.at(-1);
+    expect(executionRequest?.[1].code).toContain(
       'const selectedTab = {"index":0,"title":"Example","url":"https://example.com/"}',
     );
-    expect(executionRequest[1].code).toContain("const browserState = async");
-    expect(executionRequest[1].code).toContain(
+    expect(executionRequest?.[1].code).toContain("const browserState = async");
+    expect(executionRequest?.[1].code).toContain(
       'new AsyncFunction("page", "browserState", "return (" + source + ");")',
     );
-    expect(executionRequest[1].code).toContain("executeUserCode(activePage, browserState)");
+    expect(executionRequest?.[1].code).toContain("executeUserCode(activePage, browserState)");
     expect(onOperationPrepared).toHaveBeenCalledWith({
       toolCallId: "tool-execute",
       action: { kind: "execute", code },
@@ -403,7 +408,16 @@ describe("AgentMail Lab catalog", () => {
   test("binds the read tools to one configured inbox", async () => {
     const execute = vi.fn(async (input: unknown) => input);
     const toModelOutput = vi.fn(() => ({ type: "text" as const, value: "converted" }));
-    const readTool = tool({ inputSchema: z.object({}), execute, toModelOutput });
+    const readTool = tool({
+      inputSchema: z.object({
+        inboxId: z.string(),
+        limit: z.number().optional(),
+        q: z.string().optional(),
+        threadId: z.string().optional(),
+      }),
+      execute,
+      toModelOutput,
+    });
     const allTools: ToolSet = {
       list_messages: readTool,
       search_messages: readTool,

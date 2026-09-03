@@ -50,6 +50,10 @@ const chatMessageMetadataValidator = v.object({
 
 type ChatMessageMetadata = Infer<typeof chatMessageMetadataValidator>;
 
+// @convex-dev/agent owns this open provider/tool union. The client parses it once in
+// src/lib/scout-message-parts.ts before application code reads any part fields.
+const agentUiMessagePartsValidator = v.array(v.any());
+
 const uiMessageValidator = v.object({
   id: v.string(),
   _creationTime: v.number(),
@@ -63,7 +67,7 @@ const uiMessageValidator = v.object({
     v.literal("failed"),
   ),
   role: v.union(v.literal("system"), v.literal("user"), v.literal("assistant")),
-  parts: v.array(v.any()),
+  parts: agentUiMessagePartsValidator,
   text: v.string(),
   agentName: v.optional(v.string()),
   userId: v.optional(v.string()),

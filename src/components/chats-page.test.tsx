@@ -282,7 +282,7 @@ describe("Chat workspace", () => {
     expect(remote.executeTool).toHaveBeenCalledExactlyOnceWith({
       threadId: "thread-1",
       toolName: "browser_execute",
-      input,
+      input: JSON.stringify(input),
     });
   });
 
@@ -310,7 +310,7 @@ describe("Chat workspace", () => {
     expect(remote.executeTool).toHaveBeenCalledExactlyOnceWith({
       threadId: "thread-1",
       toolName,
-      input,
+      input: JSON.stringify(input),
     });
   });
 

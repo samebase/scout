@@ -11,21 +11,18 @@ import { Bubble, BubbleContent } from "#components/ui/bubble";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "#components/ui/collapsible";
 import { Marker, MarkerContent, MarkerIcon } from "#components/ui/marker";
 import { Message, MessageContent, MessageFooter, MessageHeader } from "#components/ui/message";
+import {
+  countGenerationSteps,
+  parseScoutMessageParts,
+  type ScoutMessagePart,
+  type ScoutToolActivity,
+} from "#lib/scout-message-parts";
 
 export type ScoutRunMessage = FunctionReturnType<
   typeof api.scout.chats.listMessages
 >["page"][number];
 
 type ScoutRunMetadata = NonNullable<ScoutRunMessage["metadata"]>;
-
-type ToolSnapshot = {
-  name: string;
-  state: string;
-  input?: unknown;
-  output?: unknown;
-  error?: unknown;
-  repairedInputFields: string[];
-};
 
 const tokenNumber = new Intl.NumberFormat();
 
@@ -50,12 +47,13 @@ export function ScoutRunMessageView({
   const isUser = message.role === "user";
   const label = isUser ? "You" : message.role === "system" ? "System" : "Scout";
   const metadata = message.metadata;
+  const parts = parseScoutMessageParts(message.parts);
 
   return (
     <Message align={isUser ? "end" : "start"}>
       <MessageContent>
         <MessageHeader>{label}</MessageHeader>
-        {message.parts.map((part, index) => (
+        {parts.map((part, index) => (
           <MessagePart
             key={partKey(part, index)}
             part={part}
@@ -84,20 +82,11 @@ export function ScoutRunMessageView({
             Scout is working
           </MessageFooter>
         ) : metadata ? (
-          <MessageFooter>
-            {formatRunMetadata(metadata, countGenerationSteps(message.parts))}
-          </MessageFooter>
+          <MessageFooter>{formatRunMetadata(metadata, countGenerationSteps(parts))}</MessageFooter>
         ) : null}
       </MessageContent>
     </Message>
   );
-}
-
-export function countGenerationSteps(parts: ScoutRunMessage["parts"]) {
-  return parts.reduce((count, part) => {
-    const record = asRecord(part);
-    return record && field(record, "type") === "step-start" ? count + 1 : count;
-  }, 0);
 }
 
 export function formatRunMetadata(metadata: ScoutRunMetadata, generationSteps: number) {
@@ -152,32 +141,26 @@ function MessagePart({
   role,
   showText,
 }: {
-  part: unknown;
+  part: ScoutMessagePart;
   role: ScoutRunMessage["role"];
   showText: boolean;
 }) {
-  const record = asRecord(part);
-  const rawType = record ? field(record, "type") : undefined;
-  const type = typeof rawType === "string" ? rawType : "unknown";
-  const text = record ? field(record, "text") : undefined;
-
-  if (type === "text" && typeof text === "string") {
-    if (!showText || !text) return null;
+  if (part.kind === "text") {
+    if (!showText || !part.text) return null;
     return (
       <Bubble
         variant={role === "user" ? "default" : role === "system" ? "secondary" : "ghost"}
         align={role === "user" ? "end" : "start"}
       >
-        <BubbleContent className="whitespace-pre-wrap">{text}</BubbleContent>
+        <BubbleContent className="whitespace-pre-wrap">{part.text}</BubbleContent>
       </Bubble>
     );
   }
 
-  const tool = toolSnapshot(record, type);
-  if (tool) return <ToolActivity tool={tool} />;
-  if (type === "step-start") return null;
+  if (part.kind === "tool") return <ToolActivity tool={part.tool} />;
+  if (part.kind === "step") return null;
 
-  if (type === "reasoning" && typeof text === "string") {
+  if (part.kind === "reasoning") {
     return (
       <Collapsible className="text-muted-foreground text-xs">
         <CollapsibleTrigger className="hover:text-foreground flex items-center gap-1 py-1">
@@ -185,22 +168,19 @@ function MessagePart({
           Reasoning
         </CollapsibleTrigger>
         <CollapsibleContent className="border-l pl-4 whitespace-pre-wrap">
-          {text}
+          {part.text}
         </CollapsibleContent>
       </Collapsible>
     );
   }
 
-  const url = record ? field(record, "url") : undefined;
-  if (record && type === "source-url" && typeof url === "string") {
-    const rawTitle = field(record, "title");
-    const title = typeof rawTitle === "string" ? rawTitle : url;
+  if (part.kind === "source") {
     return (
       <Marker>
         <MarkerContent>
           Source:{" "}
-          <a href={url} target="_blank" rel="noreferrer">
-            {title}
+          <a href={part.url} target="_blank" rel="noreferrer">
+            {part.title}
           </a>
         </MarkerContent>
       </Marker>
@@ -209,19 +189,14 @@ function MessagePart({
 
   return (
     <Marker>
-      <MarkerContent>
-        {type === "unknown" ? "Unrecognized message part" : type.replaceAll("-", " ")}
-      </MarkerContent>
+      <MarkerContent>{part.label}</MarkerContent>
     </Marker>
   );
 }
 
-function ToolActivity({ tool }: { tool: ToolSnapshot }) {
-  const outputFailure = toolOutputFailure(tool.output);
-  const isError =
-    tool.state.includes("error") || tool.error !== undefined || outputFailure !== undefined;
+function ToolActivity({ tool }: { tool: ScoutToolActivity }) {
+  const isError = tool.error !== undefined;
   const isComplete = tool.state === "output-available";
-  const inputPreview = toolInputPreview(tool.name, tool.input);
 
   return (
     <Collapsible
@@ -256,11 +231,11 @@ function ToolActivity({ tool }: { tool: ToolSnapshot }) {
                 {isError ? "error" : tool.state.replaceAll("-", " ")}
               </span>
             </span>
-            {inputPreview ? (
+            {tool.inputPreview ? (
               <span
                 className={`mt-1 line-clamp-3 whitespace-pre-wrap break-words font-mono text-[0.6875rem] leading-4${isError ? " text-destructive/90" : " text-muted-foreground"}`}
               >
-                {inputPreview}
+                {tool.inputPreview}
               </span>
             ) : null}
           </MarkerContent>
@@ -273,13 +248,9 @@ function ToolActivity({ tool }: { tool: ToolSnapshot }) {
             <ToolValue label="JSON-parsed fields" value={tool.repairedInputFields.join(", ")} />
           ) : null}
           {tool.input !== undefined ? <ToolValue label="Input" value={tool.input} /> : null}
-          {tool.output !== undefined && outputFailure === undefined ? (
-            <ToolValue label="Output" value={tool.output} />
-          ) : null}
+          {tool.output !== undefined ? <ToolValue label="Output" value={tool.output} /> : null}
           {tool.error !== undefined ? (
             <ToolValue label="Error" value={tool.error} destructive />
-          ) : outputFailure !== undefined ? (
-            <ToolValue label="Error" value={outputFailure} destructive />
           ) : null}
         </dl>
       </CollapsibleContent>
@@ -294,7 +265,7 @@ function ToolValue({
 }: {
   destructive?: boolean;
   label: string;
-  value: unknown;
+  value: string;
 }) {
   return (
     <div>
@@ -310,94 +281,15 @@ function ToolValue({
       <dd
         className={`mt-1 overflow-x-auto rounded-md bg-background p-2 font-mono text-[0.6875rem] leading-relaxed whitespace-pre-wrap break-words${destructive ? " text-destructive" : ""}`}
       >
-        {formatValue(value)}
+        {value}
       </dd>
     </div>
   );
 }
 
-export function toolOutputFailure(value: unknown) {
-  if (value instanceof Error) return value.message;
-  if (typeof value === "string") {
-    const message = value.trim();
-    return /^(?:[A-Za-z_$][\w$]*Error|Error):/.test(message) ||
-      /^An error occurred\.?$/i.test(message)
-      ? value
-      : undefined;
-  }
-  const record = asRecord(value);
-  if (!record) return undefined;
-  if (field(record, "success") === false || field(record, "isError") === true) return value;
-  const error = ownValue(record, "error");
-  return error !== undefined && error !== null && error !== false && error !== ""
-    ? value
-    : undefined;
-}
-
-export function repairedToolInputFields(record: object | null) {
-  if (!record) return [];
-  const metadata = asRecord(
-    ownValue(record, "callProviderMetadata") ?? ownValue(record, "providerMetadata"),
-  );
-  const scout = metadata ? asRecord(field(metadata, "scout")) : null;
-  const repair = scout ? asRecord(field(scout, "inputRepair")) : null;
-  const fields = repair ? field(repair, "fields") : undefined;
-  return Array.isArray(fields)
-    ? fields.filter((value): value is string => typeof value === "string")
-    : [];
-}
-
-export function toolInputPreview(toolName: string, input: unknown) {
-  if (input === undefined) return undefined;
-  const inputRecord = asRecord(input);
-  const code = inputRecord ? field(inputRecord, "code") : undefined;
-  const preview =
-    toolName === "browser_execute" && typeof code === "string" ? code : formatValue(input);
-  const trimmed = preview.trim();
-  return trimmed === "" ? undefined : trimmed;
-}
-
-function toolSnapshot(record: object | null, type: string): ToolSnapshot | null {
-  if (!record || (type !== "dynamic-tool" && !type.startsWith("tool-"))) return null;
-  const rawToolName = field(record, "toolName");
-  const dynamicName = typeof rawToolName === "string" ? rawToolName : null;
-  const staticName = type.startsWith("tool-") ? type.slice("tool-".length) : null;
-  const rawState = field(record, "state");
-  const state = typeof rawState === "string" ? rawState : "unknown";
-  return {
-    name: dynamicName ?? staticName ?? "unknown tool",
-    state,
-    input: ownValue(record, "input") ?? ownValue(record, "args"),
-    output: ownValue(record, "output") ?? ownValue(record, "result"),
-    error: ownValue(record, "errorText") ?? ownValue(record, "error"),
-    repairedInputFields: repairedToolInputFields(record),
-  };
-}
-
-function partKey(part: unknown, index: number) {
-  const record = asRecord(part);
-  const stableId = record ? (field(record, "toolCallId") ?? field(record, "id")) : undefined;
-  const type = record ? field(record, "type") : "part";
-  return typeof stableId === "string" ? stableId : `${String(type)}-${index}`;
-}
-
-function asRecord(value: unknown): object | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value) ? value : null;
-}
-
-function field(record: object, key: string): unknown {
-  return Reflect.get(record, key);
-}
-
-function ownValue(record: object, key: string) {
-  return Object.prototype.hasOwnProperty.call(record, key) ? field(record, key) : undefined;
-}
-
-function formatValue(value: unknown) {
-  if (typeof value === "string") return value;
-  try {
-    return JSON.stringify(value, null, 2) ?? String(value);
-  } catch {
-    return String(value);
-  }
+function partKey(part: ScoutMessagePart, index: number) {
+  if (part.kind === "tool") return part.tool.toolCallId;
+  if (part.kind === "reasoning" && part.id) return part.id;
+  if (part.kind === "source") return part.id;
+  return `${part.kind}-${index}`;
 }

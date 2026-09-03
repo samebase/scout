@@ -38,6 +38,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { z } from "zod";
 import { api } from "../../convex/_generated/api";
 import {
   BROWSER_CLOSE_DESCRIPTION,
@@ -63,16 +64,14 @@ import {
 } from "#components/ui/message-scroller";
 import { Textarea } from "#components/ui/textarea";
 
-type ChatSearch = {
-  thread?: string;
-  session?: string;
-};
+const chatSearchSchema = z.object({
+  thread: z.string().optional().catch(undefined),
+  session: z.string().optional().catch(undefined),
+});
+const jsonValueSchema = z.json();
 
 export const Route = createFileRoute("/chats")({
-  validateSearch: (search: Record<string, unknown>): ChatSearch => ({
-    ...(typeof search["thread"] === "string" ? { thread: search["thread"] } : {}),
-    ...(typeof search["session"] === "string" ? { session: search["session"] } : {}),
-  }),
+  validateSearch: (search) => chatSearchSchema.parse(search),
   head: () => ({
     meta: [{ title: "Chats | Scout" }],
   }),
@@ -219,6 +218,14 @@ function ChatsPage() {
       </Authenticated>
     </>
   );
+}
+
+function validJson(value: string) {
+  try {
+    return jsonValueSchema.safeParse(JSON.parse(value)).success;
+  } catch {
+    return false;
+  }
 }
 
 function threadLabel(thread: ChatThread) {
@@ -403,18 +410,14 @@ function ChatsWorkspace() {
 
   const submitManualTool = async () => {
     if (selectedDriver !== "manual" || isWorking || !selectedActiveScout || !threadId) return;
-
-    let input: unknown;
-    try {
-      input = JSON.parse(manualInput);
-    } catch {
+    if (!validJson(manualInput)) {
       setComposerState({ kind: "failed", message: "Tool input must be valid JSON." });
       return;
     }
 
     setComposerState({ kind: "sending" });
     try {
-      await executeManualTool({ threadId, toolName: manualTool.value, input });
+      await executeManualTool({ threadId, toolName: manualTool.value, input: manualInput });
       setComposerState({ kind: "idle" });
     } catch {
       setComposerState(

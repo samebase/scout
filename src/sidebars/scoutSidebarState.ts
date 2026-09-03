@@ -242,7 +242,6 @@ export function useScoutSidebarController(): SidebarLayoutStateController {
     const storedState = readScoutSidebarState();
     latestSidebarStateRef.current = storedState;
     hasAppliedStoredStateRef.current = true;
-    // eslint-disable-next-line react/set-state-in-effect -- Keep the server and first client render equal before applying local state.
     setSidebarState(storedState);
   }, []);
 
