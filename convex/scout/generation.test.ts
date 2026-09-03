@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vite-plus/test";
-import { addScoutTokenUsage, generationFailureDetails, tokenUsage } from "./generation";
+import { APICallError } from "@ai-sdk/provider";
+import { RetryError } from "ai";
+import {
+  addScoutTokenUsage,
+  generationErrorDetails,
+  generationFailureDetails,
+  tokenUsage,
+} from "./generation";
 import { assertCredentialBrowserUrl } from "./accountTools";
 import {
   SCOUT_AGENT_INSTRUCTIONS,
@@ -55,21 +62,49 @@ describe("Scout generation usage", () => {
 
   it("retains completed-step usage when a later generation step fails", () => {
     const error = new Error("final step failed");
-    expect(
-      generationFailureDetails(
-        {
-          kind: "failed",
-          error,
-          usage: { promptTokens: 12_000, completionTokens: 300, costUsd: 0.0003 },
-        },
-        undefined,
-        undefined,
-      ),
-    ).toEqual({
-      failure: "final step failed",
-      terminalError: error,
-      usage: { promptTokens: 12_000, completionTokens: 300, costUsd: 0.0003 },
+    const result = generationFailureDetails(
+      {
+        kind: "failed",
+        error,
+        usage: { promptTokens: 12_000, completionTokens: 300, costUsd: 0.0003 },
+      },
+      undefined,
+      undefined,
+    );
+
+    expect(result.failure).toContain("Error: final step failed");
+    expect(result.terminalError).toBe(error);
+    expect(result.usage).toEqual({
+      promptTokens: 12_000,
+      completionTokens: 300,
+      costUsd: 0.0003,
     });
+  });
+
+  it("keeps the provider response and retry history in generation failures", () => {
+    const providerError = new APICallError({
+      message: "Provider returned error",
+      url: "https://ai-gateway.convex.dev/v1/chat/completions",
+      requestBodyValues: { model: "qwen/qwen3.7-flash" },
+      statusCode: 503,
+      responseHeaders: { "x-request-id": "request-123" },
+      responseBody: '{"error":{"message":"upstream unavailable"}}',
+      isRetryable: true,
+    });
+    const retryError = new RetryError({
+      message: `Failed after 3 attempts. Last error: ${providerError}`,
+      reason: "maxRetriesExceeded",
+      errors: [providerError],
+    });
+
+    const details = generationErrorDetails(retryError);
+
+    expect(details).toContain("AI_RetryError");
+    expect(details).toContain("maxRetriesExceeded");
+    expect(details).toContain("statusCode: 503");
+    expect(details).toContain("x-request-id");
+    expect(details).toContain("request-123");
+    expect(details).toContain("upstream unavailable");
   });
 });
 

@@ -3,6 +3,7 @@
 import { createMCPClient, type MCPClient } from "@ai-sdk/mcp";
 import { isStepCount, type LanguageModelUsage } from "ai";
 import { v } from "convex/values";
+import { inspect } from "node:util";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { env, internalAction } from "../_generated/server";
@@ -18,7 +19,6 @@ import {
   humanHandoffOrigin,
   humanHandoffUrl,
 } from "./lib/humanHandoffAccess";
-import { diagnosticMessage } from "./lib/redaction";
 import { scoutLanguageModel, scoutModelValidator, type ScoutTokenUsage } from "./models";
 import { compactBrowserModelContext } from "./browserContext";
 import { createToolArgumentProbe } from "./toolArgumentProbe";
@@ -46,14 +46,22 @@ export function generationFailureDetails(
       : (cleanupFailure ?? completionFailure);
   const failure =
     generationResult.kind === "failed" && cleanupFailure
-      ? `${diagnosticMessage(generationResult.error)}; browser cleanup: ${diagnosticMessage(cleanupFailure)}`
+      ? `${generationErrorDetails(generationResult.error)}\nbrowser cleanup: ${generationErrorDetails(cleanupFailure)}`
       : cleanupFailure
-        ? `Browser cleanup failed: ${diagnosticMessage(cleanupFailure)}`
-        : diagnosticMessage(terminalError);
+        ? `Browser cleanup failed: ${generationErrorDetails(cleanupFailure)}`
+        : generationErrorDetails(terminalError);
 
   return generationResult.usage === undefined
     ? { failure, terminalError }
     : { failure, terminalError, usage: generationResult.usage };
+}
+
+export function generationErrorDetails(error: unknown) {
+  if (typeof error === "string") return error;
+  return inspect(error, {
+    depth: 3,
+    maxStringLength: null,
+  });
 }
 
 export function createStreamErrorCapture() {
