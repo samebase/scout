@@ -17,6 +17,16 @@ describe("task human gate detection", () => {
     expect(detectsHumanGate(dataDomeOutput)).toBe(true);
   });
 
+  it("recognizes a human gate in the current-page snapshot", () => {
+    expect(
+      detectsHumanGate({
+        success: true,
+        currentPage: '- iframe "DataDome Device Check"',
+        output: "",
+      }),
+    ).toBe(true);
+  });
+
   it.each([
     "CAPTCHA challenge",
     "hCaptcha challenge",
@@ -122,7 +132,7 @@ describe("task loop decisions", () => {
       decideTaskStep({
         state: "working",
         previousToolResult: null,
-        previousToolError: { toolName: "browser_open" },
+        previousToolError: { toolName: "create_new_firecrawl_session" },
       }),
     ).toEqual({ kind: "resolve_attempt", nextState: "resolving" });
   });

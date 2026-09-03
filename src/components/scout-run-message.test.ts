@@ -9,6 +9,7 @@ import {
   countGenerationSteps,
   formatRunMetadata,
   repairedToolInputFields,
+  toolInputPreview,
   toolOutputFailure,
 } from "./scout-run-message";
 
@@ -78,6 +79,12 @@ describe("Scout transcript metadata", () => {
 });
 
 describe("Scout tool results", () => {
+  test("previews Playwright code without the browser_execute input wrapper", () => {
+    const code = "await page.getByRole('button', { name: 'Continue' }).click();";
+
+    expect(toolInputPreview("browser_execute", { code })).toBe(code);
+  });
+
   test("reports fields repaired from stringified JSON tool arguments", () => {
     expect(
       repairedToolInputFields({

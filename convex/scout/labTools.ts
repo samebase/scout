@@ -43,6 +43,11 @@ type BrowserDependencies = {
   sleep: (milliseconds: number) => Promise<void>;
 };
 
+export type LabBrowserSessionHandle = {
+  providerSessionId: string;
+  cdpUrl: string;
+};
+
 type BrowserSessionPolicy = { captureOperations: boolean };
 type BrowserOperationOutcome =
   | { kind: "applied"; telemetry: TaskBrowserTelemetry }
@@ -196,6 +201,16 @@ function browserOutput(output: string, sensitiveValues: ReadonlySet<string>) {
   };
 }
 
+function browserSnapshotOutput(currentPage: string, sensitiveValues: ReadonlySet<string>) {
+  return {
+    success: true,
+    currentPage: redactSensitiveValues(currentPage, sensitiveValues).slice(
+      0,
+      MAX_TOOL_OUTPUT_LENGTH,
+    ),
+  };
+}
+
 function browserFailure(error: unknown, sensitiveValues: ReadonlySet<string>) {
   if (sensitiveValues.size > 0) {
     return "Browser operation failed after managed credential use";
@@ -231,7 +246,11 @@ function executionFailure(response: BrowserExecuteResponse, sensitiveValues: Rea
     : summary;
 }
 
-function scopedPlaywrightExecution(code: string, toolCallId: string) {
+function scopedPlaywrightExecution(
+  code: string,
+  toolCallId: string,
+  selectedTab: { index: number; title: string; url: string | null },
+) {
   const marker = `${PLAYWRIGHT_RESULT_PREFIX}${toolCallId}:`;
   return {
     marker,
@@ -250,9 +269,41 @@ function scopedPlaywrightExecution(code: string, toolCallId: string) {
     logs.push(values.map(display).join(" "));
   };
   try {
-    const value = await (async () => {
-${code}
-    })();
+    const pages = page.context().pages();
+    const selectedTab = ${JSON.stringify(selectedTab)};
+    const comparableUrl = (value) => {
+      try {
+        const url = new URL(value);
+        if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+        url.search = "";
+        url.hash = "";
+        return url.toString();
+      } catch {
+        return null;
+      }
+    };
+    const matchesSelectedTab = async (candidate) =>
+      (selectedTab.url === null || comparableUrl(candidate.url()) === selectedTab.url) &&
+      (selectedTab.title === "" || (await candidate.title().catch(() => "")) === selectedTab.title);
+    let activePage = pages[selectedTab.index] ?? page;
+    if (!(await matchesSelectedTab(activePage))) {
+      for (const candidate of pages) {
+        if (await matchesSelectedTab(candidate)) {
+          activePage = candidate;
+          break;
+        }
+      }
+    }
+    await activePage.bringToFront();
+    const source = ${JSON.stringify(code)};
+    const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+    let executeUserCode;
+    try {
+      executeUserCode = new AsyncFunction("page", "return (" + source + ");");
+    } catch {
+      executeUserCode = new AsyncFunction("page", source);
+    }
+    const value = await executeUserCode(activePage);
     if (value !== undefined) logs.push(display(value));
     return ${JSON.stringify(marker)} + JSON.stringify({ ok: true, output: logs.join("\\n") });
   } catch (error) {
@@ -469,9 +520,10 @@ export function createLabBrowserHarness(
 
   function postActionSnapshotFailed(error: unknown) {
     return {
-      ...browserOutput("", sensitiveValues),
+      ...browserSnapshotOutput("", sensitiveValues),
       success: false,
-      output:
+      output: "",
+      guidance:
         "The browser action completed, but the post-action snapshot failed. Inspect the current page before continuing and do not retry the action.",
       error: `PostActionSnapshotFailed: ${browserFailure(error, sensitiveValues)}`,
       mutationApplied: true,
@@ -494,7 +546,7 @@ export function createLabBrowserHarness(
         throw new Error(browserFailure(error, sensitiveValues));
       }
       try {
-        return browserOutput(await browser.snapshot(), sensitiveValues);
+        return browserSnapshotOutput(await browser.snapshot(), sensitiveValues);
       } catch (error) {
         return postActionSnapshotFailed(error);
       }
@@ -551,7 +603,7 @@ export function createLabBrowserHarness(
     try {
       const snapshot = await browser.snapshot();
       await settle(toolCallId, { kind: "applied", telemetry });
-      return browserOutput(snapshot, sensitiveValues);
+      return browserSnapshotOutput(snapshot, sensitiveValues);
     } catch (error) {
       await settle(toolCallId, { kind: "applied_snapshot_failed", telemetry });
       return postActionSnapshotFailed(error);
@@ -568,7 +620,6 @@ export function createLabBrowserHarness(
 
   function executeCode(code: string, toolCallId = localToolCallId()) {
     const source = boundedText(code, "Playwright code");
-    const scopedExecution = scopedPlaywrightExecution(source, toolCallId);
     return serialized(async () => {
       const browser = activeBrowser();
       const activeSessionId = sessionId;
@@ -597,6 +648,21 @@ export function createLabBrowserHarness(
         throw new Error(failure);
       }
 
+      const selectedTabIndex = before.tabs.findIndex((tab) => tab.active);
+      const selectedTab = before.tabs[selectedTabIndex];
+      if (!selectedTab) {
+        const failure = "The browser observation has no active tab";
+        if (captureOperations) {
+          await settle(toolCallId, { kind: "failed_before_dispatch", failure });
+        }
+        throw new Error(failure);
+      }
+      const scopedExecution = scopedPlaywrightExecution(source, toolCallId, {
+        index: selectedTabIndex,
+        title: selectedTab.title,
+        url: selectedTab.url,
+      });
+
       const dispatchedAtMs = dependencies.now();
       let response: BrowserExecuteResponse;
       try {
@@ -623,7 +689,11 @@ export function createLabBrowserHarness(
         const snapshot = await browser.snapshot().catch(() => "");
         return {
           success: false,
-          output: snapshot ? `Current page:\n${snapshot}` : "",
+          currentPage: redactSensitiveValues(snapshot, sensitiveValues).slice(
+            0,
+            MAX_TOOL_OUTPUT_LENGTH,
+          ),
+          output: "",
           error: failure,
           dispatchedAtMs,
           returnedAtMs,
@@ -693,13 +763,11 @@ export function createLabBrowserHarness(
       }
       return {
         success: succeeded,
-        output: [
-          `Current page:\n${redactSensitiveValues(snapshot, sensitiveValues)}`,
-          execution.output,
-        ]
-          .filter(Boolean)
-          .join("\n\n")
-          .slice(0, MAX_TOOL_OUTPUT_LENGTH),
+        currentPage: redactSensitiveValues(snapshot, sensitiveValues).slice(
+          0,
+          MAX_TOOL_OUTPUT_LENGTH,
+        ),
+        output: execution.output,
         error: execution.error,
         exitCode: response.exitCode ?? null,
         killed: response.killed ?? false,
@@ -770,6 +838,32 @@ export function createLabBrowserHarness(
       },
     );
     return opening;
+  }
+
+  function attach(handle: LabBrowserSessionHandle) {
+    return serialized(async () => {
+      if (sessionId || playwright) {
+        throw new Error("A browser session is already attached");
+      }
+      if (stopResult) {
+        throw new Error("This response already closed its browser session");
+      }
+      const providerSessionId = boundedText(
+        handle.providerSessionId,
+        "Firecrawl browser session ID",
+        500,
+      );
+      let connected: PlaywrightBrowser;
+      try {
+        connected = await dependencies.connect(handle.cdpUrl);
+      } catch (error) {
+        throw new Error(`Playwright could not reconnect to Firecrawl: ${diagnosticMessage(error)}`);
+      }
+      sessionId = providerSessionId;
+      playwright = connected;
+      const policy = await options.onSessionAvailable?.(providerSessionId);
+      captureOperations = policy?.captureOperations === true;
+    });
   }
 
   function close(): Promise<BrowserStopResult | undefined> {
@@ -873,17 +967,17 @@ export function createLabBrowserHarness(
   };
 
   const tools = {
-    browser_open: tool({
+    create_new_firecrawl_session: tool({
       description:
-        "Open one admin-configured Firecrawl browser session through Playwright at an HTTPS URL and return an interactive accessibility snapshot. Call once per Turn; startup handles transient provider conflicts internally. The session identity and provider URLs stay outside the model.",
+        "Create the single Firecrawl browser session for this Turn and navigate its first tab to an HTTPS URL. This tool creates a session; it does not navigate an existing session or open another tab. Call it exactly once before any browser_* tool. Startup handles transient provider conflicts internally, and provider URLs stay outside the model.",
       inputSchema: z.object({
-        url: z.string().url().describe("HTTPS page to open"),
+        url: z.string().url().describe("HTTPS page for the first tab"),
       }),
       execute: async ({ url }, execution) => await open(url, execution.toolCallId),
     }),
     browser_execute: tool({
       description:
-        "Run JavaScript with Playwright's provided page object inside Firecrawl's Node sandbox. Await every Playwright operation. For a popup or new tab, select its Page from page.context().pages() by URL or title, call bringToFront() on it, and then act on it instead of assuming page changed. If clicking is expected to close a popup, wait for and inspect the opener rather than waiting on the closing popup. Prefer semantic locators such as page.getByRole(), page.getByLabel(), or page.getByText(); add .filter({ visible: true }).first() when responsive layouts contain duplicate hidden controls. Use console.log() only for values absent from the automatically returned page snapshot. Keep each call to one coherent browser step, combining the checks needed to select and perform that step. Never enter a password here; use fill_account_password.",
+        "Run JavaScript with Playwright's active page inside Firecrawl's Node sandbox. Await every Playwright operation. A single expression is returned automatically; multi-statement code can use return or console.log for values absent from the page snapshot. Use page.goto() for navigation and page.context().newPage(), page.context().pages(), and bringToFront() for tabs. Select pages by URL or title rather than remembering array positions between calls. Prefer semantic locators such as page.getByRole(), page.getByLabel(), or page.getByText(); add .filter({ visible: true }).first() when responsive layouts contain duplicate hidden controls. Keep each call to one coherent browser step, combining the checks needed to select and perform that step. Never enter a password here; use fill_account_password.",
       inputSchema: z.object({
         code: z
           .string()
@@ -901,5 +995,5 @@ export function createLabBrowserHarness(
     }),
   } satisfies ToolSet;
 
-  return { tools, actions, open, close };
+  return { tools, actions, open, attach, close };
 }

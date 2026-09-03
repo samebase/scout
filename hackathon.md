@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-02T14:13:02Z
+- **Last updated:** 2026-09-03T12:23:20Z
 
 ## Log
 
@@ -885,8 +885,18 @@ transcript location and errors, and visibly repair malformed provider tool argum
 compact sidebar for repeatable model comparisons (`convex/scout`, `src/components/task-workspace.tsx`,
 `src/routes/lab.tsx`).
 
-### 2026-09-02 - working tree
+### 2026-09-02 - 84aed3f
 
 Made each pull request one shipped build through squash merging. Branch commits stay unversioned,
 the pull request title projects the next main commit count, and one grouped Hackathon entry carries
 forward to the next squash commit (`AGENTS.md`, `scripts/pr-build-label.ts`).
+
+### 2026-09-03 - working tree
+
+Added a manual Lab driver for Scout's existing browser, mail, password, and diagnostic tools. Lab
+threads now retain live views, Playwright operations, and replay while model context keeps only the
+latest page snapshot; standard Playwright page APIs replace custom tab commands (`convex/scout/`,
+`convex/taskReplay.ts`, `src/routes/lab.tsx`, `src/components/task-replay.tsx`).
+
+Verified the flow by completing a Samebase app across GitHub, Cloudflare, and Convex, loading the
+deployed app, replaying the multi-tab session, and deleting an earlier test app.

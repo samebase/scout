@@ -25,6 +25,7 @@ export type PlaywrightBrowser = {
 };
 
 function displayUrl(value: string) {
+  if (value === "about:blank") return value;
   try {
     const url = new URL(value);
     if ((url.protocol !== "https:" && url.protocol !== "http:") || url.username || url.password) {

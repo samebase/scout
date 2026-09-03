@@ -41,6 +41,7 @@ import {
 } from "./models";
 import { createServiceAccountRecordingTool } from "./serviceAccountTool";
 import { createAttemptResolutionTool } from "./attemptResolutionTool";
+import { compactBrowserModelContext } from "./browserContext";
 import { createToolArgumentProbe } from "./toolArgumentProbe";
 import { repairStringifiedToolInput } from "./toolCallRepair";
 
@@ -319,6 +320,7 @@ async function generateHandoffContinuation(
           chunking: "word",
           throttleMs: 100,
         },
+        contextHandler: async (_ctx, { allMessages }) => compactBrowserModelContext(allMessages),
       },
     );
     await streamResult.consumeStream();
@@ -375,6 +377,7 @@ export const generateResponse = internalAction({
     let agentMailClient: MCPClient | undefined;
     let browser: LabBrowser | undefined;
     let browserSessionId: Id<"taskBrowserSessions"> | null = null;
+    let labBrowserSessionId: Id<"scoutLabBrowserSessions"> | null = null;
     let interactiveLiveViewUrl: string | null = null;
     let humanHandoffWaiting = false;
     let isTaskTurn = false;
@@ -466,7 +469,60 @@ export const generateResponse = internalAction({
                 });
               },
             }
-          : {}),
+          : {
+              onSessionAvailable: async (providerSessionId: string) => {
+                const registered = await ctx.runMutation(internal.scout.labBrowserSessions.open, {
+                  threadId: args.threadId,
+                  scoutId,
+                  providerSessionId,
+                  profileName: scout.firecrawl.profileName,
+                });
+                labBrowserSessionId = registered.sessionId;
+                return { captureOperations: registered.captureOperations };
+              },
+              onOperationPrepared: async ({ action, toolCallId }) => {
+                if (labBrowserSessionId === null) {
+                  throw new Error("Lab browser session was not registered");
+                }
+                return await ctx.runMutation(internal.scout.labBrowserSessions.prepareOperation, {
+                  sessionId: labBrowserSessionId,
+                  toolCallId,
+                  action,
+                });
+              },
+              onOperationSettled: async ({ toolCallId, outcome }) => {
+                if (labBrowserSessionId === null) {
+                  throw new Error("Lab browser session was not registered");
+                }
+                await ctx.runMutation(internal.scout.labBrowserSessions.settleOperation, {
+                  sessionId: labBrowserSessionId,
+                  toolCallId,
+                  outcome,
+                });
+              },
+              onSessionClosed: async ({ creditsBilled, sessionDurationMs }) => {
+                if (labBrowserSessionId === null) return;
+                await ctx.runMutation(internal.scout.labBrowserSessions.close, {
+                  sessionId: labBrowserSessionId,
+                  providerDurationMs: sessionDurationMs,
+                  creditsBilled,
+                });
+                labBrowserSessionId = null;
+              },
+              onLiveViewAvailable: async (liveViewUrl: string) => {
+                if (labBrowserSessionId === null) return;
+                await ctx.runMutation(internal.scout.labBrowserSessions.setLiveView, {
+                  sessionId: labBrowserSessionId,
+                  liveViewUrl,
+                });
+              },
+              onLiveViewClosed: async () => {
+                if (labBrowserSessionId === null) return;
+                await ctx.runMutation(internal.scout.labBrowserSessions.clearLiveView, {
+                  sessionId: labBrowserSessionId,
+                });
+              },
+            }),
       });
       requireSecret(env.FIRECRAWL_API_KEY, "FIRECRAWL_API_KEY");
       agentMailClient = await createMCPClient({
@@ -641,7 +697,7 @@ export const generateResponse = internalAction({
 
       const browserTools = isTaskTurn
         ? {
-            browser_open: browser.tools.browser_open,
+            create_new_firecrawl_session: browser.tools.create_new_firecrawl_session,
             browser_execute: browser.tools.browser_execute,
           }
         : browser.tools;
@@ -663,7 +719,7 @@ export const generateResponse = internalAction({
       const taskInstructions =
         runtimeContext.kind === "lab"
           ? ""
-          : `\n\nYou are working on an operator-defined Task for ${JSON.stringify(runtimeContext.product.name)}. Its primary URL is ${JSON.stringify(runtimeContext.product.primaryUrl)} and product domain is ${JSON.stringify(runtimeContext.product.domain)}. The attempt uses ${runtimeContext.browserProfile.kind === "fresh" ? "a fresh browser profile" : `the persistent Scout browser profile ${JSON.stringify(runtimeContext.browserProfile.profileName)}`}. Decide the next useful actions from the current operator message, the existing thread, and visible product state; do not force the work into a predefined testing workflow. Use browser_execute to write ordinary Playwright JavaScript against the provided page object. Prefer semantic locators. Use the accessibility snapshot returned by each call as your default observation, and combine the checks needed to identify and perform one coherent next step instead of making separate exploratory calls. As soon as you verify an authenticated account menu, call record_authenticated_service_account with a visible known Scout username or email—not a team or workspace name—and a visible Sign out or Log out control while the browser is still open; do this before optional onboarding so the Scout inventory reflects the account even if later work fails. If a CAPTCHA or another strictly human-only check blocks progress, call request_human_help instead of attempting to solve or bypass it. That tool sends a durable handoff and pauses this Turn; do not poll or keep working after it. When the Task is complete or cannot progress, call resolve_attempt as your final action. It closes any open browser and persists completed or blocked with a concise evidence-based conclusion. Do not merely describe the result in prose.`;
+          : `\n\nYou are working on an operator-defined Task for ${JSON.stringify(runtimeContext.product.name)}. Its primary URL is ${JSON.stringify(runtimeContext.product.primaryUrl)} and product domain is ${JSON.stringify(runtimeContext.product.domain)}. The attempt uses ${runtimeContext.browserProfile.kind === "fresh" ? "a fresh browser profile" : `the persistent Scout browser profile ${JSON.stringify(runtimeContext.browserProfile.profileName)}`}. Decide the next useful actions from the current operator message, the existing thread, and visible product state; do not force the work into a predefined testing workflow. Use browser_execute for ordinary Playwright interaction, including navigation and tabs. Prefer semantic locators. Use the accessibility snapshot returned by each call as your default observation, and combine the checks needed to identify and perform one coherent next step instead of making separate exploratory calls. As soon as you verify an authenticated account menu, call record_authenticated_service_account with a visible known Scout username or email—not a team or workspace name—and a visible Sign out or Log out control while the browser is still open; do this before optional onboarding so the Scout inventory reflects the account even if later work fails. If a CAPTCHA or another strictly human-only check blocks progress, call request_human_help instead of attempting to solve or bypass it. That tool sends a durable handoff and pauses this Turn; do not poll or keep working after it. When the Task is complete or cannot progress, call resolve_attempt as your final action. It closes any open browser and persists completed or blocked with a concise evidence-based conclusion. Do not merely describe the result in prose.`;
       const instructions = `${SCOUT_AGENT_INSTRUCTIONS}\n\n${scoutWebsiteIdentityInstructions(scout)}\n\n${passwordInstructions}\n\n${loginInstructions}${taskInstructions}`;
       const streamErrors = createStreamErrorCapture();
       const streamResult = await scoutAgent.streamText(
@@ -680,52 +736,55 @@ export const generateResponse = internalAction({
           onStepEnd: ({ usage }) => {
             accumulatedUsage = addScoutTokenUsage(accumulatedUsage, tokenUsage(usage));
           },
-          ...(isTaskTurn
-            ? {
-                prepareStep: async ({ steps }) => {
-                  const decision = decideTaskStep({
-                    state: taskLoopState,
-                    previousToolError: immediatelyPrecedingToolError(steps),
-                    previousToolResult: immediatelyPrecedingToolResult(steps),
-                  });
-                  taskLoopState = decision.nextState;
-                  switch (decision.kind) {
-                    case "request_human_help":
-                      if (humanHandoffCallbacks === null) {
-                        throw new Error("Human help is unavailable outside a Task turn");
-                      }
-                      await beginHumanHandoff(
-                        humanHandoffCallbacks,
-                        "The live browser reached a human-only checkpoint.",
-                      );
-                      taskLoopState = "final";
-                      return {
-                        activeTools: [] as const,
-                        toolChoice: "none" as const,
-                        instructions: `${instructions}\n\nHuman help was requested successfully. The browser remains open under the durable handoff. Do not investigate, close the browser, or resolve the attempt. Briefly state that Scout is paused and will resume after the operator returns control.`,
-                      };
-                    case "resolve_attempt":
-                      return {
-                        activeTools: ["resolve_attempt"] as const,
-                        instructions: HANDOFF_RESOLUTION_INSTRUCTIONS,
-                      };
-                    case "resolution_failed":
-                      throw new Error("Scout could not persist the Attempt conclusion");
-                    case "final":
-                      return {
-                        activeTools: [] as const,
-                        toolChoice: "none" as const,
-                        instructions:
-                          decision.humanHelpOutcome === "waiting"
-                            ? `${instructions}\n\nHuman help was requested successfully. The browser remains open under the durable handoff. Do not investigate, close the browser, or resolve the attempt. Briefly state that Scout is paused and will resume after the operator returns control.`
-                            : `${instructions}\n\nThe bounded browser phase is over. Do not investigate further. Briefly report what you accomplished, what remains uncertain, and what the operator should try next.`,
-                      };
-                    case "none":
-                      return undefined;
+          prepareStep: async ({ steps, messages }) => {
+            const compactedMessages = compactBrowserModelContext(messages);
+            if (isTaskTurn) {
+              const decision = decideTaskStep({
+                state: taskLoopState,
+                previousToolError: immediatelyPrecedingToolError(steps),
+                previousToolResult: immediatelyPrecedingToolResult(steps),
+              });
+              taskLoopState = decision.nextState;
+              switch (decision.kind) {
+                case "request_human_help":
+                  if (humanHandoffCallbacks === null) {
+                    throw new Error("Human help is unavailable outside a Task turn");
                   }
-                },
+                  await beginHumanHandoff(
+                    humanHandoffCallbacks,
+                    "The live browser reached a human-only checkpoint.",
+                  );
+                  taskLoopState = "final";
+                  return {
+                    messages: compactedMessages,
+                    activeTools: [] as const,
+                    toolChoice: "none" as const,
+                    instructions: `${instructions}\n\nHuman help was requested successfully. The browser remains open under the durable handoff. Do not investigate, close the browser, or resolve the attempt. Briefly state that Scout is paused and will resume after the operator returns control.`,
+                  };
+                case "resolve_attempt":
+                  return {
+                    messages: compactedMessages,
+                    activeTools: ["resolve_attempt"] as const,
+                    instructions: HANDOFF_RESOLUTION_INSTRUCTIONS,
+                  };
+                case "resolution_failed":
+                  throw new Error("Scout could not persist the Attempt conclusion");
+                case "final":
+                  return {
+                    messages: compactedMessages,
+                    activeTools: [] as const,
+                    toolChoice: "none" as const,
+                    instructions:
+                      decision.humanHelpOutcome === "waiting"
+                        ? `${instructions}\n\nHuman help was requested successfully. The browser remains open under the durable handoff. Do not investigate, close the browser, or resolve the attempt. Briefly state that Scout is paused and will resume after the operator returns control.`
+                        : `${instructions}\n\nThe bounded browser phase is over. Do not investigate further. Briefly report what you accomplished, what remains uncertain, and what the operator should try next.`,
+                  };
+                case "none":
+                  return { messages: compactedMessages };
               }
-            : {}),
+            }
+            return { messages: compactedMessages };
+          },
         },
         {
           saveStreamDeltas: {
@@ -733,6 +792,7 @@ export const generateResponse = internalAction({
             chunking: "word",
             throttleMs: 100,
           },
+          contextHandler: async (_ctx, { allMessages }) => compactBrowserModelContext(allMessages),
         },
       );
       await streamResult.consumeStream();

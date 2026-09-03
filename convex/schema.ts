@@ -133,6 +133,33 @@ export default defineSchema({
   })
     .index("by_thread_id", ["threadId"])
     .index("by_user_id_and_created_at", ["userId", "createdAt"]),
+  scoutLabBrowserSessions: defineTable({
+    threadId: v.string(),
+    scoutId: v.id("scouts"),
+    sequence: v.number(),
+    provider: v.literal("firecrawl"),
+    providerSessionId: v.string(),
+    profileName: v.string(),
+    viewport: taskBrowserViewportValidator,
+    nextOperationSequence: v.number(),
+    lifecycle: taskBrowserSessionLifecycleValidator,
+  })
+    .index("by_thread_id_and_sequence", ["threadId", "sequence"])
+    .index("by_provider_and_provider_session_id", ["provider", "providerSessionId"]),
+  scoutLabBrowserOperations: defineTable({
+    sessionId: v.id("scoutLabBrowserSessions"),
+    sequence: v.number(),
+    toolCallId: v.string(),
+    action: taskBrowserActionValidator,
+    state: taskBrowserOperationStateValidator,
+  })
+    .index("by_session_id_and_sequence", ["sessionId", "sequence"])
+    .index("by_session_id_and_tool_call_id", ["sessionId", "toolCallId"]),
+  scoutLabLiveViews: defineTable({
+    sessionId: v.id("scoutLabBrowserSessions"),
+    liveViewUrl: v.string(),
+    openedAt: v.number(),
+  }).index("by_session_id", ["sessionId"]),
   productTasks: defineTable({
     userId: v.id("users"),
     productId: v.id("products"),

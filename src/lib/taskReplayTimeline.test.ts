@@ -15,17 +15,14 @@ function operation(args: {
   url: string;
   beforeUrl?: string;
   afterUrl?: string;
-  kind?: string;
 }): ReplayOperation {
   const tab = (tabId: string, url: string) => ({
     tabId,
-    title: tabId,
     url,
     active: true,
   });
   return {
     sequence: args.sequence,
-    action: { kind: args.kind ?? "execute" },
     state: {
       kind: "applied",
       telemetry: {
@@ -34,7 +31,6 @@ function operation(args: {
           tabs: [tab(args.beforeTarget, args.beforeUrl ?? args.url)],
         },
         dispatchedAtMs: args.beforeMs + 5,
-        returnedAtMs: args.afterMs,
         after: {
           capturedAtMs: args.afterMs,
           tabs: [tab(args.afterTarget, args.afterUrl ?? args.url)],
@@ -73,7 +69,6 @@ describe("task replay timeline", () => {
           afterTarget: "target-b",
           url: "https://b.test/",
           beforeUrl: "https://a.test/",
-          kind: "switch_tab",
         }),
       ],
     );
@@ -82,7 +77,7 @@ describe("task replay timeline", () => {
     expect(timeline.pageIdByTabId.get("target-b")).toBe("2");
     expect(activeTabAt(timeline.points, 1_500)).toBe("target-a");
     expect(activeTabAt(timeline.points, 2_100)).toBe("target-b");
-    expect(timeline.events).toHaveLength(2);
+    expect(timeline.actionCount).toBe(2);
     expect(timeline.transitions).toContainEqual({
       sequence: 2,
       earliestTimeMs: 2_005,
@@ -162,14 +157,12 @@ describe("task replay timeline", () => {
       beforeTarget: "t2",
       afterTarget: "t2",
       url: "https://samebase.com/pricing",
-      kind: "open",
     });
     if (active.state.kind !== "applied") throw new Error("Expected applied operation");
     active.state.telemetry.before.tabs = [];
     active.state.telemetry.after.tabs.unshift({
       tabId: "t1",
-      title: "about:blank",
-      url: null,
+      url: "about:blank",
       active: false,
     });
 
@@ -179,7 +172,7 @@ describe("task replay timeline", () => {
         {
           pageId: "1",
           pageUrl: "https://samebase.com/pricing",
-          startTimeMs: 0,
+          startTimeMs: 2_000,
           endTimeMs: 12_000,
         },
       ],
@@ -192,6 +185,37 @@ describe("task replay timeline", () => {
     expect(activePageIdAt(timeline, 2_000)).toBe("1");
   });
 
+  test("correlates a uniquely matching URL across unrelated recording clocks", () => {
+    const opened = operation({
+      sequence: 1,
+      beforeMs: 0,
+      afterMs: 20_000,
+      beforeTarget: "playwright-tab",
+      afterTarget: "playwright-tab",
+      url: "https://dash.cloudflare.com/",
+    });
+    if (opened.state.kind !== "applied") throw new Error("Expected applied operation");
+    opened.state.telemetry.before.tabs = [];
+
+    const timeline = buildReplayTimeline(
+      [
+        {
+          pageId: "recorded-page",
+          pageUrl: "https://dash.cloudflare.com/",
+          startTimeMs: 0,
+          endTimeMs: 70_000,
+        },
+      ],
+      [opened],
+    );
+
+    expect(timeline.pages[0]?.binding).toEqual({
+      kind: "correlated",
+      tabId: "playwright-tab",
+    });
+    expect(activePageIdAt(timeline, 0)).toBe("recorded-page");
+  });
+
   test("keeps a blank page when Scout activates it", () => {
     const activeBlank = operation({
       sequence: 1,
@@ -201,21 +225,18 @@ describe("task replay timeline", () => {
       afterTarget: "t2",
       url: "https://samebase.com/pricing",
       beforeUrl: "about:blank",
-      kind: "switch_tab",
     });
     if (activeBlank.state.kind !== "applied") throw new Error("Expected applied operation");
     activeBlank.state.telemetry.before.tabs = [
       {
         tabId: "t1",
-        title: "about:blank",
-        url: null,
+        url: "about:blank",
         active: true,
       },
     ];
     activeBlank.state.telemetry.after.tabs.unshift({
       tabId: "t1",
-      title: "about:blank",
-      url: null,
+      url: "about:blank",
       active: false,
     });
 
@@ -233,6 +254,75 @@ describe("task replay timeline", () => {
     );
 
     expect(timeline.pages.map((page) => page.pageId)).toEqual(["blank", "pricing"]);
+  });
+
+  test("does not bind two recordings to one tab that navigated between both URLs", () => {
+    const timeline = buildReplayTimeline(
+      [
+        { pageId: "page-a", pageUrl: "https://a.test/", startTimeMs: 0, endTimeMs: 5_000 },
+        { pageId: "page-b", pageUrl: "https://b.test/", startTimeMs: 2_000, endTimeMs: 5_000 },
+      ],
+      [
+        operation({
+          sequence: 1,
+          beforeMs: 1_000,
+          afterMs: 1_100,
+          beforeTarget: "t1",
+          afterTarget: "t1",
+          url: "https://a.test/",
+        }),
+        operation({
+          sequence: 2,
+          beforeMs: 2_000,
+          afterMs: 2_100,
+          beforeTarget: "t1",
+          afterTarget: "t1",
+          beforeUrl: "https://a.test/",
+          afterUrl: "https://b.test/",
+          url: "https://b.test/",
+        }),
+      ],
+    );
+
+    expect(timeline.pages.map((page) => page.binding)).toEqual([
+      { kind: "ambiguous", candidateTabIds: ["t1"] },
+      { kind: "ambiguous", candidateTabIds: ["t1"] },
+    ]);
+    expect(timeline.pageIdByTabId.size).toBe(0);
+    expect(activePageIdAt(timeline, 0)).toBeNull();
+  });
+
+  test("places an after-observation at the time it was actually captured", () => {
+    const switched = operation({
+      sequence: 1,
+      beforeMs: 1_000,
+      afterMs: 1_100,
+      beforeTarget: "t1",
+      afterTarget: "t2",
+      beforeUrl: "https://a.test/",
+      afterUrl: "https://b.test/",
+      url: "https://b.test/",
+    });
+    if (switched.state.kind !== "applied") throw new Error("Expected applied operation");
+    switched.state.telemetry.after.capturedAtMs = 2_000;
+
+    const timeline = buildReplayTimeline(
+      [
+        { pageId: "page-a", pageUrl: "https://a.test/", startTimeMs: 0, endTimeMs: 3_000 },
+        { pageId: "page-b", pageUrl: "https://b.test/", startTimeMs: 0, endTimeMs: 3_000 },
+      ],
+      [switched],
+    );
+
+    expect(activeTabAt(timeline.points, 999)).toBe("t1");
+    expect(activeTabAt(timeline.points, 1_000)).toBe("t2");
+    expect(timeline.transitions).toContainEqual({
+      sequence: 1,
+      earliestTimeMs: 5,
+      latestTimeMs: 1_000,
+      fromTabId: "t1",
+      toTabId: "t2",
+    });
   });
 
   test("does not correlate one track and one tab when their URLs disagree", () => {

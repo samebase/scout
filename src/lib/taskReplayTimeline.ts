@@ -7,7 +7,6 @@ export type ReplayPageTrack = {
 
 type ReplayTabObservation = {
   tabId: string;
-  title: string;
   url: string | null;
   active: boolean;
 };
@@ -15,13 +14,11 @@ type ReplayTabObservation = {
 type ReplayTelemetry = {
   before: { capturedAtMs: number; tabs: ReplayTabObservation[] };
   dispatchedAtMs: number;
-  returnedAtMs: number;
   after: { capturedAtMs: number; tabs: ReplayTabObservation[] };
 };
 
 export type ReplayOperation = {
   sequence: number;
-  action: { kind: string };
   state:
     | { kind: "prepared" }
     | { kind: "failed_before_dispatch" | "indeterminate_after_dispatch"; failure: string }
@@ -29,12 +26,11 @@ export type ReplayOperation = {
 };
 
 export type ReplayTrackBinding =
-  | { kind: "correlated"; tabId: string; timingDifferenceMs: number }
+  | { kind: "correlated"; tabId: string }
   | { kind: "ambiguous"; candidateTabIds: string[] }
   | { kind: "unmatched" };
 
 export type ReplayTimelinePoint = {
-  sequence: number;
   timeMs: number;
   tabId: string;
 };
@@ -45,13 +41,6 @@ export type ReplayTabTransition = {
   latestTimeMs: number;
   fromTabId: string;
   toTabId: string;
-};
-
-export type ReplayActionEvent = {
-  sequence: number;
-  timeMs: number;
-  kind: string;
-  tabId: string | null;
 };
 
 export type ReplayTimeline = {
@@ -65,19 +54,16 @@ export type ReplayTimeline = {
   >;
   points: ReplayTimelinePoint[];
   transitions: ReplayTabTransition[];
-  events: ReplayActionEvent[];
+  actionCount: number;
   pageIdByTabId: Map<string, string>;
   hasIntegrityGap: boolean;
 };
 
 type ReplayTabEvidence = {
-  firstSeenMs: number;
   urls: Set<string>;
   observedAboutBlank: boolean;
   wasActive: boolean;
 };
-
-const MAX_CORRELATION_DIFFERENCE_MS = 5_000;
 
 function activeTab(tabs: ReplayTabObservation[]) {
   const active = tabs.find((tab) => tab.active);
@@ -109,10 +95,8 @@ function withoutInactiveBootstrapPage(
   const bootstrapCandidates = pages.filter(
     (page) => page.pageUrl === null && page.startTimeMs === firstPageTime,
   );
-  const hasSimultaneousWebPage = pages.some(
-    (page) => page.pageUrl !== null && page.startTimeMs === firstPageTime,
-  );
-  if (bootstrapCandidates.length !== 1 || !hasSimultaneousWebPage) return [...pages];
+  const hasWebPage = pages.some((page) => page.pageUrl !== null);
+  if (bootstrapCandidates.length !== 1 || !hasWebPage) return [...pages];
 
   const bootstrapPageId = bootstrapCandidates[0]?.pageId;
   return pages.filter((page) => page.pageId !== bootstrapPageId);
@@ -137,15 +121,13 @@ export function buildReplayTimeline(
       for (const tab of observation.tabs) {
         const existing = tabEvidence.get(tab.tabId);
         if (existing) {
-          existing.firstSeenMs = Math.min(existing.firstSeenMs, observation.capturedAtMs);
-          if (tab.url) existing.urls.add(tab.url);
-          existing.observedAboutBlank ||= tab.url === null && tab.title === "about:blank";
+          if (tab.url && tab.url !== "about:blank") existing.urls.add(tab.url);
+          existing.observedAboutBlank ||= tab.url === "about:blank";
           existing.wasActive ||= tab.active;
         } else {
           tabEvidence.set(tab.tabId, {
-            firstSeenMs: observation.capturedAtMs,
-            urls: new Set(tab.url ? [tab.url] : []),
-            observedAboutBlank: tab.url === null && tab.title === "about:blank",
+            urls: new Set(tab.url && tab.url !== "about:blank" ? [tab.url] : []),
+            observedAboutBlank: tab.url === "about:blank",
             wasActive: tab.active,
           });
         }
@@ -158,35 +140,33 @@ export function buildReplayTimeline(
   const lastPageTime = Math.max(firstPageTime, ...orderedPages.map((page) => page.endTimeMs));
 
   const bindingByPageId = new Map<string, ReplayTrackBinding>();
+  const candidateTabIdsByPageId = new Map<string, string[]>();
+  const candidatePageIdsByTabId = new Map<string, string[]>();
   for (const page of orderedPages) {
-    const urlCandidates = [...tabEvidence.entries()].filter(
-      ([, evidence]) => page.pageUrl !== null && evidence.urls.has(page.pageUrl),
-    );
-    const sameUrlPages = orderedPages.filter(
-      (candidate) => page.pageUrl !== null && candidate.pageUrl === page.pageUrl,
-    );
-    if (urlCandidates.length === 1 && sameUrlPages.length === 1) {
-      const candidate = urlCandidates[0];
-      if (!candidate) continue;
-      const timingDifferenceMs = Math.abs(
-        remoteToTimeline(candidate[1].firstSeenMs) - (page.startTimeMs - firstPageTime),
-      );
-      bindingByPageId.set(
-        page.pageId,
-        timingDifferenceMs <= MAX_CORRELATION_DIFFERENCE_MS
-          ? { kind: "correlated", tabId: candidate[0], timingDifferenceMs }
-          : { kind: "unmatched" },
-      );
-      continue;
+    const candidateTabIds = [...tabEvidence.entries()]
+      .filter(([, evidence]) => page.pageUrl !== null && evidence.urls.has(page.pageUrl))
+      .map(([tabId]) => tabId)
+      .sort();
+    candidateTabIdsByPageId.set(page.pageId, candidateTabIds);
+    for (const tabId of candidateTabIds) {
+      const candidatePageIds = candidatePageIdsByTabId.get(tabId) ?? [];
+      candidatePageIds.push(page.pageId);
+      candidatePageIdsByTabId.set(tabId, candidatePageIds);
     }
-    if (urlCandidates.length > 0) {
+  }
+  for (const page of orderedPages) {
+    const candidateTabIds = candidateTabIdsByPageId.get(page.pageId) ?? [];
+    const soleTabId = candidateTabIds.length === 1 ? candidateTabIds[0] : undefined;
+    if (soleTabId && candidatePageIdsByTabId.get(soleTabId)?.length === 1) {
+      bindingByPageId.set(page.pageId, { kind: "correlated", tabId: soleTabId });
+    } else if (candidateTabIds.length > 0) {
       bindingByPageId.set(page.pageId, {
         kind: "ambiguous",
-        candidateTabIds: urlCandidates.map(([tabId]) => tabId),
+        candidateTabIds,
       });
-      continue;
+    } else {
+      bindingByPageId.set(page.pageId, { kind: "unmatched" });
     }
-    bindingByPageId.set(page.pageId, { kind: "unmatched" });
   }
 
   const pageIdByTabId = new Map<string, string>();
@@ -196,7 +176,6 @@ export function buildReplayTimeline(
 
   const points: ReplayTimelinePoint[] = [];
   const transitions: ReplayTabTransition[] = [];
-  const events: ReplayActionEvent[] = [];
   let previousObservation: { tabId: string; timeMs: number } | undefined;
   for (const operation of settled) {
     const telemetry = operation.state.telemetry;
@@ -214,14 +193,13 @@ export function buildReplayTimeline(
         });
       }
       points.push({
-        sequence: operation.sequence,
         timeMs: beforeTimeMs,
         tabId: beforeTabId,
       });
       previousObservation = { tabId: beforeTabId, timeMs: beforeTimeMs };
     }
     if (afterTabId) {
-      const afterTimeMs = remoteToTimeline(telemetry.returnedAtMs);
+      const afterTimeMs = remoteToTimeline(telemetry.after.capturedAtMs);
       if (previousObservation && previousObservation.tabId !== afterTabId) {
         transitions.push({
           sequence: operation.sequence,
@@ -234,22 +212,14 @@ export function buildReplayTimeline(
         });
       }
       points.push({
-        sequence: operation.sequence,
         timeMs: afterTimeMs,
         tabId: afterTabId,
       });
       previousObservation = { tabId: afterTabId, timeMs: afterTimeMs };
     }
-    events.push({
-      sequence: operation.sequence,
-      timeMs: remoteToTimeline(telemetry.dispatchedAtMs),
-      kind: operation.action.kind,
-      tabId: beforeTabId,
-    });
   }
   points.sort((left, right) => left.timeMs - right.timeMs);
   transitions.sort((left, right) => left.latestTimeMs - right.latestTimeMs);
-  events.sort((left, right) => left.timeMs - right.timeMs);
 
   return {
     durationMs: Math.max(0, lastPageTime - firstPageTime),
@@ -261,7 +231,7 @@ export function buildReplayTimeline(
     })),
     points,
     transitions,
-    events,
+    actionCount: settled.length,
     pageIdByTabId,
     hasIntegrityGap: operations.some(
       (operation) =>
