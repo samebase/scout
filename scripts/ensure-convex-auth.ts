@@ -109,6 +109,24 @@ async function setConvexEnv(
   });
 }
 
+async function seedLocalWorktreePasswordAccount(env: NodeJS.ProcessEnv, runConvex: RunConvex) {
+  if (env["SCOUT_LOCAL_WORKTREE_AUTH"] !== "true") {
+    return;
+  }
+
+  const email = env["VITE_LOCAL_WORKTREE_PASSWORD_EMAIL"];
+  const password = env["VITE_LOCAL_WORKTREE_PASSWORD_VALUE"];
+  if (!email || !password) {
+    throw new Error("The local worktree account credentials are missing.");
+  }
+
+  await setConvexEnv("DEV_SEED_AUTH_ENABLED", "true", env, runConvex);
+  await setConvexEnv("DEV_SEED_AUTH_EMAIL", email, env, runConvex);
+  await setConvexEnv("DEV_SEED_AUTH_PASSWORD", password, env, runConvex);
+  await runConvex(["run", "devAuth:seedPasswordAccount", "{}"], { env });
+  console.log(`Local worktree account ready: ${email}`);
+}
+
 export async function ensureConvexAuth(
   env: NodeJS.ProcessEnv,
   runConvex: RunConvex = runConvexCli,
@@ -118,16 +136,16 @@ export async function ensureConvexAuth(
 
   if (existingPrivateKey && existingJwks) {
     console.log("Convex Auth keys already configured.");
-    return;
-  }
-  if (existingPrivateKey || existingJwks) {
+  } else if (existingPrivateKey || existingJwks) {
     throw new Error("JWT_PRIVATE_KEY and JWKS must be configured together.");
+  } else {
+    const keys = generateAuthKeys();
+    await setConvexEnv("JWT_PRIVATE_KEY", keys.JWT_PRIVATE_KEY, env, runConvex);
+    await setConvexEnv("JWKS", keys.JWKS, env, runConvex);
+    console.log("Convex Auth keys configured.");
   }
 
-  const keys = generateAuthKeys();
-  await setConvexEnv("JWT_PRIVATE_KEY", keys.JWT_PRIVATE_KEY, env, runConvex);
-  await setConvexEnv("JWKS", keys.JWKS, env, runConvex);
-  console.log("Convex Auth keys configured.");
+  await seedLocalWorktreePasswordAccount(env, runConvex);
 }
 
 const entrypoint = process.argv[1];

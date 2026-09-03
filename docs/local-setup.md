@@ -37,7 +37,7 @@ pnpm run dev
 Convex may ask you to sign in and choose or create a development deployment.
 The dev script also creates Convex Auth JWT keys in that development deployment
 if they are missing. In a linked Git worktree, it automatically uses an isolated
-local backend.
+local backend, seeds the standard development account, and adds an **Autofill & sign in** action.
 
 Open the local URL printed by Vite.
 

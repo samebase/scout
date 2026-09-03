@@ -908,8 +908,14 @@ Kept Scout identities and account connections, shared manual and model tools, an
 handoff into chats alongside live view, replay, and usage (`convex/schema.ts`, `convex/scout/`,
 `convex/humanHandoffs.ts`, `src/routes/chats.tsx`).
 
-### 2026-09-03 - working tree
+### 2026-09-03 - c642308 - v163
 
 Put the conversation beside the browser in resizable panes. The browser changes from live to replay
 when its session closes, while the selected session stays in the URL (`src/routes/chats.tsx`,
 `src/sidebars/scoutSidebarState.ts`).
+
+### 2026-09-03 - working tree - v164
+
+Linked worktrees now reuse Samebase's local password-account flow: `pnpm run dev` starts an isolated
+anonymous Convex database, seeds the standard development account, and shows one-click sign-in only
+in that worktree (`scripts/run-worktree-dev.ts`, `src/components/auth-panel.tsx`).
