@@ -69,13 +69,19 @@ export function ScoutModelCalls({
                   >
                     <span className="min-w-0 flex-1">
                       <span className="flex items-baseline gap-2">
-                        <span className="font-medium">Call {call.sequence}</span>
+                        <span className="font-medium">
+                          {call.purpose?.kind === "compaction" ? "Compaction" : "Call"}{" "}
+                          {call.sequence}
+                        </span>
                         <span className="text-muted-foreground truncate">
                           {call.provider} · {call.modelId}
                         </span>
                       </span>
                       <span className="text-muted-foreground mt-0.5 block">
                         {formatCallSize(call)}
+                        {call.purpose?.kind === "generation" && call.purpose.compactionId
+                          ? " · uses conversation summary"
+                          : ""}
                         {call.compactedBrowserSnapshotCount > 0
                           ? ` · ${call.compactedBrowserSnapshotCount} browser snapshots compacted`
                           : ""}
@@ -178,6 +184,47 @@ export function SdkModelInputInspector({
           <p className="text-destructive text-xs" role="alert">
             {context.summary.state.failure}
           </p>
+        ) : null}
+        {context.compaction ? (
+          <section aria-label="Conversation summary" className="grid gap-3 rounded-lg border p-3">
+            <h3 className="text-xs font-semibold">Conversation summary</h3>
+            <p className="text-muted-foreground text-xs">
+              Covers {formatNumber(context.compaction.checkpoint.coveredMessageCount)} earlier
+              messages, through turn {context.compaction.checkpoint.coveredThrough.order + 1},
+              message {context.compaction.checkpoint.coveredThrough.stepOrder + 1}.
+            </p>
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+              <div>
+                <dt className="text-muted-foreground">Before compaction</dt>
+                <dd>{formatNumber(context.compaction.checkpoint.beforeTokens)} estimated tokens</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">After compaction</dt>
+                <dd>{formatNumber(context.compaction.checkpoint.afterTokens)} estimated tokens</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Summarization cost</dt>
+                <dd>
+                  {context.compaction.call.state.kind === "completed" &&
+                  context.compaction.call.state.usage.costUsd !== undefined
+                    ? formatCostUsd(context.compaction.call.state.usage.costUsd)
+                    : "Not reported"}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Summary model</dt>
+                <dd>{context.compaction.call.modelId}</dd>
+              </div>
+            </dl>
+            <p className="text-muted-foreground break-all font-mono text-[0.6875rem]">
+              Through message {context.compaction.checkpoint.coveredThrough.messageId}
+            </p>
+            <SnapshotValue value={context.compaction.checkpoint.summary} />
+            <p className="text-muted-foreground text-[0.6875rem]">
+              Estimates include instructions, tools, and messages. The full transcript is preserved.
+              Summarization usage is included in the turn total.
+            </p>
+          </section>
         ) : null}
         <SnapshotSection title="Instructions">
           <SnapshotValue value={snapshot.instructions} empty="None" />

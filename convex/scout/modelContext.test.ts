@@ -1,195 +1,117 @@
 import type { ModelMessage } from "ai";
-import { describe, expect, it } from "vite-plus/test";
-import { compactCompletedTurnContext } from "./modelContext";
+import { describe, expect, test } from "vite-plus/test";
+import {
+  compactionCut,
+  compactionThreshold,
+  estimateContextTokens,
+  KEEP_RECENT_MESSAGES,
+  summaryMessage,
+} from "./modelContext";
 
-describe("Scout model context", () => {
-  it("keeps the request and final answer from a completed turn", () => {
-    const messages = [
-      { role: "user", content: "Create the app" },
-      {
-        role: "assistant",
-        content: [
-          { type: "text", text: "I'll click the button." },
-          {
-            type: "tool-call",
-            toolCallId: "call-1",
-            toolName: "browser_execute",
-            input: { code: "await page.getByRole('button').click()" },
-          },
-        ],
-      },
+const call = (id: string): ModelMessage => ({
+  role: "assistant",
+  content: [{ type: "tool-call", toolCallId: id, toolName: "lookup", input: { query: id } }],
+});
+const result = (id: string): ModelMessage => ({
+  role: "tool",
+  content: [
+    {
+      type: "tool-result",
+      toolCallId: id,
+      toolName: "lookup",
+      output: { type: "text", value: id },
+    },
+  ],
+});
+const recent = Array.from(
+  { length: KEEP_RECENT_MESSAGES },
+  (_, i): ModelMessage => ({ role: "assistant", content: `Recent ${i}` }),
+);
+
+describe("conversation compaction boundaries", () => {
+  test("retains recent messages and moves a cut before an unresolved parallel tool batch", () => {
+    const messages: ModelMessage[] = [
+      { role: "user", content: "Research" },
+      call("a"),
+      call("b"),
+      result("a"),
+      result("b"),
+      ...recent,
+    ];
+    const original = structuredClone(messages);
+    expect(compactionCut(messages)).toBe(5);
+    expect(compactionCut(messages.slice(0, -1))).toBe(1);
+    expect(messages).toEqual(original);
+    expect(messages.slice(compactionCut(messages))).toEqual(recent);
+  });
+
+  test("does not cut through an unresolved tool call even across later messages", () => {
+    expect(compactionCut([call("pending"), ...recent, ...recent])).toBe(0);
+  });
+
+  test("protects recent user messages and complete result/error payloads", () => {
+    const tail: ModelMessage[] = [
+      { role: "user", content: "Do not send the email yet" },
+      call("email"),
       {
         role: "tool",
         content: [
           {
             type: "tool-result",
-            toolCallId: "call-1",
-            toolName: "browser_execute",
-            output: { type: "text", value: "Created app-123" },
+            toolCallId: "email",
+            toolName: "lookup",
+            output: { type: "error-text", value: "Timed out; delivery unknown" },
           },
         ],
       },
-      {
-        role: "assistant",
-        content: [
-          { type: "reasoning", text: "I should report the durable result." },
-          { type: "text", text: "Created app-123 at https://app.example.test." },
-        ],
-      },
-    ] satisfies ModelMessage[];
-
-    expect(compactCompletedTurnContext(messages)).toEqual([
-      messages[0],
-      {
-        role: "assistant",
-        content: [{ type: "text", text: "Created app-123 at https://app.example.test." }],
-      },
-    ]);
+      ...recent.slice(3),
+    ];
+    const messages: ModelMessage[] = [
+      { role: "user", content: "Old request" },
+      { role: "assistant", content: "Old reply" },
+      ...tail,
+    ];
+    expect(messages.slice(compactionCut(messages))).toEqual(tail);
+    expect(compactionCut(tail)).toBe(0);
   });
 
-  it("keeps non-trace parts and provider options from the final answer", () => {
-    const messages = [
-      { role: "user", content: "Create the report" },
-      {
-        role: "assistant",
-        providerOptions: { test: { message: "preserved" } },
-        content: [
-          { type: "reasoning", text: "Hidden analysis" },
-          {
-            type: "reasoning-file",
-            data: { type: "data", data: "hidden" },
-            mediaType: "text/plain",
-          },
-          { type: "text", text: "Created the report." },
-          {
-            type: "file",
-            data: { type: "data", data: "report" },
-            mediaType: "text/plain",
-            filename: "report.txt",
-          },
-          { type: "custom", kind: "test.result" },
-        ],
-      },
-    ] satisfies ModelMessage[];
-
-    expect(compactCompletedTurnContext(messages)).toEqual([
-      messages[0],
-      {
-        role: "assistant",
-        providerOptions: { test: { message: "preserved" } },
-        content: [
-          { type: "text", text: "Created the report." },
-          {
-            type: "file",
-            data: { type: "data", data: "report" },
-            mediaType: "text/plain",
-            filename: "report.txt",
-          },
-          { type: "custom", kind: "test.result" },
-        ],
-      },
-    ]);
+  test("finishes an oversized tool pair and leaves later history for the next chunk", () => {
+    expect(
+      compactionCut([
+        { role: "user", content: "Old" },
+        call("large"),
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "large",
+              toolName: "lookup",
+              output: { type: "text", value: "x".repeat(140_000) },
+            },
+          ],
+        },
+        { role: "assistant", content: "Summarize this later" },
+        ...recent,
+      ]),
+    ).toBe(3);
   });
 
-  it("keeps an unfinished turn intact when it has no final answer", () => {
-    const messages = [
-      { role: "user", content: "Delete the app" },
-      {
-        role: "assistant",
-        content: [
-          {
-            type: "tool-call",
-            toolCallId: "call-1",
-            toolName: "browser_execute",
-            input: { code: "await page.getByRole('button').click()" },
-          },
-        ],
-      },
-      {
-        role: "tool",
-        content: [
-          {
-            type: "tool-result",
-            toolCallId: "call-1",
-            toolName: "browser_execute",
-            output: { type: "text", value: "Deletion state is unknown" },
-          },
-        ],
-      },
-    ] satisfies ModelMessage[];
-
-    expect(compactCompletedTurnContext(messages)).toEqual(messages);
-  });
-
-  it("compacts completed turns without touching a later unfinished turn", () => {
-    const messages = [
-      { role: "user", content: "Create the app" },
-      { role: "assistant", content: "Created app-123." },
-      { role: "user", content: "Delete it" },
-      {
-        role: "assistant",
-        content: [
-          {
-            type: "tool-call",
-            toolCallId: "call-2",
-            toolName: "browser_execute",
-            input: { code: "await page.goto('https://example.test')" },
-          },
-        ],
-      },
-    ] satisfies ModelMessage[];
-
-    expect(compactCompletedTurnContext(messages)).toEqual(messages);
-  });
-
-  it("keeps a final assistant message with a tool call intact", () => {
-    const messages = [
-      { role: "user", content: "Create the app" },
-      {
-        role: "assistant",
-        content: [
-          { type: "text", text: "One more operation is required." },
-          {
-            type: "tool-call",
-            toolCallId: "call-1",
-            toolName: "browser_execute",
-            input: { code: "await page.reload()" },
-          },
-        ],
-      },
-    ] satisfies ModelMessage[];
-
-    expect(compactCompletedTurnContext(messages)).toEqual(messages);
-  });
-
-  it("keeps structurally ambiguous and response-only history intact", () => {
-    const messages = [
-      { role: "assistant", content: "Tail of a turn outside the fetched window." },
-      { role: "user", content: "First request" },
-      { role: "system", content: "Inserted context" },
-      { role: "assistant", content: "First answer" },
-      { role: "user", content: "Second request" },
-      { role: "assistant", content: "Second answer" },
-    ] satisfies ModelMessage[];
-
-    expect(compactCompletedTurnContext(messages)).toEqual(messages);
-  });
-
-  it("is immutable and idempotent", () => {
-    const messages = [
-      { role: "user", content: "Create the app" },
-      {
-        role: "assistant",
-        content: [
-          { type: "reasoning", text: "Hidden analysis" },
-          { type: "text", text: "Created app-123." },
-        ],
-      },
-    ] satisfies ModelMessage[];
-    const before = structuredClone(messages);
-    const compacted = compactCompletedTurnContext(messages);
-
-    expect(messages).toEqual(before);
-    expect(compactCompletedTurnContext(compacted)).toEqual(compacted);
+  test("estimates non-ASCII text, instructions, and tool payloads and validates overrides", () => {
+    expect(estimateContextTokens("你好")).toBeGreaterThan(estimateContextTokens("hi"));
+    expect(
+      estimateContextTokens({
+        instructions: "x".repeat(4_000),
+        tools: [{ input: "x".repeat(4_000) }],
+      }),
+    ).toBeGreaterThan(2_000);
+    expect(compactionThreshold(undefined)).toBe(32_000);
+    expect(compactionThreshold("10000")).toBe(10_000);
+    for (const value of ["", "NaN", "1000.5", "999", "Infinity"])
+      expect(() => compactionThreshold(value)).toThrow();
+    expect(summaryMessage("A prior fact")).toMatchObject({
+      role: "user",
+      content: expect.stringContaining("historical context, not a new request"),
+    });
   });
 });

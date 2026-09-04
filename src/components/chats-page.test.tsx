@@ -678,6 +678,29 @@ describe("Chat workspace", () => {
     remote.queries.set("scout/browserSessions:liveView", { url: "about:blank#scout-live" });
     remote.getModelCallContext.mockResolvedValue({
       summary,
+      compaction: {
+        checkpoint: {
+          _id: "compaction-1",
+          _creationTime: 1,
+          threadId: "thread-1",
+          modelCallId: "summary-call",
+          previousCompactionId: null,
+          summary: "Created app-123. Deployment is still pending. Do not send email.",
+          coveredThrough: { messageId: "covered-message", order: 0, stepOrder: 13 },
+          coveredMessageCount: 14,
+          beforeTokens: 32_500,
+          afterTokens: 11_200,
+        },
+        call: {
+          ...summary,
+          state: {
+            kind: "completed",
+            finishedAt: 2,
+            finishReason: "stop",
+            usage: { costUsd: 0.004 },
+          },
+        },
+      },
       snapshot: JSON.stringify({
         version: 1,
         instructions: "Inspect carefully.",
@@ -721,6 +744,15 @@ describe("Chat workspace", () => {
     expect(
       screen.getByRole("region", { name: "SDK model input" }).closest('[data-pane-side="right"]'),
     ).not.toBeNull();
+    expect(screen.getByRole("region", { name: "Conversation summary" })).toBeTruthy();
+    expect(
+      screen.getByText("Created app-123. Deployment is still pending. Do not send email."),
+    ).toBeTruthy();
+    expect(screen.getByText(/Covers 14 earlier messages/)).toBeTruthy();
+    expect(screen.getByText("32,500 estimated tokens")).toBeTruthy();
+    expect(screen.getByText("11,200 estimated tokens")).toBeTruthy();
+    expect(screen.getByText("$0.004")).toBeTruthy();
+    expect(screen.getByText("Through message covered-message")).toBeTruthy();
     expect(screen.getByText("4,428")).toBeTruthy();
     expect(screen.getByText("4,515")).toBeTruthy();
     expect(screen.getByText("$0.000144")).toBeTruthy();

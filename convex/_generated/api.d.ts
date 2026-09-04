@@ -42,6 +42,8 @@ import type * as scout_browserToolContract from "../scout/browserToolContract.js
 import type * as scout_browserTools from "../scout/browserTools.js";
 import type * as scout_chatAccess from "../scout/chatAccess.js";
 import type * as scout_chats from "../scout/chats.js";
+import type * as scout_compactionContext from "../scout/compactionContext.js";
+import type * as scout_compactions from "../scout/compactions.js";
 import type * as scout_credentialCrypto from "../scout/credentialCrypto.js";
 import type * as scout_generation from "../scout/generation.js";
 import type * as scout_humanHandoffInput from "../scout/humanHandoffInput.js";
@@ -118,6 +120,8 @@ declare const fullApi: ApiFromModules<{
   "scout/browserTools": typeof scout_browserTools;
   "scout/chatAccess": typeof scout_chatAccess;
   "scout/chats": typeof scout_chats;
+  "scout/compactionContext": typeof scout_compactionContext;
+  "scout/compactions": typeof scout_compactions;
   "scout/credentialCrypto": typeof scout_credentialCrypto;
   "scout/generation": typeof scout_generation;
   "scout/humanHandoffInput": typeof scout_humanHandoffInput;

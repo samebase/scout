@@ -10,17 +10,21 @@ import {
   type MutationCtx,
 } from "../_generated/server";
 import { requireOwnedAgentThread } from "./chatAccess";
+import schema from "../schema";
+import { omitNullish } from "../../shared/omitNullish";
 import {
+  modelCallPurposeValidator,
   scoutFinishReasonValidator,
   scoutModelCallStateValidator,
   scoutTokenUsageValidator,
 } from "./models";
 import { addScoutTokenUsage } from "./models";
 
-const MAX_MODEL_CALLS_PER_TURN = 200;
+const MAX_MODEL_CALLS_PER_TURN = 500;
 
 export const modelCallSummaryValidator = v.object({
   modelCallId: v.id("scoutModelCalls"),
+  purpose: v.optional(modelCallPurposeValidator),
   sequence: v.number(),
   provider: v.string(),
   modelId: v.string(),
@@ -33,13 +37,27 @@ export const modelCallSummaryValidator = v.object({
 });
 
 export type ModelCallSummary = Infer<typeof modelCallSummaryValidator>;
-type ModelCallContext = { summary: ModelCallSummary; snapshot: string } | null;
+const compactionContextValidator = v.union(
+  v.object({
+    checkpoint: schema.doc("scoutCompactions"),
+    call: modelCallSummaryValidator,
+  }),
+  v.null(),
+);
+type CompactionContext = Infer<typeof compactionContextValidator>;
+type ModelCallContext = {
+  summary: ModelCallSummary;
+  snapshot: string;
+  compaction: CompactionContext;
+} | null;
 type AuthorizedModelCallContext = {
   summary: ModelCallSummary;
   snapshotStorageId: Id<"_storage">;
+  compaction: CompactionContext;
 } | null;
 
 export function modelCallSummary(call: {
+  purpose?: ModelCallSummary["purpose"];
   _id: ModelCallSummary["modelCallId"];
   sequence: number;
   provider: string;
@@ -53,6 +71,7 @@ export function modelCallSummary(call: {
 }): ModelCallSummary {
   return {
     modelCallId: call._id,
+    ...omitNullish({ purpose: call.purpose }),
     sequence: call.sequence,
     provider: call.provider,
     modelId: call.modelId,
@@ -68,6 +87,7 @@ export function modelCallSummary(call: {
 export const recordStart = internalMutation({
   args: {
     turnId: v.id("scoutTurns"),
+    purpose: modelCallPurposeValidator,
     provider: v.string(),
     modelId: v.string(),
     messageCount: v.number(),
@@ -89,6 +109,7 @@ export const recordStart = internalMutation({
       .first();
     const modelCallId = await ctx.db.insert("scoutModelCalls", {
       turnId: args.turnId,
+      purpose: args.purpose,
       sequence: (previous?.sequence ?? 0) + 1,
       provider: args.provider,
       modelId: args.modelId,
@@ -198,6 +219,7 @@ export const authorizedContext = internalQuery({
     v.object({
       summary: modelCallSummaryValidator,
       snapshotStorageId: v.id("_storage"),
+      compaction: compactionContextValidator,
     }),
     v.null(),
   ),
@@ -210,9 +232,26 @@ export const authorizedContext = internalQuery({
     const turn = await ctx.db.get(call.turnId);
     if (!turn || turn.threadId !== args.threadId) return null;
     await requireOwnedAgentThread(ctx, turn.threadId, userId);
+    const checkpoint =
+      call.purpose?.kind === "compaction"
+        ? await ctx.db
+            .query("scoutCompactions")
+            .withIndex("by_model_call_id", (q) => q.eq("modelCallId", call._id))
+            .unique()
+        : call.purpose?.compactionId
+          ? await ctx.db.get(call.purpose.compactionId)
+          : null;
+    const compactionCall =
+      checkpoint && checkpoint.threadId === turn.threadId
+        ? await ctx.db.get(checkpoint.modelCallId)
+        : null;
     return {
       summary: modelCallSummary(call),
       snapshotStorageId: call.snapshotStorageId,
+      compaction:
+        checkpoint && compactionCall
+          ? { checkpoint, call: modelCallSummary(compactionCall) }
+          : null,
     };
   },
 });
@@ -220,7 +259,11 @@ export const authorizedContext = internalQuery({
 export const getContext = action({
   args: { modelCallId: v.string(), threadId: v.string() },
   returns: v.union(
-    v.object({ summary: modelCallSummaryValidator, snapshot: v.string() }),
+    v.object({
+      summary: modelCallSummaryValidator,
+      snapshot: v.string(),
+      compaction: compactionContextValidator,
+    }),
     v.null(),
   ),
   handler: async (ctx, args): Promise<ModelCallContext> => {
@@ -228,6 +271,10 @@ export const getContext = action({
     if (!authorized) return null;
     const blob = await ctx.storage.get(authorized.snapshotStorageId);
     if (!blob) return null;
-    return { summary: authorized.summary, snapshot: await blob.text() };
+    return {
+      summary: authorized.summary,
+      snapshot: await blob.text(),
+      compaction: authorized.compaction,
+    };
   },
 });
