@@ -390,6 +390,14 @@ describe("Chat workspace", () => {
       input: { messageId: "message-1", text: "Thanks for the update." },
     },
     {
+      toolName: "prepare_account_password",
+      input: {
+        serviceName: "Example",
+        serviceDomain: "example.com",
+        identifier: "scout-1@example.com",
+      },
+    },
+    {
       toolName: "record_authenticated_service_account",
       input: {
         accountAccess: "recovered",

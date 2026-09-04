@@ -71,12 +71,14 @@ describe("Scout managed-credential persistence", () => {
     const { backend, scoutId } = await authenticatedBackend();
     const args = registration(scoutId);
 
-    await expect(backend.query(credentialsApi["prepareManagedRegistration"], args)).rejects.toThrow(
-      "Not authorized",
-    );
+    await expect(
+      backend.query(credentialsApi["prepareManagedRegistration"], {
+        request: { kind: "profile", ...args },
+      }),
+    ).rejects.toThrow("Not authorized");
     await expect(
       backend.mutation(credentialsApi["commitManagedRegistration"], {
-        ...args,
+        request: { kind: "profile", ...args },
         encryptedCredential: encryptedCredential(),
       }),
     ).rejects.toThrow("Not authorized");
@@ -89,15 +91,22 @@ describe("Scout managed-credential persistence", () => {
     const { admin, scoutId } = await authenticatedBackend();
     const args = registration(scoutId);
 
-    await expect(admin.query(credentialsApi["prepareManagedRegistration"], args)).resolves.toEqual({
-      scoutId,
-      serviceName: "Example",
-      serviceDomain: "example.com",
-      credentialHost: "accounts.example.com",
-      identifier: "conrad@example.test",
+    await expect(
+      admin.query(credentialsApi["prepareManagedRegistration"], {
+        request: { kind: "profile", ...args },
+      }),
+    ).resolves.toEqual({
+      registration: {
+        scoutId,
+        serviceName: "Example",
+        serviceDomain: "example.com",
+        credentialHost: "accounts.example.com",
+        identifier: "conrad@example.test",
+      },
+      existing: null,
     });
     const result = await admin.mutation(credentialsApi["commitManagedRegistration"], {
-      ...args,
+      request: { kind: "profile", ...args },
       encryptedCredential: encryptedCredential(),
     });
 
@@ -122,16 +131,19 @@ describe("Scout managed-credential persistence", () => {
     const { admin, scoutId } = await authenticatedBackend();
     const firstEnvelope = encryptedCredential();
     const first = await admin.mutation(credentialsApi["commitManagedRegistration"], {
-      ...registration(scoutId),
+      request: { kind: "profile", ...registration(scoutId) },
       encryptedCredential: firstEnvelope,
     });
     const secondEnvelope = encryptedCredential();
     const second = await admin.mutation(credentialsApi["commitManagedRegistration"], {
-      ...registration(scoutId),
-      serviceName: "Other",
-      serviceDomain: "other.example",
-      credentialHost: "login.other.example",
-      identifier: "other@example.test",
+      request: {
+        kind: "profile",
+        ...registration(scoutId),
+        serviceName: "Other",
+        serviceDomain: "other.example",
+        credentialHost: "login.other.example",
+        identifier: "other@example.test",
+      },
       encryptedCredential: secondEnvelope,
     });
 
@@ -156,11 +168,14 @@ describe("Scout managed-credential persistence", () => {
   test("does not expose an OAuth account to the password runtime", async () => {
     const { admin, backend, scoutId } = await authenticatedBackend();
     const provider = await admin.mutation(credentialsApi["commitManagedRegistration"], {
-      ...registration(scoutId),
-      serviceName: "GitHub",
-      serviceDomain: "github.com",
-      credentialHost: "github.com",
-      identifier: "conrad-scout",
+      request: {
+        kind: "profile",
+        ...registration(scoutId),
+        serviceName: "GitHub",
+        serviceDomain: "github.com",
+        credentialHost: "github.com",
+        identifier: "conrad-scout",
+      },
       encryptedCredential: encryptedCredential(),
     });
     await backend.run(async (ctx) => {
@@ -184,7 +199,7 @@ describe("Scout managed-credential persistence", () => {
   test("registering another service preserves existing ciphertext, keys, account IDs, and OAuth links", async () => {
     const { admin, backend, scoutId } = await authenticatedBackend();
     const provider = await admin.mutation(credentialsApi.commitManagedRegistration, {
-      ...registration(scoutId),
+      request: { kind: "profile", ...registration(scoutId) },
       encryptedCredential: encryptedCredential(),
     });
     const linkedAccountId = await backend.run(
@@ -217,10 +232,13 @@ describe("Scout managed-credential persistence", () => {
     const before = await preservedState();
 
     await admin.mutation(credentialsApi.commitManagedRegistration, {
-      ...registration(scoutId),
-      serviceName: "Another service",
-      serviceDomain: "another.example",
-      credentialHost: "accounts.another.example",
+      request: {
+        kind: "profile",
+        ...registration(scoutId),
+        serviceName: "Another service",
+        serviceDomain: "another.example",
+        credentialHost: "accounts.another.example",
+      },
       encryptedCredential: encryptedCredential(),
     });
 
@@ -230,16 +248,19 @@ describe("Scout managed-credential persistence", () => {
   test("fails closed when the version-one key changes", async () => {
     const { admin, backend, scoutId } = await authenticatedBackend();
     await admin.mutation(credentialsApi["commitManagedRegistration"], {
-      ...registration(scoutId),
+      request: { kind: "profile", ...registration(scoutId) },
       encryptedCredential: encryptedCredential("fingerprint-one"),
     });
 
     await expect(
       admin.mutation(credentialsApi["commitManagedRegistration"], {
-        ...registration(scoutId),
-        serviceDomain: "another.example",
-        credentialHost: "login.another.example",
-        identifier: "second@example.test",
+        request: {
+          kind: "profile",
+          ...registration(scoutId),
+          serviceDomain: "another.example",
+          credentialHost: "login.another.example",
+          identifier: "second@example.test",
+        },
         encryptedCredential: encryptedCredential("fingerprint-two"),
       }),
     ).rejects.toThrow("credential key does not match configured version");
@@ -251,7 +272,7 @@ describe("Scout managed-credential persistence", () => {
   test("refuses to repin a missing registry while encrypted rows still exist", async () => {
     const { admin, backend, scoutId } = await authenticatedBackend();
     await admin.mutation(credentialsApi["commitManagedRegistration"], {
-      ...registration(scoutId),
+      request: { kind: "profile", ...registration(scoutId) },
       encryptedCredential: encryptedCredential("fingerprint-one"),
     });
     await backend.run(async (ctx) => {
@@ -261,10 +282,13 @@ describe("Scout managed-credential persistence", () => {
 
     await expect(
       admin.mutation(credentialsApi["commitManagedRegistration"], {
-        ...registration(scoutId),
-        serviceDomain: "another.example",
-        credentialHost: "login.another.example",
-        identifier: "second@example.test",
+        request: {
+          kind: "profile",
+          ...registration(scoutId),
+          serviceDomain: "another.example",
+          credentialHost: "login.another.example",
+          identifier: "second@example.test",
+        },
         encryptedCredential: encryptedCredential("fingerprint-two"),
       }),
     ).rejects.toThrow("key registry is missing for existing credentials");

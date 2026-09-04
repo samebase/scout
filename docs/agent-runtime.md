@@ -16,6 +16,12 @@ ordinary agent work. Human handoff is for something the agent cannot complete, s
 Managed passwords live in an encrypted table. The master key is a deployment secret, not database
 data. The model sees account metadata, not passwords or encrypted envelopes. `fill_account_password`
 checks the current HTTPS host and password input types before filling the configured credential.
+`prepare_account_password` uses the same encrypted store as the profile form. It derives the scout
+from the active browser session and the exact login host from the observed signup page. The requested
+service domain must contain that host. Repeated preparation reuses the existing password; it never
+replaces one. Password filling loads credentials at execution time, including those just prepared.
+The model's account inventory includes authentication evidence so a prepared password is distinct
+from verified signup or login.
 Runtime instructions require `record_authenticated_service_account` immediately after successful
 account creation or login recovery, before continuing other work. The tool re-reads visible account
 identity and sign-out controls; its latest observation links to the chat and browser session. See

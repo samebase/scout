@@ -24,6 +24,19 @@ the credential whose exact login host matches the current page. The model does n
 credential reference or supply a password. A chat can use the Scout's accounts across connected
 services in the same conversation.
 
+`prepare_account_password` exposes the same password generation and encrypted registration used by
+the profile form. Its inputs are the service name, service domain, and account identifier. Trusted
+code derives the scout from the active browser session, re-reads the current HTTPS URL, and requires
+the exact host to belong to the requested service domain. Email identifiers must match the scout's
+own inbox; a new username may be chosen for signup. Both preparation and commit verify the browser
+observation and account binding. Repeated or overlapping preparations keep the first saved password,
+account ID, and authentication evidence. The tool returns safe account metadata only.
+
+The password-filling tool is available even when no credential exists yet and reads the current
+store when invoked. This permits preparation and filling within the same run without rebuilding
+the tool set. Account preparation remains unverified until the authenticated account recorder
+succeeds; runtime instructions show that distinction.
+
 When the agent reaches a password form, it calls the existing `fill_account_password` tool with one
 visible Playwright target and an optional confirmation-field target. Trusted Node code then:
 

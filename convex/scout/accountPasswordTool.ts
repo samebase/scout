@@ -17,6 +17,43 @@ export function requirePasswordInputType(value: string) {
   }
 }
 
+const accountPasswordPreparationSchema = z
+  .object({
+    serviceName: z.string().trim().min(1).max(100).describe("Name of the service being joined"),
+    serviceDomain: z
+      .string()
+      .trim()
+      .min(1)
+      .max(253)
+      .describe(
+        "The service's domain, containing the current signup host, such as example.com for accounts.example.com",
+      ),
+    identifier: z
+      .string()
+      .trim()
+      .min(1)
+      .max(320)
+      .describe("The new account's username or this Scout's own email address"),
+  })
+  .strict();
+
+export function createAccountPasswordPreparationTool(
+  prepare: (
+    account: z.infer<typeof accountPasswordPreparationSchema>,
+    abortSignal?: AbortSignal,
+  ) => Promise<{ serviceAccountId: string; credentialHost: string }>,
+) {
+  return tool({
+    description:
+      "Prepare a managed password for a new account on the current HTTPS signup page. Trusted code generates and encrypts the password for this Scout and the page's exact host; the password is never returned. Repeating the same preparation reuses the saved password and never resets it. Use fill_account_password to enter it. Preparation does not create the account on the service: finish signup and immediately call record_authenticated_service_account after authentication succeeds. Use an existing account's saved login method when one is available.",
+    inputSchema: accountPasswordPreparationSchema,
+    execute: async (account, options) => ({
+      status: "prepared" as const,
+      ...(await prepare(account, options.abortSignal)),
+    }),
+  });
+}
+
 export function createAccountPasswordFillTool(
   fill: (
     targets: AccountPasswordTargets,

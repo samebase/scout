@@ -196,6 +196,12 @@ const MANUAL_TOOL_OPTIONS = [
     input: '{\n  "messageId": "",\n  "text": ""\n}',
   },
   {
+    value: "prepare_account_password",
+    label: "Prepare account password",
+    description: "Prepare a saved password for a new account on the current signup page.",
+    input: '{\n  "serviceName": "",\n  "serviceDomain": "",\n  "identifier": ""\n}',
+  },
+  {
     value: "fill_account_password",
     label: "Fill account password",
     description: "Fill the Scout's managed password into a visible password field.",

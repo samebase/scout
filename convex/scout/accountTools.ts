@@ -3,7 +3,11 @@
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { env, type ActionCtx } from "../_generated/server";
-import { createAccountPasswordFillTool, requirePasswordInputType } from "./accountPasswordTool";
+import {
+  createAccountPasswordFillTool,
+  createAccountPasswordPreparationTool,
+  requirePasswordInputType,
+} from "./accountPasswordTool";
 import type { createBrowserHarness } from "./browserTools";
 import {
   credentialKeyFingerprint,
@@ -11,6 +15,7 @@ import {
   decryptCredential,
 } from "./credentialCrypto";
 import { createServiceAccountRecordingTool } from "./serviceAccountTool";
+import { prepareManagedPassword } from "./serviceAccountCredentialActions";
 
 export function assertCredentialBrowserUrl(value: string, credentialHost: string) {
   let url: URL;
@@ -74,15 +79,33 @@ export function decryptRuntimeManagedPassword(
 }
 
 export function createAccountTools(
-  ctx: Pick<ActionCtx, "runMutation">,
+  ctx: Pick<ActionCtx, "runQuery" | "runMutation">,
   args: {
     browser: ReturnType<typeof createBrowserHarness>;
     scoutId: Id<"scouts">;
-    credentials: ReadonlyArray<RuntimeManagedCredential>;
     sessionId: () => Id<"scoutBrowserSessions"> | null;
   },
 ) {
   const serviceAccountTools = {
+    prepare_account_password: createAccountPasswordPreparationTool(async (account, abortSignal) => {
+      const currentUrl = await args.browser.actions.getPage("url", abortSignal);
+      if (!currentUrl.success) {
+        throw new Error("The current signup page could not be verified");
+      }
+      const sessionId = args.sessionId();
+      if (!sessionId) throw new Error("Browser session was not registered");
+      abortSignal?.throwIfAborted();
+      const result = await prepareManagedPassword(ctx, {
+        kind: "browser",
+        sessionId,
+        observedUrl: currentUrl.output,
+        ...account,
+      });
+      return {
+        serviceAccountId: result.serviceAccountId,
+        credentialHost: result.loginMethod.credentialHost,
+      };
+    }),
     record_authenticated_service_account: createServiceAccountRecordingTool(
       async ({ accountAccess, identityText, loginMethod, sessionControlText }, abortSignal) => {
         const identity = await args.browser.actions.getElement(
@@ -120,78 +143,77 @@ export function createAccountTools(
       },
     ),
   };
-  const accountPasswordTools =
-    args.credentials.length > 0
-      ? {
-          fill_account_password: createAccountPasswordFillTool(
-            async ({ passwordTarget, passwordConfirmationTarget }, toolCallId, abortSignal) => {
-              const currentUrl = await args.browser.actions.getPage("url", abortSignal);
-              if (!currentUrl.success) {
-                throw new Error("The current browser URL could not be verified");
-              }
-              let currentHostname: string;
-              try {
-                currentHostname = new URL(currentUrl.output).hostname.toLowerCase();
-              } catch {
-                throw new Error("The current browser URL could not be verified");
-              }
-              const runtimeCredential = args.credentials.find(
-                (credential) => credential.credentialHost === currentHostname,
-              );
-              if (!runtimeCredential) {
-                throw new Error("This Scout has no managed password for the current login host");
-              }
-              assertCredentialBrowserUrl(currentUrl.output, runtimeCredential.credentialHost);
-              const passwordField = await args.browser.actions.getElementAttribute(
-                passwordTarget,
-                "type",
-                abortSignal,
-              );
-              if (!passwordField.success) {
-                throw new Error("The configured password field could not be verified");
-              }
-              requirePasswordInputType(passwordField.output);
-              if (passwordConfirmationTarget) {
-                const confirmationField = await args.browser.actions.getElementAttribute(
-                  passwordConfirmationTarget,
-                  "type",
-                  abortSignal,
-                );
-                if (!confirmationField.success) {
-                  throw new Error(
-                    "The configured password confirmation field could not be verified",
-                  );
-                }
-                requirePasswordInputType(confirmationField.output);
-              }
-              let password: string;
-              try {
-                password = decryptRuntimeManagedPassword(
-                  runtimeCredential,
-                  args.scoutId,
-                  env.SCOUT_CREDENTIAL_MASTER_KEY_V1,
-                );
-              } catch {
-                throw new Error("Managed password fill is unavailable");
-              }
-              args.browser.actions.registerSensitiveValue(password);
-              const passwordResult = await args.browser.actions.fillManagedPassword(
-                {
-                  passwordTarget,
-                  ...(passwordConfirmationTarget ? { passwordConfirmationTarget } : {}),
-                },
-                password,
-                toolCallId,
-                abortSignal,
-              );
-              if (!passwordResult.success) {
-                throw new Error("The configured account password could not be filled");
-              }
-              return { filledFields: passwordConfirmationTarget ? 2 : 1 };
-            },
-          ),
+  const accountPasswordTools = {
+    fill_account_password: createAccountPasswordFillTool(
+      async ({ passwordTarget, passwordConfirmationTarget }, toolCallId, abortSignal) => {
+        const currentUrl = await args.browser.actions.getPage("url", abortSignal);
+        if (!currentUrl.success) {
+          throw new Error("The current browser URL could not be verified");
         }
-      : {};
+        let currentHostname: string;
+        try {
+          currentHostname = new URL(currentUrl.output).hostname.toLowerCase();
+        } catch {
+          throw new Error("The current browser URL could not be verified");
+        }
+        const credentials = await ctx.runQuery(
+          internal.scout.serviceAccountCredentials.listRuntimeCredentialsForScout,
+          { scoutId: args.scoutId },
+        );
+        const runtimeCredential = credentials.find(
+          (credential) => credential.credentialHost === currentHostname,
+        );
+        if (!runtimeCredential) {
+          throw new Error("This Scout has no managed password for the current login host");
+        }
+        assertCredentialBrowserUrl(currentUrl.output, runtimeCredential.credentialHost);
+        const passwordField = await args.browser.actions.getElementAttribute(
+          passwordTarget,
+          "type",
+          abortSignal,
+        );
+        if (!passwordField.success) {
+          throw new Error("The configured password field could not be verified");
+        }
+        requirePasswordInputType(passwordField.output);
+        if (passwordConfirmationTarget) {
+          const confirmationField = await args.browser.actions.getElementAttribute(
+            passwordConfirmationTarget,
+            "type",
+            abortSignal,
+          );
+          if (!confirmationField.success) {
+            throw new Error("The configured password confirmation field could not be verified");
+          }
+          requirePasswordInputType(confirmationField.output);
+        }
+        let password: string;
+        try {
+          password = decryptRuntimeManagedPassword(
+            runtimeCredential,
+            args.scoutId,
+            env.SCOUT_CREDENTIAL_MASTER_KEY_V1,
+          );
+        } catch {
+          throw new Error("Managed password fill is unavailable");
+        }
+        args.browser.actions.registerSensitiveValue(password);
+        const passwordResult = await args.browser.actions.fillManagedPassword(
+          {
+            passwordTarget,
+            ...(passwordConfirmationTarget ? { passwordConfirmationTarget } : {}),
+          },
+          password,
+          toolCallId,
+          abortSignal,
+        );
+        if (!passwordResult.success) {
+          throw new Error("The configured account password could not be filled");
+        }
+        return { filledFields: passwordConfirmationTarget ? 2 : 1 };
+      },
+    ),
+  };
 
   return { ...accountPasswordTools, ...serviceAccountTools };
 }

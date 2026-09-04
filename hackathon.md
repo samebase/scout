@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-04T21:02:30Z
+- **Last updated:** 2026-09-04T22:13:58Z
 
 ## Log
 
@@ -960,5 +960,7 @@ link. The complete project check passes all 329 tests (`convex/humanHandoffs.ts`
 
 Added persisted running summaries that compact older history at a token threshold while keeping
 recent messages, complete tool exchanges, and the original transcript. The Model calls inspector
-shows each summary's coverage, token estimates, and cost, including summaries reused by later turns
-(`convex/scout/compactionContext.ts`, `src/components/scout-model-input.tsx`).
+shows summary coverage, token estimates, and cost (`convex/scout/compactionContext.ts`,
+`src/components/scout-model-input.tsx`). Scouts can prepare signup passwords through the existing
+encrypted store and are instructed to record accounts immediately after authentication
+(`convex/scout/accountTools.ts`, `convex/scout/runtimeInstructions.ts`).

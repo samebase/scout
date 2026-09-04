@@ -70,10 +70,12 @@ independent copy of this key. Do not replace the `_V1` value after creating cred
 fingerprint checks intentionally stop reads and writes rather than mixing two keys under one
 version.
 
-Before asking a Scout to create or recover a password-based account, open its profile and register
-the managed account. Set the exact host where the password form appears. The password tool selects
-only that Scout's credential for the current HTTPS host. OAuth accounts instead refer to the exact
-provider account belonging to the same Scout; neither login method requires a Product or Task.
+A Scout can prepare its own password for a new account with `prepare_account_password` on the
+service's signup page. The tool saves an encrypted password for that scout and the exact HTTPS host;
+`fill_account_password` loads it when called. The profile form remains available for manual setup.
+Preparation does not prove the remote account exists: successful signup or login must be recorded
+with `record_authenticated_service_account`. OAuth accounts refer to the exact provider account
+belonging to the same scout.
 
 ## Force worktree mode
 

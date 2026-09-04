@@ -29,6 +29,7 @@ const manualToolNameValidator = v.union(
   v.literal("get_thread"),
   v.literal("send_message"),
   v.literal("reply_to_message"),
+  v.literal("prepare_account_password"),
   v.literal("fill_account_password"),
   v.literal("record_authenticated_service_account"),
   v.literal("web_search"),
@@ -78,6 +79,7 @@ function usesAgentMailWriteTool(toolName: ManualToolName) {
 function needsExistingBrowser(toolName: ManualToolName) {
   return (
     toolName === "browser_execute" ||
+    toolName === "prepare_account_password" ||
     toolName === "fill_account_password" ||
     toolName === "record_authenticated_service_account"
   );
@@ -255,17 +257,13 @@ export const executeTool = action({
         }
 
         if (
+          args.toolName === "prepare_account_password" ||
           args.toolName === "fill_account_password" ||
           args.toolName === "record_authenticated_service_account"
         ) {
-          const credentials = await ctx.runQuery(
-            internal.scout.serviceAccountCredentials.listRuntimeCredentialsForScout,
-            { scoutId: runtime.scoutId },
-          );
           selectedTools = createAccountTools(ctx, {
             browser,
             scoutId: runtime.scoutId,
-            credentials,
             sessionId: () => currentBrowserSessionId,
           });
         } else {

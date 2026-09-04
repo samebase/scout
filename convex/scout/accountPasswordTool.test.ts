@@ -1,11 +1,38 @@
 import { validateTypes } from "@ai-sdk/provider-utils";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { createAccountPasswordFillTool, requirePasswordInputType } from "./accountPasswordTool";
+import {
+  createAccountPasswordFillTool,
+  createAccountPasswordPreparationTool,
+  requirePasswordInputType,
+} from "./accountPasswordTool";
 
 const abortSignal = new AbortController().signal;
 const toolOptions = { toolCallId: "tool-1", messages: [], context: {}, abortSignal };
 
 describe("Scout account password tool", () => {
+  it.each(["scoutId", "sessionId", "credentialHost", "password"])(
+    "rejects model-supplied preparation scope or secrets: %s",
+    async (field) => {
+      const prepare = vi.fn(async () => ({
+        serviceAccountId: "account-1",
+        credentialHost: "example.com",
+      }));
+      const passwordTool = createAccountPasswordPreparationTool(prepare);
+      await expect(
+        validateTypes({
+          value: {
+            serviceName: "Example",
+            serviceDomain: "example.com",
+            identifier: "magda@example.test",
+            [field]: "untrusted",
+          },
+          schema: passwordTool.inputSchema,
+        }),
+      ).rejects.toThrow();
+      expect(prepare).not.toHaveBeenCalled();
+    },
+  );
+
   it("passes only password targets to the trusted filler", async () => {
     const fill = vi.fn(async () => ({ filledFields: 2 }));
     const passwordTool = createAccountPasswordFillTool(fill);

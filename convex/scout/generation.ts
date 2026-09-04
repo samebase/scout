@@ -475,7 +475,6 @@ export const runSlice = internalAction({
       const accountTools = createAccountTools(ctx, {
         browser: activeBrowser,
         scoutId,
-        credentials: runtimeCredentials,
         sessionId: () => browserSessionId,
       });
       const tools = {
