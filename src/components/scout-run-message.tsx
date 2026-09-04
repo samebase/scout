@@ -67,16 +67,18 @@ export function ScoutRunMessageView({
             showText={showText}
           />
         ))}
-        {metadata?.failure ? (
+        {metadata?.outcome.kind === "failed" ? (
           <Marker className="text-destructive" role="status">
             <MarkerIcon>
               <CircleAlertIcon />
             </MarkerIcon>
             <MarkerContent className="whitespace-pre-wrap">
-              Generation failed: {metadata.failure}
+              Generation failed: {metadata.outcome.failure}
             </MarkerContent>
           </Marker>
-        ) : message.status === "failed" ? (
+        ) : message.status === "failed" &&
+          metadata?.outcome.kind !== "stopping" &&
+          metadata?.outcome.kind !== "stopped" ? (
           <Marker className="text-destructive" role="status">
             <MarkerIcon>
               <CircleAlertIcon />
@@ -84,13 +86,22 @@ export function ScoutRunMessageView({
             <MarkerContent>Generation failed.</MarkerContent>
           </Marker>
         ) : null}
-        {!metadata?.failure && (message.status === "pending" || message.status === "streaming") ? (
+        {metadata?.outcome.kind === "stopping" ? (
+          <MessageFooter>
+            <LoaderCircleIcon className="mr-1 size-3 animate-spin" />
+            Stopping Scout
+          </MessageFooter>
+        ) : metadata?.outcome.kind === "pending" &&
+          (message.status === "pending" || message.status === "streaming") ? (
           <MessageFooter>
             <LoaderCircleIcon className="mr-1 size-3 animate-spin" />
             Scout is working
           </MessageFooter>
         ) : metadata ? (
-          <MessageFooter>{formatRunMetadata(metadata, countGenerationSteps(parts))}</MessageFooter>
+          <MessageFooter>
+            {metadata.outcome.kind === "stopped" ? "Stopped · " : ""}
+            {formatRunMetadata(metadata, countGenerationSteps(parts))}
+          </MessageFooter>
         ) : null}
         {metadata && onSelectModelCall ? (
           <ScoutModelCalls turnId={metadata.turnId} onSelect={onSelectModelCall} />

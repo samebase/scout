@@ -26,6 +26,7 @@ import {
   PanelRightIcon,
   PlusIcon,
   SendIcon,
+  SquareIcon,
   TelescopeIcon,
   XIcon,
 } from "lucide-react";
@@ -95,7 +96,11 @@ export const Route = createFileRoute("/chats")({
   component: ChatsPage,
 });
 
-type ComposerState = { kind: "idle" } | { kind: "sending" } | { kind: "failed"; message: string };
+type ComposerState =
+  | { kind: "idle" }
+  | { kind: "sending" }
+  | { kind: "stopping"; turnId: string }
+  | { kind: "failed"; message: string };
 
 type ChatThread = FunctionReturnType<typeof api.scout.chats.listThreads>["page"][number];
 type BrowserSession = FunctionReturnType<typeof api.scout.browserSessions.list>[number];
@@ -362,6 +367,7 @@ function ChatsWorkspace() {
   const sendMessage = useMutation(api.scout.chats.sendMessage).withOptimisticUpdate(
     optimisticallySendMessage(api.scout.chats.listMessages),
   );
+  const stopScout = useMutation(api.scout.chats.stop);
   const executeManualTool = useAction(api.scout.manual.executeTool);
   const [selectedDriver, setSelectedDriver] = useState<ChatDriver>(DEFAULT_DRIVER);
   const [manualTool, setManualTool] = useState<(typeof MANUAL_TOOL_OPTIONS)[number]>(
@@ -398,7 +404,7 @@ function ChatsWorkspace() {
   const selectedActiveScout = selectedScout?.status === "active" ? selectedScout : undefined;
   const scoutActivity = useQuery(
     api.scout.chats.getScoutActivity,
-    selectedScoutId ? { scoutId: selectedScoutId } : "skip",
+    threadId ? { threadId } : "skip",
   );
   const agentContext = useQuery(
     api.scout.chats.getThreadAgentContext,
@@ -425,11 +431,31 @@ function ChatsWorkspace() {
     api.humanHandoffs.active,
     selectedBrowserSession ? { sessionId: selectedBrowserSession.sessionId } : "skip",
   );
-  const isActivityLoading = selectedScoutId !== undefined && scoutActivity === undefined;
-  const isWorking =
-    composerState.kind === "sending" || isActivityLoading || scoutActivity?.active === true;
-  const isLoading = threads.status === "LoadingFirstPage" || scouts === undefined;
   const canCompose = Boolean(selectedActiveScout && threadId !== null);
+  const isActivityLoading = threadId !== null && scoutActivity === undefined;
+  const selectedThreadActivity =
+    scoutActivity?.kind !== "idle" && scoutActivity?.threadId === threadId
+      ? scoutActivity
+      : undefined;
+  const canInterrupt =
+    selectedThreadActivity?.kind === "running" || selectedThreadActivity?.kind === "handoff";
+  const serverIsStopping = selectedThreadActivity?.kind === "stopping";
+  const scoutIsWorkingElsewhere =
+    scoutActivity !== undefined &&
+    scoutActivity.kind !== "idle" &&
+    scoutActivity.threadId !== threadId;
+  const composerIsBusy = composerState.kind === "sending" || composerState.kind === "stopping";
+  const isWorking =
+    composerIsBusy ||
+    isActivityLoading ||
+    (scoutActivity !== undefined && scoutActivity.kind !== "idle");
+  const messageInputDisabled =
+    !canCompose ||
+    isActivityLoading ||
+    scoutIsWorkingElsewhere ||
+    serverIsStopping ||
+    composerIsBusy;
+  const isLoading = threads.status === "LoadingFirstPage" || scouts === undefined;
   const isLocatingRequestedThread =
     search.thread !== undefined &&
     requestedThread === undefined &&
@@ -491,6 +517,13 @@ function ChatsWorkspace() {
   }, [requestedPendingThread, requestedThread, search.thread, threads]);
 
   useEffect(() => {
+    if (composerState.kind !== "stopping" || scoutActivity === undefined) return;
+    if (scoutActivity.kind === "idle" || scoutActivity.turnId !== composerState.turnId) {
+      setComposerState({ kind: "idle" });
+    }
+  }, [composerState, scoutActivity]);
+
+  useEffect(() => {
     setDraft("");
     setComposerState((current) => (current.kind === "failed" ? { kind: "idle" } : current));
     setPendingThread((current) => (current?.threadId === search.thread ? current : null));
@@ -522,9 +555,35 @@ function ChatsWorkspace() {
 
   const submitPrompt = async () => {
     const prompt = draft.trim();
-    if (selectedDriver === "manual" || !prompt || isWorking || !selectedActiveScout || !threadId) {
+    if (
+      !selectedActiveScout ||
+      !threadId ||
+      isActivityLoading ||
+      scoutIsWorkingElsewhere ||
+      serverIsStopping ||
+      composerIsBusy
+    ) {
       return;
     }
+
+    if (canInterrupt) {
+      const turnId = selectedThreadActivity.turnId;
+      const replacement =
+        prompt && selectedDriver !== "manual" ? { prompt, model: selectedDriver } : undefined;
+      setComposerState({ kind: "stopping", turnId });
+      try {
+        await stopScout(replacement ? { threadId, replacement } : { threadId });
+        if (prompt && selectedDriver !== "manual" && currentThreadId.current === threadId) {
+          setDraft("");
+        }
+      } catch {
+        setComposerState({ kind: "failed", message: "Scout could not be stopped." });
+      }
+      return;
+    }
+
+    if (selectedDriver === "manual") return;
+    if (!prompt) return;
 
     setComposerState({ kind: "sending" });
     setDraft("");
@@ -617,7 +676,7 @@ function ChatsWorkspace() {
 
   const submitComposer = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    void (selectedDriver === "manual" ? submitManualTool() : submitPrompt());
+    void (canInterrupt || selectedDriver !== "manual" ? submitPrompt() : submitManualTool());
   };
 
   const onComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -868,7 +927,9 @@ function ChatsWorkspace() {
                 }
                 aria-label={selectedDriver === "manual" ? "Tool input" : "Message Scout"}
                 rows={selectedDriver === "manual" ? 5 : 2}
-                disabled={isWorking || !canCompose}
+                disabled={
+                  selectedDriver === "manual" ? isWorking || !canCompose : messageInputDisabled
+                }
                 className={`max-h-48 min-h-14 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0 dark:bg-transparent ${
                   selectedDriver === "manual" ? "font-mono text-xs" : ""
                 }`}
@@ -914,22 +975,42 @@ function ChatsWorkspace() {
                 </div>
                 <div className="flex items-center gap-3">
                   <p className="text-muted-foreground hidden text-xs @lg:block">
-                    {selectedDriver === "manual"
-                      ? "Run one tool call."
-                      : "Enter to send. Shift+Enter for a new line."}
+                    {canInterrupt
+                      ? selectedDriver !== "manual" && draft.trim()
+                        ? "Stops the current work, then sends this message."
+                        : "Stop the current work."
+                      : selectedDriver === "manual"
+                        ? "Run one tool call."
+                        : "Enter to send. Shift+Enter for a new line."}
                   </p>
                   <Button
                     type="submit"
                     size="icon-sm"
                     disabled={
-                      isWorking ||
-                      !canCompose ||
-                      (selectedDriver === "manual" ? !manualInput.trim() : !draft.trim())
+                      canInterrupt
+                        ? isActivityLoading || serverIsStopping || composerIsBusy
+                        : selectedDriver === "manual"
+                          ? isWorking || !canCompose || !manualInput.trim()
+                          : messageInputDisabled || (!canInterrupt && !draft.trim())
                     }
-                    aria-label={selectedDriver === "manual" ? "Run tool" : "Send message"}
+                    aria-label={
+                      composerState.kind === "stopping"
+                        ? "Stopping Scout"
+                        : composerState.kind === "sending"
+                          ? "Sending message"
+                          : canInterrupt
+                            ? selectedDriver !== "manual" && draft.trim()
+                              ? "Stop Scout and send message"
+                              : "Stop Scout"
+                            : selectedDriver === "manual"
+                              ? "Run tool"
+                              : "Send message"
+                    }
                   >
-                    {composerState.kind === "sending" ? (
+                    {composerIsBusy ? (
                       <LoaderCircleIcon className="animate-spin" />
+                    ) : canInterrupt && !draft.trim() ? (
+                      <SquareIcon />
                     ) : (
                       <SendIcon />
                     )}

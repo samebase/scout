@@ -235,6 +235,7 @@ describe("human handoffs", () => {
     const next = await backend.mutation(internal.scout.browserSessions.open, {
       threadId,
       scoutId,
+      source: { kind: "manual" },
       providerSessionId: "provider-session-2",
       cdpUrl: "wss://browser.firecrawl.dev/cdp?token=private-2",
       interactiveLiveViewUrl,
@@ -255,7 +256,7 @@ describe("human handoffs", () => {
     });
   });
 
-  test("releases a cleanup reservation when Firecrawl deletion fails", async () => {
+  test("keeps a cleanup reservation when Firecrawl deletion fails", async () => {
     const { backend, scoutId, sessionId, threadId, turnId } = await setupContext();
     await backend.run(async (ctx) => {
       await ctx.db.patch(turnId, {
@@ -280,21 +281,23 @@ describe("human handoffs", () => {
 
     expect(
       await backend.run(async (ctx) => (await ctx.db.get(sessionId))?.lifecycle),
-    ).toMatchObject({ kind: "closed", providerDurationMs: null, creditsBilled: null });
+    ).toMatchObject({ kind: "closing" });
     await expect(
       backend.run(async (ctx) => activeBrowserForChat(ctx, scoutId, threadId)),
-    ).resolves.toBeNull();
+    ).rejects.toThrow("This Scout's browser is closing");
   });
 
   test("keeps the Scout busy after pausing and while a continued handoff is closing", async () => {
-    const { backend, owner, promptMessageId, requested, scoutId, sessionId, turnId } =
+    const { backend, owner, promptMessageId, requested, sessionId, threadId, turnId } =
       await setup();
     await backend.mutation(internal.scout.turns.completeHumanHandoffPause, {
       promptMessageId,
       usage: {},
     });
-    await expect(owner.query(api.scout.chats.getScoutActivity, { scoutId })).resolves.toEqual({
-      active: true,
+    await expect(owner.query(api.scout.chats.getScoutActivity, { threadId })).resolves.toEqual({
+      kind: "handoff",
+      threadId,
+      turnId,
     });
     await claim(backend, requested.handoffId);
     await backend.mutation(internal.humanHandoffs.continueAuthorized, {
@@ -312,9 +315,46 @@ describe("human handoffs", () => {
       firecrawlCredits: 1,
       firecrawlDurationMs: 1_000,
     });
-    await expect(owner.query(api.scout.chats.getScoutActivity, { scoutId })).resolves.toEqual({
-      active: true,
+    await expect(owner.query(api.scout.chats.getScoutActivity, { threadId })).resolves.toEqual({
+      kind: "handoff",
+      threadId,
+      turnId,
     });
+  });
+
+  test("stops an active handoff and makes its page terminal", async () => {
+    const { backend, owner, promptMessageId, requested, sessionId, threadId, turnId } =
+      await setup();
+    await backend.mutation(internal.scout.turns.completeHumanHandoffPause, {
+      promptMessageId,
+      usage: {},
+    });
+    await claim(backend, requested.handoffId);
+
+    await owner.mutation(api.scout.chats.stop, { threadId });
+    expect(await backend.run(async (ctx) => (await ctx.db.get(requested.handoffId))?.status)).toBe(
+      "stopped",
+    );
+    expect(await backend.run(async (ctx) => (await ctx.db.get(turnId))?.state)).toMatchObject({
+      kind: "stopping",
+      generationFinished: true,
+    });
+
+    await backend.mutation(internal.scout.browserSessions.close, {
+      sessionId,
+      providerDurationMs: 1_000,
+      creditsBilled: 1,
+    });
+    await expect(owner.query(api.scout.chats.getScoutActivity, { threadId })).resolves.toEqual({
+      kind: "idle",
+    });
+    await expect(
+      backend.query(internal.humanHandoffs.prepareAccess, {
+        handoffId: requested.handoffId,
+        accessTokenHash,
+        now: Date.now(),
+      }),
+    ).resolves.toMatchObject({ status: "stopped" });
   });
 
   test("reserves a failed handoff's browser until cleanup and rejects stale manual dispatch", async () => {

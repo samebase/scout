@@ -51,6 +51,19 @@ export const humanHandoffValidator = v.union(
   }),
   v.object({
     ...humanHandoffCommon,
+    status: v.literal("stopped"),
+    stoppedAt: v.number(),
+    claimed: v.literal(false),
+  }),
+  v.object({
+    ...humanHandoffCommon,
+    ...humanHandoffClaim,
+    status: v.literal("stopped"),
+    stoppedAt: v.number(),
+    claimed: v.literal(true),
+  }),
+  v.object({
+    ...humanHandoffCommon,
     status: v.literal("expired"),
     expiredAt: v.number(),
     claimed: v.literal(false),
@@ -84,6 +97,7 @@ export const humanHandoffStatusValidator = v.union(
   v.literal("active"),
   v.literal("continued"),
   v.literal("resumed"),
+  v.literal("stopped"),
   v.literal("expired"),
   v.literal("failed"),
   v.literal("missing"),
@@ -146,6 +160,11 @@ export const humanHandoffPageValidator = v.union(
     ...humanHandoffPageContext,
     expiredAt: v.number(),
     claimed: v.boolean(),
+  }),
+  v.object({
+    status: v.literal("stopped"),
+    ...humanHandoffPageContext,
+    stoppedAt: v.number(),
   }),
   v.object({
     status: v.literal("failed"),
@@ -218,10 +237,30 @@ export function failedHandoff(
       };
 }
 
+export function stoppedHandoff(
+  handoff: Extract<Doc<"scoutHumanHandoffs">, { status: "available" | "active" | "continued" }>,
+  stoppedAt: number,
+) {
+  return handoff.status === "available"
+    ? {
+        ...handoffCommon(handoff),
+        status: "stopped" as const,
+        stoppedAt,
+        claimed: false as const,
+      }
+    : {
+        ...handoffCommon(handoff),
+        ...handoffClaim(handoff),
+        status: "stopped" as const,
+        stoppedAt,
+        claimed: true as const,
+      };
+}
+
 async function sendOutcome(
   ctx: MutationCtx,
   handoff: Doc<"scoutHumanHandoffs">,
-  kind: "continued" | "expired" | "failed",
+  kind: "continued" | "expired" | "failed" | "stopped",
 ) {
   await humanHandoffWorkflow.sendEvent(ctx, {
     ...humanHandoffOutcomeEvent,
@@ -286,9 +325,30 @@ export async function failHumanHandoffForTurn(ctx: MutationCtx, turnId: Id<"scou
 export async function signalHumanHandoffOutcome(
   ctx: MutationCtx,
   handoff: Doc<"scoutHumanHandoffs">,
-  kind: "continued" | "expired" | "failed",
+  kind: "continued" | "expired" | "failed" | "stopped",
 ) {
   await sendOutcome(ctx, handoff, kind);
+}
+
+export async function stopHumanHandoffForTurn(ctx: MutationCtx, turnId: Id<"scoutTurns">) {
+  const handoff = await ctx.db
+    .query("scoutHumanHandoffs")
+    .withIndex("by_turn_id", (query) => query.eq("turnId", turnId))
+    .unique();
+  if (
+    !handoff ||
+    (handoff.status !== "available" &&
+      handoff.status !== "active" &&
+      handoff.status !== "continued")
+  ) {
+    return;
+  }
+  await ctx.db.replace("scoutHumanHandoffs", handoff._id, stoppedHandoff(handoff, Date.now()));
+  if (handoff.status === "continued") {
+    await signalHumanHandoffScoutPaused(ctx, handoff);
+  } else {
+    await sendOutcome(ctx, handoff, "stopped");
+  }
 }
 
 export async function signalHumanHandoffScoutPaused(

@@ -17,13 +17,28 @@ export async function requireOwnedAgentThread(
 }
 
 export async function scoutIsWorking(ctx: QueryCtx, scoutId: Id<"scouts">) {
+  return (await scoutActivity(ctx, scoutId)).kind !== "idle";
+}
+
+export async function scoutActivity(ctx: QueryCtx, scoutId: Id<"scouts">) {
   const pending = await ctx.db
     .query("scoutTurns")
     .withIndex("by_scout_id_and_state_kind", (q) =>
       q.eq("scoutId", scoutId).eq("state.kind", "pending"),
     )
     .first();
-  if (pending) return true;
+  if (pending) {
+    return { kind: "running" as const, threadId: pending.threadId, turnId: pending._id };
+  }
+  const stopping = await ctx.db
+    .query("scoutTurns")
+    .withIndex("by_scout_id_and_state_kind", (q) =>
+      q.eq("scoutId", scoutId).eq("state.kind", "stopping"),
+    )
+    .first();
+  if (stopping) {
+    return { kind: "stopping" as const, threadId: stopping.threadId, turnId: stopping._id };
+  }
   const pausedTurn = await ctx.db
     .query("scoutTurns")
     .withIndex("by_scout_id_and_state_kind", (q) =>
@@ -31,16 +46,20 @@ export async function scoutIsWorking(ctx: QueryCtx, scoutId: Id<"scouts">) {
     )
     .order("desc")
     .first();
-  if (!pausedTurn) return false;
+  if (!pausedTurn) return { kind: "idle" as const };
   const handoff = await ctx.db
     .query("scoutHumanHandoffs")
     .withIndex("by_turn_id", (q) => q.eq("turnId", pausedTurn._id))
     .unique();
-  return (
-    handoff?.status === "available" ||
+  return handoff?.status === "available" ||
     handoff?.status === "active" ||
     handoff?.status === "continued"
-  );
+    ? {
+        kind: "handoff" as const,
+        threadId: pausedTurn.threadId,
+        turnId: pausedTurn._id,
+      }
+    : { kind: "idle" as const };
 }
 
 export async function activeBrowserForChat(ctx: QueryCtx, scoutId: Id<"scouts">, threadId: string) {

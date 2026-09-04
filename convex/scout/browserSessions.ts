@@ -21,6 +21,7 @@ import { requireFirecrawlLiveViewUrl } from "./lib/firecrawlLiveView";
 import { requireFirecrawlCdpUrl } from "./lib/firecrawlCdpUrl";
 import { omitNullish } from "../../shared/omitNullish";
 import { activeBrowserForChat } from "./chatAccess";
+import { finalizeStoppingTurn } from "./turns";
 
 const MAX_BROWSER_SESSION_ID_LENGTH = 500;
 const MAX_BROWSER_TOOL_CALL_ID_LENGTH = 200;
@@ -205,6 +206,10 @@ export const open = internalMutation({
   args: {
     threadId: v.string(),
     scoutId: v.id("scouts"),
+    source: v.union(
+      v.object({ kind: v.literal("manual") }),
+      v.object({ kind: v.literal("turn"), turnId: v.id("scoutTurns") }),
+    ),
     providerSessionId: v.string(),
     cdpUrl: v.string(),
     interactiveLiveViewUrl: v.union(v.string(), v.null()),
@@ -227,6 +232,17 @@ export const open = internalMutation({
         : requireFirecrawlLiveViewUrl(args.interactiveLiveViewUrl);
     const binding = await requireThreadBinding(ctx, args.threadId);
     if (binding.scoutId !== args.scoutId) throw new Error("browser Scout does not match");
+    if (args.source.kind === "turn") {
+      const turn = await ctx.db.get("scoutTurns", args.source.turnId);
+      if (
+        !turn ||
+        turn.threadId !== args.threadId ||
+        turn.scoutId !== args.scoutId ||
+        turn.state.kind !== "pending"
+      ) {
+        throw new Error("Active Scout turn not found");
+      }
+    }
     const existing = await ctx.db
       .query("scoutBrowserSessions")
       .withIndex("by_provider_and_provider_session_id", (index) =>
@@ -431,6 +447,7 @@ export const close = internalMutation({
           }),
         },
       });
+      await finalizeStoppingTurn(ctx, turn._id);
     }
     const liveView = await ctx.db
       .query("scoutLiveViews")

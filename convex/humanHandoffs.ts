@@ -71,6 +71,11 @@ const preparedAccessValidator = v.union(
     claimed: v.boolean(),
   }),
   v.object({
+    status: v.literal("stopped"),
+    ...pageContextFields,
+    stoppedAt: v.number(),
+  }),
+  v.object({
     status: v.literal("failed"),
     ...pageContextFields,
     failedAt: v.number(),
@@ -138,6 +143,8 @@ function resourcesAreUnavailable(
 ) {
   return (
     context.turn.state.kind === "failed" ||
+    context.turn.state.kind === "stopping" ||
+    context.turn.state.kind === "stopped" ||
     context.session.lifecycle.kind !== "active" ||
     context.session.lifecycle.providerExpiresAtMs <= now
   );
@@ -197,6 +204,8 @@ async function terminalPage(
     case "continued":
     case "resumed":
       return { ...context, status: "continued" as const, continuedAt: handoff.continuedAt };
+    case "stopped":
+      return { ...context, status: "stopped" as const, stoppedAt: handoff.stoppedAt };
     case "expired":
       return {
         ...context,
@@ -245,6 +254,8 @@ async function activePreparedAccess(
   const lifecycle = resources.session.lifecycle;
   if (
     resources.turn.state.kind === "failed" ||
+    resources.turn.state.kind === "stopping" ||
+    resources.turn.state.kind === "stopped" ||
     lifecycle.kind !== "active" ||
     lifecycle.providerExpiresAtMs <= now
   ) {
@@ -503,6 +514,8 @@ export const claimAuthorized = internalMutation({
     const lifecycle = resources.session.lifecycle;
     if (
       resources.turn.state.kind === "failed" ||
+      resources.turn.state.kind === "stopping" ||
+      resources.turn.state.kind === "stopped" ||
       lifecycle.kind !== "active" ||
       lifecycle.providerExpiresAtMs < now + HUMAN_HANDOFF_ACTIVE_MS
     ) {

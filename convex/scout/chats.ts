@@ -2,8 +2,8 @@ import { listUIMessages, syncStreams, vStreamArgs } from "@convex-dev/agent";
 import { vStreamDelta, vStreamMessage } from "@convex-dev/agent/validators";
 import { paginationOptsValidator, paginationResultValidator } from "convex/server";
 import { type Infer, v } from "convex/values";
-import { components, internal } from "../_generated/api";
-import type { Id } from "../_generated/dataModel";
+import { components } from "../_generated/api";
+import type { Doc, Id } from "../_generated/dataModel";
 import {
   internalQuery,
   internalMutation,
@@ -16,7 +16,12 @@ import { requireAppUser } from "../access";
 import { handoffCommon, handoffClaim } from "../humanHandoffsModel";
 import schema from "../schema";
 import { scoutAgent } from "./agent";
-import { activeBrowserForChat, requireOwnedAgentThread, scoutIsWorking } from "./chatAccess";
+import {
+  activeBrowserForChat,
+  requireOwnedAgentThread,
+  scoutActivity,
+  scoutIsWorking,
+} from "./chatAccess";
 import { omitNullish } from "../../shared/omitNullish";
 import {
   DEFAULT_SCOUT_MODEL,
@@ -24,9 +29,8 @@ import {
   scoutTokenUsageValidator,
   selectableScoutModelValidator,
 } from "./models";
-import { TURN_START_TIMEOUT_MS } from "./turns";
+import { enqueueTurn, stopTurn } from "./turns";
 import { scoutRuntimeInstructions } from "./runtimeInstructions";
-import { scoutTurnWorkflow } from "./turnWorkflow";
 
 const MAX_PROMPT_LENGTH = 16_000;
 const MAX_THREAD_TITLE_LENGTH = 80;
@@ -49,7 +53,13 @@ const chatMessageMetadataValidator = v.object({
   durationMs: v.optional(v.number()),
   firecrawlCredits: v.optional(v.number()),
   firecrawlDurationMs: v.optional(v.number()),
-  failure: v.optional(v.string()),
+  outcome: v.union(
+    v.object({ kind: v.literal("pending") }),
+    v.object({ kind: v.literal("completed") }),
+    v.object({ kind: v.literal("stopping") }),
+    v.object({ kind: v.literal("stopped") }),
+    v.object({ kind: v.literal("failed"), failure: v.string() }),
+  ),
 });
 
 type ChatMessageMetadata = Infer<typeof chatMessageMetadataValidator>;
@@ -85,6 +95,40 @@ const uiMessagesResultValidator = v.object({
     v.object({ kind: v.literal("deltas"), deltas: v.array(vStreamDelta) }),
   ),
 });
+
+const scoutActivityValidator = v.union(
+  v.object({ kind: v.literal("idle") }),
+  v.object({
+    kind: v.literal("running"),
+    threadId: v.string(),
+    turnId: v.id("scoutTurns"),
+  }),
+  v.object({
+    kind: v.literal("stopping"),
+    threadId: v.string(),
+    turnId: v.id("scoutTurns"),
+  }),
+  v.object({
+    kind: v.literal("handoff"),
+    threadId: v.string(),
+    turnId: v.id("scoutTurns"),
+  }),
+);
+
+function chatTurnOutcome(state: Doc<"scoutTurns">["state"]) {
+  switch (state.kind) {
+    case "pending":
+      return { kind: "pending" as const };
+    case "completed":
+      return { kind: "completed" as const };
+    case "stopping":
+      return { kind: "stopping" as const };
+    case "stopped":
+      return { kind: "stopped" as const };
+    case "failed":
+      return { kind: "failed" as const, failure: state.failure };
+  }
+}
 
 function promptText(value: string) {
   const prompt = value.trim();
@@ -240,14 +284,55 @@ export const getThreadAgentContext = query({
 
 export const getScoutActivity = query({
   args: {
-    scoutId: v.id("scouts"),
+    threadId: v.string(),
   },
-  returns: v.object({ active: v.boolean() }),
+  returns: scoutActivityValidator,
   handler: async (ctx, args) => {
-    await requireAppUser(ctx);
-    return {
-      active: await scoutIsWorking(ctx, args.scoutId),
-    };
+    const userId = await requireAppUser(ctx);
+    await requireOwnedAgentThread(ctx, args.threadId, userId);
+    const binding = await requireThreadBinding(ctx, { threadId: args.threadId, userId });
+    return await scoutActivity(ctx, binding.scoutId);
+  },
+});
+
+export const stop = mutation({
+  args: {
+    threadId: v.string(),
+    replacement: v.optional(
+      v.object({
+        prompt: v.string(),
+        model: selectableScoutModelValidator,
+      }),
+    ),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const userId = await requireAppUser(ctx);
+    await requireOwnedAgentThread(ctx, args.threadId, userId);
+    const binding = await requireThreadBinding(ctx, { threadId: args.threadId, userId });
+    const replacement = args.replacement
+      ? { prompt: promptText(args.replacement.prompt), model: args.replacement.model }
+      : undefined;
+    const activity = await scoutActivity(ctx, binding.scoutId);
+    if (activity.kind === "idle") {
+      if (!replacement) return null;
+      await requireActiveScout(ctx, binding.scoutId);
+      await activeBrowserForChat(ctx, binding.scoutId, args.threadId);
+      await enqueueTurn(ctx, {
+        threadId: args.threadId,
+        userId,
+        scoutId: binding.scoutId,
+        ...replacement,
+      });
+      return null;
+    }
+    if (activity.kind === "stopping") return null;
+    if (activity.threadId !== args.threadId) {
+      throw new Error("This Scout is working in another chat");
+    }
+    const turn = await ctx.db.get("scoutTurns", activity.turnId);
+    if (turn) await stopTurn(ctx, turn, replacement);
+    return null;
   },
 });
 
@@ -315,13 +400,19 @@ export const listMessages = query({
     const metadataByOrder = new Map<number, ChatMessageMetadata>();
     for (const turn of turns) {
       const finishedState =
-        turn.state.kind === "completed" || turn.state.kind === "failed" ? turn.state : undefined;
+        turn.state.kind === "completed" ||
+        turn.state.kind === "failed" ||
+        turn.state.kind === "stopped"
+          ? turn.state
+          : undefined;
       const terminalAt =
         turn.state.kind === "completed"
           ? turn.state.completedAt
           : turn.state.kind === "failed"
             ? turn.state.failedAt
-            : undefined;
+            : turn.state.kind === "stopped"
+              ? turn.state.stoppedAt
+              : undefined;
       const scout = scoutsById.get(turn.scoutId);
       if (!scout) {
         throw new Error("Scout not found");
@@ -330,13 +421,13 @@ export const listMessages = query({
         turnId: turn._id,
         model: turn.model,
         scout,
+        outcome: chatTurnOutcome(turn.state),
         ...omitNullish({
           usage: finishedState?.usage,
           durationMs:
             terminalAt === undefined ? undefined : Math.max(0, terminalAt - turn.startedAt),
           firecrawlCredits: finishedState?.firecrawlCredits,
           firecrawlDurationMs: finishedState?.firecrawlDurationMs,
-          failure: turn.state.kind === "failed" ? turn.state.failure : undefined,
         }),
       });
     }
@@ -353,7 +444,9 @@ export const listMessages = query({
         }
         if (
           message.role === "assistant" ||
-          (message.role === "user" && metadata.failure && !assistantOrders.has(message.order))
+          (message.role === "user" &&
+            metadata.outcome.kind !== "completed" &&
+            !assistantOrders.has(message.order))
         ) {
           return { ...message, metadata };
         }
@@ -364,51 +457,6 @@ export const listMessages = query({
     return { ...messages, page, streams: streams ?? { kind: "list", messages: [] } };
   },
 });
-async function enqueueTurn(
-  ctx: MutationCtx,
-  args: {
-    threadId: string;
-    userId: Id<"users">;
-    scoutId: Id<"scouts">;
-    prompt: string;
-    model: Infer<typeof scoutModelValidator>;
-  },
-) {
-  const { messageId, message } = await scoutAgent.saveMessage(ctx, {
-    threadId: args.threadId,
-    userId: args.userId,
-    prompt: args.prompt,
-    skipEmbeddings: true,
-  });
-  const leaseExpiresAt = Date.now() + TURN_START_TIMEOUT_MS;
-  const turnId = await ctx.db.insert("scoutTurns", {
-    threadId: args.threadId,
-    order: message.order,
-    promptMessageId: messageId,
-    scoutId: args.scoutId,
-    model: args.model,
-    startedAt: Date.now(),
-    state: { kind: "pending", leaseExpiresAt, completedSteps: 0, usage: {} },
-  });
-  await scoutTurnWorkflow.start(
-    ctx,
-    internal.scout.turnLifecycle.run,
-    {
-      threadId: args.threadId,
-      userId: args.userId,
-      promptMessageId: messageId,
-      model: args.model,
-    },
-    {
-      startAsync: true,
-      onComplete: internal.scout.turnLifecycle.onComplete,
-      context: { turnId },
-    },
-  );
-  await ctx.scheduler.runAt(leaseExpiresAt, internal.scout.turns.expire, { turnId });
-  return turnId;
-}
-
 export const runtimeContext = internalQuery({
   args: { promptMessageId: v.string() },
   returns: v.object({
@@ -460,7 +508,8 @@ export const resumeHumanHandoff = internalMutation({
       .unique();
     if (!session || !handoff) throw new Error("Human handoff not found");
     if (handoff.status === "resumed") return handoff.continuationTurnId;
-    if (handoff.status === "failed" || handoff.status === "expired") return null;
+    if (handoff.status === "failed" || handoff.status === "expired" || handoff.status === "stopped")
+      return null;
     if (handoff.status !== "continued" || session.lifecycle.kind !== "closed") {
       throw new Error("Human handoff is not ready to resume");
     }

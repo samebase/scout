@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { internal } from "../_generated/api";
 import { internalMutation } from "../_generated/server";
 import { scoutModelValidator } from "./models";
+import { finishStoppingTurn } from "./turns";
 import { scoutTurnWorkflow } from "./turnWorkflow";
 
 export const run = scoutTurnWorkflow
@@ -42,6 +43,7 @@ export const onComplete = internalMutation({
         failure,
       });
     }
+    await finishStoppingTurn(ctx, args.context.turnId);
     await scoutTurnWorkflow.cleanup(ctx, args.workflowId);
     return null;
   },

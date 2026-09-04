@@ -33,6 +33,7 @@ const remote = vi.hoisted(() => ({
   queryCalls: vi.fn(),
   createThread: vi.fn(),
   sendMessage: vi.fn(),
+  stopScout: vi.fn(),
   executeTool: vi.fn(),
   getModelCallContext: vi.fn(),
   listReplayPages: vi.fn(),
@@ -144,12 +145,13 @@ beforeEach(() => {
     status: "Exhausted",
     loadMore: remote.loadMoreMessages,
   });
-  remote.queries.set("scout/chats:getScoutActivity", { active: false });
+  remote.queries.set("scout/chats:getScoutActivity", { kind: "idle" });
   remote.queries.set("scout/chats:getThreadAgentContext", { instructions: "Chat instructions" });
   remote.queries.set("scout/browserSessions:list", []);
   remote.queries.set("humanHandoffs:active", null);
   remote.createThread.mockResolvedValue({ threadId: "thread-created" });
   remote.sendMessage.mockResolvedValue(null);
+  remote.stopScout.mockResolvedValue(null);
   remote.executeTool.mockResolvedValue({
     toolCallId: "tool-call-1",
     outcome: { kind: "success", output: "null" },
@@ -158,6 +160,7 @@ beforeEach(() => {
   remote.listReplayPages.mockResolvedValue({ status: "unavailable" });
   remote.mutations.set("scout/chats:createThread", remote.createThread);
   remote.mutations.set("scout/chats:sendMessage", remote.sendMessage);
+  remote.mutations.set("scout/chats:stop", remote.stopScout);
   remote.actions.set("scout/manual:executeTool", remote.executeTool);
   remote.actions.set("scout/modelCalls:getContext", remote.getModelCallContext);
   remote.actions.set("browserReplay:listPages", remote.listReplayPages);
@@ -270,6 +273,65 @@ describe("Chat workspace", () => {
       model: "openai/gpt-5.6-luna",
       prompt: "Inspect the submit button",
     });
+  });
+
+  test("stops the selected chat when the running composer is empty", async () => {
+    remote.queries.set("scout/chats:getScoutActivity", {
+      kind: "running",
+      threadId: "thread-1",
+      turnId: "turn-1",
+    });
+    const user = userEvent.setup();
+    await openChats();
+
+    expect(screen.getByRole("textbox", { name: "Message Scout" }).hasAttribute("disabled")).toBe(
+      false,
+    );
+    await user.click(await screen.findByRole("button", { name: "Stop Scout" }));
+
+    expect(remote.stopScout).toHaveBeenCalledExactlyOnceWith({ threadId: "thread-1" });
+    expect(remote.sendMessage).not.toHaveBeenCalled();
+  });
+
+  test("stops the selected chat and persists one replacement with the stop", async () => {
+    remote.queries.set("scout/chats:getScoutActivity", {
+      kind: "running",
+      threadId: "thread-1",
+      turnId: "turn-1",
+    });
+    const user = userEvent.setup();
+    await openChats();
+    await user.type(
+      screen.getByRole("textbox", { name: "Message Scout" }),
+      "Use the existing account instead",
+    );
+    await user.click(screen.getByRole("button", { name: "Stop Scout and send message" }));
+
+    expect(remote.stopScout).toHaveBeenCalledExactlyOnceWith({
+      threadId: "thread-1",
+      replacement: {
+        model: "qwen/qwen3.7-flash",
+        prompt: "Use the existing account instead",
+      },
+    });
+    expect(remote.sendMessage).not.toHaveBeenCalled();
+
+    remote.queries.set("scout/chats:getScoutActivity", {
+      kind: "stopping",
+      threadId: "thread-1",
+      turnId: "turn-1",
+    });
+    refreshQueries();
+    expect(remote.sendMessage).not.toHaveBeenCalled();
+
+    remote.queries.set("scout/chats:getScoutActivity", {
+      kind: "running",
+      threadId: "thread-1",
+      turnId: "turn-2",
+    });
+    refreshQueries();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Stop Scout" })).not.toBeNull());
+    expect(remote.sendMessage).not.toHaveBeenCalled();
   });
 
   test("keeps manual browser execution and validates its JSON input", async () => {
@@ -583,6 +645,7 @@ describe("Chat workspace", () => {
             turnId: "turn-1",
             model: "qwen/qwen3.7-flash",
             scout: { id: "scout-1", displayName: "Conrad" },
+            outcome: { kind: "completed" },
           },
         },
       ],

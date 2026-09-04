@@ -8,6 +8,7 @@ export const humanHandoffOutcomeEvent = defineEvent({
     v.object({ kind: v.literal("continued") }),
     v.object({ kind: v.literal("expired") }),
     v.object({ kind: v.literal("failed") }),
+    v.object({ kind: v.literal("stopped") }),
   ),
 });
 

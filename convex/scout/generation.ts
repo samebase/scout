@@ -326,6 +326,7 @@ export const runSlice = internalAction({
           const registered = await ctx.runMutation(internal.scout.browserSessions.open, {
             threadId: args.threadId,
             scoutId,
+            source: { kind: "turn", turnId: activeTurnId },
             ...session,
             profileName: scout.firecrawl.profileName,
           });

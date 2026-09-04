@@ -169,6 +169,7 @@ export const executeTool = action({
             const registered = await ctx.runMutation(internal.scout.browserSessions.open, {
               threadId: args.threadId,
               scoutId: runtime.scoutId,
+              source: { kind: "manual" },
               ...session,
               profileName: runtime.profileName,
             });

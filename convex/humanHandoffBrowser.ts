@@ -72,22 +72,11 @@ export const finishBrowserSession = internalAction({
       return "The browser session had already ended before Scout resumed.";
     }
 
-    let result: Awaited<ReturnType<typeof finishHandedOffBrowser>>;
-    try {
-      result = await finishHandedOffBrowser({
-        providerSessionId: session.providerSessionId,
-        cdpUrl: session.lifecycle.cdpUrl,
-        captureEvidence: args.captureEvidence,
-      });
-    } catch (error) {
-      await ctx.runMutation(internal.scout.browserSessions.close, {
-        sessionId: args.sessionId,
-        providerDurationMs: null,
-        creditsBilled: null,
-        ...omitNullish({ usageTurnId: args.usageTurnId }),
-      });
-      throw error;
-    }
+    const result = await finishHandedOffBrowser({
+      providerSessionId: session.providerSessionId,
+      cdpUrl: session.lifecycle.cdpUrl,
+      captureEvidence: args.captureEvidence,
+    });
     await ctx.runMutation(internal.scout.browserSessions.close, {
       sessionId: args.sessionId,
       providerDurationMs: result.providerDurationMs,

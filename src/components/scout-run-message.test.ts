@@ -41,7 +41,10 @@ describe("Scout transcript metadata", () => {
               id: scoutId,
               displayName: "Conrad Scout",
             },
-            failure: "Tool input did not match its schema",
+            outcome: {
+              kind: "failed",
+              failure: "Tool input did not match its schema",
+            },
           },
         },
       }),
@@ -63,6 +66,7 @@ describe("Scout transcript metadata", () => {
             id: scoutId,
             displayName: "Conrad Scout",
           },
+          outcome: { kind: "completed" },
           usage: {
             promptTokens: 100_000,
             completionTokens: 2_000,
@@ -72,6 +76,33 @@ describe("Scout transcript metadata", () => {
         23,
       ),
     ).toBe("Conrad Scout, Qwen 3.7 Flash, 23 steps, 100,000 input, 2,000 output, ~$0.00326 model");
+  });
+
+  test("shows a stopped run without presenting it as a failure", () => {
+    render(
+      ScoutRunMessageView({
+        message: {
+          id: "message-stopped",
+          _creationTime: 1,
+          key: "message-stopped",
+          order: 1,
+          stepOrder: 0,
+          status: "failed",
+          role: "assistant",
+          parts: [],
+          text: "",
+          metadata: {
+            turnId,
+            model: "qwen/qwen3.7-flash",
+            scout: { id: scoutId, displayName: "Conrad Scout" },
+            outcome: { kind: "stopped" },
+          },
+        },
+      }),
+    );
+
+    expect(screen.queryByText(/Generation failed/)).toBeNull();
+    expect(screen.getByText(/Stopped · Conrad Scout/)).toBeTruthy();
   });
 
   test("counts generation-step boundaries in the message parts", () => {
