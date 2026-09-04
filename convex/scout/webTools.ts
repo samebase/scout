@@ -18,13 +18,14 @@ const publicHttpsUrlSchema = z.url().refine((value) => {
   return url.protocol === "https:" && !url.username && !url.password;
 }, "Use an HTTPS URL without embedded credentials");
 
-export function createWebTools() {
+export function createWebTools(beforeDispatch?: () => Promise<void>) {
   return {
     web_search: tool({
       description:
         "Search the public web with Firecrawl. Returns up to five results with source URLs.",
       inputSchema: z.object({ query: z.string().trim().min(1).max(1_000) }),
       execute: async ({ query }) => {
+        await beforeDispatch?.();
         const response = await createFirecrawlClient().search(query, {
           sources: ["web"],
           limit: 5,
@@ -37,6 +38,7 @@ export function createWebTools() {
         "Read a public web page as text with Firecrawl, without opening a browser session. Returns its source URL and whether the text was truncated. Use the browser for signed-in pages or interactions.",
       inputSchema: z.object({ url: publicHttpsUrlSchema }),
       execute: async ({ url }) => {
+        await beforeDispatch?.();
         const response = await createFirecrawlClient().scrape(url, {
           formats: ["markdown"],
           onlyMainContent: true,
@@ -63,6 +65,7 @@ export function createWebTools() {
         limit: z.number().int().min(1).max(MAX_MAP_LIMIT).default(DEFAULT_MAP_LIMIT),
       }),
       execute: async ({ url, search, limit }) => {
+        await beforeDispatch?.();
         const mapOptions: MapOptions = {
           sitemap: "include",
           limit,
@@ -92,6 +95,7 @@ export function createWebTools() {
         maxDiscoveryDepth: z.number().int().min(0).max(5).optional(),
       }),
       execute: async ({ url, limit, maxDiscoveryDepth }) => {
+        await beforeDispatch?.();
         const scrapeOptions: ScrapeOptions = {
           formats: ["markdown"],
           onlyMainContent: true,

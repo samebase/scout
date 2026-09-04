@@ -131,6 +131,23 @@ describe("Lab browser harness", () => {
     expect(JSON.stringify(output)).not.toContain("firecrawl.dev");
   });
 
+  test("does not create a Firecrawl session after the model turn stops", async () => {
+    const deps = dependencies();
+    const browser = createBrowserHarness(
+      {
+        beforeDispatch: async () => {
+          throw new Error("Scout turn is no longer running");
+        },
+      },
+      deps,
+    );
+
+    await expect(browser.open("https://example.com")).rejects.toThrow(
+      "Scout turn is no longer running",
+    );
+    expect(deps.browser).not.toHaveBeenCalled();
+  });
+
   test("lets the model execute Playwright code in Firecrawl's Node sandbox", async () => {
     const playwright = runtime();
     const deps = dependencies(playwright);

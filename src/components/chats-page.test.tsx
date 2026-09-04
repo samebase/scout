@@ -320,6 +320,7 @@ describe("Chat workspace", () => {
       kind: "stopping",
       threadId: "thread-1",
       turnId: "turn-1",
+      retryable: false,
     });
     refreshQueries();
     expect(remote.sendMessage).not.toHaveBeenCalled();
@@ -332,6 +333,24 @@ describe("Chat workspace", () => {
     refreshQueries();
     await waitFor(() => expect(screen.getByRole("button", { name: "Stop Scout" })).not.toBeNull());
     expect(remote.sendMessage).not.toHaveBeenCalled();
+  });
+
+  test("shows a browser cleanup failure and lets the user retry Stop", async () => {
+    remote.queries.set("scout/chats:getScoutActivity", {
+      kind: "stopping",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      retryable: true,
+      failure: "Firecrawl did not stop the browser session",
+    });
+    const user = userEvent.setup();
+    await openChats();
+
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Browser cleanup failed: Firecrawl did not stop the browser session",
+    );
+    await user.click(screen.getByRole("button", { name: "Retry stopping Scout" }));
+    expect(remote.stopScout).toHaveBeenCalledExactlyOnceWith({ threadId: "thread-1" });
   });
 
   test("keeps manual browser execution and validates its JSON input", async () => {

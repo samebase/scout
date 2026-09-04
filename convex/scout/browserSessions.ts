@@ -1,4 +1,5 @@
 import { type Infer, v } from "convex/values";
+import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import {
   internalMutation,
@@ -21,7 +22,6 @@ import { requireFirecrawlLiveViewUrl } from "./lib/firecrawlLiveView";
 import { requireFirecrawlCdpUrl } from "./lib/firecrawlCdpUrl";
 import { omitNullish } from "../../shared/omitNullish";
 import { activeBrowserForChat } from "./chatAccess";
-import { finalizeStoppingTurn } from "./turns";
 
 const MAX_BROWSER_SESSION_ID_LENGTH = 500;
 const MAX_BROWSER_TOOL_CALL_ID_LENGTH = 200;
@@ -447,7 +447,9 @@ export const close = internalMutation({
           }),
         },
       });
-      await finalizeStoppingTurn(ctx, turn._id);
+      await ctx.scheduler.runAfter(0, internal.scout.turns.finalizeStopping, {
+        turnId: turn._id,
+      });
     }
     const liveView = await ctx.db
       .query("scoutLiveViews")

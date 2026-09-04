@@ -37,7 +37,34 @@ export async function scoutActivity(ctx: QueryCtx, scoutId: Id<"scouts">) {
     )
     .first();
   if (stopping) {
-    return { kind: "stopping" as const, threadId: stopping.threadId, turnId: stopping._id };
+    return stopping.state.kind === "stopping" && stopping.state.cleanupFailure
+      ? {
+          kind: "stopping" as const,
+          threadId: stopping.threadId,
+          turnId: stopping._id,
+          retryable: true as const,
+          failure: stopping.state.cleanupFailure,
+        }
+      : {
+          kind: "stopping" as const,
+          threadId: stopping.threadId,
+          turnId: stopping._id,
+          retryable: false as const,
+        };
+  }
+  const replacing = await ctx.db
+    .query("scoutTurns")
+    .withIndex("by_scout_id_and_state_kind", (q) =>
+      q.eq("scoutId", scoutId).eq("state.kind", "replacing"),
+    )
+    .first();
+  if (replacing) {
+    return {
+      kind: "stopping" as const,
+      threadId: replacing.threadId,
+      turnId: replacing._id,
+      retryable: true as const,
+    };
   }
   const pausedTurn = await ctx.db
     .query("scoutTurns")

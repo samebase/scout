@@ -15,7 +15,7 @@ describe("AgentMail write tools", () => {
     const send = vi.fn(async () => ({ messageId: "message-1", threadId: "thread-1" }));
     const tools = createAgentMailWriteTools(
       { inboxId, send, reply: vi.fn() },
-      { kind: "model", promptMessageId: "prompt-1" },
+      { kind: "model", promptMessageId: "prompt-1", beforeDispatch: async () => {} },
     );
     const input = { to: "person@gmail.com", subject: "Hello", text: "A note from Scout." };
 
@@ -40,7 +40,7 @@ describe("AgentMail write tools", () => {
     const reply = vi.fn(async () => ({ messageId: "reply-1", threadId: "thread-1" }));
     const tools = createAgentMailWriteTools(
       { inboxId, send: vi.fn(), reply },
-      { kind: "model", promptMessageId: "prompt-1" },
+      { kind: "model", promptMessageId: "prompt-1", beforeDispatch: async () => {} },
     );
     const input = { messageId: "message-1", text: "Thanks for the update." };
 
@@ -62,6 +62,28 @@ describe("AgentMail write tools", () => {
     expect(agentMailIdempotencyKey("reply", "logical-request")).not.toBe(
       agentMailIdempotencyKey("send", "logical-request"),
     );
+  });
+
+  it("does not send after the model turn stops", async () => {
+    const send = vi.fn();
+    const tools = createAgentMailWriteTools(
+      { inboxId, send, reply: vi.fn() },
+      {
+        kind: "model",
+        promptMessageId: "prompt-1",
+        beforeDispatch: async () => {
+          throw new Error("Scout turn is no longer running");
+        },
+      },
+    );
+
+    await expect(
+      tools.send_message.execute(
+        { to: "person@gmail.com", subject: "Hello", text: "A note from Scout." },
+        toolOptions,
+      ),
+    ).rejects.toThrow("Scout turn is no longer running");
+    expect(send).not.toHaveBeenCalled();
   });
 
   it("keeps a manual operation idempotent across action retries", async () => {

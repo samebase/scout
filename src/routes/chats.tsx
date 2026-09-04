@@ -99,7 +99,7 @@ export const Route = createFileRoute("/chats")({
 type ComposerState =
   | { kind: "idle" }
   | { kind: "sending" }
-  | { kind: "stopping"; turnId: string }
+  | { kind: "stopping" }
   | { kind: "failed"; message: string };
 
 type ChatThread = FunctionReturnType<typeof api.scout.chats.listThreads>["page"][number];
@@ -440,6 +440,7 @@ function ChatsWorkspace() {
   const canInterrupt =
     selectedThreadActivity?.kind === "running" || selectedThreadActivity?.kind === "handoff";
   const serverIsStopping = selectedThreadActivity?.kind === "stopping";
+  const canRetryStopping = serverIsStopping && selectedThreadActivity.retryable;
   const scoutIsWorkingElsewhere =
     scoutActivity !== undefined &&
     scoutActivity.kind !== "idle" &&
@@ -517,13 +518,6 @@ function ChatsWorkspace() {
   }, [requestedPendingThread, requestedThread, search.thread, threads]);
 
   useEffect(() => {
-    if (composerState.kind !== "stopping" || scoutActivity === undefined) return;
-    if (scoutActivity.kind === "idle" || scoutActivity.turnId !== composerState.turnId) {
-      setComposerState({ kind: "idle" });
-    }
-  }, [composerState, scoutActivity]);
-
-  useEffect(() => {
     setDraft("");
     setComposerState((current) => (current.kind === "failed" ? { kind: "idle" } : current));
     setPendingThread((current) => (current?.threadId === search.thread ? current : null));
@@ -560,22 +554,24 @@ function ChatsWorkspace() {
       !threadId ||
       isActivityLoading ||
       scoutIsWorkingElsewhere ||
-      serverIsStopping ||
+      (serverIsStopping && !canRetryStopping) ||
       composerIsBusy
     ) {
       return;
     }
 
-    if (canInterrupt) {
-      const turnId = selectedThreadActivity.turnId;
+    if (canInterrupt || canRetryStopping) {
       const replacement =
-        prompt && selectedDriver !== "manual" ? { prompt, model: selectedDriver } : undefined;
-      setComposerState({ kind: "stopping", turnId });
+        canInterrupt && prompt && selectedDriver !== "manual"
+          ? { prompt, model: selectedDriver }
+          : undefined;
+      setComposerState({ kind: "stopping" });
       try {
         await stopScout(replacement ? { threadId, replacement } : { threadId });
-        if (prompt && selectedDriver !== "manual" && currentThreadId.current === threadId) {
+        if (replacement && selectedDriver !== "manual" && currentThreadId.current === threadId) {
           setDraft("");
         }
+        setComposerState({ kind: "idle" });
       } catch {
         setComposerState({ kind: "failed", message: "Scout could not be stopped." });
       }
@@ -676,7 +672,9 @@ function ChatsWorkspace() {
 
   const submitComposer = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    void (canInterrupt || selectedDriver !== "manual" ? submitPrompt() : submitManualTool());
+    void (canInterrupt || canRetryStopping || selectedDriver !== "manual"
+      ? submitPrompt()
+      : submitManualTool());
   };
 
   const onComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -975,41 +973,52 @@ function ChatsWorkspace() {
                 </div>
                 <div className="flex items-center gap-3">
                   <p className="text-muted-foreground hidden text-xs @lg:block">
-                    {canInterrupt
-                      ? selectedDriver !== "manual" && draft.trim()
-                        ? "Stops the current work, then sends this message."
-                        : "Stop the current work."
-                      : selectedDriver === "manual"
-                        ? "Run one tool call."
-                        : "Enter to send. Shift+Enter for a new line."}
+                    {canRetryStopping
+                      ? selectedThreadActivity.failure
+                        ? "Browser cleanup failed. Retry stopping Scout."
+                        : "Retry sending the replacement message."
+                      : canInterrupt
+                        ? selectedDriver !== "manual" && draft.trim()
+                          ? "Stops the current work, then sends this message."
+                          : "Stop the current work."
+                        : selectedDriver === "manual"
+                          ? "Run one tool call."
+                          : "Enter to send. Shift+Enter for a new line."}
                   </p>
                   <Button
                     type="submit"
                     size="icon-sm"
                     disabled={
-                      canInterrupt
-                        ? isActivityLoading || serverIsStopping || composerIsBusy
-                        : selectedDriver === "manual"
-                          ? isWorking || !canCompose || !manualInput.trim()
-                          : messageInputDisabled || (!canInterrupt && !draft.trim())
+                      canRetryStopping
+                        ? composerIsBusy
+                        : canInterrupt
+                          ? isActivityLoading || serverIsStopping || composerIsBusy
+                          : selectedDriver === "manual"
+                            ? isWorking || !canCompose || !manualInput.trim()
+                            : messageInputDisabled || (!canInterrupt && !draft.trim())
                     }
                     aria-label={
                       composerState.kind === "stopping"
                         ? "Stopping Scout"
                         : composerState.kind === "sending"
                           ? "Sending message"
-                          : canInterrupt
-                            ? selectedDriver !== "manual" && draft.trim()
-                              ? "Stop Scout and send message"
-                              : "Stop Scout"
-                            : selectedDriver === "manual"
-                              ? "Run tool"
-                              : "Send message"
+                          : canRetryStopping
+                            ? selectedThreadActivity.failure
+                              ? "Retry stopping Scout"
+                              : "Retry sending message"
+                            : canInterrupt
+                              ? selectedDriver !== "manual" && draft.trim()
+                                ? "Stop Scout and send message"
+                                : "Stop Scout"
+                              : selectedDriver === "manual"
+                                ? "Run tool"
+                                : "Send message"
                     }
                   >
                     {composerIsBusy ? (
                       <LoaderCircleIcon className="animate-spin" />
-                    ) : canInterrupt && !draft.trim() ? (
+                    ) : (canRetryStopping && selectedThreadActivity.failure) ||
+                      (canInterrupt && (selectedDriver === "manual" || !draft.trim())) ? (
                       <SquareIcon />
                     ) : (
                       <SendIcon />
@@ -1021,6 +1030,10 @@ function ChatsWorkspace() {
             {composerState.kind === "failed" ? (
               <p className="text-destructive mt-2 text-sm" role="alert">
                 {composerState.message}
+              </p>
+            ) : selectedThreadActivity?.kind === "stopping" && selectedThreadActivity.failure ? (
+              <p className="text-destructive mt-2 text-sm" role="alert">
+                Browser cleanup failed: {selectedThreadActivity.failure}
               </p>
             ) : null}
           </form>

@@ -278,6 +278,9 @@ export const runSlice = internalAction({
       });
       const activeTurnId = runtimeContext.turnId;
       turnId = activeTurnId;
+      const beforeModelToolDispatch = async () => {
+        await ctx.runQuery(internal.scout.turns.assertPending, { turnId: activeTurnId });
+      };
       if (runtimeContext.userId !== args.userId) throw new Error("Scout turn owner is invalid");
       if (Date.now() - runtimeContext.startedAt >= MAX_TURN_DURATION_MS) {
         throw new Error("Scout reached the 45-minute turn safety limit");
@@ -322,6 +325,7 @@ export const runSlice = internalAction({
       );
       browser = createBrowserHarness({
         profileName: scout.firecrawl.profileName,
+        beforeDispatch: beforeModelToolDispatch,
         onSessionCreated: async (session) => {
           const registered = await ctx.runMutation(internal.scout.browserSessions.open, {
             threadId: args.threadId,
@@ -334,6 +338,7 @@ export const runSlice = internalAction({
           return { captureOperations: registered.captureOperations };
         },
         onOperationPrepared: async ({ action, toolCallId }) => {
+          await beforeModelToolDispatch();
           if (!browserSessionId) throw new Error("Browser session was not registered");
           return await ctx.runMutation(internal.scout.browserSessions.prepareOperation, {
             sessionId: browserSessionId,
@@ -437,12 +442,14 @@ export const runSlice = internalAction({
         ...createAgentMailWriteTools(agentMailInbox, {
           kind: "model",
           promptMessageId: args.promptMessageId,
+          beforeDispatch: beforeModelToolDispatch,
         }),
       };
       const activeBrowser = browser;
       if (!activeBrowser) throw new Error("Browser harness was not initialized");
       const humanHandoffCallbacks: HumanHandoffCallbacks = {
         request: async (input) => {
+          await beforeModelToolDispatch();
           if (!interactiveLiveViewUrl) {
             throw new Error("The current browser session has no interactive human-takeover link");
           }
@@ -471,7 +478,7 @@ export const runSlice = internalAction({
       });
       const tools = {
         ...browser.tools,
-        ...createWebTools(),
+        ...createWebTools(beforeModelToolDispatch),
         ...agentMailTools,
         request_human_help: createHumanHandoffTool(humanHandoffCallbacks),
         ...accountTools,
@@ -580,9 +587,12 @@ export const runSlice = internalAction({
           onStepEnd: ({ usage }) => {
             accumulatedUsage = addScoutTokenUsage(accumulatedUsage, tokenUsage(usage));
           },
-          prepareStep: async ({ messages }) => ({
-            messages: preserveTurnObjective(compactBrowserModelContext(messages), objective),
-          }),
+          prepareStep: async ({ messages }) => {
+            await beforeModelToolDispatch();
+            return {
+              messages: preserveTurnObjective(compactBrowserModelContext(messages), objective),
+            };
+          },
         },
         {
           contextOptions: { recentMessages: RECENT_MESSAGE_FETCH_LIMIT },

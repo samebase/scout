@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { components, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
-import { internalMutation, type MutationCtx } from "../_generated/server";
+import { internalMutation, internalQuery, type MutationCtx } from "../_generated/server";
 import {
   failHumanHandoffForTurn,
   signalHumanHandoffScoutPaused,
@@ -18,6 +18,7 @@ export const TURN_START_TIMEOUT_MS = 5 * 60 * 1_000;
 export const TURN_RUN_TIMEOUT_MS = 11 * 60 * 1_000;
 export const EXPIRED_TURN_FAILURE = "Scout stopped before completing this turn";
 const BROWSER_CLEANUP_FALLBACK_MS = 5 * 60 * 1_000;
+const MAX_STOP_CLEANUP_FAILURE_LENGTH = 2_000;
 
 function mergeCumulativeUsage(
   checkpoint: ScoutTokenUsage,
@@ -67,6 +68,7 @@ async function failPendingTurn(
   if (
     turn.state.kind === "completed" ||
     turn.state.kind === "stopping" ||
+    turn.state.kind === "replacing" ||
     turn.state.kind === "stopped"
   ) {
     return;
@@ -215,6 +217,22 @@ export async function finalizeStoppingTurn(ctx: MutationCtx, turnId: Doc<"scoutT
     .order("desc")
     .first();
   if (session?.lifecycle.kind === "active" || session?.lifecycle.kind === "closing") return;
+  if (turn.state.replacement) {
+    await ctx.db.patch(turn._id, {
+      state: {
+        kind: "replacing",
+        stoppedAt: Date.now(),
+        replacement: turn.state.replacement,
+        usage: turn.state.usage,
+        ...omitNullish({
+          firecrawlCredits: turn.state.firecrawlCredits,
+          firecrawlDurationMs: turn.state.firecrawlDurationMs,
+        }),
+      },
+    });
+    await ctx.scheduler.runAfter(0, internal.scout.turns.dispatchReplacement, { turnId: turn._id });
+    return;
+  }
   await ctx.db.patch(turn._id, {
     state: {
       kind: "stopped",
@@ -226,7 +244,99 @@ export async function finalizeStoppingTurn(ctx: MutationCtx, turnId: Doc<"scoutT
       }),
     },
   });
-  if (turn.state.replacement) {
+}
+
+export async function continueStoppingTurn(ctx: MutationCtx, turnId: Doc<"scoutTurns">["_id"]) {
+  const turn = await ctx.db.get("scoutTurns", turnId);
+  if (!turn || turn.state.kind !== "stopping" || !turn.state.generationFinished) return;
+  const session = await ctx.db
+    .query("scoutBrowserSessions")
+    .withIndex("by_thread_id_and_sequence", (query) => query.eq("threadId", turn.threadId))
+    .order("desc")
+    .first();
+  if (session?.lifecycle.kind === "active") {
+    const { cleanupFailure: _cleanupFailure, ...state } = turn.state;
+    await ctx.db.patch(turn._id, { state });
+    await ctx.db.patch(session._id, {
+      lifecycle: { ...session.lifecycle, kind: "closing", closingAtMs: Date.now() },
+    });
+    await scoutTurnWorkflow.start(
+      ctx,
+      internal.scout.turnLifecycle.cleanupBrowser,
+      { sessionId: session._id, turnId: turn._id },
+      {
+        startAsync: true,
+        onComplete: internal.scout.turnLifecycle.onBrowserCleanupComplete,
+        context: { sessionId: session._id, turnId: turn._id },
+      },
+    );
+    return;
+  }
+  if (session?.lifecycle.kind === "closing") return;
+  await ctx.scheduler.runAfter(0, internal.scout.turns.finalizeStopping, { turnId: turn._id });
+}
+
+export async function finishStoppingTurn(ctx: MutationCtx, turnId: Doc<"scoutTurns">["_id"]) {
+  const turn = await ctx.db.get("scoutTurns", turnId);
+  if (!turn || turn.state.kind !== "stopping") return;
+  await ctx.db.patch(turn._id, {
+    state: { ...turn.state, generationFinished: true },
+  });
+  await continueStoppingTurn(ctx, turn._id);
+}
+
+export async function recordBrowserCleanupFailure(
+  ctx: MutationCtx,
+  args: {
+    turnId: Doc<"scoutTurns">["_id"];
+    sessionId: Doc<"scoutBrowserSessions">["_id"];
+    failure: string;
+  },
+) {
+  const [turn, session] = await Promise.all([
+    ctx.db.get("scoutTurns", args.turnId),
+    ctx.db.get("scoutBrowserSessions", args.sessionId),
+  ]);
+  if (!turn || !session) return;
+  if (session?.lifecycle.kind === "closed") {
+    if (turn.state.kind === "stopping" && turn.state.generationFinished) {
+      await ctx.scheduler.runAfter(0, internal.scout.turns.finalizeStopping, { turnId: turn._id });
+    }
+    return;
+  }
+  if (session?.lifecycle.kind === "closing") {
+    const { closingAtMs: _closingAtMs, ...lifecycle } = session.lifecycle;
+    await ctx.db.patch(session._id, { lifecycle: { ...lifecycle, kind: "active" } });
+  }
+  if (turn.state.kind === "stopping" && turn.state.generationFinished) {
+    const failure = args.failure.trim();
+    await ctx.db.patch(turn._id, {
+      state: {
+        ...turn.state,
+        cleanupFailure:
+          failure.length <= MAX_STOP_CLEANUP_FAILURE_LENGTH
+            ? failure
+            : `${failure.slice(0, MAX_STOP_CLEANUP_FAILURE_LENGTH - 1)}…`,
+      },
+    });
+  }
+}
+
+export const finalizeStopping = internalMutation({
+  args: { turnId: v.id("scoutTurns") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await finalizeStoppingTurn(ctx, args.turnId);
+    return null;
+  },
+});
+
+export const dispatchReplacement = internalMutation({
+  args: { turnId: v.id("scoutTurns") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const turn = await ctx.db.get("scoutTurns", args.turnId);
+    if (!turn || turn.state.kind !== "replacing") return null;
     const binding = await ctx.db
       .query("scoutChats")
       .withIndex("by_thread_id", (query) => query.eq("threadId", turn.threadId))
@@ -240,32 +350,32 @@ export async function finalizeStoppingTurn(ctx: MutationCtx, turnId: Doc<"scoutT
       scoutId: turn.scoutId,
       ...turn.state.replacement,
     });
-  }
-}
+    await ctx.db.patch(turn._id, {
+      state: {
+        kind: "stopped",
+        stoppedAt: turn.state.stoppedAt,
+        usage: turn.state.usage,
+        ...omitNullish({
+          firecrawlCredits: turn.state.firecrawlCredits,
+          firecrawlDurationMs: turn.state.firecrawlDurationMs,
+        }),
+      },
+    });
+    return null;
+  },
+});
 
-export async function finishStoppingTurn(ctx: MutationCtx, turnId: Doc<"scoutTurns">["_id"]) {
-  const turn = await ctx.db.get("scoutTurns", turnId);
-  if (!turn || turn.state.kind !== "stopping") return;
-  await ctx.db.patch(turn._id, {
-    state: { ...turn.state, generationFinished: true },
-  });
-  const session = await ctx.db
-    .query("scoutBrowserSessions")
-    .withIndex("by_thread_id_and_sequence", (query) => query.eq("threadId", turn.threadId))
-    .order("desc")
-    .first();
-  if (session?.lifecycle.kind === "active") {
-    await ctx.db.patch(session._id, {
-      lifecycle: { ...session.lifecycle, kind: "closing", closingAtMs: Date.now() },
-    });
-    await ctx.scheduler.runAfter(0, internal.humanHandoffBrowser.finishBrowserSession, {
-      sessionId: session._id,
-      captureEvidence: false,
-      usageTurnId: turn._id,
-    });
-  }
-  await finalizeStoppingTurn(ctx, turn._id);
-}
+export const assertPending = internalQuery({
+  args: { turnId: v.id("scoutTurns") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const turn = await ctx.db.get("scoutTurns", args.turnId);
+    if (!turn || turn.state.kind !== "pending") {
+      throw new Error("Scout turn is no longer running");
+    }
+    return null;
+  },
+});
 
 export const start = internalMutation({
   args: { promptMessageId: v.string() },

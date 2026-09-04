@@ -79,6 +79,7 @@ type BrowserOperationOutcome =
 
 type BrowserHarnessOptions = {
   profileName?: string;
+  beforeDispatch?: () => Promise<void>;
   onSessionCreated?: (
     session: CreatedBrowserSessionHandle,
   ) => Promise<BrowserSessionPolicy | undefined>;
@@ -905,6 +906,7 @@ export function createBrowserHarness(
   function open(url: string, toolCallId = localToolCallId(), abortSignal?: AbortSignal) {
     pendingOpenCount += 1;
     const opening = exclusiveOperation(async () => {
+      await options.beforeDispatch?.();
       if (sessionId) {
         throw new Error("A browser session is already open");
       }

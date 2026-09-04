@@ -91,12 +91,23 @@ export const scoutTurnStateValidator = v.union(
     kind: v.literal("stopping"),
     stopRequestedAt: v.number(),
     generationFinished: v.boolean(),
+    cleanupFailure: v.optional(v.string()),
     replacement: v.optional(
       v.object({
         prompt: v.string(),
         model: scoutModelValidator,
       }),
     ),
+    usage: scoutTokenUsageValidator,
+    ...terminalTurnUsageFields,
+  }),
+  v.object({
+    kind: v.literal("replacing"),
+    stoppedAt: v.number(),
+    replacement: v.object({
+      prompt: v.string(),
+      model: scoutModelValidator,
+    }),
     usage: scoutTokenUsageValidator,
     ...terminalTurnUsageFields,
   }),

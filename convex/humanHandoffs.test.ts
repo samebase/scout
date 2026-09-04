@@ -345,6 +345,8 @@ describe("human handoffs", () => {
       providerDurationMs: 1_000,
       creditsBilled: 1,
     });
+    vi.advanceTimersByTime(0);
+    await backend.finishInProgressScheduledFunctions();
     await expect(owner.query(api.scout.chats.getScoutActivity, { threadId })).resolves.toEqual({
       kind: "idle",
     });
@@ -817,11 +819,11 @@ describe("human handoffs", () => {
     });
     await backend.finishAllScheduledFunctions(() => vi.runAllTimers());
 
-    const finished = await backend.query(components.workflow.workflow.getStatus, {
-      workflowId: handoff.workflowId,
-    });
-    expect(finished.workflow.runResult).toEqual({ kind: "success", returnValue: null });
-    expect(finished.inProgress).toEqual([]);
+    await expect(
+      backend.query(components.workflow.workflow.getStatus, {
+        workflowId: handoff.workflowId,
+      }),
+    ).rejects.toThrow("Workflow not found");
     expect(browserProvider.close).toHaveBeenCalledExactlyOnceWith(
       expect.anything(),
       "provider-session-1",

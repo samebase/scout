@@ -144,6 +144,7 @@ function resourcesAreUnavailable(
   return (
     context.turn.state.kind === "failed" ||
     context.turn.state.kind === "stopping" ||
+    context.turn.state.kind === "replacing" ||
     context.turn.state.kind === "stopped" ||
     context.session.lifecycle.kind !== "active" ||
     context.session.lifecycle.providerExpiresAtMs <= now
@@ -255,6 +256,7 @@ async function activePreparedAccess(
   if (
     resources.turn.state.kind === "failed" ||
     resources.turn.state.kind === "stopping" ||
+    resources.turn.state.kind === "replacing" ||
     resources.turn.state.kind === "stopped" ||
     lifecycle.kind !== "active" ||
     lifecycle.providerExpiresAtMs <= now
@@ -399,6 +401,10 @@ export const request = internalMutation({
       ctx,
       internal.humanHandoffLifecycle.waitForOutcome,
       { sessionId: session._id },
+      {
+        onComplete: internal.humanHandoffLifecycle.onComplete,
+        context: { sessionId: session._id, turnId: turn._id },
+      },
     );
     const claimExpiresAt = Math.min(
       requestedAt + HUMAN_HANDOFF_CLAIM_MS,
@@ -515,6 +521,7 @@ export const claimAuthorized = internalMutation({
     if (
       resources.turn.state.kind === "failed" ||
       resources.turn.state.kind === "stopping" ||
+      resources.turn.state.kind === "replacing" ||
       resources.turn.state.kind === "stopped" ||
       lifecycle.kind !== "active" ||
       lifecycle.providerExpiresAtMs < now + HUMAN_HANDOFF_ACTIVE_MS

@@ -2,7 +2,7 @@ import { listUIMessages, syncStreams, vStreamArgs } from "@convex-dev/agent";
 import { vStreamDelta, vStreamMessage } from "@convex-dev/agent/validators";
 import { paginationOptsValidator, paginationResultValidator } from "convex/server";
 import { type Infer, v } from "convex/values";
-import { components } from "../_generated/api";
+import { components, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import {
   internalQuery,
@@ -29,7 +29,7 @@ import {
   scoutTokenUsageValidator,
   selectableScoutModelValidator,
 } from "./models";
-import { enqueueTurn, stopTurn } from "./turns";
+import { continueStoppingTurn, enqueueTurn, stopTurn } from "./turns";
 import { scoutRuntimeInstructions } from "./runtimeInstructions";
 
 const MAX_PROMPT_LENGTH = 16_000;
@@ -107,6 +107,8 @@ const scoutActivityValidator = v.union(
     kind: v.literal("stopping"),
     threadId: v.string(),
     turnId: v.id("scoutTurns"),
+    retryable: v.boolean(),
+    failure: v.optional(v.string()),
   }),
   v.object({
     kind: v.literal("handoff"),
@@ -122,6 +124,8 @@ function chatTurnOutcome(state: Doc<"scoutTurns">["state"]) {
     case "completed":
       return { kind: "completed" as const };
     case "stopping":
+      return { kind: "stopping" as const };
+    case "replacing":
       return { kind: "stopping" as const };
     case "stopped":
       return { kind: "stopped" as const };
@@ -326,9 +330,19 @@ export const stop = mutation({
       });
       return null;
     }
-    if (activity.kind === "stopping") return null;
     if (activity.threadId !== args.threadId) {
       throw new Error("This Scout is working in another chat");
+    }
+    if (activity.kind === "stopping") {
+      const turn = await ctx.db.get("scoutTurns", activity.turnId);
+      if (turn?.state.kind === "replacing") {
+        await ctx.scheduler.runAfter(0, internal.scout.turns.dispatchReplacement, {
+          turnId: turn._id,
+        });
+      } else if (turn?.state.kind === "stopping" && turn.state.cleanupFailure) {
+        await continueStoppingTurn(ctx, turn._id);
+      }
+      return null;
     }
     const turn = await ctx.db.get("scoutTurns", activity.turnId);
     if (turn) await stopTurn(ctx, turn, replacement);
@@ -402,6 +416,7 @@ export const listMessages = query({
       const finishedState =
         turn.state.kind === "completed" ||
         turn.state.kind === "failed" ||
+        turn.state.kind === "replacing" ||
         turn.state.kind === "stopped"
           ? turn.state
           : undefined;
@@ -410,9 +425,11 @@ export const listMessages = query({
           ? turn.state.completedAt
           : turn.state.kind === "failed"
             ? turn.state.failedAt
-            : turn.state.kind === "stopped"
+            : turn.state.kind === "replacing"
               ? turn.state.stoppedAt
-              : undefined;
+              : turn.state.kind === "stopped"
+                ? turn.state.stoppedAt
+                : undefined;
       const scout = scoutsById.get(turn.scoutId);
       if (!scout) {
         throw new Error("Scout not found");
