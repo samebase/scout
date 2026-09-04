@@ -1,9 +1,10 @@
 /// <reference types="vite/client" />
 
 import agentTest from "@convex-dev/agent/test";
+import workflowTest from "@convex-dev/workflow/test";
 import { convexTest } from "convex-test";
 import { describe, expect, it } from "vite-plus/test";
-import { api, internal } from "./_generated/api";
+import { api, components, internal } from "./_generated/api";
 import { ADMIN_EMAIL } from "./authConfig";
 import schema from "./schema";
 
@@ -11,6 +12,7 @@ const modules = import.meta.glob("./**/*.ts");
 
 function testBackend() {
   const backend = convexTest(schema, modules);
+  workflowTest.register(backend);
   agentTest.register(backend);
   return backend;
 }
@@ -73,6 +75,79 @@ describe("Scout chats", () => {
       "openai/gpt-5.6-luna",
     ]);
     expect(followups.every((entry) => entry.scoutId === scoutId)).toBe(true);
+  });
+
+  it("stops a running turn, rejects late browser creation, and stores one replacement", async () => {
+    const backend = testBackend();
+    const userId = await backend.run(
+      async (ctx) => await ctx.db.insert("users", { email: ADMIN_EMAIL }),
+    );
+    const scoutId = await backend.run(
+      async (ctx) =>
+        await ctx.db.insert("scouts", {
+          displayName: "Stop Scout",
+          websiteIdentity: { firstName: "Stop", lastName: "Scout" },
+          slug: "stop-scout",
+          status: "active",
+          agentMail: { inboxId: "stop-inbox", address: "stop@example.test" },
+          firecrawl: { profileName: "stop-profile" },
+        }),
+    );
+    const admin = backend.withIdentity({ subject: `${userId}|test-session` });
+    const { threadId } = await admin.mutation(api.scout.chats.createThread, { scoutId });
+    const prompt = (
+      await backend.mutation(components.agent.messages.addMessages, {
+        threadId,
+        messages: [{ message: { role: "user", content: "Inspect Samebase." } }],
+      })
+    ).messages[0];
+    if (!prompt) throw new Error("Prompt message was not created");
+    const turnId = await backend.run(
+      async (ctx) =>
+        await ctx.db.insert("scoutTurns", {
+          threadId,
+          order: prompt.order,
+          promptMessageId: prompt._id,
+          scoutId,
+          model: "qwen/qwen3.7-flash",
+          startedAt: Date.now(),
+          state: {
+            kind: "pending",
+            leaseExpiresAt: Date.now() + 5 * 60 * 1_000,
+            completedSteps: 0,
+            usage: {},
+          },
+        }),
+    );
+    await admin.mutation(api.scout.chats.stop, {
+      threadId,
+      replacement: {
+        prompt: "Ignore that and inspect Cloudflare instead.",
+        model: "openai/gpt-5.6-luna",
+      },
+    });
+    await expect(
+      admin.query(api.scout.chats.getScoutActivity, { threadId }),
+    ).resolves.toMatchObject({ kind: "stopping", threadId, turnId });
+    await expect(
+      admin.mutation(internal.scout.browserSessions.open, {
+        threadId,
+        scoutId,
+        source: { kind: "turn", turnId },
+        providerSessionId: "late-provider-session",
+        cdpUrl: "wss://browser.firecrawl.dev/cdp?token=late",
+        interactiveLiveViewUrl: null,
+        providerExpiresAtMs: Date.now() + 60 * 60 * 1_000,
+        profileName: "stop-profile",
+      }),
+    ).rejects.toThrow("Active Scout turn not found");
+    expect(await backend.run(async (ctx) => (await ctx.db.get(turnId))?.state)).toMatchObject({
+      kind: "stopping",
+      replacement: {
+        prompt: "Ignore that and inspect Cloudflare instead.",
+        model: "openai/gpt-5.6-luna",
+      },
+    });
   });
 
   it("runs a manual tool without a model and stores its call and result in the agent thread", async () => {
@@ -188,20 +263,38 @@ describe("Scout chats", () => {
     const recorded = await admin.mutation(internal.scout.browserSessions.open, {
       threadId,
       scoutId,
+      source: { kind: "manual" },
       providerSessionId: "provider-session-secret",
+      cdpUrl: "wss://browser.firecrawl.dev/cdp?token=secret",
+      interactiveLiveViewUrl: null,
+      providerExpiresAtMs: Date.now() + 60 * 60 * 1_000,
       profileName: "session-profile",
     });
 
     await expect(
       admin.query(internal.scout.manualState.runtimeContext, { threadId }),
-    ).resolves.toMatchObject({ providerSessionId: "provider-session-secret", scoutId });
-    await expect(admin.query(api.scout.browserSessions.list, { threadId })).resolves.toEqual([
+    ).resolves.toMatchObject({
+      browserSession: {
+        providerSessionId: "provider-session-secret",
+        lifecycle: {
+          kind: "active",
+          cdpUrl: "wss://browser.firecrawl.dev/cdp?token=secret",
+        },
+      },
+      scoutId,
+    });
+    const publicSessions = await admin.query(api.scout.browserSessions.list, { threadId });
+    expect(publicSessions).toEqual([
       expect.objectContaining({
         sessionId: recorded.sessionId,
         sequence: 1,
         lifecycle: expect.objectContaining({ kind: "active" }),
       }),
     ]);
+    const publicSession = await admin.query(api.scout.browserSessions.get, {
+      sessionId: recorded.sessionId,
+    });
+    expect(JSON.stringify([publicSessions, publicSession])).not.toContain("token=secret");
     const other = backend.withIdentity({ subject: `${otherUserId}|test-session` });
     await expect(
       other.query(internal.scout.manualState.runtimeContext, { threadId }),
@@ -226,6 +319,9 @@ describe("Scout chats", () => {
     });
     await expect(
       admin.query(internal.scout.manualState.runtimeContext, { threadId }),
-    ).resolves.toMatchObject({ providerSessionId: null });
+    ).resolves.toMatchObject({ browserSession: null });
+    await expect(
+      backend.run(async (ctx) => await ctx.db.get("scoutBrowserSessions", recorded.sessionId)),
+    ).resolves.toMatchObject({ lifecycle: { kind: "closed" } });
   });
 });

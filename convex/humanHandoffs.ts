@@ -51,13 +51,13 @@ const preparedAccessValidator = v.union(
     status: v.literal("available"),
     ...pageContextFields,
     claimExpiresAt: v.number(),
-    providerSessionId: v.string(),
+    interactiveLiveViewUrl: v.string(),
   }),
   v.object({
     status: v.literal("active"),
     ...pageContextFields,
     expiresAt: v.number(),
-    providerSessionId: v.string(),
+    interactiveLiveViewUrl: v.string(),
   }),
   v.object({
     status: v.literal("continued"),
@@ -69,6 +69,11 @@ const preparedAccessValidator = v.union(
     ...pageContextFields,
     expiredAt: v.number(),
     claimed: v.boolean(),
+  }),
+  v.object({
+    status: v.literal("stopped"),
+    ...pageContextFields,
+    stoppedAt: v.number(),
   }),
   v.object({
     status: v.literal("failed"),
@@ -87,8 +92,6 @@ const preparedDeliveryValidator = v.union(
     inboxId: v.string(),
     recipientEmail: v.string(),
     scoutName: v.string(),
-    emailSubject: v.string(),
-    emailNote: v.string(),
   }),
   v.object({ kind: v.literal("definitive_failure") }),
   v.object({ kind: v.literal("skipped") }),
@@ -132,8 +135,18 @@ async function handoffContext(ctx: Pick<QueryCtx, "db">, handoff: Doc<"scoutHuma
   return { session, chat, turn };
 }
 
-function resourcesAreActive(context: NonNullable<Awaited<ReturnType<typeof handoffContext>>>) {
-  return context.turn.state.kind !== "failed" && context.session.lifecycle.kind === "active";
+function resourcesAreUnavailable(
+  context: NonNullable<Awaited<ReturnType<typeof handoffContext>>>,
+  now: number,
+) {
+  return (
+    context.turn.state.kind === "failed" ||
+    context.turn.state.kind === "stopping" ||
+    context.turn.state.kind === "replacing" ||
+    context.turn.state.kind === "stopped" ||
+    context.session.lifecycle.kind !== "active" ||
+    context.session.lifecycle.providerExpiresAtMs <= now
+  );
 }
 
 async function authorizedHandoff(ctx: DatabaseCtx, args: AccessArgs, now: number) {
@@ -190,6 +203,8 @@ async function terminalPage(
     case "continued":
     case "resumed":
       return { ...context, status: "continued" as const, continuedAt: handoff.continuedAt };
+    case "stopped":
+      return { ...context, status: "stopped" as const, stoppedAt: handoff.stoppedAt };
     case "expired":
       return {
         ...context,
@@ -232,7 +247,22 @@ async function activePreparedAccess(
   if (!context) return { status: "invalid" as const };
   if (handoffDeadline(handoff) <= now) return { status: "due" as const, handoffId: handoff._id };
   const resources = await handoffContext(ctx, handoff);
-  if (!resources || !resourcesAreActive(resources)) {
+  if (!resources) {
+    return { status: "broken" as const, handoffId: handoff._id };
+  }
+  const lifecycle = resources.session.lifecycle;
+  if (
+    resources.turn.state.kind === "failed" ||
+    resources.turn.state.kind === "stopping" ||
+    resources.turn.state.kind === "replacing" ||
+    resources.turn.state.kind === "stopped" ||
+    lifecycle.kind !== "active" ||
+    lifecycle.providerExpiresAtMs <= now
+  ) {
+    return { status: "broken" as const, handoffId: handoff._id };
+  }
+  const interactiveLiveViewUrl = lifecycle.interactiveLiveViewUrl;
+  if (interactiveLiveViewUrl === null) {
     return { status: "broken" as const, handoffId: handoff._id };
   }
   return handoff.status === "available"
@@ -240,13 +270,13 @@ async function activePreparedAccess(
         ...context,
         status: "available" as const,
         claimExpiresAt: handoff.claimExpiresAt,
-        providerSessionId: resources.session.providerSessionId,
+        interactiveLiveViewUrl,
       }
     : {
         ...context,
         status: "active" as const,
         expiresAt: handoff.expiresAt,
-        providerSessionId: resources.session.providerSessionId,
+        interactiveLiveViewUrl,
       };
 }
 
@@ -273,7 +303,7 @@ export const active = query({
     }
     if (
       (handoff.status !== "available" && handoff.status !== "active") ||
-      !resourcesAreActive(context)
+      resourcesAreUnavailable(context, Date.now())
     ) {
       return null;
     }
@@ -292,16 +322,12 @@ export const request = internalMutation({
     promptMessageId: v.string(),
     reason: v.string(),
     accessTokenHash: v.string(),
-    emailSubject: v.string(),
-    emailNote: v.string(),
   },
   returns: requestedHumanHandoffValidator,
   handler: async (ctx, args) => {
     const requestedAt = Date.now();
     const input = humanHandoffInputSchema.parse({
       reason: args.reason,
-      emailSubject: args.emailSubject,
-      emailNote: args.emailNote,
     });
     const reason = boundedReason(input.reason);
     const tokenHash = accessTokenHash(args.accessTokenHash);
@@ -326,7 +352,12 @@ export const request = internalMutation({
       .withIndex("by_thread_id_and_sequence", (index) => index.eq("threadId", chat.threadId))
       .order("desc")
       .first();
-    if (!session || session.scoutId !== chat.scoutId || session.lifecycle.kind !== "active") {
+    if (
+      !session ||
+      session.scoutId !== chat.scoutId ||
+      session.lifecycle.kind !== "active" ||
+      session.lifecycle.providerExpiresAtMs <= requestedAt + HUMAN_HANDOFF_ACTIVE_MS
+    ) {
       throw new Error("Active Scout browser session not found");
     }
     const [user, scout] = await Promise.all([
@@ -364,8 +395,15 @@ export const request = internalMutation({
       ctx,
       internal.humanHandoffLifecycle.waitForOutcome,
       { sessionId: session._id },
+      {
+        onComplete: internal.humanHandoffLifecycle.onComplete,
+        context: { sessionId: session._id, turnId: turn._id },
+      },
     );
-    const claimExpiresAt = requestedAt + HUMAN_HANDOFF_CLAIM_MS;
+    const claimExpiresAt = Math.min(
+      requestedAt + HUMAN_HANDOFF_CLAIM_MS,
+      session.lifecycle.providerExpiresAtMs - HUMAN_HANDOFF_ACTIVE_MS,
+    );
     const handoffId: Id<"scoutHumanHandoffs"> = await ctx.db.insert("scoutHumanHandoffs", {
       sessionId: session._id,
       turnId: turn._id,
@@ -381,8 +419,6 @@ export const request = internalMutation({
       inboxId: scout.agentMail.inboxId,
       recipientEmail,
       scoutName: scout.displayName,
-      emailSubject: input.emailSubject,
-      emailNote: input.emailNote,
     });
     await ctx.scheduler.runAt(claimExpiresAt, internal.humanHandoffs.expire, { handoffId });
     const handoff = await ctx.db.get("scoutHumanHandoffs", handoffId);
@@ -432,8 +468,6 @@ export const prepareDelivery = internalQuery({
       inboxId: delivery.inboxId,
       recipientEmail: delivery.recipientEmail,
       scoutName: delivery.scoutName,
-      emailSubject: delivery.emailSubject,
-      emailNote: delivery.emailNote,
     };
   },
 });
@@ -470,7 +504,18 @@ export const claimAuthorized = internalMutation({
       return { status: "due" as const, handoffId: handoff._id };
     }
     const resources = await handoffContext(ctx, handoff);
-    if (!resources || !resourcesAreActive(resources)) {
+    if (!resources) {
+      return { status: "broken" as const, handoffId: handoff._id };
+    }
+    const lifecycle = resources.session.lifecycle;
+    if (
+      resources.turn.state.kind === "failed" ||
+      resources.turn.state.kind === "stopping" ||
+      resources.turn.state.kind === "replacing" ||
+      resources.turn.state.kind === "stopped" ||
+      lifecycle.kind !== "active" ||
+      lifecycle.providerExpiresAtMs < now + HUMAN_HANDOFF_ACTIVE_MS
+    ) {
       return { status: "broken" as const, handoffId: handoff._id };
     }
     const expiresAt = now + HUMAN_HANDOFF_ACTIVE_MS;
@@ -515,7 +560,7 @@ export const continueAuthorized = internalMutation({
       return { ...context, status: "expired" as const, expiredAt: now, claimed: true };
     }
     const resources = await handoffContext(ctx, handoff);
-    if (!resources || !resourcesAreActive(resources)) {
+    if (!resources || resourcesAreUnavailable(resources, now)) {
       await ctx.db.replace("scoutHumanHandoffs", handoff._id, {
         ...handoffCommon(handoff),
         ...handoffClaim(handoff),

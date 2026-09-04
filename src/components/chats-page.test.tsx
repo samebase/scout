@@ -30,9 +30,12 @@ const remote = vi.hoisted(() => ({
   subscribers: new Set<() => void>(),
   actions: new Map<string, Mock>(),
   mutations: new Map<string, Mock>(),
+  queryCalls: vi.fn(),
   createThread: vi.fn(),
   sendMessage: vi.fn(),
+  stopScout: vi.fn(),
   executeTool: vi.fn(),
+  getModelCallContext: vi.fn(),
   listReplayPages: vi.fn(),
   loadMoreThreads: vi.fn(),
   loadMoreMessages: vi.fn(),
@@ -47,8 +50,9 @@ vi.mock("convex/react", () => ({
   AuthLoading: () => null,
   useQuery: (reference: FunctionReference<"query">, args: unknown) => {
     useSyncExternalStore(subscribeToQueries, () => remote.revision);
-    if (args === "skip") return undefined;
     const name = getFunctionName(reference);
+    remote.queryCalls(name, args);
+    if (args === "skip") return undefined;
     if (args && typeof args === "object" && "sessionId" in args) {
       const scopedKey = name + ":" + String(args.sessionId);
       if (remote.queries.has(scopedKey)) return remote.queries.get(scopedKey);
@@ -141,20 +145,24 @@ beforeEach(() => {
     status: "Exhausted",
     loadMore: remote.loadMoreMessages,
   });
-  remote.queries.set("scout/chats:getScoutActivity", { active: false });
+  remote.queries.set("scout/chats:getScoutActivity", { kind: "idle" });
   remote.queries.set("scout/chats:getThreadAgentContext", { instructions: "Chat instructions" });
   remote.queries.set("scout/browserSessions:list", []);
   remote.queries.set("humanHandoffs:active", null);
   remote.createThread.mockResolvedValue({ threadId: "thread-created" });
   remote.sendMessage.mockResolvedValue(null);
+  remote.stopScout.mockResolvedValue(null);
   remote.executeTool.mockResolvedValue({
     toolCallId: "tool-call-1",
     outcome: { kind: "success", output: "null" },
   });
+  remote.getModelCallContext.mockResolvedValue(null);
   remote.listReplayPages.mockResolvedValue({ status: "unavailable" });
   remote.mutations.set("scout/chats:createThread", remote.createThread);
   remote.mutations.set("scout/chats:sendMessage", remote.sendMessage);
+  remote.mutations.set("scout/chats:stop", remote.stopScout);
   remote.actions.set("scout/manual:executeTool", remote.executeTool);
+  remote.actions.set("scout/modelCalls:getContext", remote.getModelCallContext);
   remote.actions.set("browserReplay:listPages", remote.listReplayPages);
 });
 
@@ -267,6 +275,84 @@ describe("Chat workspace", () => {
     });
   });
 
+  test("stops the selected chat when the running composer is empty", async () => {
+    remote.queries.set("scout/chats:getScoutActivity", {
+      kind: "running",
+      threadId: "thread-1",
+      turnId: "turn-1",
+    });
+    const user = userEvent.setup();
+    await openChats();
+
+    expect(screen.getByRole("textbox", { name: "Message Scout" }).hasAttribute("disabled")).toBe(
+      false,
+    );
+    await user.click(await screen.findByRole("button", { name: "Stop Scout" }));
+
+    expect(remote.stopScout).toHaveBeenCalledExactlyOnceWith({ threadId: "thread-1" });
+    expect(remote.sendMessage).not.toHaveBeenCalled();
+  });
+
+  test("stops the selected chat and persists one replacement with the stop", async () => {
+    remote.queries.set("scout/chats:getScoutActivity", {
+      kind: "running",
+      threadId: "thread-1",
+      turnId: "turn-1",
+    });
+    const user = userEvent.setup();
+    await openChats();
+    await user.type(
+      screen.getByRole("textbox", { name: "Message Scout" }),
+      "Use the existing account instead",
+    );
+    await user.click(screen.getByRole("button", { name: "Stop Scout and send message" }));
+
+    expect(remote.stopScout).toHaveBeenCalledExactlyOnceWith({
+      threadId: "thread-1",
+      replacement: {
+        model: "qwen/qwen3.7-flash",
+        prompt: "Use the existing account instead",
+      },
+    });
+    expect(remote.sendMessage).not.toHaveBeenCalled();
+
+    remote.queries.set("scout/chats:getScoutActivity", {
+      kind: "stopping",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      retryable: false,
+    });
+    refreshQueries();
+    expect(remote.sendMessage).not.toHaveBeenCalled();
+
+    remote.queries.set("scout/chats:getScoutActivity", {
+      kind: "running",
+      threadId: "thread-1",
+      turnId: "turn-2",
+    });
+    refreshQueries();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Stop Scout" })).not.toBeNull());
+    expect(remote.sendMessage).not.toHaveBeenCalled();
+  });
+
+  test("shows a browser cleanup failure and lets the user retry Stop", async () => {
+    remote.queries.set("scout/chats:getScoutActivity", {
+      kind: "stopping",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      retryable: true,
+      failure: "Firecrawl did not stop the browser session",
+    });
+    const user = userEvent.setup();
+    await openChats();
+
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Browser cleanup failed: Firecrawl did not stop the browser session",
+    );
+    await user.click(screen.getByRole("button", { name: "Retry stopping Scout" }));
+    expect(remote.stopScout).toHaveBeenCalledExactlyOnceWith({ threadId: "thread-1" });
+  });
+
   test("keeps manual browser execution and validates its JSON input", async () => {
     const user = userEvent.setup();
     await openChats();
@@ -293,6 +379,8 @@ describe("Chat workspace", () => {
   test.each([
     { toolName: "web_search", input: { query: "form builder pricing" } },
     { toolName: "web_read", input: { url: "https://example.com" } },
+    { toolName: "web_map", input: { url: "https://example.com" } },
+    { toolName: "web_crawl", input: { url: "https://example.com", limit: 5 } },
     {
       toolName: "send_message",
       input: { to: "person@gmail.com", subject: "Hello", text: "A note from Scout." },
@@ -535,6 +623,126 @@ describe("Chat workspace", () => {
     expect(resize.getAttribute("aria-valuenow")).toBe("144");
   });
 
+  test("loads a selected SDK model input on demand and preserves the draft", async () => {
+    const summary = {
+      modelCallId: "model-call-1",
+      sequence: 1,
+      provider: "openrouter",
+      modelId: "qwen/qwen3.7-flash",
+      startedAt: 1,
+      messageCount: 2,
+      toolCount: 1,
+      compactedBrowserSnapshotCount: 0,
+      serializedBytes: 512,
+      state: {
+        kind: "completed",
+        finishedAt: 2,
+        finishReason: "tool-calls",
+        usage: {
+          promptTokens: 4_428,
+          completionTokens: 87,
+          totalTokens: 4_515,
+          reasoningTokens: 55,
+          cachedInputTokens: 0,
+          costUsd: 0.00014415,
+        },
+      },
+    };
+    remote.queries.set("scout/chats:listMessages", {
+      results: [
+        {
+          id: "message-1",
+          _creationTime: 1,
+          key: "message-1",
+          order: 1,
+          stepOrder: 0,
+          status: "success",
+          role: "assistant",
+          parts: [{ type: "text", text: "Inspected the page." }],
+          text: "Inspected the page.",
+          metadata: {
+            turnId: "turn-1",
+            model: "qwen/qwen3.7-flash",
+            scout: { id: "scout-1", displayName: "Conrad" },
+            outcome: { kind: "completed" },
+          },
+        },
+      ],
+      status: "Exhausted",
+      loadMore: remote.loadMoreMessages,
+    });
+    remote.queries.set("scout/modelCalls:listForTurn", [summary]);
+    const browser = session("session-1", 1);
+    remote.queries.set("scout/browserSessions:list", [browser]);
+    remote.queries.set("scout/browserSessions:get", { ...browser, operations: [] });
+    remote.queries.set("scout/browserSessions:liveView", { url: "about:blank#scout-live" });
+    remote.getModelCallContext.mockResolvedValue({
+      summary,
+      snapshot: JSON.stringify({
+        version: 1,
+        instructions: "Inspect carefully.",
+        messages: [{ role: "user", content: [{ type: "text", text: "Inspect this." }] }],
+        tools: [{ name: "browser_execute", description: "Use Playwright." }],
+        settings: { temperature: 0 },
+      }),
+    });
+    const user = userEvent.setup();
+    const router = await openChats();
+    await screen.findByTitle("Live browser session 1");
+    await waitFor(() => expect(router.state.location.search.session).toBe("session-1"));
+    const composer = await screen.findByRole<HTMLTextAreaElement>("textbox", {
+      name: "Message Scout",
+    });
+    await user.type(composer, "Keep this unfinished message");
+
+    expect(remote.queryCalls).not.toHaveBeenCalledWith("scout/modelCalls:listForTurn", {
+      turnId: "turn-1",
+    });
+    expect(remote.getModelCallContext).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Model calls" }));
+    const call = await screen.findByRole("button", { name: /Call 1/ });
+    expect(remote.queryCalls).toHaveBeenCalledWith("scout/modelCalls:listForTurn", {
+      turnId: "turn-1",
+    });
+    expect(remote.getModelCallContext).not.toHaveBeenCalled();
+
+    await user.click(call);
+    expect(await screen.findByRole("region", { name: "SDK model input" })).toBeTruthy();
+    expect(remote.getModelCallContext).toHaveBeenCalledExactlyOnceWith({
+      modelCallId: "model-call-1",
+      threadId: "thread-1",
+    });
+    expect(screen.queryByText("Inspect carefully.")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Instructions" }));
+    expect(screen.getByText("Inspect carefully.")).toBeTruthy();
+    const conversation = screen.getByRole("region", { name: "Conversation" });
+    expect(conversation.closest('[data-pane-side="main"]')).not.toBeNull();
+    expect(
+      screen.getByRole("region", { name: "SDK model input" }).closest('[data-pane-side="right"]'),
+    ).not.toBeNull();
+    expect(screen.getByText("4,428")).toBeTruthy();
+    expect(screen.getByText("4,515")).toBeTruthy();
+    expect(screen.getByText("$0.000144")).toBeTruthy();
+    expect(screen.queryByText("Use Playwright.")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Tools 1" }));
+    await user.click(screen.getByRole("button", { name: "1 · browser_execute" }));
+    expect(screen.getByText(/Use Playwright/)).toBeTruthy();
+    expect(router.state.location.search).toEqual({
+      thread: "thread-1",
+      session: "session-1",
+      call: "model-call-1",
+    });
+
+    await user.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.queryByRole("region", { name: "SDK model input" })).toBeNull();
+    expect(await screen.findByTitle("Live browser session 1")).toBeTruthy();
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Message Scout" }).value).toBe(
+      "Keep this unfinished message",
+    );
+    expect(router.state.location.search).toEqual({ thread: "thread-1", session: "session-1" });
+  });
+
   test("shows the live browser beside the conversation and keeps the handoff accessible", async () => {
     const browser = session("session-1", 1);
     remote.queries.set("scout/browserSessions:list", [browser]);
@@ -555,16 +763,17 @@ describe("Chat workspace", () => {
     expect(frame.getAttribute("src")).toBe("about:blank#scout-live");
     expect(frame.getAttribute("sandbox")).toBe("allow-same-origin allow-scripts");
     const conversation = screen.getByRole("region", { name: "Conversation" });
-    const pane = conversation.closest('[data-pane-side="right"]');
+    expect(conversation.closest('[data-pane-side="main"]')).not.toBeNull();
+    const pane = frame.closest('[data-pane-side="right"]');
     expect(pane).not.toBeNull();
     expect(pane?.hasAttribute("data-desktop-open")).toBe(true);
     const composer = within(conversation).getByRole<HTMLTextAreaElement>("textbox", {
       name: "Message Scout",
     });
     await user.type(composer, "Keep this draft");
-    await user.click(screen.getByRole("button", { name: "Hide conversation" }));
+    await user.click(screen.getByRole("button", { name: "Hide browser" }));
     expect(pane?.hasAttribute("data-desktop-open")).toBe(false);
-    await user.click(screen.getByRole("button", { name: "Show conversation" }));
+    await user.click(screen.getByRole("button", { name: "Show browser" }));
     expect(pane?.hasAttribute("data-desktop-open")).toBe(true);
     expect(composer.value).toBe("Keep this draft");
     await waitFor(() =>
@@ -635,7 +844,7 @@ describe("Chat workspace", () => {
     expect(screen.getByText("Agent context").closest("details")?.open).toBe(true);
   });
 
-  test("keeps the selected recording when another session appears and supports history navigation", async () => {
+  test("selects a new browser session and keeps manual session choices in the URL", async () => {
     const closed = { ...session("session-1", 1), lifecycle: { kind: "closed", closedAt: 2 } };
     remote.queries.set("scout/browserSessions:list", [closed]);
     remote.queries.set("scout/browserSessions:get:session-1", { ...closed, operations: [] });
@@ -656,21 +865,19 @@ describe("Chat workspace", () => {
     const picker = await screen.findByRole<HTMLSelectElement>("combobox", {
       name: "Browser session",
     });
-    expect(picker.value).toBe("session-1");
-    expect(screen.queryByTitle("Live browser session 2")).toBeNull();
-    await user.selectOptions(picker, "session-2");
+    expect(picker.value).toBe("session-2");
     expect(await screen.findByTitle("Live browser session 2")).toBeTruthy();
     expect(router.state.location.search.session).toBe("session-2");
     expect(screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Message Scout" }).value).toBe(
       "Continue later",
     );
 
-    act(() => router.history.back());
+    await user.selectOptions(picker, "session-1");
     expect(await screen.findByText("No replay")).toBeTruthy();
     expect(router.state.location.search.session).toBe("session-1");
   });
 
-  test("moves the conversation beside the first browser without losing the draft or driver", async () => {
+  test("keeps the conversation in the main pane when the first browser appears", async () => {
     const user = userEvent.setup();
     await openChats();
     await user.selectOptions(
@@ -686,7 +893,7 @@ describe("Chat workspace", () => {
 
     expect(await screen.findByTitle("Live browser session 1")).toBeTruthy();
     expect(
-      screen.getByRole("region", { name: "Conversation" }).closest('[data-pane-side="right"]'),
+      screen.getByRole("region", { name: "Conversation" }).closest('[data-pane-side="main"]'),
     ).not.toBeNull();
     expect(screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Message Scout" }).value).toBe(
       "Still typing",
@@ -696,7 +903,7 @@ describe("Chat workspace", () => {
     );
   });
 
-  test("keeps chat selected on a small screen when the browser appears and allows switching panes", async () => {
+  test("selects a new browser on a small screen and allows returning to chat", async () => {
     vi.spyOn(window, "innerWidth", "get").mockReturnValue(390);
     const user = userEvent.setup();
     await openChats();
@@ -708,15 +915,15 @@ describe("Chat workspace", () => {
     remote.queries.set("scout/browserSessions:liveView", { url: "about:blank#scout-live" });
     refreshQueries();
 
-    const showBrowser = await screen.findByRole("button", { name: "Show browser" });
+    const showChat = await screen.findByRole("button", { name: "Show chat" });
+    expect(showChat.getAttribute("aria-pressed")).toBe("true");
+    await user.click(showChat);
+    const showBrowser = screen.getByRole("button", { name: "Show browser" });
     expect(showBrowser.getAttribute("aria-pressed")).toBe("false");
-    expect(
-      screen.getByRole("button", { name: "Hide conversation" }).getAttribute("aria-pressed"),
-    ).toBe("true");
     await user.click(showBrowser);
-    expect(showBrowser.getAttribute("aria-pressed")).toBe("true");
-    await user.click(screen.getByRole("button", { name: "Show conversation" }));
-    expect(showBrowser.getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByRole("button", { name: "Show chat" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
     expect(screen.getByRole("textbox", { name: "Message Scout" })).toBeTruthy();
   });
 
@@ -729,17 +936,18 @@ describe("Chat workspace", () => {
     expect(remote.sendMessage).not.toHaveBeenCalled();
   });
 
-  test("stores only the selected chat and browser session in the URL", () => {
+  test("stores only the selected chat, browser session, and model call in the URL", () => {
     const validateSearch = ChatsRoute.options.validateSearch;
     if (typeof validateSearch !== "function") throw new Error("Chat search validator is missing");
     expect(
       validateSearch({
         thread: "thread-1",
         session: "session-1",
+        call: "model-call-1",
         view: "live",
         experiment: "discarded",
       }),
-    ).toEqual({ thread: "thread-1", session: "session-1" });
-    expect(validateSearch({ thread: 7, session: {}, view: "product" })).toEqual({});
+    ).toEqual({ thread: "thread-1", session: "session-1", call: "model-call-1" });
+    expect(validateSearch({ thread: 7, session: {}, call: [], view: "product" })).toEqual({});
   });
 });

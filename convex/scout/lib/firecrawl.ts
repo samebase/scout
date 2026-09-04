@@ -5,16 +5,22 @@ import {
   SdkError,
   type BrowserDeleteResponse,
   type BrowserExecuteResponse,
-  type FirecrawlClientOptions,
 } from "firecrawl";
 import { env } from "../../_generated/server";
+import { optionalFirecrawlLiveViewUrl } from "./firecrawlLiveView";
 
 type BrowserLifecycleClient = Pick<Firecrawl, "deleteBrowser" | "listBrowsers">;
+const FIRECRAWL_REQUEST_TIMEOUT_MS = 60_000;
 
-export function createFirecrawlClient(options: Pick<FirecrawlClientOptions, "maxRetries"> = {}) {
+export function createFirecrawlClient() {
   const apiKey = env.FIRECRAWL_API_KEY?.trim();
   if (!apiKey) throw new Error("FIRECRAWL_API_KEY is not configured");
-  return new Firecrawl({ apiKey, ...options });
+  return new Firecrawl({
+    apiKey,
+    // Firecrawl counts total attempts here, so one means no automatic retry.
+    maxRetries: 1,
+    timeoutMs: FIRECRAWL_REQUEST_TIMEOUT_MS,
+  });
 }
 
 export function firecrawlBrowserExecutionSucceeded(response: BrowserExecuteResponse) {
@@ -25,6 +31,23 @@ export function firecrawlBrowserExecutionSucceeded(response: BrowserExecuteRespo
     response.killed !== true &&
     (exitCode === undefined || exitCode === null || exitCode === 0)
   );
+}
+
+export async function recoverActiveFirecrawlBrowserSession(providerSessionId: string) {
+  const response = await createFirecrawlClient().listBrowsers({ status: "active" });
+  if (!response.success) {
+    throw new Error(response.error?.trim() || "Firecrawl could not list browser sessions");
+  }
+  const session = response.sessions?.find(
+    (candidate) => candidate.id === providerSessionId && candidate.status === "active",
+  );
+  return session
+    ? {
+        providerSessionId: session.id,
+        cdpUrl: session.cdpUrl,
+        interactiveLiveViewUrl: optionalFirecrawlLiveViewUrl(session.interactiveLiveViewUrl),
+      }
+    : null;
 }
 
 export async function closeFirecrawlBrowserSession(

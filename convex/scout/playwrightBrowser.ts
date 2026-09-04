@@ -2,10 +2,13 @@
 
 import { type Infer } from "convex/values";
 import { chromium, type BrowserContext, type Locator, type Page } from "playwright-core";
+import { omitNullish } from "../../shared/omitNullish";
 import { browserTelemetryValidator } from "../browserModel";
 import { type BrowserTarget } from "./browserTarget";
+import { requireFirecrawlCdpUrl } from "./lib/firecrawlCdpUrl";
 
 const BROWSER_ACTION_TIMEOUT_MS = 60_000;
+const BROWSER_CONTROL_TIMEOUT_MS = 30_000;
 const SNAPSHOT_TIMEOUT_MS = 30_000;
 const VIEWPORT = { width: 1280, height: 800 } as const;
 
@@ -13,14 +16,41 @@ export type BrowserTelemetry = Infer<typeof browserTelemetryValidator>;
 export type BrowserObservation = BrowserTelemetry["before"];
 
 export type PlaywrightBrowser = {
-  snapshot: () => Promise<string>;
-  navigate: (url: string) => Promise<void>;
-  getPage: (kind: "url" | "title") => Promise<string>;
-  getElement: (target: BrowserTarget) => Promise<string>;
-  getElementAttribute: (target: BrowserTarget, attribute: "type") => Promise<string>;
-  fill: (target: BrowserTarget, text: string) => Promise<void>;
-  observe: () => Promise<BrowserObservation>;
+  snapshot: (abortSignal?: AbortSignal) => Promise<string>;
+  navigate: (url: string, abortSignal?: AbortSignal) => Promise<void>;
+  getPage: (kind: "url" | "title", abortSignal?: AbortSignal) => Promise<string>;
+  getElement: (target: BrowserTarget, abortSignal?: AbortSignal) => Promise<string>;
+  getElementAttribute: (
+    target: BrowserTarget,
+    attribute: "type",
+    abortSignal?: AbortSignal,
+  ) => Promise<string>;
+  fill: (target: BrowserTarget, text: string, abortSignal?: AbortSignal) => Promise<void>;
+  observe: (abortSignal?: AbortSignal) => Promise<BrowserObservation>;
 };
+
+function runBoundedControlOperation<T>(operation: () => Promise<T>, abortSignal?: AbortSignal) {
+  const timeoutSignal = AbortSignal.timeout(BROWSER_CONTROL_TIMEOUT_MS);
+  const signal = abortSignal ? AbortSignal.any([abortSignal, timeoutSignal]) : timeoutSignal;
+  signal.throwIfAborted();
+
+  return new Promise<T>((resolve, reject) => {
+    const finish = (settle: () => void) => {
+      signal.removeEventListener("abort", onAbort);
+      settle();
+    };
+    const onAbort = () => finish(() => reject(signal.reason));
+    signal.addEventListener("abort", onAbort, { once: true });
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    operation().then(
+      (value) => finish(() => resolve(value)),
+      (error: unknown) => finish(() => reject(error)),
+    );
+  });
+}
 
 function displayUrl(value: string) {
   if (value === "about:blank") return value;
@@ -37,19 +67,10 @@ function displayUrl(value: string) {
   }
 }
 
-function requireCdpUrl(value: string) {
-  const url = new URL(value);
-  if (url.protocol !== "wss:") {
-    throw new Error("Firecrawl returned an invalid browser CDP URL");
-  }
-  return url.toString();
-}
-
 class ConnectedPlaywrightBrowser implements PlaywrightBrowser {
   private readonly context: BrowserContext;
   private activePage: Page;
-  private nextTabNumber = 1;
-  private readonly tabIds = new Map<Page, string>();
+  private readonly tabIds = new Map<Page, Promise<string>>();
 
   constructor(context: BrowserContext) {
     this.context = context;
@@ -62,35 +83,53 @@ class ConnectedPlaywrightBrowser implements PlaywrightBrowser {
       throw new Error("Firecrawl browser session has no page");
     }
     this.activePage = initialPage;
-    this.tabId(initialPage);
     context.on("page", (page) => {
       this.activePage = page;
-      this.tabId(page);
-      void page.setViewportSize(VIEWPORT).catch(() => undefined);
+      void runBoundedControlOperation(async () => await page.setViewportSize(VIEWPORT)).catch(
+        () => undefined,
+      );
     });
   }
 
-  async initialize() {
-    await this.refreshActivePage(this.context.pages());
-    await this.activePage.setViewportSize(VIEWPORT);
+  async initialize(abortSignal?: AbortSignal) {
+    await this.refreshActivePage(this.context.pages(), abortSignal);
+    await runBoundedControlOperation(
+      async () => await this.activePage.setViewportSize(VIEWPORT),
+      abortSignal,
+    );
   }
 
-  private async refreshActivePage(pages: Page[]) {
-    for (const page of pages.toReversed()) {
-      const focused = await page.evaluate(() => document.hasFocus()).catch(() => false);
-      if (focused) {
-        this.activePage = page;
-        return;
-      }
+  private async refreshActivePage(pages: Page[], abortSignal?: AbortSignal) {
+    abortSignal?.throwIfAborted();
+    const focus = await Promise.all(
+      pages.map(
+        async (page) =>
+          await runBoundedControlOperation(
+            async () => await page.evaluate(() => document.hasFocus()),
+            abortSignal,
+          ).catch(() => false),
+      ),
+    );
+    abortSignal?.throwIfAborted();
+    const focusedIndex = focus.findLastIndex(Boolean);
+    if (focusedIndex >= 0) {
+      this.activePage = pages[focusedIndex] ?? this.activePage;
     }
   }
 
-  private tabId(page: Page) {
+  private tabId(page: Page, abortSignal?: AbortSignal) {
     const existing = this.tabIds.get(page);
     if (existing) return existing;
-    const tabId = `t${this.nextTabNumber}`;
-    this.nextTabNumber += 1;
+    const tabId = runBoundedControlOperation(async () => {
+      const session = await this.context.newCDPSession(page);
+      try {
+        return (await session.send("Target.getTargetInfo")).targetInfo.targetId;
+      } finally {
+        await session.detach().catch(() => undefined);
+      }
+    }, abortSignal);
     this.tabIds.set(page, tabId);
+    void tabId.catch(() => this.tabIds.delete(page));
     return tabId;
   }
 
@@ -129,57 +168,85 @@ class ConnectedPlaywrightBrowser implements PlaywrightBrowser {
     }
   }
 
-  async snapshot() {
-    return await this.page().locator("body").ariaSnapshot({
-      mode: "ai",
-      timeout: SNAPSHOT_TIMEOUT_MS,
-    });
+  async snapshot(abortSignal?: AbortSignal) {
+    return await this.page()
+      .locator("body")
+      .ariaSnapshot(
+        omitNullish({
+          mode: "ai",
+          timeout: SNAPSHOT_TIMEOUT_MS,
+          signal: abortSignal,
+        }),
+      );
   }
 
-  async navigate(url: string) {
-    await this.page().goto(url, { waitUntil: "domcontentloaded" });
+  async navigate(url: string, abortSignal?: AbortSignal) {
+    await this.page().goto(
+      url,
+      omitNullish({ waitUntil: "domcontentloaded", signal: abortSignal }),
+    );
   }
 
-  async getPage(kind: "url" | "title") {
-    return kind === "url" ? this.page().url() : await this.page().title();
+  async getPage(kind: "url" | "title", abortSignal?: AbortSignal) {
+    return kind === "url"
+      ? this.page().url()
+      : await runBoundedControlOperation(async () => await this.page().title(), abortSignal);
   }
 
-  async getElement(target: BrowserTarget) {
-    return await this.locator(target).innerText();
+  async getElement(target: BrowserTarget, abortSignal?: AbortSignal) {
+    return await this.locator(target).innerText(omitNullish({ signal: abortSignal }));
   }
 
-  async getElementAttribute(target: BrowserTarget, attribute: "type") {
-    return (await this.locator(target).getAttribute(attribute)) ?? "";
+  async getElementAttribute(target: BrowserTarget, attribute: "type", abortSignal?: AbortSignal) {
+    return (
+      (await this.locator(target).getAttribute(attribute, omitNullish({ signal: abortSignal }))) ??
+      ""
+    );
   }
 
-  async fill(target: BrowserTarget, text: string) {
-    await this.locator(target).fill(text);
+  async fill(target: BrowserTarget, text: string, abortSignal?: AbortSignal) {
+    await this.locator(target).fill(text, omitNullish({ signal: abortSignal }));
   }
 
-  async observe() {
+  async observe(abortSignal?: AbortSignal) {
     const pages = this.context.pages().filter((page) => !page.isClosed());
     if (pages.length === 0) throw new Error("The browser has no open tab");
-    await this.refreshActivePage(pages);
+    await this.refreshActivePage(pages, abortSignal);
     if (this.activePage.isClosed()) this.activePage = pages.at(-1) ?? pages[0];
+    const tabs = await Promise.all(
+      pages.map(async (page) => ({
+        tabId: await this.tabId(page, abortSignal),
+        title: await runBoundedControlOperation(async () => await page.title(), abortSignal).catch(
+          () => "",
+        ),
+        url: displayUrl(page.url()),
+        active: page === this.activePage,
+      })),
+    );
+    abortSignal?.throwIfAborted();
     return {
       capturedAtMs: Date.now(),
-      tabs: await Promise.all(
-        pages.map(async (page) => ({
-          tabId: this.tabId(page),
-          title: await page.title().catch(() => ""),
-          url: displayUrl(page.url()),
-          active: page === this.activePage,
-        })),
-      ),
+      tabs,
     };
   }
 }
 
-export async function connectPlaywrightBrowser(cdpUrl: string): Promise<PlaywrightBrowser> {
-  const browser = await chromium.connectOverCDP(requireCdpUrl(cdpUrl));
+export async function connectPlaywrightBrowser(
+  cdpUrl: string,
+  abortSignal?: AbortSignal,
+): Promise<PlaywrightBrowser> {
+  abortSignal?.throwIfAborted();
+  const browser = await runBoundedControlOperation(
+    async () =>
+      await chromium.connectOverCDP(requireFirecrawlCdpUrl(cdpUrl), {
+        timeout: BROWSER_CONTROL_TIMEOUT_MS,
+      }),
+    abortSignal,
+  );
+  abortSignal?.throwIfAborted();
   const context = browser.contexts()[0];
   if (!context) throw new Error("Firecrawl browser session has no browser context");
   const connected = new ConnectedPlaywrightBrowser(context);
-  await connected.initialize();
+  await connected.initialize(abortSignal);
   return connected;
 }

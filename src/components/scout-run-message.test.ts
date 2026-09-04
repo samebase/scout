@@ -17,6 +17,8 @@ afterEach(() => cleanup());
 
 // @ts-expect-error This isolated view fixture does not cross the Convex ID boundary.
 const scoutId: Id<"scouts"> = "scout";
+// @ts-expect-error This isolated view fixture does not cross the Convex ID boundary.
+const turnId: Id<"scoutTurns"> = "turn";
 
 describe("Scout transcript metadata", () => {
   test("keeps the stored failure visible after generation finishes", () => {
@@ -33,12 +35,16 @@ describe("Scout transcript metadata", () => {
           parts: [],
           text: "",
           metadata: {
+            turnId,
             model: "qwen/qwen3.7-flash",
             scout: {
               id: scoutId,
               displayName: "Conrad Scout",
             },
-            failure: "Tool input did not match its schema",
+            outcome: {
+              kind: "failed",
+              failure: "Tool input did not match its schema",
+            },
           },
         },
       }),
@@ -47,17 +53,20 @@ describe("Scout transcript metadata", () => {
     const failure = screen.getByRole("status");
     expect(failure.textContent).toBe("Generation failed: Tool input did not match its schema");
     expect(failure.className).toContain("text-destructive");
+    expect(screen.getByTitle("Message ID: message-1").textContent).toBe("#message-1");
   });
 
   test("shows the model cost estimate alongside the recorded token usage", () => {
     expect(
       formatRunMetadata(
         {
+          turnId,
           model: "qwen/qwen3.7-flash",
           scout: {
             id: scoutId,
             displayName: "Conrad Scout",
           },
+          outcome: { kind: "completed" },
           usage: {
             promptTokens: 100_000,
             completionTokens: 2_000,
@@ -67,6 +76,33 @@ describe("Scout transcript metadata", () => {
         23,
       ),
     ).toBe("Conrad Scout, Qwen 3.7 Flash, 23 steps, 100,000 input, 2,000 output, ~$0.00326 model");
+  });
+
+  test("shows a stopped run without presenting it as a failure", () => {
+    render(
+      ScoutRunMessageView({
+        message: {
+          id: "message-stopped",
+          _creationTime: 1,
+          key: "message-stopped",
+          order: 1,
+          stepOrder: 0,
+          status: "failed",
+          role: "assistant",
+          parts: [],
+          text: "",
+          metadata: {
+            turnId,
+            model: "qwen/qwen3.7-flash",
+            scout: { id: scoutId, displayName: "Conrad Scout" },
+            outcome: { kind: "stopped" },
+          },
+        },
+      }),
+    );
+
+    expect(screen.queryByText(/Generation failed/)).toBeNull();
+    expect(screen.getByText(/Stopped · Conrad Scout/)).toBeTruthy();
   });
 
   test("counts generation-step boundaries in the message parts", () => {
@@ -119,6 +155,36 @@ describe("Scout tool results", () => {
         },
       },
     ]);
+  });
+
+  test("shows a short reference for a tool call while retaining its full ID", () => {
+    render(
+      ScoutRunMessageView({
+        message: {
+          id: "message-with-tool",
+          _creationTime: 1,
+          key: "message-with-tool",
+          order: 1,
+          stepOrder: 0,
+          status: "success",
+          role: "assistant",
+          parts: [
+            {
+              type: "tool-browser_execute",
+              toolCallId: "tool-call-1234567890",
+              state: "output-error",
+              input: { code: "await page.click('button')" },
+              errorText: "locator timed out",
+            },
+          ],
+          text: "",
+        },
+      }),
+    );
+
+    const reference = screen.getByTitle("Tool call ID: tool-call-1234567890");
+    expect(reference.textContent).toBe("#34567890");
+    expect(reference.getAttribute("data-reference-id")).toBe("tool-call-1234567890");
   });
 
   test("previews Playwright code without the browser_execute input wrapper", () => {

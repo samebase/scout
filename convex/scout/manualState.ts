@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { internalQuery, type MutationCtx, type QueryCtx } from "../_generated/server";
 import { requireAppUser } from "../access";
+import schema from "../schema";
 import { activeBrowserForChat, requireOwnedAgentThread, scoutIsWorking } from "./chatAccess";
 
 async function requireManualThread(ctx: QueryCtx | MutationCtx, threadId: string) {
@@ -27,8 +28,10 @@ export const runtimeContext = internalQuery({
     scoutId: v.id("scouts"),
     profileName: v.string(),
     inboxId: v.string(),
-    browserSessionId: v.union(v.id("scoutBrowserSessions"), v.null()),
-    providerSessionId: v.union(v.string(), v.null()),
+    browserSession: v.union(
+      schema.doc("scoutBrowserSessions").pick("_id", "providerSessionId", "lifecycle"),
+      v.null(),
+    ),
   }),
   handler: async (ctx, args) => {
     const { scout, userId } = await requireManualThread(ctx, args.threadId);
@@ -40,8 +43,13 @@ export const runtimeContext = internalQuery({
       scoutId: scout._id,
       profileName: scout.firecrawl.profileName,
       inboxId: scout.agentMail.inboxId,
-      browserSessionId: activeSession?._id ?? null,
-      providerSessionId: activeSession?.providerSessionId ?? null,
+      browserSession: activeSession
+        ? {
+            _id: activeSession._id,
+            providerSessionId: activeSession.providerSessionId,
+            lifecycle: activeSession.lifecycle,
+          }
+        : null,
     };
   },
 });

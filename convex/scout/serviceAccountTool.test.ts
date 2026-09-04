@@ -2,7 +2,8 @@ import { validateTypes } from "@ai-sdk/provider-utils";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { createServiceAccountRecordingTool } from "./serviceAccountTool";
 
-const toolOptions = { toolCallId: "tool-1", messages: [], context: {} };
+const abortSignal = new AbortController().signal;
+const toolOptions = { toolCallId: "tool-1", messages: [], context: {}, abortSignal };
 
 describe("Scout service-account recording tool", () => {
   it("normalizes flat managed-password evidence for trusted code", async () => {
@@ -23,12 +24,15 @@ describe("Scout service-account recording tool", () => {
       serviceAccountId: "account-1",
       created: false,
     });
-    expect(record).toHaveBeenCalledWith({
-      accountAccess: "created",
-      loginMethod: { kind: "managed_password" },
-      identityText: "conrad@example.test",
-      sessionControlText: "Sign out",
-    });
+    expect(record).toHaveBeenCalledWith(
+      {
+        accountAccess: "created",
+        loginMethod: { kind: "managed_password" },
+        identityText: "conrad@example.test",
+        sessionControlText: "Sign out",
+      },
+      abortSignal,
+    );
   });
 
   it.each([
@@ -79,16 +83,19 @@ describe("Scout service-account recording tool", () => {
 
     await recordingTool.execute(input, toolOptions);
 
-    expect(record).toHaveBeenCalledWith({
-      accountAccess: "created",
-      loginMethod: {
-        kind: "oauth",
-        providerServiceDomain: "github.com",
-        providerIdentifier: "conrad-scout",
+    expect(record).toHaveBeenCalledWith(
+      {
+        accountAccess: "created",
+        loginMethod: {
+          kind: "oauth",
+          providerServiceDomain: "github.com",
+          providerIdentifier: "conrad-scout",
+        },
+        identityText: "conrad@example.test",
+        sessionControlText: "Sign out",
       },
-      identityText: "conrad@example.test",
-      sessionControlText: "Sign out",
-    });
+      abortSignal,
+    );
   });
 
   it("requires an exact provider account for OAuth", async () => {

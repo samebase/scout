@@ -12,8 +12,6 @@ const delivery = {
   recipientEmail: "operator@example.test",
   scoutName: "Conrad Scout",
   handoffUrl: "https://scout.example/handoff/handoff-1#access=private",
-  emailSubject: "A quick check needs you",
-  emailNote: "Please complete the waiting browser check, then return control.",
 };
 
 const ready = async () => ({ kind: "ready" as const, claimExpiresAt: 20_000 });
@@ -41,7 +39,7 @@ describe("human handoff email delivery", () => {
     expect(sendEmail).toHaveBeenCalledWith(
       expect.objectContaining({
         to: delivery.recipientEmail,
-        subject: `[Scout human check] ${delivery.emailSubject}`,
+        subject: "[Scout human check] Conrad Scout needs your help",
         idempotencyKey: "scout-handoff-handoff-1",
       }),
       { signal },

@@ -227,21 +227,25 @@ function HandoffState({
   const title =
     page.status === "continued"
       ? "Control returned to Scout"
-      : page.status === "expired"
-        ? "This handoff expired"
-        : "This handoff failed";
+      : page.status === "stopped"
+        ? "This handoff was stopped"
+        : page.status === "expired"
+          ? "This handoff expired"
+          : "This handoff failed";
   const message =
     page.status === "continued"
       ? "Scout will continue in the chat."
-      : page.status === "expired"
-        ? page.claimed
-          ? "The five-minute control window ended. Return to the chat to try again."
-          : "The private link was not opened within 45 minutes. Return to the chat to try again."
-        : page.failure === "delivery_failed"
-          ? "Scout could not deliver the secure link. Return to the chat to try again."
-          : page.failure === "scout_failed"
-            ? "Scout stopped before resuming. Return to the chat to try again."
-            : "The browser session ended. Return to the chat to try again.";
+      : page.status === "stopped"
+        ? "The current run was stopped. Return to the chat to continue."
+        : page.status === "expired"
+          ? page.claimed
+            ? "The five-minute control window ended. Return to the chat to try again."
+            : "The private link was not opened within 45 minutes. Return to the chat to try again."
+          : page.failure === "delivery_failed"
+            ? "Scout could not deliver the secure link. Return to the chat to try again."
+            : page.failure === "scout_failed"
+              ? "Scout stopped before resuming. Return to the chat to try again."
+              : "The browser session ended. Return to the chat to try again.";
   return (
     <HandoffNotice title={title}>
       <p>{message}</p>

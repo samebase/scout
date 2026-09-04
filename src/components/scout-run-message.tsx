@@ -11,6 +11,7 @@ import { Bubble, BubbleContent } from "#components/ui/bubble";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "#components/ui/collapsible";
 import { Marker, MarkerContent, MarkerIcon } from "#components/ui/marker";
 import { Message, MessageContent, MessageFooter, MessageHeader } from "#components/ui/message";
+import { ScoutModelCalls } from "#components/scout-model-input";
 import {
   countGenerationSteps,
   parseScoutMessageParts,
@@ -39,9 +40,11 @@ export function scoutModelLabel(model: string) {
 
 export function ScoutRunMessageView({
   message,
+  onSelectModelCall,
   showText = true,
 }: {
   message: ScoutRunMessage;
+  onSelectModelCall?: (modelCallId: string) => void;
   showText?: boolean;
 }) {
   const isUser = message.role === "user";
@@ -52,7 +55,10 @@ export function ScoutRunMessageView({
   return (
     <Message align={isUser ? "end" : "start"}>
       <MessageContent>
-        <MessageHeader>{label}</MessageHeader>
+        <MessageHeader>
+          {label}
+          <RunReference label="Message ID" value={message.id} />
+        </MessageHeader>
         {parts.map((part, index) => (
           <MessagePart
             key={partKey(part, index)}
@@ -61,16 +67,18 @@ export function ScoutRunMessageView({
             showText={showText}
           />
         ))}
-        {metadata?.failure ? (
+        {metadata?.outcome.kind === "failed" ? (
           <Marker className="text-destructive" role="status">
             <MarkerIcon>
               <CircleAlertIcon />
             </MarkerIcon>
             <MarkerContent className="whitespace-pre-wrap">
-              Generation failed: {metadata.failure}
+              Generation failed: {metadata.outcome.failure}
             </MarkerContent>
           </Marker>
-        ) : message.status === "failed" ? (
+        ) : message.status === "failed" &&
+          metadata?.outcome.kind !== "stopping" &&
+          metadata?.outcome.kind !== "stopped" ? (
           <Marker className="text-destructive" role="status">
             <MarkerIcon>
               <CircleAlertIcon />
@@ -78,13 +86,25 @@ export function ScoutRunMessageView({
             <MarkerContent>Generation failed.</MarkerContent>
           </Marker>
         ) : null}
-        {!metadata?.failure && (message.status === "pending" || message.status === "streaming") ? (
+        {metadata?.outcome.kind === "stopping" ? (
+          <MessageFooter>
+            <LoaderCircleIcon className="mr-1 size-3 animate-spin" />
+            Stopping Scout
+          </MessageFooter>
+        ) : metadata?.outcome.kind === "pending" &&
+          (message.status === "pending" || message.status === "streaming") ? (
           <MessageFooter>
             <LoaderCircleIcon className="mr-1 size-3 animate-spin" />
             Scout is working
           </MessageFooter>
         ) : metadata ? (
-          <MessageFooter>{formatRunMetadata(metadata, countGenerationSteps(parts))}</MessageFooter>
+          <MessageFooter>
+            {metadata.outcome.kind === "stopped" ? "Stopped · " : ""}
+            {formatRunMetadata(metadata, countGenerationSteps(parts))}
+          </MessageFooter>
+        ) : null}
+        {metadata && onSelectModelCall ? (
+          <ScoutModelCalls turnId={metadata.turnId} onSelect={onSelectModelCall} />
         ) : null}
       </MessageContent>
     </Message>
@@ -217,6 +237,7 @@ function ToolActivity({ tool }: { tool: ScoutToolActivity }) {
             <span className="flex items-baseline justify-between gap-3">
               <span className="flex min-w-0 items-baseline gap-2">
                 <span className="font-mono text-xs">{tool.name}</span>
+                <RunReference label="Tool call ID" value={tool.toolCallId} />
                 {tool.repairedInputFields.length > 0 ? (
                   <span className="shrink-0 text-[0.6875rem] font-medium text-amber-700 dark:text-amber-400">
                     JSON parsed
@@ -257,6 +278,19 @@ function ToolActivity({ tool }: { tool: ScoutToolActivity }) {
         </dl>
       </CollapsibleContent>
     </Collapsible>
+  );
+}
+
+function RunReference({ label, value }: { label: string; value: string }) {
+  const visibleValue = value.length <= 12 ? value : value.slice(-8);
+  return (
+    <span
+      title={`${label}: ${value}`}
+      data-reference-id={value}
+      className="text-muted-foreground/70 select-all font-mono text-[0.625rem] font-normal"
+    >
+      #{visibleValue}
+    </span>
   );
 }
 

@@ -8,12 +8,12 @@ import { v } from "convex/values";
 import { z } from "zod";
 import { internal } from "../_generated/api";
 import { action, env } from "../_generated/server";
-import { findActiveBrowserSession } from "../humanHandoffBrowser";
 import { createAccountTools } from "./accountTools";
 import { createAgentMailWriteTools } from "./agentMailTools";
 import { scoutAgent } from "./agent";
 import { closeAgentMailBestEffort } from "./generation";
 import { createBrowserHarness, selectAgentMailTools } from "./browserTools";
+import { attachPersistedBrowserSession } from "./browserSessionConnection";
 import { createAgentMailInboxClient, requiredAgentMailApiKey } from "./lib/agentMail";
 import { diagnosticMessage } from "./lib/redaction";
 import { requireRuntimeTool } from "./lib/runtimeTool";
@@ -33,6 +33,8 @@ const manualToolNameValidator = v.union(
   v.literal("record_authenticated_service_account"),
   v.literal("web_search"),
   v.literal("web_read"),
+  v.literal("web_map"),
+  v.literal("web_crawl"),
   v.literal("inspect_tool_arguments"),
 );
 const jsonValueSchema = z.json();
@@ -81,19 +83,6 @@ function needsExistingBrowser(toolName: ManualToolName) {
   );
 }
 
-async function attachBrowser(
-  browser: Browser,
-  providerSessionId: string,
-  clearStaleSession: () => Promise<void>,
-) {
-  const active = await findActiveBrowserSession(providerSessionId);
-  if (!active) {
-    await clearStaleSession();
-    throw new Error("The browser session has expired. Create a new Firecrawl session.");
-  }
-  await browser.attach({ providerSessionId: active.sessionId, cdpUrl: active.cdpUrl });
-}
-
 export const executeTool = action({
   args: {
     threadId: v.string(),
@@ -136,7 +125,7 @@ export const executeTool = action({
 
     let agentMailClient: MCPClient | undefined;
     let browser: Browser | undefined;
-    let currentBrowserSessionId = runtime.browserSessionId;
+    let currentBrowserSessionId = runtime.browserSession?._id ?? null;
     let output: JSONValue = null;
     let executionError: string | undefined;
     try {
@@ -163,19 +152,25 @@ export const executeTool = action({
         );
       } else if (args.toolName === "inspect_tool_arguments") {
         selectedTools = { inspect_tool_arguments: createToolArgumentProbe() };
-      } else if (args.toolName === "web_search" || args.toolName === "web_read") {
+      } else if (
+        args.toolName === "web_search" ||
+        args.toolName === "web_read" ||
+        args.toolName === "web_map" ||
+        args.toolName === "web_crawl"
+      ) {
         selectedTools = createWebTools();
       } else {
-        if (args.toolName === "create_new_firecrawl_session" && runtime.providerSessionId) {
+        if (args.toolName === "create_new_firecrawl_session" && runtime.browserSession) {
           throw new Error("This chat already has an open browser session");
         }
         browser = createBrowserHarness({
           profileName: runtime.profileName,
-          onSessionAvailable: async (providerSessionId) => {
+          onSessionCreated: async (session) => {
             const registered = await ctx.runMutation(internal.scout.browserSessions.open, {
               threadId: args.threadId,
               scoutId: runtime.scoutId,
-              providerSessionId,
+              source: { kind: "manual" },
+              ...session,
               profileName: runtime.profileName,
             });
             currentBrowserSessionId = registered.sessionId;
@@ -225,17 +220,36 @@ export const executeTool = action({
           },
         });
         if (
-          runtime.providerSessionId &&
+          runtime.browserSession &&
           (needsExistingBrowser(args.toolName) || args.toolName === "browser_close")
         ) {
-          await attachBrowser(browser, runtime.providerSessionId, async () => {
-            if (runtime.browserSessionId === null) return;
+          const persisted = runtime.browserSession;
+          if (persisted.lifecycle.kind !== "active") {
+            throw new Error("Active browser session not found");
+          }
+          const connection = await attachPersistedBrowserSession(browser, {
+            providerSessionId: persisted.providerSessionId,
+            cdpUrl: persisted.lifecycle.cdpUrl,
+            interactiveLiveViewUrl: persisted.lifecycle.interactiveLiveViewUrl,
+          });
+          if (!connection) {
             await ctx.runMutation(internal.scout.browserSessions.close, {
-              sessionId: runtime.browserSessionId,
+              sessionId: persisted._id,
               providerDurationMs: null,
               creditsBilled: null,
             });
-          });
+            throw new Error("The browser session has expired. Create a new Firecrawl session.");
+          }
+          if (
+            connection.cdpUrl !== persisted.lifecycle.cdpUrl ||
+            connection.interactiveLiveViewUrl !== persisted.lifecycle.interactiveLiveViewUrl
+          ) {
+            await ctx.runMutation(internal.scout.browserSessions.replaceConnection, {
+              sessionId: persisted._id,
+              cdpUrl: connection.cdpUrl,
+              interactiveLiveViewUrl: connection.interactiveLiveViewUrl,
+            });
+          }
         } else if (needsExistingBrowser(args.toolName)) {
           throw new Error("Open a browser session before using it");
         }

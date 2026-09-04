@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import { finishHandedOffBrowser } from "./humanHandoffBrowser";
 
+const SESSION = {
+  providerSessionId: "session-1",
+  cdpUrl: "wss://browser.firecrawl.dev/cdp?token=secret",
+};
+
 function stoppedBrowser() {
   return {
     success: true,
@@ -10,22 +15,19 @@ function stoppedBrowser() {
 }
 
 describe("handed-off browser cleanup", () => {
-  it("still closes the browser when active-session verification fails", async () => {
+  it("captures a Playwright snapshot through the persisted connection", async () => {
     const close = vi.fn(async () => stoppedBrowser());
+    const captureSnapshot = vi.fn(async () => '- button "Continue" [ref=e1]');
+
     const result = await finishHandedOffBrowser(
-      { providerSessionId: "session-1", captureEvidence: true },
-      {
-        find: vi.fn(async () => {
-          throw new Error("provider read failed");
-        }),
-        captureSnapshot: vi.fn(),
-        close,
-      },
+      { ...SESSION, captureEvidence: true },
+      { captureSnapshot, close },
     );
 
-    expect(close).toHaveBeenCalledExactlyOnceWith("session-1");
-    expect(result).toMatchObject({
-      evidence: expect.stringContaining("provider read failed"),
+    expect(captureSnapshot).toHaveBeenCalledExactlyOnceWith(SESSION.cdpUrl);
+    expect(close).toHaveBeenCalledExactlyOnceWith(SESSION.providerSessionId);
+    expect(result).toEqual({
+      evidence: '- button "Continue" [ref=e1]',
       providerDurationMs: 12_000,
       creditsBilled: 4,
     });
@@ -33,14 +35,10 @@ describe("handed-off browser cleanup", () => {
 
   it("still closes the browser when the final snapshot fails", async () => {
     const close = vi.fn(async () => stoppedBrowser());
+
     const result = await finishHandedOffBrowser(
-      { providerSessionId: "session-1", captureEvidence: true },
+      { ...SESSION, captureEvidence: true },
       {
-        find: vi.fn(async () => ({
-          sessionId: "session-1",
-          cdpUrl: "wss://browser.firecrawl.dev/cdp?token=secret",
-          interactiveLiveViewUrl: null,
-        })),
         captureSnapshot: vi.fn(async () => {
           throw new Error("snapshot failed");
         }),
@@ -48,45 +46,21 @@ describe("handed-off browser cleanup", () => {
       },
     );
 
-    expect(close).toHaveBeenCalledExactlyOnceWith("session-1");
+    expect(close).toHaveBeenCalledExactlyOnceWith(SESSION.providerSessionId);
     expect(result.evidence).toContain("snapshot failed");
   });
 
-  it("stores a Playwright snapshot as evidence", async () => {
+  it("does not connect when no final evidence was requested", async () => {
+    const captureSnapshot = vi.fn();
     const close = vi.fn(async () => stoppedBrowser());
+
     const result = await finishHandedOffBrowser(
-      { providerSessionId: "session-1", captureEvidence: true },
-      {
-        find: vi.fn(async () => ({
-          sessionId: "session-1",
-          cdpUrl: "wss://browser.firecrawl.dev/cdp?token=secret",
-          interactiveLiveViewUrl: null,
-        })),
-        captureSnapshot: vi.fn(async () => '- button "Continue" [ref=e1]'),
-        close,
-      },
+      { ...SESSION, captureEvidence: false },
+      { captureSnapshot, close },
     );
 
-    expect(result.evidence).toBe('- button "Continue" [ref=e1]');
-    expect(close).toHaveBeenCalledExactlyOnceWith("session-1");
-  });
-
-  it("records an already-ended provider session without closing it again", async () => {
-    const close = vi.fn(async () => stoppedBrowser());
-    const result = await finishHandedOffBrowser(
-      { providerSessionId: "session-1", captureEvidence: true },
-      {
-        find: vi.fn(async () => null),
-        captureSnapshot: vi.fn(),
-        close,
-      },
-    );
-
-    expect(close).not.toHaveBeenCalled();
-    expect(result).toEqual({
-      evidence: "The browser session ended before Scout could inspect the completed human step.",
-      providerDurationMs: null,
-      creditsBilled: null,
-    });
+    expect(captureSnapshot).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalledExactlyOnceWith(SESSION.providerSessionId);
+    expect(result.evidence).toContain("without a final browser snapshot");
   });
 });

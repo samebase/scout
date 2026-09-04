@@ -1,4 +1,5 @@
 import { type Infer, v } from "convex/values";
+import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import {
   internalMutation,
@@ -18,13 +19,14 @@ import {
   browserViewportValidator,
 } from "../browserModel";
 import { requireFirecrawlLiveViewUrl } from "./lib/firecrawlLiveView";
+import { requireFirecrawlCdpUrl } from "./lib/firecrawlCdpUrl";
 import { omitNullish } from "../../shared/omitNullish";
 import { activeBrowserForChat } from "./chatAccess";
 
 const MAX_BROWSER_SESSION_ID_LENGTH = 500;
 const MAX_BROWSER_TOOL_CALL_ID_LENGTH = 200;
 const MAX_BROWSER_FAILURE_LENGTH = 2_000;
-const MAX_BROWSER_OPERATIONS = 100;
+const MAX_BROWSER_OPERATIONS = 500;
 const MAX_BROWSER_SESSIONS_PER_THREAD = 50;
 const BROWSER_VIEWPORT = { width: 1_280, height: 800 } as const;
 
@@ -65,6 +67,10 @@ function boundedFailure(value: string) {
     : `${characters.slice(0, MAX_BROWSER_FAILURE_LENGTH - 1).join("")}…`;
 }
 
+function addProviderUsage(current: number | undefined, next: number | null) {
+  return next === null ? current : (current ?? 0) + next;
+}
+
 async function requireThreadBinding(ctx: Pick<QueryCtx | MutationCtx, "db">, threadId: string) {
   const binding = await ctx.db
     .query("scoutChats")
@@ -86,6 +92,16 @@ async function ownedSession(
 }
 
 function projectSession(session: Doc<"scoutBrowserSessions">) {
+  const lifecycle =
+    session.lifecycle.kind === "active"
+      ? { kind: "active" as const, openedAtMs: session.lifecycle.openedAtMs }
+      : session.lifecycle.kind === "closing"
+        ? {
+            kind: "closing" as const,
+            openedAtMs: session.lifecycle.openedAtMs,
+            closingAtMs: session.lifecycle.closingAtMs,
+          }
+        : session.lifecycle;
   return {
     sessionId: session._id,
     sequence: session.sequence,
@@ -93,7 +109,7 @@ function projectSession(session: Doc<"scoutBrowserSessions">) {
     provider: session.provider,
     profileName: session.profileName,
     viewport: session.viewport,
-    lifecycle: session.lifecycle,
+    lifecycle,
     operationCount: Math.max(0, session.nextOperationSequence - 1),
   };
 }
@@ -177,7 +193,7 @@ export const replayData = internalQuery({
     return {
       providerSessionId: session.providerSessionId,
       viewport: session.viewport,
-      lifecycle: session.lifecycle,
+      lifecycle: projectSession(session).lifecycle,
       operations: operations.map((operation) => ({
         sequence: operation.sequence,
         state: operation.state,
@@ -190,7 +206,14 @@ export const open = internalMutation({
   args: {
     threadId: v.string(),
     scoutId: v.id("scouts"),
+    source: v.union(
+      v.object({ kind: v.literal("manual") }),
+      v.object({ kind: v.literal("turn"), turnId: v.id("scoutTurns") }),
+    ),
     providerSessionId: v.string(),
+    cdpUrl: v.string(),
+    interactiveLiveViewUrl: v.union(v.string(), v.null()),
+    providerExpiresAtMs: v.number(),
     profileName: v.string(),
   },
   returns: v.object({
@@ -202,8 +225,24 @@ export const open = internalMutation({
     if (!providerSessionId || providerSessionId.length > MAX_BROWSER_SESSION_ID_LENGTH) {
       throw new Error("Firecrawl browser session ID is invalid");
     }
+    const cdpUrl = requireFirecrawlCdpUrl(args.cdpUrl);
+    const interactiveLiveViewUrl =
+      args.interactiveLiveViewUrl === null
+        ? null
+        : requireFirecrawlLiveViewUrl(args.interactiveLiveViewUrl);
     const binding = await requireThreadBinding(ctx, args.threadId);
     if (binding.scoutId !== args.scoutId) throw new Error("browser Scout does not match");
+    if (args.source.kind === "turn") {
+      const turn = await ctx.db.get("scoutTurns", args.source.turnId);
+      if (
+        !turn ||
+        turn.threadId !== args.threadId ||
+        turn.scoutId !== args.scoutId ||
+        turn.state.kind !== "pending"
+      ) {
+        throw new Error("Active Scout turn not found");
+      }
+    }
     const existing = await ctx.db
       .query("scoutBrowserSessions")
       .withIndex("by_provider_and_provider_session_id", (index) =>
@@ -242,10 +281,42 @@ export const open = internalMutation({
         profileName: args.profileName,
         viewport: BROWSER_VIEWPORT,
         nextOperationSequence: 1,
-        lifecycle: { kind: "active", openedAtMs: Date.now() },
+        lifecycle: {
+          kind: "active",
+          openedAtMs: Date.now(),
+          providerExpiresAtMs: args.providerExpiresAtMs,
+          cdpUrl,
+          interactiveLiveViewUrl,
+        },
       }),
       captureOperations: true as const,
     };
+  },
+});
+
+export const replaceConnection = internalMutation({
+  args: {
+    sessionId: v.id("scoutBrowserSessions"),
+    cdpUrl: v.string(),
+    interactiveLiveViewUrl: v.union(v.string(), v.null()),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const session = await ctx.db.get("scoutBrowserSessions", args.sessionId);
+    if (!session || session.lifecycle.kind !== "active") {
+      throw new Error("Active browser session not found");
+    }
+    await ctx.db.patch("scoutBrowserSessions", session._id, {
+      lifecycle: {
+        ...session.lifecycle,
+        cdpUrl: requireFirecrawlCdpUrl(args.cdpUrl),
+        interactiveLiveViewUrl:
+          args.interactiveLiveViewUrl === null
+            ? null
+            : requireFirecrawlLiveViewUrl(args.interactiveLiveViewUrl),
+      },
+    });
+    return null;
   },
 });
 
@@ -335,11 +406,24 @@ export const close = internalMutation({
     sessionId: v.id("scoutBrowserSessions"),
     providerDurationMs: v.union(v.number(), v.null()),
     creditsBilled: v.union(v.number(), v.null()),
+    usageTurnId: v.optional(v.id("scoutTurns")),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
     const session = await ctx.db.get("scoutBrowserSessions", args.sessionId);
     if (!session || session.lifecycle.kind === "closed") return null;
+    const handoff = await ctx.db
+      .query("scoutHumanHandoffs")
+      .withIndex("by_session_id", (index) => index.eq("sessionId", session._id))
+      .unique();
+    const usageTurnId = args.usageTurnId ?? handoff?.turnId;
+    const turn = usageTurnId ? await ctx.db.get("scoutTurns", usageTurnId) : null;
+    if (
+      args.usageTurnId &&
+      (!turn || turn.threadId !== session.threadId || turn.scoutId !== session.scoutId)
+    ) {
+      throw new Error("Browser usage turn does not match the session");
+    }
     await failHumanHandoffForSession(ctx, session._id);
     await ctx.db.patch("scoutBrowserSessions", session._id, {
       lifecycle: {
@@ -350,20 +434,21 @@ export const close = internalMutation({
         creditsBilled: args.creditsBilled,
       },
     });
-    const handoff = await ctx.db
-      .query("scoutHumanHandoffs")
-      .withIndex("by_session_id", (index) => index.eq("sessionId", session._id))
-      .unique();
-    const turn = handoff ? await ctx.db.get("scoutTurns", handoff.turnId) : null;
-    if (turn && (turn.state.kind === "completed" || turn.state.kind === "failed")) {
+    if (turn) {
       await ctx.db.patch("scoutTurns", turn._id, {
         state: {
           ...turn.state,
           ...omitNullish({
-            firecrawlCredits: args.creditsBilled,
-            firecrawlDurationMs: args.providerDurationMs,
+            firecrawlCredits: addProviderUsage(turn.state.firecrawlCredits, args.creditsBilled),
+            firecrawlDurationMs: addProviderUsage(
+              turn.state.firecrawlDurationMs,
+              args.providerDurationMs,
+            ),
           }),
         },
+      });
+      await ctx.scheduler.runAfter(0, internal.scout.turns.finalizeStopping, {
+        turnId: turn._id,
       });
     }
     const liveView = await ctx.db

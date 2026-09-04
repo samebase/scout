@@ -5,9 +5,9 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalAction } from "./_generated/server";
 import { closeFirecrawlBrowserSession, createFirecrawlClient } from "./scout/lib/firecrawl";
-import { optionalFirecrawlLiveViewUrl } from "./scout/lib/firecrawlLiveView";
 import { diagnosticMessage } from "./scout/lib/redaction";
 import { connectPlaywrightBrowser } from "./scout/playwrightBrowser";
+import { omitNullish } from "../shared/omitNullish";
 
 const MAX_HANDOFF_EVIDENCE_LENGTH = 20_000;
 
@@ -19,46 +19,13 @@ function boundedEvidence(value: string) {
 }
 
 type BrowserFinishDependencies = {
-  find: (providerSessionId: string) => Promise<ActiveBrowserSession | null>;
   captureSnapshot: (cdpUrl: string) => Promise<string>;
   close: (providerSessionId: string) => ReturnType<Firecrawl["deleteBrowser"]>;
 };
 
-type ActiveBrowserSession = {
-  sessionId: string;
-  cdpUrl: string;
-  interactiveLiveViewUrl: string | null;
-};
-
-async function findActiveBrowserSessionWith(
-  firecrawl: Pick<Firecrawl, "listBrowsers">,
-  providerSessionId: string,
-): Promise<ActiveBrowserSession | null> {
-  const response = await firecrawl.listBrowsers({ status: "active" });
-  if (!response.success) {
-    throw new Error(response.error?.trim() || "Firecrawl could not list browser sessions");
-  }
-  const session = response.sessions?.find(
-    (candidate) => candidate.id === providerSessionId && candidate.status === "active",
-  );
-  return session
-    ? {
-        sessionId: session.id,
-        cdpUrl: session.cdpUrl,
-        interactiveLiveViewUrl: optionalFirecrawlLiveViewUrl(session.interactiveLiveViewUrl),
-      }
-    : null;
-}
-
-export async function findActiveBrowserSession(providerSessionId: string) {
-  return await findActiveBrowserSessionWith(createFirecrawlClient(), providerSessionId);
-}
-
 function browserFinishDependencies(): BrowserFinishDependencies {
-  const firecrawl = createFirecrawlClient({ maxRetries: 1 });
+  const firecrawl = createFirecrawlClient();
   return {
-    find: async (providerSessionId) =>
-      await findActiveBrowserSessionWith(firecrawl, providerSessionId),
     captureSnapshot: async (cdpUrl) => await (await connectPlaywrightBrowser(cdpUrl)).snapshot(),
     close: async (providerSessionId) =>
       await closeFirecrawlBrowserSession(firecrawl, providerSessionId),
@@ -66,26 +33,13 @@ function browserFinishDependencies(): BrowserFinishDependencies {
 }
 
 export async function finishHandedOffBrowser(
-  args: { providerSessionId: string; captureEvidence: boolean },
+  args: { providerSessionId: string; cdpUrl: string; captureEvidence: boolean },
   dependencies: BrowserFinishDependencies = browserFinishDependencies(),
 ) {
   let evidence = "The operator returned control without a final browser snapshot.";
-  let active: Awaited<ReturnType<typeof findActiveBrowserSession>> | undefined;
-  try {
-    active = await dependencies.find(args.providerSessionId);
-  } catch (error) {
-    evidence = `Scout could not verify the handed-off browser before closing it: ${boundedEvidence(diagnosticMessage(error))}`;
-  }
-  if (active === null) {
-    return {
-      evidence: "The browser session ended before Scout could inspect the completed human step.",
-      providerDurationMs: null,
-      creditsBilled: null,
-    };
-  }
-  if (active && args.captureEvidence) {
+  if (args.captureEvidence) {
     try {
-      evidence = boundedEvidence(await dependencies.captureSnapshot(active.cdpUrl));
+      evidence = boundedEvidence(await dependencies.captureSnapshot(args.cdpUrl));
     } catch (error) {
       evidence = `The post-handoff browser snapshot failed: ${boundedEvidence(diagnosticMessage(error))}`;
     }
@@ -107,6 +61,7 @@ export const finishBrowserSession = internalAction({
   args: {
     sessionId: v.id("scoutBrowserSessions"),
     captureEvidence: v.boolean(),
+    usageTurnId: v.optional(v.id("scoutTurns")),
   },
   returns: v.string(),
   handler: async (ctx, args): Promise<string> => {
@@ -119,12 +74,14 @@ export const finishBrowserSession = internalAction({
 
     const result = await finishHandedOffBrowser({
       providerSessionId: session.providerSessionId,
+      cdpUrl: session.lifecycle.cdpUrl,
       captureEvidence: args.captureEvidence,
     });
     await ctx.runMutation(internal.scout.browserSessions.close, {
       sessionId: args.sessionId,
       providerDurationMs: result.providerDurationMs,
       creditsBilled: result.creditsBilled,
+      ...omitNullish({ usageTurnId: args.usageTurnId }),
     });
     return result.evidence;
   },

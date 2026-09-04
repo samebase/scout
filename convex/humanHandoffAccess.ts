@@ -4,8 +4,8 @@ import { type Infer, v } from "convex/values";
 import { internal } from "./_generated/api";
 import { action } from "./_generated/server";
 import { humanHandoffPageValidator } from "./humanHandoffsModel";
-import { findActiveBrowserSession } from "./humanHandoffBrowser";
 import { omitNullish } from "../shared/omitNullish";
+import { requireFirecrawlLiveViewUrl } from "./scout/lib/firecrawlLiveView";
 import {
   hashHumanHandoffAccessToken,
   isHumanHandoffAccessToken,
@@ -33,15 +33,6 @@ function accessInput(args: { handoffId: string; accessToken?: string }) {
       };
 }
 
-async function interactiveLiveViewUrl(providerSessionId: string): Promise<string | null> {
-  try {
-    const session = await findActiveBrowserSession(providerSessionId);
-    return session?.interactiveLiveViewUrl ?? null;
-  } catch {
-    throw new Error("Scout could not verify the live browser. Try again.");
-  }
-}
-
 export const load = action({
   args: accessArgs,
   returns: humanHandoffPageValidator,
@@ -66,10 +57,7 @@ export const load = action({
     }
     if (prepared.status !== "available" && prepared.status !== "active") return prepared;
 
-    let liveViewUrl = await interactiveLiveViewUrl(prepared.providerSessionId);
-    if (!liveViewUrl) {
-      return await ctx.runMutation(internal.humanHandoffs.failAccess, access);
-    }
+    let liveViewUrl = requireFirecrawlLiveViewUrl(prepared.interactiveLiveViewUrl);
 
     if (prepared.status === "available") {
       prepared = await ctx.runMutation(internal.humanHandoffs.claimAuthorized, access);
@@ -93,10 +81,7 @@ export const load = action({
       if (prepared.status !== "active") return { status: "invalid" };
     }
 
-    liveViewUrl = await interactiveLiveViewUrl(prepared.providerSessionId);
-    if (!liveViewUrl) {
-      return await ctx.runMutation(internal.humanHandoffs.failAccess, access);
-    }
+    liveViewUrl = requireFirecrawlLiveViewUrl(prepared.interactiveLiveViewUrl);
     return {
       status: "waiting",
       handoffId: prepared.handoffId,
@@ -131,10 +116,7 @@ export const continueHandoff = action({
     }
     if (prepared.status !== "available" && prepared.status !== "active") return prepared;
 
-    const liveViewUrl = await interactiveLiveViewUrl(prepared.providerSessionId);
-    if (!liveViewUrl) {
-      return await ctx.runMutation(internal.humanHandoffs.failAccess, access);
-    }
+    requireFirecrawlLiveViewUrl(prepared.interactiveLiveViewUrl);
     if (prepared.status === "available") {
       prepared = await ctx.runMutation(internal.humanHandoffs.claimAuthorized, access);
       if (prepared.status === "broken") {

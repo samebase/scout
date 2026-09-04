@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 
 import { convexTest } from "convex-test";
+import agentTest from "@convex-dev/agent/test";
 import workflowTest from "@convex-dev/workflow/test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { api, components, internal } from "./_generated/api";
@@ -13,12 +14,8 @@ import { hashHumanHandoffAccessToken } from "./scout/lib/humanHandoffAccess";
 const modules = import.meta.glob("./**/*.ts");
 const accessToken = `hh1_${"A".repeat(43)}`;
 const accessTokenHash = hashHumanHandoffAccessToken(accessToken);
-const deliveryArgs = {
-  emailSubject: "A browser check needs you",
-  emailNote: "Please complete the waiting browser check, then return control.",
-};
+const interactiveLiveViewUrl = "https://liveview.firecrawl.dev/view/session-1";
 const browserProvider = vi.hoisted(() => ({
-  list: vi.fn(),
   close: vi.fn(),
   snapshot: vi.fn(),
 }));
@@ -27,7 +24,7 @@ vi.mock("./scout/lib/firecrawl", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./scout/lib/firecrawl")>();
   return {
     ...actual,
-    createFirecrawlClient: () => ({ listBrowsers: browserProvider.list }),
+    createFirecrawlClient: () => ({}),
     closeFirecrawlBrowserSession: browserProvider.close,
   };
 });
@@ -43,16 +40,6 @@ vi.mock("./scout/playwrightBrowser", async (importOriginal) => {
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-09-03T12:00:00Z"));
-  browserProvider.list.mockReset().mockResolvedValue({
-    success: true,
-    sessions: [
-      {
-        id: "provider-session-1",
-        status: "active",
-        cdpUrl: "wss://browser.firecrawl.dev/cdp?token=private",
-      },
-    ],
-  });
   browserProvider.close.mockReset().mockResolvedValue({
     success: true,
     sessionDurationMs: 12_000,
@@ -67,8 +54,9 @@ afterEach(() => {
 
 async function setupContext() {
   const backend = convexTest(schema, modules);
+  agentTest.register(backend);
   workflowTest.register(backend);
-  const ids = await backend.run(async (ctx) => {
+  const identity = await backend.run(async (ctx) => {
     const userId = await ctx.db.insert("users", { email: ADMIN_EMAIL });
     const scoutId = await ctx.db.insert("scouts", {
       displayName: "Conrad Scout",
@@ -78,46 +66,69 @@ async function setupContext() {
       agentMail: { inboxId: "conrad-inbox", address: "conrad@example.test" },
       firecrawl: { profileName: "conrad-profile" },
     });
-    const threadId = "thread-1";
+    return { userId, scoutId };
+  });
+  const thread = await backend.mutation(components.agent.threads.createThread, {
+    userId: identity.userId,
+  });
+  const prompt = (
+    await backend.mutation(components.agent.messages.addMessages, {
+      threadId: thread._id,
+      messages: [{ message: { role: "user", content: "Test human handoff" } }],
+    })
+  ).messages[0];
+  if (!prompt) throw new Error("Prompt message was not created");
+  const ids = await backend.run(async (ctx) => {
+    const threadId = thread._id;
     const chatId = await ctx.db.insert("scoutChats", {
-      userId,
-      scoutId,
+      userId: identity.userId,
+      scoutId: identity.scoutId,
       threadId,
       createdAt: Date.now(),
     });
     const turnId = await ctx.db.insert("scoutTurns", {
-      threadId: "thread-1",
-      order: 0,
-      promptMessageId: "prompt-1",
-      scoutId,
+      threadId,
+      order: prompt.order,
+      promptMessageId: prompt._id,
+      scoutId: identity.scoutId,
       model: "qwen/qwen3.7-flash",
       startedAt: Date.now(),
-      state: { kind: "pending", leaseExpiresAt: Date.now() + 8 * 60 * 1_000 },
+      state: {
+        kind: "pending",
+        leaseExpiresAt: Date.now() + 8 * 60 * 1_000,
+        completedSteps: 0,
+        usage: {},
+      },
     });
     const sessionId = await ctx.db.insert("scoutBrowserSessions", {
       threadId,
-      scoutId,
+      scoutId: identity.scoutId,
       sequence: 1,
       provider: "firecrawl",
       providerSessionId: "provider-session-1",
       profileName: "conrad-profile",
       viewport: { width: 1_280, height: 800 },
       nextOperationSequence: 1,
-      lifecycle: { kind: "active", openedAtMs: Date.now() },
+      lifecycle: {
+        kind: "active",
+        openedAtMs: Date.now(),
+        providerExpiresAtMs: Date.now() + 60 * 60 * 1_000,
+        cdpUrl: "wss://browser.firecrawl.dev/cdp?token=private",
+        interactiveLiveViewUrl,
+      },
     });
-    return { userId, chatId, scoutId, threadId, turnId, sessionId };
+    return { chatId, threadId, turnId, sessionId };
   });
-  const owner = backend.withIdentity({ subject: `${ids.userId}|test-session` });
-  return { backend, owner, ...ids };
+  const owner = backend.withIdentity({ subject: `${identity.userId}|test-session` });
+  return { backend, owner, ...identity, ...ids, promptMessageId: prompt._id };
 }
 
 async function setup() {
   const context = await setupContext();
   const requested = await context.backend.mutation(internal.humanHandoffs.request, {
-    promptMessageId: "prompt-1",
+    promptMessageId: context.promptMessageId,
     reason: "  GitHub   requires a CAPTCHA.  ",
     accessTokenHash,
-    ...deliveryArgs,
   });
   return { ...context, requested };
 }
@@ -133,14 +144,155 @@ async function claim(
 }
 
 describe("human handoffs", () => {
+  test("persists completed slice progress before the next generation action", async () => {
+    const { backend, promptMessageId, turnId } = await setupContext();
+    const checkpointedAt = Date.now();
+    await expect(
+      backend.mutation(internal.scout.turns.start, { promptMessageId }),
+    ).resolves.toEqual({ completedSteps: 0, usage: {} });
+    await backend.mutation(internal.scout.turns.continueAfterSlice, {
+      promptMessageId,
+      previousCompletedSteps: 0,
+      completedSteps: 2,
+      usage: { promptTokens: 100, completionTokens: 10 },
+    });
+
+    expect(await backend.run(async (ctx) => (await ctx.db.get(turnId))?.state)).toMatchObject({
+      kind: "pending",
+      leaseExpiresAt: checkpointedAt + 11 * 60 * 1_000,
+      completedSteps: 2,
+      usage: { promptTokens: 100, completionTokens: 10 },
+    });
+    await expect(
+      backend.mutation(internal.scout.turns.continueAfterSlice, {
+        promptMessageId,
+        previousCompletedSteps: 0,
+        completedSteps: 2,
+        usage: {},
+      }),
+    ).rejects.toThrow("progress changed");
+  });
+
+  test("an expired turn closes its active browser and retains cumulative usage", async () => {
+    const { backend, scoutId, sessionId, threadId, turnId } = await setupContext();
+    await backend.run(
+      async (ctx) =>
+        await ctx.db.patch(turnId, {
+          state: {
+            kind: "pending",
+            leaseExpiresAt: Date.now() - 1,
+            completedSteps: 2,
+            usage: { promptTokens: 100, completionTokens: 10 },
+          },
+        }),
+    );
+
+    await backend.mutation(internal.scout.turns.expire, { turnId });
+    expect(await backend.run(async (ctx) => (await ctx.db.get(turnId))?.state)).toMatchObject({
+      kind: "failed",
+      usage: { promptTokens: 100, completionTokens: 10 },
+    });
+    expect(
+      await backend.run(async (ctx) => (await ctx.db.get(sessionId))?.lifecycle),
+    ).toMatchObject({ kind: "closing" });
+    await expect(
+      backend.run(async (ctx) => activeBrowserForChat(ctx, scoutId, threadId)),
+    ).rejects.toThrow("browser is closing");
+    await backend.action(internal.humanHandoffBrowser.finishBrowserSession, {
+      sessionId,
+      captureEvidence: false,
+      usageTurnId: turnId,
+    });
+    await backend.finishAllScheduledFunctions(() => vi.runAllTimers());
+
+    expect(browserProvider.close).toHaveBeenCalledExactlyOnceWith(
+      expect.anything(),
+      "provider-session-1",
+    );
+    expect(
+      await backend.run(async (ctx) => (await ctx.db.get(sessionId))?.lifecycle),
+    ).toMatchObject({ kind: "closed", providerDurationMs: 12_000, creditsBilled: 4 });
+    expect(await backend.run(async (ctx) => (await ctx.db.get(turnId))?.state)).toMatchObject({
+      kind: "failed",
+      firecrawlDurationMs: 12_000,
+      firecrawlCredits: 4,
+    });
+  });
+
+  test("adds usage from multiple browser sessions in one turn", async () => {
+    const { backend, scoutId, sessionId, threadId, turnId } = await setupContext();
+    await backend.mutation(internal.scout.browserSessions.close, {
+      sessionId,
+      providerDurationMs: 4_000,
+      creditsBilled: 2,
+      usageTurnId: turnId,
+    });
+    const next = await backend.mutation(internal.scout.browserSessions.open, {
+      threadId,
+      scoutId,
+      source: { kind: "manual" },
+      providerSessionId: "provider-session-2",
+      cdpUrl: "wss://browser.firecrawl.dev/cdp?token=private-2",
+      interactiveLiveViewUrl,
+      providerExpiresAtMs: Date.now() + 60 * 60 * 1_000,
+      profileName: "conrad-profile",
+    });
+    await backend.mutation(internal.scout.browserSessions.close, {
+      sessionId: next.sessionId,
+      providerDurationMs: 6_000,
+      creditsBilled: 3,
+      usageTurnId: turnId,
+    });
+
+    expect(await backend.run(async (ctx) => (await ctx.db.get(turnId))?.state)).toMatchObject({
+      kind: "pending",
+      firecrawlDurationMs: 10_000,
+      firecrawlCredits: 5,
+    });
+  });
+
+  test("keeps a cleanup reservation when Firecrawl deletion fails", async () => {
+    const { backend, scoutId, sessionId, threadId, turnId } = await setupContext();
+    await backend.run(async (ctx) => {
+      await ctx.db.patch(turnId, {
+        state: {
+          kind: "pending",
+          leaseExpiresAt: Date.now() - 1,
+          completedSteps: 0,
+          usage: {},
+        },
+      });
+    });
+    await backend.mutation(internal.scout.turns.expire, { turnId });
+    browserProvider.close.mockRejectedValueOnce(new Error("Firecrawl deletion failed"));
+
+    await expect(
+      backend.action(internal.humanHandoffBrowser.finishBrowserSession, {
+        sessionId,
+        captureEvidence: false,
+        usageTurnId: turnId,
+      }),
+    ).rejects.toThrow("Firecrawl deletion failed");
+
+    expect(
+      await backend.run(async (ctx) => (await ctx.db.get(sessionId))?.lifecycle),
+    ).toMatchObject({ kind: "closing" });
+    await expect(
+      backend.run(async (ctx) => activeBrowserForChat(ctx, scoutId, threadId)),
+    ).rejects.toThrow("This Scout's browser is closing");
+  });
+
   test("keeps the Scout busy after pausing and while a continued handoff is closing", async () => {
-    const { backend, owner, requested, scoutId, sessionId, turnId } = await setup();
+    const { backend, owner, promptMessageId, requested, sessionId, threadId, turnId } =
+      await setup();
     await backend.mutation(internal.scout.turns.completeHumanHandoffPause, {
-      promptMessageId: "prompt-1",
+      promptMessageId,
       usage: {},
     });
-    await expect(owner.query(api.scout.chats.getScoutActivity, { scoutId })).resolves.toEqual({
-      active: true,
+    await expect(owner.query(api.scout.chats.getScoutActivity, { threadId })).resolves.toEqual({
+      kind: "handoff",
+      threadId,
+      turnId,
     });
     await claim(backend, requested.handoffId);
     await backend.mutation(internal.humanHandoffs.continueAuthorized, {
@@ -158,15 +310,54 @@ describe("human handoffs", () => {
       firecrawlCredits: 1,
       firecrawlDurationMs: 1_000,
     });
-    await expect(owner.query(api.scout.chats.getScoutActivity, { scoutId })).resolves.toEqual({
-      active: true,
+    await expect(owner.query(api.scout.chats.getScoutActivity, { threadId })).resolves.toEqual({
+      kind: "handoff",
+      threadId,
+      turnId,
     });
   });
 
+  test("stops an active handoff and makes its page terminal", async () => {
+    const { backend, owner, promptMessageId, requested, sessionId, threadId, turnId } =
+      await setup();
+    await backend.mutation(internal.scout.turns.completeHumanHandoffPause, {
+      promptMessageId,
+      usage: {},
+    });
+    await claim(backend, requested.handoffId);
+
+    await owner.mutation(api.scout.chats.stop, { threadId });
+    expect(await backend.run(async (ctx) => (await ctx.db.get(requested.handoffId))?.status)).toBe(
+      "stopped",
+    );
+    expect(await backend.run(async (ctx) => (await ctx.db.get(turnId))?.state)).toMatchObject({
+      kind: "stopping",
+      generationFinished: true,
+    });
+
+    await backend.mutation(internal.scout.browserSessions.close, {
+      sessionId,
+      providerDurationMs: 1_000,
+      creditsBilled: 1,
+    });
+    vi.advanceTimersByTime(0);
+    await backend.finishInProgressScheduledFunctions();
+    await expect(owner.query(api.scout.chats.getScoutActivity, { threadId })).resolves.toEqual({
+      kind: "idle",
+    });
+    await expect(
+      backend.query(internal.humanHandoffs.prepareAccess, {
+        handoffId: requested.handoffId,
+        accessTokenHash,
+        now: Date.now(),
+      }),
+    ).resolves.toMatchObject({ status: "stopped" });
+  });
+
   test("reserves a failed handoff's browser until cleanup and rejects stale manual dispatch", async () => {
-    const { backend, scoutId, threadId, sessionId } = await setup();
+    const { backend, promptMessageId, scoutId, threadId, sessionId } = await setup();
     await backend.mutation(internal.scout.turns.fail, {
-      promptMessageId: "prompt-1",
+      promptMessageId,
       failure: "Generation failed",
     });
     await expect(
@@ -215,7 +406,6 @@ describe("human handoffs", () => {
       inboxId: "conrad-inbox",
       recipientEmail: ADMIN_EMAIL,
       scoutName: "Conrad Scout",
-      ...deliveryArgs,
     });
     expect(JSON.stringify(delivery)).not.toMatch(/hh1_|#access=|https?:\/\//);
     expect(requested).toEqual({
@@ -247,7 +437,7 @@ describe("human handoffs", () => {
       }),
     ).resolves.toMatchObject({
       status: "available",
-      providerSessionId: "provider-session-1",
+      interactiveLiveViewUrl,
     });
     await expect(
       owner.query(internal.humanHandoffs.prepareAccess, {
@@ -284,14 +474,81 @@ describe("human handoffs", () => {
     expect(anonymousPage).toEqual(bearerPage);
   });
 
+  test("does not expose a handoff after its Firecrawl session expires", async () => {
+    const { backend, owner, requested, sessionId } = await setup();
+    await backend.run(async (ctx) => {
+      const session = await ctx.db.get(sessionId);
+      if (!session || session.lifecycle.kind !== "active") {
+        throw new Error("Active browser session not found");
+      }
+      await ctx.db.patch(session._id, {
+        lifecycle: { ...session.lifecycle, providerExpiresAtMs: Date.now() - 1 },
+      });
+    });
+
+    await expect(
+      backend.query(internal.humanHandoffs.prepareAccess, {
+        handoffId: requested.handoffId,
+        accessTokenHash,
+        now: Date.now(),
+      }),
+    ).resolves.toEqual({ status: "broken", handoffId: requested.handoffId });
+    await expect(owner.query(api.humanHandoffs.active, { sessionId })).resolves.toBeNull();
+  });
+
+  test("does not offer a handoff beyond the Firecrawl session lifetime", async () => {
+    const context = await setupContext();
+    const providerExpiresAtMs = Date.now() + 7 * 60 * 1_000;
+    await context.backend.run(async (ctx) => {
+      const session = await ctx.db.get(context.sessionId);
+      if (!session || session.lifecycle.kind !== "active") {
+        throw new Error("Active browser session not found");
+      }
+      await ctx.db.patch(session._id, {
+        lifecycle: { ...session.lifecycle, providerExpiresAtMs },
+      });
+    });
+
+    const requested = await context.backend.mutation(internal.humanHandoffs.request, {
+      promptMessageId: context.promptMessageId,
+      reason: "GitHub requires a CAPTCHA.",
+      accessTokenHash,
+    });
+
+    expect(requested.claimExpiresAt).toBe(providerExpiresAtMs - HUMAN_HANDOFF_ACTIVE_MS);
+  });
+
+  test("does not request a handoff without time for the full control window", async () => {
+    const context = await setupContext();
+    await context.backend.run(async (ctx) => {
+      const session = await ctx.db.get(context.sessionId);
+      if (!session || session.lifecycle.kind !== "active") {
+        throw new Error("Active browser session not found");
+      }
+      await ctx.db.patch(session._id, {
+        lifecycle: {
+          ...session.lifecycle,
+          providerExpiresAtMs: Date.now() + HUMAN_HANDOFF_ACTIVE_MS,
+        },
+      });
+    });
+
+    await expect(
+      context.backend.mutation(internal.humanHandoffs.request, {
+        promptMessageId: context.promptMessageId,
+        reason: "GitHub requires a CAPTCHA.",
+        accessTokenHash,
+      }),
+    ).rejects.toThrow("Active Scout browser session not found");
+  });
+
   test("repeating a request preserves its link and workflow", async () => {
-    const { backend, requested, sessionId, turnId } = await setup();
+    const { backend, promptMessageId, requested, sessionId, turnId } = await setup();
     const original = await backend.run(async (ctx) => await ctx.db.get(requested.handoffId));
     const repeated = await backend.mutation(internal.humanHandoffs.request, {
-      promptMessageId: "prompt-1",
+      promptMessageId,
       reason: "The same browser check.",
       accessTokenHash,
-      ...deliveryArgs,
     });
 
     expect(repeated).toEqual({ ...requested, created: false });
@@ -308,16 +565,15 @@ describe("human handoffs", () => {
     expect(byTurn?.sessionId).toBe(sessionId);
     await expect(
       backend.mutation(internal.humanHandoffs.request, {
-        promptMessageId: "prompt-1",
+        promptMessageId,
         reason: "The same browser check.",
         accessTokenHash: "b".repeat(64),
-        ...deliveryArgs,
       }),
     ).rejects.toThrow("already");
   });
 
   test("rejects a browser session bound to a different Scout", async () => {
-    const { backend, sessionId } = await setupContext();
+    const { backend, promptMessageId, sessionId } = await setupContext();
     await backend.run(async (ctx) => {
       const otherScoutId = await ctx.db.insert("scouts", {
         displayName: "Mara Scout",
@@ -332,16 +588,15 @@ describe("human handoffs", () => {
 
     await expect(
       backend.mutation(internal.humanHandoffs.request, {
-        promptMessageId: "prompt-1",
+        promptMessageId,
         reason: "CAPTCHA",
         accessTokenHash,
-        ...deliveryArgs,
       }),
     ).rejects.toThrow("Active Scout browser session not found");
   });
 
   test("does not authorize a handoff after its session moves to another chat", async () => {
-    const { backend, owner, requested, sessionId } = await setup();
+    const { backend, owner, promptMessageId, requested, sessionId } = await setup();
     await backend.run(async (ctx) => {
       await ctx.db.patch("scoutBrowserSessions", sessionId, { threadId: "different-thread" });
     });
@@ -356,7 +611,7 @@ describe("human handoffs", () => {
     await expect(owner.query(api.humanHandoffs.active, { sessionId })).resolves.toBeNull();
     await expect(
       backend.mutation(internal.scout.turns.completeHumanHandoffPause, {
-        promptMessageId: "prompt-1",
+        promptMessageId,
         usage: {},
       }),
     ).rejects.toThrow("Active human handoff not found");
@@ -377,6 +632,25 @@ describe("human handoffs", () => {
     await expect(claim(backend, requested.handoffId)).resolves.toEqual(claimed);
   });
 
+  test("does not claim without time for the full control window", async () => {
+    const { backend, requested, sessionId } = await setup();
+    const providerExpiresAtMs = Date.now() + 60_000;
+    await backend.run(async (ctx) => {
+      const session = await ctx.db.get(sessionId);
+      if (!session || session.lifecycle.kind !== "active") {
+        throw new Error("Active browser session not found");
+      }
+      await ctx.db.patch(session._id, {
+        lifecycle: { ...session.lifecycle, providerExpiresAtMs },
+      });
+    });
+
+    await expect(claim(backend, requested.handoffId)).resolves.toMatchObject({
+      status: "broken",
+      handoffId: requested.handoffId,
+    });
+  });
+
   test("continuation is atomic and replays the same terminal page", async () => {
     const { backend, requested } = await setup();
     await claim(backend, requested.handoffId);
@@ -390,9 +664,9 @@ describe("human handoffs", () => {
   });
 
   test("completing the Scout turn preserves the available browser handoff", async () => {
-    const { backend, requested, turnId } = await setup();
+    const { backend, promptMessageId, requested, turnId } = await setup();
     await backend.mutation(internal.scout.turns.completeHumanHandoffPause, {
-      promptMessageId: "prompt-1",
+      promptMessageId,
       usage: {},
     });
     const handoff = await backend.run(async (ctx) => await ctx.db.get(requested.handoffId));
@@ -402,7 +676,7 @@ describe("human handoffs", () => {
   });
 
   test("the human can return control before Scout records its paused checkpoint", async () => {
-    const { backend, requested, turnId } = await setup();
+    const { backend, promptMessageId, requested, turnId } = await setup();
     await claim(backend, requested.handoffId);
     await backend.mutation(internal.humanHandoffs.continueAuthorized, {
       handoffId: requested.handoffId,
@@ -413,7 +687,7 @@ describe("human handoffs", () => {
     );
 
     await backend.mutation(internal.scout.turns.completeHumanHandoffPause, {
-      promptMessageId: "prompt-1",
+      promptMessageId,
       usage: {},
     });
     expect(await backend.run(async (ctx) => (await ctx.db.get(turnId))?.state.kind)).toBe(
@@ -460,9 +734,9 @@ describe("human handoffs", () => {
   });
 
   test("an unexpected turn failure fails the open handoff", async () => {
-    const { backend, requested } = await setup();
+    const { backend, promptMessageId, requested } = await setup();
     await backend.mutation(internal.scout.turns.fail, {
-      promptMessageId: "prompt-1",
+      promptMessageId,
       failure: "generation failed",
     });
     const handoff = await backend.run(async (ctx) => await ctx.db.get(requested.handoffId));
@@ -472,14 +746,14 @@ describe("human handoffs", () => {
   test.each(["continue first", "failure first"])(
     "Continue racing with a turn failure stays failed: %s",
     async (ordering) => {
-      const { backend, requested, turnId } = await setup();
+      const { backend, promptMessageId, requested, turnId } = await setup();
       await claim(backend, requested.handoffId);
       const continuationArgs = { handoffId: requested.handoffId, accessTokenHash };
       if (ordering === "continue first") {
         await backend.mutation(internal.humanHandoffs.continueAuthorized, continuationArgs);
       }
       await backend.mutation(internal.scout.turns.fail, {
-        promptMessageId: "prompt-1",
+        promptMessageId,
         failure: "generation failed after sending the handoff",
       });
 
@@ -487,7 +761,7 @@ describe("human handoffs", () => {
         backend.mutation(internal.humanHandoffs.continueAuthorized, continuationArgs),
       ).resolves.toMatchObject({ status: "failed", failure: "scout_failed" });
       await backend.mutation(internal.scout.turns.completeHumanHandoffPause, {
-        promptMessageId: "prompt-1",
+        promptMessageId,
         usage: {},
       });
       const handoff = await backend.run(async (ctx) => await ctx.db.get(requested.handoffId));
@@ -504,7 +778,7 @@ describe("human handoffs", () => {
   );
 
   test("a failed source turn releases the paused workflow, closes its browser, and never resumes", async () => {
-    const { backend, requested, sessionId, threadId } = await setup();
+    const { backend, promptMessageId, requested, sessionId, threadId } = await setup();
     await claim(backend, requested.handoffId);
     await backend.mutation(internal.humanHandoffs.continueAuthorized, {
       handoffId: requested.handoffId,
@@ -529,16 +803,16 @@ describe("human handoffs", () => {
     expect(browserProvider.close).not.toHaveBeenCalled();
 
     await backend.mutation(internal.scout.turns.fail, {
-      promptMessageId: "prompt-1",
+      promptMessageId,
       failure: "generation failed before the pause checkpoint",
     });
     await backend.finishAllScheduledFunctions(() => vi.runAllTimers());
 
-    const finished = await backend.query(components.workflow.workflow.getStatus, {
-      workflowId: handoff.workflowId,
-    });
-    expect(finished.workflow.runResult).toEqual({ kind: "success", returnValue: null });
-    expect(finished.inProgress).toEqual([]);
+    await expect(
+      backend.query(components.workflow.workflow.getStatus, {
+        workflowId: handoff.workflowId,
+      }),
+    ).rejects.toThrow("Workflow not found");
     expect(browserProvider.close).toHaveBeenCalledExactlyOnceWith(
       expect.anything(),
       "provider-session-1",
@@ -587,7 +861,7 @@ describe("human handoffs", () => {
   });
 
   test("supports handoffs in long-running chats", async () => {
-    const { backend, turnId, scoutId, threadId } = await setupContext();
+    const { backend, promptMessageId, turnId, scoutId, threadId } = await setupContext();
     await backend.run(async (ctx) => {
       await ctx.db.patch("scoutTurns", turnId, { order: 50 });
       for (let order = 0; order < 50; order += 1) {
@@ -605,10 +879,9 @@ describe("human handoffs", () => {
 
     await expect(
       backend.mutation(internal.humanHandoffs.request, {
-        promptMessageId: "prompt-1",
+        promptMessageId,
         reason: "CAPTCHA",
         accessTokenHash,
-        ...deliveryArgs,
       }),
     ).resolves.toMatchObject({ created: true });
   });
