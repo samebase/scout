@@ -101,6 +101,7 @@ type ChatThread = FunctionReturnType<typeof api.scout.chats.listThreads>["page"]
 type BrowserSession = FunctionReturnType<typeof api.scout.browserSessions.list>[number];
 type BrowserSessionDetail = NonNullable<FunctionReturnType<typeof api.scout.browserSessions.get>>;
 type Scout = FunctionReturnType<typeof api.scout.scouts.list>[number];
+type InspectorKind = "browser" | "model-call";
 type PendingThread = {
   threadId: string;
   scoutId: Scout["_id"];
@@ -505,7 +506,7 @@ function ChatsWorkspace() {
   const closeCreateChat = () => {
     if (createChatSubmitting) return;
     setCreateChatOpen(false);
-    setMobilePane("right");
+    setMobilePane("main");
     requestAnimationFrame(() => createChatButton.current?.focus());
   };
 
@@ -516,7 +517,7 @@ function ChatsWorkspace() {
     setComposerState({ kind: "idle" });
     setCreateChatOpen(false);
     void navigate({ to: "/chats", search: { thread: created.threadId } });
-    setMobilePane("right");
+    setMobilePane("main");
   };
 
   const submitPrompt = async () => {
@@ -708,35 +709,24 @@ function ChatsWorkspace() {
         ...(search.session ? { session: search.session } : {}),
       },
     });
+    if (!selectedBrowserSession) setMobilePane("main");
   };
 
   const hasBrowser = selectedBrowserSession !== undefined && !createChatOpen;
+  const inspectorKind: InspectorKind | null = createChatOpen
+    ? null
+    : search.call
+      ? "model-call"
+      : hasBrowser
+        ? "browser"
+        : null;
   const conversation = (
     <PaneFrame
-      header={
-        search.call ? (
-          <div className="flex h-full items-center gap-2 px-2 text-xs font-semibold">
-            <Button type="button" variant="ghost" size="sm" onClick={closeModelCall}>
-              <ArrowLeftIcon />
-              Back
-            </Button>
-            <span>SDK model input</span>
-          </div>
-        ) : (
-          <div className="flex h-full items-center px-4 text-xs font-semibold">Chat</div>
-        )
-      }
+      header={<div className="flex h-full items-center px-4 text-xs font-semibold">Chat</div>}
       content={
-        <section
-          aria-label={search.call ? "Model call inspector" : "Conversation"}
-          className="flex h-full min-h-0 min-w-0 flex-col"
-        >
-          {search.call && threadId ? (
-            <SdkModelInputInspector modelCallId={search.call} threadId={threadId} />
-          ) : null}
+        <section aria-label="Conversation" className="flex h-full min-h-0 min-w-0 flex-col">
           {activeHandoff?.phase === "delivery_failed" ? (
             <div
-              hidden={Boolean(search.call)}
               role="alert"
               className="flex flex-wrap items-center justify-between gap-3 border-b border-destructive/30 bg-destructive/5 px-4 py-3"
             >
@@ -746,10 +736,7 @@ function ChatsWorkspace() {
               </p>
             </div>
           ) : activeHandoff ? (
-            <div
-              hidden={Boolean(search.call)}
-              className="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/40 px-4 py-3"
-            >
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/40 px-4 py-3">
               <p className="text-sm">{activeHandoff.reason}</p>
               <Button asChild size="sm" variant="outline">
                 <Link to="/handoff/$handoffId" params={{ handoffId: activeHandoff.handoffId }}>
@@ -759,7 +746,7 @@ function ChatsWorkspace() {
             </div>
           ) : null}
 
-          <div hidden={Boolean(search.call)} className="min-h-0 flex-1">
+          <div className="min-h-0 flex-1">
             <MessageScrollerProvider autoScroll scrollPreviousItemPeek={48}>
               <MessageScroller>
                 <MessageScrollerViewport>
@@ -800,7 +787,6 @@ function ChatsWorkspace() {
           </div>
 
           <form
-            hidden={Boolean(search.call)}
             className="chat-composer shrink-0 overflow-y-auto border-t bg-[color-mix(in_oklch,var(--card)_92%,var(--background))] p-3 @sm:p-4"
             onSubmit={submitComposer}
           >
@@ -959,11 +945,48 @@ function ChatsWorkspace() {
           </form>
         </section>
       }
-      scrollRestorationId={
-        search.call ? `model-call:${search.call}` : `chat-thread:${threadId ?? "empty"}`
-      }
+      scrollRestorationId={`chat-thread:${threadId ?? "empty"}`}
     />
   );
+  const inspector =
+    search.call && threadId ? (
+      <PaneFrame
+        header={
+          <div className="flex h-full items-center gap-2 px-2 text-xs font-semibold">
+            <Button type="button" variant="ghost" size="sm" onClick={closeModelCall}>
+              <ArrowLeftIcon />
+              Back
+            </Button>
+            <span>SDK model input</span>
+          </div>
+        }
+        content={<SdkModelInputInspector modelCallId={search.call} threadId={threadId} />}
+        scrollRestorationId={`model-call:${search.call}`}
+      />
+    ) : hasBrowser ? (
+      <PaneFrame
+        header={
+          browserSessions && browserSessions.length > 1 ? (
+            <BrowserSessionPicker
+              sessions={browserSessions}
+              selectedSessionId={selectedBrowserSession.sessionId}
+              onSelectSession={(sessionId) =>
+                void navigate({
+                  to: "/chats",
+                  search: { ...search, session: sessionId },
+                })
+              }
+            />
+          ) : undefined
+        }
+        content={
+          <ChatBrowserView
+            liveViewUrl={liveView?.url ?? null}
+            session={browserSession ?? undefined}
+          />
+        }
+      />
+    ) : undefined;
 
   return (
     <>
@@ -974,7 +997,8 @@ function ChatsWorkspace() {
             createOpen={createChatOpen}
             createSubmitting={createChatSubmitting}
             loadingScouts={scouts === undefined}
-            hasBrowser={hasBrowser}
+            inspectorKind={inspectorKind}
+            inspectionKey={search.call ?? selectedBrowserSession?.sessionId ?? null}
             driver={selectedDriver}
             thread={selectedThread}
             scout={selectedScout}
@@ -1001,7 +1025,7 @@ function ChatsWorkspace() {
                 onLoadMore={() => threads.loadMore(THREAD_PAGE_SIZE)}
                 onNavigate={() => {
                   resetForNavigation();
-                  setMobilePane("right");
+                  setMobilePane("main");
                 }}
               />
             }
@@ -1021,34 +1045,11 @@ function ChatsWorkspace() {
                 />
               }
             />
-          ) : hasBrowser ? (
-            <PaneFrame
-              header={
-                browserSessions && browserSessions.length > 1 ? (
-                  <BrowserSessionPicker
-                    sessions={browserSessions}
-                    selectedSessionId={selectedBrowserSession.sessionId}
-                    onSelectSession={(sessionId) =>
-                      void navigate({
-                        to: "/chats",
-                        search: { ...search, session: sessionId },
-                      })
-                    }
-                  />
-                ) : undefined
-              }
-              content={
-                <ChatBrowserView
-                  liveViewUrl={liveView?.url ?? null}
-                  session={browserSession ?? undefined}
-                />
-              }
-            />
           ) : (
             conversation
           )
         }
-        {...(hasBrowser ? { right: conversation } : {})}
+        {...(inspector ? { right: inspector } : {})}
         resizeHandleLabels={CHAT_RESIZE_HANDLE_LABELS}
       />
       <script
@@ -1156,7 +1157,8 @@ function ChatChrome({
   createOpen,
   createSubmitting,
   loadingScouts,
-  hasBrowser,
+  inspectorKind,
+  inspectionKey,
   driver,
   thread,
   scout,
@@ -1166,7 +1168,8 @@ function ChatChrome({
   createOpen: boolean;
   createSubmitting: boolean;
   loadingScouts: boolean;
-  hasBrowser: boolean;
+  inspectorKind: InspectorKind | null;
+  inspectionKey: string | null;
   driver: ChatDriver;
   thread: ChatThread | undefined;
   scout: Scout | undefined;
@@ -1176,7 +1179,21 @@ function ChatChrome({
   const { isMobile, leftDesktopOpen, rightDesktopOpen, mobilePane } =
     useSidebarLayoutPresentation();
   const navigationShown = isMobile ? mobilePane === "left" : leftDesktopOpen;
-  const conversationShown = isMobile ? mobilePane === "right" : rightDesktopOpen;
+  const inspectorShown = isMobile ? mobilePane === "right" : rightDesktopOpen;
+  const inspectorLabel = inspectorKind === "model-call" ? "model call" : "browser";
+  const previousInspectionKey = useRef<string | null>(null);
+
+  useEffect(() => {
+    const changed = inspectionKey !== null && inspectionKey !== previousInspectionKey.current;
+    previousInspectionKey.current = inspectionKey;
+    if (!changed) return;
+
+    if (isMobile) {
+      setMobilePane("right");
+    } else if (!rightDesktopOpen) {
+      toggleRightPane();
+    }
+  }, [inspectionKey, isMobile, rightDesktopOpen, setMobilePane, toggleRightPane]);
 
   return (
     <div className="flex h-12 min-w-0 items-center gap-2 px-2 sm:px-4">
@@ -1187,9 +1204,7 @@ function ChatChrome({
         aria-label={navigationShown ? "Hide chats" : "Show chats"}
         aria-pressed={navigationShown}
         onClick={() =>
-          isMobile
-            ? setMobilePane(navigationShown ? (hasBrowser ? "right" : "main") : "left")
-            : toggleLeftPane()
+          isMobile ? setMobilePane(navigationShown ? "main" : "left") : toggleLeftPane()
         }
       >
         <PanelLeftIcon />
@@ -1212,30 +1227,30 @@ function ChatChrome({
           {chatDriverLabel(driver)}
         </p>
       </div>
-      {hasBrowser ? (
-        <>
+      {inspectorKind ? (
+        isMobile ? (
           <Button
             type="button"
             size="icon-sm"
             variant="ghost"
-            className="md:hidden"
-            aria-label="Show browser"
-            aria-pressed={mobilePane === "main"}
-            onClick={() => setMobilePane("main")}
+            aria-label={inspectorShown ? "Show chat" : `Show ${inspectorLabel}`}
+            aria-pressed={inspectorShown}
+            onClick={() => setMobilePane(inspectorShown ? "main" : "right")}
           >
-            <MonitorIcon />
+            {inspectorShown ? <ArrowLeftIcon /> : <MonitorIcon />}
           </Button>
+        ) : (
           <Button
             type="button"
             size="icon-sm"
             variant="ghost"
-            aria-label={conversationShown ? "Hide conversation" : "Show conversation"}
-            aria-pressed={conversationShown}
+            aria-label={inspectorShown ? `Hide ${inspectorLabel}` : `Show ${inspectorLabel}`}
+            aria-pressed={inspectorShown}
             onClick={toggleRightPane}
           >
             <PanelRightIcon />
           </Button>
-        </>
+        )
       ) : null}
       <Button
         ref={createButtonRef}

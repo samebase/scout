@@ -557,7 +557,14 @@ describe("Chat workspace", () => {
         kind: "completed",
         finishedAt: 2,
         finishReason: "tool-calls",
-        usage: { promptTokens: 100, completionTokens: 20 },
+        usage: {
+          promptTokens: 4_428,
+          completionTokens: 87,
+          totalTokens: 4_515,
+          reasoningTokens: 55,
+          cachedInputTokens: 0,
+          costUsd: 0.00014415,
+        },
       },
     };
     remote.queries.set("scout/chats:listMessages", {
@@ -583,6 +590,10 @@ describe("Chat workspace", () => {
       loadMore: remote.loadMoreMessages,
     });
     remote.queries.set("scout/modelCalls:listForTurn", [summary]);
+    const browser = session("session-1", 1);
+    remote.queries.set("scout/browserSessions:list", [browser]);
+    remote.queries.set("scout/browserSessions:get", { ...browser, operations: [] });
+    remote.queries.set("scout/browserSessions:liveView", { url: "about:blank#scout-live" });
     remote.getModelCallContext.mockResolvedValue({
       summary,
       snapshot: JSON.stringify({
@@ -595,6 +606,8 @@ describe("Chat workspace", () => {
     });
     const user = userEvent.setup();
     const router = await openChats();
+    await screen.findByTitle("Live browser session 1");
+    await waitFor(() => expect(router.state.location.search.session).toBe("session-1"));
     const composer = await screen.findByRole<HTMLTextAreaElement>("textbox", {
       name: "Message Scout",
     });
@@ -618,19 +631,34 @@ describe("Chat workspace", () => {
       modelCallId: "model-call-1",
       threadId: "thread-1",
     });
+    expect(screen.queryByText("Inspect carefully.")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Instructions" }));
     expect(screen.getByText("Inspect carefully.")).toBeTruthy();
-    expect(screen.queryByRole("region", { name: "Conversation" })).toBeNull();
+    const conversation = screen.getByRole("region", { name: "Conversation" });
+    expect(conversation.closest('[data-pane-side="main"]')).not.toBeNull();
+    expect(
+      screen.getByRole("region", { name: "SDK model input" }).closest('[data-pane-side="right"]'),
+    ).not.toBeNull();
+    expect(screen.getByText("4,428")).toBeTruthy();
+    expect(screen.getByText("4,515")).toBeTruthy();
+    expect(screen.getByText("$0.000144")).toBeTruthy();
+    expect(screen.queryByText("Use Playwright.")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Tools 1" }));
+    await user.click(screen.getByRole("button", { name: "1 · browser_execute" }));
+    expect(screen.getByText(/Use Playwright/)).toBeTruthy();
     expect(router.state.location.search).toEqual({
       thread: "thread-1",
+      session: "session-1",
       call: "model-call-1",
     });
 
     await user.click(screen.getByRole("button", { name: "Back" }));
-    expect(await screen.findByRole("region", { name: "Conversation" })).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "SDK model input" })).toBeNull();
+    expect(await screen.findByTitle("Live browser session 1")).toBeTruthy();
     expect(screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Message Scout" }).value).toBe(
       "Keep this unfinished message",
     );
-    expect(router.state.location.search).toEqual({ thread: "thread-1" });
+    expect(router.state.location.search).toEqual({ thread: "thread-1", session: "session-1" });
   });
 
   test("shows the live browser beside the conversation and keeps the handoff accessible", async () => {
@@ -653,16 +681,17 @@ describe("Chat workspace", () => {
     expect(frame.getAttribute("src")).toBe("about:blank#scout-live");
     expect(frame.getAttribute("sandbox")).toBe("allow-same-origin allow-scripts");
     const conversation = screen.getByRole("region", { name: "Conversation" });
-    const pane = conversation.closest('[data-pane-side="right"]');
+    expect(conversation.closest('[data-pane-side="main"]')).not.toBeNull();
+    const pane = frame.closest('[data-pane-side="right"]');
     expect(pane).not.toBeNull();
     expect(pane?.hasAttribute("data-desktop-open")).toBe(true);
     const composer = within(conversation).getByRole<HTMLTextAreaElement>("textbox", {
       name: "Message Scout",
     });
     await user.type(composer, "Keep this draft");
-    await user.click(screen.getByRole("button", { name: "Hide conversation" }));
+    await user.click(screen.getByRole("button", { name: "Hide browser" }));
     expect(pane?.hasAttribute("data-desktop-open")).toBe(false);
-    await user.click(screen.getByRole("button", { name: "Show conversation" }));
+    await user.click(screen.getByRole("button", { name: "Show browser" }));
     expect(pane?.hasAttribute("data-desktop-open")).toBe(true);
     expect(composer.value).toBe("Keep this draft");
     await waitFor(() =>
@@ -766,7 +795,7 @@ describe("Chat workspace", () => {
     expect(router.state.location.search.session).toBe("session-1");
   });
 
-  test("moves the conversation beside the first browser without losing the draft or driver", async () => {
+  test("keeps the conversation in the main pane when the first browser appears", async () => {
     const user = userEvent.setup();
     await openChats();
     await user.selectOptions(
@@ -782,7 +811,7 @@ describe("Chat workspace", () => {
 
     expect(await screen.findByTitle("Live browser session 1")).toBeTruthy();
     expect(
-      screen.getByRole("region", { name: "Conversation" }).closest('[data-pane-side="right"]'),
+      screen.getByRole("region", { name: "Conversation" }).closest('[data-pane-side="main"]'),
     ).not.toBeNull();
     expect(screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Message Scout" }).value).toBe(
       "Still typing",
@@ -792,7 +821,7 @@ describe("Chat workspace", () => {
     );
   });
 
-  test("keeps chat selected on a small screen when the browser appears and allows switching panes", async () => {
+  test("selects a new browser on a small screen and allows returning to chat", async () => {
     vi.spyOn(window, "innerWidth", "get").mockReturnValue(390);
     const user = userEvent.setup();
     await openChats();
@@ -804,15 +833,15 @@ describe("Chat workspace", () => {
     remote.queries.set("scout/browserSessions:liveView", { url: "about:blank#scout-live" });
     refreshQueries();
 
-    const showBrowser = await screen.findByRole("button", { name: "Show browser" });
+    const showChat = await screen.findByRole("button", { name: "Show chat" });
+    expect(showChat.getAttribute("aria-pressed")).toBe("true");
+    await user.click(showChat);
+    const showBrowser = screen.getByRole("button", { name: "Show browser" });
     expect(showBrowser.getAttribute("aria-pressed")).toBe("false");
-    expect(
-      screen.getByRole("button", { name: "Hide conversation" }).getAttribute("aria-pressed"),
-    ).toBe("true");
     await user.click(showBrowser);
-    expect(showBrowser.getAttribute("aria-pressed")).toBe("true");
-    await user.click(screen.getByRole("button", { name: "Show conversation" }));
-    expect(showBrowser.getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByRole("button", { name: "Show chat" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
     expect(screen.getByRole("textbox", { name: "Message Scout" })).toBeTruthy();
   });
 

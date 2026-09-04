@@ -153,14 +153,27 @@ export function SdkModelInputInspector({
   }
 
   const { context, snapshot } = state;
+  const usageMetrics = modelCallUsageMetrics(context.summary);
   return (
     <section aria-label="SDK model input" className="h-full overflow-auto px-4 py-5 @sm:px-5">
-      <div className="mx-auto grid w-full max-w-3xl gap-6">
-        <p className="text-muted-foreground text-xs">
-          Call {context.summary.sequence} · {context.summary.modelId} ·{" "}
-          {context.summary.messageCount} messages · {context.summary.toolCount} tools ·{" "}
-          {formatBytes(context.summary.serializedBytes)}
-        </p>
+      <div className="mx-auto grid w-full max-w-3xl gap-5">
+        <div className="grid gap-3 border-b pb-4">
+          <p className="text-muted-foreground text-xs">
+            Call {context.summary.sequence} · {context.summary.modelId} ·{" "}
+            {context.summary.messageCount} messages · {context.summary.toolCount} tools ·{" "}
+            {formatBytes(context.summary.serializedBytes)}
+          </p>
+          {usageMetrics.length > 0 ? (
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-2 @sm:grid-cols-3">
+              {usageMetrics.map((metric) => (
+                <div key={metric.label} className="min-w-0">
+                  <dt className="text-muted-foreground text-[0.6875rem]">{metric.label}</dt>
+                  <dd className="truncate font-mono text-xs font-medium">{metric.value}</dd>
+                </div>
+              ))}
+            </dl>
+          ) : null}
+        </div>
         {context.summary.state.kind === "failed" ? (
           <p className="text-destructive text-xs" role="alert">
             {context.summary.state.failure}
@@ -169,27 +182,24 @@ export function SdkModelInputInspector({
         <SnapshotSection title="Instructions">
           <SnapshotValue value={snapshot.instructions} empty="None" />
         </SnapshotSection>
-        <SnapshotSection title="Messages">
-          <ol className="grid gap-3">
+        <SnapshotSection title="Messages" count={snapshot.messages.length}>
+          <ol className="grid gap-2">
             {snapshot.messages.map((message, index) => (
               <li key={index} className="min-w-0">
-                <p className="text-muted-foreground mb-1 text-[0.6875rem] font-medium">
-                  {index + 1} · {modelMessageRole(message)}
-                </p>
-                <SnapshotValue value={message} />
+                <SnapshotItem
+                  title={`${index + 1} · ${modelMessageRole(message)}`}
+                  value={message}
+                />
               </li>
             ))}
           </ol>
         </SnapshotSection>
-        <SnapshotSection title="Tools">
+        <SnapshotSection title="Tools" count={snapshot.tools?.length ?? 0}>
           {snapshot.tools && snapshot.tools.length > 0 ? (
-            <ol className="grid gap-3">
+            <ol className="grid gap-2">
               {snapshot.tools.map((tool, index) => (
                 <li key={index} className="min-w-0">
-                  <p className="text-muted-foreground mb-1 text-[0.6875rem] font-medium">
-                    {index + 1} · {modelToolName(tool)}
-                  </p>
-                  <SnapshotValue value={tool} />
+                  <SnapshotItem title={`${index + 1} · ${modelToolName(tool)}`} value={tool} />
                 </li>
               ))}
             </ol>
@@ -226,6 +236,45 @@ function formatBytes(bytes: number) {
   return `${kilobytes < 10 ? kilobytes.toFixed(1) : Math.round(kilobytes)} KB`;
 }
 
+function modelCallUsageMetrics(call: ModelCallSummary) {
+  if (call.state.kind !== "completed") return [];
+
+  const { usage } = call.state;
+  return [
+    usage.promptTokens === undefined
+      ? null
+      : { label: "Input tokens", value: formatNumber(usage.promptTokens) },
+    usage.cachedInputTokens === undefined
+      ? null
+      : { label: "Cached input", value: formatNumber(usage.cachedInputTokens) },
+    usage.completionTokens === undefined
+      ? null
+      : { label: "Output tokens", value: formatNumber(usage.completionTokens) },
+    usage.reasoningTokens === undefined
+      ? null
+      : { label: "Reasoning tokens", value: formatNumber(usage.reasoningTokens) },
+    usage.totalTokens === undefined
+      ? null
+      : { label: "Total tokens", value: formatNumber(usage.totalTokens) },
+    usage.costUsd === undefined
+      ? null
+      : { label: "Estimated cost", value: formatCostUsd(usage.costUsd) },
+  ].filter((metric) => metric !== null);
+}
+
+function formatNumber(value: number) {
+  return new Intl.NumberFormat("en-US").format(value);
+}
+
+function formatCostUsd(cost: number) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: cost < 0.01 ? 6 : cost < 1 ? 4 : 2,
+  }).format(cost);
+}
+
 function modelMessageRole(message: z.output<typeof jsonValueSchema>) {
   const parsed = messageLabelSchema.safeParse(message);
   return parsed.success ? parsed.data.role : "message";
@@ -236,12 +285,48 @@ function modelToolName(tool: z.output<typeof jsonValueSchema>) {
   return parsed.success ? parsed.data.name : "tool";
 }
 
-function SnapshotSection({ children, title }: { children: ReactNode; title: string }) {
+function SnapshotSection({
+  children,
+  count,
+  title,
+}: {
+  children: ReactNode;
+  count?: number;
+  title: string;
+}) {
+  const [open, setOpen] = useState(false);
   return (
-    <section>
-      <h2 className="mb-2 text-xs font-semibold">{title}</h2>
-      {children}
-    </section>
+    <Collapsible open={open} onOpenChange={setOpen} className="min-w-0">
+      <CollapsibleTrigger className="group/snapshot-section flex w-full items-center gap-2 border-b py-2 text-left text-xs font-semibold outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <ChevronRightIcon className="size-3 transition-transform group-data-[state=open]/snapshot-section:rotate-90" />
+        {title}
+        {count === undefined ? null : (
+          <span className="text-muted-foreground ml-auto font-normal">{count}</span>
+        )}
+      </CollapsibleTrigger>
+      <CollapsibleContent className="pt-3">{children}</CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+function SnapshotItem({
+  title,
+  value,
+}: {
+  title: string;
+  value: z.output<typeof jsonValueSchema>;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="rounded-lg border bg-muted/20">
+      <CollapsibleTrigger className="group/snapshot-item flex w-full items-center gap-2 px-3 py-2 text-left font-mono text-[0.6875rem] font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
+        <ChevronRightIcon className="size-3 shrink-0 transition-transform group-data-[state=open]/snapshot-item:rotate-90" />
+        <span className="truncate">{title}</span>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="border-t p-2">
+        <SnapshotValue value={value} />
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
