@@ -147,7 +147,10 @@ beforeEach(() => {
   remote.queries.set("humanHandoffs:active", null);
   remote.createThread.mockResolvedValue({ threadId: "thread-created" });
   remote.sendMessage.mockResolvedValue(null);
-  remote.executeTool.mockResolvedValue(null);
+  remote.executeTool.mockResolvedValue({
+    toolCallId: "tool-call-1",
+    outcome: { kind: "success", output: "null" },
+  });
   remote.listReplayPages.mockResolvedValue({ status: "unavailable" });
   remote.mutations.set("scout/chats:createThread", remote.createThread);
   remote.mutations.set("scout/chats:sendMessage", remote.sendMessage);
@@ -283,12 +286,21 @@ describe("Chat workspace", () => {
       threadId: "thread-1",
       toolName: "browser_execute",
       input: JSON.stringify(input),
+      operationId: expect.any(String),
     });
   });
 
   test.each([
     { toolName: "web_search", input: { query: "form builder pricing" } },
     { toolName: "web_read", input: { url: "https://example.com" } },
+    {
+      toolName: "send_message",
+      input: { to: "person@gmail.com", subject: "Hello", text: "A note from Scout." },
+    },
+    {
+      toolName: "reply_to_message",
+      input: { messageId: "message-1", text: "Thanks for the update." },
+    },
     {
       toolName: "record_authenticated_service_account",
       input: {
@@ -311,7 +323,198 @@ describe("Chat workspace", () => {
       threadId: "thread-1",
       toolName,
       input: JSON.stringify(input),
+      operationId: expect.any(String),
     });
+  });
+
+  test("reuses the manual email operation after reload and provider-equivalent normalization", async () => {
+    remote.executeTool.mockRejectedValueOnce(new Error("response lost"));
+    let user = userEvent.setup();
+    await openChats();
+    await user.selectOptions(await screen.findByRole("combobox", { name: "Driver" }), "manual");
+    await user.selectOptions(screen.getByRole("combobox", { name: "Tool" }), "send_message");
+    const input = {
+      to: " person@gmail.com ",
+      subject: "Hello ",
+      text: "A note from Scout. ",
+    };
+    fireEvent.change(screen.getByRole("textbox", { name: "Tool input" }), {
+      target: { value: JSON.stringify(input) },
+    });
+
+    await user.click(screen.getByRole("button", { name: "Run tool" }));
+    await screen.findByRole("alert");
+
+    cleanup();
+    user = userEvent.setup();
+    await openChats();
+    await user.selectOptions(await screen.findByRole("combobox", { name: "Driver" }), "manual");
+    await user.selectOptions(screen.getByRole("combobox", { name: "Tool" }), "send_message");
+    fireEvent.change(screen.getByRole("textbox", { name: "Tool input" }), {
+      target: {
+        value: JSON.stringify(
+          {
+            text: input.text.trim(),
+            to: input.to.trim(),
+            subject: input.subject.trim(),
+          },
+          null,
+          2,
+        ),
+      },
+    });
+    await user.click(screen.getByRole("button", { name: "Run tool" }));
+
+    const firstCall = remote.executeTool.mock.calls[0]?.[0];
+    const secondCall = remote.executeTool.mock.calls[1]?.[0];
+    expect(firstCall).toMatchObject({ operationId: expect.any(String) });
+    expect(secondCall?.operationId).toBe(firstCall?.operationId);
+    expect(JSON.parse(secondCall?.input)).toEqual({
+      text: input.text.trim(),
+      to: input.to.trim(),
+      subject: input.subject.trim(),
+    });
+  });
+
+  test("reuses a manual reply operation for trim-equivalent input", async () => {
+    remote.executeTool.mockRejectedValueOnce(new Error("response lost"));
+    let user = userEvent.setup();
+    await openChats();
+    await user.selectOptions(await screen.findByRole("combobox", { name: "Driver" }), "manual");
+    await user.selectOptions(screen.getByRole("combobox", { name: "Tool" }), "reply_to_message");
+    fireEvent.change(screen.getByRole("textbox", { name: "Tool input" }), {
+      target: {
+        value: JSON.stringify({ messageId: " message-1 ", text: " Thanks for the update. " }),
+      },
+    });
+    await user.click(screen.getByRole("button", { name: "Run tool" }));
+    await screen.findByRole("alert");
+
+    cleanup();
+    user = userEvent.setup();
+    await openChats();
+    await user.selectOptions(await screen.findByRole("combobox", { name: "Driver" }), "manual");
+    await user.selectOptions(screen.getByRole("combobox", { name: "Tool" }), "reply_to_message");
+    fireEvent.change(screen.getByRole("textbox", { name: "Tool input" }), {
+      target: {
+        value: JSON.stringify({ messageId: "message-1", text: "Thanks for the update." }, null, 2),
+      },
+    });
+    await user.click(screen.getByRole("button", { name: "Run tool" }));
+
+    expect(remote.executeTool.mock.calls[1]?.[0].operationId).toBe(
+      remote.executeTool.mock.calls[0]?.[0].operationId,
+    );
+  });
+
+  test("preserves an unresolved email operation while another thread sends", async () => {
+    remote.queries.set("scout/chats:listThreads", {
+      ...threadPage(),
+      results: [
+        { threadId: "thread-1", title: "First", scoutId: "scout-1", creationTime: 1 },
+        { threadId: "thread-2", title: "Second", scoutId: "scout-1", creationTime: 2 },
+      ],
+    });
+    remote.executeTool
+      .mockRejectedValueOnce(new Error("first response lost"))
+      .mockRejectedValueOnce(new Error("second response lost"));
+    const input = JSON.stringify({
+      to: "person@gmail.com",
+      subject: "Hello",
+      text: "A note from Scout.",
+    });
+
+    for (const [index, threadId] of ["thread-1", "thread-2", "thread-1"].entries()) {
+      const user = userEvent.setup();
+      await openChats(`/chats?thread=${threadId}`);
+      await user.selectOptions(await screen.findByRole("combobox", { name: "Driver" }), "manual");
+      await user.selectOptions(screen.getByRole("combobox", { name: "Tool" }), "send_message");
+      fireEvent.change(screen.getByRole("textbox", { name: "Tool input" }), {
+        target: { value: input },
+      });
+      await user.click(screen.getByRole("button", { name: "Run tool" }));
+      await waitFor(() => expect(remote.executeTool).toHaveBeenCalledTimes(index + 1));
+      cleanup();
+    }
+
+    const firstOperationId = remote.executeTool.mock.calls[0]?.[0].operationId;
+    expect(remote.executeTool.mock.calls[1]?.[0].operationId).not.toBe(firstOperationId);
+    expect(remote.executeTool.mock.calls[2]?.[0].operationId).toBe(firstOperationId);
+  });
+
+  test("blocks an unresolved email retry after AgentMail's 24-hour idempotency window", async () => {
+    remote.executeTool.mockRejectedValueOnce(new Error("response lost"));
+    let user = userEvent.setup();
+    await openChats();
+    await user.selectOptions(await screen.findByRole("combobox", { name: "Driver" }), "manual");
+    await user.selectOptions(screen.getByRole("combobox", { name: "Tool" }), "send_message");
+    const toolInput = screen.getByRole("textbox", { name: "Tool input" });
+    fireEvent.change(toolInput, {
+      target: {
+        value: JSON.stringify({
+          to: "person@gmail.com",
+          subject: "Hello",
+          text: "A note from Scout.",
+        }),
+      },
+    });
+    await user.click(screen.getByRole("button", { name: "Run tool" }));
+    await screen.findByRole("alert");
+
+    const storageKey = window.localStorage.key(0);
+    if (!storageKey) throw new Error("Pending manual email was not persisted");
+    const stored: unknown = JSON.parse(window.localStorage.getItem(storageKey) ?? "null");
+    if (!Array.isArray(stored) || typeof stored[0] !== "object" || stored[0] === null) {
+      throw new Error("Pending manual email has an invalid test shape");
+    }
+    Object.assign(stored[0], { createdAt: Date.now() - 24 * 60 * 60 * 1_000 });
+    window.localStorage.setItem(storageKey, JSON.stringify(stored));
+
+    cleanup();
+    user = userEvent.setup();
+    await openChats();
+    await user.selectOptions(await screen.findByRole("combobox", { name: "Driver" }), "manual");
+    await user.selectOptions(screen.getByRole("combobox", { name: "Tool" }), "send_message");
+    fireEvent.change(screen.getByRole("textbox", { name: "Tool input" }), {
+      target: {
+        value: JSON.stringify({
+          to: "person@gmail.com",
+          subject: "Hello",
+          text: "A note from Scout.",
+        }),
+      },
+    });
+    await user.click(screen.getByRole("button", { name: "Run tool" }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain("older than 24 hours");
+    expect(remote.executeTool).toHaveBeenCalledOnce();
+
+    const firstOperationId = remote.executeTool.mock.calls[0]?.[0].operationId;
+    await user.click(screen.getByRole("button", { name: "Run tool" }));
+    await waitFor(() => expect(remote.executeTool).toHaveBeenCalledTimes(2));
+    expect(remote.executeTool.mock.calls[1]?.[0].operationId).not.toBe(firstOperationId);
+  });
+
+  test("submits a manual operation only once while its fingerprint is being prepared", async () => {
+    let finish:
+      | ((result: { toolCallId: string; outcome: { kind: "success"; output: string } }) => void)
+      | undefined;
+    remote.executeTool.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const user = userEvent.setup();
+    await openChats();
+    await user.selectOptions(await screen.findByRole("combobox", { name: "Driver" }), "manual");
+    const runTool = screen.getByRole("button", { name: "Run tool" });
+    const form = runTool.closest("form");
+    if (!form) throw new Error("Manual composer form not found");
+
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+    await waitFor(() => expect(remote.executeTool).toHaveBeenCalledOnce());
+    finish?.({ toolCallId: "tool-call-1", outcome: { kind: "success", output: "null" } });
   });
 
   test("preserves the agent instructions and keyboard-resizable context panel", async () => {
@@ -367,6 +570,26 @@ describe("Chat workspace", () => {
     await waitFor(() =>
       expect(router.state.location.search).toEqual({ thread: "thread-1", session: "session-1" }),
     );
+  });
+
+  test("shows an actionable notice when the private handoff link could not be delivered", async () => {
+    const browser = session("session-1", 1);
+    remote.queries.set("scout/browserSessions:list", [browser]);
+    remote.queries.set("scout/browserSessions:get", { ...browser, operations: [] });
+    remote.queries.set("humanHandoffs:active", {
+      handoffId: "handoff-1",
+      reason: "Complete the CAPTCHA.",
+      requestedAt: 1,
+      failedAt: 2,
+      phase: "delivery_failed",
+    });
+
+    await openChats();
+
+    const notice = await screen.findByRole("alert");
+    expect(notice.textContent).toContain("could not deliver the private handoff link");
+    expect(notice.textContent).toContain("ask Scout to try");
+    expect(screen.queryByRole("link", { name: "Open browser handoff" })).toBeNull();
   });
 
   test("loads the requested closed browser session for replay", async () => {

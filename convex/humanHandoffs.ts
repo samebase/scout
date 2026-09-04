@@ -18,7 +18,9 @@ import {
   humanHandoffPageValidator,
   humanHandoffStatusValidator,
 } from "./humanHandoffsModel";
+import { humanHandoffDeliveryArgsValidator } from "./humanHandoffDeliveryModel";
 import { humanHandoffWorkflow } from "./humanHandoffWorkflow";
+import { humanHandoffInputSchema } from "./scout/humanHandoffInput";
 
 export const HUMAN_HANDOFF_CLAIM_MS = 45 * 60 * 1_000;
 export const HUMAN_HANDOFF_ACTIVE_MS = 5 * 60 * 1_000;
@@ -74,6 +76,22 @@ const preparedAccessValidator = v.union(
     failedAt: v.number(),
     failure: humanHandoffFailureValidator,
   }),
+);
+
+const preparedDeliveryValidator = v.union(
+  v.object({
+    kind: v.literal("ready"),
+    claimExpiresAt: v.number(),
+    promptMessageId: v.string(),
+    accessTokenHash: v.string(),
+    inboxId: v.string(),
+    recipientEmail: v.string(),
+    scoutName: v.string(),
+    emailSubject: v.string(),
+    emailNote: v.string(),
+  }),
+  v.object({ kind: v.literal("definitive_failure") }),
+  v.object({ kind: v.literal("skipped") }),
 );
 
 function boundedReason(value: string) {
@@ -241,11 +259,24 @@ export const active = query({
       .query("scoutHumanHandoffs")
       .withIndex("by_session_id", (index) => index.eq("sessionId", args.sessionId))
       .unique();
-    if (!handoff || (handoff.status !== "available" && handoff.status !== "active")) {
+    if (!handoff) return null;
+    const context = await handoffContext(ctx, handoff);
+    if (!context || context.chat.userId !== userId) return null;
+    if (handoff.status === "failed" && handoff.failure === "delivery_failed") {
+      return {
+        handoffId: handoff._id,
+        reason: handoff.reason,
+        requestedAt: handoff.requestedAt,
+        failedAt: handoff.failedAt,
+        phase: "delivery_failed" as const,
+      };
+    }
+    if (
+      (handoff.status !== "available" && handoff.status !== "active") ||
+      !resourcesAreActive(context)
+    ) {
       return null;
     }
-    const context = await handoffContext(ctx, handoff);
-    if (!context || context.chat.userId !== userId || !resourcesAreActive(context)) return null;
     return {
       handoffId: handoff._id,
       reason: handoff.reason,
@@ -261,11 +292,18 @@ export const request = internalMutation({
     promptMessageId: v.string(),
     reason: v.string(),
     accessTokenHash: v.string(),
+    emailSubject: v.string(),
+    emailNote: v.string(),
   },
   returns: requestedHumanHandoffValidator,
   handler: async (ctx, args) => {
     const requestedAt = Date.now();
-    const reason = boundedReason(args.reason);
+    const input = humanHandoffInputSchema.parse({
+      reason: args.reason,
+      emailSubject: args.emailSubject,
+      emailNote: args.emailNote,
+    });
+    const reason = boundedReason(input.reason);
     const tokenHash = accessTokenHash(args.accessTokenHash);
     const turn = await ctx.db
       .query("scoutTurns")
@@ -338,17 +376,65 @@ export const request = internalMutation({
       workflowId,
       status: "available",
     });
+    await ctx.db.insert("scoutHumanHandoffDeliveries", {
+      handoffId,
+      inboxId: scout.agentMail.inboxId,
+      recipientEmail,
+      scoutName: scout.displayName,
+      emailSubject: input.emailSubject,
+      emailNote: input.emailNote,
+    });
     await ctx.scheduler.runAt(claimExpiresAt, internal.humanHandoffs.expire, { handoffId });
     const handoff = await ctx.db.get("scoutHumanHandoffs", handoffId);
     if (!handoff || handoff.status !== "available") {
       throw new Error("Human handoff could not be created");
     }
+    await ctx.scheduler.runAfter(0, internal.humanHandoffs.startDeliveryWorkflow, {
+      handoffId,
+    });
     return requestResult({
       handoff,
       created: true,
       recipientEmail,
       scoutName: scout.displayName,
     });
+  },
+});
+
+export const startDeliveryWorkflow = internalMutation({
+  args: humanHandoffDeliveryArgsValidator.fields,
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await humanHandoffWorkflow.start(ctx, internal.humanHandoffDeliveryWorkflow.deliverEmail, args);
+    return null;
+  },
+});
+
+export const prepareDelivery = internalQuery({
+  args: { handoffId: v.id("scoutHumanHandoffs") },
+  returns: preparedDeliveryValidator,
+  handler: async (ctx, args) => {
+    const handoff = await ctx.db.get("scoutHumanHandoffs", args.handoffId);
+    if (!handoff || handoff.status !== "available") return { kind: "skipped" as const };
+    const [delivery, turn] = await Promise.all([
+      ctx.db
+        .query("scoutHumanHandoffDeliveries")
+        .withIndex("by_handoff_id", (index) => index.eq("handoffId", handoff._id))
+        .unique(),
+      ctx.db.get("scoutTurns", handoff.turnId),
+    ]);
+    if (!delivery || !turn) return { kind: "definitive_failure" as const };
+    return {
+      kind: "ready" as const,
+      claimExpiresAt: handoff.claimExpiresAt,
+      promptMessageId: turn.promptMessageId,
+      accessTokenHash: handoff.accessTokenHash,
+      inboxId: delivery.inboxId,
+      recipientEmail: delivery.recipientEmail,
+      scoutName: delivery.scoutName,
+      emailSubject: delivery.emailSubject,
+      emailNote: delivery.emailNote,
+    };
   },
 });
 

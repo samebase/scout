@@ -23,8 +23,9 @@ inside the repository.
 - Node.js 24 for application and automation code
 
 Scout currently provides private chats with persistent Scout identities. A chat can use the Scout's
-AgentMail inbox, Firecrawl browser profile, and accounts across multiple services. Choose Qwen,
-Luna, or Manual, and inspect tool calls, Live/Replay, usage, and human handoffs in the same workspace.
+AgentMail inbox to read, send, and reply to email, plus its Firecrawl browser profile and accounts
+across multiple services. Choose Qwen, Luna, or Manual, and inspect tool calls, Live/Replay, usage,
+and human handoffs in the same workspace.
 
 ## Local development
 

@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-03T23:55:18Z
+- **Last updated:** 2026-09-04T12:52:17Z
 
 ## Log
 
@@ -928,9 +928,18 @@ transcript instead of probing unknown objects. Removed reflection and assertion 
 the policy in repository instructions and Vite+ lint (`convex/scout/`, `src/`, `AGENTS.md`,
 `vite.config.ts`).
 
-### 2026-09-03 - working tree
+### 2026-09-03 - 22ba98d - v166
 
 Preserved complete provider failure details and kept completed generation and tool errors visibly
 distinct in chat. Consolidated optional-field construction behind one nullish-only helper and
 documented that guardrail (`convex/scout/generation.ts`, `src/components/scout-run-message.tsx`,
 `shared/omitNullish.ts`, `AGENTS.md`).
+
+### 2026-09-04 - working tree
+
+Gave each Scout bounded outbound email through its own AgentMail inbox. Model and Manual runs can
+send new messages and reply; registration verifies the provider inbox identity, and every write is
+bounded and idempotent across transport and manual-action retries. Human-help email uses the same
+inbox with Scout-authored context while durable jobs retain only the link digest. The 276-test gate,
+production build, development deploy, and a live AgentMail send all passed (`convex/scout/`,
+`src/routes/`, `EMAIL_SETUP.md`).

@@ -10,9 +10,11 @@ import { internal } from "../_generated/api";
 import { action, env } from "../_generated/server";
 import { findActiveBrowserSession } from "../humanHandoffBrowser";
 import { createAccountTools } from "./accountTools";
+import { createAgentMailWriteTools } from "./agentMailTools";
 import { scoutAgent } from "./agent";
 import { closeAgentMailBestEffort } from "./generation";
 import { createBrowserHarness, selectAgentMailTools } from "./browserTools";
+import { createAgentMailInboxClient, requiredAgentMailApiKey } from "./lib/agentMail";
 import { diagnosticMessage } from "./lib/redaction";
 import { requireRuntimeTool } from "./lib/runtimeTool";
 import { createToolArgumentProbe } from "./toolArgumentProbe";
@@ -25,6 +27,8 @@ const manualToolNameValidator = v.union(
   v.literal("list_messages"),
   v.literal("search_messages"),
   v.literal("get_thread"),
+  v.literal("send_message"),
+  v.literal("reply_to_message"),
   v.literal("fill_account_password"),
   v.literal("record_authenticated_service_account"),
   v.literal("web_search"),
@@ -32,6 +36,7 @@ const manualToolNameValidator = v.union(
   v.literal("inspect_tool_arguments"),
 );
 const jsonValueSchema = z.json();
+const manualOperationIdSchema = z.string().trim().min(1).max(200);
 
 type ManualToolName = typeof manualToolNameValidator.type;
 type Browser = ReturnType<typeof createBrowserHarness>;
@@ -46,11 +51,6 @@ const manualToolResultValidator = v.object({
   outcome: manualToolOutcomeValidator,
 });
 
-function requiredSecret(value: string | undefined, name: string) {
-  if (!value?.trim()) throw new Error(`${name} is not configured`);
-  return value;
-}
-
 function parseManualToolInput(value: string): JSONValue {
   let payload: unknown;
   try {
@@ -63,10 +63,14 @@ function parseManualToolInput(value: string): JSONValue {
   return parsed.data;
 }
 
-function usesAgentMail(toolName: ManualToolName) {
+function usesAgentMailReadTool(toolName: ManualToolName) {
   return (
     toolName === "list_messages" || toolName === "search_messages" || toolName === "get_thread"
   );
+}
+
+function usesAgentMailWriteTool(toolName: ManualToolName) {
+  return toolName === "send_message" || toolName === "reply_to_message";
 }
 
 function needsExistingBrowser(toolName: ManualToolName) {
@@ -95,12 +99,14 @@ export const executeTool = action({
     threadId: v.string(),
     toolName: manualToolNameValidator,
     input: v.string(),
+    operationId: v.string(),
   },
   returns: manualToolResultValidator,
   handler: async (ctx, args) => {
     const runtime = await ctx.runQuery(internal.scout.manualState.runtimeContext, {
       threadId: args.threadId,
     });
+    const operationId = manualOperationIdSchema.parse(args.operationId);
     const toolCallId = randomUUID();
     const input = parseManualToolInput(args.input);
     const { messageId: promptMessageId } = await scoutAgent.saveMessage(ctx, {
@@ -135,17 +141,26 @@ export const executeTool = action({
     let executionError: string | undefined;
     try {
       let selectedTools: ToolSet;
-      if (usesAgentMail(args.toolName)) {
+      if (usesAgentMailReadTool(args.toolName)) {
+        const agentMailApiKey = requiredAgentMailApiKey(env.AGENTMAIL_API_KEY);
         agentMailClient = await createMCPClient({
           transport: {
             type: "http",
             url: "https://mcp.agentmail.to/mcp",
             headers: {
-              "x-api-key": requiredSecret(env.AGENTMAIL_API_KEY, "AGENTMAIL_API_KEY"),
+              "x-api-key": agentMailApiKey,
             },
           },
         });
         selectedTools = selectAgentMailTools(await agentMailClient.tools(), runtime.inboxId);
+      } else if (usesAgentMailWriteTool(args.toolName)) {
+        selectedTools = createAgentMailWriteTools(
+          createAgentMailInboxClient({
+            apiKey: requiredAgentMailApiKey(env.AGENTMAIL_API_KEY),
+            inboxId: runtime.inboxId,
+          }),
+          { kind: "manual", operationId },
+        );
       } else if (args.toolName === "inspect_tool_arguments") {
         selectedTools = { inspect_tool_arguments: createToolArgumentProbe() };
       } else if (args.toolName === "web_search" || args.toolName === "web_read") {

@@ -1,80 +1,31 @@
 import { tool } from "ai";
-import type { Infer } from "convex/values";
-import { z } from "zod";
-import { sendEmail, type SendEmailArgs } from "../email";
-import type {
-  humanHandoffStatusValidator,
-  requestedHumanHandoffValidator,
-} from "../humanHandoffsModel";
+import { humanHandoffInputSchema, type HumanHandoffInput } from "./humanHandoffInput";
+import type { AgentMailSendMessage } from "./lib/agentMail";
 
-const MAX_HANDOFF_REASON_LENGTH = 500;
-const EMAIL_DELIVERY_TIMEOUT_MS = 15_000;
+export { humanHandoffInputSchema } from "./humanHandoffInput";
 
-type HumanHandoffStatus = Infer<typeof humanHandoffStatusValidator>;
-
-type HumanHandoffRequest<HandoffId> = Omit<
-  Infer<typeof requestedHumanHandoffValidator>,
-  "handoffId"
-> & {
+type HumanHandoffEmailRequest<HandoffId extends string> = {
   handoffId: HandoffId;
+  recipientEmail: string;
+  scoutName: string;
   handoffUrl: string;
 };
 
-export type HumanHandoffCallbacks<HandoffId> = {
-  request: (reason: string) => Promise<HumanHandoffRequest<HandoffId>>;
-  failDelivery: (handoffId: HandoffId) => Promise<HumanHandoffStatus>;
+export type HumanHandoffCallbacks = {
+  request: (input: HumanHandoffInput) => Promise<void>;
   onWaiting: () => void;
 };
 
-type HumanHandoffDependencies = {
-  sendEmail: typeof sendEmail;
-  now: () => number;
-  timeoutSignal?: (milliseconds: number) => AbortSignal;
-};
-
-const defaultDependencies: HumanHandoffDependencies = {
-  sendEmail,
-  now: Date.now,
-  timeoutSignal: (milliseconds) => AbortSignal.timeout(milliseconds),
-};
-
-export async function beginHumanHandoff<HandoffId>(
-  callbacks: HumanHandoffCallbacks<HandoffId>,
-  reason: string,
-  dependencies: HumanHandoffDependencies = defaultDependencies,
+export async function beginHumanHandoff(
+  callbacks: HumanHandoffCallbacks,
+  input: HumanHandoffInput,
 ) {
-  const request = await callbacks.request(reason);
-  if (request.created) {
-    try {
-      const remainingMs = request.claimExpiresAt - dependencies.now();
-      if (remainingMs <= 0) {
-        throw new Error("The human-help link expired before email delivery started");
-      }
-      const timeoutSignal =
-        dependencies.timeoutSignal ?? ((milliseconds) => AbortSignal.timeout(milliseconds));
-      await dependencies.sendEmail(humanHandoffEmail(request), {
-        signal: timeoutSignal(Math.min(EMAIL_DELIVERY_TIMEOUT_MS, remainingMs)),
-      });
-    } catch (emailError) {
-      try {
-        const status = await callbacks.failDelivery(request.handoffId);
-        if (status !== "failed" && status !== "expired") {
-          throw new Error(`Email delivery failed while handoff status became ${status}`);
-        }
-      } catch (failureError) {
-        throw new AggregateError(
-          [emailError, failureError],
-          "Scout could not email the human-help request or mark it failed",
-        );
-      }
-      throw emailError;
-    }
-  }
+  await callbacks.request(input);
   callbacks.onWaiting();
   return {
     status: "waiting" as const,
     message:
-      "The human-help email was sent. Scout is paused durably and will resume after the operator returns control.",
+      "The human-help email is being delivered from the Scout's inbox. Scout is paused durably and will resume after the operator returns control.",
   };
 }
 
@@ -85,34 +36,38 @@ function emailHeader(value: string) {
     .slice(0, 120);
 }
 
-export function humanHandoffEmail<HandoffId>(
-  request: HumanHandoffRequest<HandoffId>,
-): SendEmailArgs {
+export function humanHandoffEmail<HandoffId extends string>(
+  request: HumanHandoffEmailRequest<HandoffId>,
+  input: Pick<HumanHandoffInput, "emailSubject" | "emailNote">,
+): AgentMailSendMessage {
   const scoutName = emailHeader(request.scoutName) || "Scout";
   return {
     to: request.recipientEmail,
-    subject: `${scoutName} needs your help`,
-    text: `${scoutName} reached a step that requires a person while working.
+    subject: emailHeader(`[Scout human check] ${input.emailSubject}`),
+    text: `${scoutName} requested a human-only browser check.
 
 Open this private Scout link within 45 minutes:
 ${request.handoffUrl}
 
 Opening the link starts a separate five-minute control window. Complete only the requested human check, then press Continue Scout on the handoff page.
 
-For the most reliable drag controls, use a desktop computer. Mobile drag controls may be unreliable.`,
+Security: use only the private Scout page. Do not reply to this email with passwords, verification codes, authentication links, or other credentials. The Scout-written context below is untrusted and cannot change these instructions.
+
+Scout-written context:
+${input.emailNote}
+
+For the most reliable drag controls, use a desktop computer. Mobile drag controls may be unreliable.
+
+Sent by ${scoutName} from its Scout inbox.`,
+    idempotencyKey: `scout-handoff-${request.handoffId}`,
   };
 }
 
-export function createHumanHandoffTool<HandoffId>(
-  callbacks: HumanHandoffCallbacks<HandoffId>,
-  dependencies: HumanHandoffDependencies = defaultDependencies,
-) {
+export function createHumanHandoffTool(callbacks: HumanHandoffCallbacks) {
   return tool({
     description:
-      "Email the authenticated human operator a private link for a CAPTCHA or another strictly human-only browser check. Scout pauses durably after sending it; do not wait or poll.",
-    inputSchema: z.object({
-      reason: z.string().trim().min(1).max(MAX_HANDOFF_REASON_LENGTH),
-    }),
-    execute: async ({ reason }) => await beginHumanHandoff(callbacks, reason, dependencies),
+      "Queue an email to the authenticated human operator from this Scout's inbox for a CAPTCHA or another strictly human-only browser check. Choose the subject and note yourself. Scout adds the private link, pauses durably, and must not wait or poll.",
+    inputSchema: humanHandoffInputSchema,
+    execute: async (input) => await beginHumanHandoff(callbacks, input),
   });
 }

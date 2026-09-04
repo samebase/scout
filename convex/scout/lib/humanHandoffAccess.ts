@@ -1,15 +1,23 @@
 "use node";
 
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
+import { humanHandoffOrigin, humanHandoffUrl, isHumanHandoffAccessToken } from "./humanHandoffUrl";
 
-const ACCESS_TOKEN_PATTERN = /^hh1_[A-Za-z0-9_-]{43}$/;
+export { humanHandoffOrigin, humanHandoffUrl, isHumanHandoffAccessToken };
 
-export function createHumanHandoffAccessToken() {
-  return `hh1_${randomBytes(32).toString("base64url")}`;
-}
+const HUMAN_HANDOFF_TOKEN_CONTEXT = "scout-human-handoff-access-v1";
 
-export function isHumanHandoffAccessToken(value: string) {
-  return ACCESS_TOKEN_PATTERN.test(value);
+export function deriveHumanHandoffAccessToken(promptMessageId: string, agentMailApiKey: string) {
+  const normalizedPromptMessageId = promptMessageId.trim();
+  const normalizedApiKey = agentMailApiKey.trim();
+  if (!normalizedPromptMessageId) throw new Error("Prompt message ID is required");
+  if (!normalizedApiKey) throw new Error("AGENTMAIL_API_KEY is not configured");
+  const digest = createHmac("sha256", normalizedApiKey)
+    .update(HUMAN_HANDOFF_TOKEN_CONTEXT)
+    .update("\0")
+    .update(normalizedPromptMessageId)
+    .digest("base64url");
+  return `hh1_${digest}`;
 }
 
 export function hashHumanHandoffAccessToken(value: string) {
@@ -17,32 +25,4 @@ export function hashHumanHandoffAccessToken(value: string) {
     throw new Error("Human handoff access token is invalid");
   }
   return createHash("sha256").update(value).digest("hex");
-}
-
-export function humanHandoffOrigin(value: string | undefined) {
-  if (value === undefined) {
-    throw new Error("SITE_URL is required to create a human handoff");
-  }
-  const parsed = new URL(value);
-  const loopback = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
-  if (
-    (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && loopback)) ||
-    parsed.username ||
-    parsed.password ||
-    parsed.pathname !== "/" ||
-    parsed.search ||
-    parsed.hash
-  ) {
-    throw new Error("SITE_URL must be a secure application origin");
-  }
-  return parsed.origin;
-}
-
-export function humanHandoffUrl(origin: string, handoffId: string, accessToken: string) {
-  if (!isHumanHandoffAccessToken(accessToken)) {
-    throw new Error("Human handoff access token is invalid");
-  }
-  const url = new URL(`/handoff/${encodeURIComponent(handoffId)}`, humanHandoffOrigin(origin));
-  url.hash = new URLSearchParams({ access: accessToken }).toString();
-  return url.toString();
 }

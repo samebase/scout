@@ -36,6 +36,13 @@ calls until closed or expired; a model generation can attach to that chat's open
 generations close their browser on completion, except when waiting for human help. A Scout's
 persistent browser profile is shared, so only one chat may hold its open browser at a time.
 
+Mail reads use AgentMail's hosted MCP tools and remain scoped to the Scout's configured inbox.
+`send_message` and `reply_to_message` use AgentMail's REST API from the same inbox. The model chooses
+the recipient and copy when email materially advances the user's task. Registration verifies the
+stored ID and address against AgentMail; runtime tools fix every mail call to that persisted inbox
+and supply a deterministic idempotency key for every write. Incoming email is read only when Scout
+invokes a mail tool; no webhook or ambient email turn runs in the background.
+
 `web_search` and `web_read` use Firecrawl's SDK for public research. Browser work uses
 `create_new_firecrawl_session`, `browser_execute`, and `browser_close`. The execution tool accepts
 JavaScript with Playwright, including normal tab operations. Its description includes the exact
@@ -54,12 +61,15 @@ handles remain server-side. Live and replay access checks the chat owner. Replay
 recordings rather than recording a second video in Scout; see
 [Firecrawl limitations](./firecrawl-limitations.md).
 
-A human-help request pauses the model generation and leaves the remote browser open. The private
-email link allows up to 45 minutes to open it; the five-minute control window starts on first open.
-It does not require signing in. The operator finishes the check and presses Continue. A Convex
-workflow waits for the Scout to finish pausing, captures the final page, closes the browser, and
-queues a new generation in the same chat. Expiration and failure also close the browser. Normal
-chat/tool input is blocked while that handoff owns the session.
+A human-help request pauses the model generation and leaves the remote browser open. Scout chooses
+the email subject and explanatory note, while the server adds the private handoff link and sends the
+message from that Scout's AgentMail inbox. Agent-authored handoff notes cannot contain explicit
+external destinations. Fixed security instructions and the private link precede the labeled,
+untrusted Scout context. The private link allows up to 45 minutes to open it; the five-minute control
+window starts on first open. It does not require signing in. The operator finishes the check and
+presses Continue. A Convex workflow waits for the Scout to finish pausing, captures the final page,
+closes the browser, and queues a new generation in the same chat. Expiration and failure also close
+the browser. Normal chat/tool input is blocked while that handoff owns the session.
 
 This cleanup does not introduce a new agent harness, automatic multi-generation supervision, or
 long-running context compaction. Those can be evaluated against the simpler chat interface.

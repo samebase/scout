@@ -1,5 +1,5 @@
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useMutation, useQuery } from "convex/react";
+import { useAction, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { LoaderCircleIcon, PlusIcon, XIcon } from "lucide-react";
 import { type FormEvent, type ReactNode, useRef, useState } from "react";
@@ -202,7 +202,7 @@ function ScoutRegistrationForm({
   onCancel: () => void;
   onSubmittingChange: (submitting: boolean) => void;
 }) {
-  const registerScout = useMutation(api.scout.scouts.register);
+  const registerScout = useAction(api.scout.scoutRegistration.register);
   const navigate = useNavigate();
   const [fields, setFields] = useState<RegistrationFields>(EMPTY_REGISTRATION);
   const [slugEdited, setSlugEdited] = useState(false);
@@ -450,6 +450,11 @@ function registrationError(error: unknown) {
       "AgentMail inbox is already registered to another Scout",
       "That AgentMail inbox belongs to another scout.",
     ],
+    [
+      "Configured AgentMail inbox ID and address do not identify the same inbox",
+      "That AgentMail inbox ID does not match the address.",
+    ],
+    ["AgentMail inbox lookup failed", "AgentMail could not verify that inbox."],
     [
       "Firecrawl profile is already registered to another Scout",
       "That Firecrawl profile belongs to another scout.",

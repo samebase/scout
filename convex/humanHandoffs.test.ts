@@ -8,9 +8,15 @@ import { ADMIN_EMAIL } from "./authConfig";
 import schema from "./schema";
 import { HUMAN_HANDOFF_ACTIVE_MS, HUMAN_HANDOFF_CLAIM_MS } from "./humanHandoffs";
 import { activeBrowserForChat } from "./scout/chatAccess";
+import { hashHumanHandoffAccessToken } from "./scout/lib/humanHandoffAccess";
 
 const modules = import.meta.glob("./**/*.ts");
-const accessTokenHash = "a".repeat(64);
+const accessToken = `hh1_${"A".repeat(43)}`;
+const accessTokenHash = hashHumanHandoffAccessToken(accessToken);
+const deliveryArgs = {
+  emailSubject: "A browser check needs you",
+  emailNote: "Please complete the waiting browser check, then return control.",
+};
 const browserProvider = vi.hoisted(() => ({
   list: vi.fn(),
   close: vi.fn(),
@@ -111,6 +117,7 @@ async function setup() {
     promptMessageId: "prompt-1",
     reason: "  GitHub   requires a CAPTCHA.  ",
     accessTokenHash,
+    ...deliveryArgs,
   });
   return { ...context, requested };
 }
@@ -182,7 +189,7 @@ describe("human handoffs", () => {
     ).resolves.toBeNull();
   });
 
-  test("stores a private 45-minute link without starting the control timer", async () => {
+  test("stores only the private-link digest while queuing 45-minute delivery", async () => {
     const { backend, owner, requested, sessionId, turnId, threadId } = await setup();
     const row = await backend.run(async (ctx) => await ctx.db.get(requested.handoffId));
     if (!row || row.status !== "available") throw new Error("Available handoff not found");
@@ -196,6 +203,21 @@ describe("human handoffs", () => {
     });
     expect(row.claimExpiresAt - row.requestedAt).toBe(HUMAN_HANDOFF_CLAIM_MS);
     expect(JSON.stringify(row)).not.toContain("hh1_");
+    const delivery = await backend.run(
+      async (ctx) =>
+        await ctx.db
+          .query("scoutHumanHandoffDeliveries")
+          .withIndex("by_handoff_id", (index) => index.eq("handoffId", requested.handoffId))
+          .unique(),
+    );
+    expect(delivery).toMatchObject({
+      handoffId: requested.handoffId,
+      inboxId: "conrad-inbox",
+      recipientEmail: ADMIN_EMAIL,
+      scoutName: "Conrad Scout",
+      ...deliveryArgs,
+    });
+    expect(JSON.stringify(delivery)).not.toMatch(/hh1_|#access=|https?:\/\//);
     expect(requested).toEqual({
       handoffId: row._id,
       created: true,
@@ -269,6 +291,7 @@ describe("human handoffs", () => {
       promptMessageId: "prompt-1",
       reason: "The same browser check.",
       accessTokenHash,
+      ...deliveryArgs,
     });
 
     expect(repeated).toEqual({ ...requested, created: false });
@@ -288,6 +311,7 @@ describe("human handoffs", () => {
         promptMessageId: "prompt-1",
         reason: "The same browser check.",
         accessTokenHash: "b".repeat(64),
+        ...deliveryArgs,
       }),
     ).rejects.toThrow("already");
   });
@@ -311,6 +335,7 @@ describe("human handoffs", () => {
         promptMessageId: "prompt-1",
         reason: "CAPTCHA",
         accessTokenHash,
+        ...deliveryArgs,
       }),
     ).rejects.toThrow("Active Scout browser session not found");
   });
@@ -537,7 +562,7 @@ describe("human handoffs", () => {
   });
 
   test("email delivery failure terminates the handoff without changing its source turn", async () => {
-    const { backend, requested, turnId } = await setup();
+    const { backend, owner, requested, sessionId, turnId } = await setup();
     const args = { handoffId: requested.handoffId };
     await expect(backend.mutation(internal.humanHandoffs.failDelivery, args)).resolves.toBe(
       "failed",
@@ -551,6 +576,10 @@ describe("human handoffs", () => {
       failure: "delivery_failed",
       claimed: false,
       turnId,
+    });
+    await expect(owner.query(api.humanHandoffs.active, { sessionId })).resolves.toMatchObject({
+      handoffId: requested.handoffId,
+      phase: "delivery_failed",
     });
     expect(await backend.run(async (ctx) => (await ctx.db.get(turnId))?.state.kind)).toBe(
       "pending",
@@ -579,6 +608,7 @@ describe("human handoffs", () => {
         promptMessageId: "prompt-1",
         reason: "CAPTCHA",
         accessTokenHash,
+        ...deliveryArgs,
       }),
     ).resolves.toMatchObject({ created: true });
   });
