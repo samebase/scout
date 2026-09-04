@@ -34,6 +34,7 @@ import type * as scout_accountTools from "../scout/accountTools.js";
 import type * as scout_agent from "../scout/agent.js";
 import type * as scout_agentMailToolInput from "../scout/agentMailToolInput.js";
 import type * as scout_agentMailTools from "../scout/agentMailTools.js";
+import type * as scout_browserClickRecorder from "../scout/browserClickRecorder.js";
 import type * as scout_browserContext from "../scout/browserContext.js";
 import type * as scout_browserSessionConnection from "../scout/browserSessionConnection.js";
 import type * as scout_browserSessions from "../scout/browserSessions.js";
@@ -112,6 +113,7 @@ declare const fullApi: ApiFromModules<{
   "scout/agent": typeof scout_agent;
   "scout/agentMailToolInput": typeof scout_agentMailToolInput;
   "scout/agentMailTools": typeof scout_agentMailTools;
+  "scout/browserClickRecorder": typeof scout_browserClickRecorder;
   "scout/browserContext": typeof scout_browserContext;
   "scout/browserSessionConnection": typeof scout_browserSessionConnection;
   "scout/browserSessions": typeof scout_browserSessions;

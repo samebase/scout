@@ -2,7 +2,8 @@ import { type Infer, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { action, type ActionCtx } from "./_generated/server";
-import { browserOperationStateValidator, browserViewportValidator } from "./browserModel";
+import { browserViewportValidator } from "./browserModel";
+import { replayOperationValidator } from "./scout/browserSessions";
 import {
   getBrowserReplayPlaylist,
   isFirecrawlReplayNotReady,
@@ -20,11 +21,6 @@ const replayNotReadyValidator = v.union(
   v.object({ status: v.literal("processing") }),
   v.object({ status: v.literal("unavailable") }),
 );
-
-const replayOperationValidator = v.object({
-  sequence: v.number(),
-  state: browserOperationStateValidator,
-});
 
 type ReplayData = {
   providerSessionId: string;
@@ -113,6 +109,6 @@ async function loadReplayData(
   return {
     providerSessionId: replayData.providerSessionId,
     viewport: replayData.viewport,
-    operations: replayData.operations.map(({ sequence, state }) => ({ sequence, state })),
+    operations: replayData.operations,
   };
 }

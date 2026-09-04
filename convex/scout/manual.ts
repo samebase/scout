@@ -188,7 +188,7 @@ export const executeTool = action({
               action,
             });
           },
-          onOperationSettled: async ({ toolCallId, outcome }) => {
+          onOperationSettled: async ({ toolCallId, outcome, clickCapture }) => {
             if (currentBrowserSessionId === null) {
               throw new Error("Browser session was not registered");
             }
@@ -196,6 +196,7 @@ export const executeTool = action({
               sessionId: currentBrowserSessionId,
               toolCallId,
               outcome,
+              clickCapture,
             });
           },
           onSessionClosed: async ({ creditsBilled, sessionDurationMs }) => {

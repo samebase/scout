@@ -6,6 +6,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import { Button } from "#components/ui/button";
 import { activePageIdAt, buildReplayTimeline } from "#lib/browserReplayTimeline";
+import { CLICK_COLOR, replayClicks, visibleReplayClicks } from "#lib/browserReplayClicks";
+import { BrowserReplayExport } from "./browser-replay-export";
 
 type ReplayPagesResult = FunctionReturnType<typeof api.browserReplay.listPages>;
 type ReplayReady = Extract<ReplayPagesResult, { status: "ready" }>;
@@ -149,9 +151,15 @@ function BrowserReplayPlayer({
   const [playing, setPlaying] = useState(false);
   const [manualPageId, setManualPageId] = useState<string | null>(null);
   const [failedMediaPageIds, setFailedMediaPageIds] = useState<string[]>([]);
+  const [showClicks, setShowClicks] = useState(true);
+  const [clickOffsetMs, setClickOffsetMs] = useState(0);
   const timeline = useMemo(
     () => buildReplayTimeline(replay.pages, replay.operations),
     [replay.operations, replay.pages],
+  );
+  const clickData = useMemo(
+    () => replayClicks(replay.operations, timeline, clickOffsetMs),
+    [replay.operations, timeline, clickOffsetMs],
   );
 
   useEffect(() => {
@@ -300,6 +308,26 @@ function BrowserReplayPlayer({
             />
           );
         })}
+        {showClicks && activePageId && !activeTrackFailed ? (
+          <svg
+            className="pointer-events-none absolute inset-0 z-10 size-full"
+            viewBox={`0 0 ${replay.viewport.width} ${replay.viewport.height}`}
+            aria-hidden="true"
+          >
+            {visibleReplayClicks(clickData.clicks, currentTimeMs, activePageId).map((click) => (
+              <circle
+                key={click.id}
+                cx={click.x * replay.viewport.width}
+                cy={click.y * replay.viewport.height}
+                r={(click.radius * replay.viewport.width) / 1280}
+                opacity={click.opacity}
+                fill="#38bdf833"
+                stroke={CLICK_COLOR}
+                strokeWidth={(4 * replay.viewport.width) / 1280}
+              />
+            ))}
+          </svg>
+        ) : null}
         {activeTrackFailed ? (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-neutral-950/90 px-8 text-center text-sm text-neutral-300">
             This recording could not be played. Choose another track or refresh the replay.
@@ -418,6 +446,54 @@ function BrowserReplayPlayer({
             ? ` ${failedPageIds.size} ${failedPageIds.size === 1 ? "recording could" : "recordings could"} not be loaded.`
             : ""}
         </p>
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={showClicks}
+              onChange={(event) => setShowClicks(event.currentTarget.checked)}
+            />
+            Show clicks ({clickData.recorded})
+          </label>
+          {clickData.recorded > 0 ? (
+            <label className="flex items-center gap-2">
+              Click timing (seconds)
+              <input
+                type="number"
+                step="0.1"
+                min="-60"
+                max="60"
+                value={clickOffsetMs / 1_000}
+                className="w-20 rounded border bg-background px-2 py-1"
+                onChange={(event) => {
+                  const value = event.currentTarget.valueAsNumber;
+                  if (Number.isFinite(value))
+                    setClickOffsetMs(Math.max(-60, Math.min(60, value)) * 1_000);
+                }}
+              />
+            </label>
+          ) : null}
+        </div>
+        <p className="mt-2 text-[11px] leading-4 text-muted-foreground">
+          {clickData.recorded === 0
+            ? "No recorded clicks. Automatic markers require a new browser session with click capture enabled."
+            : "Timing is approximate. Adjust it while reviewing, then export. Positive values show clicks later."}
+          {clickData.unmapped > 0
+            ? ` ${clickData.unmapped} clicks could not be matched to a recorded tab and will not be shown.`
+            : ""}
+          {clickData.recorded > 0 && clickData.incomplete
+            ? " Some actions have missing or partial click capture."
+            : ""}{" "}
+          Captures top-level page clicks during agent actions. Iframe clicks and human-control
+          intervals are not captured.
+        </p>
+        <BrowserReplayExport
+          sessionId={sessionId}
+          timeline={timeline}
+          manualPageId={manualPageId}
+          viewport={replay.viewport}
+          clicks={showClicks ? clickData.clicks : []}
+        />
       </div>
     </div>
   );

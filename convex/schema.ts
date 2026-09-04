@@ -3,6 +3,7 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import {
   browserActionValidator,
+  browserClickCaptureValidator,
   browserOperationStateValidator,
   browserViewportValidator,
   persistedBrowserSessionLifecycleValidator,
@@ -137,6 +138,7 @@ export default defineSchema({
     toolCallId: v.string(),
     action: browserActionValidator,
     state: browserOperationStateValidator,
+    clickCapture: v.optional(browserClickCaptureValidator),
   })
     .index("by_session_id_and_sequence", ["sessionId", "sequence"])
     .index("by_session_id_and_tool_call_id", ["sessionId", "toolCallId"]),

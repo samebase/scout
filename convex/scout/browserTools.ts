@@ -93,6 +93,7 @@ type BrowserHarnessOptions = {
   onOperationSettled?: (operation: {
     toolCallId: string;
     outcome: BrowserOperationOutcome;
+    clickCapture: Awaited<ReturnType<PlaywrightBrowser["finishClickCapture"]>>;
   }) => Promise<void>;
   onSessionClosed?: (result: BrowserStopResult) => Promise<void>;
 };
@@ -559,7 +560,8 @@ export function createBrowserHarness(
 
   async function settle(toolCallId: string, outcome: BrowserOperationOutcome) {
     try {
-      await options.onOperationSettled?.({ toolCallId, outcome });
+      const clickCapture = await activeBrowser().finishClickCapture();
+      await options.onOperationSettled?.({ toolCallId, outcome, clickCapture });
     } catch (error) {
       terminalTelemetryFailure = { error };
       throw error;
@@ -634,6 +636,7 @@ export function createBrowserHarness(
 
     let preparedTelemetry: Awaited<ReturnType<typeof prepareTelemetry>>;
     try {
+      await browser.startClickCapture();
       preparedTelemetry = await prepareTelemetry(browser, action, abortSignal);
     } catch (error) {
       const failure = browserFailure(error, sensitiveValues);
@@ -729,6 +732,7 @@ export function createBrowserHarness(
 
       let before: BrowserTelemetry["before"];
       try {
+        if (captureOperations) await browser.startClickCapture();
         before = await browser.observe(abortSignal);
       } catch (error) {
         const failure = browserFailure(error, sensitiveValues);

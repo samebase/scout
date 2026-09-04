@@ -44,6 +44,7 @@ export type ReplayTabTransition = {
 };
 
 export type ReplayTimeline = {
+  telemetryOriginMs: number;
   durationMs: number;
   pages: Array<
     ReplayPageTrack & {
@@ -222,6 +223,7 @@ export function buildReplayTimeline(
   transitions.sort((left, right) => left.latestTimeMs - right.latestTimeMs);
 
   return {
+    telemetryOriginMs: telemetryOrigin,
     durationMs: Math.max(0, lastPageTime - firstPageTime),
     pages: orderedPages.map((page) => ({
       ...page,

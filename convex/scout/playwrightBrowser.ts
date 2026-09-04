@@ -5,6 +5,7 @@ import { chromium, type BrowserContext, type Locator, type Page } from "playwrig
 import { omitNullish } from "../../shared/omitNullish";
 import { browserTelemetryValidator } from "../browserModel";
 import { type BrowserTarget } from "./browserTarget";
+import { BrowserClickRecorder, type BrowserClickCapture } from "./browserClickRecorder";
 import { requireFirecrawlCdpUrl } from "./lib/firecrawlCdpUrl";
 
 const BROWSER_ACTION_TIMEOUT_MS = 60_000;
@@ -16,6 +17,8 @@ export type BrowserTelemetry = Infer<typeof browserTelemetryValidator>;
 export type BrowserObservation = BrowserTelemetry["before"];
 
 export type PlaywrightBrowser = {
+  startClickCapture: () => Promise<void>;
+  finishClickCapture: () => Promise<BrowserClickCapture>;
   snapshot: (abortSignal?: AbortSignal) => Promise<string>;
   navigate: (url: string, abortSignal?: AbortSignal) => Promise<void>;
   getPage: (kind: "url" | "title", abortSignal?: AbortSignal) => Promise<string>;
@@ -71,6 +74,18 @@ class ConnectedPlaywrightBrowser implements PlaywrightBrowser {
   private readonly context: BrowserContext;
   private activePage: Page;
   private readonly tabIds = new Map<Page, Promise<string>>();
+  private clickRecorder: BrowserClickRecorder | null = null;
+
+  async startClickCapture() {
+    this.clickRecorder = new BrowserClickRecorder(this.context);
+    await this.clickRecorder.start();
+  }
+
+  async finishClickCapture(): Promise<BrowserClickCapture> {
+    const recorder = this.clickRecorder;
+    this.clickRecorder = null;
+    return recorder ? await recorder.finish() : { kind: "unavailable" };
+  }
 
   constructor(context: BrowserContext) {
     this.context = context;

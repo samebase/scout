@@ -350,12 +350,13 @@ export const runSlice = internalAction({
             action,
           });
         },
-        onOperationSettled: async ({ toolCallId, outcome }) => {
+        onOperationSettled: async ({ toolCallId, outcome, clickCapture }) => {
           if (!browserSessionId) throw new Error("Browser session was not registered");
           await ctx.runMutation(internal.scout.browserSessions.settleOperation, {
             sessionId: browserSessionId,
             toolCallId,
             outcome,
+            clickCapture,
           });
         },
         onSessionClosed: async ({ creditsBilled, sessionDurationMs }) => {
