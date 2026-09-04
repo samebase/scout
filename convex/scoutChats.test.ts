@@ -105,6 +105,7 @@ describe("Scout chats", () => {
         arrayValue: ["alpha", "beta"],
         nullValue: null,
       }),
+      operationId: "manual-tool-valid",
     });
 
     expect(result.toolCallId).toEqual(expect.any(String));
@@ -120,6 +121,7 @@ describe("Scout chats", () => {
       threadId,
       toolName: "inspect_tool_arguments",
       input: "{}",
+      operationId: "manual-tool-invalid",
     });
     expect(invalid).toMatchObject({
       toolCallId: expect.any(String),

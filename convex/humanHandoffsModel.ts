@@ -99,6 +99,13 @@ const activeHumanHandoffContext = {
 export const activeHumanHandoffValidator = v.union(
   v.object({ ...activeHumanHandoffContext, phase: v.literal("unclaimed") }),
   v.object({ ...activeHumanHandoffContext, phase: v.literal("claimed") }),
+  v.object({
+    handoffId: v.id("scoutHumanHandoffs"),
+    reason: v.string(),
+    requestedAt: v.number(),
+    failedAt: v.number(),
+    phase: v.literal("delivery_failed"),
+  }),
 );
 
 export const requestedHumanHandoffValidator = v.object({

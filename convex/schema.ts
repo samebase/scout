@@ -7,6 +7,7 @@ import {
   browserSessionLifecycleValidator,
   browserViewportValidator,
 } from "./browserModel";
+import { humanHandoffDeliveryRecordValidator } from "./humanHandoffDeliveryModel";
 import { humanHandoffValidator } from "./humanHandoffsModel";
 import { scoutServiceAccountFieldsValidator, scoutWebsiteIdentityValidator } from "./scout/model";
 import { scoutModelValidator, scoutTurnStateValidator } from "./scout/models";
@@ -124,4 +125,8 @@ export default defineSchema({
   scoutHumanHandoffs: defineTable(humanHandoffValidator)
     .index("by_session_id", ["sessionId"])
     .index("by_turn_id", ["turnId"]),
+  scoutHumanHandoffDeliveries: defineTable(humanHandoffDeliveryRecordValidator).index(
+    "by_handoff_id",
+    ["handoffId"],
+  ),
 });

@@ -47,6 +47,10 @@ import {
   CREATE_FIRECRAWL_SESSION_DESCRIPTION,
 } from "../../convex/scout/browserToolContract";
 import {
+  agentMailReplyInputSchema,
+  agentMailSendInputSchema,
+} from "../../convex/scout/agentMailToolInput";
+import {
   scoutSidebarDesktopPrehydrationScript,
   scoutSidebarMobilePrehydrationScript,
 } from "../sidebars/scoutSidebarState";
@@ -69,6 +73,16 @@ const chatSearchSchema = z.object({
   session: z.string().optional().catch(undefined),
 });
 const jsonValueSchema = z.json();
+const MANUAL_SUBMISSION_STORAGE_KEY = "scout_pending_manual_email_submissions_v2";
+const MANUAL_EMAIL_RETRY_WINDOW_MS = 24 * 60 * 60 * 1_000;
+const manualSubmissionSchema = z.object({
+  threadId: z.string().min(1),
+  toolName: z.string().min(1),
+  inputFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+  operationId: z.string().uuid(),
+  createdAt: z.number().int().nonnegative(),
+});
+const manualSubmissionsSchema = z.array(manualSubmissionSchema);
 
 export const Route = createFileRoute("/chats")({
   validateSearch: (search) => chatSearchSchema.parse(search),
@@ -97,6 +111,7 @@ const DRIVER_OPTIONS = [
 
 type ChatDriver = (typeof DRIVER_OPTIONS)[number]["value"];
 type ManualToolName = FunctionArgs<typeof api.scout.manual.executeTool>["toolName"];
+type ManualSubmission = z.output<typeof manualSubmissionSchema>;
 
 const MANUAL_TOOL_OPTIONS = [
   {
@@ -146,6 +161,18 @@ const MANUAL_TOOL_OPTIONS = [
     label: "Read email thread",
     description: "Read one email thread by its AgentMail thread ID.",
     input: '{\n  "threadId": ""\n}',
+  },
+  {
+    value: "send_message",
+    label: "Send email",
+    description: "Send one email from this Scout's AgentMail inbox.",
+    input: '{\n  "to": "person@example.com",\n  "subject": "",\n  "text": ""\n}',
+  },
+  {
+    value: "reply_to_message",
+    label: "Reply to email",
+    description: "Reply from this Scout's inbox using an AgentMail message ID.",
+    input: '{\n  "messageId": "",\n  "text": ""\n}',
   },
   {
     value: "fill_account_password",
@@ -228,6 +255,69 @@ function validJson(value: string) {
   }
 }
 
+function canonicalJson(value: z.output<typeof jsonValueSchema>): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    return `{${Object.entries(value)
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function normalizedManualInput(toolName: ManualToolName, value: string) {
+  const parsed = jsonValueSchema.parse(JSON.parse(value));
+  if (toolName === "send_message") {
+    const normalized = agentMailSendInputSchema.safeParse(parsed);
+    return normalized.success ? normalized.data : parsed;
+  }
+  if (toolName === "reply_to_message") {
+    const normalized = agentMailReplyInputSchema.safeParse(parsed);
+    return normalized.success ? normalized.data : parsed;
+  }
+  return parsed;
+}
+
+async function manualInputFingerprint(toolName: ManualToolName, value: string) {
+  const parsed = normalizedManualInput(toolName, value);
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(canonicalJson(parsed)),
+  );
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function readPendingManualSubmissions(): ManualSubmission[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const serialized = window.localStorage.getItem(MANUAL_SUBMISSION_STORAGE_KEY);
+    if (!serialized) return [];
+    const parsed = manualSubmissionsSchema.safeParse(JSON.parse(serialized));
+    if (parsed.success) return parsed.data;
+    window.localStorage.removeItem(MANUAL_SUBMISSION_STORAGE_KEY);
+  } catch {
+    // Invalid or unavailable browser storage should not prevent manual tools from running.
+  }
+  return [];
+}
+
+function writePendingManualSubmissions(submissions: ManualSubmission[]) {
+  try {
+    if (submissions.length > 0) {
+      window.localStorage.setItem(MANUAL_SUBMISSION_STORAGE_KEY, JSON.stringify(submissions));
+    } else {
+      window.localStorage.removeItem(MANUAL_SUBMISSION_STORAGE_KEY);
+    }
+  } catch {
+    // The in-memory operation still protects retries until this component is replaced.
+  }
+}
+
+function isManualEmailWrite(toolName: ManualToolName) {
+  return toolName === "send_message" || toolName === "reply_to_message";
+}
+
 function threadLabel(thread: ChatThread) {
   return thread.title?.trim() || "New chat";
 }
@@ -269,6 +359,8 @@ function ChatsWorkspace() {
   const [createChatOpen, setCreateChatOpen] = useState(false);
   const [createChatSubmitting, setCreateChatSubmitting] = useState(false);
   const createChatButton = useRef<HTMLButtonElement>(null);
+  const pendingManualSubmissions = useRef<ManualSubmission[]>(readPendingManualSubmissions());
+  const manualSubmissionInFlight = useRef(false);
   const contextResize = useRef<{
     pointerId: number;
     startHeight: number;
@@ -409,15 +501,67 @@ function ChatsWorkspace() {
   };
 
   const submitManualTool = async () => {
-    if (selectedDriver !== "manual" || isWorking || !selectedActiveScout || !threadId) return;
+    if (
+      selectedDriver !== "manual" ||
+      isWorking ||
+      manualSubmissionInFlight.current ||
+      !selectedActiveScout ||
+      !threadId
+    )
+      return;
     if (!validJson(manualInput)) {
       setComposerState({ kind: "failed", message: "Tool input must be valid JSON." });
       return;
     }
 
-    setComposerState({ kind: "sending" });
+    manualSubmissionInFlight.current = true;
     try {
-      await executeManualTool({ threadId, toolName: manualTool.value, input: manualInput });
+      const inputFingerprint = await manualInputFingerprint(manualTool.value, manualInput);
+      const emailWrite = isManualEmailWrite(manualTool.value);
+      const pending = emailWrite
+        ? pendingManualSubmissions.current.find(
+            (submission) =>
+              submission.threadId === threadId &&
+              submission.toolName === manualTool.value &&
+              submission.inputFingerprint === inputFingerprint,
+          )
+        : undefined;
+      if (pending && Date.now() - pending.createdAt >= MANUAL_EMAIL_RETRY_WINDOW_MS) {
+        pendingManualSubmissions.current = pendingManualSubmissions.current.filter(
+          (candidate) => candidate.operationId !== pending.operationId,
+        );
+        writePendingManualSubmissions(pendingManualSubmissions.current);
+        setComposerState({
+          kind: "failed",
+          message:
+            "This email has an unresolved delivery result older than 24 hours. Check the Scout inbox before trying again.",
+        });
+        return;
+      }
+      const submission = pending ?? {
+        threadId,
+        toolName: manualTool.value,
+        inputFingerprint,
+        operationId: crypto.randomUUID(),
+        createdAt: Date.now(),
+      };
+      if (emailWrite && !pending) {
+        pendingManualSubmissions.current = [...pendingManualSubmissions.current, submission];
+        writePendingManualSubmissions(pendingManualSubmissions.current);
+      }
+      setComposerState({ kind: "sending" });
+      const result = await executeManualTool({
+        threadId,
+        toolName: manualTool.value,
+        input: manualInput,
+        operationId: submission.operationId,
+      });
+      if (emailWrite && result.outcome.kind === "success") {
+        pendingManualSubmissions.current = pendingManualSubmissions.current.filter(
+          (candidate) => candidate.operationId !== submission.operationId,
+        );
+        writePendingManualSubmissions(pendingManualSubmissions.current);
+      }
       setComposerState({ kind: "idle" });
     } catch {
       setComposerState(
@@ -425,6 +569,8 @@ function ChatsWorkspace() {
           ? { kind: "failed", message: "The manual tool call could not be submitted." }
           : { kind: "idle" },
       );
+    } finally {
+      manualSubmissionInFlight.current = false;
     }
   };
 
@@ -511,7 +657,17 @@ function ChatsWorkspace() {
       header={<div className="flex h-full items-center px-4 text-xs font-semibold">Chat</div>}
       content={
         <section aria-label="Conversation" className="flex h-full min-h-0 min-w-0 flex-col">
-          {activeHandoff ? (
+          {activeHandoff?.phase === "delivery_failed" ? (
+            <div
+              role="alert"
+              className="flex flex-wrap items-center justify-between gap-3 border-b border-destructive/30 bg-destructive/5 px-4 py-3"
+            >
+              <p className="text-sm">
+                Scout could not deliver the private handoff link. Check its inbox, then ask Scout to
+                try the human-help request again.
+              </p>
+            </div>
+          ) : activeHandoff ? (
             <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/40 px-4 py-3">
               <p className="text-sm">{activeHandoff.reason}</p>
               <Button asChild size="sm" variant="outline">

@@ -10,14 +10,14 @@ import { env, internalAction } from "../_generated/server";
 import { findActiveBrowserSession } from "../humanHandoffBrowser";
 import { scoutAgent } from "./agent";
 import { createAccountTools } from "./accountTools";
+import { createAgentMailWriteTools } from "./agentMailTools";
 import { requireOwnedAgentThread } from "./chatAccess";
 import { createBrowserHarness, selectAgentMailTools } from "./browserTools";
 import { createHumanHandoffTool, type HumanHandoffCallbacks } from "./humanHandoffTool";
+import { createAgentMailInboxClient, requiredAgentMailApiKey } from "./lib/agentMail";
 import {
-  createHumanHandoffAccessToken,
+  deriveHumanHandoffAccessToken,
   hashHumanHandoffAccessToken,
-  humanHandoffOrigin,
-  humanHandoffUrl,
 } from "./lib/humanHandoffAccess";
 import { omitNullish } from "../../shared/omitNullish";
 import { scoutLanguageModel, scoutModelValidator, type ScoutTokenUsage } from "./models";
@@ -172,6 +172,7 @@ export const generateResponse = internalAction({
     let browserSessionId: Id<"scoutBrowserSessions"> | null = null;
     let interactiveLiveViewUrl: string | null = null;
     let humanHandoffWaiting = false;
+    let humanHandoffAccessToken: string | undefined;
     let generationResult: GenerationResult;
     let accumulatedUsage: ScoutTokenUsage | undefined;
 
@@ -263,43 +264,47 @@ export const generateResponse = internalAction({
         }
       }
       requireSecret(env.FIRECRAWL_API_KEY, "FIRECRAWL_API_KEY");
+      const agentMailApiKey = requiredAgentMailApiKey(env.AGENTMAIL_API_KEY);
+      const agentMailInbox = createAgentMailInboxClient({
+        apiKey: agentMailApiKey,
+        inboxId: scout.agentMail.inboxId,
+      });
       agentMailClient = await createMCPClient({
         transport: {
           type: "http",
           url: "https://mcp.agentmail.to/mcp",
           headers: {
-            "x-api-key": requireSecret(env.AGENTMAIL_API_KEY, "AGENTMAIL_API_KEY"),
+            "x-api-key": agentMailApiKey,
           },
         },
       });
-      const agentMailTools = selectAgentMailTools(
-        await agentMailClient.tools(),
-        scout.agentMail.inboxId,
-      );
+      const agentMailTools = {
+        ...selectAgentMailTools(await agentMailClient.tools(), scout.agentMail.inboxId),
+        ...createAgentMailWriteTools(agentMailInbox, {
+          kind: "model",
+          promptMessageId: args.promptMessageId,
+        }),
+      };
       const activeBrowser = browser;
       if (!activeBrowser) throw new Error("Browser harness was not initialized");
-      const humanHandoffCallbacks: HumanHandoffCallbacks<Id<"scoutHumanHandoffs">> = {
-        request: async (reason) => {
+      const humanHandoffCallbacks: HumanHandoffCallbacks = {
+        request: async (input) => {
           if (!interactiveLiveViewUrl) {
             throw new Error("The current browser session has no interactive human-takeover link");
           }
-          const accessToken = createHumanHandoffAccessToken();
-          const request = await ctx.runMutation(internal.humanHandoffs.request, {
+          humanHandoffAccessToken ??= deriveHumanHandoffAccessToken(
+            args.promptMessageId,
+            agentMailApiKey,
+          );
+          const accessToken = humanHandoffAccessToken;
+          await ctx.runMutation(internal.humanHandoffs.request, {
             promptMessageId: args.promptMessageId,
-            reason,
+            reason: input.reason,
             accessTokenHash: hashHumanHandoffAccessToken(accessToken),
+            emailSubject: input.emailSubject,
+            emailNote: input.emailNote,
           });
-          return {
-            ...request,
-            handoffUrl: humanHandoffUrl(
-              humanHandoffOrigin(env.SITE_URL),
-              request.handoffId,
-              accessToken,
-            ),
-          };
         },
-        failDelivery: async (handoffId) =>
-          await ctx.runMutation(internal.humanHandoffs.failDelivery, { handoffId }),
         onWaiting: () => {
           humanHandoffWaiting = true;
         },

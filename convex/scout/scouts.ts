@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
-import { internalQuery, mutation, query, type MutationCtx } from "../_generated/server";
+import { internalMutation, internalQuery, query, type QueryCtx } from "../_generated/server";
 import { requireAppUser } from "../access";
 import { scoutWebsiteIdentityValidator } from "./model";
 
@@ -28,7 +28,7 @@ const scoutFieldsValidator = v.object({
   status: v.union(v.literal("active"), v.literal("disabled")),
 });
 
-const scoutRegistrationFieldsValidator = scoutFieldsValidator.omit("status");
+export const scoutRegistrationFieldsValidator = scoutFieldsValidator.omit("status");
 
 const scoutPublicValidator = v.object({
   _id: v.id("scouts"),
@@ -45,9 +45,12 @@ const scoutPublicValidator = v.object({
   }),
 });
 
-const registrationResultValidator = v.object({
+export const registrationResultValidator = v.object({
   scoutId: v.id("scouts"),
 });
+
+export type PreparedScoutRegistration = typeof scoutFieldsValidator.type;
+export type ScoutRegistrationResult = typeof registrationResultValidator.type;
 
 const scoutRuntimeIdentityValidator = v.object({
   displayName: v.string(),
@@ -132,8 +135,10 @@ function projectScout(scout: Doc<"scouts">) {
   };
 }
 
-async function saveScout(ctx: MutationCtx, args: typeof scoutFieldsValidator.type) {
-  const fields = normalizeScoutFields(args);
+async function requireScoutAvailable(
+  ctx: Pick<QueryCtx, "db">,
+  fields: typeof scoutFieldsValidator.type,
+) {
   const existing = await ctx.db
     .query("scouts")
     .withIndex("by_slug", (q) => q.eq("slug", fields.slug))
@@ -165,8 +170,6 @@ async function saveScout(ctx: MutationCtx, args: typeof scoutFieldsValidator.typ
   if (profileOwner) {
     throw new Error("Firecrawl profile is already registered to another Scout");
   }
-
-  return { scoutId: await ctx.db.insert("scouts", fields) };
 }
 
 export const list = query({
@@ -213,11 +216,23 @@ export const getRuntimeIdentity = internalQuery({
   },
 });
 
-export const register = mutation({
+export const prepareRegistration = internalQuery({
   args: scoutRegistrationFieldsValidator.fields,
-  returns: registrationResultValidator,
+  returns: scoutFieldsValidator,
   handler: async (ctx, args) => {
     await requireAppUser(ctx);
-    return await saveScout(ctx, { ...args, status: "active" });
+    const fields = normalizeScoutFields({ ...args, status: "active" });
+    await requireScoutAvailable(ctx, fields);
+    return fields;
+  },
+});
+
+export const commitRegistration = internalMutation({
+  args: scoutFieldsValidator.fields,
+  returns: registrationResultValidator,
+  handler: async (ctx, fields) => {
+    await requireAppUser(ctx);
+    await requireScoutAvailable(ctx, fields);
+    return { scoutId: await ctx.db.insert("scouts", fields) };
   },
 });

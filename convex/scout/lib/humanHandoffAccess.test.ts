@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 import {
-  createHumanHandoffAccessToken,
+  deriveHumanHandoffAccessToken,
   hashHumanHandoffAccessToken,
   humanHandoffOrigin,
   humanHandoffUrl,
@@ -14,10 +14,12 @@ describe("human handoff bearer", () => {
     );
   });
 
-  test("creates a random 256-bit token and persists only its digest", () => {
-    const first = createHumanHandoffAccessToken();
-    const second = createHumanHandoffAccessToken();
+  test("derives a stable, prompt-bound 256-bit token and persists only its digest", () => {
+    const first = deriveHumanHandoffAccessToken("prompt-1", "agentmail-secret");
+    const repeated = deriveHumanHandoffAccessToken("prompt-1", "agentmail-secret");
+    const second = deriveHumanHandoffAccessToken("prompt-2", "agentmail-secret");
 
+    expect(first).toBe(repeated);
     expect(first).not.toBe(second);
     expect(isHumanHandoffAccessToken(first)).toBe(true);
     expect(hashHumanHandoffAccessToken(first)).toMatch(/^[a-f0-9]{64}$/);
@@ -39,7 +41,7 @@ describe("human handoff bearer", () => {
   });
 
   test("puts the bearer in the fragment of a first-party URL", () => {
-    const token = createHumanHandoffAccessToken();
+    const token = deriveHumanHandoffAccessToken("prompt-1", "agentmail-secret");
     const url = humanHandoffUrl("https://scout.example", "handoff/id", token);
 
     expect(url).toBe(`https://scout.example/handoff/handoff%2Fid#access=${token}`);
