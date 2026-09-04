@@ -14,6 +14,7 @@ import {
 } from "../_generated/server";
 import { requireAppUser } from "../access";
 import { handoffCommon, handoffClaim } from "../humanHandoffsModel";
+import schema from "../schema";
 import { scoutAgent } from "./agent";
 import { activeBrowserForChat, requireOwnedAgentThread, scoutIsWorking } from "./chatAccess";
 import { omitNullish } from "../../shared/omitNullish";
@@ -415,8 +416,10 @@ export const runtimeContext = internalQuery({
     startedAt: v.number(),
     userId: v.id("users"),
     scoutId: v.id("scouts"),
-    browserSessionId: v.union(v.id("scoutBrowserSessions"), v.null()),
-    providerSessionId: v.union(v.string(), v.null()),
+    browserSession: v.union(
+      schema.doc("scoutBrowserSessions").pick("_id", "providerSessionId", "lifecycle"),
+      v.null(),
+    ),
   }),
   handler: async (ctx, args) => {
     const turn = await ctx.db
@@ -435,8 +438,13 @@ export const runtimeContext = internalQuery({
       startedAt: turn.startedAt,
       userId: chat.userId,
       scoutId: chat.scoutId,
-      browserSessionId: session?._id ?? null,
-      providerSessionId: session?.providerSessionId ?? null,
+      browserSession: session
+        ? {
+            _id: session._id,
+            providerSessionId: session.providerSessionId,
+            lifecycle: session.lifecycle,
+          }
+        : null,
     };
   },
 });

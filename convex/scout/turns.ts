@@ -73,11 +73,11 @@ async function failPendingTurn(
     .first();
   const cleanupSession =
     !handoffOwnsBrowserCleanup && session?.threadId === turn.threadId ? session : null;
-  if (cleanupSession) {
+  if (cleanupSession?.lifecycle.kind === "active") {
     await ctx.db.patch(cleanupSession._id, {
       lifecycle: {
+        ...cleanupSession.lifecycle,
         kind: "closing",
-        openedAtMs: cleanupSession.lifecycle.openedAtMs,
         closingAtMs: Date.now(),
       },
     });

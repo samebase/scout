@@ -12,12 +12,12 @@ import { inspect } from "node:util";
 import { components, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { env, internalAction } from "../_generated/server";
-import { findActiveBrowserSession } from "../humanHandoffBrowser";
 import { scoutAgent } from "./agent";
 import { createAccountTools } from "./accountTools";
 import { createAgentMailWriteTools } from "./agentMailTools";
 import { requireOwnedAgentThread } from "./chatAccess";
 import { createBrowserHarness, selectAgentMailTools } from "./browserTools";
+import { attachPersistedBrowserSession } from "./browserSessionConnection";
 import { createHumanHandoffTool, type HumanHandoffCallbacks } from "./humanHandoffTool";
 import { createAgentMailInboxClient, requiredAgentMailApiKey } from "./lib/agentMail";
 import {
@@ -32,6 +32,7 @@ import {
   type ScoutTokenUsage,
 } from "./models";
 import { compactBrowserModelContext, compactedBrowserSnapshotCount } from "./browserContext";
+import { compactCompletedTurnContext } from "./modelContext";
 import { createToolArgumentProbe } from "./toolArgumentProbe";
 import { repairStringifiedToolInput } from "./toolCallRepair";
 import { scoutRuntimeInstructions } from "./runtimeInstructions";
@@ -41,6 +42,7 @@ export const GENERATION_SLICE_STEPS = 1;
 export const GENERATION_SLICE_WORK_BUDGET_MS = 6 * 60 * 1_000;
 export const MAX_TURN_STEPS = 120;
 export const MAX_TURN_DURATION_MS = 45 * 60 * 1_000;
+const RECENT_MESSAGE_FETCH_LIMIT = 500;
 const AGENT_MAIL_CLOSE_TIMEOUT_MS = 1_000;
 const AGENT_MAIL_REQUEST_TIMEOUT_MS = 30_000;
 
@@ -320,11 +322,11 @@ export const runSlice = internalAction({
       );
       browser = createBrowserHarness({
         profileName: scout.firecrawl.profileName,
-        onSessionAvailable: async (providerSessionId) => {
+        onSessionCreated: async (session) => {
           const registered = await ctx.runMutation(internal.scout.browserSessions.open, {
             threadId: args.threadId,
             scoutId,
-            providerSessionId,
+            ...session,
             profileName: scout.firecrawl.profileName,
           });
           browserSessionId = registered.sessionId;
@@ -374,22 +376,38 @@ export const runSlice = internalAction({
           });
         },
       });
-      if (runtimeContext.providerSessionId && runtimeContext.browserSessionId) {
-        const existing = await findActiveBrowserSession(runtimeContext.providerSessionId);
-        if (existing) {
-          await browser.attach(
-            { providerSessionId: existing.sessionId, cdpUrl: existing.cdpUrl },
-            sliceAbortSignal,
-          );
-          interactiveLiveViewUrl = existing.interactiveLiveViewUrl;
-        } else {
+      if (runtimeContext.browserSession) {
+        const persisted = runtimeContext.browserSession;
+        if (persisted.lifecycle.kind !== "active") {
+          throw new Error("Active browser session not found");
+        }
+        const connection = await attachPersistedBrowserSession(
+          browser,
+          {
+            providerSessionId: persisted.providerSessionId,
+            cdpUrl: persisted.lifecycle.cdpUrl,
+            interactiveLiveViewUrl: persisted.lifecycle.interactiveLiveViewUrl,
+          },
+          sliceAbortSignal,
+        );
+        if (!connection) {
           await ctx.runMutation(internal.scout.browserSessions.close, {
-            sessionId: runtimeContext.browserSessionId,
+            sessionId: persisted._id,
             providerDurationMs: null,
             creditsBilled: null,
             usageTurnId: activeTurnId,
           });
+        } else if (
+          connection.cdpUrl !== persisted.lifecycle.cdpUrl ||
+          connection.interactiveLiveViewUrl !== persisted.lifecycle.interactiveLiveViewUrl
+        ) {
+          await ctx.runMutation(internal.scout.browserSessions.replaceConnection, {
+            sessionId: persisted._id,
+            cdpUrl: connection.cdpUrl,
+            interactiveLiveViewUrl: connection.interactiveLiveViewUrl,
+          });
         }
+        if (connection) browserSessionId = persisted._id;
       }
       requireSecret(env.FIRECRAWL_API_KEY, "FIRECRAWL_API_KEY");
       const agentMailApiKey = requiredAgentMailApiKey(env.AGENTMAIL_API_KEY);
@@ -490,12 +508,19 @@ export const runSlice = internalAction({
           tools,
           repairToolCall: repairStringifiedToolInput,
           abortSignal: sliceAbortSignal,
-          maxRetries: 0,
+          maxRetries: 2,
           timeout: { totalMs: timeoutMs },
           stopWhen: isStepCount(sliceStepLimit),
           onError: streamErrors.onError,
           onLanguageModelCallStart: async (event) => {
             try {
+              if (activeModelCallId) {
+                await ctx.runMutation(internal.scout.modelCalls.failOne, {
+                  modelCallId: activeModelCallId,
+                  failure: "Model call was retried before a response completed",
+                });
+                activeModelCallId = null;
+              }
               const snapshot = modelCallContext(event);
               const blob = new Blob([snapshot], { type: "application/json" });
               const snapshotStorageId = await ctx.storage.store(blob);
@@ -559,13 +584,26 @@ export const runSlice = internalAction({
           }),
         },
         {
+          contextOptions: { recentMessages: RECENT_MESSAGE_FETCH_LIMIT },
           saveStreamDeltas: {
             returnImmediately: true,
             chunking: "word",
             throttleMs: 100,
           },
-          contextHandler: async (_ctx, { allMessages }) =>
-            preserveTurnObjective(compactBrowserModelContext(allMessages), objective),
+          contextHandler: async (
+            _ctx,
+            { search, recent, inputMessages, inputPrompt, existingResponses },
+          ) =>
+            preserveTurnObjective(
+              compactBrowserModelContext([
+                ...search,
+                ...compactCompletedTurnContext(recent),
+                ...inputMessages,
+                ...inputPrompt,
+                ...existingResponses,
+              ]),
+              objective,
+            ),
         },
       );
       await streamResult.consumeStream();

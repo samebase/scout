@@ -99,7 +99,13 @@ async function accountContext() {
       profileName: "conrad-profile",
       viewport: { width: 1_280, height: 800 },
       nextOperationSequence: 2,
-      lifecycle: { kind: "active", openedAtMs: 1 },
+      lifecycle: {
+        kind: "active",
+        openedAtMs: 1,
+        providerExpiresAtMs: 60 * 60 * 1_000,
+        cdpUrl: "wss://browser.firecrawl.dev/cdp?token=private",
+        interactiveLiveViewUrl: null,
+      },
     });
     const operationId = await ctx.db.insert("scoutBrowserOperations", {
       sessionId,

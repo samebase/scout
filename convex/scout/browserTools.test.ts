@@ -90,11 +90,13 @@ describe("Lab browser harness", () => {
       interactiveLiveViewUrl:
         "https://liveview.firecrawl.dev/private?signature=interactive-control",
     });
+    const onSessionCreated = vi.fn(async () => undefined);
     const onLiveViewAvailable = vi.fn(async () => undefined);
     const onInteractiveLiveViewAvailable = vi.fn(async () => undefined);
     const browser = createBrowserHarness(
       {
         profileName: "scout-conrad",
+        onSessionCreated,
         onLiveViewAvailable,
         onInteractiveLiveViewAvailable,
       },
@@ -119,6 +121,13 @@ describe("Lab browser harness", () => {
     );
     expect(onLiveViewAvailable).toHaveBeenCalledOnce();
     expect(onInteractiveLiveViewAvailable).toHaveBeenCalledOnce();
+    expect(onSessionCreated).toHaveBeenCalledExactlyOnceWith({
+      providerSessionId: "session-1",
+      cdpUrl: "wss://browser.firecrawl.dev/cdp?token=secret",
+      interactiveLiveViewUrl:
+        "https://liveview.firecrawl.dev/private?signature=interactive-control",
+      providerExpiresAtMs: 3_601_010,
+    });
     expect(JSON.stringify(output)).not.toContain("firecrawl.dev");
   });
 
@@ -129,7 +138,7 @@ describe("Lab browser harness", () => {
     const onOperationSettled = vi.fn(async () => undefined);
     const browser = createBrowserHarness(
       {
-        onSessionAvailable: async () => ({ captureOperations: true }),
+        onSessionCreated: async () => ({ captureOperations: true }),
         onOperationPrepared,
         onOperationSettled,
       },
@@ -163,6 +172,8 @@ describe("Lab browser harness", () => {
       'new AsyncFunction("page", "browserState", "return (" + source + ");")',
     );
     expect(executionRequest?.[1].code).toContain("executeUserCode(activePage, browserState)");
+    expect(executionRequest?.[1].code).toContain("activePage.setDefaultTimeout(10000)");
+    expect(executionRequest?.[1].code).toContain("activePage.setDefaultNavigationTimeout(30000)");
     expect(onOperationPrepared).toHaveBeenCalledWith({
       toolCallId: "tool-execute",
       action: { kind: "execute", code },
@@ -189,21 +200,23 @@ describe("Lab browser harness", () => {
 
   test("reconnects to an existing Firecrawl session for a later execution", async () => {
     const deps = dependencies();
-    const onSessionAvailable = vi.fn(async () => ({ captureOperations: true }));
     const onOperationPrepared = vi.fn(async () => true);
     const browser = createBrowserHarness(
       {
-        onSessionAvailable,
         onOperationPrepared,
         onOperationSettled: async () => undefined,
       },
       deps,
     );
 
-    await browser.attach({
-      providerSessionId: "session-existing",
-      cdpUrl: "wss://browser.firecrawl.dev/cdp?token=secret",
-    });
+    await browser.attach(
+      {
+        providerSessionId: "session-existing",
+        cdpUrl: "wss://browser.firecrawl.dev/cdp?token=secret",
+        interactiveLiveViewUrl: null,
+      },
+      { captureOperations: true },
+    );
     await browser.actions.executeCode("return await page.title()", "tool-reconnected");
 
     expect(deps.browser).not.toHaveBeenCalled();
@@ -211,7 +224,6 @@ describe("Lab browser harness", () => {
       "wss://browser.firecrawl.dev/cdp?token=secret",
       undefined,
     );
-    expect(onSessionAvailable).toHaveBeenCalledExactlyOnceWith("session-existing");
     expect(onOperationPrepared).toHaveBeenCalledExactlyOnceWith({
       toolCallId: "tool-reconnected",
       action: { kind: "execute", code: "return await page.title()" },
@@ -262,7 +274,7 @@ describe("Lab browser harness", () => {
     const onOperationSettled = vi.fn(async () => undefined);
     const browser = createBrowserHarness(
       {
-        onSessionAvailable: async () => ({ captureOperations: true }),
+        onSessionCreated: async () => ({ captureOperations: true }),
         onOperationPrepared: async () => true,
         onOperationSettled,
       },
@@ -450,7 +462,7 @@ describe("Lab browser harness", () => {
     const onOperationSettled = vi.fn(async () => undefined);
     const browser = createBrowserHarness(
       {
-        onSessionAvailable: async () => ({ captureOperations: true }),
+        onSessionCreated: async () => ({ captureOperations: true }),
         onOperationPrepared: async () => {
           controller.abort(new Error("Scout slice expired"));
           return true;
@@ -516,7 +528,7 @@ describe("Lab browser harness", () => {
     const registrationFailure = new Error("database unavailable");
     const browser = createBrowserHarness(
       {
-        onSessionAvailable: async () => {
+        onSessionCreated: async () => {
           throw registrationFailure;
         },
       },

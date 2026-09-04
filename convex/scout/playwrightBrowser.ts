@@ -5,6 +5,7 @@ import { chromium, type BrowserContext, type Locator, type Page } from "playwrig
 import { omitNullish } from "../../shared/omitNullish";
 import { browserTelemetryValidator } from "../browserModel";
 import { type BrowserTarget } from "./browserTarget";
+import { requireFirecrawlCdpUrl } from "./lib/firecrawlCdpUrl";
 
 const BROWSER_ACTION_TIMEOUT_MS = 60_000;
 const BROWSER_CONTROL_TIMEOUT_MS = 30_000;
@@ -64,14 +65,6 @@ function displayUrl(value: string) {
   } catch {
     return null;
   }
-}
-
-function requireCdpUrl(value: string) {
-  const url = new URL(value);
-  if (url.protocol !== "wss:") {
-    throw new Error("Firecrawl returned an invalid browser CDP URL");
-  }
-  return url.toString();
 }
 
 class ConnectedPlaywrightBrowser implements PlaywrightBrowser {
@@ -245,7 +238,7 @@ export async function connectPlaywrightBrowser(
   abortSignal?.throwIfAborted();
   const browser = await runBoundedControlOperation(
     async () =>
-      await chromium.connectOverCDP(requireCdpUrl(cdpUrl), {
+      await chromium.connectOverCDP(requireFirecrawlCdpUrl(cdpUrl), {
         timeout: BROWSER_CONTROL_TIMEOUT_MS,
       }),
     abortSignal,

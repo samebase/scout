@@ -191,19 +191,36 @@ describe("Scout chats", () => {
       threadId,
       scoutId,
       providerSessionId: "provider-session-secret",
+      cdpUrl: "wss://browser.firecrawl.dev/cdp?token=secret",
+      interactiveLiveViewUrl: null,
+      providerExpiresAtMs: Date.now() + 60 * 60 * 1_000,
       profileName: "session-profile",
     });
 
     await expect(
       admin.query(internal.scout.manualState.runtimeContext, { threadId }),
-    ).resolves.toMatchObject({ providerSessionId: "provider-session-secret", scoutId });
-    await expect(admin.query(api.scout.browserSessions.list, { threadId })).resolves.toEqual([
+    ).resolves.toMatchObject({
+      browserSession: {
+        providerSessionId: "provider-session-secret",
+        lifecycle: {
+          kind: "active",
+          cdpUrl: "wss://browser.firecrawl.dev/cdp?token=secret",
+        },
+      },
+      scoutId,
+    });
+    const publicSessions = await admin.query(api.scout.browserSessions.list, { threadId });
+    expect(publicSessions).toEqual([
       expect.objectContaining({
         sessionId: recorded.sessionId,
         sequence: 1,
         lifecycle: expect.objectContaining({ kind: "active" }),
       }),
     ]);
+    const publicSession = await admin.query(api.scout.browserSessions.get, {
+      sessionId: recorded.sessionId,
+    });
+    expect(JSON.stringify([publicSessions, publicSession])).not.toContain("token=secret");
     const other = backend.withIdentity({ subject: `${otherUserId}|test-session` });
     await expect(
       other.query(internal.scout.manualState.runtimeContext, { threadId }),
@@ -228,6 +245,9 @@ describe("Scout chats", () => {
     });
     await expect(
       admin.query(internal.scout.manualState.runtimeContext, { threadId }),
-    ).resolves.toMatchObject({ providerSessionId: null });
+    ).resolves.toMatchObject({ browserSession: null });
+    await expect(
+      backend.run(async (ctx) => await ctx.db.get("scoutBrowserSessions", recorded.sessionId)),
+    ).resolves.toMatchObject({ lifecycle: { kind: "closed" } });
   });
 });

@@ -7,6 +7,7 @@ import {
   type BrowserExecuteResponse,
 } from "firecrawl";
 import { env } from "../../_generated/server";
+import { optionalFirecrawlLiveViewUrl } from "./firecrawlLiveView";
 
 type BrowserLifecycleClient = Pick<Firecrawl, "deleteBrowser" | "listBrowsers">;
 const FIRECRAWL_REQUEST_TIMEOUT_MS = 60_000;
@@ -30,6 +31,23 @@ export function firecrawlBrowserExecutionSucceeded(response: BrowserExecuteRespo
     response.killed !== true &&
     (exitCode === undefined || exitCode === null || exitCode === 0)
   );
+}
+
+export async function recoverActiveFirecrawlBrowserSession(providerSessionId: string) {
+  const response = await createFirecrawlClient().listBrowsers({ status: "active" });
+  if (!response.success) {
+    throw new Error(response.error?.trim() || "Firecrawl could not list browser sessions");
+  }
+  const session = response.sessions?.find(
+    (candidate) => candidate.id === providerSessionId && candidate.status === "active",
+  );
+  return session
+    ? {
+        providerSessionId: session.id,
+        cdpUrl: session.cdpUrl,
+        interactiveLiveViewUrl: optionalFirecrawlLiveViewUrl(session.interactiveLiveViewUrl),
+      }
+    : null;
 }
 
 export async function closeFirecrawlBrowserSession(

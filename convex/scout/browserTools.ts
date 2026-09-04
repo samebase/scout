@@ -30,7 +30,10 @@ import {
 const MAX_TOOL_TEXT_LENGTH = 20_000;
 const MAX_TOOL_OUTPUT_LENGTH = 20_000;
 const PLAYWRIGHT_RESULT_PREFIX = "__SCOUT_PLAYWRIGHT_RESULT__";
+const PLAYWRIGHT_ACTION_TIMEOUT_MS = 10_000;
+const PLAYWRIGHT_NAVIGATION_TIMEOUT_MS = 30_000;
 const PROFILE_WRITE_RETRY_DELAYS_MS = [10_000, 10_000, 10_000] as const;
+const FIRECRAWL_BROWSER_TTL_SECONDS = 3_600;
 
 const agentMailToolNames = ["list_messages", "search_messages", "get_thread"] as const;
 const playwrightExecutionResultSchema = z.discriminatedUnion("ok", [
@@ -62,7 +65,10 @@ type BrowserDependencies = {
 export type BrowserSessionHandle = {
   providerSessionId: string;
   cdpUrl: string;
+  interactiveLiveViewUrl: string | null;
 };
+
+type CreatedBrowserSessionHandle = BrowserSessionHandle & { providerExpiresAtMs: number };
 
 type BrowserSessionPolicy = { captureOperations: boolean };
 type BrowserOperationOutcome =
@@ -73,7 +79,9 @@ type BrowserOperationOutcome =
 
 type BrowserHarnessOptions = {
   profileName?: string;
-  onSessionAvailable?: (sessionId: string) => Promise<BrowserSessionPolicy | undefined>;
+  onSessionCreated?: (
+    session: CreatedBrowserSessionHandle,
+  ) => Promise<BrowserSessionPolicy | undefined>;
   onLiveViewAvailable?: (liveViewUrl: string) => Promise<void>;
   onInteractiveLiveViewAvailable?: (interactiveLiveViewUrl: string) => Promise<void>;
   onLiveViewClosed?: () => Promise<void>;
@@ -114,6 +122,15 @@ function firecrawlProfileWriterBusy(error: unknown) {
     error instanceof SdkError &&
     /another session is currently writing to this profile/i.test(error.message)
   );
+}
+
+function firecrawlBrowserExpiresAt(expiresAt: string | undefined, now: number) {
+  if (expiresAt === undefined) return now + FIRECRAWL_BROWSER_TTL_SECONDS * 1_000;
+  const expiresAtMs = Date.parse(expiresAt);
+  if (!Number.isFinite(expiresAtMs) || expiresAtMs <= now) {
+    throw new Error("Firecrawl returned an invalid browser expiration time");
+  }
+  return expiresAtMs;
 }
 
 async function createFirecrawlBrowserWithProfileRetry(
@@ -349,6 +366,8 @@ function scopedPlaywrightExecution(
       }
     }
     await activePage.bringToFront();
+    activePage.setDefaultTimeout(${PLAYWRIGHT_ACTION_TIMEOUT_MS});
+    activePage.setDefaultNavigationTimeout(${PLAYWRIGHT_NAVIGATION_TIMEOUT_MS});
     ${BROWSER_STATE_HELPER_SOURCE}
     const source = ${JSON.stringify(code)};
     const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
@@ -898,8 +917,8 @@ export function createBrowserHarness(
         dependencies,
         {
           streamWebView: true,
-          ttl: 3_600,
-          activityTtl: 3_600,
+          ttl: FIRECRAWL_BROWSER_TTL_SECONDS,
+          activityTtl: FIRECRAWL_BROWSER_TTL_SECONDS,
           ...(options.profileName
             ? { profile: { name: options.profileName, saveChanges: true } }
             : {}),
@@ -920,9 +939,11 @@ export function createBrowserHarness(
       }
       let liveViewUrl: string | null;
       let interactiveLiveViewUrl: string | null;
+      let providerExpiresAtMs: number;
       try {
         liveViewUrl = optionalFirecrawlLiveViewUrl(session.liveViewUrl);
         interactiveLiveViewUrl = optionalFirecrawlLiveViewUrl(session.interactiveLiveViewUrl);
+        providerExpiresAtMs = firecrawlBrowserExpiresAt(session.expiresAt, dependencies.now());
       } catch (error) {
         await dependencies.deleteBrowser(session.id);
         throw error;
@@ -944,9 +965,15 @@ export function createBrowserHarness(
       }
       sessionId = session.id;
       playwright = connected;
+      const handle = {
+        providerSessionId: session.id,
+        cdpUrl: session.cdpUrl,
+        interactiveLiveViewUrl,
+        providerExpiresAtMs,
+      };
       let policy: BrowserSessionPolicy | undefined;
       try {
-        policy = await options.onSessionAvailable?.(session.id);
+        policy = await options.onSessionCreated?.(handle);
       } catch (error) {
         sessionId = undefined;
         playwright = undefined;
@@ -988,7 +1015,11 @@ export function createBrowserHarness(
     return opening;
   }
 
-  function attach(handle: BrowserSessionHandle, abortSignal?: AbortSignal) {
+  function attach(
+    handle: BrowserSessionHandle,
+    policy: BrowserSessionPolicy,
+    abortSignal?: AbortSignal,
+  ) {
     return exclusiveOperation(async () => {
       if (sessionId || playwright) {
         throw new Error("A browser session is already attached");
@@ -1011,9 +1042,11 @@ export function createBrowserHarness(
       abortSignal?.throwIfAborted();
       sessionId = providerSessionId;
       playwright = connected;
-      const policy = await options.onSessionAvailable?.(providerSessionId);
-      abortSignal?.throwIfAborted();
-      captureOperations = policy?.captureOperations === true;
+      captureOperations = policy.captureOperations;
+      if (handle.interactiveLiveViewUrl !== null) {
+        await options.onInteractiveLiveViewAvailable?.(handle.interactiveLiveViewUrl);
+        abortSignal?.throwIfAborted();
+      }
     });
   }
 

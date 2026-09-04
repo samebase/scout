@@ -63,6 +63,7 @@ export async function runHumanHandoffDelivery(
           recipientEmail: delivery.recipientEmail,
           scoutName: delivery.scoutName,
           handoffUrl: delivery.handoffUrl,
+          claimExpiresAt: prepared.claimExpiresAt,
         },
         { emailSubject: delivery.emailSubject, emailNote: delivery.emailNote },
       ),

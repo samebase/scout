@@ -76,6 +76,32 @@ export const browserSessionLifecycleValidator = v.union(
   }),
 );
 
+const activeBrowserSessionConnection = {
+  openedAtMs: v.number(),
+  providerExpiresAtMs: v.number(),
+  cdpUrl: v.string(),
+  interactiveLiveViewUrl: v.union(v.string(), v.null()),
+};
+
+export const persistedBrowserSessionLifecycleValidator = v.union(
+  v.object({
+    kind: v.literal("active"),
+    ...activeBrowserSessionConnection,
+  }),
+  v.object({
+    kind: v.literal("closing"),
+    ...activeBrowserSessionConnection,
+    closingAtMs: v.number(),
+  }),
+  v.object({
+    kind: v.literal("closed"),
+    openedAtMs: v.number(),
+    closedAtMs: v.number(),
+    providerDurationMs: v.union(v.number(), v.null()),
+    creditsBilled: v.union(v.number(), v.null()),
+  }),
+);
+
 export const browserViewportValidator = v.object({
   width: v.number(),
   height: v.number(),

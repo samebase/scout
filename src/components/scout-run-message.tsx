@@ -55,7 +55,10 @@ export function ScoutRunMessageView({
   return (
     <Message align={isUser ? "end" : "start"}>
       <MessageContent>
-        <MessageHeader>{label}</MessageHeader>
+        <MessageHeader>
+          {label}
+          <RunReference label="Message ID" value={message.id} />
+        </MessageHeader>
         {parts.map((part, index) => (
           <MessagePart
             key={partKey(part, index)}
@@ -223,6 +226,7 @@ function ToolActivity({ tool }: { tool: ScoutToolActivity }) {
             <span className="flex items-baseline justify-between gap-3">
               <span className="flex min-w-0 items-baseline gap-2">
                 <span className="font-mono text-xs">{tool.name}</span>
+                <RunReference label="Tool call ID" value={tool.toolCallId} />
                 {tool.repairedInputFields.length > 0 ? (
                   <span className="shrink-0 text-[0.6875rem] font-medium text-amber-700 dark:text-amber-400">
                     JSON parsed
@@ -263,6 +267,19 @@ function ToolActivity({ tool }: { tool: ScoutToolActivity }) {
         </dl>
       </CollapsibleContent>
     </Collapsible>
+  );
+}
+
+function RunReference({ label, value }: { label: string; value: string }) {
+  const visibleValue = value.length <= 12 ? value : value.slice(-8);
+  return (
+    <span
+      title={`${label}: ${value}`}
+      data-reference-id={value}
+      className="text-muted-foreground/70 select-all font-mono text-[0.625rem] font-normal"
+    >
+      #{visibleValue}
+    </span>
   );
 }
 

@@ -4,8 +4,8 @@ import { v } from "convex/values";
 import {
   browserActionValidator,
   browserOperationStateValidator,
-  browserSessionLifecycleValidator,
   browserViewportValidator,
+  persistedBrowserSessionLifecycleValidator,
 } from "./browserModel";
 import { humanHandoffDeliveryRecordValidator } from "./humanHandoffDeliveryModel";
 import { humanHandoffValidator } from "./humanHandoffsModel";
@@ -120,7 +120,7 @@ export default defineSchema({
     profileName: v.string(),
     viewport: browserViewportValidator,
     nextOperationSequence: v.number(),
-    lifecycle: browserSessionLifecycleValidator,
+    lifecycle: persistedBrowserSessionLifecycleValidator,
   })
     .index("by_thread_id_and_sequence", ["threadId", "sequence"])
     .index("by_scout_id_and_lifecycle_kind", ["scoutId", "lifecycle.kind"])

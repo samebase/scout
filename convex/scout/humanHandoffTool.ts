@@ -9,6 +9,7 @@ type HumanHandoffEmailRequest<HandoffId extends string> = {
   recipientEmail: string;
   scoutName: string;
   handoffUrl: string;
+  claimExpiresAt: number;
 };
 
 export type HumanHandoffCallbacks = {
@@ -46,7 +47,7 @@ export function humanHandoffEmail<HandoffId extends string>(
     subject: emailHeader(`[Scout human check] ${input.emailSubject}`),
     text: `${scoutName} requested a human-only browser check.
 
-Open this private Scout link within 45 minutes:
+Open this private Scout link before ${new Date(request.claimExpiresAt).toISOString()}:
 ${request.handoffUrl}
 
 Opening the link starts a separate five-minute control window. Complete only the requested human check, then press Continue Scout on the handoff page.

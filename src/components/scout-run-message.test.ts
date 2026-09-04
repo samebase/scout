@@ -50,6 +50,7 @@ describe("Scout transcript metadata", () => {
     const failure = screen.getByRole("status");
     expect(failure.textContent).toBe("Generation failed: Tool input did not match its schema");
     expect(failure.className).toContain("text-destructive");
+    expect(screen.getByTitle("Message ID: message-1").textContent).toBe("#message-1");
   });
 
   test("shows the model cost estimate alongside the recorded token usage", () => {
@@ -123,6 +124,36 @@ describe("Scout tool results", () => {
         },
       },
     ]);
+  });
+
+  test("shows a short reference for a tool call while retaining its full ID", () => {
+    render(
+      ScoutRunMessageView({
+        message: {
+          id: "message-with-tool",
+          _creationTime: 1,
+          key: "message-with-tool",
+          order: 1,
+          stepOrder: 0,
+          status: "success",
+          role: "assistant",
+          parts: [
+            {
+              type: "tool-browser_execute",
+              toolCallId: "tool-call-1234567890",
+              state: "output-error",
+              input: { code: "await page.click('button')" },
+              errorText: "locator timed out",
+            },
+          ],
+          text: "",
+        },
+      }),
+    );
+
+    const reference = screen.getByTitle("Tool call ID: tool-call-1234567890");
+    expect(reference.textContent).toBe("#34567890");
+    expect(reference.getAttribute("data-reference-id")).toBe("tool-call-1234567890");
   });
 
   test("previews Playwright code without the browser_execute input wrapper", () => {

@@ -18,6 +18,7 @@ import {
   browserViewportValidator,
 } from "../browserModel";
 import { requireFirecrawlLiveViewUrl } from "./lib/firecrawlLiveView";
+import { requireFirecrawlCdpUrl } from "./lib/firecrawlCdpUrl";
 import { omitNullish } from "../../shared/omitNullish";
 import { activeBrowserForChat } from "./chatAccess";
 
@@ -90,6 +91,16 @@ async function ownedSession(
 }
 
 function projectSession(session: Doc<"scoutBrowserSessions">) {
+  const lifecycle =
+    session.lifecycle.kind === "active"
+      ? { kind: "active" as const, openedAtMs: session.lifecycle.openedAtMs }
+      : session.lifecycle.kind === "closing"
+        ? {
+            kind: "closing" as const,
+            openedAtMs: session.lifecycle.openedAtMs,
+            closingAtMs: session.lifecycle.closingAtMs,
+          }
+        : session.lifecycle;
   return {
     sessionId: session._id,
     sequence: session.sequence,
@@ -97,7 +108,7 @@ function projectSession(session: Doc<"scoutBrowserSessions">) {
     provider: session.provider,
     profileName: session.profileName,
     viewport: session.viewport,
-    lifecycle: session.lifecycle,
+    lifecycle,
     operationCount: Math.max(0, session.nextOperationSequence - 1),
   };
 }
@@ -181,7 +192,7 @@ export const replayData = internalQuery({
     return {
       providerSessionId: session.providerSessionId,
       viewport: session.viewport,
-      lifecycle: session.lifecycle,
+      lifecycle: projectSession(session).lifecycle,
       operations: operations.map((operation) => ({
         sequence: operation.sequence,
         state: operation.state,
@@ -195,6 +206,9 @@ export const open = internalMutation({
     threadId: v.string(),
     scoutId: v.id("scouts"),
     providerSessionId: v.string(),
+    cdpUrl: v.string(),
+    interactiveLiveViewUrl: v.union(v.string(), v.null()),
+    providerExpiresAtMs: v.number(),
     profileName: v.string(),
   },
   returns: v.object({
@@ -206,6 +220,11 @@ export const open = internalMutation({
     if (!providerSessionId || providerSessionId.length > MAX_BROWSER_SESSION_ID_LENGTH) {
       throw new Error("Firecrawl browser session ID is invalid");
     }
+    const cdpUrl = requireFirecrawlCdpUrl(args.cdpUrl);
+    const interactiveLiveViewUrl =
+      args.interactiveLiveViewUrl === null
+        ? null
+        : requireFirecrawlLiveViewUrl(args.interactiveLiveViewUrl);
     const binding = await requireThreadBinding(ctx, args.threadId);
     if (binding.scoutId !== args.scoutId) throw new Error("browser Scout does not match");
     const existing = await ctx.db
@@ -246,10 +265,42 @@ export const open = internalMutation({
         profileName: args.profileName,
         viewport: BROWSER_VIEWPORT,
         nextOperationSequence: 1,
-        lifecycle: { kind: "active", openedAtMs: Date.now() },
+        lifecycle: {
+          kind: "active",
+          openedAtMs: Date.now(),
+          providerExpiresAtMs: args.providerExpiresAtMs,
+          cdpUrl,
+          interactiveLiveViewUrl,
+        },
       }),
       captureOperations: true as const,
     };
+  },
+});
+
+export const replaceConnection = internalMutation({
+  args: {
+    sessionId: v.id("scoutBrowserSessions"),
+    cdpUrl: v.string(),
+    interactiveLiveViewUrl: v.union(v.string(), v.null()),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const session = await ctx.db.get("scoutBrowserSessions", args.sessionId);
+    if (!session || session.lifecycle.kind !== "active") {
+      throw new Error("Active browser session not found");
+    }
+    await ctx.db.patch("scoutBrowserSessions", session._id, {
+      lifecycle: {
+        ...session.lifecycle,
+        cdpUrl: requireFirecrawlCdpUrl(args.cdpUrl),
+        interactiveLiveViewUrl:
+          args.interactiveLiveViewUrl === null
+            ? null
+            : requireFirecrawlLiveViewUrl(args.interactiveLiveViewUrl),
+      },
+    });
+    return null;
   },
 });
 

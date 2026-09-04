@@ -12,7 +12,7 @@ export const BROWSER_STATE_HELPER_SOURCE = `const browserState = async (selected
   ),
 });`;
 
-export const BROWSER_EXECUTE_DESCRIPTION = `Run JavaScript with Playwright's active page. Await every Playwright operation. Return a value when it helps the next decision; the current accessibility snapshot is always included. Use semantic locators for page controls and page.context() for tabs. The runtime defines this helper before running your code (comparableUrl removes URL query strings and fragments):
+export const BROWSER_EXECUTE_DESCRIPTION = `Run JavaScript with Playwright's active page. Await every Playwright operation. Return a value when it helps the next decision; the current accessibility snapshot is always included. Use semantic locators for page controls and page.context() for tabs. In accessibility snapshots, quoted text after a role is its accessible name for getByRole, while text after a colon is visible DOM text. Snapshot [ref=e...] values are evidence labels, not selectors or DOM attributes. The runtime defines this helper before running your code (comparableUrl removes URL query strings and fragments):
 
 ${BROWSER_STATE_HELPER_SOURCE}
 

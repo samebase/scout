@@ -298,6 +298,8 @@ describe("Chat workspace", () => {
   test.each([
     { toolName: "web_search", input: { query: "form builder pricing" } },
     { toolName: "web_read", input: { url: "https://example.com" } },
+    { toolName: "web_map", input: { url: "https://example.com" } },
+    { toolName: "web_crawl", input: { url: "https://example.com", limit: 5 } },
     {
       toolName: "send_message",
       input: { to: "person@gmail.com", subject: "Hello", text: "A note from Scout." },
@@ -731,7 +733,7 @@ describe("Chat workspace", () => {
     expect(screen.getByText("Agent context").closest("details")?.open).toBe(true);
   });
 
-  test("keeps the selected recording when another session appears and supports history navigation", async () => {
+  test("selects a new browser session and keeps manual session choices in the URL", async () => {
     const closed = { ...session("session-1", 1), lifecycle: { kind: "closed", closedAt: 2 } };
     remote.queries.set("scout/browserSessions:list", [closed]);
     remote.queries.set("scout/browserSessions:get:session-1", { ...closed, operations: [] });
@@ -752,16 +754,14 @@ describe("Chat workspace", () => {
     const picker = await screen.findByRole<HTMLSelectElement>("combobox", {
       name: "Browser session",
     });
-    expect(picker.value).toBe("session-1");
-    expect(screen.queryByTitle("Live browser session 2")).toBeNull();
-    await user.selectOptions(picker, "session-2");
+    expect(picker.value).toBe("session-2");
     expect(await screen.findByTitle("Live browser session 2")).toBeTruthy();
     expect(router.state.location.search.session).toBe("session-2");
     expect(screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Message Scout" }).value).toBe(
       "Continue later",
     );
 
-    act(() => router.history.back());
+    await user.selectOptions(picker, "session-1");
     expect(await screen.findByText("No replay")).toBeTruthy();
     expect(router.state.location.search.session).toBe("session-1");
   });

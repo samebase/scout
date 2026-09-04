@@ -49,6 +49,7 @@ describe("human handoff tool", () => {
         recipientEmail: "operator@example.test",
         scoutName: "Conrad Scout",
         handoffUrl,
+        claimExpiresAt: Date.parse("2026-09-03T12:45:00.000Z"),
       },
       handoffInput,
     );
@@ -60,7 +61,7 @@ describe("human handoff tool", () => {
       idempotencyKey: "scout-handoff-handoff-1",
     });
     expect(email.text).toContain(handoffInput.emailNote);
-    expect(email.text).toContain("within 45 minutes");
+    expect(email.text).toContain("before 2026-09-03T12:45:00.000Z");
     expect(email.text).toContain("starts a separate five-minute control window");
     expect(email.text).toContain("Do not reply to this email with passwords");
     expect(email.text.indexOf(handoffUrl)).toBeLessThan(email.text.indexOf(handoffInput.emailNote));

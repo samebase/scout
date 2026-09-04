@@ -148,6 +148,18 @@ const MANUAL_TOOL_OPTIONS = [
     input: '{\n  "url": "https://samebase.com"\n}',
   },
   {
+    value: "web_map",
+    label: "Map a website",
+    description: "Discover public URLs on a website with Firecrawl.",
+    input: '{\n  "url": "https://samebase.com"\n}',
+  },
+  {
+    value: "web_crawl",
+    label: "Crawl a website",
+    description: "Read a bounded set of public pages on a website with Firecrawl.",
+    input: '{\n  "url": "https://samebase.com",\n  "limit": 5\n}',
+  },
+  {
     value: "list_messages",
     label: "List email",
     description: "List messages in this Scout's inbox.",
@@ -428,11 +440,24 @@ function ChatsWorkspace() {
     requestedPendingThread === null &&
     threads.status === "Exhausted";
   const currentThreadId = useRef(threadId);
+  const knownBrowserSessions = useRef<{
+    threadId: string;
+    sessionIds: ReadonlySet<BrowserSession["sessionId"]>;
+  } | null>(null);
   currentThreadId.current = threadId;
 
   useEffect(() => {
     if (!threadId || browserSessions === undefined) return;
-    const sessionId = selectedBrowserSession?.sessionId;
+    const previousSessions = knownBrowserSessions.current;
+    const newlyCreatedSession =
+      previousSessions?.threadId === threadId
+        ? browserSessions.findLast((session) => !previousSessions.sessionIds.has(session.sessionId))
+        : undefined;
+    knownBrowserSessions.current = {
+      threadId,
+      sessionIds: new Set(browserSessions.map((session) => session.sessionId)),
+    };
+    const sessionId = newlyCreatedSession?.sessionId ?? selectedBrowserSession?.sessionId;
     if (search.thread === threadId && search.session === sessionId) return;
     void navigate({
       to: "/chats",

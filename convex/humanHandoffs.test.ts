@@ -18,8 +18,8 @@ const deliveryArgs = {
   emailSubject: "A browser check needs you",
   emailNote: "Please complete the waiting browser check, then return control.",
 };
+const interactiveLiveViewUrl = "https://liveview.firecrawl.dev/view/session-1";
 const browserProvider = vi.hoisted(() => ({
-  list: vi.fn(),
   close: vi.fn(),
   snapshot: vi.fn(),
 }));
@@ -28,7 +28,7 @@ vi.mock("./scout/lib/firecrawl", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./scout/lib/firecrawl")>();
   return {
     ...actual,
-    createFirecrawlClient: () => ({ listBrowsers: browserProvider.list }),
+    createFirecrawlClient: () => ({}),
     closeFirecrawlBrowserSession: browserProvider.close,
   };
 });
@@ -44,16 +44,6 @@ vi.mock("./scout/playwrightBrowser", async (importOriginal) => {
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-09-03T12:00:00Z"));
-  browserProvider.list.mockReset().mockResolvedValue({
-    success: true,
-    sessions: [
-      {
-        id: "provider-session-1",
-        status: "active",
-        cdpUrl: "wss://browser.firecrawl.dev/cdp?token=private",
-      },
-    ],
-  });
   browserProvider.close.mockReset().mockResolvedValue({
     success: true,
     sessionDurationMs: 12_000,
@@ -123,7 +113,13 @@ async function setupContext() {
       profileName: "conrad-profile",
       viewport: { width: 1_280, height: 800 },
       nextOperationSequence: 1,
-      lifecycle: { kind: "active", openedAtMs: Date.now() },
+      lifecycle: {
+        kind: "active",
+        openedAtMs: Date.now(),
+        providerExpiresAtMs: Date.now() + 60 * 60 * 1_000,
+        cdpUrl: "wss://browser.firecrawl.dev/cdp?token=private",
+        interactiveLiveViewUrl,
+      },
     });
     return { chatId, threadId, turnId, sessionId };
   });
@@ -240,6 +236,9 @@ describe("human handoffs", () => {
       threadId,
       scoutId,
       providerSessionId: "provider-session-2",
+      cdpUrl: "wss://browser.firecrawl.dev/cdp?token=private-2",
+      interactiveLiveViewUrl,
+      providerExpiresAtMs: Date.now() + 60 * 60 * 1_000,
       profileName: "conrad-profile",
     });
     await backend.mutation(internal.scout.browserSessions.close, {
@@ -402,7 +401,7 @@ describe("human handoffs", () => {
       }),
     ).resolves.toMatchObject({
       status: "available",
-      providerSessionId: "provider-session-1",
+      interactiveLiveViewUrl,
     });
     await expect(
       owner.query(internal.humanHandoffs.prepareAccess, {
@@ -437,6 +436,76 @@ describe("human handoffs", () => {
       accessTokenHash,
     });
     expect(anonymousPage).toEqual(bearerPage);
+  });
+
+  test("does not expose a handoff after its Firecrawl session expires", async () => {
+    const { backend, owner, requested, sessionId } = await setup();
+    await backend.run(async (ctx) => {
+      const session = await ctx.db.get(sessionId);
+      if (!session || session.lifecycle.kind !== "active") {
+        throw new Error("Active browser session not found");
+      }
+      await ctx.db.patch(session._id, {
+        lifecycle: { ...session.lifecycle, providerExpiresAtMs: Date.now() - 1 },
+      });
+    });
+
+    await expect(
+      backend.query(internal.humanHandoffs.prepareAccess, {
+        handoffId: requested.handoffId,
+        accessTokenHash,
+        now: Date.now(),
+      }),
+    ).resolves.toEqual({ status: "broken", handoffId: requested.handoffId });
+    await expect(owner.query(api.humanHandoffs.active, { sessionId })).resolves.toBeNull();
+  });
+
+  test("does not offer a handoff beyond the Firecrawl session lifetime", async () => {
+    const context = await setupContext();
+    const providerExpiresAtMs = Date.now() + 7 * 60 * 1_000;
+    await context.backend.run(async (ctx) => {
+      const session = await ctx.db.get(context.sessionId);
+      if (!session || session.lifecycle.kind !== "active") {
+        throw new Error("Active browser session not found");
+      }
+      await ctx.db.patch(session._id, {
+        lifecycle: { ...session.lifecycle, providerExpiresAtMs },
+      });
+    });
+
+    const requested = await context.backend.mutation(internal.humanHandoffs.request, {
+      promptMessageId: context.promptMessageId,
+      reason: "GitHub requires a CAPTCHA.",
+      accessTokenHash,
+      ...deliveryArgs,
+    });
+
+    expect(requested.claimExpiresAt).toBe(providerExpiresAtMs - HUMAN_HANDOFF_ACTIVE_MS);
+  });
+
+  test("does not request a handoff without time for the full control window", async () => {
+    const context = await setupContext();
+    await context.backend.run(async (ctx) => {
+      const session = await ctx.db.get(context.sessionId);
+      if (!session || session.lifecycle.kind !== "active") {
+        throw new Error("Active browser session not found");
+      }
+      await ctx.db.patch(session._id, {
+        lifecycle: {
+          ...session.lifecycle,
+          providerExpiresAtMs: Date.now() + HUMAN_HANDOFF_ACTIVE_MS,
+        },
+      });
+    });
+
+    await expect(
+      context.backend.mutation(internal.humanHandoffs.request, {
+        promptMessageId: context.promptMessageId,
+        reason: "GitHub requires a CAPTCHA.",
+        accessTokenHash,
+        ...deliveryArgs,
+      }),
+    ).rejects.toThrow("Active Scout browser session not found");
   });
 
   test("repeating a request preserves its link and workflow", async () => {
@@ -530,6 +599,25 @@ describe("human handoffs", () => {
       phase: "claimed",
     });
     await expect(claim(backend, requested.handoffId)).resolves.toEqual(claimed);
+  });
+
+  test("does not claim without time for the full control window", async () => {
+    const { backend, requested, sessionId } = await setup();
+    const providerExpiresAtMs = Date.now() + 60_000;
+    await backend.run(async (ctx) => {
+      const session = await ctx.db.get(sessionId);
+      if (!session || session.lifecycle.kind !== "active") {
+        throw new Error("Active browser session not found");
+      }
+      await ctx.db.patch(session._id, {
+        lifecycle: { ...session.lifecycle, providerExpiresAtMs },
+      });
+    });
+
+    await expect(claim(backend, requested.handoffId)).resolves.toMatchObject({
+      status: "broken",
+      handoffId: requested.handoffId,
+    });
   });
 
   test("continuation is atomic and replays the same terminal page", async () => {
