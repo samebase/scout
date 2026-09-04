@@ -103,22 +103,31 @@ export const humanHandoffStatusValidator = v.union(
   v.literal("missing"),
 );
 
-const activeHumanHandoffContext = {
+const chatHumanHandoffContext = {
   handoffId: v.id("scoutHumanHandoffs"),
   reason: v.string(),
   requestedAt: v.number(),
-  expiresAt: v.number(),
 };
 
-export const activeHumanHandoffValidator = v.union(
-  v.object({ ...activeHumanHandoffContext, phase: v.literal("unclaimed") }),
-  v.object({ ...activeHumanHandoffContext, phase: v.literal("claimed") }),
+export const chatHumanHandoffValidator = v.union(
   v.object({
-    handoffId: v.id("scoutHumanHandoffs"),
-    reason: v.string(),
-    requestedAt: v.number(),
-    failedAt: v.number(),
-    phase: v.literal("delivery_failed"),
+    ...chatHumanHandoffContext,
+    status: v.union(v.literal("available"), v.literal("active")),
+    expiresAt: v.number(),
+  }),
+  v.object({
+    ...chatHumanHandoffContext,
+    status: v.union(
+      v.literal("continued"),
+      v.literal("resumed"),
+      v.literal("stopped"),
+      v.literal("expired"),
+    ),
+  }),
+  v.object({
+    ...chatHumanHandoffContext,
+    status: v.literal("failed"),
+    failure: humanHandoffFailureValidator,
   }),
 );
 

@@ -317,42 +317,51 @@ describe("human handoffs", () => {
     });
   });
 
-  test("stops an active handoff and makes its page terminal", async () => {
-    const { backend, owner, promptMessageId, requested, sessionId, threadId, turnId } =
-      await setup();
-    await backend.mutation(internal.scout.turns.completeHumanHandoffPause, {
-      promptMessageId,
-      usage: {},
-    });
-    await claim(backend, requested.handoffId);
+  test.each([false, true])(
+    "stops a handoff (claimed: %s) and exposes its outcome in chat",
+    async (claimed) => {
+      const { backend, owner, promptMessageId, requested, sessionId, threadId, turnId } =
+        await setup();
+      await backend.mutation(internal.scout.turns.completeHumanHandoffPause, {
+        promptMessageId,
+        usage: {},
+      });
+      if (claimed) await claim(backend, requested.handoffId);
 
-    await owner.mutation(api.scout.chats.stop, { threadId });
-    expect(await backend.run(async (ctx) => (await ctx.db.get(requested.handoffId))?.status)).toBe(
-      "stopped",
-    );
-    expect(await backend.run(async (ctx) => (await ctx.db.get(turnId))?.state)).toMatchObject({
-      kind: "stopping",
-      generationFinished: true,
-    });
+      await owner.mutation(api.scout.chats.stop, { threadId });
+      expect(
+        await backend.run(async (ctx) => (await ctx.db.get(requested.handoffId))?.status),
+      ).toBe("stopped");
+      expect(await backend.run(async (ctx) => (await ctx.db.get(turnId))?.state)).toMatchObject({
+        kind: "stopping",
+        generationFinished: true,
+      });
 
-    await backend.mutation(internal.scout.browserSessions.close, {
-      sessionId,
-      providerDurationMs: 1_000,
-      creditsBilled: 1,
-    });
-    vi.advanceTimersByTime(0);
-    await backend.finishInProgressScheduledFunctions();
-    await expect(owner.query(api.scout.chats.getScoutActivity, { threadId })).resolves.toEqual({
-      kind: "idle",
-    });
-    await expect(
-      backend.query(internal.humanHandoffs.prepareAccess, {
-        handoffId: requested.handoffId,
-        accessTokenHash,
-        now: Date.now(),
-      }),
-    ).resolves.toMatchObject({ status: "stopped" });
-  });
+      await backend.mutation(internal.scout.browserSessions.close, {
+        sessionId,
+        providerDurationMs: 1_000,
+        creditsBilled: 1,
+      });
+      vi.advanceTimersByTime(0);
+      await backend.finishInProgressScheduledFunctions();
+      await expect(owner.query(api.scout.chats.getScoutActivity, { threadId })).resolves.toEqual({
+        kind: "idle",
+      });
+      await expect(
+        backend.query(internal.humanHandoffs.prepareAccess, {
+          handoffId: requested.handoffId,
+          accessTokenHash,
+          now: Date.now(),
+        }),
+      ).resolves.toMatchObject({ status: "stopped" });
+      await expect(owner.query(api.humanHandoffs.forSession, { sessionId })).resolves.toMatchObject(
+        {
+          handoffId: requested.handoffId,
+          status: "stopped",
+        },
+      );
+    },
+  );
 
   test("reserves a failed handoff's browser until cleanup and rejects stale manual dispatch", async () => {
     const { backend, promptMessageId, scoutId, threadId, sessionId } = await setup();
@@ -415,12 +424,12 @@ describe("human handoffs", () => {
       scoutName: "Conrad Scout",
       claimExpiresAt: row.claimExpiresAt,
     });
-    await expect(owner.query(api.humanHandoffs.active, { sessionId })).resolves.toEqual({
+    await expect(owner.query(api.humanHandoffs.forSession, { sessionId })).resolves.toEqual({
       handoffId: requested.handoffId,
       reason: "GitHub requires a CAPTCHA.",
       requestedAt: row.requestedAt,
       expiresAt: row.claimExpiresAt,
-      phase: "unclaimed",
+      status: "available",
     });
     await expect(
       backend.query(internal.humanHandoffs.prepareAccess, {
@@ -474,7 +483,7 @@ describe("human handoffs", () => {
     expect(anonymousPage).toEqual(bearerPage);
   });
 
-  test("does not expose a handoff after its Firecrawl session expires", async () => {
+  test("shows an ended handoff without offering access after its Firecrawl session expires", async () => {
     const { backend, owner, requested, sessionId } = await setup();
     await backend.run(async (ctx) => {
       const session = await ctx.db.get(sessionId);
@@ -493,7 +502,10 @@ describe("human handoffs", () => {
         now: Date.now(),
       }),
     ).resolves.toEqual({ status: "broken", handoffId: requested.handoffId });
-    await expect(owner.query(api.humanHandoffs.active, { sessionId })).resolves.toBeNull();
+    await expect(owner.query(api.humanHandoffs.forSession, { sessionId })).resolves.toMatchObject({
+      status: "failed",
+      failure: "browser_ended",
+    });
   });
 
   test("does not offer a handoff beyond the Firecrawl session lifetime", async () => {
@@ -608,7 +620,7 @@ describe("human handoffs", () => {
         now: Date.now(),
       }),
     ).resolves.toEqual({ status: "invalid" });
-    await expect(owner.query(api.humanHandoffs.active, { sessionId })).resolves.toBeNull();
+    await expect(owner.query(api.humanHandoffs.forSession, { sessionId })).resolves.toBeNull();
     await expect(
       backend.mutation(internal.scout.turns.completeHumanHandoffPause, {
         promptMessageId,
@@ -625,9 +637,9 @@ describe("human handoffs", () => {
     if (claimed.status !== "active") throw new Error("Handoff was not claimed");
     expect(claimed.expiresAt).toBeGreaterThanOrEqual(before + HUMAN_HANDOFF_ACTIVE_MS);
     expect(claimed.expiresAt).toBeLessThanOrEqual(Date.now() + HUMAN_HANDOFF_ACTIVE_MS);
-    await expect(owner.query(api.humanHandoffs.active, { sessionId })).resolves.toMatchObject({
+    await expect(owner.query(api.humanHandoffs.forSession, { sessionId })).resolves.toMatchObject({
       expiresAt: claimed.expiresAt,
-      phase: "claimed",
+      status: "active",
     });
     await expect(claim(backend, requested.handoffId)).resolves.toEqual(claimed);
   });
@@ -714,6 +726,11 @@ describe("human handoffs", () => {
       now: Date.now(),
     });
     expect(unopenedPage).toMatchObject({ status: "expired", claimed: false });
+    await expect(
+      unopened.owner.query(api.humanHandoffs.forSession, {
+        sessionId: unopened.sessionId,
+      }),
+    ).resolves.toMatchObject({ status: "expired" });
 
     const opened = await setup();
     await claim(opened.backend, opened.requested.handoffId);
@@ -731,6 +748,11 @@ describe("human handoffs", () => {
       now: Date.now(),
     });
     expect(openedPage).toMatchObject({ status: "expired", claimed: true });
+    await expect(
+      opened.owner.query(api.humanHandoffs.forSession, {
+        sessionId: opened.sessionId,
+      }),
+    ).resolves.toMatchObject({ status: "expired" });
   });
 
   test("an unexpected turn failure fails the open handoff", async () => {
@@ -851,9 +873,10 @@ describe("human handoffs", () => {
       claimed: false,
       turnId,
     });
-    await expect(owner.query(api.humanHandoffs.active, { sessionId })).resolves.toMatchObject({
+    await expect(owner.query(api.humanHandoffs.forSession, { sessionId })).resolves.toMatchObject({
       handoffId: requested.handoffId,
-      phase: "delivery_failed",
+      status: "failed",
+      failure: "delivery_failed",
     });
     expect(await backend.run(async (ctx) => (await ctx.db.get(turnId))?.state.kind)).toBe(
       "pending",
