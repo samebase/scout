@@ -18,6 +18,7 @@ import {
   browserViewportValidator,
 } from "../browserModel";
 import { requireFirecrawlLiveViewUrl } from "./lib/firecrawlLiveView";
+import { omitNullish } from "../../shared/omitNullish";
 import { activeBrowserForChat } from "./chatAccess";
 
 const MAX_BROWSER_SESSION_ID_LENGTH = 500;
@@ -358,10 +359,10 @@ export const close = internalMutation({
       await ctx.db.patch("scoutTurns", turn._id, {
         state: {
           ...turn.state,
-          ...(args.creditsBilled === null ? {} : { firecrawlCredits: args.creditsBilled }),
-          ...(args.providerDurationMs === null
-            ? {}
-            : { firecrawlDurationMs: args.providerDurationMs }),
+          ...omitNullish({
+            firecrawlCredits: args.creditsBilled,
+            firecrawlDurationMs: args.providerDurationMs,
+          }),
         },
       });
     }

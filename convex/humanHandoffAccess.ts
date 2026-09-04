@@ -5,6 +5,7 @@ import { internal } from "./_generated/api";
 import { action } from "./_generated/server";
 import { humanHandoffPageValidator } from "./humanHandoffsModel";
 import { findActiveBrowserSession } from "./humanHandoffBrowser";
+import { omitNullish } from "../shared/omitNullish";
 import {
   hashHumanHandoffAccessToken,
   isHumanHandoffAccessToken,
@@ -28,7 +29,7 @@ function accessInput(args: { handoffId: string; accessToken?: string }) {
     ? null
     : {
         handoffId: args.handoffId,
-        ...(hash === undefined ? {} : { accessTokenHash: hash }),
+        ...omitNullish({ accessTokenHash: hash }),
       };
 }
 
@@ -101,7 +102,7 @@ export const load = action({
       handoffId: prepared.handoffId,
       reason: prepared.reason,
       scoutName: prepared.scoutName,
-      ...(prepared.destination === undefined ? {} : { destination: prepared.destination }),
+      ...omitNullish({ destination: prepared.destination }),
       expiresAt: prepared.expiresAt,
       serverNow: Date.now(),
       interactiveLiveViewUrl: liveViewUrl,

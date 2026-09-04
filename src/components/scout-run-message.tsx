@@ -66,7 +66,9 @@ export function ScoutRunMessageView({
             <MarkerIcon>
               <CircleAlertIcon />
             </MarkerIcon>
-            <MarkerContent>Generation failed: {metadata.failure}</MarkerContent>
+            <MarkerContent className="whitespace-pre-wrap">
+              Generation failed: {metadata.failure}
+            </MarkerContent>
           </Marker>
         ) : message.status === "failed" ? (
           <Marker className="text-destructive" role="status">

@@ -3,6 +3,7 @@
 import { createMCPClient, type MCPClient } from "@ai-sdk/mcp";
 import { isStepCount, type LanguageModelUsage } from "ai";
 import { v } from "convex/values";
+import { inspect } from "node:util";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { env, internalAction } from "../_generated/server";
@@ -18,7 +19,7 @@ import {
   humanHandoffOrigin,
   humanHandoffUrl,
 } from "./lib/humanHandoffAccess";
-import { diagnosticMessage } from "./lib/redaction";
+import { omitNullish } from "../../shared/omitNullish";
 import { scoutLanguageModel, scoutModelValidator, type ScoutTokenUsage } from "./models";
 import { compactBrowserModelContext } from "./browserContext";
 import { createToolArgumentProbe } from "./toolArgumentProbe";
@@ -46,14 +47,24 @@ export function generationFailureDetails(
       : (cleanupFailure ?? completionFailure);
   const failure =
     generationResult.kind === "failed" && cleanupFailure
-      ? `${diagnosticMessage(generationResult.error)}; browser cleanup: ${diagnosticMessage(cleanupFailure)}`
+      ? `${generationErrorDetails(generationResult.error)}\nbrowser cleanup: ${generationErrorDetails(cleanupFailure)}`
       : cleanupFailure
-        ? `Browser cleanup failed: ${diagnosticMessage(cleanupFailure)}`
-        : diagnosticMessage(terminalError);
+        ? `Browser cleanup failed: ${generationErrorDetails(cleanupFailure)}`
+        : generationErrorDetails(terminalError);
 
-  return generationResult.usage === undefined
-    ? { failure, terminalError }
-    : { failure, terminalError, usage: generationResult.usage };
+  return {
+    failure,
+    terminalError,
+    ...omitNullish({ usage: generationResult.usage }),
+  };
+}
+
+export function generationErrorDetails(error: unknown) {
+  if (typeof error === "string") return error;
+  return inspect(error, {
+    depth: 3,
+    maxStringLength: null,
+  });
 }
 
 export function createStreamErrorCapture() {
@@ -103,20 +114,15 @@ function requireSecret(value: string | undefined, name: string) {
 
 export function tokenUsage(usage: LanguageModelUsage): ScoutTokenUsage {
   const rawCost = usage.raw?.["cost"];
-  return {
-    ...(usage.inputTokens === undefined ? {} : { promptTokens: usage.inputTokens }),
-    ...(usage.outputTokens === undefined ? {} : { completionTokens: usage.outputTokens }),
-    ...(usage.totalTokens === undefined ? {} : { totalTokens: usage.totalTokens }),
-    ...(usage.outputTokenDetails.reasoningTokens === undefined
-      ? {}
-      : { reasoningTokens: usage.outputTokenDetails.reasoningTokens }),
-    ...(usage.inputTokenDetails.cacheReadTokens === undefined
-      ? {}
-      : { cachedInputTokens: usage.inputTokenDetails.cacheReadTokens }),
-    ...(typeof rawCost === "number" && Number.isFinite(rawCost) && rawCost >= 0
-      ? { costUsd: rawCost }
-      : {}),
-  };
+  return omitNullish({
+    promptTokens: usage.inputTokens,
+    completionTokens: usage.outputTokens,
+    totalTokens: usage.totalTokens,
+    reasoningTokens: usage.outputTokenDetails.reasoningTokens,
+    cachedInputTokens: usage.inputTokenDetails.cacheReadTokens,
+    costUsd:
+      typeof rawCost === "number" && Number.isFinite(rawCost) && rawCost >= 0 ? rawCost : undefined,
+  });
 }
 
 function addOptionalNumbers(left: number | undefined, right: number | undefined) {
@@ -136,14 +142,14 @@ export function addScoutTokenUsage(
   const reasoningTokens = addOptionalNumbers(total.reasoningTokens, next.reasoningTokens);
   const cachedInputTokens = addOptionalNumbers(total.cachedInputTokens, next.cachedInputTokens);
   const costUsd = addOptionalNumbers(total.costUsd, next.costUsd);
-  return {
-    ...(promptTokens === undefined ? {} : { promptTokens }),
-    ...(completionTokens === undefined ? {} : { completionTokens }),
-    ...(totalTokens === undefined ? {} : { totalTokens }),
-    ...(reasoningTokens === undefined ? {} : { reasoningTokens }),
-    ...(cachedInputTokens === undefined ? {} : { cachedInputTokens }),
-    ...(costUsd === undefined ? {} : { costUsd }),
-  };
+  return omitNullish({
+    promptTokens,
+    completionTokens,
+    totalTokens,
+    reasoningTokens,
+    cachedInputTokens,
+    costUsd,
+  });
 }
 
 export const generateResponse = internalAction({
@@ -365,7 +371,7 @@ export const generateResponse = internalAction({
       generationResult = {
         kind: "failed",
         error,
-        ...(accumulatedUsage === undefined ? {} : { usage: accumulatedUsage }),
+        ...omitNullish({ usage: accumulatedUsage }),
       };
     }
 
@@ -391,13 +397,10 @@ export const generateResponse = internalAction({
           await ctx.runMutation(internal.scout.turns.complete, {
             promptMessageId: args.promptMessageId,
             usage: generationResult.usage,
-            ...(browserUsage?.creditsBilled === null || browserUsage?.creditsBilled === undefined
-              ? {}
-              : { firecrawlCredits: browserUsage.creditsBilled }),
-            ...(browserUsage?.sessionDurationMs === null ||
-            browserUsage?.sessionDurationMs === undefined
-              ? {}
-              : { firecrawlDurationMs: browserUsage.sessionDurationMs }),
+            ...omitNullish({
+              firecrawlCredits: browserUsage?.creditsBilled,
+              firecrawlDurationMs: browserUsage?.sessionDurationMs,
+            }),
           });
         }
         await closeAgentMailBestEffort(agentMailClient);
@@ -417,14 +420,11 @@ export const generateResponse = internalAction({
       await ctx.runMutation(internal.scout.turns.fail, {
         promptMessageId: args.promptMessageId,
         failure: failureDetails.failure,
-        ...("usage" in failureDetails ? { usage: failureDetails.usage } : {}),
-        ...(browserUsage?.creditsBilled === null || browserUsage?.creditsBilled === undefined
-          ? {}
-          : { firecrawlCredits: browserUsage.creditsBilled }),
-        ...(browserUsage?.sessionDurationMs === null ||
-        browserUsage?.sessionDurationMs === undefined
-          ? {}
-          : { firecrawlDurationMs: browserUsage.sessionDurationMs }),
+        ...omitNullish({
+          usage: failureDetails.usage,
+          firecrawlCredits: browserUsage?.creditsBilled,
+          firecrawlDurationMs: browserUsage?.sessionDurationMs,
+        }),
       });
     } catch (persistenceError) {
       terminalError = new AggregateError(

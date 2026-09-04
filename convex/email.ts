@@ -1,4 +1,5 @@
 import { env } from "./_generated/server";
+import { omitNullish } from "../shared/omitNullish";
 
 const CLOUDFLARE_API_BASE_URL = "https://api.cloudflare.com/client/v4";
 const EMAIL_FROM = {
@@ -97,7 +98,7 @@ export async function sendEmail(
         text: args.text,
         html: args.html,
       }),
-      ...(options.signal === undefined ? {} : { signal: options.signal }),
+      ...omitNullish({ signal: options.signal }),
     },
   );
 

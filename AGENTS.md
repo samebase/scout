@@ -101,6 +101,9 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
   owned by a schema or dependency.
 - Default properties and function arguments to required. Optionality must represent current
   persisted data, external input, migration, or patch semantics.
+- When constructing an object with optional fields, use `omitNullish` from
+  `shared/omitNullish.ts` instead of repeated conditional spreads. It removes only `null` and
+  `undefined`; do not use it when either value is meaningful.
 - Prefer delete-first internal refactors. Remove pass-through adapters, mirror types, compatibility
   shims, and one-call helpers unless they protect a current invariant or a real boundary.
 - Do not shape production code for test convenience. Test behavior directly and keep the native
