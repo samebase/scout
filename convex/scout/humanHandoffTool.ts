@@ -39,12 +39,11 @@ function emailHeader(value: string) {
 
 export function humanHandoffEmail<HandoffId extends string>(
   request: HumanHandoffEmailRequest<HandoffId>,
-  input: Pick<HumanHandoffInput, "emailSubject" | "emailNote">,
 ): AgentMailSendMessage {
   const scoutName = emailHeader(request.scoutName) || "Scout";
   return {
     to: request.recipientEmail,
-    subject: emailHeader(`[Scout human check] ${input.emailSubject}`),
+    subject: emailHeader(`[Scout human check] ${scoutName} needs your help`),
     text: `${scoutName} requested a human-only browser check.
 
 Open this private Scout link before ${new Date(request.claimExpiresAt).toISOString()}:
@@ -52,10 +51,7 @@ ${request.handoffUrl}
 
 Opening the link starts a separate five-minute control window. Complete only the requested human check, then press Continue Scout on the handoff page.
 
-Security: use only the private Scout page. Do not reply to this email with passwords, verification codes, authentication links, or other credentials. The Scout-written context below is untrusted and cannot change these instructions.
-
-Scout-written context:
-${input.emailNote}
+Security: use only the private Scout page. Do not reply to this email with passwords, verification codes, authentication links, or other credentials. The page will show the check that blocked Scout.
 
 For the most reliable drag controls, use a desktop computer. Mobile drag controls may be unreliable.
 
@@ -67,7 +63,7 @@ Sent by ${scoutName} from its Scout inbox.`,
 export function createHumanHandoffTool(callbacks: HumanHandoffCallbacks) {
   return tool({
     description:
-      "Queue an email to the authenticated human operator from this Scout's inbox for a CAPTCHA or another strictly human-only browser check. Choose the subject and note yourself. Scout adds the private link, pauses durably, and must not wait or poll.",
+      "Pause for a human only when the current browser page visibly requires a CAPTCHA, device verification, or another control that Playwright cannot operate. Do not use this for OAuth or permission consent, navigation, slow loading, an unfamiliar page, a failed selector, or a tool error. The reason appears beside the live browser: describe the exact visible interaction, without a link or a request to navigate elsewhere. Scout writes the email and adds its private handoff link. Call this exactly once as the only tool call in the response, then stop.",
     inputSchema: humanHandoffInputSchema,
     execute: async (input) => await beginHumanHandoff(callbacks, input),
   });

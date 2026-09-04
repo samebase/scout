@@ -218,7 +218,9 @@ describe("Scout runtime instructions", () => {
     expect(SCOUT_AGENT_INSTRUCTIONS).toContain(
       "Complete OAuth for the Scout's own accounts yourself",
     );
-    expect(SCOUT_AGENT_INSTRUCTIONS).toContain("Request human help only for a CAPTCHA");
+    expect(SCOUT_AGENT_INSTRUCTIONS).toContain(
+      "Use request_human_help only for a visible human-only browser check",
+    );
   });
 
   it("does not confuse an initiated operation with completion", () => {

@@ -9,6 +9,4 @@ export const humanHandoffDeliveryRecordValidator = v.object({
   inboxId: v.string(),
   recipientEmail: v.string(),
   scoutName: v.string(),
-  emailSubject: v.string(),
-  emailNote: v.string(),
 });

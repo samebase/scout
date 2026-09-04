@@ -74,14 +74,13 @@ handles remain server-side. Live and replay access checks the chat owner. Replay
 recordings rather than recording a second video in Scout; see
 [Firecrawl limitations](./firecrawl-limitations.md).
 
-A human-help request pauses the model generation and leaves the remote browser open. Scout chooses
-the email subject and explanatory note, while the server adds the private handoff link and sends the
-message from that Scout's AgentMail inbox. Agent-authored handoff notes cannot contain explicit
-external destinations. Fixed security instructions and the private link precede the labeled,
-untrusted Scout context. The private link allows up to 45 minutes to open it; the five-minute control
-window starts on first open. It does not require signing in. The operator finishes the check and
-presses Continue. A Convex workflow waits for the Scout to finish pausing, captures the final page,
-closes the browser, and queues a new generation in the same chat. Expiration and failure also close
-the browser. Normal chat/tool input is blocked while that handoff owns the session.
+A human-help request pauses the model generation and leaves the remote browser open. Scout describes
+the visible human-only check, while the server writes the email, adds the private handoff link, and
+sends it from that Scout's AgentMail inbox. The private page shows the requested check. The link
+allows up to 45 minutes to open it; the five-minute control window starts on first open. It does not
+require signing in. The operator finishes the check and presses Continue. A Convex workflow waits
+for the Scout to finish pausing, captures the final page, closes the browser, and queues a new
+generation in the same chat. Expiration and failure also close the browser. Normal chat/tool input
+is blocked while that handoff owns the session.
 
 This runtime does not rewrite stored transcripts or add a task, attempt, or supervisor hierarchy.

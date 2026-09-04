@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-04T12:52:17Z
+- **Last updated:** 2026-09-04T19:33:19Z
 
 ## Log
 
@@ -935,7 +935,7 @@ distinct in chat. Consolidated optional-field construction behind one nullish-on
 documented that guardrail (`convex/scout/generation.ts`, `src/components/scout-run-message.tsx`,
 `shared/omitNullish.ts`, `AGENTS.md`).
 
-### 2026-09-04 - working tree
+### 2026-09-04 - 2321fef - v167
 
 Gave each Scout bounded outbound email through its own AgentMail inbox. Model and Manual runs can
 send new messages and reply; registration verifies the provider inbox identity, and every write is
@@ -943,3 +943,15 @@ bounded and idempotent across transport and manual-action retries. Human-help em
 inbox with Scout-authored context while durable jobs retain only the link digest. The 276-test gate,
 production build, development deploy, and a live AgentMail send all passed (`convex/scout/`,
 `src/routes/`, `EMAIL_SETUP.md`).
+
+### 2026-09-04 - working tree
+
+Made long Scout turns durable across bounded model slices, compacted old browser observations, and
+captured each model call's exact input, usage, and cost. Added cached browser-session connections,
+Firecrawl map and crawl tools, and a chat-first inspection UI that keeps session and call selection
+in the URL (`convex/scout/`, `src/components/scout-model-input.tsx`, `src/routes/chats.tsx`).
+
+Added Stop-and-send so a user can replace active work while Scout safely closes browser and handoff
+state. Reduced human help to one visible-blocker reason while the server owns the email and private
+link. The complete project check passes all 329 tests (`convex/humanHandoffs.ts`,
+`convex/scout/humanHandoffTool.ts`, `convex/scout/turns.ts`).

@@ -14,10 +14,6 @@ import { hashHumanHandoffAccessToken } from "./scout/lib/humanHandoffAccess";
 const modules = import.meta.glob("./**/*.ts");
 const accessToken = `hh1_${"A".repeat(43)}`;
 const accessTokenHash = hashHumanHandoffAccessToken(accessToken);
-const deliveryArgs = {
-  emailSubject: "A browser check needs you",
-  emailNote: "Please complete the waiting browser check, then return control.",
-};
 const interactiveLiveViewUrl = "https://liveview.firecrawl.dev/view/session-1";
 const browserProvider = vi.hoisted(() => ({
   close: vi.fn(),
@@ -133,7 +129,6 @@ async function setup() {
     promptMessageId: context.promptMessageId,
     reason: "  GitHub   requires a CAPTCHA.  ",
     accessTokenHash,
-    ...deliveryArgs,
   });
   return { ...context, requested };
 }
@@ -411,7 +406,6 @@ describe("human handoffs", () => {
       inboxId: "conrad-inbox",
       recipientEmail: ADMIN_EMAIL,
       scoutName: "Conrad Scout",
-      ...deliveryArgs,
     });
     expect(JSON.stringify(delivery)).not.toMatch(/hh1_|#access=|https?:\/\//);
     expect(requested).toEqual({
@@ -519,7 +513,6 @@ describe("human handoffs", () => {
       promptMessageId: context.promptMessageId,
       reason: "GitHub requires a CAPTCHA.",
       accessTokenHash,
-      ...deliveryArgs,
     });
 
     expect(requested.claimExpiresAt).toBe(providerExpiresAtMs - HUMAN_HANDOFF_ACTIVE_MS);
@@ -545,7 +538,6 @@ describe("human handoffs", () => {
         promptMessageId: context.promptMessageId,
         reason: "GitHub requires a CAPTCHA.",
         accessTokenHash,
-        ...deliveryArgs,
       }),
     ).rejects.toThrow("Active Scout browser session not found");
   });
@@ -557,7 +549,6 @@ describe("human handoffs", () => {
       promptMessageId,
       reason: "The same browser check.",
       accessTokenHash,
-      ...deliveryArgs,
     });
 
     expect(repeated).toEqual({ ...requested, created: false });
@@ -577,7 +568,6 @@ describe("human handoffs", () => {
         promptMessageId,
         reason: "The same browser check.",
         accessTokenHash: "b".repeat(64),
-        ...deliveryArgs,
       }),
     ).rejects.toThrow("already");
   });
@@ -601,7 +591,6 @@ describe("human handoffs", () => {
         promptMessageId,
         reason: "CAPTCHA",
         accessTokenHash,
-        ...deliveryArgs,
       }),
     ).rejects.toThrow("Active Scout browser session not found");
   });
@@ -893,7 +882,6 @@ describe("human handoffs", () => {
         promptMessageId,
         reason: "CAPTCHA",
         accessTokenHash,
-        ...deliveryArgs,
       }),
     ).resolves.toMatchObject({ created: true });
   });

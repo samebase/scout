@@ -92,8 +92,6 @@ const preparedDeliveryValidator = v.union(
     inboxId: v.string(),
     recipientEmail: v.string(),
     scoutName: v.string(),
-    emailSubject: v.string(),
-    emailNote: v.string(),
   }),
   v.object({ kind: v.literal("definitive_failure") }),
   v.object({ kind: v.literal("skipped") }),
@@ -324,16 +322,12 @@ export const request = internalMutation({
     promptMessageId: v.string(),
     reason: v.string(),
     accessTokenHash: v.string(),
-    emailSubject: v.string(),
-    emailNote: v.string(),
   },
   returns: requestedHumanHandoffValidator,
   handler: async (ctx, args) => {
     const requestedAt = Date.now();
     const input = humanHandoffInputSchema.parse({
       reason: args.reason,
-      emailSubject: args.emailSubject,
-      emailNote: args.emailNote,
     });
     const reason = boundedReason(input.reason);
     const tokenHash = accessTokenHash(args.accessTokenHash);
@@ -425,8 +419,6 @@ export const request = internalMutation({
       inboxId: scout.agentMail.inboxId,
       recipientEmail,
       scoutName: scout.displayName,
-      emailSubject: input.emailSubject,
-      emailNote: input.emailNote,
     });
     await ctx.scheduler.runAt(claimExpiresAt, internal.humanHandoffs.expire, { handoffId });
     const handoff = await ctx.db.get("scoutHumanHandoffs", handoffId);
@@ -476,8 +468,6 @@ export const prepareDelivery = internalQuery({
       inboxId: delivery.inboxId,
       recipientEmail: delivery.recipientEmail,
       scoutName: delivery.scoutName,
-      emailSubject: delivery.emailSubject,
-      emailNote: delivery.emailNote,
     };
   },
 });

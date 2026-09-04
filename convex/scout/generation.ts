@@ -462,8 +462,6 @@ export const runSlice = internalAction({
             promptMessageId: args.promptMessageId,
             reason: input.reason,
             accessTokenHash: hashHumanHandoffAccessToken(accessToken),
-            emailSubject: input.emailSubject,
-            emailNote: input.emailNote,
           });
         },
         onWaiting: () => {

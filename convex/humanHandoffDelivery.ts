@@ -41,8 +41,6 @@ type DeliverableHumanHandoff = {
   recipientEmail: string;
   scoutName: string;
   handoffUrl: string;
-  emailSubject: string;
-  emailNote: string;
 };
 
 export async function runHumanHandoffDelivery(
@@ -57,16 +55,13 @@ export async function runHumanHandoffDelivery(
     dependencies.timeoutSignal ?? ((milliseconds: number) => AbortSignal.timeout(milliseconds));
   try {
     await dependencies.sendEmail(
-      humanHandoffEmail(
-        {
-          handoffId: delivery.handoffId,
-          recipientEmail: delivery.recipientEmail,
-          scoutName: delivery.scoutName,
-          handoffUrl: delivery.handoffUrl,
-          claimExpiresAt: prepared.claimExpiresAt,
-        },
-        { emailSubject: delivery.emailSubject, emailNote: delivery.emailNote },
-      ),
+      humanHandoffEmail({
+        handoffId: delivery.handoffId,
+        recipientEmail: delivery.recipientEmail,
+        scoutName: delivery.scoutName,
+        handoffUrl: delivery.handoffUrl,
+        claimExpiresAt: prepared.claimExpiresAt,
+      }),
       { signal: timeoutSignal(Math.min(EMAIL_DELIVERY_TIMEOUT_MS, remainingMs)) },
     );
     return { kind: "sent" };
@@ -104,8 +99,6 @@ export const send = internalAction({
         recipientEmail: prepared.recipientEmail,
         scoutName: prepared.scoutName,
         handoffUrl,
-        emailSubject: prepared.emailSubject,
-        emailNote: prepared.emailNote,
       },
       {
         prepare: async () => ({
