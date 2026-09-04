@@ -23,6 +23,8 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
 
 - Install Vite+ once to supply Node.js, then run `corepack enable` to make pnpm available.
 - Use `pnpm run dev` for normal development. It selects the primary or linked-worktree flow.
+- Reserve frontend port `5173` for the primary checkout. Linked worktrees start at `5174` and
+  use a higher available port when needed.
 - Vite+ stays in `package.json` and supplies the dev, format, lint, test, and build tools behind the
   package scripts.
 

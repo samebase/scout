@@ -39,7 +39,9 @@ The dev script also creates Convex Auth JWT keys in that development deployment
 if they are missing. In a linked Git worktree, it automatically uses an isolated
 local backend, seeds the standard development account, and adds an **Autofill & sign in** action.
 
-Open the local URL printed by Vite.
+The primary checkout reserves `http://localhost:5173` and stops if that port is occupied.
+Linked worktrees start at port `5174` and try higher ports when needed. Open the local URL
+printed by Vite.
 
 ## Public handoff links
 
