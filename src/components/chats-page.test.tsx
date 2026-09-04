@@ -30,9 +30,11 @@ const remote = vi.hoisted(() => ({
   subscribers: new Set<() => void>(),
   actions: new Map<string, Mock>(),
   mutations: new Map<string, Mock>(),
+  queryCalls: vi.fn(),
   createThread: vi.fn(),
   sendMessage: vi.fn(),
   executeTool: vi.fn(),
+  getModelCallContext: vi.fn(),
   listReplayPages: vi.fn(),
   loadMoreThreads: vi.fn(),
   loadMoreMessages: vi.fn(),
@@ -47,8 +49,9 @@ vi.mock("convex/react", () => ({
   AuthLoading: () => null,
   useQuery: (reference: FunctionReference<"query">, args: unknown) => {
     useSyncExternalStore(subscribeToQueries, () => remote.revision);
-    if (args === "skip") return undefined;
     const name = getFunctionName(reference);
+    remote.queryCalls(name, args);
+    if (args === "skip") return undefined;
     if (args && typeof args === "object" && "sessionId" in args) {
       const scopedKey = name + ":" + String(args.sessionId);
       if (remote.queries.has(scopedKey)) return remote.queries.get(scopedKey);
@@ -151,10 +154,12 @@ beforeEach(() => {
     toolCallId: "tool-call-1",
     outcome: { kind: "success", output: "null" },
   });
+  remote.getModelCallContext.mockResolvedValue(null);
   remote.listReplayPages.mockResolvedValue({ status: "unavailable" });
   remote.mutations.set("scout/chats:createThread", remote.createThread);
   remote.mutations.set("scout/chats:sendMessage", remote.sendMessage);
   remote.actions.set("scout/manual:executeTool", remote.executeTool);
+  remote.actions.set("scout/modelCalls:getContext", remote.getModelCallContext);
   remote.actions.set("browserReplay:listPages", remote.listReplayPages);
 });
 
@@ -535,6 +540,97 @@ describe("Chat workspace", () => {
     expect(resize.getAttribute("aria-valuenow")).toBe("144");
   });
 
+  test("loads a selected SDK model input on demand and preserves the draft", async () => {
+    const summary = {
+      modelCallId: "model-call-1",
+      sequence: 1,
+      provider: "openrouter",
+      modelId: "qwen/qwen3.7-flash",
+      startedAt: 1,
+      messageCount: 2,
+      toolCount: 1,
+      compactedBrowserSnapshotCount: 0,
+      serializedBytes: 512,
+      state: {
+        kind: "completed",
+        finishedAt: 2,
+        finishReason: "tool-calls",
+        usage: { promptTokens: 100, completionTokens: 20 },
+      },
+    };
+    remote.queries.set("scout/chats:listMessages", {
+      results: [
+        {
+          id: "message-1",
+          _creationTime: 1,
+          key: "message-1",
+          order: 1,
+          stepOrder: 0,
+          status: "success",
+          role: "assistant",
+          parts: [{ type: "text", text: "Inspected the page." }],
+          text: "Inspected the page.",
+          metadata: {
+            turnId: "turn-1",
+            model: "qwen/qwen3.7-flash",
+            scout: { id: "scout-1", displayName: "Conrad" },
+          },
+        },
+      ],
+      status: "Exhausted",
+      loadMore: remote.loadMoreMessages,
+    });
+    remote.queries.set("scout/modelCalls:listForTurn", [summary]);
+    remote.getModelCallContext.mockResolvedValue({
+      summary,
+      snapshot: JSON.stringify({
+        version: 1,
+        instructions: "Inspect carefully.",
+        messages: [{ role: "user", content: [{ type: "text", text: "Inspect this." }] }],
+        tools: [{ name: "browser_execute", description: "Use Playwright." }],
+        settings: { temperature: 0 },
+      }),
+    });
+    const user = userEvent.setup();
+    const router = await openChats();
+    const composer = await screen.findByRole<HTMLTextAreaElement>("textbox", {
+      name: "Message Scout",
+    });
+    await user.type(composer, "Keep this unfinished message");
+
+    expect(remote.queryCalls).not.toHaveBeenCalledWith("scout/modelCalls:listForTurn", {
+      turnId: "turn-1",
+    });
+    expect(remote.getModelCallContext).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Model calls" }));
+    const call = await screen.findByRole("button", { name: /Call 1/ });
+    expect(remote.queryCalls).toHaveBeenCalledWith("scout/modelCalls:listForTurn", {
+      turnId: "turn-1",
+    });
+    expect(remote.getModelCallContext).not.toHaveBeenCalled();
+
+    await user.click(call);
+    expect(await screen.findByRole("region", { name: "SDK model input" })).toBeTruthy();
+    expect(remote.getModelCallContext).toHaveBeenCalledExactlyOnceWith({
+      modelCallId: "model-call-1",
+      threadId: "thread-1",
+    });
+    expect(screen.getByText("Inspect carefully.")).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "Conversation" })).toBeNull();
+    expect(router.state.location.search).toEqual({
+      thread: "thread-1",
+      call: "model-call-1",
+    });
+
+    await user.click(screen.getByRole("button", { name: "Back" }));
+    expect(await screen.findByRole("region", { name: "Conversation" })).toBeTruthy();
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Message Scout" }).value).toBe(
+      "Keep this unfinished message",
+    );
+    expect(router.state.location.search).toEqual({ thread: "thread-1" });
+  });
+
   test("shows the live browser beside the conversation and keeps the handoff accessible", async () => {
     const browser = session("session-1", 1);
     remote.queries.set("scout/browserSessions:list", [browser]);
@@ -729,17 +825,18 @@ describe("Chat workspace", () => {
     expect(remote.sendMessage).not.toHaveBeenCalled();
   });
 
-  test("stores only the selected chat and browser session in the URL", () => {
+  test("stores only the selected chat, browser session, and model call in the URL", () => {
     const validateSearch = ChatsRoute.options.validateSearch;
     if (typeof validateSearch !== "function") throw new Error("Chat search validator is missing");
     expect(
       validateSearch({
         thread: "thread-1",
         session: "session-1",
+        call: "model-call-1",
         view: "live",
         experiment: "discarded",
       }),
-    ).toEqual({ thread: "thread-1", session: "session-1" });
-    expect(validateSearch({ thread: 7, session: {}, view: "product" })).toEqual({});
+    ).toEqual({ thread: "thread-1", session: "session-1", call: "model-call-1" });
+    expect(validateSearch({ thread: 7, session: {}, call: [], view: "product" })).toEqual({});
   });
 });

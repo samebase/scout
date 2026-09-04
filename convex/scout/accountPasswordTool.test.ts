@@ -2,7 +2,8 @@ import { validateTypes } from "@ai-sdk/provider-utils";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { createAccountPasswordFillTool, requirePasswordInputType } from "./accountPasswordTool";
 
-const toolOptions = { toolCallId: "tool-1", messages: [], context: {} };
+const abortSignal = new AbortController().signal;
+const toolOptions = { toolCallId: "tool-1", messages: [], context: {}, abortSignal };
 
 describe("Scout account password tool", () => {
   it("passes only password targets to the trusted filler", async () => {
@@ -25,7 +26,11 @@ describe("Scout account password tool", () => {
     });
 
     await expect(passwordTool.execute(input, toolOptions)).resolves.toEqual({ filledFields: 2 });
-    expect(fill).toHaveBeenCalledWith({ passwordTarget, passwordConfirmationTarget }, "tool-1");
+    expect(fill).toHaveBeenCalledWith(
+      { passwordTarget, passwordConfirmationTarget },
+      "tool-1",
+      abortSignal,
+    );
   });
 
   it("rejects inputs that could carry plaintext instead of targets", async () => {

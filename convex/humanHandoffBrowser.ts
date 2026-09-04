@@ -8,6 +8,7 @@ import { closeFirecrawlBrowserSession, createFirecrawlClient } from "./scout/lib
 import { optionalFirecrawlLiveViewUrl } from "./scout/lib/firecrawlLiveView";
 import { diagnosticMessage } from "./scout/lib/redaction";
 import { connectPlaywrightBrowser } from "./scout/playwrightBrowser";
+import { omitNullish } from "../shared/omitNullish";
 
 const MAX_HANDOFF_EVIDENCE_LENGTH = 20_000;
 
@@ -55,7 +56,7 @@ export async function findActiveBrowserSession(providerSessionId: string) {
 }
 
 function browserFinishDependencies(): BrowserFinishDependencies {
-  const firecrawl = createFirecrawlClient({ maxRetries: 1 });
+  const firecrawl = createFirecrawlClient();
   return {
     find: async (providerSessionId) =>
       await findActiveBrowserSessionWith(firecrawl, providerSessionId),
@@ -107,6 +108,7 @@ export const finishBrowserSession = internalAction({
   args: {
     sessionId: v.id("scoutBrowserSessions"),
     captureEvidence: v.boolean(),
+    usageTurnId: v.optional(v.id("scoutTurns")),
   },
   returns: v.string(),
   handler: async (ctx, args): Promise<string> => {
@@ -117,14 +119,26 @@ export const finishBrowserSession = internalAction({
       return "The browser session had already ended before Scout resumed.";
     }
 
-    const result = await finishHandedOffBrowser({
-      providerSessionId: session.providerSessionId,
-      captureEvidence: args.captureEvidence,
-    });
+    let result: Awaited<ReturnType<typeof finishHandedOffBrowser>>;
+    try {
+      result = await finishHandedOffBrowser({
+        providerSessionId: session.providerSessionId,
+        captureEvidence: args.captureEvidence,
+      });
+    } catch (error) {
+      await ctx.runMutation(internal.scout.browserSessions.close, {
+        sessionId: args.sessionId,
+        providerDurationMs: null,
+        creditsBilled: null,
+        ...omitNullish({ usageTurnId: args.usageTurnId }),
+      });
+      throw error;
+    }
     await ctx.runMutation(internal.scout.browserSessions.close, {
       sessionId: args.sessionId,
       providerDurationMs: result.providerDurationMs,
       creditsBilled: result.creditsBilled,
+      ...omitNullish({ usageTurnId: args.usageTurnId }),
     });
     return result.evidence;
   },

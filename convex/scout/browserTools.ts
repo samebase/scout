@@ -3,6 +3,7 @@
 import { tool, type ToolSet } from "ai";
 import { type Infer } from "convex/values";
 import { SdkError, type BrowserExecuteResponse, type Firecrawl } from "firecrawl";
+import { setTimeout as wait } from "node:timers/promises";
 import { z } from "zod";
 import { browserActionValidator } from "../browserModel";
 import { type BrowserTarget } from "./browserTarget";
@@ -53,9 +54,9 @@ type BrowserDependencies = {
   browser: Firecrawl["browser"];
   browserExecute: Firecrawl["browserExecute"];
   deleteBrowser: Firecrawl["deleteBrowser"];
-  connect: (cdpUrl: string) => Promise<PlaywrightBrowser>;
+  connect: (cdpUrl: string, abortSignal?: AbortSignal) => Promise<PlaywrightBrowser>;
   now: () => number;
-  sleep: (milliseconds: number) => Promise<void>;
+  sleep: (milliseconds: number, abortSignal?: AbortSignal) => Promise<void>;
 };
 
 export type BrowserSessionHandle = {
@@ -88,7 +89,7 @@ type BrowserHarnessOptions = {
 };
 
 function defaultBrowserDependencies(): BrowserDependencies {
-  const firecrawl = createFirecrawlClient({ maxRetries: 1 });
+  const firecrawl = createFirecrawlClient();
   return {
     browser: async (options) => await firecrawl.browser(options),
     browserExecute: async (sessionId, options) =>
@@ -96,8 +97,8 @@ function defaultBrowserDependencies(): BrowserDependencies {
     deleteBrowser: async (sessionId) => await closeFirecrawlBrowserSession(firecrawl, sessionId),
     connect: connectPlaywrightBrowser,
     now: Date.now,
-    sleep: async (milliseconds) =>
-      await new Promise((resolve) => setTimeout(resolve, milliseconds)),
+    sleep: async (milliseconds, abortSignal) =>
+      await wait(milliseconds, undefined, { signal: abortSignal }),
   };
 }
 
@@ -118,15 +119,23 @@ function firecrawlProfileWriterBusy(error: unknown) {
 async function createFirecrawlBrowserWithProfileRetry(
   dependencies: BrowserDependencies,
   options: NonNullable<Parameters<Firecrawl["browser"]>[0]>,
+  abortSignal?: AbortSignal,
 ) {
   for (const delay of PROFILE_WRITE_RETRY_DELAYS_MS) {
+    abortSignal?.throwIfAborted();
     try {
       return await dependencies.browser(options);
     } catch (error) {
       if (!options.profile || !firecrawlProfileWriterBusy(error)) throw error;
-      await dependencies.sleep(delay);
+      abortSignal?.throwIfAborted();
+      if (abortSignal) {
+        await dependencies.sleep(delay, abortSignal);
+      } else {
+        await dependencies.sleep(delay);
+      }
     }
   }
+  abortSignal?.throwIfAborted();
   return await dependencies.browser(options);
 }
 
@@ -134,15 +143,45 @@ async function executePlaywrightWithRateLimitRetry(
   dependencies: BrowserDependencies,
   sessionId: string,
   options: Parameters<Firecrawl["browserExecute"]>[1],
+  abortSignal?: AbortSignal,
 ) {
+  abortSignal?.throwIfAborted();
   try {
     return await dependencies.browserExecute(sessionId, options);
   } catch (error) {
     const delay = firecrawlRateLimitDelay(error);
     if (delay === null) throw error;
-    await dependencies.sleep(delay);
+    abortSignal?.throwIfAborted();
+    if (abortSignal) {
+      await dependencies.sleep(delay, abortSignal);
+    } else {
+      await dependencies.sleep(delay);
+    }
+    abortSignal?.throwIfAborted();
     return await dependencies.browserExecute(sessionId, options);
   }
+}
+
+async function deleteCreatedBrowserSession(dependencies: BrowserDependencies, sessionId: string) {
+  const stopped = await dependencies.deleteBrowser(sessionId);
+  if (!stopped.success) {
+    throw new Error(stopped.error?.trim() || "Firecrawl did not stop the browser session");
+  }
+}
+
+async function abortCreatedBrowserSession(
+  dependencies: BrowserDependencies,
+  sessionId: string,
+  abortSignal: AbortSignal,
+  message: string,
+): Promise<never> {
+  const abortReason = abortSignal.reason ?? new Error("Browser session creation was canceled");
+  try {
+    await deleteCreatedBrowserSession(dependencies, sessionId);
+  } catch (cleanupError) {
+    throw new AggregateError([abortReason, cleanupError], message);
+  }
+  throw abortReason;
 }
 
 function boundedText(value: string, label: string, maxLength = MAX_TOOL_TEXT_LENGTH) {
@@ -452,16 +491,21 @@ export function createBrowserHarness(
   let captureOperations = false;
   let localToolCallSequence = 0;
   let terminalTelemetryFailure: { error: unknown } | undefined;
-  let operationTail: Promise<void> = Promise.resolve();
+  let operationActive = false;
   const sensitiveValues = new Set<string>();
 
-  function serialized<T>(operation: () => Promise<T>) {
-    const result = operationTail.then(operation, operation);
-    operationTail = result.then(
-      () => undefined,
-      () => undefined,
-    );
-    return result;
+  async function exclusiveOperation<T>(operation: () => Promise<T>) {
+    if (operationActive) {
+      throw new Error(
+        "Only one browser operation may run at a time. Make one browser tool call per response.",
+      );
+    }
+    operationActive = true;
+    try {
+      return await operation();
+    } finally {
+      operationActive = false;
+    }
   }
 
   function activeBrowser() {
@@ -471,11 +515,18 @@ export function createBrowserHarness(
     return playwright;
   }
 
-  function read(operation: (browser: PlaywrightBrowser) => Promise<string>) {
-    return serialized(async () => {
+  function read(
+    operation: (browser: PlaywrightBrowser) => Promise<string>,
+    abortSignal?: AbortSignal,
+  ) {
+    return exclusiveOperation(async () => {
       try {
-        return browserOutput(await operation(activeBrowser()), sensitiveValues);
+        abortSignal?.throwIfAborted();
+        const output = await operation(activeBrowser());
+        abortSignal?.throwIfAborted();
+        return browserOutput(output, sensitiveValues);
       } catch (error) {
+        abortSignal?.throwIfAborted();
         throw new Error(browserFailure(error, sensitiveValues));
       }
     });
@@ -498,10 +549,11 @@ export function createBrowserHarness(
   async function prepareTelemetry(
     browser: PlaywrightBrowser,
     action: BrowserAction,
+    abortSignal?: AbortSignal,
   ): Promise<BrowserTelemetry["before"]> {
     return action.kind === "open"
       ? { capturedAtMs: dependencies.now(), tabs: [] }
-      : await browser.observe();
+      : await browser.observe(abortSignal);
   }
 
   function postActionSnapshotFailed(error: unknown) {
@@ -521,19 +573,28 @@ export function createBrowserHarness(
     action: BrowserAction,
     operation: (browser: PlaywrightBrowser) => Promise<void>,
     toolCallId: string,
+    abortSignal?: AbortSignal,
   ) {
+    abortSignal?.throwIfAborted();
     const browser = activeBrowser();
     if (terminalTelemetryFailure) throw terminalTelemetryFailure.error;
 
     if (!captureOperations) {
       try {
+        abortSignal?.throwIfAborted();
         await operation(browser);
+        abortSignal?.throwIfAborted();
       } catch (error) {
+        abortSignal?.throwIfAborted();
         throw new Error(browserFailure(error, sensitiveValues));
       }
       try {
-        return browserSnapshotOutput(await browser.snapshot(), sensitiveValues);
+        abortSignal?.throwIfAborted();
+        const snapshot = await browser.snapshot(abortSignal);
+        abortSignal?.throwIfAborted();
+        return browserSnapshotOutput(snapshot, sensitiveValues);
       } catch (error) {
+        abortSignal?.throwIfAborted();
         return postActionSnapshotFailed(error);
       }
     }
@@ -545,19 +606,32 @@ export function createBrowserHarness(
     if (!prepared) {
       throw new Error("Browser tool call was already prepared and will not be dispatched again");
     }
+    if (abortSignal?.aborted) {
+      const failure = browserFailure(abortSignal.reason, sensitiveValues);
+      await settle(toolCallId, { kind: "failed_before_dispatch", failure });
+      abortSignal.throwIfAborted();
+    }
 
     let preparedTelemetry: Awaited<ReturnType<typeof prepareTelemetry>>;
     try {
-      preparedTelemetry = await prepareTelemetry(browser, action);
+      preparedTelemetry = await prepareTelemetry(browser, action, abortSignal);
     } catch (error) {
       const failure = browserFailure(error, sensitiveValues);
       await settle(toolCallId, { kind: "failed_before_dispatch", failure });
+      abortSignal?.throwIfAborted();
       throw new Error(failure);
+    }
+
+    if (abortSignal?.aborted) {
+      const failure = browserFailure(abortSignal.reason, sensitiveValues);
+      await settle(toolCallId, { kind: "failed_before_dispatch", failure });
+      abortSignal.throwIfAborted();
     }
 
     const dispatchedAtMs = dependencies.now();
     try {
       await operation(browser);
+      abortSignal?.throwIfAborted();
     } catch (error) {
       const failure = browserFailure(error, sensitiveValues);
       await settle(toolCallId, { kind: "indeterminate_after_dispatch", failure });
@@ -565,6 +639,7 @@ export function createBrowserHarness(
         `Browser action failed after dispatch and its outcome is unknown: ${failure}`,
       );
       terminalTelemetryFailure = { error: terminalError };
+      abortSignal?.throwIfAborted();
       throw terminalError;
     }
 
@@ -576,37 +651,46 @@ export function createBrowserHarness(
         before: preparedTelemetry,
         dispatchedAtMs,
         returnedAtMs,
-        after: await browser.observe(),
+        after: await browser.observe(abortSignal),
       };
     } catch (error) {
       const failure = `Browser action completed, but telemetry capture failed: ${browserFailure(error, sensitiveValues)}`;
       await settle(toolCallId, { kind: "indeterminate_after_dispatch", failure });
       const terminalError = new Error(failure);
       terminalTelemetryFailure = { error: terminalError };
+      abortSignal?.throwIfAborted();
       throw terminalError;
     }
 
+    let snapshot: string;
     try {
-      const snapshot = await browser.snapshot();
-      await settle(toolCallId, { kind: "applied", telemetry });
-      return browserSnapshotOutput(snapshot, sensitiveValues);
+      abortSignal?.throwIfAborted();
+      snapshot = await browser.snapshot(abortSignal);
+      abortSignal?.throwIfAborted();
     } catch (error) {
       await settle(toolCallId, { kind: "applied_snapshot_failed", telemetry });
+      abortSignal?.throwIfAborted();
       return postActionSnapshotFailed(error);
     }
+    await settle(toolCallId, { kind: "applied", telemetry });
+    return browserSnapshotOutput(snapshot, sensitiveValues);
   }
 
   function mutate(
     action: BrowserAction,
     operation: (browser: PlaywrightBrowser) => Promise<void>,
     toolCallId = localToolCallId(),
+    abortSignal?: AbortSignal,
   ) {
-    return serialized(async () => await performMutation(action, operation, toolCallId));
+    return exclusiveOperation(
+      async () => await performMutation(action, operation, toolCallId, abortSignal),
+    );
   }
 
-  function executeCode(code: string, toolCallId = localToolCallId()) {
+  function executeCode(code: string, toolCallId = localToolCallId(), abortSignal?: AbortSignal) {
     const source = boundedText(code, "Playwright code");
-    return serialized(async () => {
+    return exclusiveOperation(async () => {
+      abortSignal?.throwIfAborted();
       const browser = activeBrowser();
       const activeSessionId = sessionId;
       if (!activeSessionId) throw new Error("Open a browser session before using it");
@@ -625,12 +709,13 @@ export function createBrowserHarness(
 
       let before: BrowserTelemetry["before"];
       try {
-        before = await browser.observe();
+        before = await browser.observe(abortSignal);
       } catch (error) {
         const failure = browserFailure(error, sensitiveValues);
         if (captureOperations) {
           await settle(toolCallId, { kind: "failed_before_dispatch", failure });
         }
+        abortSignal?.throwIfAborted();
         throw new Error(failure);
       }
 
@@ -649,22 +734,47 @@ export function createBrowserHarness(
         url: selectedTab.url,
       });
 
+      if (abortSignal?.aborted) {
+        const failure = "Browser execution was canceled before dispatch";
+        if (captureOperations) {
+          await settle(toolCallId, { kind: "failed_before_dispatch", failure });
+        }
+        abortSignal.throwIfAborted();
+      }
+
       const dispatchedAtMs = dependencies.now();
       let response: BrowserExecuteResponse;
       try {
-        response = await executePlaywrightWithRateLimitRetry(dependencies, activeSessionId, {
-          code: scopedExecution.code,
-          language: "node",
-          timeout: 60,
-        });
+        response = await executePlaywrightWithRateLimitRetry(
+          dependencies,
+          activeSessionId,
+          {
+            code: scopedExecution.code,
+            language: "node",
+            timeout: 60,
+          },
+          abortSignal,
+        );
       } catch (error) {
         const returnedAtMs = dependencies.now();
         const failure = `Firecrawl Playwright request failed: ${browserFailure(error, sensitiveValues)}`;
+        if (abortSignal?.aborted) {
+          if (captureOperations) {
+            await settle(toolCallId, { kind: "indeterminate_after_dispatch", failure });
+          }
+          abortSignal.throwIfAborted();
+        }
         let after = before;
         try {
-          after = await browser.observe();
+          after = await browser.observe(abortSignal);
         } catch {
           // The provider failure is already the useful diagnostic.
+        }
+        if (abortSignal?.aborted) {
+          if (captureOperations) {
+            await settle(toolCallId, { kind: "indeterminate_after_dispatch", failure });
+          }
+          abortSignal.throwIfAborted();
         }
         if (captureOperations) {
           await settle(toolCallId, {
@@ -672,7 +782,8 @@ export function createBrowserHarness(
             failure,
           });
         }
-        const snapshot = await browser.snapshot().catch(() => "");
+        const snapshot = await browser.snapshot(abortSignal).catch(() => "");
+        abortSignal?.throwIfAborted();
         return {
           success: false,
           currentPage: redactSensitiveValues(snapshot, sensitiveValues).slice(
@@ -688,14 +799,22 @@ export function createBrowserHarness(
       }
 
       const returnedAtMs = dependencies.now();
+      if (abortSignal?.aborted) {
+        const failure = "Browser execution exceeded the Scout slice deadline after dispatch";
+        if (captureOperations) {
+          await settle(toolCallId, { kind: "indeterminate_after_dispatch", failure });
+        }
+        abortSignal.throwIfAborted();
+      }
       let after: BrowserTelemetry["after"];
       try {
-        after = await browser.observe();
+        after = await browser.observe(abortSignal);
       } catch (error) {
         const failure = `Playwright code returned, but browser observation failed: ${browserFailure(error, sensitiveValues)}`;
         if (captureOperations) {
           await settle(toolCallId, { kind: "indeterminate_after_dispatch", failure });
         }
+        abortSignal?.throwIfAborted();
         return {
           success: false,
           output: executionOutput(response, sensitiveValues),
@@ -714,7 +833,9 @@ export function createBrowserHarness(
       const succeeded = execution.success;
       let snapshot: string;
       try {
-        snapshot = await browser.snapshot();
+        abortSignal?.throwIfAborted();
+        snapshot = await browser.snapshot(abortSignal);
+        abortSignal?.throwIfAborted();
       } catch (error) {
         if (captureOperations) {
           await settle(
@@ -727,6 +848,7 @@ export function createBrowserHarness(
                 },
           );
         }
+        abortSignal?.throwIfAborted();
         return succeeded
           ? postActionSnapshotFailed(error)
           : {
@@ -761,9 +883,9 @@ export function createBrowserHarness(
     });
   }
 
-  function open(url: string, toolCallId = localToolCallId()) {
+  function open(url: string, toolCallId = localToolCallId(), abortSignal?: AbortSignal) {
     pendingOpenCount += 1;
-    const opening = serialized(async () => {
+    const opening = exclusiveOperation(async () => {
       if (sessionId) {
         throw new Error("A browser session is already open");
       }
@@ -772,16 +894,29 @@ export function createBrowserHarness(
       }
 
       const targetUrl = httpsUrl(url);
-      const session = await createFirecrawlBrowserWithProfileRetry(dependencies, {
-        streamWebView: true,
-        ttl: 3_600,
-        activityTtl: 3_600,
-        ...(options.profileName
-          ? { profile: { name: options.profileName, saveChanges: true } }
-          : {}),
-      });
+      const session = await createFirecrawlBrowserWithProfileRetry(
+        dependencies,
+        {
+          streamWebView: true,
+          ttl: 3_600,
+          activityTtl: 3_600,
+          ...(options.profileName
+            ? { profile: { name: options.profileName, saveChanges: true } }
+            : {}),
+        },
+        abortSignal,
+      );
       if (!session.success || !session.id || !session.cdpUrl) {
+        abortSignal?.throwIfAborted();
         throw new Error(session.error?.trim() || "Firecrawl did not create a browser session");
+      }
+      if (abortSignal?.aborted) {
+        await abortCreatedBrowserSession(
+          dependencies,
+          session.id,
+          abortSignal,
+          "Browser session creation was canceled and cleanup failed",
+        );
       }
       let liveViewUrl: string | null;
       let interactiveLiveViewUrl: string | null;
@@ -794,25 +929,52 @@ export function createBrowserHarness(
       }
       let connected: PlaywrightBrowser;
       try {
-        connected = await dependencies.connect(session.cdpUrl);
+        connected = await dependencies.connect(session.cdpUrl, abortSignal);
       } catch (error) {
         await dependencies.deleteBrowser(session.id);
         throw new Error(`Playwright could not connect to Firecrawl: ${diagnosticMessage(error)}`);
       }
+      if (abortSignal?.aborted) {
+        await abortCreatedBrowserSession(
+          dependencies,
+          session.id,
+          abortSignal,
+          "Browser connection was canceled and cleanup failed",
+        );
+      }
       sessionId = session.id;
       playwright = connected;
-      const policy = await options.onSessionAvailable?.(session.id);
+      let policy: BrowserSessionPolicy | undefined;
+      try {
+        policy = await options.onSessionAvailable?.(session.id);
+      } catch (error) {
+        sessionId = undefined;
+        playwright = undefined;
+        try {
+          await deleteCreatedBrowserSession(dependencies, session.id);
+        } catch (cleanupError) {
+          throw new AggregateError(
+            [error, cleanupError],
+            "Browser session registration and cleanup both failed",
+          );
+        }
+        throw error;
+      }
       captureOperations = policy?.captureOperations === true;
+      abortSignal?.throwIfAborted();
       if (liveViewUrl !== null) {
         await options.onLiveViewAvailable?.(liveViewUrl);
+        abortSignal?.throwIfAborted();
       }
       if (interactiveLiveViewUrl !== null) {
         await options.onInteractiveLiveViewAvailable?.(interactiveLiveViewUrl);
+        abortSignal?.throwIfAborted();
       }
       return await performMutation(
         { kind: "open", url: telemetryUrl(targetUrl) },
-        async (browser) => await browser.navigate(targetUrl),
+        async (browser) => await browser.navigate(targetUrl, abortSignal),
         toolCallId,
+        abortSignal,
       );
     });
     void opening.then(
@@ -826,8 +988,8 @@ export function createBrowserHarness(
     return opening;
   }
 
-  function attach(handle: BrowserSessionHandle) {
-    return serialized(async () => {
+  function attach(handle: BrowserSessionHandle, abortSignal?: AbortSignal) {
+    return exclusiveOperation(async () => {
       if (sessionId || playwright) {
         throw new Error("A browser session is already attached");
       }
@@ -841,13 +1003,16 @@ export function createBrowserHarness(
       );
       let connected: PlaywrightBrowser;
       try {
-        connected = await dependencies.connect(handle.cdpUrl);
+        connected = await dependencies.connect(handle.cdpUrl, abortSignal);
       } catch (error) {
+        abortSignal?.throwIfAborted();
         throw new Error(`Playwright could not reconnect to Firecrawl: ${diagnosticMessage(error)}`);
       }
+      abortSignal?.throwIfAborted();
       sessionId = providerSessionId;
       playwright = connected;
       const policy = await options.onSessionAvailable?.(providerSessionId);
+      abortSignal?.throwIfAborted();
       captureOperations = policy?.captureOperations === true;
     });
   }
@@ -865,7 +1030,7 @@ export function createBrowserHarness(
     if (!sessionId && !stopResult && pendingOpenCount === 0) {
       return Promise.resolve(undefined);
     }
-    const pendingClose = serialized(async () => {
+    const pendingClose = exclusiveOperation(async () => {
       if (!sessionId && !stopResult) {
         return undefined;
       }
@@ -913,18 +1078,27 @@ export function createBrowserHarness(
       if (!value) throw new Error("Sensitive browser values cannot be empty");
       sensitiveValues.add(value);
     },
-    snapshot: async () => await read(async (browser) => await browser.snapshot()),
+    snapshot: async (abortSignal?: AbortSignal) =>
+      await read(async (browser) => await browser.snapshot(abortSignal), abortSignal),
     executeCode,
-    getPage: async (kind: "url" | "title") =>
-      await read(async (browser) => await browser.getPage(kind)),
-    getElement: async (target: BrowserTarget) =>
-      await read(async (browser) => await browser.getElement(target)),
-    getElementAttribute: async (target: BrowserTarget, attribute: "type") =>
-      await read(async (browser) => await browser.getElementAttribute(target, attribute)),
+    getPage: async (kind: "url" | "title", abortSignal?: AbortSignal) =>
+      await read(async (browser) => await browser.getPage(kind, abortSignal), abortSignal),
+    getElement: async (target: BrowserTarget, abortSignal?: AbortSignal) =>
+      await read(async (browser) => await browser.getElement(target, abortSignal), abortSignal),
+    getElementAttribute: async (
+      target: BrowserTarget,
+      attribute: "type",
+      abortSignal?: AbortSignal,
+    ) =>
+      await read(
+        async (browser) => await browser.getElementAttribute(target, attribute, abortSignal),
+        abortSignal,
+      ),
     fillManagedPassword: async (
       targets: { passwordTarget: BrowserTarget; passwordConfirmationTarget?: BrowserTarget },
       password: string,
       toolCallId?: string,
+      abortSignal?: AbortSignal,
     ) => {
       return await mutate(
         {
@@ -932,12 +1106,14 @@ export function createBrowserHarness(
           fieldCount: targets.passwordConfirmationTarget ? 2 : 1,
         },
         async (browser) => {
-          await browser.fill(targets.passwordTarget, password);
+          await browser.fill(targets.passwordTarget, password, abortSignal);
+          abortSignal?.throwIfAborted();
           if (targets.passwordConfirmationTarget) {
-            await browser.fill(targets.passwordConfirmationTarget, password);
+            await browser.fill(targets.passwordConfirmationTarget, password, abortSignal);
           }
         },
         toolCallId,
+        abortSignal,
       );
     },
   };
@@ -948,7 +1124,8 @@ export function createBrowserHarness(
       inputSchema: z.object({
         url: z.string().url().describe("HTTPS page for the first tab"),
       }),
-      execute: async ({ url }, execution) => await open(url, execution.toolCallId),
+      execute: async ({ url }, execution) =>
+        await open(url, execution.toolCallId, execution.abortSignal),
     }),
     browser_execute: tool({
       description: BROWSER_EXECUTE_DESCRIPTION,
@@ -959,7 +1136,8 @@ export function createBrowserHarness(
           .max(MAX_TOOL_TEXT_LENGTH)
           .describe("JavaScript body executed with Playwright page available"),
       }),
-      execute: async ({ code }, execution) => await actions.executeCode(code, execution.toolCallId),
+      execute: async ({ code }, execution) =>
+        await actions.executeCode(code, execution.toolCallId, execution.abortSignal),
     }),
     browser_close: tool({
       description: BROWSER_CLOSE_DESCRIPTION,

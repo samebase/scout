@@ -111,8 +111,12 @@ describe("Lab browser harness", () => {
     });
     expect(deps.connect).toHaveBeenCalledExactlyOnceWith(
       "wss://browser.firecrawl.dev/cdp?token=secret",
+      undefined,
     );
-    expect(playwright.navigate).toHaveBeenCalledExactlyOnceWith("https://example.com/login");
+    expect(playwright.navigate).toHaveBeenCalledExactlyOnceWith(
+      "https://example.com/login",
+      undefined,
+    );
     expect(onLiveViewAvailable).toHaveBeenCalledOnce();
     expect(onInteractiveLiveViewAvailable).toHaveBeenCalledOnce();
     expect(JSON.stringify(output)).not.toContain("firecrawl.dev");
@@ -205,6 +209,7 @@ describe("Lab browser harness", () => {
     expect(deps.browser).not.toHaveBeenCalled();
     expect(deps.connect).toHaveBeenCalledExactlyOnceWith(
       "wss://browser.firecrawl.dev/cdp?token=secret",
+      undefined,
     );
     expect(onSessionAvailable).toHaveBeenCalledExactlyOnceWith("session-existing");
     expect(onOperationPrepared).toHaveBeenCalledExactlyOnceWith({
@@ -334,6 +339,54 @@ describe("Lab browser harness", () => {
     expect(deps.browserExecute).toHaveBeenCalledTimes(2);
   });
 
+  test("does not retry a rate-limited execution after its model turn is aborted", async () => {
+    const abortController = new AbortController();
+    const deps = dependencies();
+    deps.browserExecute
+      .mockImplementationOnce(async () => {
+        abortController.abort(new Error("model turn timed out"));
+        throw new SdkError("Rate limit exceeded; please retry after 2s", 429);
+      })
+      .mockResolvedValueOnce({ success: true, exitCode: 0, stdout: "retried" });
+    const browser = createBrowserHarness({}, deps);
+    await browser.open("https://example.com");
+
+    await expect(
+      browser.tools.browser_execute.execute(
+        { code: "return await page.title()" },
+        {
+          toolCallId: "tool-aborted-execute",
+          messages: [],
+          context: undefined,
+          abortSignal: abortController.signal,
+        },
+      ),
+    ).rejects.toThrow("model turn timed out");
+    expect(deps.sleep).not.toHaveBeenCalled();
+    expect(deps.browserExecute).toHaveBeenCalledOnce();
+  });
+
+  test("rejects concurrent browser operations instead of building an unbounded queue", async () => {
+    const deps = dependencies();
+    let finishExecution: (() => void) | undefined;
+    deps.browserExecute.mockImplementationOnce(
+      async () =>
+        await new Promise<BrowserExecuteResponse>((resolve) => {
+          finishExecution = () =>
+            resolve({ success: true, exitCode: 0, stdout: "finished", killed: false });
+        }),
+    );
+    const browser = createBrowserHarness({}, deps);
+    await browser.open("https://example.com");
+
+    const first = browser.actions.executeCode("await page.locator('button').click()");
+    await expect(browser.actions.executeCode("await page.title()")).rejects.toThrow(
+      "one browser operation",
+    );
+    finishExecution?.();
+    await expect(first).resolves.toMatchObject({ success: true });
+  });
+
   test("waits for a persistent profile writer before opening one session", async () => {
     const deps = dependencies();
     const profileBusy = new SdkError(
@@ -355,6 +408,78 @@ describe("Lab browser harness", () => {
     expect(deps.sleep).toHaveBeenNthCalledWith(1, 10_000);
     expect(deps.sleep).toHaveBeenNthCalledWith(2, 10_000);
     expect(deps.browser).toHaveBeenCalledTimes(3);
+  });
+
+  test("does not retry a profile-busy open after its model turn is aborted", async () => {
+    const abortController = new AbortController();
+    const deps = dependencies();
+    deps.browser
+      .mockImplementationOnce(async () => {
+        abortController.abort(new Error("model turn timed out"));
+        throw new SdkError(
+          "Another session is currently writing to this profile. Only one writer is allowed at a time.",
+          409,
+        );
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        id: "session-retried",
+        cdpUrl: "wss://browser.firecrawl.dev/cdp?token=secret",
+      });
+    const browser = createBrowserHarness({ profileName: "scout-conrad" }, deps);
+
+    await expect(
+      browser.tools.create_new_firecrawl_session.execute(
+        { url: "https://example.com" },
+        {
+          toolCallId: "tool-aborted-open",
+          messages: [],
+          context: undefined,
+          abortSignal: abortController.signal,
+        },
+      ),
+    ).rejects.toThrow("model turn timed out");
+    expect(deps.sleep).not.toHaveBeenCalled();
+    expect(deps.browser).toHaveBeenCalledOnce();
+  });
+
+  test("does not dispatch a prepared browser mutation after cancellation", async () => {
+    const controller = new AbortController();
+    const playwright = runtime();
+    const deps = dependencies(playwright);
+    const onOperationSettled = vi.fn(async () => undefined);
+    const browser = createBrowserHarness(
+      {
+        onSessionAvailable: async () => ({ captureOperations: true }),
+        onOperationPrepared: async () => {
+          controller.abort(new Error("Scout slice expired"));
+          return true;
+        },
+        onOperationSettled,
+      },
+      deps,
+    );
+
+    await expect(
+      browser.tools.create_new_firecrawl_session.execute(
+        { url: "https://example.com" },
+        {
+          toolCallId: "tool-canceled-before-navigation",
+          messages: [],
+          context: undefined,
+          abortSignal: controller.signal,
+        },
+      ),
+    ).rejects.toThrow("Scout slice expired");
+    expect(playwright.navigate).not.toHaveBeenCalled();
+    expect(onOperationSettled).toHaveBeenCalledExactlyOnceWith({
+      toolCallId: "tool-canceled-before-navigation",
+      outcome: {
+        kind: "failed_before_dispatch",
+        failure: expect.stringContaining("Scout slice expired"),
+      },
+    });
+    await browser.close();
   });
 
   test("fills managed passwords through trusted local Playwright without exposing them", async () => {
@@ -384,6 +509,23 @@ describe("Lab browser harness", () => {
       "Playwright could not connect",
     );
     expect(deps.deleteBrowser).toHaveBeenCalledExactlyOnceWith("session-1");
+  });
+
+  test("closes a provider session when the app cannot register it", async () => {
+    const deps = dependencies();
+    const registrationFailure = new Error("database unavailable");
+    const browser = createBrowserHarness(
+      {
+        onSessionAvailable: async () => {
+          throw registrationFailure;
+        },
+      },
+      deps,
+    );
+
+    await expect(browser.open("https://example.com")).rejects.toBe(registrationFailure);
+    expect(deps.deleteBrowser).toHaveBeenCalledExactlyOnceWith("session-1");
+    await expect(browser.close()).resolves.toBeUndefined();
   });
 
   test("closes a successful Firecrawl session once", async () => {

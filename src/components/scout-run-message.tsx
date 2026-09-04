@@ -11,6 +11,7 @@ import { Bubble, BubbleContent } from "#components/ui/bubble";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "#components/ui/collapsible";
 import { Marker, MarkerContent, MarkerIcon } from "#components/ui/marker";
 import { Message, MessageContent, MessageFooter, MessageHeader } from "#components/ui/message";
+import { ScoutModelCalls } from "#components/scout-model-input";
 import {
   countGenerationSteps,
   parseScoutMessageParts,
@@ -39,9 +40,11 @@ export function scoutModelLabel(model: string) {
 
 export function ScoutRunMessageView({
   message,
+  onSelectModelCall,
   showText = true,
 }: {
   message: ScoutRunMessage;
+  onSelectModelCall?: (modelCallId: string) => void;
   showText?: boolean;
 }) {
   const isUser = message.role === "user";
@@ -85,6 +88,9 @@ export function ScoutRunMessageView({
           </MessageFooter>
         ) : metadata ? (
           <MessageFooter>{formatRunMetadata(metadata, countGenerationSteps(parts))}</MessageFooter>
+        ) : null}
+        {metadata && onSelectModelCall ? (
+          <ScoutModelCalls turnId={metadata.turnId} onSelect={onSelectModelCall} />
         ) : null}
       </MessageContent>
     </Message>

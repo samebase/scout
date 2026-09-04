@@ -17,6 +17,8 @@ afterEach(() => cleanup());
 
 // @ts-expect-error This isolated view fixture does not cross the Convex ID boundary.
 const scoutId: Id<"scouts"> = "scout";
+// @ts-expect-error This isolated view fixture does not cross the Convex ID boundary.
+const turnId: Id<"scoutTurns"> = "turn";
 
 describe("Scout transcript metadata", () => {
   test("keeps the stored failure visible after generation finishes", () => {
@@ -33,6 +35,7 @@ describe("Scout transcript metadata", () => {
           parts: [],
           text: "",
           metadata: {
+            turnId,
             model: "qwen/qwen3.7-flash",
             scout: {
               id: scoutId,
@@ -53,6 +56,7 @@ describe("Scout transcript metadata", () => {
     expect(
       formatRunMetadata(
         {
+          turnId,
           model: "qwen/qwen3.7-flash",
           scout: {
             id: scoutId,

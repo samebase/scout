@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 
 import agentTest from "@convex-dev/agent/test";
+import workflowTest from "@convex-dev/workflow/test";
 import { convexTest } from "convex-test";
 import { describe, expect, it } from "vite-plus/test";
 import { api, internal } from "./_generated/api";
@@ -11,6 +12,7 @@ const modules = import.meta.glob("./**/*.ts");
 
 function testBackend() {
   const backend = convexTest(schema, modules);
+  workflowTest.register(backend);
   agentTest.register(backend);
   return backend;
 }

@@ -267,9 +267,10 @@ export async function failHumanHandoffForTurn(ctx: MutationCtx, turnId: Id<"scou
     .query("scoutHumanHandoffs")
     .withIndex("by_turn_id", (query) => query.eq("turnId", turnId))
     .unique();
-  if (!handoff) return;
+  if (!handoff) return false;
   if (handoff.status === "available" || handoff.status === "active") {
     await failOpenHandoff(ctx, handoff, "scout_failed");
+    return true;
   } else if (handoff.status === "continued") {
     await ctx.db.replace(
       "scoutHumanHandoffs",
@@ -277,7 +278,9 @@ export async function failHumanHandoffForTurn(ctx: MutationCtx, turnId: Id<"scou
       failedHandoff(handoff, { failedAt: Date.now(), failure: "scout_failed" }),
     );
     await signalHumanHandoffScoutPaused(ctx, handoff);
+    return true;
   }
+  return false;
 }
 
 export async function signalHumanHandoffOutcome(

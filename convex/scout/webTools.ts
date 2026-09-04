@@ -33,6 +33,8 @@ export function createWebTools() {
         const response = await createFirecrawlClient().scrape(url, {
           formats: ["markdown"],
           onlyMainContent: true,
+          timeout: 60_000,
+          autoResume: false,
         });
         const text = response.markdown ?? "";
         return {

@@ -18,12 +18,17 @@ export function requirePasswordInputType(value: string) {
 }
 
 export function createAccountPasswordFillTool(
-  fill: (targets: AccountPasswordTargets, toolCallId: string) => Promise<{ filledFields: number }>,
+  fill: (
+    targets: AccountPasswordTargets,
+    toolCallId: string,
+    abortSignal?: AbortSignal,
+  ) => Promise<{ filledFields: number }>,
 ) {
   return tool({
     description:
       "Fill the configured Scout account password without revealing it. Identify the visible password field and, when present, its confirmation field with Playwright targets. Never enter a password through browser_execute.",
     inputSchema: accountPasswordTargetsSchema,
-    execute: async (targets, options) => await fill(targets, options.toolCallId),
+    execute: async (targets, options) =>
+      await fill(targets, options.toolCallId, options.abortSignal),
   });
 }

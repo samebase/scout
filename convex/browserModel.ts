@@ -63,6 +63,11 @@ export const browserOperationStateValidator = v.union(
 export const browserSessionLifecycleValidator = v.union(
   v.object({ kind: v.literal("active"), openedAtMs: v.number() }),
   v.object({
+    kind: v.literal("closing"),
+    openedAtMs: v.number(),
+    closingAtMs: v.number(),
+  }),
+  v.object({
     kind: v.literal("closed"),
     openedAtMs: v.number(),
     closedAtMs: v.number(),

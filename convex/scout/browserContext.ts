@@ -5,7 +5,7 @@ type ToolMessage = Extract<ModelMessage, { role: "tool" }>;
 type ToolResultPart = Extract<ToolMessage["content"][number], { type: "tool-result" }>;
 type ToolResultOutput = ToolResultPart["output"];
 
-const SUPERSEDED_BROWSER_SNAPSHOT = "[superseded by a newer browser snapshot]";
+export const SUPERSEDED_BROWSER_SNAPSHOT = "[superseded by a newer browser snapshot]";
 const browserSnapshotSchema = z.object({ currentPage: z.string().min(1) }).catchall(z.json());
 
 function isBrowserTool(toolName: string) {
@@ -53,4 +53,17 @@ export function compactBrowserModelContext(messages: ModelMessage[]) {
       };
     })
     .toReversed();
+}
+
+export function compactedBrowserSnapshotCount(messages: readonly ModelMessage[]) {
+  let count = 0;
+  for (const message of messages) {
+    if (message.role !== "tool") continue;
+    for (const part of message.content) {
+      if (part.type !== "tool-result") continue;
+      const snapshot = browserSnapshot(part.output);
+      if (snapshot?.value.currentPage === SUPERSEDED_BROWSER_SNAPSHOT) count += 1;
+    }
+  }
+  return count;
 }

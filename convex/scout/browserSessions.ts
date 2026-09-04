@@ -24,7 +24,7 @@ import { activeBrowserForChat } from "./chatAccess";
 const MAX_BROWSER_SESSION_ID_LENGTH = 500;
 const MAX_BROWSER_TOOL_CALL_ID_LENGTH = 200;
 const MAX_BROWSER_FAILURE_LENGTH = 2_000;
-const MAX_BROWSER_OPERATIONS = 100;
+const MAX_BROWSER_OPERATIONS = 500;
 const MAX_BROWSER_SESSIONS_PER_THREAD = 50;
 const BROWSER_VIEWPORT = { width: 1_280, height: 800 } as const;
 
@@ -63,6 +63,10 @@ function boundedFailure(value: string) {
   return characters.length <= MAX_BROWSER_FAILURE_LENGTH
     ? characters.join("")
     : `${characters.slice(0, MAX_BROWSER_FAILURE_LENGTH - 1).join("")}…`;
+}
+
+function addProviderUsage(current: number | undefined, next: number | null) {
+  return next === null ? current : (current ?? 0) + next;
 }
 
 async function requireThreadBinding(ctx: Pick<QueryCtx | MutationCtx, "db">, threadId: string) {
@@ -335,11 +339,24 @@ export const close = internalMutation({
     sessionId: v.id("scoutBrowserSessions"),
     providerDurationMs: v.union(v.number(), v.null()),
     creditsBilled: v.union(v.number(), v.null()),
+    usageTurnId: v.optional(v.id("scoutTurns")),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
     const session = await ctx.db.get("scoutBrowserSessions", args.sessionId);
     if (!session || session.lifecycle.kind === "closed") return null;
+    const handoff = await ctx.db
+      .query("scoutHumanHandoffs")
+      .withIndex("by_session_id", (index) => index.eq("sessionId", session._id))
+      .unique();
+    const usageTurnId = args.usageTurnId ?? handoff?.turnId;
+    const turn = usageTurnId ? await ctx.db.get("scoutTurns", usageTurnId) : null;
+    if (
+      args.usageTurnId &&
+      (!turn || turn.threadId !== session.threadId || turn.scoutId !== session.scoutId)
+    ) {
+      throw new Error("Browser usage turn does not match the session");
+    }
     await failHumanHandoffForSession(ctx, session._id);
     await ctx.db.patch("scoutBrowserSessions", session._id, {
       lifecycle: {
@@ -350,18 +367,16 @@ export const close = internalMutation({
         creditsBilled: args.creditsBilled,
       },
     });
-    const handoff = await ctx.db
-      .query("scoutHumanHandoffs")
-      .withIndex("by_session_id", (index) => index.eq("sessionId", session._id))
-      .unique();
-    const turn = handoff ? await ctx.db.get("scoutTurns", handoff.turnId) : null;
-    if (turn && (turn.state.kind === "completed" || turn.state.kind === "failed")) {
+    if (turn) {
       await ctx.db.patch("scoutTurns", turn._id, {
         state: {
           ...turn.state,
           ...omitNullish({
-            firecrawlCredits: args.creditsBilled,
-            firecrawlDurationMs: args.providerDurationMs,
+            firecrawlCredits: addProviderUsage(turn.state.firecrawlCredits, args.creditsBilled),
+            firecrawlDurationMs: addProviderUsage(
+              turn.state.firecrawlDurationMs,
+              args.providerDurationMs,
+            ),
           }),
         },
       });

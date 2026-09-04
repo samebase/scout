@@ -10,7 +10,11 @@ import {
 import { humanHandoffDeliveryRecordValidator } from "./humanHandoffDeliveryModel";
 import { humanHandoffValidator } from "./humanHandoffsModel";
 import { scoutServiceAccountFieldsValidator, scoutWebsiteIdentityValidator } from "./scout/model";
-import { scoutModelValidator, scoutTurnStateValidator } from "./scout/models";
+import {
+  scoutModelCallStateValidator,
+  scoutModelValidator,
+  scoutTurnStateValidator,
+} from "./scout/models";
 
 export const accountObservationValidator = v.object({
   threadId: v.string(),
@@ -94,6 +98,19 @@ export default defineSchema({
     .index("by_prompt_message_id", ["promptMessageId"])
     .index("by_thread_id_and_order", ["threadId", "order"])
     .index("by_scout_id_and_state_kind", ["scoutId", "state.kind"]),
+  scoutModelCalls: defineTable({
+    turnId: v.id("scoutTurns"),
+    sequence: v.number(),
+    provider: v.string(),
+    modelId: v.string(),
+    startedAt: v.number(),
+    messageCount: v.number(),
+    toolCount: v.number(),
+    compactedBrowserSnapshotCount: v.number(),
+    serializedBytes: v.number(),
+    snapshotStorageId: v.id("_storage"),
+    state: scoutModelCallStateValidator,
+  }).index("by_turn_id_and_sequence", ["turnId", "sequence"]),
   scoutBrowserSessions: defineTable({
     threadId: v.string(),
     scoutId: v.id("scouts"),

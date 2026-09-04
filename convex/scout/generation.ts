@@ -1,10 +1,15 @@
 "use node";
 
 import { createMCPClient, type MCPClient } from "@ai-sdk/mcp";
-import { isStepCount, type LanguageModelUsage } from "ai";
+import {
+  isStepCount,
+  type FinishReason,
+  type LanguageModelCallStartEvent,
+  type LanguageModelUsage,
+} from "ai";
 import { v } from "convex/values";
 import { inspect } from "node:util";
-import { internal } from "../_generated/api";
+import { components, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { env, internalAction } from "../_generated/server";
 import { findActiveBrowserSession } from "../humanHandoffBrowser";
@@ -20,21 +25,31 @@ import {
   hashHumanHandoffAccessToken,
 } from "./lib/humanHandoffAccess";
 import { omitNullish } from "../../shared/omitNullish";
-import { scoutLanguageModel, scoutModelValidator, type ScoutTokenUsage } from "./models";
-import { compactBrowserModelContext } from "./browserContext";
+import {
+  addScoutTokenUsage,
+  scoutLanguageModel,
+  scoutModelValidator,
+  type ScoutTokenUsage,
+} from "./models";
+import { compactBrowserModelContext, compactedBrowserSnapshotCount } from "./browserContext";
 import { createToolArgumentProbe } from "./toolArgumentProbe";
 import { repairStringifiedToolInput } from "./toolCallRepair";
 import { scoutRuntimeInstructions } from "./runtimeInstructions";
 import { createWebTools } from "./webTools";
 
-const MAX_GENERATION_STEPS = 30;
+export const GENERATION_SLICE_STEPS = 1;
+export const GENERATION_SLICE_WORK_BUDGET_MS = 6 * 60 * 1_000;
+export const MAX_TURN_STEPS = 120;
+export const MAX_TURN_DURATION_MS = 45 * 60 * 1_000;
 const AGENT_MAIL_CLOSE_TIMEOUT_MS = 1_000;
+const AGENT_MAIL_REQUEST_TIMEOUT_MS = 30_000;
 
 type Browser = ReturnType<typeof createBrowserHarness>;
-type BrowserUsage = Awaited<ReturnType<Browser["close"]>>;
 type GenerationResult =
   | { kind: "completed"; usage: ScoutTokenUsage }
+  | { kind: "continued"; completedSteps: number; usage: ScoutTokenUsage }
   | { kind: "failed"; error: unknown; usage?: ScoutTokenUsage };
+type GenerationSliceResult = { kind: "completed" } | { kind: "continued" };
 
 export function generationFailureDetails(
   generationResult: GenerationResult,
@@ -105,6 +120,21 @@ export async function closeAgentMailBestEffort(
   });
 }
 
+async function loadAgentMailTools(client: MCPClient, abortSignal: AbortSignal) {
+  let page = await client.listTools({
+    options: { signal: abortSignal, timeout: AGENT_MAIL_REQUEST_TIMEOUT_MS },
+  });
+  const tools = [...page.tools];
+  while (page.nextCursor != null) {
+    page = await client.listTools({
+      params: { cursor: page.nextCursor },
+      options: { signal: abortSignal, timeout: AGENT_MAIL_REQUEST_TIMEOUT_MS },
+    });
+    tools.push(...page.tools);
+  }
+  return client.toolsFromDefinitions({ ...page, tools });
+}
+
 function requireSecret(value: string | undefined, name: string) {
   if (!value) {
     throw new Error(`${name} is not configured`);
@@ -125,47 +155,108 @@ export function tokenUsage(usage: LanguageModelUsage): ScoutTokenUsage {
   });
 }
 
-function addOptionalNumbers(left: number | undefined, right: number | undefined) {
-  if (left === undefined) return right;
-  if (right === undefined) return left;
-  return left + right;
+export function modelCallContext(event: LanguageModelCallStartEvent) {
+  return JSON.stringify(
+    {
+      version: 1,
+      instructions: event.instructions ?? null,
+      messages: event.messages,
+      tools: event.tools ?? null,
+      settings: omitNullish({
+        maxOutputTokens: event.maxOutputTokens,
+        temperature: event.temperature,
+        topP: event.topP,
+        topK: event.topK,
+        presencePenalty: event.presencePenalty,
+        frequencyPenalty: event.frequencyPenalty,
+        stopSequences: event.stopSequences,
+        seed: event.seed,
+        reasoning: event.reasoning,
+      }),
+    },
+    null,
+    2,
+  );
 }
 
-export function addScoutTokenUsage(
-  total: ScoutTokenUsage | undefined,
-  next: ScoutTokenUsage,
-): ScoutTokenUsage {
-  if (total === undefined) return next;
-  const promptTokens = addOptionalNumbers(total.promptTokens, next.promptTokens);
-  const completionTokens = addOptionalNumbers(total.completionTokens, next.completionTokens);
-  const totalTokens = addOptionalNumbers(total.totalTokens, next.totalTokens);
-  const reasoningTokens = addOptionalNumbers(total.reasoningTokens, next.reasoningTokens);
-  const cachedInputTokens = addOptionalNumbers(total.cachedInputTokens, next.cachedInputTokens);
-  const costUsd = addOptionalNumbers(total.costUsd, next.costUsd);
-  return omitNullish({
-    promptTokens,
-    completionTokens,
-    totalTokens,
-    reasoningTokens,
-    cachedInputTokens,
-    costUsd,
-  });
+export function generationNeedsContinuation(
+  finishReason: FinishReason,
+  sliceStepCount: number,
+  completedSteps: number,
+  sliceStepLimit: number,
+) {
+  return (
+    finishReason === "tool-calls" &&
+    sliceStepCount >= sliceStepLimit &&
+    completedSteps + sliceStepCount < MAX_TURN_STEPS
+  );
 }
 
-export const generateResponse = internalAction({
+export function generationSliceTimeoutMs(
+  actionStartedAt: number,
+  turnStartedAt: number,
+  now: number,
+) {
+  return Math.max(
+    0,
+    Math.min(
+      GENERATION_SLICE_WORK_BUDGET_MS - (now - actionStartedAt),
+      MAX_TURN_DURATION_MS - (now - turnStartedAt),
+    ),
+  );
+}
+
+export function finalStepToolsCompleted(step: {
+  toolCalls: ReadonlyArray<{ toolCallId: string } | undefined>;
+  content: ReadonlyArray<{ type: string; toolCallId?: string }>;
+}) {
+  const completed = new Set(
+    step.content.flatMap((part) =>
+      (part.type === "tool-result" || part.type === "tool-error") && part.toolCallId
+        ? [part.toolCallId]
+        : [],
+    ),
+  );
+  return step.toolCalls.every(
+    (toolCall) => toolCall !== undefined && completed.has(toolCall.toolCallId),
+  );
+}
+
+function userMessageText(message: Parameters<typeof compactBrowserModelContext>[0][number]) {
+  if (message.role !== "user") return null;
+  if (typeof message.content === "string") return message.content;
+  return message.content
+    .filter((part) => part.type === "text")
+    .map((part) => part.text)
+    .join("");
+}
+
+export function preserveTurnObjective(
+  messages: Parameters<typeof compactBrowserModelContext>[0],
+  objective: string,
+) {
+  if (messages.some((message) => userMessageText(message)?.trim() === objective)) return messages;
+  return [{ role: "user" as const, content: objective }, ...messages];
+}
+
+export const runSlice = internalAction({
   args: {
     threadId: v.string(),
     userId: v.id("users"),
     promptMessageId: v.string(),
     model: scoutModelValidator,
   },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    const started = await ctx.runMutation(internal.scout.turns.start, {
+  returns: v.union(
+    v.object({ kind: v.literal("completed") }),
+    v.object({ kind: v.literal("continued") }),
+  ),
+  handler: async (ctx, args): Promise<GenerationSliceResult> => {
+    const actionStartedAt = Date.now();
+    const progress = await ctx.runMutation(internal.scout.turns.start, {
       promptMessageId: args.promptMessageId,
     });
-    if (!started) {
-      return null;
+    if (!progress) {
+      return { kind: "completed" };
     }
     let agentMailClient: MCPClient | undefined;
     let browser: Browser | undefined;
@@ -175,13 +266,45 @@ export const generateResponse = internalAction({
     let humanHandoffAccessToken: string | undefined;
     let generationResult: GenerationResult;
     let accumulatedUsage: ScoutTokenUsage | undefined;
+    const previousUsage = progress.usage;
+    let turnId: Id<"scoutTurns"> | undefined;
 
     try {
       await requireOwnedAgentThread(ctx, args.threadId, args.userId);
       const runtimeContext = await ctx.runQuery(internal.scout.chats.runtimeContext, {
         promptMessageId: args.promptMessageId,
       });
+      const activeTurnId = runtimeContext.turnId;
+      turnId = activeTurnId;
       if (runtimeContext.userId !== args.userId) throw new Error("Scout turn owner is invalid");
+      if (Date.now() - runtimeContext.startedAt >= MAX_TURN_DURATION_MS) {
+        throw new Error("Scout reached the 45-minute turn safety limit");
+      }
+      const initialSliceTimeoutMs = generationSliceTimeoutMs(
+        actionStartedAt,
+        runtimeContext.startedAt,
+        Date.now(),
+      );
+      if (initialSliceTimeoutMs <= 0) {
+        throw new Error("Scout ran out of time before the next model step could start");
+      }
+      const modelCallCaptureController = new AbortController();
+      const sliceAbortSignal = AbortSignal.any([
+        AbortSignal.timeout(initialSliceTimeoutMs),
+        modelCallCaptureController.signal,
+      ]);
+      const sliceStepLimit = Math.min(
+        GENERATION_SLICE_STEPS,
+        MAX_TURN_STEPS - progress.completedSteps,
+      );
+      if (sliceStepLimit <= 0) {
+        throw new Error(`Scout reached the ${MAX_TURN_STEPS}-step safety limit`);
+      }
+      const [promptMessage] = await ctx.runQuery(components.agent.messages.getMessagesByIds, {
+        messageIds: [args.promptMessageId],
+      });
+      const objective = promptMessage?.text?.trim();
+      if (!objective) throw new Error("Scout turn objective not found");
       const scoutId = runtimeContext.scoutId;
       const scout = await ctx.runQuery(internal.scout.scouts.getRuntimeIdentity, { scoutId });
       if (!scout || scout.status !== "active") {
@@ -229,6 +352,7 @@ export const generateResponse = internalAction({
             sessionId: browserSessionId,
             providerDurationMs: sessionDurationMs,
             creditsBilled,
+            usageTurnId: activeTurnId,
           });
           browserSessionId = null;
         },
@@ -253,13 +377,17 @@ export const generateResponse = internalAction({
       if (runtimeContext.providerSessionId && runtimeContext.browserSessionId) {
         const existing = await findActiveBrowserSession(runtimeContext.providerSessionId);
         if (existing) {
-          await browser.attach({ providerSessionId: existing.sessionId, cdpUrl: existing.cdpUrl });
+          await browser.attach(
+            { providerSessionId: existing.sessionId, cdpUrl: existing.cdpUrl },
+            sliceAbortSignal,
+          );
           interactiveLiveViewUrl = existing.interactiveLiveViewUrl;
         } else {
           await ctx.runMutation(internal.scout.browserSessions.close, {
             sessionId: runtimeContext.browserSessionId,
             providerDurationMs: null,
             creditsBilled: null,
+            usageTurnId: activeTurnId,
           });
         }
       }
@@ -277,9 +405,16 @@ export const generateResponse = internalAction({
             "x-api-key": agentMailApiKey,
           },
         },
+        initializationOptions: {
+          signal: sliceAbortSignal,
+          timeout: AGENT_MAIL_REQUEST_TIMEOUT_MS,
+        },
       });
       const agentMailTools = {
-        ...selectAgentMailTools(await agentMailClient.tools(), scout.agentMail.inboxId),
+        ...selectAgentMailTools(
+          await loadAgentMailTools(agentMailClient, sliceAbortSignal),
+          scout.agentMail.inboxId,
+        ),
         ...createAgentMailWriteTools(agentMailInbox, {
           kind: "model",
           promptMessageId: args.promptMessageId,
@@ -330,6 +465,21 @@ export const generateResponse = internalAction({
         browserSessionOpen: browserSessionId !== null,
       });
       const streamErrors = createStreamErrorCapture();
+      let activeModelCallId: Id<"scoutModelCalls"> | null = null;
+      let modelCallCaptureFailure: Error | undefined;
+      const failModelCallCapture = (error: unknown) => {
+        if (modelCallCaptureFailure) return;
+        modelCallCaptureFailure = new Error("Scout model-input capture failed", { cause: error });
+        modelCallCaptureController.abort(modelCallCaptureFailure);
+      };
+      const timeoutMs = generationSliceTimeoutMs(
+        actionStartedAt,
+        runtimeContext.startedAt,
+        Date.now(),
+      );
+      if (timeoutMs <= 0) {
+        throw new Error("Scout ran out of time before the next model step could start");
+      }
       const streamResult = await scoutAgent.streamText(
         ctx,
         { threadId: args.threadId, userId: args.userId },
@@ -339,22 +489,73 @@ export const generateResponse = internalAction({
           instructions,
           tools,
           repairToolCall: repairStringifiedToolInput,
-          stopWhen: isStepCount(MAX_GENERATION_STEPS),
+          abortSignal: sliceAbortSignal,
+          maxRetries: 0,
+          timeout: { totalMs: timeoutMs },
+          stopWhen: isStepCount(sliceStepLimit),
           onError: streamErrors.onError,
+          onLanguageModelCallStart: async (event) => {
+            try {
+              const snapshot = modelCallContext(event);
+              const blob = new Blob([snapshot], { type: "application/json" });
+              const snapshotStorageId = await ctx.storage.store(blob);
+              try {
+                const modelCallId = await ctx.runMutation(internal.scout.modelCalls.recordStart, {
+                  turnId: activeTurnId,
+                  provider: event.provider,
+                  modelId: event.modelId,
+                  messageCount: event.messages.length,
+                  toolCount: event.tools?.length ?? 0,
+                  compactedBrowserSnapshotCount: compactedBrowserSnapshotCount(event.messages),
+                  serializedBytes: blob.size,
+                  snapshotStorageId,
+                });
+                activeModelCallId = modelCallId;
+              } catch (error) {
+                await ctx.storage.delete(snapshotStorageId);
+                throw error;
+              }
+            } catch (error) {
+              console.error("Failed to capture Scout model input", error);
+              failModelCallCapture(error);
+            }
+          },
+          onLanguageModelCallEnd: async (event) => {
+            const modelCallId = activeModelCallId;
+            if (!modelCallId) return;
+            try {
+              await ctx.runMutation(internal.scout.modelCalls.recordEnd, {
+                modelCallId,
+                finishReason: event.finishReason,
+                usage: tokenUsage(event.usage),
+              });
+            } catch (error) {
+              console.error("Failed to finish Scout model input capture", error);
+              try {
+                await ctx.runMutation(internal.scout.modelCalls.failOne, {
+                  modelCallId,
+                  failure: `Completion capture failed: ${generationErrorDetails(error)}`,
+                });
+              } catch (failureError) {
+                console.error("Failed to mark Scout model input capture as failed", failureError);
+                failModelCallCapture(
+                  new AggregateError(
+                    [error, failureError],
+                    "Model input completion and failure capture both failed",
+                  ),
+                );
+                return;
+              }
+              failModelCallCapture(error);
+            } finally {
+              activeModelCallId = null;
+            }
+          },
           onStepEnd: ({ usage }) => {
             accumulatedUsage = addScoutTokenUsage(accumulatedUsage, tokenUsage(usage));
           },
           prepareStep: async ({ messages }) => ({
-            messages: compactBrowserModelContext(messages),
-            ...(humanHandoffWaiting
-              ? {
-                  activeTools: [] as const,
-                  toolChoice: "none" as const,
-                  instructions:
-                    instructions +
-                    "\n\nHuman help was requested. The browser remains open while you are paused. Briefly tell the user you will resume after they return control.",
-                }
-              : {}),
+            messages: preserveTurnObjective(compactBrowserModelContext(messages), objective),
           }),
         },
         {
@@ -363,53 +564,112 @@ export const generateResponse = internalAction({
             chunking: "word",
             throttleMs: 100,
           },
-          contextHandler: async (_ctx, { allMessages }) => compactBrowserModelContext(allMessages),
+          contextHandler: async (_ctx, { allMessages }) =>
+            preserveTurnObjective(compactBrowserModelContext(allMessages), objective),
         },
       );
       await streamResult.consumeStream();
+      if (modelCallCaptureFailure) throw modelCallCaptureFailure;
       streamErrors.throwIfCaptured();
-      generationResult = {
-        kind: "completed",
-        usage: accumulatedUsage ?? tokenUsage(await streamResult.totalUsage),
-      };
+      const steps = await streamResult.steps;
+      const finishReason = await streamResult.finishReason;
+      const completedSteps = progress.completedSteps + steps.length;
+      const finalStep = steps.at(-1);
+      const usage = addScoutTokenUsage(
+        previousUsage,
+        accumulatedUsage ?? tokenUsage(await streamResult.totalUsage),
+      );
+      if (humanHandoffWaiting || finishReason === "stop") {
+        generationResult = { kind: "completed", usage };
+      } else if (finishReason === "tool-calls" && completedSteps >= MAX_TURN_STEPS) {
+        generationResult = {
+          kind: "failed",
+          error: new Error(`Scout reached the ${MAX_TURN_STEPS}-step safety limit`),
+          usage,
+        };
+      } else if (Date.now() - runtimeContext.startedAt >= MAX_TURN_DURATION_MS) {
+        generationResult = {
+          kind: "failed",
+          error: new Error("Scout reached the 45-minute turn safety limit"),
+          usage,
+        };
+      } else if (
+        generationNeedsContinuation(
+          finishReason,
+          steps.length,
+          progress.completedSteps,
+          sliceStepLimit,
+        ) &&
+        finalStep !== undefined &&
+        finalStepToolsCompleted(finalStep)
+      ) {
+        generationResult = { kind: "continued", completedSteps, usage };
+      } else {
+        generationResult = {
+          kind: "failed",
+          error: new Error(`Scout generation ended with finish reason ${finishReason}`),
+          usage,
+        };
+      }
+      if (generationResult.kind === "continued") {
+        await ctx.runMutation(internal.scout.turns.continueAfterSlice, {
+          promptMessageId: args.promptMessageId,
+          previousCompletedSteps: progress.completedSteps,
+          completedSteps: generationResult.completedSteps,
+          usage: generationResult.usage,
+        });
+      }
     } catch (error) {
+      if (turnId) {
+        try {
+          await ctx.runMutation(internal.scout.modelCalls.failPending, {
+            turnId,
+            failure: generationErrorDetails(error),
+          });
+        } catch (captureError) {
+          console.error("Failed to mark Scout model input capture as failed", captureError);
+        }
+      }
       generationResult = {
         kind: "failed",
         error,
-        ...omitNullish({ usage: accumulatedUsage }),
+        ...omitNullish({
+          usage:
+            accumulatedUsage === undefined
+              ? previousUsage
+              : addScoutTokenUsage(previousUsage, accumulatedUsage),
+        }),
       };
     }
 
     const preserveBrowserForHandoff = generationResult.kind === "completed" && humanHandoffWaiting;
-    let browserUsage: BrowserUsage = undefined;
+    const preserveBrowserForContinuation = generationResult.kind === "continued";
     let cleanupFailure: unknown;
-    if (!preserveBrowserForHandoff) {
+    if (!preserveBrowserForHandoff && !preserveBrowserForContinuation) {
       try {
-        browserUsage = await closeGenerationBrowser(browser);
+        await closeGenerationBrowser(browser);
       } catch (error) {
         cleanupFailure = error;
       }
     }
     let completionFailure: unknown;
-    if (generationResult.kind === "completed" && !cleanupFailure && !completionFailure) {
+    if (generationResult.kind !== "failed" && !cleanupFailure && !completionFailure) {
       try {
-        if (preserveBrowserForHandoff) {
-          await ctx.runMutation(internal.scout.turns.completeHumanHandoffPause, {
-            promptMessageId: args.promptMessageId,
-            usage: generationResult.usage,
-          });
-        } else {
-          await ctx.runMutation(internal.scout.turns.complete, {
-            promptMessageId: args.promptMessageId,
-            usage: generationResult.usage,
-            ...omitNullish({
-              firecrawlCredits: browserUsage?.creditsBilled,
-              firecrawlDurationMs: browserUsage?.sessionDurationMs,
-            }),
-          });
+        if (!preserveBrowserForContinuation) {
+          if (preserveBrowserForHandoff) {
+            await ctx.runMutation(internal.scout.turns.completeHumanHandoffPause, {
+              promptMessageId: args.promptMessageId,
+              usage: generationResult.usage,
+            });
+          } else {
+            await ctx.runMutation(internal.scout.turns.complete, {
+              promptMessageId: args.promptMessageId,
+              usage: generationResult.usage,
+            });
+          }
         }
         await closeAgentMailBestEffort(agentMailClient);
-        return null;
+        return { kind: preserveBrowserForContinuation ? "continued" : "completed" };
       } catch (error) {
         completionFailure = error;
       }
@@ -425,11 +685,7 @@ export const generateResponse = internalAction({
       await ctx.runMutation(internal.scout.turns.fail, {
         promptMessageId: args.promptMessageId,
         failure: failureDetails.failure,
-        ...omitNullish({
-          usage: failureDetails.usage,
-          firecrawlCredits: browserUsage?.creditsBilled,
-          firecrawlDurationMs: browserUsage?.sessionDurationMs,
-        }),
+        ...omitNullish({ usage: failureDetails.usage }),
       });
     } catch (persistenceError) {
       terminalError = new AggregateError(

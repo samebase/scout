@@ -2,11 +2,20 @@ import { describe, expect, it } from "vite-plus/test";
 import { APICallError } from "@ai-sdk/provider";
 import { RetryError } from "ai";
 import {
-  addScoutTokenUsage,
+  GENERATION_SLICE_STEPS,
+  GENERATION_SLICE_WORK_BUDGET_MS,
+  MAX_TURN_STEPS,
+  MAX_TURN_DURATION_MS,
+  generationNeedsContinuation,
   generationErrorDetails,
   generationFailureDetails,
+  generationSliceTimeoutMs,
+  finalStepToolsCompleted,
+  modelCallContext,
+  preserveTurnObjective,
   tokenUsage,
 } from "./generation";
+import { addScoutTokenUsage } from "./models";
 import { assertCredentialBrowserUrl } from "./accountTools";
 import {
   SCOUT_AGENT_INSTRUCTIONS,
@@ -105,6 +114,92 @@ describe("Scout generation usage", () => {
     expect(details).toContain("x-request-id");
     expect(details).toContain("request-123");
     expect(details).toContain("upstream unavailable");
+  });
+});
+
+describe("Scout generation slices", () => {
+  it("budgets model work from action start and the overall turn deadline", () => {
+    expect(generationSliceTimeoutMs(1_000, 1_000, 1_000)).toBe(GENERATION_SLICE_WORK_BUDGET_MS);
+    expect(generationSliceTimeoutMs(1_000, 1_000, 61_000)).toBe(
+      GENERATION_SLICE_WORK_BUDGET_MS - 60_000,
+    );
+    expect(generationSliceTimeoutMs(1_000, 1_000 - MAX_TURN_DURATION_MS + 30_000, 1_000)).toBe(
+      30_000,
+    );
+    expect(generationSliceTimeoutMs(1_000, 1_000 - MAX_TURN_DURATION_MS, 1_000)).toBe(0);
+  });
+
+  it("continues only when a full slice ends on tool calls below the turn ceiling", () => {
+    expect(
+      generationNeedsContinuation("tool-calls", GENERATION_SLICE_STEPS, 0, GENERATION_SLICE_STEPS),
+    ).toBe(true);
+    expect(
+      generationNeedsContinuation("stop", GENERATION_SLICE_STEPS, 0, GENERATION_SLICE_STEPS),
+    ).toBe(false);
+    expect(
+      generationNeedsContinuation(
+        "tool-calls",
+        GENERATION_SLICE_STEPS - 1,
+        0,
+        GENERATION_SLICE_STEPS,
+      ),
+    ).toBe(false);
+    expect(
+      generationNeedsContinuation(
+        "tool-calls",
+        GENERATION_SLICE_STEPS,
+        MAX_TURN_STEPS - GENERATION_SLICE_STEPS,
+        GENERATION_SLICE_STEPS,
+      ),
+    ).toBe(false);
+  });
+
+  it("does not continue from an unresolved tool call", () => {
+    expect(
+      finalStepToolsCompleted({
+        toolCalls: [{ toolCallId: "call-1" }],
+        content: [{ type: "tool-call", toolCallId: "call-1" }],
+      }),
+    ).toBe(false);
+    expect(
+      finalStepToolsCompleted({
+        toolCalls: [{ toolCallId: "call-1" }],
+        content: [
+          { type: "tool-call", toolCallId: "call-1" },
+          { type: "tool-result", toolCallId: "call-1" },
+        ],
+      }),
+    ).toBe(true);
+  });
+
+  it("serializes the exact standardized model request without transport secrets", () => {
+    const context = modelCallContext({
+      callId: "call-1",
+      provider: "gateway",
+      modelId: "model",
+      instructions: "Use the browser.",
+      messages: [{ role: "user", content: [{ type: "text", text: "Open Samebase" }] }],
+      tools: [{ type: "function", name: "browser_execute" }],
+      temperature: 0.2,
+    });
+
+    const parsed = JSON.parse(context);
+    expect(parsed.instructions).toBe("Use the browser.");
+    expect(parsed.messages).toEqual([
+      { role: "user", content: [{ type: "text", text: "Open Samebase" }] },
+    ]);
+    expect(parsed.tools).toEqual([{ type: "function", name: "browser_execute" }]);
+    expect(parsed.settings).toEqual({ temperature: 0.2 });
+  });
+
+  it("restores the original objective only after it falls out of recent context", () => {
+    const objective = "Create a Samebase app";
+    const present = [{ role: "user" as const, content: objective }];
+    expect(preserveTurnObjective(present, objective)).toBe(present);
+    expect(preserveTurnObjective([{ role: "assistant", content: "Working" }], objective)).toEqual([
+      { role: "user", content: objective },
+      { role: "assistant", content: "Working" },
+    ]);
   });
 });
 

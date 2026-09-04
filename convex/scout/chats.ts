@@ -25,6 +25,7 @@ import {
 } from "./models";
 import { TURN_START_TIMEOUT_MS } from "./turns";
 import { scoutRuntimeInstructions } from "./runtimeInstructions";
+import { scoutTurnWorkflow } from "./turnWorkflow";
 
 const MAX_PROMPT_LENGTH = 16_000;
 const MAX_THREAD_TITLE_LENGTH = 80;
@@ -37,6 +38,7 @@ const recentThreadValidator = v.object({
 });
 
 const chatMessageMetadataValidator = v.object({
+  turnId: v.id("scoutTurns"),
   model: scoutModelValidator,
   scout: v.object({
     id: v.id("scouts"),
@@ -324,6 +326,7 @@ export const listMessages = query({
         throw new Error("Scout not found");
       }
       metadataByOrder.set(turn.order, {
+        turnId: turn._id,
         model: turn.model,
         scout,
         ...omitNullish({
@@ -384,14 +387,23 @@ async function enqueueTurn(
     scoutId: args.scoutId,
     model: args.model,
     startedAt: Date.now(),
-    state: { kind: "pending", leaseExpiresAt },
+    state: { kind: "pending", leaseExpiresAt, completedSteps: 0, usage: {} },
   });
-  await ctx.scheduler.runAfter(0, internal.scout.generation.generateResponse, {
-    threadId: args.threadId,
-    userId: args.userId,
-    promptMessageId: messageId,
-    model: args.model,
-  });
+  await scoutTurnWorkflow.start(
+    ctx,
+    internal.scout.turnLifecycle.run,
+    {
+      threadId: args.threadId,
+      userId: args.userId,
+      promptMessageId: messageId,
+      model: args.model,
+    },
+    {
+      startAsync: true,
+      onComplete: internal.scout.turnLifecycle.onComplete,
+      context: { turnId },
+    },
+  );
   await ctx.scheduler.runAt(leaseExpiresAt, internal.scout.turns.expire, { turnId });
   return turnId;
 }
@@ -399,6 +411,8 @@ async function enqueueTurn(
 export const runtimeContext = internalQuery({
   args: { promptMessageId: v.string() },
   returns: v.object({
+    turnId: v.id("scoutTurns"),
+    startedAt: v.number(),
     userId: v.id("users"),
     scoutId: v.id("scouts"),
     browserSessionId: v.union(v.id("scoutBrowserSessions"), v.null()),
@@ -417,6 +431,8 @@ export const runtimeContext = internalQuery({
     if (!chat || chat.scoutId !== turn.scoutId) throw new Error("Chat not found");
     const session = await activeBrowserForChat(ctx, chat.scoutId, chat.threadId);
     return {
+      turnId: turn._id,
+      startedAt: turn.startedAt,
       userId: chat.userId,
       scoutId: chat.scoutId,
       browserSessionId: session?._id ?? null,

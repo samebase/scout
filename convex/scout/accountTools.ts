@@ -84,20 +84,24 @@ export function createAccountTools(
 ) {
   const serviceAccountTools = {
     record_authenticated_service_account: createServiceAccountRecordingTool(
-      async ({ accountAccess, identityText, loginMethod, sessionControlText }) => {
-        const [identity, sessionControl, currentUrl] = await Promise.all([
-          args.browser.actions.getElement({
+      async ({ accountAccess, identityText, loginMethod, sessionControlText }, abortSignal) => {
+        const identity = await args.browser.actions.getElement(
+          {
             kind: "text",
             text: identityText,
             exact: true,
-          }),
-          args.browser.actions.getElement({
+          },
+          abortSignal,
+        );
+        const sessionControl = await args.browser.actions.getElement(
+          {
             kind: "text",
             text: sessionControlText,
             exact: true,
-          }),
-          args.browser.actions.getPage("url"),
-        ]);
+          },
+          abortSignal,
+        );
+        const currentUrl = await args.browser.actions.getPage("url", abortSignal);
         if (!identity.success || !sessionControl.success || !currentUrl.success) {
           throw new Error(
             "The authenticated account evidence could not be read from the current page",
@@ -120,8 +124,8 @@ export function createAccountTools(
     args.credentials.length > 0
       ? {
           fill_account_password: createAccountPasswordFillTool(
-            async ({ passwordTarget, passwordConfirmationTarget }, toolCallId) => {
-              const currentUrl = await args.browser.actions.getPage("url");
+            async ({ passwordTarget, passwordConfirmationTarget }, toolCallId, abortSignal) => {
+              const currentUrl = await args.browser.actions.getPage("url", abortSignal);
               if (!currentUrl.success) {
                 throw new Error("The current browser URL could not be verified");
               }
@@ -141,6 +145,7 @@ export function createAccountTools(
               const passwordField = await args.browser.actions.getElementAttribute(
                 passwordTarget,
                 "type",
+                abortSignal,
               );
               if (!passwordField.success) {
                 throw new Error("The configured password field could not be verified");
@@ -150,6 +155,7 @@ export function createAccountTools(
                 const confirmationField = await args.browser.actions.getElementAttribute(
                   passwordConfirmationTarget,
                   "type",
+                  abortSignal,
                 );
                 if (!confirmationField.success) {
                   throw new Error(
@@ -176,6 +182,7 @@ export function createAccountTools(
                 },
                 password,
                 toolCallId,
+                abortSignal,
               );
               if (!passwordResult.success) {
                 throw new Error("The configured account password could not be filled");

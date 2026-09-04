@@ -44,6 +44,15 @@ export async function scoutIsWorking(ctx: QueryCtx, scoutId: Id<"scouts">) {
 }
 
 export async function activeBrowserForChat(ctx: QueryCtx, scoutId: Id<"scouts">, threadId: string) {
+  const closingSession = await ctx.db
+    .query("scoutBrowserSessions")
+    .withIndex("by_scout_id_and_lifecycle_kind", (q) =>
+      q.eq("scoutId", scoutId).eq("lifecycle.kind", "closing"),
+    )
+    .first();
+  if (closingSession) {
+    throw new Error("This Scout's browser is closing. Wait for cleanup to finish.");
+  }
   const session = await ctx.db
     .query("scoutBrowserSessions")
     .withIndex("by_scout_id_and_lifecycle_kind", (q) =>

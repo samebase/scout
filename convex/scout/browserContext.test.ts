@@ -1,6 +1,6 @@
 import type { ModelMessage } from "ai";
 import { describe, expect, it } from "vitest";
-import { compactBrowserModelContext } from "./browserContext";
+import { compactBrowserModelContext, compactedBrowserSnapshotCount } from "./browserContext";
 
 describe("browser model context", () => {
   it("keeps commands and outcomes while retaining only the latest browser snapshot", () => {
@@ -60,7 +60,8 @@ describe("browser model context", () => {
       },
     ] satisfies ModelMessage[];
 
-    expect(compactBrowserModelContext(messages)).toEqual([
+    const compacted = compactBrowserModelContext(messages);
+    expect(compacted).toEqual([
       messages[0],
       {
         role: "tool",
@@ -82,5 +83,6 @@ describe("browser model context", () => {
       },
       messages[2],
     ]);
+    expect(compactedBrowserSnapshotCount(compacted)).toBe(1);
   });
 });

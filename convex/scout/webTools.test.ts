@@ -26,6 +26,8 @@ describe("Public web tools", () => {
     expect(firecrawl.scrape).toHaveBeenCalledWith("https://example.com", {
       formats: ["markdown"],
       onlyMainContent: true,
+      timeout: 60_000,
+      autoResume: false,
     });
     expect(result).toEqual({
       url: "https://example.com",

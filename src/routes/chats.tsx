@@ -18,6 +18,7 @@ import {
 } from "convex/react";
 import type { FunctionArgs, FunctionReturnType } from "convex/server";
 import {
+  ArrowLeftIcon,
   ExternalLinkIcon,
   LoaderCircleIcon,
   MonitorIcon,
@@ -55,6 +56,7 @@ import {
   scoutSidebarMobilePrehydrationScript,
 } from "../sidebars/scoutSidebarState";
 import { ScoutRunMessageView, scoutModelLabel } from "#components/scout-run-message";
+import { SdkModelInputInspector } from "#components/scout-model-input";
 import { AuthPanel } from "#components/auth-panel";
 import { BrowserReplay } from "#components/browser-replay";
 import { Button } from "#components/ui/button";
@@ -71,6 +73,7 @@ import { Textarea } from "#components/ui/textarea";
 const chatSearchSchema = z.object({
   thread: z.string().optional().catch(undefined),
   session: z.string().optional().catch(undefined),
+  call: z.string().optional().catch(undefined),
 });
 const jsonValueSchema = z.json();
 const MANUAL_SUBMISSION_STORAGE_KEY = "scout_pending_manual_email_submissions_v2";
@@ -434,9 +437,21 @@ function ChatsWorkspace() {
     void navigate({
       to: "/chats",
       replace: true,
-      search: { thread: threadId, ...(sessionId ? { session: sessionId } : {}) },
+      search: {
+        thread: threadId,
+        ...(sessionId ? { session: sessionId } : {}),
+        ...(search.call ? { call: search.call } : {}),
+      },
     });
-  }, [browserSessions, navigate, search.session, search.thread, selectedBrowserSession, threadId]);
+  }, [
+    browserSessions,
+    navigate,
+    search.call,
+    search.session,
+    search.thread,
+    selectedBrowserSession,
+    threadId,
+  ]);
 
   useEffect(() => {
     if (
@@ -651,14 +666,52 @@ function ChatsWorkspace() {
     selectionMissing,
   });
 
+  const openModelCall = (modelCallId: string) => {
+    void navigate({
+      to: "/chats",
+      replace: true,
+      search: { ...search, call: modelCallId },
+    });
+  };
+
+  const closeModelCall = () => {
+    void navigate({
+      to: "/chats",
+      replace: true,
+      search: {
+        ...(search.thread ? { thread: search.thread } : {}),
+        ...(search.session ? { session: search.session } : {}),
+      },
+    });
+  };
+
   const hasBrowser = selectedBrowserSession !== undefined && !createChatOpen;
   const conversation = (
     <PaneFrame
-      header={<div className="flex h-full items-center px-4 text-xs font-semibold">Chat</div>}
+      header={
+        search.call ? (
+          <div className="flex h-full items-center gap-2 px-2 text-xs font-semibold">
+            <Button type="button" variant="ghost" size="sm" onClick={closeModelCall}>
+              <ArrowLeftIcon />
+              Back
+            </Button>
+            <span>SDK model input</span>
+          </div>
+        ) : (
+          <div className="flex h-full items-center px-4 text-xs font-semibold">Chat</div>
+        )
+      }
       content={
-        <section aria-label="Conversation" className="flex h-full min-h-0 min-w-0 flex-col">
+        <section
+          aria-label={search.call ? "Model call inspector" : "Conversation"}
+          className="flex h-full min-h-0 min-w-0 flex-col"
+        >
+          {search.call && threadId ? (
+            <SdkModelInputInspector modelCallId={search.call} threadId={threadId} />
+          ) : null}
           {activeHandoff?.phase === "delivery_failed" ? (
             <div
+              hidden={Boolean(search.call)}
               role="alert"
               className="flex flex-wrap items-center justify-between gap-3 border-b border-destructive/30 bg-destructive/5 px-4 py-3"
             >
@@ -668,7 +721,10 @@ function ChatsWorkspace() {
               </p>
             </div>
           ) : activeHandoff ? (
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/40 px-4 py-3">
+            <div
+              hidden={Boolean(search.call)}
+              className="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/40 px-4 py-3"
+            >
               <p className="text-sm">{activeHandoff.reason}</p>
               <Button asChild size="sm" variant="outline">
                 <Link to="/handoff/$handoffId" params={{ handoffId: activeHandoff.handoffId }}>
@@ -678,7 +734,7 @@ function ChatsWorkspace() {
             </div>
           ) : null}
 
-          <div className="min-h-0 flex-1">
+          <div hidden={Boolean(search.call)} className="min-h-0 flex-1">
             <MessageScrollerProvider autoScroll scrollPreviousItemPeek={48}>
               <MessageScroller>
                 <MessageScrollerViewport>
@@ -708,7 +764,7 @@ function ChatsWorkspace() {
                         messageId={message.id}
                         scrollAnchor={message.role === "user"}
                       >
-                        <ScoutRunMessageView message={message} />
+                        <ScoutRunMessageView message={message} onSelectModelCall={openModelCall} />
                       </MessageScrollerItem>
                     ))}
                   </MessageScrollerContent>
@@ -719,6 +775,7 @@ function ChatsWorkspace() {
           </div>
 
           <form
+            hidden={Boolean(search.call)}
             className="chat-composer shrink-0 overflow-y-auto border-t bg-[color-mix(in_oklch,var(--card)_92%,var(--background))] p-3 @sm:p-4"
             onSubmit={submitComposer}
           >
@@ -769,9 +826,6 @@ function ChatsWorkspace() {
                       {BROWSER_EXECUTE_DESCRIPTION}
                     </pre>
                   </section>
-                  <p className="text-muted-foreground">
-                    The transcript above is the conversation history supplied to the model.
-                  </p>
                 </div>
               </details>
             ) : null}
@@ -880,7 +934,9 @@ function ChatsWorkspace() {
           </form>
         </section>
       }
-      scrollRestorationId={`chat-thread:${threadId ?? "empty"}`}
+      scrollRestorationId={
+        search.call ? `model-call:${search.call}` : `chat-thread:${threadId ?? "empty"}`
+      }
     />
   );
 
@@ -1006,7 +1062,11 @@ function BrowserSessionPicker({
       {sessions.map((session) => (
         <option key={session.sessionId} value={session.sessionId}>
           Session {session.sequence}
-          {session.lifecycle.kind === "active" ? " · Live" : ""}
+          {session.lifecycle.kind === "active"
+            ? " · Live"
+            : session.lifecycle.kind === "closing"
+              ? " · Closing"
+              : ""}
         </option>
       ))}
     </select>
@@ -1023,6 +1083,9 @@ function ChatBrowserView({
   if (!session) return <ChatViewStatus>Loading browser session</ChatViewStatus>;
   if (session.lifecycle.kind === "closed") {
     return <BrowserReplay key={session.sessionId} sessionId={session.sessionId} />;
+  }
+  if (session.lifecycle.kind === "closing") {
+    return <ChatViewStatus>Closing browser session</ChatViewStatus>;
   }
   if (!liveViewUrl) return <ChatViewStatus>Connecting to live browser</ChatViewStatus>;
   return (
