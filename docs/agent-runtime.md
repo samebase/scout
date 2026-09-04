@@ -16,8 +16,9 @@ ordinary agent work. Human handoff is for something the agent cannot complete, s
 Managed passwords live in an encrypted table. The master key is a deployment secret, not database
 data. The model sees account metadata, not passwords or encrypted envelopes. `fill_account_password`
 checks the current HTTPS host and password input types before filling the configured credential.
-`record_authenticated_service_account` re-reads visible account identity and sign-out controls;
-its latest observation links to the chat and browser session. See
+Runtime instructions require `record_authenticated_service_account` immediately after successful
+account creation or login recovery, before continuing other work. The tool re-reads visible account
+identity and sign-out controls; its latest observation links to the chat and browser session. See
 [managed credentials](./scout-credential-store-decision.md).
 
 ## Chat execution
