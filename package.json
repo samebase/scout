@@ -13,7 +13,6 @@
     "dev": "node ./scripts/run-context-dev.ts",
     "dev:primary": "node ./scripts/run-primary-dev.ts",
     "dev:frontend": "vp dev",
-    "dev:shared": "node ./scripts/run-shared-dev.ts",
     "dev:worktree": "node ./scripts/run-worktree-dev.ts",
     "check": "vp check && vp run typecheck && vp test && vp run verify:dev-launcher-version",
     "build": "vp run build:cloudflare",

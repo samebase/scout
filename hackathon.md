@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-06T12:24:50Z
+- **Last updated:** 2026-09-06T14:12:48Z
 
 ## Log
 
@@ -1022,4 +1022,3 @@ Added a Scout overview and separate Play and Review identities (`src/products/`)
 existing Scouts through Convex and shows the browser, conversation, help requests, and stop control.
 Review has its own landing page and a link to the existing Lab while its dedicated flow is still being designed.
 Tailwind utilities and shared class variants keep the product styling alongside its components.
-Shared development mode lets the worktree frontend use configured Scouts without deploying backend code.

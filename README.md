@@ -62,21 +62,6 @@ To force the isolated backend outside a linked worktree, use:
 pnpm run dev:worktree
 ```
 
-For UI work with existing Scouts, stop the current dev server and run:
-
-```sh
-pnpm run dev:shared
-```
-
-This starts only the worktree's frontend, using the cloud development deployment configured in
-the primary checkout's `.env.local`. Sign in with your development account. Chats and Scout actions
-use that shared database. The command does not deploy backend code or copy data, credentials, or
-environment files, and rejects production and local deployment targets.
-
-Scout uses the [Convex AI Gateway](https://docs.convex.dev/ai-gateway/overview), which requires a
-cloud deployment. Copying its database into the isolated local backend is not enough to run models.
-Use a separate cloud development deployment when testing backend changes that need the gateway.
-
 The core workflow runs on macOS, Linux, and Windows. See
 [`docs/local-setup.md`](./docs/local-setup.md) for the local Convex setup and troubleshooting steps.
 

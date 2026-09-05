@@ -15,7 +15,7 @@ import {
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import { Route } from "../../routes/play.session";
-import { gameInvitePrompt, gameInviteSchema } from "./invite";
+import { gameInviteDisplayText, gameInvitePrompt, gameInviteSchema } from "./invite";
 import { AuthPanel } from "../../components/auth-panel";
 import { BrowserReplay } from "../../components/browser-replay";
 import { ChatHandoffNotice } from "../../components/chat-handoff-notice";
@@ -585,13 +585,7 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
                       message.role === "user" && "rounded-[9px] bg-play-cloud p-3",
                     )}
                   >
-                    {message.text.startsWith("Play a game with me at ")
-                      ? message.text
-                          .split("\n\n")
-                          .filter((_, index) => index !== 1)
-                          .join("\n\n")
-                          .replace("My note: ", "")
-                      : message.text}
+                    {message.role === "user" ? gameInviteDisplayText(message.text) : message.text}
                   </p>
                 </div>
               ))}
