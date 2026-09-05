@@ -171,7 +171,7 @@ const MANUAL_TOOL_OPTIONS = [
     value: "list_messages",
     label: "List email",
     description: "List messages in this Scout's inbox.",
-    input: '{\n  "limit": 10\n}',
+    input: "{}",
   },
   {
     value: "search_messages",

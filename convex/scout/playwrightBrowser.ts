@@ -184,7 +184,7 @@ class ConnectedPlaywrightBrowser implements PlaywrightBrowser {
   }
 
   async snapshot(abortSignal?: AbortSignal) {
-    return await this.page()
+    const snapshot = await this.page()
       .locator("body")
       .ariaSnapshot(
         omitNullish({
@@ -193,6 +193,12 @@ class ConnectedPlaywrightBrowser implements PlaywrightBrowser {
           signal: abortSignal,
         }),
       );
+    // AI mode includes iframe contents. Match each YAML key (plain or single-quoted)
+    // before removing its reference metadata, leaving names and text values intact.
+    return snapshot.replace(
+      /^[ \t]*- (?:'(?:[^'\n]|'')*'|[^'\n][^\n]*?)(?=:(?: |$)|$)/gm,
+      (header) => header.replace(/ \[ref=[^[\]\s]+\](?=(?: \[[^[\]\n]*\])*'?$)/, ""),
+    );
   }
 
   async navigate(url: string, abortSignal?: AbortSignal) {

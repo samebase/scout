@@ -1,5 +1,6 @@
 import { chromium } from "playwright-core";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { omitNullish } from "../../shared/omitNullish";
 import { connectPlaywrightBrowser } from "./playwrightBrowser";
 
 function fakePage(
@@ -84,6 +85,48 @@ afterEach(() => {
 });
 
 describe("trusted Playwright observer", () => {
+  test.skipIf(process.env["SCOUT_RUN_BROWSER_PROOF"] !== "true")(
+    "preserves native iframe snapshots and semantic targets without internal references",
+    async () => {
+      const nativeBrowser = await chromium.launch(
+        omitNullish({
+          executablePath: process.env["SCOUT_BROWSER_PROOF_CHROMIUM"],
+          headless: true,
+        }),
+      );
+      try {
+        const context = await nativeBrowser.newContext();
+        const page = await context.newPage();
+        await page.setContent(`
+          <h1>Guide [ref=e99]</h1>
+          <button disabled>Save "report"</button>
+          <button>Save: now</button>
+          <button>John's #1</button>
+          <button>/settings/</button>
+          <button>Save [ref=e99] [draft</button>
+          <p>Keep [ref=e88] in the document</p>
+          <iframe title="Editor" srcdoc='<label>Content<input value="Draft"></label>'></iframe>
+        `);
+        await page.frameLocator("iframe").getByRole("textbox", { name: "Content" }).fill("Revised");
+        vi.spyOn(chromium, "connectOverCDP").mockResolvedValue(nativeBrowser);
+        const browser = await connectPlaywrightBrowser("wss://browser.firecrawl.dev/cdp");
+
+        const snapshot = await browser.snapshot();
+        expect(snapshot).toContain('heading "Guide [ref=e99]" [level=1]');
+        expect(snapshot).toContain("[disabled]");
+        expect(snapshot).toContain(`- 'button "Save: now"'`);
+        expect(snapshot).toContain(`- 'button "John''s #1"'`);
+        expect(snapshot).toContain("- button /settings/");
+        expect(snapshot).toContain('button "Save [ref=e99] [draft"');
+        expect(snapshot).toContain('textbox "Content" [active]: Revised');
+        expect(snapshot).toContain("Keep [ref=e88] in the document");
+        expect(snapshot.match(/\[ref=[^\]]+\]/g)).toEqual(["[ref=e99]", "[ref=e99]", "[ref=e88]"]);
+      } finally {
+        await nativeBrowser.close();
+      }
+    },
+  );
+
   test("stops waiting for an in-flight CDP connection when aborted", async () => {
     const controller = new AbortController();
     const connect = vi.spyOn(chromium, "connectOverCDP");
@@ -121,6 +164,53 @@ describe("trusted Playwright observer", () => {
     });
     expect(initial.filter).toHaveBeenCalledWith({ visible: true });
     expect(initial.fill).toHaveBeenCalledWith("secret", {});
+  });
+
+  test("removes snapshot references while preserving iframe controls, states, and literal text", async () => {
+    const initial = fakePage(
+      "https://example.com/",
+      `- heading "Guide [ref=e99]" [level=1] [ref=e1]
+- button "Save \\"report\\"" [disabled] [ref=e2]
+- iframe "Editor" [ref=e3]:
+  - textbox "Content" [ref=f1e1]: Draft
+- text: Keep [ref=e88] in the document
+- link "Documentation" [ref=e4] [cursor=pointer]:
+  - /url: https://example.com/[ref=e77]`,
+    );
+    const { context } = fakeContext([initial.page]);
+    connectFakeContext(context);
+    const browser = await connectPlaywrightBrowser("wss://browser.firecrawl.dev/cdp");
+
+    await expect(browser.snapshot()).resolves.toBe(`- heading "Guide [ref=e99]" [level=1]
+- button "Save \\"report\\"" [disabled]
+- iframe "Editor":
+  - textbox "Content": Draft
+- text: Keep [ref=e88] in the document
+- link "Documentation" [cursor=pointer]:
+  - /url: https://example.com/[ref=e77]`);
+  });
+
+  test("preserves YAML-quoted and slash-delimited names, including literal reference text", async () => {
+    const initial = fakePage(
+      "https://example.com/",
+      `- 'button "Save: now [ref=e99]" [ref=e1] [cursor=pointer]'
+- 'button "John''s #1" [ref=e2]'
+- button /settings/ [ref=e3]
+- textbox /path/ [ref=e4]: /caption/ [ref=e88]
+- button "John's report" [ref=e5]
+- button "Save [ref=e99] [draft" [ref=e6]`,
+    );
+    const { context } = fakeContext([initial.page]);
+    connectFakeContext(context);
+    const browser = await connectPlaywrightBrowser("wss://browser.firecrawl.dev/cdp");
+
+    await expect(browser.snapshot()).resolves
+      .toBe(`- 'button "Save: now [ref=e99]" [cursor=pointer]'
+- 'button "John''s #1"'
+- button /settings/
+- textbox /path/: /caption/ [ref=e88]
+- button "John's report"
+- button "Save [ref=e99] [draft"`);
   });
 
   test("keeps stable tab IDs and treats a newly opened page as active", async () => {

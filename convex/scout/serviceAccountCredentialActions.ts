@@ -3,7 +3,8 @@
 import { randomUUID } from "node:crypto";
 import { ConvexError, v } from "convex/values";
 import { internal } from "../_generated/api";
-import { action, env, type ActionCtx } from "../_generated/server";
+import { action, type ActionCtx } from "../_generated/server";
+import { getRuntimeEnv } from "../runtimeEnv";
 import {
   credentialKeyFingerprint,
   decodeCredentialMasterKey,
@@ -65,7 +66,7 @@ async function storeManagedPassword(
   }
   let key;
   try {
-    key = decodeCredentialMasterKey(env.SCOUT_CREDENTIAL_MASTER_KEY_V1);
+    key = decodeCredentialMasterKey(getRuntimeEnv("SCOUT_CREDENTIAL_MASTER_KEY_V1"));
   } catch {
     throw new ConvexError("Password storage is not configured for this deployment.");
   }

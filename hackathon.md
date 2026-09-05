@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-05T13:04:15Z
+- **Last updated:** 2026-09-05T14:27:33Z
 
 ## Log
 
@@ -981,8 +981,17 @@ login edits keep account links intact and require fresh authentication evidence
 (`src/components/scout-service-accounts.tsx`, `convex/scout/serviceAccounts.ts`). Scout creation
 explains missing email configuration (`convex/scout/scoutRegistration.ts`).
 
-### 2026-09-05 - working tree
+### 2026-09-05 - f97f1c1 - v172
 
 Allowed longer Scout sessions to export with their click rings, up to 50 minutes.
 The browser keeps the existing cancellable MP4 workflow with a 1 GiB output ceiling
 (`src/lib/browserReplayExportPlan.ts`, `src/components/browser-replay-export.tsx`).
+
+### 2026-09-05 - working tree
+
+Node actions read current deployment configuration when Convex reuses a process (`convex/runtimeEnv.ts`).
+Browser snapshots preserve iframe controls without internal references, and tool instructions explain
+public helpers and bounded waits (`convex/scout/playwrightBrowser.ts`, `convex/scout/browserToolContract.ts`).
+Inbox reads use minimal inputs and omit empty pagination values (`convex/scout/browserTools.ts`).
+Resumed browser actions restore password masking from encrypted credentials (`convex/scout/accountTools.ts`).
+Account recording explains mismatches between visible names and saved login identifiers (`convex/scout/serviceAccounts.ts`).

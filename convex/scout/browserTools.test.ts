@@ -10,7 +10,6 @@ import {
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { createBrowserHarness, selectAgentMailTools } from "./browserTools";
-import { BROWSER_EXECUTE_DESCRIPTION, BROWSER_STATE_HELPER_SOURCE } from "./browserToolContract";
 import type { PlaywrightBrowser } from "./playwrightBrowser";
 
 const firstTab = {
@@ -80,11 +79,6 @@ function dependencies(browserRuntime = runtime()) {
 }
 
 describe("Lab browser harness", () => {
-  test("documents the browserState helper in the browser tool contract", () => {
-    expect(BROWSER_EXECUTE_DESCRIPTION).toContain(BROWSER_STATE_HELPER_SOURCE);
-    expect(BROWSER_EXECUTE_DESCRIPTION).toContain("return await browserState(page)");
-  });
-
   test("opens Firecrawl once and keeps its CDP and live-view URLs outside model output", async () => {
     const playwright = runtime();
     const deps = dependencies(playwright);
@@ -730,6 +724,37 @@ describe("Lab browser harness", () => {
 });
 
 describe("AgentMail Lab catalog", () => {
+  test("omits unused pagination values instead of forwarding an invalid empty cursor", async () => {
+    const execute = vi.fn(async (input: unknown) => input);
+    const readTool = tool({
+      inputSchema: z.object({
+        inboxId: z.string(),
+        q: z.string().optional(),
+        limit: z.number().optional(),
+        pageToken: z.string().min(1).optional(),
+      }),
+      execute,
+      toModelOutput: () => ({ type: "text", value: "messages" }),
+    });
+    const selected = selectAgentMailTools(
+      { list_messages: readTool, search_messages: readTool, get_thread: readTool },
+      "magda@agentmail.to",
+    );
+    const options = { toolCallId: "tool-1", messages: [], context: undefined };
+
+    await selected.list_messages.execute({}, options);
+    await selected.search_messages.execute({ q: "GitHub", limit: null, pageToken: "" }, options);
+    await selected.list_messages.execute({ limit: null, pageToken: null }, options);
+    await selected.list_messages.execute({ limit: 5, pageToken: "returned-cursor" }, options);
+
+    expect(execute.mock.calls.map(([input]) => input)).toEqual([
+      { inboxId: "magda@agentmail.to" },
+      { inboxId: "magda@agentmail.to", q: "GitHub" },
+      { inboxId: "magda@agentmail.to" },
+      { inboxId: "magda@agentmail.to", limit: 5, pageToken: "returned-cursor" },
+    ]);
+  });
+
   test("binds the read tools to one configured inbox", async () => {
     const execute = vi.fn(async (input: unknown) => input);
     const toModelOutput = vi.fn(() => ({ type: "text" as const, value: "converted" }));

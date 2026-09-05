@@ -443,6 +443,29 @@ describe("Scout service-account inventory", () => {
     },
   );
 
+  it("requires the saved login identity when a service displays a different username", async () => {
+    const { backend, scoutId, evidence } = await accountContext();
+    const serviceAccountId = await insertManagedAccount(backend, {
+      scoutId,
+      serviceName: "Example",
+      serviceDomain: "example.com",
+      identifier: "conrad@example.test",
+    });
+    const observation = { ...evidence, loginMethod: { kind: "managed_password" as const } };
+    await expect(
+      backend.mutation(internal.scout.serviceAccounts.recordAuthenticated, {
+        ...observation,
+        visibleIdentity: "conrad-scout",
+      }),
+    ).rejects.toThrow('The visible identity does not match the saved login: "conrad@example.test"');
+    expect(await backend.run(async (ctx) => await ctx.db.get(serviceAccountId))).toMatchObject({
+      authenticationEvidence: { kind: "none" },
+    });
+    await expect(
+      backend.mutation(internal.scout.serviceAccounts.recordAuthenticated, observation),
+    ).resolves.toEqual({ serviceAccountId, created: false });
+  });
+
   it("does not create a managed-password account from browser evidence", async () => {
     const { backend, evidence } = await accountContext();
     await expect(

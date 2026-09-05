@@ -6,14 +6,14 @@ import {
   type BrowserDeleteResponse,
   type BrowserExecuteResponse,
 } from "firecrawl";
-import { env } from "../../_generated/server";
+import { getRuntimeEnv } from "../../runtimeEnv";
 import { optionalFirecrawlLiveViewUrl } from "./firecrawlLiveView";
 
 type BrowserLifecycleClient = Pick<Firecrawl, "deleteBrowser" | "listBrowsers">;
 const FIRECRAWL_REQUEST_TIMEOUT_MS = 60_000;
 
 export function createFirecrawlClient() {
-  const apiKey = env.FIRECRAWL_API_KEY?.trim();
+  const apiKey = getRuntimeEnv("FIRECRAWL_API_KEY")?.trim();
   if (!apiKey) throw new Error("FIRECRAWL_API_KEY is not configured");
   return new Firecrawl({
     apiKey,

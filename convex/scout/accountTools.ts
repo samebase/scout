@@ -2,7 +2,8 @@
 
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
-import { env, type ActionCtx } from "../_generated/server";
+import type { ActionCtx } from "../_generated/server";
+import { getRuntimeEnv } from "../runtimeEnv";
 import {
   createAccountPasswordFillTool,
   createAccountPasswordPreparationTool,
@@ -75,6 +76,26 @@ export function decryptRuntimeManagedPassword(
     );
   } finally {
     key.fill(0);
+  }
+}
+
+export function restoreManagedPasswordRedaction({
+  browser,
+  credentials,
+  scoutId,
+}: {
+  browser: ReturnType<typeof createBrowserHarness>;
+  credentials: ReadonlyArray<RuntimeManagedCredential>;
+  scoutId: Id<"scouts">;
+}) {
+  for (const credential of credentials) {
+    browser.actions.registerSensitiveValue(
+      decryptRuntimeManagedPassword(
+        credential,
+        scoutId,
+        getRuntimeEnv("SCOUT_CREDENTIAL_MASTER_KEY_V1"),
+      ),
+    );
   }
 }
 
@@ -194,7 +215,7 @@ export function createAccountTools(
           password = decryptRuntimeManagedPassword(
             runtimeCredential,
             args.scoutId,
-            env.SCOUT_CREDENTIAL_MASTER_KEY_V1,
+            getRuntimeEnv("SCOUT_CREDENTIAL_MASTER_KEY_V1"),
           );
         } catch {
           throw new Error("Managed password fill is unavailable");

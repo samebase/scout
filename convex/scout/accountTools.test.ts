@@ -5,7 +5,11 @@ import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { ADMIN_EMAIL } from "../authConfig";
 import schema from "../schema";
-import { createAccountTools, decryptRuntimeManagedPassword } from "./accountTools";
+import {
+  createAccountTools,
+  decryptRuntimeManagedPassword,
+  restoreManagedPasswordRedaction,
+} from "./accountTools";
 import { createBrowserHarness } from "./browserTools";
 import type { PlaywrightBrowser } from "./playwrightBrowser";
 import { prepareManagedPassword } from "./serviceAccountCredentialActions";
@@ -126,21 +130,19 @@ async function browserAccountContext() {
       ],
     })),
   } satisfies PlaywrightBrowser;
-  const browser = createBrowserHarness(
-    {},
-    {
-      browser: async () => ({
-        success: true,
-        id: "browser-1",
-        cdpUrl: "wss://browser.firecrawl.dev/cdp?token=test",
-      }),
-      browserExecute: async () => ({ success: true, stdout: "", exitCode: 0, killed: false }),
-      deleteBrowser: async () => ({ success: true }),
-      connect: async () => runtime,
-      now: () => 2,
-      sleep: async () => undefined,
-    },
-  );
+  const browserDependencies = {
+    browser: async () => ({
+      success: true,
+      id: "browser-1",
+      cdpUrl: "wss://browser.firecrawl.dev/cdp?token=test",
+    }),
+    browserExecute: vi.fn(async () => ({ success: true, stdout: "", exitCode: 0, killed: false })),
+    deleteBrowser: async () => ({ success: true }),
+    connect: async () => runtime,
+    now: () => 2,
+    sleep: async () => undefined,
+  } satisfies Parameters<typeof createBrowserHarness>[1];
+  const browser = createBrowserHarness({}, browserDependencies);
   await browser.open("https://accounts.example.com/signup");
   const accountTools = (ctx: Pick<ActionCtx, "runQuery" | "runMutation">) =>
     createAccountTools(ctx, {
@@ -160,10 +162,51 @@ async function browserAccountContext() {
     await backend.query(internal.scout.serviceAccountCredentials.listRuntimeCredentialsForScout, {
       scoutId,
     });
-  return { backend, accountTools, runtime, request, credentials, ...seeded };
+  return { backend, accountTools, browserDependencies, runtime, request, credentials, ...seeded };
 }
 
 describe("Autonomous managed-password preparation", () => {
+  it("redacts persisted credentials after a new controller resumes a filled browser", async () => {
+    const { backend, accountTools, browserDependencies, runtime, credentials, scoutId } =
+      await browserAccountContext();
+    await backend.action(async (ctx) => {
+      const tools = accountTools(ctx);
+      await tools.prepare_account_password.execute(
+        { serviceName: "Example", serviceDomain: "example.com", identifier: "magda@example.test" },
+        toolOptions,
+      );
+      await tools.fill_account_password.execute({ passwordTarget }, toolOptions);
+    });
+    const saved = await credentials();
+    const [credential] = saved;
+    if (!credential) throw new Error("Password was not persisted");
+    const password = decryptRuntimeManagedPassword(credential, scoutId, key);
+    runtime.snapshot.mockResolvedValue(`- textbox "Password" [active]: ${password}`);
+    browserDependencies.browserExecute.mockResolvedValue({
+      success: false,
+      stdout: password,
+      exitCode: 1,
+      killed: false,
+    });
+    const resumedBrowser = createBrowserHarness({}, browserDependencies);
+    restoreManagedPasswordRedaction({ browser: resumedBrowser, credentials: saved, scoutId });
+    await resumedBrowser.attach(
+      {
+        providerSessionId: "browser-1",
+        cdpUrl: "wss://browser.firecrawl.dev/cdp?token=test",
+        interactiveLiveViewUrl: null,
+      },
+      { captureOperations: false },
+    );
+    expect(await resumedBrowser.actions.snapshot()).toMatchObject({
+      output: '- textbox "Password" [active]: [secret redacted]',
+    });
+    const result = await resumedBrowser.actions.executeCode("throw new Error('click failed')");
+    expect(result.success).toBe(false);
+    expect(result.currentPage).toContain("[secret redacted]");
+    expect(JSON.stringify(result)).not.toContain(password);
+  });
+
   it("prepares, fills, records, and reuses a new scout's password without returning secrets", async () => {
     const { accountTools, runtime, credentials, backend, scoutId, conradId } =
       await browserAccountContext();

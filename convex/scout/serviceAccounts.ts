@@ -408,6 +408,14 @@ export const recordAuthenticated = internalMutation({
     }
 
     if (loginMethod.kind === "managed_password") {
+      const registeredIdentifiers = serviceAccounts
+        .filter((account) => account.loginMethod.kind === "managed_password")
+        .map((account) => account.identifier);
+      if (registeredIdentifiers.length > 0) {
+        throw new Error(
+          `The visible identity does not match the saved login: ${registeredIdentifiers.map((identifier) => JSON.stringify(identifier)).join(", ")}. Open account settings showing the registered username or email together with a Sign out or Log out control, then retry. A display name alone does not verify the saved login.`,
+        );
+      }
       throw new Error("A managed-password account must be registered before it is used");
     }
     const scout = await ctx.db.get("scouts", chat.scoutId);

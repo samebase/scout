@@ -6,7 +6,7 @@ const serviceAccountEvidenceFields = {
   identityText: z
     .string()
     .min(1)
-    .describe("Exact visible Scout username or email on the authenticated service page"),
+    .describe("Exact visible registered login identifier on the authenticated service page"),
   sessionControlText: z
     .string()
     .min(1)
@@ -62,7 +62,7 @@ export function createServiceAccountRecordingTool(
 ) {
   return tool({
     description:
-      "Record an authenticated account in this Scout's service-account inventory immediately after successful account creation or login recovery, before continuing other work. First open an account menu that simultaneously shows one of the Scout's exact known usernames or email addresses and a Sign out or Log out control; a team or workspace name is not an account identity. State whether the account was created or an existing login was recovered, and whether it used the managed password or OAuth through another exact Scout account. For OAuth, include that provider account's exact service domain and identifier. Trusted code re-reads the current URL and both visible text values. It updates an exact existing match or records a new OAuth account where the visible identity belongs to this Scout. Managed-password accounts must already be registered.",
+      "Record an authenticated account in this Scout's service-account inventory immediately after successful account creation or login recovery, before continuing other work. The page must show the saved login identifier and a Sign out or Log out control. If the account menu shows a different display name or username, open account settings to find the registered email. State whether the account was created or an existing login was recovered, and whether it used the managed password or OAuth through another exact Scout account. For OAuth, include that provider account's exact service domain and identifier. Trusted code re-reads the current URL and both visible text values. It updates an exact existing match or records a new OAuth account where the visible identity belongs to this Scout. Managed-password accounts must already be registered.",
     inputSchema: serviceAccountEvidenceInputSchema,
     execute: async (evidence, options) => await record(evidence, options.abortSignal),
   });
