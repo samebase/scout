@@ -154,8 +154,8 @@ test("keeps skill guidance across slices, compaction and follow-ups without rewr
       await t.backend.query(internal.scout.chats.runtimeContext, {
         promptMessageId: t.prompt._id,
       })
-    ).skillsSelected,
-  ).toBe(false);
+    ).activeSkills,
+  ).toEqual([]);
   const { load_skills: loader } = createSkillTools(async (names) =>
     t.backend.mutation(internal.scout.chats.loadSkills, { turnId: t.turnId, names }),
   );
@@ -205,7 +205,6 @@ test("keeps skill guidance across slices, compaction and follow-ups without rewr
     promptMessageId: t.prompt._id,
   });
   expect(runtime.activeSkills).toEqual(["games"]);
-  expect(runtime.skillsSelected).toBe(true);
   await t.backend.mutation(internal.scout.turns.continueAfterSlice, {
     promptMessageId: t.prompt._id,
     previousCompletedSteps: 1,
@@ -246,7 +245,6 @@ test("keeps skill guidance across slices, compaction and follow-ups without rewr
     const { _id: _previousId, _creationTime: _created, ...fields } = previous;
     return ctx.db.insert("scoutTurns", {
       ...fields,
-      skillsSelected: false,
       promptMessageId: nextPrompt._id,
       order: nextPrompt.order,
       state: { kind: "pending", leaseExpiresAt: Date.now() + 60_000, completedSteps: 0, usage: {} },
@@ -256,10 +254,7 @@ test("keeps skill guidance across slices, compaction and follow-ups without rewr
     await t.backend.query(internal.scout.chats.runtimeContext, {
       promptMessageId: nextPrompt._id,
     }),
-  ).toMatchObject({ activeSkills: ["games"], skillsSelected: false });
-  expect(
-    await t.backend.mutation(internal.scout.chats.loadSkills, { turnId: nextTurn, names: null }),
-  ).toEqual(["games"]);
+  ).toMatchObject({ activeSkills: ["games"] });
   await t.backend.mutation(internal.scout.chats.loadSkills, {
     turnId: nextTurn,
     names: ["email", "research"],
@@ -273,8 +268,8 @@ test("keeps skill guidance across slices, compaction and follow-ups without rewr
       await t.backend.query(internal.scout.chats.runtimeContext, {
         promptMessageId: nextPrompt._id,
       })
-    ).skillsSelected,
-  ).toBe(true);
+    ).activeSkills,
+  ).toEqual(["research", "email"]);
   await expect(
     t.backend.mutation(internal.scout.chats.loadSkills, {
       turnId: t.turnId,

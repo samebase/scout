@@ -68,12 +68,13 @@ summary. Summarization usage contributes to the turn's existing usage and cost t
 of truth for billing. Restore the default by removing the override after verification.
 
 Optional bundled guides cover games, research, and email. The model sees their short descriptions
-and selects the names it needs through `load_skills`. The first step of each user request exposes
-only `keep_skills` and `load_skills` and requires a choice: keep existing guides for a continuation, or select the
-complete set for a new task, including an empty list when no guide applies. Selection replaces the
-chat's active set. Keeping guides reads the stored set without duplicating guidance.
+and uses `load_skills` when the active set needs to change. Selection replaces the complete set,
+including an empty list when no guide applies. Follow-ups retain active guides automatically and
+can proceed directly with task tools or an answer. There is no required selection step.
 The server orders and deduplicates names and rejects changes from stopped or expired turns.
 Later generation slices and compaction reuse the selection independently of the summary.
+After a tool call, generation continues to consume its result even when the provider reports `stop`;
+a guide-loading step does not complete the user's task. Normal step and time limits still apply.
 
 Each generation request includes the current guides once in its `active_skills` instructions, outside
 the conversation history. The tool records only the selected names, so old or inactive guide bodies
@@ -81,7 +82,8 @@ do not accumulate in the transcript or summary. Model calls exposes those activa
 Messages and the exact guidance in Instructions. The original transcript remains intact. Guides
 provide procedure; the summary holds task progress, and essential identity, credential, email, and
 handoff rules remain unconditional. There is no filesystem discovery or user-authored skill execution.
-This uses the catalog, activation, and context-lifetime recommendations from the
+This uses the catalog, model-driven activation, and context-retention patterns from the
+[AI SDK skills guide](https://ai-sdk.dev/cookbook/guides/agent-skills) and the
 [Agent Skills integration guide](https://agentskills.io/client-implementation/adding-skills-support).
 
 Manual calls run the same browser, account, mail, and research tools without invoking a model.

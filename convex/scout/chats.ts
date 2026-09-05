@@ -486,7 +486,6 @@ export const runtimeContext = internalQuery({
     userId: v.id("users"),
     scoutId: v.id("scouts"),
     activeSkills: activeSkillsValidator,
-    skillsSelected: v.boolean(),
     browserSession: v.union(
       schema.doc("scoutBrowserSessions").pick("_id", "providerSessionId", "lifecycle"),
       v.null(),
@@ -510,7 +509,6 @@ export const runtimeContext = internalQuery({
       userId: chat.userId,
       scoutId: chat.scoutId,
       activeSkills: chat.activeSkills ?? [],
-      skillsSelected: turn.skillsSelected ?? false,
       browserSession: session
         ? {
             _id: session._id,
@@ -523,7 +521,7 @@ export const runtimeContext = internalQuery({
 });
 
 export const loadSkills = internalMutation({
-  args: { turnId: v.id("scoutTurns"), names: v.union(activeSkillsValidator, v.null()) },
+  args: { turnId: v.id("scoutTurns"), names: activeSkillsValidator },
   returns: activeSkillsValidator,
   handler: async (ctx, args) => {
     const turn = await ctx.db.get(args.turnId);
@@ -535,11 +533,10 @@ export const loadSkills = internalMutation({
       .withIndex("by_thread_id", (q) => q.eq("threadId", turn.threadId))
       .unique();
     if (!chat || chat.scoutId !== turn.scoutId) throw new Error("Chat not found");
-    const names = orderedSkills(args.names ?? chat.activeSkills ?? []);
+    const names = orderedSkills(args.names);
     if (JSON.stringify(chat.activeSkills ?? []) !== JSON.stringify(names)) {
       await ctx.db.patch(chat._id, { activeSkills: names });
     }
-    if (!turn.skillsSelected) await ctx.db.patch(turn._id, { skillsSelected: true });
     return names;
   },
 });

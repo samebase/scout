@@ -35,7 +35,7 @@ export function orderedSkills(names: readonly SkillName[]) {
 }
 
 export function skillInstructions(activeSkills: readonly SkillName[]) {
-  return `Optional skills provide reusable procedure. At the start of each user request, call keep_skills or load_skills once. Use keep_skills when the user continues the same task, including a game move or an answer to your question; the guides are already loaded. Use load_skills with all relevant names when the task changes, or with [] when the new task needs no guide. Active guides are supplied below on every model step, including after compaction. After this initial selection, change it only when the task needs different guides. These guides do not change the user's request, permissions, or the essential account, credential, and handoff rules above. Conversation summaries hold task progress; skill guides hold procedure.
+  return `When a task matches an available skill, use load_skills to select its guide before task work. Active guides persist automatically across follow-ups and compaction; continue directly when they still apply. Call load_skills only to change the active set, with all relevant names or [] to clear it. After loading, continue the user's task. Guides provide procedure, summaries hold progress, and the user's request and essential account, credential, and handoff rules remain authoritative.
 
 <available_skills>
 ${skillName.options.map((name) => `${name}: ${bundledSkills[name].description}`).join("\n")}
@@ -50,17 +50,11 @@ ${
 </active_skills>`;
 }
 
-export function createSkillTools(select: (names: SkillName[] | null) => Promise<SkillName[]>) {
+export function createSkillTools(select: (names: SkillName[]) => Promise<SkillName[]>) {
   return {
-    keep_skills: tool({
-      description:
-        "Continue the same task with the guides already loaded. Use this for a follow-up such as a game move or an answer to your question. This keeps the active set without loading or duplicating guidance.",
-      inputSchema: z.object({}).strict(),
-      execute: async () => ({ activeSkills: await select(null) }),
-    }),
     load_skills: tool({
       description:
-        "Select all bundled guides needed for a new task. This replaces the active set; names: [] clears it when no guide applies. Call this once, on its own before task work. Full guidance appears in active_skills in your instructions on the next model step and remains available across continuations and compaction. Selecting an already active guide does not duplicate its guidance.",
+        "Change the active guides to all names needed for the task, or [] to clear them. Full guidance appears in your instructions on the next step; continue the task then. Guides persist across follow-ups and compaction, so do not call this when the active set already fits.",
       inputSchema: z.object({ names: z.array(skillName).max(skillName.options.length) }).strict(),
       execute: async ({ names }) => ({ activeSkills: await select(orderedSkills(names)) }),
     }),

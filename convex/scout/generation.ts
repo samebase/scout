@@ -192,11 +192,15 @@ export function generationNeedsContinuation(
   sliceStepCount: number,
   completedSteps: number,
   sliceStepLimit: number,
+  finalStep: Parameters<typeof finalStepToolsCompleted>[0] | undefined,
 ) {
   return (
-    finishReason === "tool-calls" &&
+    (finishReason === "tool-calls" || finishReason === "stop") &&
     sliceStepCount >= sliceStepLimit &&
-    completedSteps + sliceStepCount < MAX_TURN_STEPS
+    completedSteps + sliceStepCount < MAX_TURN_STEPS &&
+    finalStep !== undefined &&
+    finalStep.toolCalls.length > 0 &&
+    finalStepToolsCompleted(finalStep)
   );
 }
 
@@ -491,7 +495,6 @@ export const runSlice = internalAction({
         scoutId,
         sessionId: () => browserSessionId,
       });
-      let skillsSelected = runtimeContext.skillsSelected;
       const tools = {
         ...browser.tools,
         ...createWebTools(beforeModelToolDispatch),
@@ -499,21 +502,13 @@ export const runSlice = internalAction({
         request_human_help: createHumanHandoffTool(humanHandoffCallbacks),
         ...accountTools,
         inspect_tool_arguments: createToolArgumentProbe(),
-        ...createSkillTools(async (names) => {
-          const activeSkills = await ctx.runMutation(internal.scout.chats.loadSkills, {
+        ...createSkillTools(async (names) =>
+          ctx.runMutation(internal.scout.chats.loadSkills, {
             turnId: activeTurnId,
             names,
-          });
-          skillsSelected = true;
-          return activeSkills;
-        }),
+          }),
+        ),
       };
-      // Reconsider guides for each user request before tools with external effects.
-      // Later slices keep the selection without another activation round.
-      const selectingSkills = !runtimeContext.skillsSelected;
-      const stepTools = selectingSkills
-        ? { keep_skills: tools.keep_skills, load_skills: tools.load_skills }
-        : tools;
       const instructions = scoutRuntimeInstructions({
         scout,
         credentials: runtimeCredentials,
@@ -613,7 +608,7 @@ export const runSlice = internalAction({
       const fixedTokens = estimateContextTokens({
         instructions,
         tools: await Promise.all(
-          Object.entries(stepTools).map(async ([name, tool]) => ({
+          Object.entries(tools).map(async ([name, tool]) => ({
             name,
             description: tool.description,
             inputSchema: await asSchema<unknown>(tool.inputSchema).jsonSchema,
@@ -657,8 +652,7 @@ export const runSlice = internalAction({
           promptMessageId: args.promptMessageId,
           model: scoutLanguageModel(args.model),
           instructions,
-          tools: stepTools,
-          toolChoice: selectingSkills ? "required" : "auto",
+          tools,
           repairToolCall: repairStringifiedToolInput,
           abortSignal: sliceAbortSignal,
           maxRetries: 2,
@@ -692,15 +686,9 @@ export const runSlice = internalAction({
         previousUsage,
         accumulatedUsage ?? tokenUsage(await streamResult.totalUsage),
       );
-      if (!skillsSelected && finishReason === "stop") {
-        generationResult = {
-          kind: "failed",
-          error: new Error("Scout ended without choosing whether to keep or load skill guides"),
-          usage,
-        };
-      } else if (humanHandoffWaiting || finishReason === "stop") {
+      if (humanHandoffWaiting || (finishReason === "stop" && !finalStep?.toolCalls.length)) {
         generationResult = { kind: "completed", usage };
-      } else if (finishReason === "tool-calls" && completedSteps >= MAX_TURN_STEPS) {
+      } else if (completedSteps >= MAX_TURN_STEPS) {
         generationResult = {
           kind: "failed",
           error: new Error(`Scout reached the ${MAX_TURN_STEPS}-step safety limit`),
@@ -718,9 +706,8 @@ export const runSlice = internalAction({
           steps.length,
           progress.completedSteps,
           sliceStepLimit,
-        ) &&
-        finalStep !== undefined &&
-        finalStepToolsCompleted(finalStep)
+          finalStep,
+        )
       ) {
         generationResult = { kind: "continued", completedSteps, usage };
       } else {

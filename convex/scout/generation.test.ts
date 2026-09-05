@@ -130,11 +130,39 @@ describe("Scout generation slices", () => {
   });
 
   it("continues only when a full slice ends on tool calls below the turn ceiling", () => {
+    const finalStep = {
+      toolCalls: [{ toolCallId: "call-1" }],
+      content: [{ type: "tool-result", toolCallId: "call-1" }],
+    };
     expect(
-      generationNeedsContinuation("tool-calls", GENERATION_SLICE_STEPS, 0, GENERATION_SLICE_STEPS),
+      generationNeedsContinuation(
+        "tool-calls",
+        GENERATION_SLICE_STEPS,
+        0,
+        GENERATION_SLICE_STEPS,
+        finalStep,
+      ),
     ).toBe(true);
     expect(
-      generationNeedsContinuation("stop", GENERATION_SLICE_STEPS, 0, GENERATION_SLICE_STEPS),
+      generationNeedsContinuation(
+        "stop",
+        GENERATION_SLICE_STEPS,
+        0,
+        GENERATION_SLICE_STEPS,
+        finalStep,
+      ),
+    ).toBe(true);
+    expect(
+      generationNeedsContinuation("stop", GENERATION_SLICE_STEPS, 0, GENERATION_SLICE_STEPS, {
+        toolCalls: [],
+        content: [],
+      }),
+    ).toBe(false);
+    expect(
+      generationNeedsContinuation("stop", GENERATION_SLICE_STEPS, 0, GENERATION_SLICE_STEPS, {
+        ...finalStep,
+        content: [],
+      }),
     ).toBe(false);
     expect(
       generationNeedsContinuation(
@@ -142,6 +170,7 @@ describe("Scout generation slices", () => {
         GENERATION_SLICE_STEPS - 1,
         0,
         GENERATION_SLICE_STEPS,
+        finalStep,
       ),
     ).toBe(false);
     expect(
@@ -150,6 +179,16 @@ describe("Scout generation slices", () => {
         GENERATION_SLICE_STEPS,
         MAX_TURN_STEPS - GENERATION_SLICE_STEPS,
         GENERATION_SLICE_STEPS,
+        finalStep,
+      ),
+    ).toBe(false);
+    expect(
+      generationNeedsContinuation(
+        "stop",
+        GENERATION_SLICE_STEPS,
+        MAX_TURN_STEPS - GENERATION_SLICE_STEPS,
+        GENERATION_SLICE_STEPS,
+        finalStep,
       ),
     ).toBe(false);
   });

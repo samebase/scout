@@ -99,7 +99,6 @@ export default defineSchema({
     scoutId: v.id("scouts"),
     model: scoutModelValidator,
     startedAt: v.number(),
-    skillsSelected: v.optional(v.boolean()),
     state: scoutTurnStateValidator,
   })
     .index("by_prompt_message_id", ["promptMessageId"])

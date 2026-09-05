@@ -20,8 +20,8 @@ describe("bundled skill context", () => {
 
   test("selects and clears guides without putting their bodies in the transcript", async () => {
     let selected: Parameters<typeof skillInstructions>[0] = [];
-    const select = vi.fn(async (names: Parameters<typeof skillInstructions>[0] | null) => {
-      selected = names ?? selected;
+    const select = vi.fn(async (names: Parameters<typeof skillInstructions>[0]) => {
+      selected = names;
       return [...selected];
     });
     const tools = createSkillTools(select);
@@ -32,13 +32,10 @@ describe("bundled skill context", () => {
     ).resolves.toEqual({
       activeSkills: ["research", "email"],
     });
-    await expect(requireRuntimeTool(tools, "keep_skills").execute({}, options)).resolves.toEqual({
-      activeSkills: ["research", "email"],
-    });
     await expect(loader.execute({ names: [] }, options)).resolves.toEqual({
       activeSkills: [],
     });
     await expect(loader.execute({ names: ["invented"] }, options)).rejects.toThrow();
-    expect(select).toHaveBeenCalledTimes(3);
+    expect(select).toHaveBeenCalledTimes(2);
   });
 });

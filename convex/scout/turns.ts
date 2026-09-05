@@ -162,7 +162,6 @@ export async function enqueueTurn(
     scoutId: args.scoutId,
     model: args.model,
     startedAt: Date.now(),
-    skillsSelected: false,
     state: { kind: "pending", leaseExpiresAt, completedSteps: 0, usage: {} },
   });
   await scoutTurnWorkflow.start(

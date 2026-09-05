@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-05T15:40:48Z
+- **Last updated:** 2026-09-05T17:13:16Z
 
 ## Log
 
@@ -1000,5 +1000,6 @@ Account recording explains mismatches between visible names and saved login iden
 
 Added optional games, research, and email guides that Scout selects through `load_skills`.
 Active guidance stays separate from conversation summaries and survives compaction and later turns,
-with selections and full instructions visible in Model calls (`convex/scout/skills.ts`,
+with follow-ups retaining their guides automatically. Selections and full instructions are visible
+in Model calls (`convex/scout/skills.ts`,
 `convex/scout/chats.ts`, `convex/scout/generation.ts`).
