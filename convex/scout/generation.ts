@@ -42,6 +42,7 @@ import { createToolArgumentProbe } from "./toolArgumentProbe";
 import { repairStringifiedToolInput } from "./toolCallRepair";
 import { scoutRuntimeInstructions } from "./runtimeInstructions";
 import { createWebTools } from "./webTools";
+import { createSkillTools } from "./skills";
 
 export const GENERATION_SLICE_STEPS = 1;
 export const GENERATION_SLICE_WORK_BUDGET_MS = 6 * 60 * 1_000;
@@ -191,11 +192,15 @@ export function generationNeedsContinuation(
   sliceStepCount: number,
   completedSteps: number,
   sliceStepLimit: number,
+  finalStep: Parameters<typeof finalStepToolsCompleted>[0] | undefined,
 ) {
   return (
-    finishReason === "tool-calls" &&
+    (finishReason === "tool-calls" || finishReason === "stop") &&
     sliceStepCount >= sliceStepLimit &&
-    completedSteps + sliceStepCount < MAX_TURN_STEPS
+    completedSteps + sliceStepCount < MAX_TURN_STEPS &&
+    finalStep !== undefined &&
+    finalStep.toolCalls.length > 0 &&
+    finalStepToolsCompleted(finalStep)
   );
 }
 
@@ -497,12 +502,19 @@ export const runSlice = internalAction({
         request_human_help: createHumanHandoffTool(humanHandoffCallbacks),
         ...accountTools,
         inspect_tool_arguments: createToolArgumentProbe(),
+        ...createSkillTools(async (names) =>
+          ctx.runMutation(internal.scout.chats.loadSkills, {
+            turnId: activeTurnId,
+            names,
+          }),
+        ),
       };
       const instructions = scoutRuntimeInstructions({
         scout,
         credentials: runtimeCredentials,
         serviceAccounts: runtimeServiceAccounts,
         browserSessionOpen: browserSessionId !== null,
+        activeSkills: runtimeContext.activeSkills,
       });
       const streamErrors = createStreamErrorCapture();
       let activeModelCallId: Id<"scoutModelCalls"> | null = null;
@@ -674,9 +686,9 @@ export const runSlice = internalAction({
         previousUsage,
         accumulatedUsage ?? tokenUsage(await streamResult.totalUsage),
       );
-      if (humanHandoffWaiting || finishReason === "stop") {
+      if (humanHandoffWaiting || (finishReason === "stop" && !finalStep?.toolCalls.length)) {
         generationResult = { kind: "completed", usage };
-      } else if (finishReason === "tool-calls" && completedSteps >= MAX_TURN_STEPS) {
+      } else if (completedSteps >= MAX_TURN_STEPS) {
         generationResult = {
           kind: "failed",
           error: new Error(`Scout reached the ${MAX_TURN_STEPS}-step safety limit`),
@@ -694,9 +706,8 @@ export const runSlice = internalAction({
           steps.length,
           progress.completedSteps,
           sliceStepLimit,
-        ) &&
-        finalStep !== undefined &&
-        finalStepToolsCompleted(finalStep)
+          finalStep,
+        )
       ) {
         generationResult = { kind: "continued", completedSteps, usage };
       } else {

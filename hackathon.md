@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-05T15:18:35Z
+- **Last updated:** 2026-09-05T17:13:16Z
 
 ## Log
 
@@ -987,7 +987,7 @@ Allowed longer Scout sessions to export with their click rings, up to 50 minutes
 The browser keeps the existing cancellable MP4 workflow with a 1 GiB output ceiling
 (`src/lib/browserReplayExportPlan.ts`, `src/components/browser-replay-export.tsx`).
 
-### 2026-09-05 - working tree
+### 2026-09-05 - 5d4833d - v173
 
 Node actions read current deployment configuration when Convex reuses a process (`convex/runtimeEnv.ts`).
 Browser snapshots preserve iframe controls without internal references, and tool instructions explain
@@ -995,3 +995,11 @@ public helpers and bounded waits (`convex/scout/playwrightBrowser.ts`, `convex/s
 Inbox reads use minimal inputs and omit empty pagination values (`convex/scout/browserTools.ts`).
 Resumed browsers restore password masking; password edits wait for browser closure (`convex/scout/accountTools.ts`, `convex/scout/serviceAccounts.ts`).
 Account recording explains mismatches between visible names and saved login identifiers (`convex/scout/serviceAccounts.ts`).
+
+### 2026-09-05 - working tree
+
+Added optional games, research, and email guides that Scout selects through `load_skills`.
+Active guidance stays separate from conversation summaries and survives compaction and later turns,
+with follow-ups retaining their guides automatically. Selections and full instructions are visible
+in Model calls (`convex/scout/skills.ts`,
+`convex/scout/chats.ts`, `convex/scout/generation.ts`).
