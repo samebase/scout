@@ -153,10 +153,9 @@ async function seedLocalWorktreePasswordAccount(
   await setConvexEnv("DEV_SEED_AUTH_ENABLED", "true", target, env, runConvex);
   await setConvexEnv("DEV_SEED_AUTH_EMAIL", email, target, env, runConvex);
   await setConvexEnv("DEV_SEED_AUTH_PASSWORD", password, target, env, runConvex);
-  await runConvex(
-    ["run", "devAuth:seedPasswordAccount", "{}", ...deploymentSelectorArgs(target)],
-    { env },
-  );
+  await runConvex(["run", "devAuth:seedPasswordAccount", "{}", ...deploymentSelectorArgs(target)], {
+    env,
+  });
   console.log(`Local worktree account ready: ${email}`);
 }
 

@@ -56,7 +56,7 @@ The core workflow runs on macOS, Linux, and Windows. See
 
 | Command                   | Purpose                                                      |
 | ------------------------- | ------------------------------------------------------------ |
-| `pnpm run check`          | Format, lint, type-check, test, and verify the dev launcher   |
+| `pnpm run check`          | Format, lint, type-check, test, and verify the dev launcher  |
 | `pnpm run build`          | Build locally or run the complete Workers Builds build stage |
 | `pnpm run deploy`         | Deploy the production Worker and its hosted frontend         |
 | `pnpm run deploy:preview` | Create or update the current branch's Worker Preview         |
