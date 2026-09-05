@@ -115,13 +115,49 @@ describe("replay export plan", () => {
     ]);
   });
 
-  test("bounds browser work and rejects invalid coordinates at the worker boundary", () => {
-    expect(() =>
-      replayExportSpans(
-        buildReplayTimeline([{ ...page, endTimeMs: 1_000_000 }], [operation]),
-        null,
-      ),
-    ).toThrow("10 minutes");
+  test.each([45, 50])("accepts a %i-minute session or selected tab", (minutes) => {
+    const durationMs = minutes * 60_000;
+    const long = buildReplayTimeline(
+      [{ ...page, endTimeMs: page.startTimeMs + durationMs }],
+      [operation],
+    );
+    for (const selectedPageId of [null, "1"]) {
+      expect(replayExportSpans(long, selectedPageId)).toEqual([
+        { pageId: "1", fromMs: 0, toMs: durationMs, pageStartMs: 0 },
+      ]);
+    }
+  });
+
+  test("rejects sessions and selected tabs longer than 50 minutes", () => {
+    const long = buildReplayTimeline(
+      [{ ...page, endTimeMs: page.startTimeMs + 50 * 60_000 + 1 }],
+      [operation],
+    );
+    for (const selectedPageId of [null, "1"]) {
+      expect(() => replayExportSpans(long, selectedPageId)).toThrow("50 minutes");
+    }
+  });
+
+  test("applies the limit to the selected tab's duration, not its end time", () => {
+    const long = buildReplayTimeline(
+      [
+        page,
+        {
+          pageId: "2",
+          pageUrl: "https://b.test/",
+          startTimeMs: page.startTimeMs + 30 * 60_000,
+          endTimeMs: page.startTimeMs + 80 * 60_000,
+        },
+      ],
+      [operation],
+    );
+    expect(() => replayExportSpans(long, null)).toThrow("50 minutes");
+    expect(replayExportSpans(long, "2")).toEqual([
+      { pageId: "2", fromMs: 30 * 60_000, toMs: 80 * 60_000, pageStartMs: 30 * 60_000 },
+    ]);
+  });
+
+  test("rejects invalid coordinates at the worker boundary", () => {
     expect(
       replayExportRequestSchema.safeParse({
         width: 1280,

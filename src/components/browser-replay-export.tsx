@@ -7,6 +7,8 @@ import { Button } from "#components/ui/button";
 import type { ReplayClick } from "#lib/browserReplayClicks";
 import type { ReplayTimeline } from "#lib/browserReplayTimeline";
 import {
+  MAX_REPLAY_EXPORT_BYTES,
+  MAX_REPLAY_EXPORT_DURATION_MS,
   replayExportMessageSchema,
   replayExportSpans,
   type ReplayExportRequest,
@@ -160,7 +162,7 @@ export function BrowserReplayExport({
           ? state.message
           : state.kind === "exporting"
             ? "Keep this replay open while it exports. Closing or refreshing cancels the export."
-            : "Exports the selected view with visible click rings baked in. Silent MP4, original speed, up to 10 minutes / 100 MB. Processed on this device."}
+            : `Exports the selected view with visible click rings baked in. Silent MP4, original speed, up to ${MAX_REPLAY_EXPORT_DURATION_MS / 60_000} minutes / ${MAX_REPLAY_EXPORT_BYTES / 1024 ** 3} GiB. Processed on this device.`}
       </p>
     </div>
   );

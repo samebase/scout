@@ -28,7 +28,9 @@ export async function renderBrowserReplay(
   const startMs = spans[0].fromMs;
   const endMs = spans[spans.length - 1].toMs;
   if (endMs <= startMs || endMs - startMs > MAX_REPLAY_EXPORT_DURATION_MS)
-    throw new Error("Replay export must be between 0 and 10 minutes.");
+    throw new Error(
+      `Replay export must be longer than 0 and no longer than ${MAX_REPLAY_EXPORT_DURATION_MS / 60_000} minutes.`,
+    );
   const quality = new Quality({ bitrate: 2_000_000 });
   if (!(await canEncodeVideo("avc", { width, height, quality }))) {
     throw new Error(
@@ -42,7 +44,7 @@ export async function renderBrowserReplay(
   target.onwrite = (_start, end) => {
     if (end > MAX_REPLAY_EXPORT_BYTES)
       throw new Error(
-        "The export exceeds the 100 MB browser limit. Choose a shorter recorded tab.",
+        `The export exceeds the ${MAX_REPLAY_EXPORT_BYTES / 1024 ** 3} GiB size limit. Choose a shorter recorded tab.`,
       );
   };
   const output = new Output({ format: new Mp4OutputFormat({ fastStart: "fragmented" }), target });
