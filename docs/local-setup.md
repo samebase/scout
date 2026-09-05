@@ -39,7 +39,9 @@ The dev script also creates Convex Auth JWT keys in that development deployment
 if they are missing. In a linked Git worktree, it automatically uses an isolated
 local backend, seeds the standard development account, and adds an **Autofill & sign in** action.
 
-Open the local URL printed by Vite.
+The primary checkout reserves `http://localhost:5173` and stops if that port is occupied.
+Linked worktrees start at port `5174` and try higher ports when needed. Open the local URL
+printed by Vite.
 
 ## Public handoff links
 
@@ -70,10 +72,12 @@ independent copy of this key. Do not replace the `_V1` value after creating cred
 fingerprint checks intentionally stop reads and writes rather than mixing two keys under one
 version.
 
-Before asking a Scout to create or recover a password-based account, open its profile and register
-the managed account. Set the exact host where the password form appears. The password tool selects
-only that Scout's credential for the current HTTPS host. OAuth accounts instead refer to the exact
-provider account belonging to the same Scout; neither login method requires a Product or Task.
+A Scout can prepare its own password for a new account with `prepare_account_password` on the
+service's signup page. The tool saves an encrypted password for that scout and the exact HTTPS host;
+`fill_account_password` loads it when called. The profile form remains available for manual setup.
+Preparation does not prove the remote account exists: successful signup or login must be recorded
+with `record_authenticated_service_account`. OAuth accounts refer to the exact provider account
+belonging to the same scout.
 
 ## Force worktree mode
 

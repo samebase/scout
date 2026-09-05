@@ -42,6 +42,7 @@ import {
 } from "react";
 import { z } from "zod";
 import { api } from "../../convex/_generated/api";
+import { omitNullish } from "../../shared/omitNullish";
 import {
   BROWSER_CLOSE_DESCRIPTION,
   BROWSER_EXECUTE_DESCRIPTION,
@@ -60,6 +61,7 @@ import { ScoutRunMessageView, scoutModelLabel } from "#components/scout-run-mess
 import { SdkModelInputInspector } from "#components/scout-model-input";
 import { AuthPanel } from "#components/auth-panel";
 import { BrowserReplay } from "#components/browser-replay";
+import { ChatHandoffNotice } from "#components/chat-handoff-notice";
 import { Button } from "#components/ui/button";
 import {
   MessageScroller,
@@ -194,6 +196,12 @@ const MANUAL_TOOL_OPTIONS = [
     label: "Reply to email",
     description: "Reply from this Scout's inbox using an AgentMail message ID.",
     input: '{\n  "messageId": "",\n  "text": ""\n}',
+  },
+  {
+    value: "prepare_account_password",
+    label: "Prepare account password",
+    description: "Prepare a saved password for a new account on the current signup page.",
+    input: '{\n  "serviceName": "",\n  "serviceDomain": "",\n  "identifier": ""\n}',
   },
   {
     value: "fill_account_password",
@@ -427,9 +435,10 @@ function ChatsWorkspace() {
     api.scout.browserSessions.liveView,
     selectedBrowserSession ? { sessionId: selectedBrowserSession.sessionId } : "skip",
   );
-  const activeHandoff = useQuery(
-    api.humanHandoffs.active,
-    selectedBrowserSession ? { sessionId: selectedBrowserSession.sessionId } : "skip",
+  const latestBrowserSession = browserSessions?.at(-1);
+  const chatHandoff = useQuery(
+    api.humanHandoffs.forSession,
+    latestBrowserSession ? { sessionId: latestBrowserSession.sessionId } : "skip",
   );
   const canCompose = Boolean(selectedActiveScout && threadId !== null);
   const isActivityLoading = threadId !== null && scoutActivity === undefined;
@@ -445,6 +454,9 @@ function ChatsWorkspace() {
     scoutActivity !== undefined &&
     scoutActivity.kind !== "idle" &&
     scoutActivity.threadId !== threadId;
+  const workingThread = availableThreads.find(
+    (thread) => scoutActivity?.kind !== "idle" && thread.threadId === scoutActivity?.threadId,
+  );
   const composerIsBusy = composerState.kind === "sending" || composerState.kind === "stopping";
   const isWorking =
     composerIsBusy ||
@@ -547,6 +559,20 @@ function ChatsWorkspace() {
     setMobilePane("main");
   };
 
+  const stopCurrentWork = async (
+    replacement: FunctionArgs<typeof api.scout.chats.stop>["replacement"],
+  ) => {
+    if (!threadId || composerIsBusy) return;
+    setComposerState({ kind: "stopping" });
+    try {
+      await stopScout({ threadId, ...omitNullish({ replacement }) });
+      if (replacement && currentThreadId.current === threadId) setDraft("");
+      setComposerState({ kind: "idle" });
+    } catch {
+      setComposerState({ kind: "failed", message: "Scout could not be stopped." });
+    }
+  };
+
   const submitPrompt = async () => {
     const prompt = draft.trim();
     if (
@@ -565,16 +591,7 @@ function ChatsWorkspace() {
         canInterrupt && prompt && selectedDriver !== "manual"
           ? { prompt, model: selectedDriver }
           : undefined;
-      setComposerState({ kind: "stopping" });
-      try {
-        await stopScout(replacement ? { threadId, replacement } : { threadId });
-        if (replacement && selectedDriver !== "manual" && currentThreadId.current === threadId) {
-          setDraft("");
-        }
-        setComposerState({ kind: "idle" });
-      } catch {
-        setComposerState({ kind: "failed", message: "Scout could not be stopped." });
-      }
+      await stopCurrentWork(replacement);
       return;
     }
 
@@ -782,25 +799,27 @@ function ChatsWorkspace() {
       header={<div className="flex h-full items-center px-4 text-xs font-semibold">Chat</div>}
       content={
         <section aria-label="Conversation" className="flex h-full min-h-0 min-w-0 flex-col">
-          {activeHandoff?.phase === "delivery_failed" ? (
-            <div
-              role="alert"
-              className="flex flex-wrap items-center justify-between gap-3 border-b border-destructive/30 bg-destructive/5 px-4 py-3"
-            >
-              <p className="text-sm">
-                Scout could not deliver the private handoff link. Check its inbox, then ask Scout to
-                try the human-help request again.
-              </p>
-            </div>
-          ) : activeHandoff ? (
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/40 px-4 py-3">
-              <p className="text-sm">{activeHandoff.reason}</p>
-              <Button asChild size="sm" variant="outline">
-                <Link to="/handoff/$handoffId" params={{ handoffId: activeHandoff.handoffId }}>
-                  Open browser handoff
+          {scoutIsWorkingElsewhere ? (
+            <div role="status" className="border-b bg-muted/40 px-4 py-3 text-sm">
+              {selectedActiveScout?.displayName ?? "Scout"} is busy in another chat.
+              {workingThread ? (
+                <Link
+                  to="/chats"
+                  search={{ thread: workingThread.threadId }}
+                  className="ml-2 underline"
+                >
+                  Open active chat
                 </Link>
-              </Button>
+              ) : null}
             </div>
+          ) : null}
+          {chatHandoff ? (
+            <ChatHandoffNotice
+              handoff={chatHandoff}
+              browserClosed={latestBrowserSession?.lifecycle.kind === "closed"}
+              canCancel={canInterrupt && !composerIsBusy}
+              onCancel={() => void stopCurrentWork(undefined)}
+            />
           ) : null}
 
           <div className="min-h-0 flex-1">

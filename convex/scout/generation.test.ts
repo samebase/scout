@@ -250,6 +250,7 @@ describe("Scout runtime instructions", () => {
     const instructions = serviceAccountLoginInstructions([
       {
         serviceAccountId: "github-account",
+        authenticationEvidence: { kind: "none" },
         serviceName: "GitHub",
         serviceDomain: "github.com",
         identifier: "conrad-scout",
@@ -261,6 +262,7 @@ describe("Scout runtime instructions", () => {
       },
       {
         serviceAccountId: "convex-account",
+        authenticationEvidence: { kind: "succeeded", checkedAt: 1 },
         serviceName: "Convex",
         serviceDomain: "convex.dev",
         identifier: "conrad@example.test",

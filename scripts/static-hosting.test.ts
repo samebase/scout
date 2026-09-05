@@ -10,10 +10,11 @@ vi.mock("@tanstack/react-start/plugin/vite", () => ({
   tanstackStart: configuration.tanstackStart,
 }));
 
-import "../vite.config.ts";
+import viteConfig from "../vite.config.ts";
 
 describe("Static hosting", () => {
   test("builds one SPA shell from Chats without a public landing prerender", () => {
+    viteConfig({ command: "build", mode: "production" });
     expect(configuration.tanstackStart).toHaveBeenCalledExactlyOnceWith({
       prerender: {
         autoStaticPathsDiscovery: false,

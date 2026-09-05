@@ -11,6 +11,8 @@ import { humanHandoffDeliveryRecordValidator } from "./humanHandoffDeliveryModel
 import { humanHandoffValidator } from "./humanHandoffsModel";
 import { scoutServiceAccountFieldsValidator, scoutWebsiteIdentityValidator } from "./scout/model";
 import {
+  compactionFields,
+  modelCallPurposeValidator,
   scoutModelCallStateValidator,
   scoutModelValidator,
   scoutTurnStateValidator,
@@ -100,6 +102,7 @@ export default defineSchema({
     .index("by_scout_id_and_state_kind", ["scoutId", "state.kind"]),
   scoutModelCalls: defineTable({
     turnId: v.id("scoutTurns"),
+    purpose: v.optional(modelCallPurposeValidator),
     sequence: v.number(),
     provider: v.string(),
     modelId: v.string(),
@@ -111,6 +114,9 @@ export default defineSchema({
     snapshotStorageId: v.id("_storage"),
     state: scoutModelCallStateValidator,
   }).index("by_turn_id_and_sequence", ["turnId", "sequence"]),
+  scoutCompactions: defineTable(compactionFields)
+    .index("by_thread_id", ["threadId"])
+    .index("by_model_call_id", ["modelCallId"]),
   scoutBrowserSessions: defineTable({
     threadId: v.string(),
     scoutId: v.id("scouts"),

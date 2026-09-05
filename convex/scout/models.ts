@@ -24,6 +24,25 @@ export const scoutTokenUsageValidator = v.object({
 
 export type ScoutTokenUsage = Infer<typeof scoutTokenUsageValidator>;
 
+export const modelCallPurposeValidator = v.union(
+  v.object({
+    kind: v.literal("generation"),
+    compactionId: v.union(v.id("scoutCompactions"), v.null()),
+  }),
+  v.object({ kind: v.literal("compaction") }),
+);
+
+export const compactionFields = {
+  threadId: v.string(),
+  modelCallId: v.id("scoutModelCalls"),
+  previousCompactionId: v.union(v.id("scoutCompactions"), v.null()),
+  summary: v.string(),
+  coveredThrough: v.object({ messageId: v.string(), order: v.number(), stepOrder: v.number() }),
+  coveredMessageCount: v.number(),
+  beforeTokens: v.number(),
+  afterTokens: v.number(),
+};
+
 function addOptionalNumbers(left: number | undefined, right: number | undefined) {
   if (left === undefined) return right;
   if (right === undefined) return left;

@@ -2,15 +2,18 @@
 
 import { createMCPClient, type MCPClient } from "@ai-sdk/mcp";
 import {
+  asSchema,
+  generateText,
   isStepCount,
   type FinishReason,
   type LanguageModelCallStartEvent,
+  type LanguageModelCallEndEvent,
   type LanguageModelUsage,
 } from "ai";
 import { v } from "convex/values";
 import { inspect } from "node:util";
 import { components, internal } from "../_generated/api";
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import { env, internalAction } from "../_generated/server";
 import { scoutAgent } from "./agent";
 import { createAccountTools } from "./accountTools";
@@ -32,7 +35,8 @@ import {
   type ScoutTokenUsage,
 } from "./models";
 import { compactBrowserModelContext, compactedBrowserSnapshotCount } from "./browserContext";
-import { compactCompletedTurnContext } from "./modelContext";
+import { compactionThreshold, estimateContextTokens, SUMMARY_INSTRUCTIONS } from "./modelContext";
+import { prepareConversationContext } from "./compactionContext";
 import { createToolArgumentProbe } from "./toolArgumentProbe";
 import { repairStringifiedToolInput } from "./toolCallRepair";
 import { scoutRuntimeInstructions } from "./runtimeInstructions";
@@ -471,7 +475,6 @@ export const runSlice = internalAction({
       const accountTools = createAccountTools(ctx, {
         browser: activeBrowser,
         scoutId,
-        credentials: runtimeCredentials,
         sessionId: () => browserSessionId,
       });
       const tools = {
@@ -504,6 +507,119 @@ export const runSlice = internalAction({
       if (timeoutMs <= 0) {
         throw new Error("Scout ran out of time before the next model step could start");
       }
+      let callPurpose: NonNullable<Doc<"scoutModelCalls">["purpose"]> = { kind: "compaction" };
+      let lastCompletedModelCallId: Id<"scoutModelCalls"> | null = null;
+      const modelCallCallbacks = {
+        onLanguageModelCallStart: async (event: LanguageModelCallStartEvent) => {
+          try {
+            if (activeModelCallId) {
+              await ctx.runMutation(internal.scout.modelCalls.failOne, {
+                modelCallId: activeModelCallId,
+                failure: "Model call was retried before a response completed",
+              });
+              activeModelCallId = null;
+            }
+            const snapshot = modelCallContext(event);
+            const blob = new Blob([snapshot], { type: "application/json" });
+            const snapshotStorageId = await ctx.storage.store(blob);
+            try {
+              const modelCallId = await ctx.runMutation(internal.scout.modelCalls.recordStart, {
+                turnId: activeTurnId,
+                purpose: callPurpose,
+                provider: event.provider,
+                modelId: event.modelId,
+                messageCount: event.messages.length,
+                toolCount: event.tools?.length ?? 0,
+                compactedBrowserSnapshotCount: compactedBrowserSnapshotCount(event.messages),
+                serializedBytes: blob.size,
+                snapshotStorageId,
+              });
+              activeModelCallId = modelCallId;
+            } catch (error) {
+              await ctx.storage.delete(snapshotStorageId);
+              throw error;
+            }
+          } catch (error) {
+            console.error("Failed to capture Scout model input", error);
+            failModelCallCapture(error);
+          }
+        },
+        onLanguageModelCallEnd: async (
+          event: Pick<LanguageModelCallEndEvent, "usage" | "finishReason">,
+        ) => {
+          const modelCallId = activeModelCallId;
+          if (!modelCallId) return;
+          accumulatedUsage = addScoutTokenUsage(accumulatedUsage, tokenUsage(event.usage));
+          try {
+            await ctx.runMutation(internal.scout.modelCalls.recordEnd, {
+              modelCallId,
+              finishReason: event.finishReason,
+              usage: tokenUsage(event.usage),
+            });
+            lastCompletedModelCallId = modelCallId;
+          } catch (error) {
+            console.error("Failed to finish Scout model input capture", error);
+            try {
+              await ctx.runMutation(internal.scout.modelCalls.failOne, {
+                modelCallId,
+                failure: `Completion capture failed: ${generationErrorDetails(error)}`,
+              });
+            } catch (failureError) {
+              console.error("Failed to mark Scout model input capture as failed", failureError);
+              failModelCallCapture(
+                new AggregateError(
+                  [error, failureError],
+                  "Model input completion and failure capture both failed",
+                ),
+              );
+              return;
+            }
+            failModelCallCapture(error);
+          } finally {
+            activeModelCallId = null;
+          }
+        },
+      };
+      const fixedTokens = estimateContextTokens({
+        instructions,
+        tools: await Promise.all(
+          Object.entries(tools).map(async ([name, tool]) => ({
+            name,
+            description: tool.description,
+            inputSchema: await asSchema<unknown>(tool.inputSchema).jsonSchema,
+          })),
+        ),
+      });
+      const prepared = await prepareConversationContext(ctx, {
+        threadId: args.threadId,
+        promptMessageId: args.promptMessageId,
+        threshold: compactionThreshold(env.SCOUT_COMPACTION_TOKENS),
+        fixedTokens,
+        preserveObjective: (messages) => preserveTurnObjective(messages, objective),
+        summarize: async (input) => {
+          await beforeModelToolDispatch();
+          callPurpose = { kind: "compaction" };
+          lastCompletedModelCallId = null;
+          const result = await generateText({
+            model: scoutLanguageModel(args.model),
+            instructions: SUMMARY_INSTRUCTIONS,
+            prompt: JSON.stringify(input),
+            maxOutputTokens: 8_192,
+            reasoning: "none",
+            abortSignal: sliceAbortSignal,
+            maxRetries: 2,
+            ...modelCallCallbacks,
+          });
+          if (modelCallCaptureFailure) throw modelCallCaptureFailure;
+          if (result.finishReason !== "stop" || !lastCompletedModelCallId) {
+            throw new Error(
+              `Conversation summarization ended with ${result.finishReason}; original history is unchanged`,
+            );
+          }
+          return { summary: result.text.trim(), modelCallId: lastCompletedModelCallId };
+        },
+      });
+      callPurpose = { kind: "generation", compactionId: prepared.compactionId };
       const streamResult = await scoutAgent.streamText(
         ctx,
         { threadId: args.threadId, userId: args.userId },
@@ -518,78 +634,10 @@ export const runSlice = internalAction({
           timeout: { totalMs: timeoutMs },
           stopWhen: isStepCount(sliceStepLimit),
           onError: streamErrors.onError,
-          onLanguageModelCallStart: async (event) => {
-            try {
-              if (activeModelCallId) {
-                await ctx.runMutation(internal.scout.modelCalls.failOne, {
-                  modelCallId: activeModelCallId,
-                  failure: "Model call was retried before a response completed",
-                });
-                activeModelCallId = null;
-              }
-              const snapshot = modelCallContext(event);
-              const blob = new Blob([snapshot], { type: "application/json" });
-              const snapshotStorageId = await ctx.storage.store(blob);
-              try {
-                const modelCallId = await ctx.runMutation(internal.scout.modelCalls.recordStart, {
-                  turnId: activeTurnId,
-                  provider: event.provider,
-                  modelId: event.modelId,
-                  messageCount: event.messages.length,
-                  toolCount: event.tools?.length ?? 0,
-                  compactedBrowserSnapshotCount: compactedBrowserSnapshotCount(event.messages),
-                  serializedBytes: blob.size,
-                  snapshotStorageId,
-                });
-                activeModelCallId = modelCallId;
-              } catch (error) {
-                await ctx.storage.delete(snapshotStorageId);
-                throw error;
-              }
-            } catch (error) {
-              console.error("Failed to capture Scout model input", error);
-              failModelCallCapture(error);
-            }
-          },
-          onLanguageModelCallEnd: async (event) => {
-            const modelCallId = activeModelCallId;
-            if (!modelCallId) return;
-            try {
-              await ctx.runMutation(internal.scout.modelCalls.recordEnd, {
-                modelCallId,
-                finishReason: event.finishReason,
-                usage: tokenUsage(event.usage),
-              });
-            } catch (error) {
-              console.error("Failed to finish Scout model input capture", error);
-              try {
-                await ctx.runMutation(internal.scout.modelCalls.failOne, {
-                  modelCallId,
-                  failure: `Completion capture failed: ${generationErrorDetails(error)}`,
-                });
-              } catch (failureError) {
-                console.error("Failed to mark Scout model input capture as failed", failureError);
-                failModelCallCapture(
-                  new AggregateError(
-                    [error, failureError],
-                    "Model input completion and failure capture both failed",
-                  ),
-                );
-                return;
-              }
-              failModelCallCapture(error);
-            } finally {
-              activeModelCallId = null;
-            }
-          },
-          onStepEnd: ({ usage }) => {
-            accumulatedUsage = addScoutTokenUsage(accumulatedUsage, tokenUsage(usage));
-          },
-          prepareStep: async ({ messages }) => {
+          ...modelCallCallbacks,
+          prepareStep: async () => {
             await beforeModelToolDispatch();
-            return {
-              messages: preserveTurnObjective(compactBrowserModelContext(messages), objective),
-            };
+            return { messages: prepared.messages };
           },
         },
         {
@@ -599,20 +647,7 @@ export const runSlice = internalAction({
             chunking: "word",
             throttleMs: 100,
           },
-          contextHandler: async (
-            _ctx,
-            { search, recent, inputMessages, inputPrompt, existingResponses },
-          ) =>
-            preserveTurnObjective(
-              compactBrowserModelContext([
-                ...search,
-                ...compactCompletedTurnContext(recent),
-                ...inputMessages,
-                ...inputPrompt,
-                ...existingResponses,
-              ]),
-              objective,
-            ),
+          contextHandler: async () => prepared.messages,
         },
       );
       await streamResult.consumeStream();

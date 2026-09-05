@@ -43,7 +43,7 @@ describe("ensure-convex-auth", () => {
     await ensureConvexAuth(
       {
         SCOUT_LOCAL_WORKTREE_AUTH: "true",
-        VITE_LOCAL_WORKTREE_PASSWORD_EMAIL: "nicu@samebase.com",
+        VITE_LOCAL_WORKTREE_PASSWORD_EMAIL: "nicu.dev@gmail.com",
         VITE_LOCAL_WORKTREE_PASSWORD_VALUE: "pass1234",
       },
       async (args) => {
@@ -60,7 +60,7 @@ describe("ensure-convex-auth", () => {
       ["env", "get", "JWT_PRIVATE_KEY"],
       ["env", "get", "JWKS"],
       ["env", "set", "--", "DEV_SEED_AUTH_ENABLED", "true"],
-      ["env", "set", "--", "DEV_SEED_AUTH_EMAIL", "nicu@samebase.com"],
+      ["env", "set", "--", "DEV_SEED_AUTH_EMAIL", "nicu.dev@gmail.com"],
       ["env", "set", "--", "DEV_SEED_AUTH_PASSWORD", "pass1234"],
       ["run", "devAuth:seedPasswordAccount", "{}"],
     ]);

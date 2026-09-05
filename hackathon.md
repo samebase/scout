@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-04T19:33:19Z
+- **Last updated:** 2026-09-04T22:13:58Z
 
 ## Log
 
@@ -944,7 +944,7 @@ inbox with Scout-authored context while durable jobs retain only the link digest
 production build, development deploy, and a live AgentMail send all passed (`convex/scout/`,
 `src/routes/`, `EMAIL_SETUP.md`).
 
-### 2026-09-04 - working tree
+### 2026-09-04 - 611eb23 - v168
 
 Made long Scout turns durable across bounded model slices, compacted old browser observations, and
 captured each model call's exact input, usage, and cost. Added cached browser-session connections,
@@ -955,3 +955,12 @@ Added Stop-and-send so a user can replace active work while Scout safely closes 
 state. Reduced human help to one visible-blocker reason while the server owns the email and private
 link. The complete project check passes all 329 tests (`convex/humanHandoffs.ts`,
 `convex/scout/humanHandoffTool.ts`, `convex/scout/turns.ts`).
+
+### 2026-09-04 - working tree
+
+Added persisted running summaries that compact older history at a token threshold while keeping
+recent messages, complete tool exchanges, and the original transcript. The Model calls inspector
+shows summary coverage, token estimates, and cost (`convex/scout/compactionContext.ts`,
+`src/components/scout-model-input.tsx`). Scouts can prepare signup passwords through the existing
+encrypted store and are instructed to record accounts immediately after authentication
+(`convex/scout/accountTools.ts`, `convex/scout/runtimeInstructions.ts`).

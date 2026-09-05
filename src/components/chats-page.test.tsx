@@ -148,7 +148,7 @@ beforeEach(() => {
   remote.queries.set("scout/chats:getScoutActivity", { kind: "idle" });
   remote.queries.set("scout/chats:getThreadAgentContext", { instructions: "Chat instructions" });
   remote.queries.set("scout/browserSessions:list", []);
-  remote.queries.set("humanHandoffs:active", null);
+  remote.queries.set("humanHandoffs:forSession", null);
   remote.createThread.mockResolvedValue({ threadId: "thread-created" });
   remote.sendMessage.mockResolvedValue(null);
   remote.stopScout.mockResolvedValue(null);
@@ -368,12 +368,14 @@ describe("Chat workspace", () => {
     const input = { code: "return await page.title()" };
     fireEvent.change(toolInput, { target: { value: JSON.stringify(input) } });
     await user.click(screen.getByRole("button", { name: "Run tool" }));
-    expect(remote.executeTool).toHaveBeenCalledExactlyOnceWith({
-      threadId: "thread-1",
-      toolName: "browser_execute",
-      input: JSON.stringify(input),
-      operationId: expect.any(String),
-    });
+    await waitFor(() =>
+      expect(remote.executeTool).toHaveBeenCalledExactlyOnceWith({
+        threadId: "thread-1",
+        toolName: "browser_execute",
+        input: JSON.stringify(input),
+        operationId: expect.any(String),
+      }),
+    );
   });
 
   test.each([
@@ -388,6 +390,14 @@ describe("Chat workspace", () => {
     {
       toolName: "reply_to_message",
       input: { messageId: "message-1", text: "Thanks for the update." },
+    },
+    {
+      toolName: "prepare_account_password",
+      input: {
+        serviceName: "Example",
+        serviceDomain: "example.com",
+        identifier: "scout-1@example.com",
+      },
     },
     {
       toolName: "record_authenticated_service_account",
@@ -407,12 +417,14 @@ describe("Chat workspace", () => {
       target: { value: JSON.stringify(input) },
     });
     await user.click(screen.getByRole("button", { name: "Run tool" }));
-    expect(remote.executeTool).toHaveBeenCalledExactlyOnceWith({
-      threadId: "thread-1",
-      toolName,
-      input: JSON.stringify(input),
-      operationId: expect.any(String),
-    });
+    await waitFor(() =>
+      expect(remote.executeTool).toHaveBeenCalledExactlyOnceWith({
+        threadId: "thread-1",
+        toolName,
+        input: JSON.stringify(input),
+        operationId: expect.any(String),
+      }),
+    );
   });
 
   test("reuses the manual email operation after reload and provider-equivalent normalization", async () => {
@@ -678,6 +690,29 @@ describe("Chat workspace", () => {
     remote.queries.set("scout/browserSessions:liveView", { url: "about:blank#scout-live" });
     remote.getModelCallContext.mockResolvedValue({
       summary,
+      compaction: {
+        checkpoint: {
+          _id: "compaction-1",
+          _creationTime: 1,
+          threadId: "thread-1",
+          modelCallId: "summary-call",
+          previousCompactionId: null,
+          summary: "Created app-123. Deployment is still pending. Do not send email.",
+          coveredThrough: { messageId: "covered-message", order: 0, stepOrder: 13 },
+          coveredMessageCount: 14,
+          beforeTokens: 32_500,
+          afterTokens: 11_200,
+        },
+        call: {
+          ...summary,
+          state: {
+            kind: "completed",
+            finishedAt: 2,
+            finishReason: "stop",
+            usage: { costUsd: 0.004 },
+          },
+        },
+      },
       snapshot: JSON.stringify({
         version: 1,
         instructions: "Inspect carefully.",
@@ -721,6 +756,15 @@ describe("Chat workspace", () => {
     expect(
       screen.getByRole("region", { name: "SDK model input" }).closest('[data-pane-side="right"]'),
     ).not.toBeNull();
+    expect(screen.getByRole("region", { name: "Conversation summary" })).toBeTruthy();
+    expect(
+      screen.getByText("Created app-123. Deployment is still pending. Do not send email."),
+    ).toBeTruthy();
+    expect(screen.getByText(/Covers 14 earlier messages/)).toBeTruthy();
+    expect(screen.getByText("32,500 estimated tokens")).toBeTruthy();
+    expect(screen.getByText("11,200 estimated tokens")).toBeTruthy();
+    expect(screen.getByText("$0.004")).toBeTruthy();
+    expect(screen.getByText("Through message covered-message")).toBeTruthy();
     expect(screen.getByText("4,428")).toBeTruthy();
     expect(screen.getByText("4,515")).toBeTruthy();
     expect(screen.getByText("$0.000144")).toBeTruthy();
@@ -748,12 +792,12 @@ describe("Chat workspace", () => {
     remote.queries.set("scout/browserSessions:list", [browser]);
     remote.queries.set("scout/browserSessions:get", { ...browser, operations: [] });
     remote.queries.set("scout/browserSessions:liveView", { url: "about:blank#scout-live" });
-    remote.queries.set("humanHandoffs:active", {
+    remote.queries.set("humanHandoffs:forSession", {
       handoffId: "handoff-1",
       reason: "Complete the CAPTCHA.",
       requestedAt: 1,
       expiresAt: Date.now() + 60_000,
-      phase: "unclaimed",
+      status: "available",
     });
     const user = userEvent.setup();
     const router = await openChats();
@@ -785,21 +829,150 @@ describe("Chat workspace", () => {
     const browser = session("session-1", 1);
     remote.queries.set("scout/browserSessions:list", [browser]);
     remote.queries.set("scout/browserSessions:get", { ...browser, operations: [] });
-    remote.queries.set("humanHandoffs:active", {
+    remote.queries.set("humanHandoffs:forSession", {
       handoffId: "handoff-1",
       reason: "Complete the CAPTCHA.",
       requestedAt: 1,
       failedAt: 2,
-      phase: "delivery_failed",
+      status: "failed",
+      failure: "delivery_failed",
     });
 
     await openChats();
 
     const notice = await screen.findByRole("alert");
     expect(notice.textContent).toContain("could not deliver the private handoff link");
-    expect(notice.textContent).toContain("ask Scout to try");
+    expect(notice.textContent).toContain("Closing the browser");
     expect(screen.queryByRole("link", { name: "Open browser handoff" })).toBeNull();
   });
+
+  test("cancels the current handoff while viewing an older browser and preserves the draft", async () => {
+    const oldBrowser = { ...session("session-old", 1), lifecycle: { kind: "closed" } };
+    const currentBrowser = session("session-current", 2);
+    remote.queries.set("scout/browserSessions:list", [oldBrowser, currentBrowser]);
+    remote.queries.set("scout/browserSessions:get:session-old", { ...oldBrowser, operations: [] });
+    const handoff = {
+      handoffId: "handoff-current",
+      reason: "Complete the CAPTCHA.",
+      requestedAt: 1,
+      expiresAt: Date.now() + 60_000,
+      status: "available",
+    };
+    remote.queries.set("humanHandoffs:forSession:session-current", handoff);
+    remote.queries.set("scout/chats:getScoutActivity", {
+      kind: "handoff",
+      threadId: "thread-1",
+      turnId: "turn-1",
+    });
+    const user = userEvent.setup();
+    await openChats("/chats?thread=thread-1&session=session-old");
+
+    expect(
+      (await screen.findByRole("link", { name: "Open browser handoff" })).getAttribute("href"),
+    ).toBe("/handoff/handoff-current");
+    const composer = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Message Scout" });
+    await user.type(composer, "Keep this draft");
+    await user.click(screen.getByRole("button", { name: "Cancel handoff" }));
+    expect(remote.stopScout).toHaveBeenCalledExactlyOnceWith({ threadId: "thread-1" });
+    expect(remote.sendMessage).not.toHaveBeenCalled();
+    expect(composer.value).toBe("Keep this draft");
+
+    remote.queries.set("humanHandoffs:forSession:session-current", {
+      ...handoff,
+      status: "stopped",
+    });
+    remote.queries.set("scout/chats:getScoutActivity", {
+      kind: "stopping",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      retryable: false,
+    });
+    refreshQueries();
+    expect(screen.getByText("Handoff canceled.")).not.toBeNull();
+    expect(screen.getByText("Closing the browser…")).not.toBeNull();
+    expect(composer.disabled).toBe(true);
+
+    remote.queries.set("scout/browserSessions:list", [
+      oldBrowser,
+      {
+        ...currentBrowser,
+        lifecycle: { kind: "closed" },
+      },
+    ]);
+    remote.queries.set("scout/chats:getScoutActivity", { kind: "idle" });
+    refreshQueries();
+    expect(
+      screen.getByText("The browser is closed. Send a new message to continue."),
+    ).not.toBeNull();
+    expect(composer.disabled).toBe(false);
+    expect(composer.value).toBe("Keep this draft");
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Send message" }).disabled).toBe(
+      false,
+    );
+    expect(screen.queryByRole("link", { name: "Open browser handoff" })).toBeNull();
+  });
+
+  test("shows that an expired handoff has ended and permits a new message", async () => {
+    const browser = { ...session("session-1", 1), lifecycle: { kind: "closed" } };
+    remote.queries.set("scout/browserSessions:list", [browser]);
+    remote.queries.set("scout/browserSessions:get", { ...browser, operations: [] });
+    remote.queries.set("humanHandoffs:forSession", {
+      handoffId: "handoff-1",
+      reason: "Complete the CAPTCHA.",
+      requestedAt: 1,
+      status: "expired",
+    });
+    const user = userEvent.setup();
+    await openChats();
+    expect(screen.getByText("Handoff expired.")).not.toBeNull();
+    expect(
+      screen.getByText("The browser is closed. Send a new message to continue."),
+    ).not.toBeNull();
+    expect(screen.queryByRole("link", { name: "Open browser handoff" })).toBeNull();
+    await user.type(
+      screen.getByRole("textbox", { name: "Message Scout" }),
+      "Try a different approach",
+    );
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+    expect(remote.sendMessage).toHaveBeenCalledExactlyOnceWith({
+      threadId: "thread-1",
+      prompt: "Try a different approach",
+      model: "qwen/qwen3.7-flash",
+    });
+  });
+
+  test.each([false, true])(
+    "explains activity in another chat and links only a known owned chat (%s)",
+    async (owned) => {
+      if (owned)
+        remote.queries.set(
+          "scout/chats:listThreads",
+          threadPage([
+            {
+              threadId: "thread-1",
+              title: "Inspect the form",
+              scoutId: "scout-1",
+              creationTime: 1,
+            },
+            { threadId: "thread-2", title: "Signup", scoutId: "scout-1", creationTime: 2 },
+          ]),
+        );
+      remote.queries.set("scout/chats:getScoutActivity", {
+        kind: "handoff",
+        threadId: "thread-2",
+        turnId: "turn-2",
+      });
+      await openChats("/chats?thread=thread-1");
+      expect(screen.getByText("Conrad is busy in another chat.")).not.toBeNull();
+      expect(
+        screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Message Scout" }).disabled,
+      ).toBe(true);
+      expect(screen.queryByRole("button", { name: "Stop Scout" })).toBeNull();
+      const link = screen.queryByRole("link", { name: "Open active chat" });
+      if (owned) expect(link?.getAttribute("href")).toBe("/chats?thread=thread-2");
+      else expect(link).toBeNull();
+    },
+  );
 
   test("loads the requested closed browser session for replay", async () => {
     const closed = { ...session("session-closed", 1), lifecycle: { kind: "closed", closedAt: 2 } };

@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import type { Doc } from "../_generated/dataModel";
 import { internalMutation, internalQuery, type QueryCtx } from "../_generated/server";
 import { requireAppUser } from "../access";
 import { canonicalCredentialHost, canonicalServiceDomain } from "../serviceDomains";
@@ -12,13 +13,25 @@ const MAX_ENVELOPE_FIELD_LENGTH = 1_000;
 const CREDENTIAL_REFERENCE_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
-const managedRegistrationArgsValidator = v.object({
+export const managedRegistrationArgsValidator = v.object({
   scoutId: v.id("scouts"),
   serviceName: v.string(),
   serviceDomain: v.string(),
   credentialHost: v.string(),
   identifier: v.string(),
 });
+
+export const managedRegistrationRequestValidator = v.union(
+  managedRegistrationArgsValidator.extend({ kind: v.literal("profile") }),
+  v.object({
+    kind: v.literal("browser"),
+    sessionId: v.id("scoutBrowserSessions"),
+    observedUrl: v.string(),
+    serviceName: v.string(),
+    serviceDomain: v.string(),
+    identifier: v.string(),
+  }),
+);
 
 const normalizedRegistrationValidator = v.object({
   scoutId: v.id("scouts"),
@@ -39,7 +52,7 @@ const encryptedCredentialValidator = v.object({
   authenticationTag: v.string(),
 });
 
-const managedRegistrationResultValidator = v.object({
+export const managedRegistrationResultValidator = v.object({
   serviceAccountId: v.id("scoutServiceAccounts"),
   loginMethod: scoutManagedPasswordLoginMethodValidator,
 });
@@ -82,13 +95,110 @@ function normalizeRegistration(args: typeof managedRegistrationArgsValidator.typ
   };
 }
 
+async function resolveRegistration(
+  ctx: Pick<QueryCtx, "auth" | "db">,
+  request: typeof managedRegistrationRequestValidator.type,
+) {
+  switch (request.kind) {
+    case "profile":
+      await requireAppUser(ctx);
+      return normalizeRegistration(request);
+    case "browser": {
+      const session = await ctx.db.get("scoutBrowserSessions", request.sessionId);
+      if (!session || session.lifecycle.kind !== "active") {
+        throw new Error("Active Scout browser session not found");
+      }
+      const chat = await ctx.db
+        .query("scoutChats")
+        .withIndex("by_thread_id", (query) => query.eq("threadId", session.threadId))
+        .unique();
+      if (!chat || chat.scoutId !== session.scoutId) {
+        throw new Error("Browser session does not match its Scout chat");
+      }
+      const latestOperation = await ctx.db
+        .query("scoutBrowserOperations")
+        .withIndex("by_session_id_and_sequence", (query) => query.eq("sessionId", session._id))
+        .order("desc")
+        .first();
+      if (
+        !latestOperation ||
+        (latestOperation.state.kind !== "applied" &&
+          latestOperation.state.kind !== "applied_snapshot_failed")
+      ) {
+        throw new Error("Observe the signup page before preparing an account password");
+      }
+      const observedUrl = new URL(request.observedUrl);
+      if (
+        observedUrl.protocol !== "https:" ||
+        observedUrl.username ||
+        observedUrl.password ||
+        observedUrl.port
+      ) {
+        throw new Error(
+          "Account passwords require an HTTPS signup page without credentials or a port",
+        );
+      }
+      observedUrl.search = "";
+      observedUrl.hash = "";
+      const serviceDomain = canonicalServiceDomain(request.serviceDomain);
+      if (
+        observedUrl.hostname !== serviceDomain &&
+        !observedUrl.hostname.endsWith(`.${serviceDomain}`)
+      ) {
+        throw new Error("The signup host must belong to the requested service domain");
+      }
+      const activeTab = latestOperation.state.telemetry.after.tabs.find((tab) => tab.active);
+      if (activeTab?.url !== observedUrl.href) {
+        throw new Error("The signup page does not match the latest browser observation");
+      }
+      const scout = await ctx.db.get("scouts", chat.scoutId);
+      if (!scout || scout.status !== "active") throw new Error("Active Scout not found");
+      const identifier = requiredText(
+        request.identifier,
+        "Account identifier",
+        MAX_IDENTIFIER_LENGTH,
+      );
+      if (
+        identifier.includes("@") &&
+        identifier.toLowerCase() !== scout.agentMail.address.toLowerCase()
+      ) {
+        throw new Error("Use this Scout's own email address for account signup");
+      }
+      const accounts = await ctx.db
+        .query("scoutServiceAccounts")
+        .withIndex("by_scout_id", (query) => query.eq("scoutId", chat.scoutId))
+        .take(MAX_ACCOUNTS_PER_SCOUT);
+      const hostAccounts = accounts.filter(
+        (account) =>
+          account.loginMethod.kind === "managed_password" &&
+          account.loginMethod.credentialHost === observedUrl.hostname,
+      );
+      if (hostAccounts.length > 1) throw new Error("Multiple managed accounts use this login host");
+      const existing = hostAccounts[0];
+      if (existing && existing.identifier !== identifier) {
+        throw new Error(
+          "A password is already prepared for a different identifier on this login host",
+        );
+      }
+      return normalizeRegistration({
+        scoutId: chat.scoutId,
+        serviceName: existing?.serviceName ?? request.serviceName,
+        serviceDomain: existing?.serviceDomain ?? serviceDomain,
+        credentialHost: observedUrl.hostname,
+        identifier,
+      });
+    }
+  }
+}
+
 async function requireRegistrationAvailable(
   ctx: Pick<QueryCtx, "db">,
   registration: ReturnType<typeof normalizeRegistration>,
+  reuseExisting: boolean,
 ) {
   const scout = await ctx.db.get(registration.scoutId);
-  if (!scout) {
-    throw new Error("Scout not found");
+  if (!scout || scout.status !== "active") {
+    throw new Error("Active Scout not found");
   }
 
   const duplicate = await ctx.db
@@ -101,6 +211,14 @@ async function requireRegistrationAvailable(
     )
     .unique();
   if (duplicate) {
+    if (
+      reuseExisting &&
+      duplicate.loginMethod.kind === "managed_password" &&
+      duplicate.loginMethod.credentialHost === registration.credentialHost
+    ) {
+      await runtimeCredentialForAccount(ctx, duplicate);
+      return { serviceAccountId: duplicate._id, loginMethod: duplicate.loginMethod };
+    }
     throw new Error("Service account is already registered to this Scout");
   }
   const serviceAccounts = await ctx.db
@@ -128,6 +246,7 @@ async function requireRegistrationAvailable(
   if (allAccounts.length >= MAX_ACCOUNTS) {
     throw new Error(`Service account inventory can contain at most ${MAX_ACCOUNTS} accounts`);
   }
+  return null;
 }
 
 function boundedEnvelopeField(value: string, label: string) {
@@ -135,26 +254,36 @@ function boundedEnvelopeField(value: string, label: string) {
 }
 
 export const prepareManagedRegistration = internalQuery({
-  args: managedRegistrationArgsValidator.fields,
-  returns: normalizedRegistrationValidator,
-  handler: async (ctx, args) => {
-    await requireAppUser(ctx);
-    const registration = normalizeRegistration(args);
-    await requireRegistrationAvailable(ctx, registration);
-    return registration;
+  args: { request: managedRegistrationRequestValidator },
+  returns: v.object({
+    registration: normalizedRegistrationValidator,
+    existing: v.union(managedRegistrationResultValidator, v.null()),
+  }),
+  handler: async (ctx, { request }) => {
+    const registration = await resolveRegistration(ctx, request);
+    const existing = await requireRegistrationAvailable(
+      ctx,
+      registration,
+      request.kind === "browser",
+    );
+    return { registration, existing };
   },
 });
 
 export const commitManagedRegistration = internalMutation({
   args: {
-    ...managedRegistrationArgsValidator.fields,
+    request: managedRegistrationRequestValidator,
     encryptedCredential: encryptedCredentialValidator,
   },
   returns: managedRegistrationResultValidator,
   handler: async (ctx, args) => {
-    await requireAppUser(ctx);
-    const registration = normalizeRegistration(args);
-    await requireRegistrationAvailable(ctx, registration);
+    const registration = await resolveRegistration(ctx, args.request);
+    const existing = await requireRegistrationAvailable(
+      ctx,
+      registration,
+      args.request.kind === "browser",
+    );
+    if (existing) return existing;
 
     const credentialReference = boundedEnvelopeField(
       args.encryptedCredential.credentialReference,
@@ -245,6 +374,48 @@ export const commitManagedRegistration = internalMutation({
   },
 });
 
+async function runtimeCredentialForAccount(
+  ctx: Pick<QueryCtx, "db">,
+  account: Doc<"scoutServiceAccounts">,
+) {
+  if (account.loginMethod.kind !== "managed_password") return null;
+  const credential = await ctx.db
+    .query("scoutManagedCredentials")
+    .withIndex("by_service_account_id", (query) => query.eq("serviceAccountId", account._id))
+    .unique();
+  if (
+    !credential ||
+    credential.scoutId !== account.scoutId ||
+    credential.credentialHost !== account.loginMethod.credentialHost ||
+    credential.identifier !== account.identifier ||
+    credential.createdAt !== account.loginMethod.createdAt
+  ) {
+    throw new Error("Managed credential has an invalid service-account binding");
+  }
+  const configuredKey = await ctx.db
+    .query("scoutCredentialKeys")
+    .withIndex("by_key_version", (query) => query.eq("keyVersion", credential.keyVersion))
+    .unique();
+  if (!configuredKey || configuredKey.keyFingerprint !== credential.keyFingerprint) {
+    throw new Error("Managed credential key registry is missing or inconsistent");
+  }
+  return {
+    serviceAccountId: account._id,
+    identifier: account.identifier,
+    serviceDomain: account.serviceDomain,
+    credentialHost: credential.credentialHost,
+    createdAt: credential.createdAt,
+    credentialReference: credential.credentialReference,
+    formatVersion: credential.formatVersion,
+    algorithm: credential.algorithm,
+    keyVersion: credential.keyVersion,
+    keyFingerprint: credential.keyFingerprint,
+    nonce: credential.nonce,
+    ciphertext: credential.ciphertext,
+    authenticationTag: credential.authenticationTag,
+  };
+}
+
 export const listRuntimeCredentialsForScout = internalQuery({
   args: { scoutId: v.id("scouts") },
   returns: v.array(runtimeCredentialValidator),
@@ -255,42 +426,8 @@ export const listRuntimeCredentialsForScout = internalQuery({
       .take(MAX_ACCOUNTS_PER_SCOUT);
     const credentials: Array<typeof runtimeCredentialValidator.type> = [];
     for (const account of accounts) {
-      if (account.loginMethod.kind !== "managed_password") continue;
-      const credential = await ctx.db
-        .query("scoutManagedCredentials")
-        .withIndex("by_service_account_id", (query) => query.eq("serviceAccountId", account._id))
-        .unique();
-      if (
-        !credential ||
-        credential.scoutId !== account.scoutId ||
-        credential.credentialHost !== account.loginMethod.credentialHost ||
-        credential.identifier !== account.identifier ||
-        credential.createdAt !== account.loginMethod.createdAt
-      ) {
-        throw new Error("Managed credential has an invalid service-account binding");
-      }
-      const configuredKey = await ctx.db
-        .query("scoutCredentialKeys")
-        .withIndex("by_key_version", (query) => query.eq("keyVersion", credential.keyVersion))
-        .unique();
-      if (!configuredKey || configuredKey.keyFingerprint !== credential.keyFingerprint) {
-        throw new Error("Managed credential key registry is missing or inconsistent");
-      }
-      credentials.push({
-        serviceAccountId: account._id,
-        identifier: account.identifier,
-        serviceDomain: account.serviceDomain,
-        credentialHost: credential.credentialHost,
-        createdAt: credential.createdAt,
-        credentialReference: credential.credentialReference,
-        formatVersion: credential.formatVersion,
-        algorithm: credential.algorithm,
-        keyVersion: credential.keyVersion,
-        keyFingerprint: credential.keyFingerprint,
-        nonce: credential.nonce,
-        ciphertext: credential.ciphertext,
-        authenticationTag: credential.authenticationTag,
-      });
+      const credential = await runtimeCredentialForAccount(ctx, account);
+      if (credential) credentials.push(credential);
     }
     return credentials;
   },

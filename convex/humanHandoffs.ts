@@ -5,7 +5,7 @@ import type { QueryCtx } from "./_generated/server";
 import { internalMutation, internalQuery, query } from "./_generated/server";
 import { getAppUserId, requireAppUser } from "./access";
 import {
-  activeHumanHandoffValidator,
+  chatHumanHandoffValidator,
   expiredHandoff,
   failedHandoff,
   handoffClaim,
@@ -280,9 +280,9 @@ async function activePreparedAccess(
       };
 }
 
-export const active = query({
+export const forSession = query({
   args: { sessionId: v.id("scoutBrowserSessions") },
-  returns: v.union(activeHumanHandoffValidator, v.null()),
+  returns: v.union(chatHumanHandoffValidator, v.null()),
   handler: async (ctx, args) => {
     const userId = await requireAppUser(ctx);
     const handoff = await ctx.db
@@ -292,28 +292,29 @@ export const active = query({
     if (!handoff) return null;
     const context = await handoffContext(ctx, handoff);
     if (!context || context.chat.userId !== userId) return null;
-    if (handoff.status === "failed" && handoff.failure === "delivery_failed") {
-      return {
-        handoffId: handoff._id,
-        reason: handoff.reason,
-        requestedAt: handoff.requestedAt,
-        failedAt: handoff.failedAt,
-        phase: "delivery_failed" as const,
-      };
-    }
-    if (
-      (handoff.status !== "available" && handoff.status !== "active") ||
-      resourcesAreUnavailable(context, Date.now())
-    ) {
-      return null;
-    }
-    return {
+    const common = {
       handoffId: handoff._id,
       reason: handoff.reason,
       requestedAt: handoff.requestedAt,
-      expiresAt: handoffDeadline(handoff),
-      phase: handoff.status === "available" ? ("unclaimed" as const) : ("claimed" as const),
     };
+    switch (handoff.status) {
+      case "available":
+      case "active": {
+        const now = Date.now();
+        if (handoffDeadline(handoff) <= now) return { ...common, status: "expired" as const };
+        if (resourcesAreUnavailable(context, now)) {
+          return { ...common, status: "failed" as const, failure: "browser_ended" as const };
+        }
+        return { ...common, status: handoff.status, expiresAt: handoffDeadline(handoff) };
+      }
+      case "failed":
+        return { ...common, status: handoff.status, failure: handoff.failure };
+      case "continued":
+      case "resumed":
+      case "stopped":
+      case "expired":
+        return { ...common, status: handoff.status };
+    }
   },
 });
 

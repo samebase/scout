@@ -267,6 +267,7 @@ export const getThreadAgentContext = query({
       serviceDomain: account.serviceDomain,
       identifier: account.identifier,
       loginMethod: account.loginMethod,
+      authenticationEvidence: account.authenticationEvidence,
     }));
     return {
       instructions: scoutRuntimeInstructions({

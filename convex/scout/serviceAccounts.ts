@@ -5,6 +5,7 @@ import { requireAppUser } from "../access";
 import { accountObservationValidator } from "../schema";
 import { canonicalServiceDomain } from "../serviceDomains";
 import {
+  scoutServiceAccountAuthenticationEvidenceValidator,
   scoutServiceAccountFieldsValidator,
   scoutServiceAccountLoginMethodValidator,
 } from "./model";
@@ -36,6 +37,7 @@ const runtimeServiceAccountValidator = v.object({
   serviceDomain: v.string(),
   identifier: v.string(),
   loginMethod: scoutServiceAccountLoginMethodValidator,
+  authenticationEvidence: scoutServiceAccountAuthenticationEvidenceValidator,
 });
 
 const serviceAccountRecordingResultValidator = v.object({
@@ -180,6 +182,7 @@ export const listRuntimeForScout = internalQuery({
       serviceDomain: account.serviceDomain,
       identifier: account.identifier,
       loginMethod: account.loginMethod,
+      authenticationEvidence: account.authenticationEvidence,
     }));
   },
 });
