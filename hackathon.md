@@ -2,7 +2,7 @@
 
 - **Project:** Scout
 - **Event:** Convex All Gas Hackathon
-- **What it does:** Lets users chat with persistent Scouts that use their own connected accounts, with visible tool calls, browser sessions, and replay.
+- **What it does:** Offers browser play with persistent Scouts, a product-review landing page, and a lab for chats, connected accounts, and replay.
 - **Live app:** https://usable-spider-599.eu-west-1.convex.site
 - **Repo:** private
 - **Frontend:** Convex static hosting
@@ -1010,8 +1010,15 @@ Enabled DeepSeek V4 Flash in the existing Scout chat flow through Convex AI Gate
 Existing conversations can select it for later turns, with the choice retained in turn history
 (`convex/scout/models.ts`, `src/routes/chats.tsx`, `src/components/scout-run-message.tsx`).
 
-### 2026-09-06 - working tree
+### 2026-09-06 - 57946c7 - v176
 
 Added a "Managed with Samebase" credit below sign-in and in the chat navigation footer.
 The embedded mark stays visible in light and dark themes
 (`src/components/samebase-attribution.tsx`, `src/routes/chats.tsx`).
+
+### 2026-09-06 - working tree
+
+Added a Scout overview and separate Play and Review identities (`src/products/`). Play invites
+existing Scouts through Convex and shows the browser, conversation, help requests, and stop control.
+Review has its own landing page and a link to the existing Lab while its dedicated flow is still being designed.
+Shared development mode lets the worktree frontend use configured Scouts without deploying backend code.

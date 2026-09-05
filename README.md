@@ -1,6 +1,7 @@
 # Scout
 
-Give a Scout its own accounts, then work with it through chat.
+Explore Scout Play for browser games, Scout Review's product-review design preview, and the lab
+for connected accounts and detailed agent work.
 
 Live app: [usable-spider-599.eu-west-1.convex.site](https://usable-spider-599.eu-west-1.convex.site)
 
@@ -22,7 +23,18 @@ inside the repository.
 - Vite+ for development, formatting, linting, tests, and builds
 - Node.js 24 for application and automation code
 
-Scout currently provides private chats with persistent Scout identities. A chat can use the Scout's
+The public home page offers two product entries. `/play` introduces the game player, and
+`/play/session` accepts a room link and opens a browser-and-chat session with an existing Scout.
+`/review` is a landing page with its own visual identity and a static illustration. Its button opens
+the existing Lab; the dedicated review flow is still to be designed.
+`/chats` is the lab for detailed transcripts, replays, and model controls. See
+[`docs/play-product-direction.md`](./docs/play-product-direction.md) for the product options and research.
+
+Product pages, styles, and local behavior live in `src/products/play/` and `src/products/review/`.
+They share the current app's infrastructure without a shared product shell or theme. This keeps
+future separate frontends possible; each would still need its own routing and deployment setup.
+
+Scout provides private chats with persistent Scout identities. A chat can use the Scout's
 AgentMail inbox to read, send, and reply to email, plus its Firecrawl browser profile and accounts
 across multiple services. Choose Qwen, Luna, or Manual, and inspect tool calls, Live/Replay, usage,
 and human handoffs in the same workspace.
@@ -48,6 +60,21 @@ To force the isolated backend outside a linked worktree, use:
 ```sh
 pnpm run dev:worktree
 ```
+
+For UI work with existing Scouts, stop the current dev server and run:
+
+```sh
+pnpm run dev:shared
+```
+
+This starts only the worktree's frontend, using the cloud development deployment configured in
+the primary checkout's `.env.local`. Sign in with your development account. Chats and Scout actions
+use that shared database. The command does not deploy backend code or copy data, credentials, or
+environment files, and rejects production and local deployment targets.
+
+Scout uses the [Convex AI Gateway](https://docs.convex.dev/ai-gateway/overview), which requires a
+cloud deployment. Copying its database into the isolated local backend is not enough to run models.
+Use a separate cloud development deployment when testing backend changes that need the gateway.
 
 The core workflow runs on macOS, Linux, and Windows. See
 [`docs/local-setup.md`](./docs/local-setup.md) for the local Convex setup and troubleshooting steps.

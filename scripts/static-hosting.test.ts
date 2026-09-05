@@ -13,7 +13,7 @@ vi.mock("@tanstack/react-start/plugin/vite", () => ({
 import viteConfig from "../vite.config.ts";
 
 describe("Static hosting", () => {
-  test("builds one SPA shell from Chats without a public landing prerender", () => {
+  test("builds one SPA shell from the public landing page", () => {
     viteConfig({ command: "build", mode: "production" });
     expect(configuration.tanstackStart).toHaveBeenCalledExactlyOnceWith({
       prerender: {
@@ -22,7 +22,7 @@ describe("Static hosting", () => {
       },
       spa: {
         enabled: true,
-        maskPath: "/chats",
+        maskPath: "/",
         prerender: { outputPath: "/index.html" },
       },
     });

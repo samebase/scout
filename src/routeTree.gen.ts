@@ -11,9 +11,13 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ChatsRouteImport } from './routes/chats'
+import { Route as PlayRouteImport } from './routes/play'
+import { Route as ReviewRouteImport } from './routes/review'
 import { Route as ScoutsRouteImport } from './routes/scouts'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as HandoffHandoffIdRouteImport } from './routes/handoff.$handoffId'
+import { Route as PlayIndexRouteImport } from './routes/play.index'
+import { Route as PlaySessionRouteImport } from './routes/play.session'
 import { Route as ScoutsIndexRouteImport } from './routes/scouts.index'
 import { Route as ScoutsSlugRouteImport } from './routes/scouts.$slug'
 
@@ -25,6 +29,16 @@ const IndexRoute = IndexRouteImport.update({
 const ChatsRoute = ChatsRouteImport.update({
   id: '/chats',
   path: '/chats',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PlayRoute = PlayRouteImport.update({
+  id: '/play',
+  path: '/play',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReviewRoute = ReviewRouteImport.update({
+  id: '/review',
+  path: '/review',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ScoutsRoute = ScoutsRouteImport.update({
@@ -42,6 +56,16 @@ const HandoffHandoffIdRoute = HandoffHandoffIdRouteImport.update({
   path: '/handoff/$handoffId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PlayIndexRoute = PlayIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => PlayRoute,
+} as any)
+const PlaySessionRoute = PlaySessionRouteImport.update({
+  id: '/session',
+  path: '/session',
+  getParentRoute: () => PlayRoute,
+} as any)
 const ScoutsIndexRoute = ScoutsIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -56,28 +80,39 @@ const ScoutsSlugRoute = ScoutsSlugRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/chats': typeof ChatsRoute
+  '/play': typeof PlayRouteWithChildren
+  '/review': typeof ReviewRoute
   '/scouts': typeof ScoutsRouteWithChildren
   '/settings': typeof SettingsRoute
   '/handoff/$handoffId': typeof HandoffHandoffIdRoute
+  '/play/session': typeof PlaySessionRoute
   '/scouts/$slug': typeof ScoutsSlugRoute
+  '/play/': typeof PlayIndexRoute
   '/scouts/': typeof ScoutsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/chats': typeof ChatsRoute
+  '/review': typeof ReviewRoute
   '/settings': typeof SettingsRoute
   '/handoff/$handoffId': typeof HandoffHandoffIdRoute
+  '/play/session': typeof PlaySessionRoute
   '/scouts/$slug': typeof ScoutsSlugRoute
+  '/play': typeof PlayIndexRoute
   '/scouts': typeof ScoutsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/chats': typeof ChatsRoute
+  '/play': typeof PlayRouteWithChildren
+  '/review': typeof ReviewRoute
   '/scouts': typeof ScoutsRouteWithChildren
   '/settings': typeof SettingsRoute
   '/handoff/$handoffId': typeof HandoffHandoffIdRoute
+  '/play/session': typeof PlaySessionRoute
   '/scouts/$slug': typeof ScoutsSlugRoute
+  '/play/': typeof PlayIndexRoute
   '/scouts/': typeof ScoutsIndexRoute
 }
 export interface FileRouteTypes {
@@ -85,33 +120,46 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/chats'
+    | '/play'
+    | '/review'
     | '/scouts'
     | '/settings'
     | '/handoff/$handoffId'
+    | '/play/session'
     | '/scouts/$slug'
+    | '/play/'
     | '/scouts/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/chats'
+    | '/review'
     | '/settings'
     | '/handoff/$handoffId'
+    | '/play/session'
     | '/scouts/$slug'
+    | '/play'
     | '/scouts'
   id:
     | '__root__'
     | '/'
     | '/chats'
+    | '/play'
+    | '/review'
     | '/scouts'
     | '/settings'
     | '/handoff/$handoffId'
+    | '/play/session'
     | '/scouts/$slug'
+    | '/play/'
     | '/scouts/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ChatsRoute: typeof ChatsRoute
+  PlayRoute: typeof PlayRouteWithChildren
+  ReviewRoute: typeof ReviewRoute
   ScoutsRoute: typeof ScoutsRouteWithChildren
   SettingsRoute: typeof SettingsRoute
   HandoffHandoffIdRoute: typeof HandoffHandoffIdRoute
@@ -131,6 +179,20 @@ declare module '@tanstack/react-router' {
       path: '/chats'
       fullPath: '/chats'
       preLoaderRoute: typeof ChatsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/play': {
+      id: '/play'
+      path: '/play'
+      fullPath: '/play'
+      preLoaderRoute: typeof PlayRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/review': {
+      id: '/review'
+      path: '/review'
+      fullPath: '/review'
+      preLoaderRoute: typeof ReviewRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/scouts': {
@@ -154,6 +216,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HandoffHandoffIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/play/': {
+      id: '/play/'
+      path: '/'
+      fullPath: '/play/'
+      preLoaderRoute: typeof PlayIndexRouteImport
+      parentRoute: typeof PlayRoute
+    }
+    '/play/session': {
+      id: '/play/session'
+      path: '/session'
+      fullPath: '/play/session'
+      preLoaderRoute: typeof PlaySessionRouteImport
+      parentRoute: typeof PlayRoute
+    }
     '/scouts/': {
       id: '/scouts/'
       path: '/'
@@ -171,6 +247,18 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface PlayRouteChildren {
+  PlaySessionRoute: typeof PlaySessionRoute
+  PlayIndexRoute: typeof PlayIndexRoute
+}
+
+const PlayRouteChildren: PlayRouteChildren = {
+  PlaySessionRoute: PlaySessionRoute,
+  PlayIndexRoute: PlayIndexRoute,
+}
+
+const PlayRouteWithChildren = PlayRoute._addFileChildren(PlayRouteChildren)
+
 interface ScoutsRouteChildren {
   ScoutsSlugRoute: typeof ScoutsSlugRoute
   ScoutsIndexRoute: typeof ScoutsIndexRoute
@@ -187,6 +275,8 @@ const ScoutsRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ChatsRoute: ChatsRoute,
+  PlayRoute: PlayRouteWithChildren,
+  ReviewRoute: ReviewRoute,
   ScoutsRoute: ScoutsRouteWithChildren,
   SettingsRoute: SettingsRoute,
   HandoffHandoffIdRoute: HandoffHandoffIdRoute,
