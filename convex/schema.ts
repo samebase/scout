@@ -11,6 +11,7 @@ import {
 import { humanHandoffDeliveryRecordValidator } from "./humanHandoffDeliveryModel";
 import { humanHandoffValidator } from "./humanHandoffsModel";
 import { scoutServiceAccountFieldsValidator, scoutWebsiteIdentityValidator } from "./scout/model";
+import { activeSkillsValidator } from "./scout/skills";
 import {
   compactionFields,
   modelCallPurposeValidator,
@@ -87,6 +88,7 @@ export default defineSchema({
     userId: v.id("users"),
     scoutId: v.id("scouts"),
     createdAt: v.number(),
+    activeSkills: v.optional(activeSkillsValidator),
   })
     .index("by_thread_id", ["threadId"])
     .index("by_user_id_and_created_at", ["userId", "createdAt"]),
@@ -97,6 +99,7 @@ export default defineSchema({
     scoutId: v.id("scouts"),
     model: scoutModelValidator,
     startedAt: v.number(),
+    skillsSelected: v.optional(v.boolean()),
     state: scoutTurnStateValidator,
   })
     .index("by_prompt_message_id", ["promptMessageId"])

@@ -11,6 +11,7 @@ import { omitNullish } from "../shared/omitNullish";
 import { loadUncompactedMessages, prepareConversationContext } from "./scout/compactionContext";
 import { preserveTurnObjective } from "./scout/generation";
 import { estimateContextTokens } from "./scout/modelContext";
+import { bundledSkills, createSkillTools } from "./scout/skills";
 
 type StoredMessage = FunctionArgs<
   typeof components.agent.messages.addMessages
@@ -144,6 +145,146 @@ test("pages beyond the old 500-message window without losing unsummarized histor
   );
   expect(prepared.messages).toEqual(docsToModelMessages(original));
   expect(t.summarize).not.toHaveBeenCalled();
+});
+
+test("keeps skill guidance across slices, compaction and follow-ups without rewriting history", async () => {
+  const t = await setup("Play the game until it ends.");
+  expect(
+    (
+      await t.backend.query(internal.scout.chats.runtimeContext, {
+        promptMessageId: t.prompt._id,
+      })
+    ).skillsSelected,
+  ).toBe(false);
+  const { load_skills: loader } = createSkillTools(async (names) =>
+    t.backend.mutation(internal.scout.chats.loadSkills, { turnId: t.turnId, names }),
+  );
+  const selection = await loader.execute(
+    { names: ["games", "games"] },
+    { toolCallId: "skills-1", messages: [], context: {} },
+  );
+  await t.backend.mutation(components.agent.messages.addMessages, {
+    threadId: t.threadId,
+    promptMessageId: t.prompt._id,
+    messages: [
+      {
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "tool-call",
+              toolCallId: "skills-1",
+              toolName: "load_skills",
+              args: { names: ["games"] },
+            },
+          ],
+        },
+      },
+      {
+        message: {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "skills-1",
+              toolName: "load_skills",
+              result: selection,
+            },
+          ],
+        },
+      },
+    ],
+  });
+  await t.writeHistory("Game observations", 20, 100);
+  const original = await t.readOriginal();
+  const compacted = await t.prepare();
+  expect(compacted.compactionId).not.toBeNull();
+  expect(JSON.stringify(compacted.messages)).not.toContain("load_skills");
+  expect(await t.readOriginal()).toEqual(original);
+  const runtime = await t.backend.query(internal.scout.chats.runtimeContext, {
+    promptMessageId: t.prompt._id,
+  });
+  expect(runtime.activeSkills).toEqual(["games"]);
+  expect(runtime.skillsSelected).toBe(true);
+  await t.backend.mutation(internal.scout.turns.continueAfterSlice, {
+    promptMessageId: t.prompt._id,
+    previousCompletedSteps: 1,
+    completedSteps: 2,
+    usage: {},
+  });
+  expect(
+    (
+      await t.backend.query(internal.scout.chats.runtimeContext, {
+        promptMessageId: t.prompt._id,
+      })
+    ).activeSkills,
+  ).toEqual(["games"]);
+  const readInstructions = async () =>
+    (
+      await t.owner.query(api.scout.chats.getThreadAgentContext, {
+        threadId: t.threadId,
+      })
+    ).instructions;
+  const instructions = await readInstructions();
+  expect(instructions.split(bundledSkills.games.guidance)).toHaveLength(2);
+  expect(instructions).not.toContain(bundledSkills.email.guidance);
+  expect(instructions).not.toContain(bundledSkills.research.guidance);
+  expect(JSON.stringify(t.summarize.mock.calls)).not.toContain(bundledSkills.games.guidance);
+  await t.backend.mutation(internal.scout.turns.complete, {
+    promptMessageId: t.prompt._id,
+    usage: {},
+  });
+  const [nextPrompt] = (
+    await t.backend.mutation(components.agent.messages.addMessages, {
+      threadId: t.threadId,
+      messages: [{ message: { role: "user", content: "Now research and email the result." } }],
+    })
+  ).messages;
+  const nextTurn = await t.backend.run(async (ctx) => {
+    const previous = await ctx.db.get(t.turnId);
+    if (!previous) throw new Error("Turn missing");
+    const { _id: _previousId, _creationTime: _created, ...fields } = previous;
+    return ctx.db.insert("scoutTurns", {
+      ...fields,
+      skillsSelected: false,
+      promptMessageId: nextPrompt._id,
+      order: nextPrompt.order,
+      state: { kind: "pending", leaseExpiresAt: Date.now() + 60_000, completedSteps: 0, usage: {} },
+    });
+  });
+  expect(
+    await t.backend.query(internal.scout.chats.runtimeContext, {
+      promptMessageId: nextPrompt._id,
+    }),
+  ).toMatchObject({ activeSkills: ["games"], skillsSelected: false });
+  expect(
+    await t.backend.mutation(internal.scout.chats.loadSkills, { turnId: nextTurn, names: null }),
+  ).toEqual(["games"]);
+  await t.backend.mutation(internal.scout.chats.loadSkills, {
+    turnId: nextTurn,
+    names: ["email", "research"],
+  });
+  const switched = await readInstructions();
+  expect(switched).not.toContain(bundledSkills.games.guidance);
+  expect(switched).toContain(bundledSkills.research.guidance);
+  expect(switched).toContain(bundledSkills.email.guidance);
+  expect(
+    (
+      await t.backend.query(internal.scout.chats.runtimeContext, {
+        promptMessageId: nextPrompt._id,
+      })
+    ).skillsSelected,
+  ).toBe(true);
+  await expect(
+    t.backend.mutation(internal.scout.chats.loadSkills, {
+      turnId: t.turnId,
+      names: ["games"],
+    }),
+  ).rejects.toThrow("Active Scout turn not found");
+  await expect(
+    t.outsider.query(api.scout.chats.getThreadAgentContext, { threadId: t.threadId }),
+  ).rejects.toThrow();
+  expect((await t.readOriginal()).slice(0, original.length)).toEqual(original);
 });
 
 test("persists, reloads and advances summaries while preserving the transcript, objective and usage", async () => {

@@ -31,6 +31,7 @@ import {
 } from "./models";
 import { continueStoppingTurn, enqueueTurn, stopTurn } from "./turns";
 import { scoutRuntimeInstructions } from "./runtimeInstructions";
+import { activeSkillsValidator, orderedSkills } from "./skills";
 
 const MAX_PROMPT_LENGTH = 16_000;
 const MAX_THREAD_TITLE_LENGTH = 80;
@@ -224,6 +225,7 @@ export const createThread = mutation({
       userId,
       scoutId: args.scoutId,
       createdAt: Date.now(),
+      activeSkills: [],
     });
     return created;
   },
@@ -274,6 +276,7 @@ export const getThreadAgentContext = query({
         scout,
         credentials,
         serviceAccounts,
+        activeSkills: binding.activeSkills ?? [],
         browserSessionOpen:
           (
             await ctx.db
@@ -482,6 +485,8 @@ export const runtimeContext = internalQuery({
     startedAt: v.number(),
     userId: v.id("users"),
     scoutId: v.id("scouts"),
+    activeSkills: activeSkillsValidator,
+    skillsSelected: v.boolean(),
     browserSession: v.union(
       schema.doc("scoutBrowserSessions").pick("_id", "providerSessionId", "lifecycle"),
       v.null(),
@@ -504,6 +509,8 @@ export const runtimeContext = internalQuery({
       startedAt: turn.startedAt,
       userId: chat.userId,
       scoutId: chat.scoutId,
+      activeSkills: chat.activeSkills ?? [],
+      skillsSelected: turn.skillsSelected ?? false,
       browserSession: session
         ? {
             _id: session._id,
@@ -512,6 +519,28 @@ export const runtimeContext = internalQuery({
           }
         : null,
     };
+  },
+});
+
+export const loadSkills = internalMutation({
+  args: { turnId: v.id("scoutTurns"), names: v.union(activeSkillsValidator, v.null()) },
+  returns: activeSkillsValidator,
+  handler: async (ctx, args) => {
+    const turn = await ctx.db.get(args.turnId);
+    if (!turn || turn.state.kind !== "pending" || turn.state.leaseExpiresAt <= Date.now()) {
+      throw new Error("Active Scout turn not found");
+    }
+    const chat = await ctx.db
+      .query("scoutChats")
+      .withIndex("by_thread_id", (q) => q.eq("threadId", turn.threadId))
+      .unique();
+    if (!chat || chat.scoutId !== turn.scoutId) throw new Error("Chat not found");
+    const names = orderedSkills(args.names ?? chat.activeSkills ?? []);
+    if (JSON.stringify(chat.activeSkills ?? []) !== JSON.stringify(names)) {
+      await ctx.db.patch(chat._id, { activeSkills: names });
+    }
+    if (!turn.skillsSelected) await ctx.db.patch(turn._id, { skillsSelected: true });
+    return names;
   },
 });
 

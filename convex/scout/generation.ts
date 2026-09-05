@@ -42,6 +42,7 @@ import { createToolArgumentProbe } from "./toolArgumentProbe";
 import { repairStringifiedToolInput } from "./toolCallRepair";
 import { scoutRuntimeInstructions } from "./runtimeInstructions";
 import { createWebTools } from "./webTools";
+import { createSkillTools } from "./skills";
 
 export const GENERATION_SLICE_STEPS = 1;
 export const GENERATION_SLICE_WORK_BUDGET_MS = 6 * 60 * 1_000;
@@ -490,6 +491,7 @@ export const runSlice = internalAction({
         scoutId,
         sessionId: () => browserSessionId,
       });
+      let skillsSelected = runtimeContext.skillsSelected;
       const tools = {
         ...browser.tools,
         ...createWebTools(beforeModelToolDispatch),
@@ -497,12 +499,27 @@ export const runSlice = internalAction({
         request_human_help: createHumanHandoffTool(humanHandoffCallbacks),
         ...accountTools,
         inspect_tool_arguments: createToolArgumentProbe(),
+        ...createSkillTools(async (names) => {
+          const activeSkills = await ctx.runMutation(internal.scout.chats.loadSkills, {
+            turnId: activeTurnId,
+            names,
+          });
+          skillsSelected = true;
+          return activeSkills;
+        }),
       };
+      // Reconsider guides for each user request before tools with external effects.
+      // Later slices keep the selection without another activation round.
+      const selectingSkills = !runtimeContext.skillsSelected;
+      const stepTools = selectingSkills
+        ? { keep_skills: tools.keep_skills, load_skills: tools.load_skills }
+        : tools;
       const instructions = scoutRuntimeInstructions({
         scout,
         credentials: runtimeCredentials,
         serviceAccounts: runtimeServiceAccounts,
         browserSessionOpen: browserSessionId !== null,
+        activeSkills: runtimeContext.activeSkills,
       });
       const streamErrors = createStreamErrorCapture();
       let activeModelCallId: Id<"scoutModelCalls"> | null = null;
@@ -596,7 +613,7 @@ export const runSlice = internalAction({
       const fixedTokens = estimateContextTokens({
         instructions,
         tools: await Promise.all(
-          Object.entries(tools).map(async ([name, tool]) => ({
+          Object.entries(stepTools).map(async ([name, tool]) => ({
             name,
             description: tool.description,
             inputSchema: await asSchema<unknown>(tool.inputSchema).jsonSchema,
@@ -640,7 +657,8 @@ export const runSlice = internalAction({
           promptMessageId: args.promptMessageId,
           model: scoutLanguageModel(args.model),
           instructions,
-          tools,
+          tools: stepTools,
+          toolChoice: selectingSkills ? "required" : "auto",
           repairToolCall: repairStringifiedToolInput,
           abortSignal: sliceAbortSignal,
           maxRetries: 2,
@@ -674,7 +692,13 @@ export const runSlice = internalAction({
         previousUsage,
         accumulatedUsage ?? tokenUsage(await streamResult.totalUsage),
       );
-      if (humanHandoffWaiting || finishReason === "stop") {
+      if (!skillsSelected && finishReason === "stop") {
+        generationResult = {
+          kind: "failed",
+          error: new Error("Scout ended without choosing whether to keep or load skill guides"),
+          usage,
+        };
+      } else if (humanHandoffWaiting || finishReason === "stop") {
         generationResult = { kind: "completed", usage };
       } else if (finishReason === "tool-calls" && completedSteps >= MAX_TURN_STEPS) {
         generationResult = {

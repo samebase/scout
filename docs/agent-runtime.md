@@ -67,6 +67,23 @@ summary. Summarization usage contributes to the turn's existing usage and cost t
 1,000. Estimates use serialized UTF-8 bytes divided by four; provider token counts remain the source
 of truth for billing. Restore the default by removing the override after verification.
 
+Optional bundled guides cover games, research, and email. The model sees their short descriptions
+and selects the names it needs through `load_skills`. The first step of each user request exposes
+only `keep_skills` and `load_skills` and requires a choice: keep existing guides for a continuation, or select the
+complete set for a new task, including an empty list when no guide applies. Selection replaces the
+chat's active set. Keeping guides reads the stored set without duplicating guidance.
+The server orders and deduplicates names and rejects changes from stopped or expired turns.
+Later generation slices and compaction reuse the selection independently of the summary.
+
+Each generation request includes the current guides once in its `active_skills` instructions, outside
+the conversation history. The tool records only the selected names, so old or inactive guide bodies
+do not accumulate in the transcript or summary. Model calls exposes those activation results in
+Messages and the exact guidance in Instructions. The original transcript remains intact. Guides
+provide procedure; the summary holds task progress, and essential identity, credential, email, and
+handoff rules remain unconditional. There is no filesystem discovery or user-authored skill execution.
+This uses the catalog, activation, and context-lifetime recommendations from the
+[Agent Skills integration guide](https://agentskills.io/client-implementation/adding-skills-support).
+
 Manual calls run the same browser, account, mail, and research tools without invoking a model.
 Their inputs and outputs appear in the same transcript. Manual browser sessions stay open between
 calls until closed or expired; a model generation can attach to that chat's open session. Automatic
