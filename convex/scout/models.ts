@@ -4,12 +4,21 @@ import { omitNullish } from "../../shared/omitNullish";
 
 const lunaModelValidator = v.literal("openai/gpt-5.6-luna");
 const qwen37FlashModelValidator = v.literal("qwen/qwen3.7-flash");
+const deepSeekV4FlashModelValidator = v.literal("deepseek/deepseek-v4-flash-0731");
 
-export const selectableScoutModelValidator = v.union(lunaModelValidator, qwen37FlashModelValidator);
+export const selectableScoutModelValidator = v.union(
+  lunaModelValidator,
+  qwen37FlashModelValidator,
+  deepSeekV4FlashModelValidator,
+);
 
 export type SelectableScoutModel = Infer<typeof selectableScoutModelValidator>;
 
-export const scoutModelValidator = v.union(lunaModelValidator, qwen37FlashModelValidator);
+export const scoutModelValidator = v.union(
+  lunaModelValidator,
+  qwen37FlashModelValidator,
+  deepSeekV4FlashModelValidator,
+);
 
 export type ScoutModel = Infer<typeof scoutModelValidator>;
 

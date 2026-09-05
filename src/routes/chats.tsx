@@ -117,6 +117,7 @@ type PendingThread = {
 const DRIVER_OPTIONS = [
   { value: "openai/gpt-5.6-luna", label: "Luna" },
   { value: "qwen/qwen3.7-flash", label: "Qwen 3.7 Flash" },
+  { value: "deepseek/deepseek-v4-flash-0731", label: "DeepSeek V4 Flash" },
   { value: "manual", label: "Manual" },
 ] as const;
 

@@ -33,6 +33,8 @@ export function scoutModelLabel(model: string) {
       return "Luna";
     case "qwen/qwen3.7-flash":
       return "Qwen 3.7 Flash";
+    case "deepseek/deepseek-v4-flash-0731":
+      return "DeepSeek V4 Flash";
     default:
       return model;
   }

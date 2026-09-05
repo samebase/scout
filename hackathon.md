@@ -10,9 +10,9 @@
 - **Components:** @convex-dev/agent, @convex-dev/static-hosting, @convex-dev/workflow
 - **Convex features:** schema, tables, indexes, queries, paginated queries, realtime queries, mutations, actions, scheduled functions, HTTP actions, AI Gateway
 - **Auth:** Convex Auth
-- **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna (Convex AI Gateway)
+- **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-05T17:13:16Z
+- **Last updated:** 2026-09-05T21:37:40Z
 
 ## Log
 
@@ -996,10 +996,16 @@ Inbox reads use minimal inputs and omit empty pagination values (`convex/scout/b
 Resumed browsers restore password masking; password edits wait for browser closure (`convex/scout/accountTools.ts`, `convex/scout/serviceAccounts.ts`).
 Account recording explains mismatches between visible names and saved login identifiers (`convex/scout/serviceAccounts.ts`).
 
-### 2026-09-05 - working tree
+### 2026-09-05 - ffbab14 - v174
 
 Added optional games, research, and email guides that Scout selects through `load_skills`.
 Active guidance stays separate from conversation summaries and survives compaction and later turns,
 with follow-ups retaining their guides automatically. Selections and full instructions are visible
 in Model calls (`convex/scout/skills.ts`,
 `convex/scout/chats.ts`, `convex/scout/generation.ts`).
+
+### 2026-09-05 - working tree
+
+Enabled DeepSeek V4 Flash in the existing Scout chat flow through Convex AI Gateway.
+Existing conversations can select it for later turns, with the choice retained in turn history
+(`convex/scout/models.ts`, `src/routes/chats.tsx`, `src/components/scout-run-message.tsx`).

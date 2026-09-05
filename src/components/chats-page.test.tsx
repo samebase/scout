@@ -254,25 +254,25 @@ describe("Chat workspace", () => {
     );
   });
 
-  test("sends a prompt through the chosen model on the selected chat", async () => {
-    const user = userEvent.setup();
-    await openChats();
-    await user.selectOptions(
-      await screen.findByRole("combobox", { name: "Driver" }),
-      "openai/gpt-5.6-luna",
-    );
-    await user.type(
-      screen.getByRole("textbox", { name: "Message Scout" }),
-      "Inspect the submit button",
-    );
-    await user.click(screen.getByRole("button", { name: "Send message" }));
+  test.each(["openai/gpt-5.6-luna", "deepseek/deepseek-v4-flash-0731"])(
+    "sends a prompt through %s on the selected chat",
+    async (model) => {
+      const user = userEvent.setup();
+      await openChats();
+      await user.selectOptions(await screen.findByRole("combobox", { name: "Driver" }), model);
+      await user.type(
+        screen.getByRole("textbox", { name: "Message Scout" }),
+        "Inspect the submit button",
+      );
+      await user.click(screen.getByRole("button", { name: "Send message" }));
 
-    expect(remote.sendMessage).toHaveBeenCalledExactlyOnceWith({
-      threadId: "thread-1",
-      model: "openai/gpt-5.6-luna",
-      prompt: "Inspect the submit button",
-    });
-  });
+      expect(remote.sendMessage).toHaveBeenCalledExactlyOnceWith({
+        threadId: "thread-1",
+        model,
+        prompt: "Inspect the submit button",
+      });
+    },
+  );
 
   test("stops the selected chat when the running composer is empty", async () => {
     remote.queries.set("scout/chats:getScoutActivity", {
