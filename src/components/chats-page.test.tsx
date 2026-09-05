@@ -305,7 +305,7 @@ describe("Chat workspace", () => {
       screen.getByRole("textbox", { name: "Message Scout" }),
       "Use the existing account instead",
     );
-    await user.click(screen.getByRole("button", { name: "Stop Scout and send message" }));
+    await user.click(screen.getByRole("button", { name: "Send message" }));
 
     expect(remote.stopScout).toHaveBeenCalledExactlyOnceWith({
       threadId: "thread-1",

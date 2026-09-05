@@ -1027,7 +1027,7 @@ function ChatsWorkspace() {
                               : "Retry sending message"
                             : canInterrupt
                               ? selectedDriver !== "manual" && draft.trim()
-                                ? "Stop Scout and send message"
+                                ? "Send message"
                                 : "Stop Scout"
                               : selectedDriver === "manual"
                                 ? "Run tool"

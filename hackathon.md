@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-04T23:06:26Z
+- **Last updated:** 2026-09-05T03:16:20Z
 
 ## Log
 
@@ -965,9 +965,18 @@ shows summary coverage, token estimates, and cost (`convex/scout/compactionConte
 encrypted store and are instructed to record accounts immediately after authentication
 (`convex/scout/accountTools.ts`, `convex/scout/runtimeInstructions.ts`).
 
-### 2026-09-04 - working tree
+### 2026-09-05 - b4dd421 - v170
 
 Added click rings and browser-side MP4 export to the admin chat replay. Convex retains bounded
 click events alongside browser operations, including failures, while MediaBunny renders the
 recorded video and rings in a cancellable worker (`convex/scout/browserClickRecorder.ts`,
 `src/components/browser-replay.tsx`, `src/lib/renderBrowserReplay.ts`).
+
+### 2026-09-05 - working tree
+
+Browser handoffs preserve the active browser across interrupted turns and send the private link
+through the existing email workflow (`convex/scout/turns.ts`, `convex/humanHandoffs.ts`). Scout
+profiles can save chosen passwords and account connections such as "Sign in with GitHub," while
+login edits keep account links intact and require fresh authentication evidence
+(`src/components/scout-service-accounts.tsx`, `convex/scout/serviceAccounts.ts`). Scout creation
+explains missing email configuration (`convex/scout/scoutRegistration.ts`).

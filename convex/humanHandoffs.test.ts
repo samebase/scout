@@ -9,6 +9,7 @@ import { ADMIN_EMAIL } from "./authConfig";
 import schema from "./schema";
 import { HUMAN_HANDOFF_ACTIVE_MS, HUMAN_HANDOFF_CLAIM_MS } from "./humanHandoffs";
 import { activeBrowserForChat } from "./scout/chatAccess";
+import { finishStoppingTurn } from "./scout/turns";
 import { hashHumanHandoffAccessToken } from "./scout/lib/humanHandoffAccess";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -144,6 +145,34 @@ async function claim(
 }
 
 describe("human handoffs", () => {
+  test.each(["pending", "stopping"])(
+    "retries failed cleanup of a closing browser for a %s turn",
+    async (kind) => {
+      const { backend, owner, threadId, turnId, sessionId, promptMessageId } = await setupContext();
+      await backend.mutation(internal.scout.turns.beginBrowserCleanup, { turnId, sessionId });
+      if (kind === "pending") {
+        await backend.mutation(internal.scout.turns.fail, {
+          promptMessageId,
+          failure: "Provider browser cleanup failed",
+        });
+      } else {
+        await owner.mutation(api.scout.chats.stop, { threadId });
+        await backend.run((ctx) => finishStoppingTurn(ctx, turnId));
+        await backend.run((ctx) => finishStoppingTurn(ctx, turnId));
+      }
+      vi.advanceTimersByTime(0);
+      await backend.finishInProgressScheduledFunctions();
+      await backend.finishAllScheduledFunctions(() => vi.runAllTimers());
+      expect(browserProvider.close).toHaveBeenCalledOnce();
+      expect(await backend.run(async (ctx) => (await ctx.db.get(sessionId))?.lifecycle.kind)).toBe(
+        "closed",
+      );
+      expect(await backend.run(async (ctx) => (await ctx.db.get(turnId))?.state.kind)).toBe(
+        kind === "pending" ? "failed" : "stopped",
+      );
+    },
+  );
+
   test("persists completed slice progress before the next generation action", async () => {
     const { backend, promptMessageId, turnId } = await setupContext();
     const checkpointedAt = Date.now();
@@ -552,6 +581,37 @@ describe("human handoffs", () => {
         accessTokenHash,
       }),
     ).rejects.toThrow("Active Scout browser session not found");
+  });
+
+  test("rejects takeover when an earlier execution remains unresolved", async () => {
+    const { backend, promptMessageId, sessionId } = await setupContext();
+    for (const toolCallId of ["lost-response", "later-failure"]) {
+      await backend.mutation(internal.scout.browserSessions.prepareOperation, {
+        sessionId,
+        toolCallId,
+        action: { kind: "execute", code: "await page.title()" },
+      });
+      await backend.mutation(internal.scout.browserSessions.settleOperation, {
+        sessionId,
+        toolCallId,
+        outcome:
+          toolCallId === "lost-response"
+            ? { kind: "indeterminate_after_dispatch", failure: "Lost provider response" }
+            : { kind: "failed_before_dispatch", failure: "Interrupted before dispatch" },
+        clickCapture: { kind: "unavailable" },
+      });
+    }
+    await expect(
+      backend.mutation(internal.humanHandoffs.request, {
+        promptMessageId,
+        reason: "The user requested browser control",
+        accessTokenHash,
+      }),
+    ).rejects.toThrow("A browser operation may still be running");
+    expect(await backend.run(async (ctx) => ctx.db.query("scoutHumanHandoffs").first())).toBeNull();
+    expect(
+      await backend.run(async (ctx) => ctx.db.query("scoutHumanHandoffDeliveries").first()),
+    ).toBeNull();
   });
 
   test("repeating a request preserves its link and workflow", async () => {

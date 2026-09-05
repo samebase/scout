@@ -43,15 +43,15 @@ export function humanHandoffEmail<HandoffId extends string>(
   const scoutName = emailHeader(request.scoutName) || "Scout";
   return {
     to: request.recipientEmail,
-    subject: emailHeader(`[Scout human check] ${scoutName} needs your help`),
-    text: `${scoutName} requested a human-only browser check.
+    subject: emailHeader(`[Scout handoff] ${scoutName} is ready for you`),
+    text: `${scoutName} has paused so you can take control of the browser.
 
 Open this private Scout link before ${new Date(request.claimExpiresAt).toISOString()}:
 ${request.handoffUrl}
 
-Opening the link starts a separate five-minute control window. Complete only the requested human check, then press Continue Scout on the handoff page.
+Opening the link starts a separate five-minute control window. When you are finished, press Continue Scout on the handoff page.
 
-Security: use only the private Scout page. Do not reply to this email with passwords, verification codes, authentication links, or other credentials. The page will show the check that blocked Scout.
+Security: use only the private Scout page. Do not reply to this email with passwords, verification codes, authentication links, or other credentials. The page describes the requested browser interaction.
 
 For the most reliable drag controls, use a desktop computer. Mobile drag controls may be unreliable.
 
@@ -63,7 +63,7 @@ Sent by ${scoutName} from its Scout inbox.`,
 export function createHumanHandoffTool(callbacks: HumanHandoffCallbacks) {
   return tool({
     description:
-      "Pause for a human only when the current browser page visibly requires a CAPTCHA, device verification, or another control that Playwright cannot operate. Do not use this for OAuth or permission consent, navigation, slow loading, an unfamiliar page, a failed selector, or a tool error. The reason appears beside the live browser: describe the exact visible interaction, without a link or a request to navigate elsewhere. Scout writes the email and adds its private handoff link. Call this exactly once as the only tool call in the response, then stop.",
+      "Hand the open browser to the user when they ask to take over, or when a visible CAPTCHA, device verification, or another human-only control blocks the task. A user-requested takeover does not require a visible challenge. Open the user's requested page first if no browser is open. Describe the requested interaction in at most 500 characters. This tool creates the private handoff and queues its email to the chat owner's saved address; do not send a separate email. Report a handoff only after this tool succeeds. Call this exactly once as the only tool call in the response, then stop.",
     inputSchema: humanHandoffInputSchema,
     execute: async (input) => await beginHumanHandoff(callbacks, input),
   });

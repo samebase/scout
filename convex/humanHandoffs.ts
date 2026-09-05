@@ -21,6 +21,7 @@ import {
 import { humanHandoffDeliveryArgsValidator } from "./humanHandoffDeliveryModel";
 import { humanHandoffWorkflow } from "./humanHandoffWorkflow";
 import { humanHandoffInputSchema } from "./scout/humanHandoffInput";
+import { browserReadyForTransfer } from "./scout/chatAccess";
 
 export const HUMAN_HANDOFF_CLAIM_MS = 45 * 60 * 1_000;
 export const HUMAN_HANDOFF_ACTIVE_MS = 5 * 60 * 1_000;
@@ -360,6 +361,11 @@ export const request = internalMutation({
       session.lifecycle.providerExpiresAtMs <= requestedAt + HUMAN_HANDOFF_ACTIVE_MS
     ) {
       throw new Error("Active Scout browser session not found");
+    }
+    if (!(await browserReadyForTransfer(ctx, session._id))) {
+      throw new Error(
+        "A browser operation may still be running. Close this session and open the requested page before requesting handoff again. No handoff or email was created.",
+      );
     }
     const [user, scout] = await Promise.all([
       ctx.db.get("users", chat.userId),

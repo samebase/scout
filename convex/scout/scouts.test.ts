@@ -1,4 +1,5 @@
 import { anyApi } from "convex/server";
+import { ConvexError } from "convex/values";
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { ADMIN_EMAIL } from "../authConfig";
@@ -59,6 +60,23 @@ afterEach(() => {
 });
 
 describe("Scout registry", () => {
+  it.each([undefined, "   "])(
+    "returns a public error when AgentMail is not configured: %s",
+    async (apiKey) => {
+      vi.stubEnv("AGENTMAIL_API_KEY", apiKey);
+      const backend = testBackend();
+      const adminId = await insertUser(backend, ADMIN_EMAIL);
+      const admin = backend.withIdentity({ subject: `${adminId}|test-session` });
+      const registration = admin.action(scoutRegistrationApi["register"], scoutRegistrationFields);
+      await expect(registration).rejects.toBeInstanceOf(ConvexError);
+      await expect(registration).rejects.toMatchObject({
+        data: "Scout email is not configured on this deployment. Ask the administrator to configure AgentMail.",
+      });
+      expect(fetch).not.toHaveBeenCalled();
+      await expect(admin.query(scoutsApi["list"], {})).resolves.toEqual([]);
+    },
+  );
+
   it("rejects unauthenticated and non-admin access", async () => {
     const backend = testBackend();
 

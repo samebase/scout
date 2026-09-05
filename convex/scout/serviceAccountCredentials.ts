@@ -1,9 +1,10 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 import { internalMutation, internalQuery, type QueryCtx } from "../_generated/server";
 import { requireAppUser } from "../access";
 import { canonicalCredentialHost, canonicalServiceDomain } from "../serviceDomains";
-import { scoutManagedPasswordLoginMethodValidator } from "./model";
+import { scoutManagedPasswordLoginMethodValidator, profileAccountUpdateValidator } from "./model";
+import { resolveProfileAccount, serviceAccountIdentifierKey } from "./serviceAccounts";
 
 const MAX_ACCOUNTS = 200;
 const MAX_ACCOUNTS_PER_SCOUT = 50;
@@ -23,6 +24,10 @@ export const managedRegistrationArgsValidator = v.object({
 
 export const managedRegistrationRequestValidator = v.union(
   managedRegistrationArgsValidator.extend({ kind: v.literal("profile") }),
+  profileAccountUpdateValidator.omit("kind").extend({
+    kind: v.literal("profile_update"),
+    credentialHost: v.string(),
+  }),
   v.object({
     kind: v.literal("browser"),
     sessionId: v.id("scoutBrowserSessions"),
@@ -85,14 +90,17 @@ function requiredText(value: string, label: string, maximumLength: number) {
 }
 
 function normalizeRegistration(args: typeof managedRegistrationArgsValidator.type) {
-  const credentialHost = canonicalCredentialHost(args.credentialHost);
-  return {
-    scoutId: args.scoutId,
-    serviceName: requiredText(args.serviceName, "Service name", MAX_SERVICE_NAME_LENGTH),
-    serviceDomain: canonicalServiceDomain(args.serviceDomain),
-    credentialHost,
-    identifier: requiredText(args.identifier, "Account identifier", MAX_IDENTIFIER_LENGTH),
-  };
+  try {
+    return {
+      scoutId: args.scoutId,
+      serviceName: requiredText(args.serviceName, "Service name", MAX_SERVICE_NAME_LENGTH),
+      serviceDomain: canonicalServiceDomain(args.serviceDomain),
+      credentialHost: canonicalCredentialHost(args.credentialHost),
+      identifier: requiredText(args.identifier, "Account identifier", MAX_IDENTIFIER_LENGTH),
+    };
+  } catch (error) {
+    throw new ConvexError(error instanceof Error ? error.message : "Invalid account details.");
+  }
 }
 
 async function resolveRegistration(
@@ -103,6 +111,14 @@ async function resolveRegistration(
     case "profile":
       await requireAppUser(ctx);
       return normalizeRegistration(request);
+    case "profile_update": {
+      const { registration } = await resolveProfileAccount(ctx, {
+        kind: "update",
+        serviceAccountId: request.serviceAccountId,
+        identifier: request.identifier,
+      });
+      return normalizeRegistration({ ...registration, credentialHost: request.credentialHost });
+    }
     case "browser": {
       const session = await ctx.db.get("scoutBrowserSessions", request.sessionId);
       if (!session || session.lifecycle.kind !== "active") {
@@ -195,21 +211,24 @@ async function requireRegistrationAvailable(
   ctx: Pick<QueryCtx, "db">,
   registration: ReturnType<typeof normalizeRegistration>,
   reuseExisting: boolean,
+  updatedAccountId: Doc<"scoutServiceAccounts">["_id"] | null,
 ) {
   const scout = await ctx.db.get(registration.scoutId);
   if (!scout || scout.status !== "active") {
-    throw new Error("Active Scout not found");
+    throw new ConvexError("Active Scout not found");
   }
 
-  const duplicate = await ctx.db
+  const serviceAccounts = await ctx.db
     .query("scoutServiceAccounts")
-    .withIndex("by_scout_id_and_service_domain_and_identifier", (query) =>
-      query
-        .eq("scoutId", registration.scoutId)
-        .eq("serviceDomain", registration.serviceDomain)
-        .eq("identifier", registration.identifier),
+    .withIndex("by_scout_id_and_service_domain", (query) =>
+      query.eq("scoutId", registration.scoutId).eq("serviceDomain", registration.serviceDomain),
     )
-    .unique();
+    .take(MAX_ACCOUNTS_PER_SCOUT);
+  const duplicate = serviceAccounts.find(
+    (account) =>
+      serviceAccountIdentifierKey(account.identifier) ===
+        serviceAccountIdentifierKey(registration.identifier) && account._id !== updatedAccountId,
+  );
   if (duplicate) {
     if (
       reuseExisting &&
@@ -219,24 +238,27 @@ async function requireRegistrationAvailable(
       await runtimeCredentialForAccount(ctx, duplicate);
       return { serviceAccountId: duplicate._id, loginMethod: duplicate.loginMethod };
     }
-    throw new Error("Service account is already registered to this Scout");
+    throw new ConvexError("Service account is already registered to this Scout");
   }
-  const serviceAccounts = await ctx.db
-    .query("scoutServiceAccounts")
-    .withIndex("by_scout_id_and_service_domain", (query) =>
-      query.eq("scoutId", registration.scoutId).eq("serviceDomain", registration.serviceDomain),
+  if (
+    serviceAccounts.some(
+      (account) =>
+        account._id !== updatedAccountId && account.loginMethod.kind === "managed_password",
     )
-    .take(MAX_ACCOUNTS_PER_SCOUT);
-  if (serviceAccounts.some((account) => account.loginMethod.kind === "managed_password")) {
-    throw new Error("This Scout already has a managed credential for the service");
+  ) {
+    throw new ConvexError(
+      "This Scout already has a managed credential for the service. Edit its login instead.",
+    );
   }
+
+  if (updatedAccountId !== null) return null;
 
   const scoutAccounts = await ctx.db
     .query("scoutServiceAccounts")
     .withIndex("by_scout_id", (query) => query.eq("scoutId", registration.scoutId))
     .take(MAX_ACCOUNTS_PER_SCOUT);
   if (scoutAccounts.length >= MAX_ACCOUNTS_PER_SCOUT) {
-    throw new Error(`A Scout can have at most ${MAX_ACCOUNTS_PER_SCOUT} service accounts`);
+    throw new ConvexError(`A Scout can have at most ${MAX_ACCOUNTS_PER_SCOUT} service accounts`);
   }
 
   const allAccounts = await ctx.db
@@ -244,7 +266,7 @@ async function requireRegistrationAvailable(
     .withIndex("by_scout_id")
     .take(MAX_ACCOUNTS);
   if (allAccounts.length >= MAX_ACCOUNTS) {
-    throw new Error(`Service account inventory can contain at most ${MAX_ACCOUNTS} accounts`);
+    throw new ConvexError(`Service account inventory can contain at most ${MAX_ACCOUNTS} accounts`);
   }
   return null;
 }
@@ -265,6 +287,7 @@ export const prepareManagedRegistration = internalQuery({
       ctx,
       registration,
       request.kind === "browser",
+      request.kind === "profile_update" ? request.serviceAccountId : null,
     );
     return { registration, existing };
   },
@@ -282,6 +305,7 @@ export const commitManagedRegistration = internalMutation({
       ctx,
       registration,
       args.request.kind === "browser",
+      args.request.kind === "profile_update" ? args.request.serviceAccountId : null,
     );
     if (existing) return existing;
 
@@ -297,9 +321,10 @@ export const commitManagedRegistration = internalMutation({
       "Credential key fingerprint",
     );
     const nonce = boundedEnvelopeField(args.encryptedCredential.nonce, "Credential nonce");
-    const ciphertext = boundedEnvelopeField(
+    const ciphertext = requiredText(
       args.encryptedCredential.ciphertext,
       "Credential ciphertext",
+      4_096,
     );
     const authenticationTag = boundedEnvelopeField(
       args.encryptedCredential.authenticationTag,
@@ -347,14 +372,30 @@ export const commitManagedRegistration = internalMutation({
       credentialHost: registration.credentialHost,
       createdAt,
     };
-    const serviceAccountId = await ctx.db.insert("scoutServiceAccounts", {
+    const accountFields = {
       scoutId: registration.scoutId,
       serviceName: registration.serviceName,
       serviceDomain: registration.serviceDomain,
       identifier: registration.identifier,
-      authenticationEvidence: { kind: "none" },
+      authenticationEvidence: { kind: "none" as const },
       loginMethod,
-    });
+    };
+    const serviceAccountId =
+      args.request.kind === "profile_update"
+        ? args.request.serviceAccountId
+        : await ctx.db.insert("scoutServiceAccounts", accountFields);
+    if (args.request.kind === "profile_update") {
+      await ctx.db.patch("scoutServiceAccounts", serviceAccountId, {
+        ...accountFields,
+        lastObserved: undefined,
+        loginUpdatedAt: createdAt,
+      });
+      const previous = await ctx.db
+        .query("scoutManagedCredentials")
+        .withIndex("by_service_account_id", (q) => q.eq("serviceAccountId", serviceAccountId))
+        .unique();
+      if (previous) await ctx.db.delete("scoutManagedCredentials", previous._id);
+    }
     await ctx.db.insert("scoutManagedCredentials", {
       credentialReference,
       serviceAccountId,

@@ -108,6 +108,7 @@ export function createAccountTools(
     }),
     record_authenticated_service_account: createServiceAccountRecordingTool(
       async ({ accountAccess, identityText, loginMethod, sessionControlText }, abortSignal) => {
+        const observationStartedAt = Date.now();
         const identity = await args.browser.actions.getElement(
           {
             kind: "text",
@@ -133,6 +134,7 @@ export function createAccountTools(
         const browserSessionId = args.sessionId();
         if (!browserSessionId) throw new Error("Browser session was not registered");
         return await ctx.runMutation(internal.scout.serviceAccounts.recordAuthenticated, {
+          observationStartedAt,
           sessionId: browserSessionId,
           accountAccess,
           loginMethod,

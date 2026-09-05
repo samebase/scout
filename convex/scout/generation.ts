@@ -453,22 +453,30 @@ export const runSlice = internalAction({
       const activeBrowser = browser;
       if (!activeBrowser) throw new Error("Browser harness was not initialized");
       const humanHandoffCallbacks: HumanHandoffCallbacks = {
-        request: async (input) => {
-          await beforeModelToolDispatch();
-          if (!interactiveLiveViewUrl) {
-            throw new Error("The current browser session has no interactive human-takeover link");
-          }
-          humanHandoffAccessToken ??= deriveHumanHandoffAccessToken(
-            args.promptMessageId,
-            agentMailApiKey,
-          );
-          const accessToken = humanHandoffAccessToken;
-          await ctx.runMutation(internal.humanHandoffs.request, {
-            promptMessageId: args.promptMessageId,
-            reason: input.reason,
-            accessTokenHash: hashHumanHandoffAccessToken(accessToken),
-          });
-        },
+        request: async (input) =>
+          activeBrowser.transferControl(async () => {
+            await beforeModelToolDispatch();
+            if (!browserSessionId) {
+              throw new Error(
+                "No browser session is open. Open the user's requested page with create_new_firecrawl_session, then retry request_human_help. No handoff or email was created.",
+              );
+            }
+            if (!interactiveLiveViewUrl) {
+              throw new Error(
+                "The current browser has no interactive takeover link. No handoff or email was created. Report this failure to the user; do not replace the handoff with a regular email.",
+              );
+            }
+            humanHandoffAccessToken ??= deriveHumanHandoffAccessToken(
+              args.promptMessageId,
+              agentMailApiKey,
+            );
+            const accessToken = humanHandoffAccessToken;
+            await ctx.runMutation(internal.humanHandoffs.request, {
+              promptMessageId: args.promptMessageId,
+              reason: input.reason,
+              accessTokenHash: hashHumanHandoffAccessToken(accessToken),
+            });
+          }),
         onWaiting: () => {
           humanHandoffWaiting = true;
         },
@@ -725,12 +733,20 @@ export const runSlice = internalAction({
       };
     }
 
+    await browser?.drain();
     const preserveBrowserForHandoff = generationResult.kind === "completed" && humanHandoffWaiting;
     const preserveBrowserForContinuation = generationResult.kind === "continued";
     let cleanupFailure: unknown;
     if (!preserveBrowserForHandoff && !preserveBrowserForContinuation) {
       try {
-        await closeGenerationBrowser(browser);
+        const cleanup =
+          turnId && browserSessionId
+            ? await ctx.runMutation(internal.scout.turns.beginBrowserCleanup, {
+                turnId,
+                sessionId: browserSessionId,
+              })
+            : "close";
+        if (cleanup === "close") await closeGenerationBrowser(browser);
       } catch (error) {
         cleanupFailure = error;
       }

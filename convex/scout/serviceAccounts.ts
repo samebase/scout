@@ -1,6 +1,13 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
-import { internalMutation, internalQuery, query, type MutationCtx } from "../_generated/server";
+import {
+  internalMutation,
+  internalQuery,
+  mutation,
+  query,
+  type MutationCtx,
+  type QueryCtx,
+} from "../_generated/server";
 import { requireAppUser } from "../access";
 import { accountObservationValidator } from "../schema";
 import { canonicalServiceDomain } from "../serviceDomains";
@@ -8,6 +15,7 @@ import {
   scoutServiceAccountAuthenticationEvidenceValidator,
   scoutServiceAccountFieldsValidator,
   scoutServiceAccountLoginMethodValidator,
+  profileAccountTargetValidator,
 } from "./model";
 
 const MAX_ACCOUNTS = 200;
@@ -60,6 +68,98 @@ function canonicalIdentifier(value: string) {
   return requiredText(value, "Account identifier", MAX_IDENTIFIER_LENGTH);
 }
 
+export async function resolveProfileAccount(
+  ctx: Pick<QueryCtx, "auth" | "db">,
+  target: typeof profileAccountTargetValidator.type,
+) {
+  await requireAppUser(ctx);
+  const account =
+    target.kind === "update"
+      ? await ctx.db.get("scoutServiceAccounts", target.serviceAccountId)
+      : null;
+  const fields = target.kind === "create" ? target : account;
+  if (!fields) throw new ConvexError("Account not found.");
+  const scout = await ctx.db.get("scouts", fields.scoutId);
+  if (!scout || scout.status !== "active") throw new ConvexError("Active Scout not found.");
+  let registration;
+  try {
+    registration = {
+      scoutId: scout._id,
+      serviceName: requiredText(fields.serviceName, "Service name", 100),
+      serviceDomain: canonicalServiceDomain(fields.serviceDomain),
+      identifier: canonicalIdentifier(target.identifier),
+    };
+  } catch (error) {
+    throw new ConvexError(error instanceof Error ? error.message : "Invalid account details.");
+  }
+  const serviceAccounts = await ctx.db
+    .query("scoutServiceAccounts")
+    .withIndex("by_scout_id_and_service_domain", (q) =>
+      q.eq("scoutId", scout._id).eq("serviceDomain", registration.serviceDomain),
+    )
+    .take(MAX_ACCOUNTS_PER_SCOUT);
+  const duplicate = serviceAccounts.find(
+    (candidate) =>
+      serviceAccountIdentifierKey(candidate.identifier) ===
+        serviceAccountIdentifierKey(registration.identifier) && candidate._id !== account?._id,
+  );
+  if (duplicate) throw new ConvexError("That account is already registered for this Scout.");
+  if (!account) {
+    const scoutAccounts = await ctx.db
+      .query("scoutServiceAccounts")
+      .withIndex("by_scout_id", (q) => q.eq("scoutId", scout._id))
+      .take(MAX_ACCOUNTS_PER_SCOUT);
+    if (scoutAccounts.length >= MAX_ACCOUNTS_PER_SCOUT)
+      throw new ConvexError(`A Scout can have at most ${MAX_ACCOUNTS_PER_SCOUT} accounts.`);
+    const allAccounts = await ctx.db
+      .query("scoutServiceAccounts")
+      .withIndex("by_scout_id")
+      .take(MAX_ACCOUNTS);
+    if (allAccounts.length >= MAX_ACCOUNTS)
+      throw new ConvexError("The service account inventory is full.");
+  }
+  return { registration, account };
+}
+
+export const saveOAuth = mutation({
+  args: { account: profileAccountTargetValidator, providerAccountId: v.id("scoutServiceAccounts") },
+  returns: v.object({ serviceAccountId: v.id("scoutServiceAccounts") }),
+  handler: async (ctx, args) => {
+    const { registration, account } = await resolveProfileAccount(ctx, args.account);
+    const visited = new Set(account ? [account._id] : []);
+    let providerId = args.providerAccountId;
+    while (true) {
+      if (visited.has(providerId) || visited.size >= MAX_ACCOUNTS_PER_SCOUT) {
+        throw new ConvexError("Choose a provider that does not sign in through this account.");
+      }
+      visited.add(providerId);
+      const provider = await ctx.db.get("scoutServiceAccounts", providerId);
+      if (!provider || provider.scoutId !== registration.scoutId) {
+        throw new ConvexError("Choose a provider account belonging to this Scout.");
+      }
+      if (provider.loginMethod.kind === "managed_password") break;
+      providerId = provider.loginMethod.providerAccountId;
+    }
+    const fields = {
+      ...registration,
+      authenticationEvidence: { kind: "none" as const },
+      loginMethod: { kind: "oauth" as const, providerAccountId: args.providerAccountId },
+    };
+    if (!account) return { serviceAccountId: await ctx.db.insert("scoutServiceAccounts", fields) };
+    const credential = await ctx.db
+      .query("scoutManagedCredentials")
+      .withIndex("by_service_account_id", (q) => q.eq("serviceAccountId", account._id))
+      .unique();
+    if (credential) await ctx.db.delete("scoutManagedCredentials", credential._id);
+    await ctx.db.patch("scoutServiceAccounts", account._id, {
+      ...fields,
+      lastObserved: undefined,
+      loginUpdatedAt: Date.now(),
+    });
+    return { serviceAccountId: account._id };
+  },
+});
+
 function normalizedEvidenceText(value: string) {
   try {
     return decodeURIComponent(value).toLocaleLowerCase();
@@ -68,8 +168,12 @@ function normalizedEvidenceText(value: string) {
   }
 }
 
+export function serviceAccountIdentifierKey(identifier: string) {
+  return normalizedEvidenceText(identifier).trim().replace(/^@+/, "");
+}
+
 function evidenceShowsIdentifier(visibleIdentity: string, identifier: string) {
-  const expected = normalizedEvidenceText(identifier).trim();
+  const expected = serviceAccountIdentifierKey(identifier);
   return normalizedEvidenceText(visibleIdentity)
     .split(/\r?\n/)
     .map((line) => line.trim().replaceAll(/\s+/g, " "))
@@ -189,6 +293,7 @@ export const listRuntimeForScout = internalQuery({
 
 export const recordAuthenticated = internalMutation({
   args: {
+    observationStartedAt: v.number(),
     sessionId: v.id("scoutBrowserSessions"),
     accountAccess: v.union(v.literal("created"), v.literal("recovered")),
     observedUrl: v.string(),
@@ -253,11 +358,24 @@ export const recordAuthenticated = internalMutation({
       .query("scoutServiceAccounts")
       .withIndex("by_scout_id", (query) => query.eq("scoutId", chat.scoutId))
       .take(MAX_ACCOUNTS_PER_SCOUT);
-    const matchingAccounts = accounts.filter(
+    const serviceAccounts = accounts.filter(
       (account) =>
-        (observedDomain === account.serviceDomain ||
-          observedDomain.endsWith(`.${account.serviceDomain}`)) &&
-        evidenceShowsIdentifier(visibleIdentity, canonicalIdentifier(account.identifier)),
+        observedDomain === account.serviceDomain ||
+        observedDomain.endsWith(`.${account.serviceDomain}`),
+    );
+    if (
+      serviceAccounts.some(
+        (account) =>
+          account.loginUpdatedAt !== undefined &&
+          args.observationStartedAt <= account.loginUpdatedAt,
+      )
+    ) {
+      throw new Error(
+        "Account login settings changed. Read the current page again before recording authentication.",
+      );
+    }
+    const matchingAccounts = serviceAccounts.filter((account) =>
+      evidenceShowsIdentifier(visibleIdentity, canonicalIdentifier(account.identifier)),
     );
     if (matchingAccounts.length > 1) {
       throw new Error("Visible account evidence must match exactly one Scout service account");

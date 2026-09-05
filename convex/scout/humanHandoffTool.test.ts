@@ -51,7 +51,7 @@ describe("human handoff tool", () => {
 
     expect(email).toEqual({
       to: "operator@example.test",
-      subject: "[Scout human check] Conrad Scout needs your help",
+      subject: "[Scout handoff] Conrad Scout is ready for you",
       text: expect.stringContaining(handoffUrl),
       idempotencyKey: "scout-handoff-handoff-1",
     });
@@ -62,7 +62,7 @@ describe("human handoff tool", () => {
     expect(email.text).not.toContain("attacker.test");
   });
 
-  test("asks the model only for the visible blocker", () => {
+  test("accepts a bounded takeover reason", () => {
     expect(humanHandoffInputSchema.safeParse(handoffInput).success).toBe(true);
     expect(humanHandoffInputSchema.safeParse({ reason: "" }).success).toBe(false);
     expect(humanHandoffInputSchema.safeParse({ reason: "x".repeat(501) }).success).toBe(false);

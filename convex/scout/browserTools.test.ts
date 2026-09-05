@@ -1,4 +1,6 @@
-import { tool, type ToolSet } from "ai";
+import { isStepCount, streamText, tool, type ToolSet } from "ai";
+import { convertArrayToReadableStream, MockLanguageModelV4 } from "ai/test";
+import { EventEmitter, once } from "node:events";
 import {
   SdkError,
   type BrowserCreateResponse,
@@ -314,6 +316,7 @@ describe("Lab browser harness", () => {
       outcome: {
         kind: "indeterminate_after_dispatch",
         failure: expect.stringContaining("not found"),
+        executionFinished: true,
       },
     });
 
@@ -420,6 +423,129 @@ describe("Lab browser harness", () => {
     );
     finishExecution?.();
     await expect(first).resolves.toMatchObject({ success: true });
+  });
+
+  test("drains browser execution and settlement after the SDK abandons an aborted parallel tool", async () => {
+    const events = new EventEmitter();
+    const started = once(events, "started");
+    const releaseBrowser = once(events, "releaseBrowser");
+    const releaseOther = once(events, "releaseOther");
+    const settlementStarted = once(events, "settlementStarted");
+    const releaseSettlement = once(events, "releaseSettlement");
+    const deps = dependencies();
+    deps.browserExecute.mockImplementationOnce(async () => {
+      events.emit("started");
+      await releaseBrowser;
+      return { success: true, exitCode: 0, stdout: "finished", killed: false };
+    });
+    const browser = createBrowserHarness(
+      {
+        onSessionCreated: async () => ({ captureOperations: true }),
+        onOperationPrepared: async () => true,
+        onOperationSettled: async ({ toolCallId }) => {
+          if (toolCallId === "browser-call") {
+            events.emit("settlementStarted");
+            await releaseSettlement;
+          }
+        },
+      },
+      deps,
+    );
+    await browser.open("https://example.com");
+    const abort = new AbortController();
+    const model = new MockLanguageModelV4({
+      doStream: {
+        stream: convertArrayToReadableStream([
+          { type: "stream-start", warnings: [] },
+          {
+            type: "tool-call",
+            toolCallId: "browser-call",
+            toolName: "browser_execute",
+            input: JSON.stringify({ code: "await page.locator('button').click()" }),
+          },
+          { type: "tool-call", toolCallId: "other-call", toolName: "other_tool", input: "{}" },
+          {
+            type: "finish",
+            finishReason: { unified: "tool-calls", raw: undefined },
+            usage: {
+              inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined },
+              outputTokens: { total: 1, text: 1, reasoning: undefined },
+            },
+          },
+        ]),
+      },
+    });
+    const result = streamText({
+      model,
+      tools: {
+        ...browser.tools,
+        other_tool: tool({
+          inputSchema: z.object({}),
+          execute: async () => {
+            await releaseOther;
+            return "finished";
+          },
+        }),
+      },
+      prompt: "Inspect the page and another resource",
+      abortSignal: abort.signal,
+      stopWhen: isStepCount(1),
+    });
+    const consumed = result.consumeStream();
+    await started;
+    abort.abort(new Error("slice deadline expired"));
+    events.emit("releaseOther");
+    await consumed;
+    await expect(result.steps).rejects.toThrow();
+    const drained = vi.fn();
+    const finished = browser.drain().then(drained);
+    await expect(browser.actions.executeCode("await page.title()")).rejects.toThrow(
+      "finished accepting operations",
+    );
+    expect(drained).not.toHaveBeenCalled();
+    events.emit("releaseBrowser");
+    await settlementStarted;
+    expect(drained).not.toHaveBeenCalled();
+    events.emit("releaseSettlement");
+    await finished;
+    expect(drained).toHaveBeenCalledOnce();
+    await expect(
+      browser.tools.browser_close.execute(
+        {},
+        { toolCallId: "late-close", messages: [], context: undefined },
+      ),
+    ).rejects.toThrow("finished accepting operations");
+    expect(deps.deleteBrowser).not.toHaveBeenCalled();
+    await browser.close();
+    expect(deps.deleteBrowser).toHaveBeenCalledOnce();
+  });
+
+  test("allows recovery after a rejected handoff and seals browser tools after a successful transfer", async () => {
+    const deps = dependencies();
+    const browser = createBrowserHarness({}, deps);
+    await expect(
+      browser.transferControl(async () => {
+        throw new Error("No browser session is open");
+      }),
+    ).rejects.toThrow("No browser session is open");
+    await browser.open("https://example.com");
+    await browser.transferControl(async () => {
+      await expect(browser.actions.executeCode("await page.title()")).rejects.toThrow(
+        "Only one browser operation",
+      );
+    });
+    await expect(browser.actions.executeCode("await page.title()")).rejects.toThrow(
+      "finished accepting operations",
+    );
+    await expect(
+      browser.tools.browser_close.execute(
+        {},
+        { toolCallId: "late-close", messages: [], context: undefined },
+      ),
+    ).rejects.toThrow("finished accepting operations");
+    expect(deps.deleteBrowser).not.toHaveBeenCalled();
+    await browser.close();
+    expect(deps.deleteBrowser).toHaveBeenCalledOnce();
   });
 
   test("waits for a persistent profile writer before opening one session", async () => {
@@ -533,6 +659,27 @@ describe("Lab browser harness", () => {
 
     expect(playwright.fill).toHaveBeenCalledTimes(2);
     expect(JSON.stringify(result)).not.toContain(password);
+  });
+
+  test("redacts supplied passwords in raw, URL-encoded, and JSON-escaped browser output", async () => {
+    const playwright = runtime();
+    const deps = dependencies(playwright);
+    const browser = createBrowserHarness({}, deps);
+    await browser.open("https://example.com");
+    const password = 'quote"backslash\\line\nbreak';
+    browser.actions.registerSensitiveValue(password);
+    deps.browserExecute.mockResolvedValueOnce({
+      success: true,
+      exitCode: 0,
+      stdout: [password, encodeURIComponent(password), JSON.stringify({ password })].join("\n"),
+    });
+    const result = await browser.actions.executeCode(
+      "return { password: await page.getByLabel('Password').inputValue() }",
+    );
+    expect(result).toMatchObject({
+      success: true,
+      output: '[secret redacted]\n[secret redacted]\n{"password":"[secret redacted]"}',
+    });
   });
 
   test("rejects unsafe URLs and cleans up a failed CDP connection", async () => {

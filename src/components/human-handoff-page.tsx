@@ -133,7 +133,7 @@ export function HumanHandoffPage({ handoffId }: { handoffId: string }) {
         </span>
         <div>
           <p className="text-sm font-semibold">Scout human handoff</p>
-          <p className="text-muted-foreground text-xs">Complete only the requested human step.</p>
+          <p className="text-muted-foreground text-xs">Return control when you are finished.</p>
         </div>
       </header>
 

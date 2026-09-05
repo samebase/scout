@@ -132,6 +132,7 @@ async function accountContext() {
     return { chatId, threadId, sessionId, operationId };
   });
   const evidence = {
+    observationStartedAt: Date.now(),
     sessionId: browser.sessionId,
     accountAccess: "created",
     observedUrl,
@@ -170,6 +171,44 @@ async function fillInventory(
 }
 
 describe("Scout service-account inventory", () => {
+  it.each(["conrad@example.test", "conrad-new"])(
+    "rejects a pending authentication observation after editing the login to %s",
+    async (identifier) => {
+      const { backend, admin, evidence, providerAccountId } = await accountContext();
+      const saved = await backend.mutation(
+        internal.scout.serviceAccounts.recordAuthenticated,
+        evidence,
+      );
+      await admin.mutation(api.scout.serviceAccounts.saveOAuth, {
+        account: {
+          kind: "update",
+          serviceAccountId: saved.serviceAccountId,
+          identifier,
+        },
+        providerAccountId,
+      });
+      const updated = await backend.run(
+        async (ctx) => await ctx.db.get("scoutServiceAccounts", saved.serviceAccountId),
+      );
+      expect(updated).toMatchObject({
+        authenticationEvidence: { kind: "none" },
+        loginUpdatedAt: expect.any(Number),
+      });
+      expect(updated?.lastObserved).toBeUndefined();
+      await expect(
+        backend.mutation(internal.scout.serviceAccounts.recordAuthenticated, evidence),
+      ).rejects.toThrow("login settings changed");
+      if (!updated?.loginUpdatedAt) throw new Error("Login update was not recorded");
+      await expect(
+        backend.mutation(internal.scout.serviceAccounts.recordAuthenticated, {
+          ...evidence,
+          observationStartedAt: updated.loginUpdatedAt + 1,
+          visibleIdentity: identifier,
+        }),
+      ).resolves.toEqual({ serviceAccountId: saved.serviceAccountId, created: false });
+    },
+  );
+
   it("rejects unauthenticated and non-admin inventory access", async () => {
     const backend = testBackend();
     await expect(backend.query(api.scout.serviceAccounts.list, {})).rejects.toThrow(
