@@ -2,8 +2,8 @@ import { z } from "zod";
 import { activePageIdAt, type ReplayTimeline } from "./browserReplayTimeline";
 
 export const REPLAY_EXPORT_FPS = 30;
-export const MAX_REPLAY_EXPORT_DURATION_MS = 10 * 60 * 1_000;
-export const MAX_REPLAY_EXPORT_BYTES = 100 * 1024 * 1024;
+export const MAX_REPLAY_EXPORT_DURATION_MS = 50 * 60 * 1_000;
+export const MAX_REPLAY_EXPORT_BYTES = 1024 * 1024 * 1024;
 
 export const replayExportRequestSchema = z.object({
   width: z.number().int().min(2).max(1920),
@@ -50,7 +50,7 @@ export function replayExportSpans(timeline: ReplayTimeline, manualPageId: string
   if (end <= start) throw new Error("The replay has no video to export.");
   if (end - start > MAX_REPLAY_EXPORT_DURATION_MS) {
     throw new Error(
-      "This browser export supports up to 10 minutes. Choose a shorter recorded tab.",
+      `This browser export supports up to ${MAX_REPLAY_EXPORT_DURATION_MS / 60_000} minutes. Choose a shorter recorded tab.`,
     );
   }
   const boundaries = [

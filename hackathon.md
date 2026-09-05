@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-05T03:16:20Z
+- **Last updated:** 2026-09-05T13:04:15Z
 
 ## Log
 
@@ -972,7 +972,7 @@ click events alongside browser operations, including failures, while MediaBunny 
 recorded video and rings in a cancellable worker (`convex/scout/browserClickRecorder.ts`,
 `src/components/browser-replay.tsx`, `src/lib/renderBrowserReplay.ts`).
 
-### 2026-09-05 - working tree
+### 2026-09-05 - 9f8ae55 - v171
 
 Browser handoffs preserve the active browser across interrupted turns and send the private link
 through the existing email workflow (`convex/scout/turns.ts`, `convex/humanHandoffs.ts`). Scout
@@ -980,3 +980,9 @@ profiles can save chosen passwords and account connections such as "Sign in with
 login edits keep account links intact and require fresh authentication evidence
 (`src/components/scout-service-accounts.tsx`, `convex/scout/serviceAccounts.ts`). Scout creation
 explains missing email configuration (`convex/scout/scoutRegistration.ts`).
+
+### 2026-09-05 - working tree
+
+Allowed longer Scout sessions to export with their click rings, up to 50 minutes.
+The browser keeps the existing cancellable MP4 workflow with a 1 GiB output ceiling
+(`src/lib/browserReplayExportPlan.ts`, `src/components/browser-replay-export.tsx`).

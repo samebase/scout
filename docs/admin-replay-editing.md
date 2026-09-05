@@ -21,8 +21,11 @@ New tabs attach asynchronously and mark the operation's coverage as partial.
 MediaBunny 1.55.6 runs in a worker loaded on export. It reads fresh HLS playlists,
 decodes frames, draws the video and click rings, and encodes one silent H.264 MP4
 at 30 fps and original speed. Convex stores metadata and supplies authorized
-playlists; it does not encode video. The MVP limits export to ten minutes and
-100 MiB, closes decoders after each contiguous tab span, and supports cancellation.
+playlists; it does not encode video. Export supports up to 50 minutes and 1 GiB,
+closes decoders after each contiguous tab span, and supports cancellation.
+The size ceiling leaves room for about 750 MB of video at the requested 2 Mbps
+over 50 minutes, plus container overhead. The MP4 stays in memory until download;
+these application limits do not guarantee enough memory on every device.
 Closing or refreshing the replay cancels an active export. No video is uploaded.
 
 Click times are calibrated from the browser clock to the operation clock, but
@@ -319,9 +322,11 @@ Preserving or retiming source audio is a separate feature.
 
 Check decoder/AVC encoder support for the requested dimensions before starting.
 Bound active decoders, close samples promptly, and dispose inputs on cancellation.
-Use `BufferTarget` only for a guarded small export; its documentation recommends
-it for files below roughly 100 MB. Longer exports should stream to a seekable file
-target, respecting write offsets. A 16x edit does not guarantee a 16x faster render
+The current `BufferTarget` holds the MP4 in memory. Its documentation recommends
+it for files below roughly 100 MB, so the 1 GiB application ceiling can exceed
+that recommendation. Streaming to a seekable file target, respecting write offsets,
+remains the next step if real session exports hit memory pressure.
+A 16x edit does not guarantee a 16x faster render
 because dependent source frames may still need decoding. See
 [codec checks][mediabunny-codecs] and [output targets][mediabunny-output].
 
