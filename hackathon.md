@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-05T14:27:33Z
+- **Last updated:** 2026-09-05T15:18:35Z
 
 ## Log
 
@@ -993,5 +993,5 @@ Node actions read current deployment configuration when Convex reuses a process 
 Browser snapshots preserve iframe controls without internal references, and tool instructions explain
 public helpers and bounded waits (`convex/scout/playwrightBrowser.ts`, `convex/scout/browserToolContract.ts`).
 Inbox reads use minimal inputs and omit empty pagination values (`convex/scout/browserTools.ts`).
-Resumed browser actions restore password masking from encrypted credentials (`convex/scout/accountTools.ts`).
+Resumed browsers restore password masking; password edits wait for browser closure (`convex/scout/accountTools.ts`, `convex/scout/serviceAccounts.ts`).
 Account recording explains mismatches between visible names and saved login identifiers (`convex/scout/serviceAccounts.ts`).

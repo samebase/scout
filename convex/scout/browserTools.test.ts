@@ -676,6 +676,27 @@ describe("Lab browser harness", () => {
     });
   });
 
+  test("keeps browser diagnostics useful while masking restored passwords", async () => {
+    const playwright = runtime();
+    const browser = createBrowserHarness({}, dependencies(playwright));
+    await browser.open("https://example.com");
+    const password = 'quote"backslash\\line\nbreak';
+    browser.actions.registerSensitiveValue(password);
+    playwright.getElement.mockRejectedValueOnce(
+      new Error(
+        `Locator matched two elements: ${password}, ${encodeURIComponent(password)}, ${JSON.stringify(password)}`,
+      ),
+    );
+
+    await expect(browser.actions.getElement(passwordTarget)).rejects.toThrow(
+      'Locator matched two elements: [secret redacted], [secret redacted], "[secret redacted]"',
+    );
+    playwright.fill.mockRejectedValueOnce(new Error(`fill failed: ${password.slice(0, 8)}`));
+    await expect(browser.actions.fillManagedPassword({ passwordTarget }, password)).rejects.toThrow(
+      "Managed password fill failed",
+    );
+  });
+
   test("rejects unsafe URLs and cleans up a failed CDP connection", async () => {
     const deps = dependencies();
     deps.connect.mockRejectedValueOnce(new Error("websocket refused"));

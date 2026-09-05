@@ -231,11 +231,6 @@ export const executeTool = action({
           if (persisted.lifecycle.kind !== "active") {
             throw new Error("Active browser session not found");
           }
-          const credentials = await ctx.runQuery(
-            internal.scout.serviceAccountCredentials.listRuntimeCredentialsForScout,
-            { scoutId: runtime.scoutId },
-          );
-          restoreManagedPasswordRedaction({ browser, credentials, scoutId: runtime.scoutId });
           const connection = await attachPersistedBrowserSession(browser, {
             providerSessionId: persisted.providerSessionId,
             cdpUrl: persisted.lifecycle.cdpUrl,
@@ -258,6 +253,13 @@ export const executeTool = action({
               cdpUrl: connection.cdpUrl,
               interactiveLiveViewUrl: connection.interactiveLiveViewUrl,
             });
+          }
+          if (args.toolName !== "browser_close") {
+            const credentials = await ctx.runQuery(
+              internal.scout.serviceAccountCredentials.listRuntimeCredentialsForScout,
+              { scoutId: runtime.scoutId },
+            );
+            restoreManagedPasswordRedaction({ browser, credentials, scoutId: runtime.scoutId });
           }
         } else if (needsExistingBrowser(args.toolName)) {
           throw new Error("Open a browser session before using it");

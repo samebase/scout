@@ -21,7 +21,9 @@ from the active browser session and the exact login host from the observed signu
 service domain must contain that host. Repeated preparation reuses the existing password; it never
 replaces one. Password filling loads credentials at execution time, including those just prepared.
 Resumed generations and manual browser actions restore password redaction from the encrypted store
-before attaching to an existing browser, so a populated field stays masked across action boundaries.
+after reconnecting and before reading or acting on the page, so a populated field stays masked across
+action boundaries. Closing a browser does not need credential decryption. An existing password login
+can only be changed after the Scout's browser closes, preserving the values needed for masking.
 The model's account inventory includes authentication evidence so a prepared password is distinct
 from verified signup or login.
 Runtime instructions require `record_authenticated_service_account` immediately after successful

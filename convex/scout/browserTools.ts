@@ -285,9 +285,6 @@ function browserSnapshotOutput(currentPage: string, sensitiveValues: ReadonlySet
 }
 
 function browserFailure(error: unknown, sensitiveValues: ReadonlySet<string>) {
-  if (sensitiveValues.size > 0) {
-    return "Browser operation failed after managed credential use";
-  }
   return redactSensitiveValues(diagnosticMessage(error), sensitiveValues).slice(
     0,
     MAX_TOOL_OUTPUT_LENGTH,
@@ -1137,7 +1134,7 @@ export function createBrowserHarness(
         await options.onLiveViewClosed?.();
         closeCallbacksComplete = true;
       } catch (error) {
-        throw sensitiveValues.size > 0 ? new Error("Managed browser cleanup failed") : error;
+        throw sensitiveValues.size > 0 ? new Error(browserFailure(error, sensitiveValues)) : error;
       }
       if (terminalTelemetryFailure) {
         throw terminalTelemetryFailure.error;
@@ -1189,10 +1186,14 @@ export function createBrowserHarness(
           fieldCount: targets.passwordConfirmationTarget ? 2 : 1,
         },
         async (browser) => {
-          await browser.fill(targets.passwordTarget, password, abortSignal);
-          abortSignal?.throwIfAborted();
-          if (targets.passwordConfirmationTarget) {
-            await browser.fill(targets.passwordConfirmationTarget, password, abortSignal);
+          try {
+            await browser.fill(targets.passwordTarget, password, abortSignal);
+            abortSignal?.throwIfAborted();
+            if (targets.passwordConfirmationTarget) {
+              await browser.fill(targets.passwordConfirmationTarget, password, abortSignal);
+            }
+          } catch {
+            throw new Error("Managed password fill failed");
           }
         },
         toolCallId,

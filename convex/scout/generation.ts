@@ -393,7 +393,6 @@ export const runSlice = internalAction({
         if (persisted.lifecycle.kind !== "active") {
           throw new Error("Active browser session not found");
         }
-        restoreManagedPasswordRedaction({ browser, credentials: runtimeCredentials, scoutId });
         const connection = await attachPersistedBrowserSession(
           browser,
           {
@@ -420,7 +419,10 @@ export const runSlice = internalAction({
             interactiveLiveViewUrl: connection.interactiveLiveViewUrl,
           });
         }
-        if (connection) browserSessionId = persisted._id;
+        if (connection) {
+          browserSessionId = persisted._id;
+          restoreManagedPasswordRedaction({ browser, credentials: runtimeCredentials, scoutId });
+        }
       }
       requireSecret(getRuntimeEnv("FIRECRAWL_API_KEY"), "FIRECRAWL_API_KEY");
       const agentMailApiKey = requiredAgentMailApiKey(getRuntimeEnv("AGENTMAIL_API_KEY"));

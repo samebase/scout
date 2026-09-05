@@ -81,6 +81,21 @@ export async function resolveProfileAccount(
   if (!fields) throw new ConvexError("Account not found.");
   const scout = await ctx.db.get("scouts", fields.scoutId);
   if (!scout || scout.status !== "active") throw new ConvexError("Active Scout not found.");
+  if (account?.loginMethod.kind === "managed_password") {
+    for (const kind of ["active", "closing"] as const) {
+      const session = await ctx.db
+        .query("scoutBrowserSessions")
+        .withIndex("by_scout_id_and_lifecycle_kind", (q) =>
+          q.eq("scoutId", scout._id).eq("lifecycle.kind", kind),
+        )
+        .first();
+      if (session) {
+        throw new ConvexError(
+          "Close this Scout's browser before changing an existing password login.",
+        );
+      }
+    }
+  }
   let registration;
   try {
     registration = {
