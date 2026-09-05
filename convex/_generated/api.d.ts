@@ -29,6 +29,7 @@ import type * as humanHandoffLifecycle from "../humanHandoffLifecycle.js";
 import type * as humanHandoffWorkflow from "../humanHandoffWorkflow.js";
 import type * as humanHandoffs from "../humanHandoffs.js";
 import type * as humanHandoffsModel from "../humanHandoffsModel.js";
+import type * as runtimeEnv from "../runtimeEnv.js";
 import type * as scout_accountPasswordTool from "../scout/accountPasswordTool.js";
 import type * as scout_accountTools from "../scout/accountTools.js";
 import type * as scout_agent from "../scout/agent.js";
@@ -108,6 +109,7 @@ declare const fullApi: ApiFromModules<{
   humanHandoffWorkflow: typeof humanHandoffWorkflow;
   humanHandoffs: typeof humanHandoffs;
   humanHandoffsModel: typeof humanHandoffsModel;
+  runtimeEnv: typeof runtimeEnv;
   "scout/accountPasswordTool": typeof scout_accountPasswordTool;
   "scout/accountTools": typeof scout_accountTools;
   "scout/agent": typeof scout_agent;

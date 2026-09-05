@@ -14,9 +14,10 @@ import { v } from "convex/values";
 import { inspect } from "node:util";
 import { components, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
-import { env, internalAction } from "../_generated/server";
+import { internalAction } from "../_generated/server";
+import { getRuntimeEnv } from "../runtimeEnv";
 import { scoutAgent } from "./agent";
-import { createAccountTools } from "./accountTools";
+import { createAccountTools, restoreManagedPasswordRedaction } from "./accountTools";
 import { createAgentMailWriteTools } from "./agentMailTools";
 import { requireOwnedAgentThread } from "./chatAccess";
 import { createBrowserHarness, selectAgentMailTools } from "./browserTools";
@@ -418,10 +419,13 @@ export const runSlice = internalAction({
             interactiveLiveViewUrl: connection.interactiveLiveViewUrl,
           });
         }
-        if (connection) browserSessionId = persisted._id;
+        if (connection) {
+          browserSessionId = persisted._id;
+          restoreManagedPasswordRedaction({ browser, credentials: runtimeCredentials, scoutId });
+        }
       }
-      requireSecret(env.FIRECRAWL_API_KEY, "FIRECRAWL_API_KEY");
-      const agentMailApiKey = requiredAgentMailApiKey(env.AGENTMAIL_API_KEY);
+      requireSecret(getRuntimeEnv("FIRECRAWL_API_KEY"), "FIRECRAWL_API_KEY");
+      const agentMailApiKey = requiredAgentMailApiKey(getRuntimeEnv("AGENTMAIL_API_KEY"));
       const agentMailInbox = createAgentMailInboxClient({
         apiKey: agentMailApiKey,
         inboxId: scout.agentMail.inboxId,
@@ -602,7 +606,7 @@ export const runSlice = internalAction({
       const prepared = await prepareConversationContext(ctx, {
         threadId: args.threadId,
         promptMessageId: args.promptMessageId,
-        threshold: compactionThreshold(env.SCOUT_COMPACTION_TOKENS),
+        threshold: compactionThreshold(getRuntimeEnv("SCOUT_COMPACTION_TOKENS")),
         fixedTokens,
         preserveObjective: (messages) => preserveTurnObjective(messages, objective),
         summarize: async (input) => {

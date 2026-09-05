@@ -1,4 +1,4 @@
-import { env } from "../../_generated/server";
+import { getRuntimeEnv } from "../../runtimeEnv";
 import { z } from "zod";
 
 const FIRECRAWL_BROWSER_URL = "https://api.firecrawl.dev/v2/browser";
@@ -14,7 +14,7 @@ export function isFirecrawlReplayNotReady(error: unknown) {
 }
 
 function authorizationHeaders(accept?: string) {
-  const apiKey = env.FIRECRAWL_API_KEY?.trim();
+  const apiKey = getRuntimeEnv("FIRECRAWL_API_KEY")?.trim();
   if (!apiKey) throw new Error("FIRECRAWL_API_KEY is not configured");
   return accept
     ? { Authorization: `Bearer ${apiKey}`, Accept: accept }

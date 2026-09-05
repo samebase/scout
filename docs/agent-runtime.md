@@ -20,11 +20,17 @@ checks the current HTTPS host and password input types before filling the config
 from the active browser session and the exact login host from the observed signup page. The requested
 service domain must contain that host. Repeated preparation reuses the existing password; it never
 replaces one. Password filling loads credentials at execution time, including those just prepared.
+Resumed generations and manual browser actions restore password redaction from the encrypted store
+after reconnecting and before reading or acting on the page, so a populated field stays masked across
+action boundaries. Closing a browser does not need credential decryption. An existing password login
+can only be changed after the Scout's browser closes, preserving the values needed for masking.
 The model's account inventory includes authentication evidence so a prepared password is distinct
 from verified signup or login.
 Runtime instructions require `record_authenticated_service_account` immediately after successful
 account creation or login recovery, before continuing other work. The tool re-reads visible account
-identity and sign-out controls; its latest observation links to the chat and browser session. See
+identity and sign-out controls; its latest observation links to the chat and browser session. If a
+service displays a username different from the saved login email, the agent must find the registered
+email in account settings. A mismatch reports the expected identifier without changing the account. See
 [managed credentials](./scout-credential-store-decision.md).
 
 ## Chat execution
@@ -68,6 +74,10 @@ generations close their browser on completion, except when waiting for human hel
 persistent browser profile is shared, so only one chat may hold its open browser at a time.
 
 Mail reads use AgentMail's hosted MCP tools and remain scoped to the Scout's configured inbox.
+`list_messages` works with `{}`; `search_messages` needs only `q`, a plain-text query.
+Both accept optional pagination. Empty cursors and null pagination values are omitted before
+calling AgentMail, and their tool definitions disable strict generation so optional inputs can
+be omitted. Advanced provider filters are not exposed in these everyday tools.
 `send_message` and `reply_to_message` use AgentMail's REST API from the same inbox. The model chooses
 the recipient and copy when email materially advances the user's task. Registration verifies the
 stored ID and address against AgentMail; runtime tools fix every mail call to that persisted inbox
@@ -76,8 +86,11 @@ invokes a mail tool; no webhook or ambient email turn runs in the background.
 
 `web_search` and `web_read` use Firecrawl's SDK for public research. Browser work uses
 `create_new_firecrawl_session`, `browser_execute`, and `browser_close`. The execution tool accepts
-JavaScript with Playwright, including normal tab operations. Its description includes the exact
-`browserState()` helper implementation. Old page observations are compacted in model context;
+JavaScript with the active `page` and a `browserState()` helper, including normal tab operations.
+Snapshots retain iframe content and accessibility states while omitting internal reference labels.
+The tool documents its 60-second execution limit and directs the model to check current state,
+use bounded conditional waits, and correct failed assumptions from fresh observations.
+Old page observations are compacted in model context;
 the stored transcript retains the full tool results.
 
 ## Inspection and handoff

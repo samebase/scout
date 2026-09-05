@@ -7,8 +7,9 @@ import { type JSONValue, type ModelMessage, type ToolSet } from "ai";
 import { v } from "convex/values";
 import { z } from "zod";
 import { internal } from "../_generated/api";
-import { action, env } from "../_generated/server";
-import { createAccountTools } from "./accountTools";
+import { action } from "../_generated/server";
+import { getRuntimeEnv } from "../runtimeEnv";
+import { createAccountTools, restoreManagedPasswordRedaction } from "./accountTools";
 import { createAgentMailWriteTools } from "./agentMailTools";
 import { scoutAgent } from "./agent";
 import { closeAgentMailBestEffort } from "./generation";
@@ -133,7 +134,7 @@ export const executeTool = action({
     try {
       let selectedTools: ToolSet;
       if (usesAgentMailReadTool(args.toolName)) {
-        const agentMailApiKey = requiredAgentMailApiKey(env.AGENTMAIL_API_KEY);
+        const agentMailApiKey = requiredAgentMailApiKey(getRuntimeEnv("AGENTMAIL_API_KEY"));
         agentMailClient = await createMCPClient({
           transport: {
             type: "http",
@@ -147,7 +148,7 @@ export const executeTool = action({
       } else if (usesAgentMailWriteTool(args.toolName)) {
         selectedTools = createAgentMailWriteTools(
           createAgentMailInboxClient({
-            apiKey: requiredAgentMailApiKey(env.AGENTMAIL_API_KEY),
+            apiKey: requiredAgentMailApiKey(getRuntimeEnv("AGENTMAIL_API_KEY")),
             inboxId: runtime.inboxId,
           }),
           { kind: "manual", operationId },
@@ -252,6 +253,13 @@ export const executeTool = action({
               cdpUrl: connection.cdpUrl,
               interactiveLiveViewUrl: connection.interactiveLiveViewUrl,
             });
+          }
+          if (args.toolName !== "browser_close") {
+            const credentials = await ctx.runQuery(
+              internal.scout.serviceAccountCredentials.listRuntimeCredentialsForScout,
+              { scoutId: runtime.scoutId },
+            );
+            restoreManagedPasswordRedaction({ browser, credentials, scoutId: runtime.scoutId });
           }
         } else if (needsExistingBrowser(args.toolName)) {
           throw new Error("Open a browser session before using it");

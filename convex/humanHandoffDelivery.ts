@@ -2,7 +2,8 @@
 
 import { type Infer, v } from "convex/values";
 import { internal } from "./_generated/api";
-import { env, internalAction } from "./_generated/server";
+import { internalAction } from "./_generated/server";
+import { getRuntimeEnv } from "./runtimeEnv";
 import { humanHandoffDeliveryArgsValidator } from "./humanHandoffDeliveryModel";
 import { humanHandoffEmail } from "./scout/humanHandoffTool";
 import {
@@ -82,12 +83,16 @@ export const send = internalAction({
     let apiKey: string;
     let handoffUrl: string;
     try {
-      apiKey = requiredAgentMailApiKey(env.AGENTMAIL_API_KEY);
+      apiKey = requiredAgentMailApiKey(getRuntimeEnv("AGENTMAIL_API_KEY"));
       const accessToken = deriveHumanHandoffAccessToken(prepared.promptMessageId, apiKey);
       if (hashHumanHandoffAccessToken(accessToken) !== prepared.accessTokenHash) {
         return { kind: "definitive_failure" };
       }
-      handoffUrl = humanHandoffUrl(humanHandoffOrigin(env.SITE_URL), args.handoffId, accessToken);
+      handoffUrl = humanHandoffUrl(
+        humanHandoffOrigin(getRuntimeEnv("SITE_URL")),
+        args.handoffId,
+        accessToken,
+      );
     } catch {
       return { kind: "definitive_failure" };
     }

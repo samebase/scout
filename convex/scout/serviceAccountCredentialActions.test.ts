@@ -63,6 +63,82 @@ async function context() {
 }
 
 describe("Profile account login settings", () => {
+  it.each(["active", "closing"] as const)(
+    "retains a password while its Scout's browser is %s, then permits edits after closure",
+    async (kind) => {
+      const { admin, backend, scoutId, otherScoutId, args, credentials } = await context();
+      const saved = await admin.action(passwordApi, args);
+      const sessionId = await backend.run(
+        async (ctx) =>
+          await ctx.db.insert("scoutBrowserSessions", {
+            scoutId,
+            threadId: "live-browser",
+            sequence: 1,
+            provider: "firecrawl",
+            providerSessionId: "browser-1",
+            profileName: "magda",
+            viewport: { width: 1280, height: 800 },
+            nextOperationSequence: 1,
+            lifecycle: {
+              ...(kind === "closing" ? { kind, closingAtMs: 2 } : { kind }),
+              openedAtMs: 1,
+              providerExpiresAtMs: 3600000,
+              cdpUrl: "wss://browser.firecrawl.dev/cdp?token=test",
+              interactiveLiveViewUrl: null,
+            },
+          }),
+      );
+      const provider = await admin.action(passwordApi, {
+        ...args,
+        account: { ...args.account, serviceName: "Example", serviceDomain: "example.com" },
+        credentialHost: "example.com",
+      });
+      const before = await credentials();
+      const account = {
+        kind: "update" as const,
+        serviceAccountId: saved.serviceAccountId,
+        identifier: "new-identifier",
+      };
+      await expect(admin.action(passwordApi, { ...args, account })).rejects.toThrow(
+        "Close this Scout's browser",
+      );
+      await expect(
+        admin.mutation(oauthApi, { account, providerAccountId: provider.serviceAccountId }),
+      ).rejects.toThrow("Close this Scout's browser");
+      expect(await credentials()).toEqual(before);
+
+      const other = await admin.action(passwordApi, {
+        ...args,
+        account: { ...args.account, scoutId: otherScoutId },
+      });
+      await expect(
+        admin.action(passwordApi, {
+          ...args,
+          account: { ...account, serviceAccountId: other.serviceAccountId },
+        }),
+      ).resolves.toMatchObject({ serviceAccountId: other.serviceAccountId });
+
+      await backend.run(
+        async (ctx) =>
+          await ctx.db.patch("scoutBrowserSessions", sessionId, {
+            lifecycle: {
+              kind: "closed",
+              openedAtMs: 1,
+              closedAtMs: 3,
+              providerDurationMs: null,
+              creditsBilled: null,
+            },
+          }),
+      );
+      await expect(admin.action(passwordApi, { ...args, account })).resolves.toMatchObject({
+        serviceAccountId: saved.serviceAccountId,
+      });
+      await expect(
+        admin.mutation(oauthApi, { account, providerAccountId: provider.serviceAccountId }),
+      ).resolves.toEqual({ serviceAccountId: saved.serviceAccountId });
+    },
+  );
+
   it.each([
     ["Magda@example.test", "magda@example.test"],
     ["magda-scout", "@magda-scout"],

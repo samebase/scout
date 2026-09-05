@@ -16,7 +16,6 @@ import { afterEach, beforeEach, describe, expect, test, vi, type Mock } from "vi
 import {
   BROWSER_EXECUTE_DESCRIPTION,
   BROWSER_EXECUTE_EXAMPLE,
-  BROWSER_STATE_HELPER_SOURCE,
 } from "../../convex/scout/browserToolContract";
 import { Route as ChatsRoute } from "../routes/chats";
 import { Route as IndexRoute } from "../routes/index";
@@ -626,7 +625,6 @@ describe("Chat workspace", () => {
       name: "browser_execute",
     }).nextElementSibling;
     expect(toolDescription?.textContent).toBe(BROWSER_EXECUTE_DESCRIPTION);
-    expect(toolDescription?.textContent).toContain(BROWSER_STATE_HELPER_SOURCE);
     const resize = screen.getByRole("separator", { name: "Resize agent context" });
     expect(resize.getAttribute("aria-valuenow")).toBe("288");
     fireEvent.keyDown(resize, { key: "ArrowUp" });

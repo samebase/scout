@@ -38,6 +38,20 @@ afterEach(() => {
 });
 
 describe("Firecrawl browser replay", () => {
+  test("uses the current invocation's key after the runtime replaces process.env", async () => {
+    const previousEnvironment = process.env;
+    try {
+      process.env = { ...previousEnvironment, FIRECRAWL_API_KEY: "updated-key" };
+      responses.push(Response.json({ success: true, pages: [] }));
+
+      await listBrowserReplayPages("session-1");
+
+      expect(requests[0]?.init?.headers).toEqual({ Authorization: "Bearer updated-key" });
+    } finally {
+      process.env = previousEnvironment;
+    }
+  });
+
   test("loads replay metadata and removes credentials from recorded page URLs", async () => {
     responses.push(
       Response.json({

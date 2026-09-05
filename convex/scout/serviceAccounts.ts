@@ -81,6 +81,21 @@ export async function resolveProfileAccount(
   if (!fields) throw new ConvexError("Account not found.");
   const scout = await ctx.db.get("scouts", fields.scoutId);
   if (!scout || scout.status !== "active") throw new ConvexError("Active Scout not found.");
+  if (account?.loginMethod.kind === "managed_password") {
+    for (const kind of ["active", "closing"] as const) {
+      const session = await ctx.db
+        .query("scoutBrowserSessions")
+        .withIndex("by_scout_id_and_lifecycle_kind", (q) =>
+          q.eq("scoutId", scout._id).eq("lifecycle.kind", kind),
+        )
+        .first();
+      if (session) {
+        throw new ConvexError(
+          "Close this Scout's browser before changing an existing password login.",
+        );
+      }
+    }
+  }
   let registration;
   try {
     registration = {
@@ -408,6 +423,14 @@ export const recordAuthenticated = internalMutation({
     }
 
     if (loginMethod.kind === "managed_password") {
+      const registeredIdentifiers = serviceAccounts
+        .filter((account) => account.loginMethod.kind === "managed_password")
+        .map((account) => account.identifier);
+      if (registeredIdentifiers.length > 0) {
+        throw new Error(
+          `The visible identity does not match the saved login: ${registeredIdentifiers.map((identifier) => JSON.stringify(identifier)).join(", ")}. Open account settings showing the registered username or email together with a Sign out or Log out control, then retry. A display name alone does not verify the saved login.`,
+        );
+      }
       throw new Error("A managed-password account must be registered before it is used");
     }
     const scout = await ctx.db.get("scouts", chat.scoutId);
