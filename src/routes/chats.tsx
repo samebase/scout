@@ -59,6 +59,7 @@ import {
 } from "../sidebars/scoutSidebarState";
 import { ScoutRunMessageView, scoutModelLabel } from "#components/scout-run-message";
 import { SdkModelInputInspector } from "#components/scout-model-input";
+import { SamebaseAttribution } from "#components/samebase-attribution";
 import { AuthPanel } from "#components/auth-panel";
 import { BrowserReplay } from "#components/browser-replay";
 import { ChatHandoffNotice } from "#components/chat-handoff-notice";
@@ -265,6 +266,9 @@ function ChatsPage() {
               Scout
             </h1>
             <AuthPanel />
+            <div className="mt-4 flex justify-center">
+              <SamebaseAttribution />
+            </div>
           </div>
         </main>
       </Unauthenticated>
@@ -1129,6 +1133,7 @@ function ChatsWorkspace() {
         formatResizeHandleValueText={formatResizeHandleValueText}
         left={
           <PaneFrame
+            footer={<SamebaseAttribution />}
             content={
               <ChatNavigation
                 threads={threads.status === "LoadingFirstPage" ? undefined : availableThreads}
