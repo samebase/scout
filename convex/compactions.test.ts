@@ -1,15 +1,22 @@
 /// <reference types="vite/client" />
 import agentTest from "@convex-dev/agent/test";
 import { docsToModelMessages } from "@convex-dev/agent";
+import type { FunctionArgs } from "convex/server";
 import { convexTest } from "convex-test";
 import { expect, test, vi } from "vite-plus/test";
 import { api, components, internal } from "./_generated/api";
 import { ADMIN_EMAIL } from "./authConfig";
 import schema from "./schema";
+import { omitNullish } from "../shared/omitNullish";
 import { loadUncompactedMessages, prepareConversationContext } from "./scout/compactionContext";
 import { preserveTurnObjective } from "./scout/generation";
+import { estimateContextTokens } from "./scout/modelContext";
 
-async function setup() {
+type StoredMessage = FunctionArgs<
+  typeof components.agent.messages.addMessages
+>["messages"][number]["message"];
+
+async function setup(objective = "Research these services and draft an email. Do not send it.") {
   const backend = convexTest(schema, import.meta.glob("./**/*.ts"));
   agentTest.register(backend);
   const { ownerId, outsiderId, scoutId } = await backend.run(async (ctx) => ({
@@ -27,7 +34,6 @@ async function setup() {
   const owner = backend.withIdentity({ subject: `${ownerId}|session` });
   const outsider = backend.withIdentity({ subject: `${outsiderId}|session` });
   const { threadId } = await owner.mutation(api.scout.chats.createThread, { scoutId });
-  const objective = "Research these services and draft an email. Do not send it.";
   const [prompt] = (
     await backend.mutation(components.agent.messages.addMessages, {
       threadId,
@@ -258,4 +264,119 @@ test("a later user turn reuses the summary with its new request and all unsummar
   expect(next.messages.slice(1, -1)).toEqual(first.messages.slice(-8));
   expect(next.messages.at(-1)).toEqual(docsToModelMessages([followup])[0]);
   expect(t.summarize).toHaveBeenCalledTimes(1);
+});
+
+test("does not summarize when only the pinned objective is outside the recent window", async () => {
+  const t = await setup("Research these sources and compare them. ".padEnd(10_200, "x"));
+  await t.writeHistory("Recent source", 8, 1_000);
+  const original = await t.readOriginal();
+  const prepared = await t.prepare();
+  expect(prepared.messages).toEqual(docsToModelMessages(original));
+  expect(t.summarize).not.toHaveBeenCalled();
+  expect(prepared.compactionId).toBeNull();
+});
+
+test("compacts later research after a large prefix of superseded browser snapshots", async () => {
+  const t = await setup();
+  const history: StoredMessage[] = [];
+  for (let index = 0; index < 12; index += 1) {
+    const toolCallId = `browser-${index}`;
+    history.push(
+      {
+        role: "assistant",
+        content: [{ type: "tool-call", toolName: "browser_execute", toolCallId, input: {} }],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolName: "browser_execute",
+            toolCallId,
+            output: { type: "json", value: { currentPage: "snapshot".repeat(2_500) } },
+          },
+        ],
+      },
+    );
+  }
+  await t.backend.mutation(components.agent.messages.addMessages, {
+    threadId: t.threadId,
+    promptMessageId: t.prompt._id,
+    messages: history.map((message) => ({ message })),
+  });
+  await t.writeHistory("Research source", 20, 1_000);
+  const original = await t.readOriginal();
+  const beforeTokens = estimateContextTokens(docsToModelMessages(original));
+  const prepared = await t.prepare();
+  expect(t.summarize).toHaveBeenCalled();
+  expect(prepared.compactionId).not.toBeNull();
+  expect(estimateContextTokens(prepared.messages)).toBeLessThan(beforeTokens / 2);
+  expect(prepared.messages.slice(-8)).toEqual(docsToModelMessages(original.slice(-8)));
+  expect(await t.readOriginal()).toEqual(original);
+  const summaryCount = t.summarize.mock.calls.length;
+  expect(await t.prepare()).toEqual(prepared);
+  expect(t.summarize).toHaveBeenCalledTimes(summaryCount);
+});
+
+test("does not lose a manual result arriving after a later turn starts compacting", async () => {
+  const t = await setup();
+  const add = async (messages: StoredMessage[], promptMessageId: string | null) =>
+    (
+      await t.backend.mutation(components.agent.messages.addMessages, {
+        threadId: t.threadId,
+        ...omitNullish({ promptMessageId }),
+        messages: messages.map((message) => ({ message })),
+      })
+    ).messages;
+  const call: StoredMessage = {
+    role: "assistant",
+    content: [{ type: "tool-call", toolName: "web_crawl", toolCallId: "late-result", input: {} }],
+  };
+  await add([call], t.prompt._id);
+  const objective = "Continue the other research.";
+  const [current] = await add([{ role: "user", content: objective }], null);
+  await t.backend.run(async (ctx) =>
+    ctx.db.patch(t.turnId, {
+      promptMessageId: current._id,
+      order: current.order,
+    }),
+  );
+  await add(
+    Array.from({ length: 20 }, (_, index) => ({
+      role: "assistant" as const,
+      content: "Source " + index + ": " + "Evidence about another source. ".repeat(100),
+    })),
+    current._id,
+  );
+  const prepare = (threshold: number) =>
+    t.backend.action(async (ctx) =>
+      prepareConversationContext(ctx, {
+        ...t.options,
+        promptMessageId: current._id,
+        threshold,
+        preserveObjective: (messages) => preserveTurnObjective(messages, objective),
+      }),
+    );
+  await prepare(9_000);
+  const result: StoredMessage = {
+    role: "tool",
+    content: [
+      {
+        type: "tool-result",
+        toolName: "web_crawl",
+        toolCallId: "late-result",
+        output: { type: "text", value: "The delayed source contains the required answer." },
+      },
+    ],
+  };
+  await add([result], t.prompt._id);
+  const original = await t.readOriginal();
+  expect(docsToModelMessages(original)).toContainEqual(result);
+  const resumed = await prepare(1_000_000);
+  expect(resumed.messages).toContainEqual(call);
+  expect(resumed.messages).toContainEqual(result);
+  const compacted = await prepare(9_000);
+  expect(compacted.compactionId).not.toBeNull();
+  expect(t.summarize.mock.calls[0][0].messages).toContainEqual(result);
+  expect(await t.readOriginal()).toEqual(original);
 });

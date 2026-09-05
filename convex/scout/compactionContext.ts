@@ -72,10 +72,13 @@ export async function prepareConversationContext(
     Doc<"scoutCompactions">,
     "_id" | "summary" | "coveredThrough" | "coveredMessageCount"
   > | null = await ctx.runQuery(internal.scout.compactions.latest, { threadId: args.threadId });
-  let entries = filterOutOrphanedToolMessages(
-    await loadUncompactedMessages(ctx, { ...args, compaction }),
-  ).flatMap((doc) => docsToModelMessages([doc]).map((message) => ({ doc, message })));
-  const context = (summary: string | null, messages: ModelMessage[]) => {
+  let entries = (await loadUncompactedMessages(ctx, { ...args, compaction })).flatMap((doc) =>
+    docsToModelMessages([doc]).map((message) => ({ doc, message })),
+  );
+  const context = (summary: string | null, selected: typeof entries) => {
+    const messages = docsToModelMessages(
+      filterOutOrphanedToolMessages(selected.map((entry) => entry.doc)),
+    );
     const recentStart = Math.max(0, messages.length - KEEP_RECENT_MESSAGES);
     return [
       ...(summary === null ? [] : [summaryMessage(summary)]),
@@ -86,33 +89,27 @@ export async function prepareConversationContext(
     ];
   };
   for (;;) {
-    const messages = entries.map((entry) => entry.message);
-    const current = context(compaction?.summary ?? null, messages);
+    const messages = compactBrowserModelContext(entries.map((entry) => entry.message));
+    const current = context(compaction?.summary ?? null, entries);
     const beforeTokens = args.fixedTokens + estimateContextTokens(current);
     if (beforeTokens < args.threshold)
       return { messages: current, compactionId: compaction?._id ?? null };
     const cut = compactionCut(messages);
-    // Avoid paying to summarize a tiny prefix, especially when fixed tool schemas
-    // or the protected recent messages account for most of the context.
-    if (
-      cut === 0 ||
-      estimateContextTokens(compactBrowserModelContext(messages).slice(0, cut)) < 2_000
-    ) {
+    if (cut === 0) return { messages: current, compactionId: compaction?._id ?? null };
+    const remaining = entries.slice(cut);
+    // Count only removable context: the current objective is pinned even when
+    // its original message is inside the prefix.
+    const retainedTokens =
+      args.fixedTokens + estimateContextTokens(context(compaction?.summary ?? null, remaining));
+    if (beforeTokens - retainedTokens < 2_000) {
       return { messages: current, compactionId: compaction?._id ?? null };
     }
     const result = await args.summarize({
       previousSummary: compaction?.summary ?? null,
       messages: messages.slice(0, cut),
     });
-    const remaining = entries.slice(cut);
     const afterTokens =
-      args.fixedTokens +
-      estimateContextTokens(
-        context(
-          result.summary,
-          remaining.map((entry) => entry.message),
-        ),
-      );
+      args.fixedTokens + estimateContextTokens(context(result.summary, remaining));
     if (!result.summary.trim() || afterTokens >= beforeTokens) {
       throw new Error(
         "Conversation compaction did not produce a smaller nonempty summary; original history is unchanged",

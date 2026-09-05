@@ -368,12 +368,14 @@ describe("Chat workspace", () => {
     const input = { code: "return await page.title()" };
     fireEvent.change(toolInput, { target: { value: JSON.stringify(input) } });
     await user.click(screen.getByRole("button", { name: "Run tool" }));
-    expect(remote.executeTool).toHaveBeenCalledExactlyOnceWith({
-      threadId: "thread-1",
-      toolName: "browser_execute",
-      input: JSON.stringify(input),
-      operationId: expect.any(String),
-    });
+    await waitFor(() =>
+      expect(remote.executeTool).toHaveBeenCalledExactlyOnceWith({
+        threadId: "thread-1",
+        toolName: "browser_execute",
+        input: JSON.stringify(input),
+        operationId: expect.any(String),
+      }),
+    );
   });
 
   test.each([
@@ -415,12 +417,14 @@ describe("Chat workspace", () => {
       target: { value: JSON.stringify(input) },
     });
     await user.click(screen.getByRole("button", { name: "Run tool" }));
-    expect(remote.executeTool).toHaveBeenCalledExactlyOnceWith({
-      threadId: "thread-1",
-      toolName,
-      input: JSON.stringify(input),
-      operationId: expect.any(String),
-    });
+    await waitFor(() =>
+      expect(remote.executeTool).toHaveBeenCalledExactlyOnceWith({
+        threadId: "thread-1",
+        toolName,
+        input: JSON.stringify(input),
+        operationId: expect.any(String),
+      }),
+    );
   });
 
   test("reuses the manual email operation after reload and provider-equivalent normalization", async () => {
