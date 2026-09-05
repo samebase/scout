@@ -15,6 +15,7 @@ import {
   browserActionValidator,
   browserClickCaptureValidator,
   MAX_BROWSER_CLICKS_PER_OPERATION,
+  MAX_BROWSER_OPERATIONS,
   browserOperationStateValidator,
   browserOutcomeValidator,
   browserSessionLifecycleValidator,
@@ -28,7 +29,6 @@ import { activeBrowserForChat } from "./chatAccess";
 const MAX_BROWSER_SESSION_ID_LENGTH = 500;
 const MAX_BROWSER_TOOL_CALL_ID_LENGTH = 200;
 const MAX_BROWSER_FAILURE_LENGTH = 2_000;
-const MAX_BROWSER_OPERATIONS = 500;
 const MAX_BROWSER_SESSIONS_PER_THREAD = 50;
 const BROWSER_VIEWPORT = { width: 1_280, height: 800 } as const;
 
@@ -419,7 +419,7 @@ export const settleOperation = internalMutation({
         await ctx.db.patch("scoutBrowserOperations", operation._id, {
           clickCapture: capture,
           state: {
-            kind: args.outcome.kind,
+            ...args.outcome,
             settledAtMs,
             failure: boundedFailure(args.outcome.failure),
           },

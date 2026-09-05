@@ -50,6 +50,23 @@ normally sets it to `http://localhost:5173`, so emailed handoff links work when 
 computer. To open them from another device, point `SITE_URL` at an HTTPS preview deployment or
 tunnel that serves this frontend and connects to the same Convex deployment.
 
+## Configure Scout integrations
+
+Development and production have separate Scout registries and environment variables. A code
+deployment does not copy development Scouts or credentials into production.
+
+Set `AGENTMAIL_API_KEY` before registering a Scout. Registration verifies an existing AgentMail
+inbox; it does not create one. Browser tasks also require `FIRECRAWL_API_KEY`.
+
+```sh
+pnpm exec convex env set AGENTMAIL_API_KEY
+pnpm exec convex env set FIRECRAWL_API_KEY
+```
+
+These commands target development. Add `--prod` to configure production after confirming the
+target deployment. Production also needs its own managed-credential key, described below, and
+`SITE_URL` must point to the production frontend for sign-in and handoff emails.
+
 ## Configure managed credentials
 
 Managed service-account registration requires one 32-byte master key in the Convex deployment.

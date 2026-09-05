@@ -1,6 +1,6 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { internal } from "../_generated/api";
+import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { ADMIN_EMAIL } from "../authConfig";
@@ -14,7 +14,11 @@ const modules = {
   ...import.meta.glob("../**/*.*s"),
   ...Object.fromEntries(
     Object.entries(
-      import.meta.glob(["./serviceAccountCredentials.ts", "./serviceAccounts.ts"]),
+      import.meta.glob([
+        "./serviceAccountCredentials.ts",
+        "./serviceAccounts.ts",
+        "./serviceAccountCredentialActions.ts",
+      ]),
     ).map(([path, module]) => [`../scout/${path.slice(2)}`, module]),
   ),
 };
@@ -242,28 +246,38 @@ describe("Autonomous managed-password preparation", () => {
     });
   });
 
-  it("reuses a profile-prepared credential whose service domain differs from its login host", async () => {
-    const { backend, request, scoutId, credentials } = await browserAccountContext();
+  it("reuses and fills a manually saved password whose service domain differs from its login host", async () => {
+    const { backend, request, scoutId, credentials, accountTools, runtime } =
+      await browserAccountContext();
     const userId = await backend.run(
       async (ctx) => await ctx.db.insert("users", { email: ADMIN_EMAIL }),
     );
     const admin = backend.withIdentity({ subject: `${userId}|test-session` });
-    const result = await admin.action(
-      async (ctx) =>
-        await prepareManagedPassword(ctx, {
-          kind: "profile",
-          scoutId,
-          serviceName: "Example",
-          serviceDomain: "example.com",
-          credentialHost: "accounts.example.com",
-          identifier: "magda@example.test",
-        }),
-    );
+    const result = await admin.action(api.scout.serviceAccountCredentialActions.savePassword, {
+      account: {
+        kind: "create",
+        scoutId,
+        serviceName: "Example",
+        serviceDomain: "example.com",
+        identifier: "magda@example.test",
+      },
+      credentialHost: "accounts.example.com",
+      password: { kind: "provided", value: "My manually saved password" },
+    });
     const before = await credentials();
     expect(await backend.action(async (ctx) => await prepareManagedPassword(ctx, request))).toEqual(
       result,
     );
     expect(await credentials()).toEqual(before);
+    await backend.action(
+      async (ctx) =>
+        await accountTools(ctx).fill_account_password.execute({ passwordTarget }, toolOptions),
+    );
+    expect(runtime.fill).toHaveBeenCalledWith(
+      passwordTarget,
+      "My manually saved password",
+      toolOptions.abortSignal,
+    );
   });
 
   it.each([

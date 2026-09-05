@@ -5,7 +5,8 @@ import { type Infer } from "convex/values";
 import { SdkError, type BrowserExecuteResponse, type Firecrawl } from "firecrawl";
 import { setTimeout as wait } from "node:timers/promises";
 import { z } from "zod";
-import { browserActionValidator } from "../browserModel";
+import { browserActionValidator, browserOutcomeValidator } from "../browserModel";
+import { omitNullish } from "../../shared/omitNullish";
 import { type BrowserTarget } from "./browserTarget";
 import {
   BROWSER_CLOSE_DESCRIPTION,
@@ -71,11 +72,7 @@ export type BrowserSessionHandle = {
 type CreatedBrowserSessionHandle = BrowserSessionHandle & { providerExpiresAtMs: number };
 
 type BrowserSessionPolicy = { captureOperations: boolean };
-type BrowserOperationOutcome =
-  | { kind: "applied"; telemetry: BrowserTelemetry }
-  | { kind: "applied_snapshot_failed"; telemetry: BrowserTelemetry }
-  | { kind: "failed_before_dispatch"; failure: string }
-  | { kind: "indeterminate_after_dispatch"; failure: string };
+type BrowserOperationOutcome = Infer<typeof browserOutcomeValidator>;
 
 type BrowserHarnessOptions = {
   profileName?: string;
@@ -254,15 +251,17 @@ function redactProviderUrls(value: string) {
 
 function redactSensitiveValues(value: string, sensitiveValues: ReadonlySet<string>) {
   let redacted = value;
-  for (const sensitiveValue of [...sensitiveValues].sort(
+  const representations = new Set<string>();
+  for (const secret of sensitiveValues) {
+    if (!secret) continue;
+    representations.add(secret);
+    representations.add(encodeURIComponent(secret));
+    representations.add(JSON.stringify(secret).slice(1, -1));
+  }
+  for (const sensitiveValue of [...representations].sort(
     (left, right) => right.length - left.length,
   )) {
-    if (!sensitiveValue) continue;
     redacted = redacted.replaceAll(sensitiveValue, "[secret redacted]");
-    const encoded = encodeURIComponent(sensitiveValue);
-    if (encoded !== sensitiveValue) {
-      redacted = redacted.replaceAll(encoded, "[secret redacted]");
-    }
   }
   return redactProviderUrls(redacted);
 }
@@ -513,20 +512,42 @@ export function createBrowserHarness(
   let localToolCallSequence = 0;
   let terminalTelemetryFailure: { error: unknown } | undefined;
   let operationActive = false;
+  let acceptingOperations = true;
+  let operationFinished: Promise<void> = Promise.resolve();
   const sensitiveValues = new Set<string>();
 
-  async function exclusiveOperation<T>(operation: () => Promise<T>) {
+  async function exclusiveOperation<T>(operation: () => Promise<T>, closing = false) {
+    if (!acceptingOperations && !closing) {
+      throw new Error("This browser controller has finished accepting operations");
+    }
     if (operationActive) {
       throw new Error(
         "Only one browser operation may run at a time. Make one browser tool call per response.",
       );
     }
     operationActive = true;
+    const pending = Promise.resolve().then(operation);
+    operationFinished = pending.then(
+      () => undefined,
+      () => undefined,
+    );
     try {
-      return await operation();
+      return await pending;
     } finally {
       operationActive = false;
     }
+  }
+
+  async function drain() {
+    acceptingOperations = false;
+    await operationFinished;
+  }
+
+  function transferControl(request: () => Promise<void>) {
+    return exclusiveOperation(async () => {
+      await request();
+      acceptingOperations = false;
+    });
   }
 
   function activeBrowser() {
@@ -823,10 +844,16 @@ export function createBrowserHarness(
       }
 
       const returnedAtMs = dependencies.now();
+      const executionFinished =
+        response.exitCode != null || response.killed === true ? true : undefined;
       if (abortSignal?.aborted) {
         const failure = "Browser execution exceeded the Scout slice deadline after dispatch";
         if (captureOperations) {
-          await settle(toolCallId, { kind: "indeterminate_after_dispatch", failure });
+          await settle(toolCallId, {
+            kind: "indeterminate_after_dispatch",
+            failure,
+            ...omitNullish({ executionFinished }),
+          });
         }
         abortSignal.throwIfAborted();
       }
@@ -836,7 +863,11 @@ export function createBrowserHarness(
       } catch (error) {
         const failure = `Playwright code returned, but browser observation failed: ${browserFailure(error, sensitiveValues)}`;
         if (captureOperations) {
-          await settle(toolCallId, { kind: "indeterminate_after_dispatch", failure });
+          await settle(toolCallId, {
+            kind: "indeterminate_after_dispatch",
+            failure,
+            ...omitNullish({ executionFinished }),
+          });
         }
         abortSignal?.throwIfAborted();
         return {
@@ -869,6 +900,7 @@ export function createBrowserHarness(
               : {
                   kind: "indeterminate_after_dispatch",
                   failure: execution.error ?? "Playwright execution failed",
+                  ...omitNullish({ executionFinished }),
                 },
           );
         }
@@ -890,6 +922,7 @@ export function createBrowserHarness(
             : {
                 kind: "indeterminate_after_dispatch",
                 failure: execution.error ?? "Playwright execution failed",
+                ...omitNullish({ executionFinished }),
               },
         );
       }
@@ -1099,7 +1132,7 @@ export function createBrowserHarness(
         throw terminalTelemetryFailure.error;
       }
       return stopResult;
-    });
+    }, true);
     closePromise = pendingClose;
     void pendingClose.then(
       () => {
@@ -1181,9 +1214,16 @@ export function createBrowserHarness(
     browser_close: tool({
       description: BROWSER_CLOSE_DESCRIPTION,
       inputSchema: z.object({}),
-      execute: async () => (await close()) ?? { success: true, alreadyClosed: true },
+      execute: async (_, execution) => {
+        await options.beforeDispatch?.();
+        execution.abortSignal?.throwIfAborted();
+        if (!acceptingOperations) {
+          throw new Error("This browser controller has finished accepting operations");
+        }
+        return (await close()) ?? { success: true, alreadyClosed: true };
+      },
     }),
   } satisfies ToolSet;
 
-  return { tools, actions, open, attach, close };
+  return { tools, actions, open, attach, close, drain, transferControl };
 }

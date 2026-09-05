@@ -1,8 +1,10 @@
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useAction, useQuery } from "convex/react";
+import { ConvexError } from "convex/values";
 import type { FunctionReturnType } from "convex/server";
 import { LoaderCircleIcon, PlusIcon, XIcon } from "lucide-react";
 import { type FormEvent, type ReactNode, useRef, useState } from "react";
+import { z } from "zod";
 import { api } from "../../convex/_generated/api";
 import { ServiceIcon } from "#components/service-icon";
 import { Button } from "#components/ui/button";
@@ -439,6 +441,10 @@ function slugFromName(value: string) {
 }
 
 function registrationError(error: unknown) {
+  if (error instanceof ConvexError) {
+    const message = z.string().safeParse(error.data);
+    if (message.success) return message.data;
+  }
   const message = error instanceof Error ? error.message : "";
   const knownMessages = [
     ["Scout slug is already registered", "That scout slug is already registered."],

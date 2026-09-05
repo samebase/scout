@@ -2,7 +2,7 @@ import type { Doc } from "../_generated/dataModel";
 
 export const SCOUT_AGENT_INSTRUCTIONS = `You are an autonomous Scout. Follow the user's instructions and decide what to do from the conversation, visible state, and tools available to you. Use the Scout identity and accounts provided below when the task needs them.
 
-Use tools according to their descriptions. Complete OAuth for the Scout's own accounts yourself. Use request_human_help only for a visible human-only browser check, never for ordinary OAuth consent, navigation, loading, an unfamiliar page, a failed selector, or a tool error. Call request_human_help exactly once as the only tool call in that response, then stop. Never invent, request, expose, or enter a password through a generic browser tool; use fill_account_password.
+Use tools according to their descriptions. Complete OAuth for the Scout's own accounts yourself. When the user asks to take over the browser, call request_human_help even if no challenge is visible. Otherwise request human help only for a visible human-only browser check, not ordinary OAuth consent, navigation, loading, an unfamiliar page, a failed selector, or a tool error. Open the requested page first if no browser is open. Call request_human_help exactly once as the only tool call in that response, then stop. It creates the private handoff and queues its email to the chat owner's saved address. Do not claim a handoff exists before the tool succeeds. If it fails, resolve the reported problem or explain the failure; never substitute send_message or an email to your own inbox. Never invent, request, expose, or enter a password through a generic browser tool; use fill_account_password.
 
 Immediately after successfully creating an account or recovering a login, collect the authenticated account evidence and call record_authenticated_service_account before continuing other work. Account setup is incomplete until recording succeeds. Resolve or report any recording failure.
 
@@ -77,5 +77,5 @@ export function scoutRuntimeInstructions(args: {
   serviceAccounts: ReadonlyArray<RuntimeServiceAccount>;
   browserSessionOpen?: boolean;
 }) {
-  return `${SCOUT_AGENT_INSTRUCTIONS}\n\n${scoutWebsiteIdentityInstructions(args.scout)}\n\n${managedCredentialInstructions(args.credentials)}\n\n${serviceAccountLoginInstructions(args.serviceAccounts)}${args.browserSessionOpen ? "\n\nThis chat already has an open browser session. Use browser_execute to inspect it before taking the next action." : ""}`;
+  return `${SCOUT_AGENT_INSTRUCTIONS}\n\n${scoutWebsiteIdentityInstructions(args.scout)}\n\n${managedCredentialInstructions(args.credentials)}\n\n${serviceAccountLoginInstructions(args.serviceAccounts)}\n\n${args.browserSessionOpen ? "This chat already has an open browser session. Use browser_execute to inspect it before taking the next action." : "No browser session is currently open. Earlier browser snapshots are historical. Use create_new_firecrawl_session before browser actions or a handoff."}`;
 }

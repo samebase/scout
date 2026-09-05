@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 
 export const MAX_BROWSER_CLICKS_PER_OPERATION = 64;
+export const MAX_BROWSER_OPERATIONS = 500;
 
 export const browserClickCaptureValidator = v.union(
   v.object({ kind: v.literal("unavailable") }),
@@ -47,6 +48,12 @@ export const browserTelemetryValidator = v.object({
   after: browserObservationValidator,
 });
 
+const indeterminateBrowserOutcome = {
+  kind: v.literal("indeterminate_after_dispatch"),
+  failure: v.string(),
+  executionFinished: v.optional(v.literal(true)),
+};
+
 export const browserOutcomeValidator = v.union(
   v.object({ kind: v.literal("applied"), telemetry: browserTelemetryValidator }),
   v.object({
@@ -54,7 +61,7 @@ export const browserOutcomeValidator = v.union(
     telemetry: browserTelemetryValidator,
   }),
   v.object({ kind: v.literal("failed_before_dispatch"), failure: v.string() }),
-  v.object({ kind: v.literal("indeterminate_after_dispatch"), failure: v.string() }),
+  v.object(indeterminateBrowserOutcome),
 );
 
 export const browserOperationStateValidator = v.union(
@@ -75,9 +82,8 @@ export const browserOperationStateValidator = v.union(
     failure: v.string(),
   }),
   v.object({
-    kind: v.literal("indeterminate_after_dispatch"),
+    ...indeterminateBrowserOutcome,
     settledAtMs: v.number(),
-    failure: v.string(),
   }),
 );
 

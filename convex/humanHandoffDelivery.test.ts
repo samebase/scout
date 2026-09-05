@@ -39,7 +39,7 @@ describe("human handoff email delivery", () => {
     expect(sendEmail).toHaveBeenCalledWith(
       expect.objectContaining({
         to: delivery.recipientEmail,
-        subject: "[Scout human check] Conrad Scout needs your help",
+        subject: "[Scout handoff] Conrad Scout is ready for you",
         idempotencyKey: "scout-handoff-handoff-1",
       }),
       { signal },

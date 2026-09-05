@@ -1,8 +1,24 @@
 import type { ActionCtx, MutationCtx, QueryCtx } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
+import { MAX_BROWSER_OPERATIONS } from "../browserModel";
 import { scoutAgent } from "./agent";
 
 type AgentThreadContext = QueryCtx | MutationCtx | ActionCtx;
+
+export async function browserReadyForTransfer(
+  ctx: QueryCtx,
+  sessionId: Id<"scoutBrowserSessions">,
+) {
+  const operations = await ctx.db
+    .query("scoutBrowserOperations")
+    .withIndex("by_session_id_and_sequence", (q) => q.eq("sessionId", sessionId))
+    .take(MAX_BROWSER_OPERATIONS);
+  return operations.every(
+    ({ state }) =>
+      state.kind !== "prepared" &&
+      (state.kind !== "indeterminate_after_dispatch" || state.executionFinished === true),
+  );
+}
 
 export async function requireOwnedAgentThread(
   ctx: AgentThreadContext,

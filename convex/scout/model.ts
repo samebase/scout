@@ -42,3 +42,16 @@ export const scoutServiceAccountFieldsValidator = v.object({
   authenticationEvidence: scoutServiceAccountAuthenticationEvidenceValidator,
   loginMethod: scoutServiceAccountLoginMethodValidator,
 });
+
+export const profileAccountUpdateValidator = v.object({
+  kind: v.literal("update"),
+  serviceAccountId: v.id("scoutServiceAccounts"),
+  identifier: v.string(),
+});
+
+export const profileAccountTargetValidator = v.union(
+  scoutServiceAccountFieldsValidator
+    .pick("scoutId", "serviceName", "serviceDomain", "identifier")
+    .extend({ kind: v.literal("create") }),
+  profileAccountUpdateValidator,
+);

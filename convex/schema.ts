@@ -49,6 +49,7 @@ export default defineSchema({
     .index("by_firecrawl_profile_name", ["firecrawl.profileName"]),
   scoutServiceAccounts: defineTable(
     scoutServiceAccountFieldsValidator.extend({
+      loginUpdatedAt: v.optional(v.number()),
       lastObserved: v.optional(accountObservationValidator),
     }).fields,
   )

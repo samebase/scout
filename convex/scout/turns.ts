@@ -9,6 +9,7 @@ import {
 } from "../humanHandoffsModel";
 import { omitNullish } from "../../shared/omitNullish";
 import { scoutAgent } from "./agent";
+import { browserReadyForTransfer } from "./chatAccess";
 import { failPendingModelCall } from "./modelCalls";
 import { scoutTokenUsageValidator } from "./models";
 import type { ScoutModel, ScoutTokenUsage } from "./models";
@@ -81,12 +82,15 @@ async function failPendingTurn(
   const handoffOwnsBrowserCleanup = await failHumanHandoffForTurn(ctx, turn._id);
   const session = await ctx.db
     .query("scoutBrowserSessions")
-    .withIndex("by_scout_id_and_lifecycle_kind", (query) =>
-      query.eq("scoutId", turn.scoutId).eq("lifecycle.kind", "active"),
-    )
+    .withIndex("by_thread_id_and_sequence", (query) => query.eq("threadId", turn.threadId))
+    .order("desc")
     .first();
   const cleanupSession =
-    !handoffOwnsBrowserCleanup && session?.threadId === turn.threadId ? session : null;
+    !handoffOwnsBrowserCleanup &&
+    session?.scoutId === turn.scoutId &&
+    (session.lifecycle.kind === "active" || session.lifecycle.kind === "closing")
+      ? session
+      : null;
   if (cleanupSession?.lifecycle.kind === "active") {
     await ctx.db.patch(cleanupSession._id, {
       lifecycle: {
@@ -208,6 +212,53 @@ export async function stopTurn(
   return true;
 }
 
+async function browserNeededByReplacement(
+  ctx: MutationCtx,
+  turn: Doc<"scoutTurns">,
+  session: Doc<"scoutBrowserSessions"> | null,
+) {
+  if (
+    turn.state.kind !== "stopping" ||
+    !turn.state.replacement ||
+    turn.state.cleanupFailure ||
+    session?.lifecycle.kind !== "active" ||
+    session.threadId !== turn.threadId ||
+    session.scoutId !== turn.scoutId
+  ) {
+    return false;
+  }
+  const handoff = await ctx.db
+    .query("scoutHumanHandoffs")
+    .withIndex("by_session_id", (q) => q.eq("sessionId", session._id))
+    .unique();
+  if (handoff) return false;
+  return await browserReadyForTransfer(ctx, session._id);
+}
+
+export const beginBrowserCleanup = internalMutation({
+  args: { turnId: v.id("scoutTurns"), sessionId: v.id("scoutBrowserSessions") },
+  returns: v.union(v.literal("preserve"), v.literal("close")),
+  handler: async (ctx, args) => {
+    const turn = await ctx.db.get("scoutTurns", args.turnId);
+    const session = await ctx.db.get("scoutBrowserSessions", args.sessionId);
+    if (
+      !turn ||
+      !session ||
+      turn.threadId !== session.threadId ||
+      turn.scoutId !== session.scoutId
+    ) {
+      throw new Error("Browser cleanup does not match the Scout turn");
+    }
+    if (await browserNeededByReplacement(ctx, turn, session)) return "preserve";
+    if (session.lifecycle.kind === "active") {
+      await ctx.db.patch(session._id, {
+        lifecycle: { ...session.lifecycle, kind: "closing", closingAtMs: Date.now() },
+      });
+    }
+    return "close";
+  },
+});
+
 export async function finalizeStoppingTurn(ctx: MutationCtx, turnId: Doc<"scoutTurns">["_id"]) {
   const turn = await ctx.db.get("scoutTurns", turnId);
   if (!turn || turn.state.kind !== "stopping" || !turn.state.generationFinished) return;
@@ -216,7 +267,12 @@ export async function finalizeStoppingTurn(ctx: MutationCtx, turnId: Doc<"scoutT
     .withIndex("by_thread_id_and_sequence", (query) => query.eq("threadId", turn.threadId))
     .order("desc")
     .first();
-  if (session?.lifecycle.kind === "active" || session?.lifecycle.kind === "closing") return;
+  if (session?.lifecycle.kind === "closing") return;
+  if (
+    session?.lifecycle.kind === "active" &&
+    !(await browserNeededByReplacement(ctx, turn, session))
+  )
+    return;
   if (turn.state.replacement) {
     await ctx.db.patch(turn._id, {
       state: {
@@ -254,7 +310,18 @@ export async function continueStoppingTurn(ctx: MutationCtx, turnId: Doc<"scoutT
     .withIndex("by_thread_id_and_sequence", (query) => query.eq("threadId", turn.threadId))
     .order("desc")
     .first();
-  if (session?.lifecycle.kind === "active") {
+  if (await browserNeededByReplacement(ctx, turn, session)) {
+    await finalizeStoppingTurn(ctx, turn._id);
+    return;
+  }
+  if (session?.lifecycle.kind === "active" || session?.lifecycle.kind === "closing") {
+    if (session.lifecycle.kind === "closing") {
+      const handoff = await ctx.db
+        .query("scoutHumanHandoffs")
+        .withIndex("by_session_id", (q) => q.eq("sessionId", session._id))
+        .unique();
+      if (handoff) return;
+    }
     const { cleanupFailure: _cleanupFailure, ...state } = turn.state;
     await ctx.db.patch(turn._id, { state });
     await ctx.db.patch(session._id, {
@@ -272,13 +339,12 @@ export async function continueStoppingTurn(ctx: MutationCtx, turnId: Doc<"scoutT
     );
     return;
   }
-  if (session?.lifecycle.kind === "closing") return;
   await ctx.scheduler.runAfter(0, internal.scout.turns.finalizeStopping, { turnId: turn._id });
 }
 
 export async function finishStoppingTurn(ctx: MutationCtx, turnId: Doc<"scoutTurns">["_id"]) {
   const turn = await ctx.db.get("scoutTurns", turnId);
-  if (!turn || turn.state.kind !== "stopping") return;
+  if (!turn || turn.state.kind !== "stopping" || turn.state.generationFinished) return;
   await ctx.db.patch(turn._id, {
     state: { ...turn.state, generationFinished: true },
   });

@@ -219,7 +219,7 @@ describe("Scout runtime instructions", () => {
       "Complete OAuth for the Scout's own accounts yourself",
     );
     expect(SCOUT_AGENT_INSTRUCTIONS).toContain(
-      "Use request_human_help only for a visible human-only browser check",
+      "When the user asks to take over the browser, call request_human_help even if no challenge is visible",
     );
   });
 
