@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-04T22:13:58Z
+- **Last updated:** 2026-09-04T23:06:26Z
 
 ## Log
 
@@ -956,7 +956,7 @@ state. Reduced human help to one visible-blocker reason while the server owns th
 link. The complete project check passes all 329 tests (`convex/humanHandoffs.ts`,
 `convex/scout/humanHandoffTool.ts`, `convex/scout/turns.ts`).
 
-### 2026-09-04 - working tree
+### 2026-09-04 - 3cb697d - v169
 
 Added persisted running summaries that compact older history at a token threshold while keeping
 recent messages, complete tool exchanges, and the original transcript. The Model calls inspector
@@ -964,3 +964,10 @@ shows summary coverage, token estimates, and cost (`convex/scout/compactionConte
 `src/components/scout-model-input.tsx`). Scouts can prepare signup passwords through the existing
 encrypted store and are instructed to record accounts immediately after authentication
 (`convex/scout/accountTools.ts`, `convex/scout/runtimeInstructions.ts`).
+
+### 2026-09-04 - working tree
+
+Added click rings and browser-side MP4 export to the admin chat replay. Convex retains bounded
+click events alongside browser operations, including failures, while MediaBunny renders the
+recorded video and rings in a cancellable worker (`convex/scout/browserClickRecorder.ts`,
+`src/components/browser-replay.tsx`, `src/lib/renderBrowserReplay.ts`).

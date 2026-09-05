@@ -13,6 +13,8 @@ import schema from "../schema";
 import { failHumanHandoffForSession } from "../humanHandoffsModel";
 import {
   browserActionValidator,
+  browserClickCaptureValidator,
+  MAX_BROWSER_CLICKS_PER_OPERATION,
   browserOperationStateValidator,
   browserOutcomeValidator,
   browserSessionLifecycleValidator,
@@ -56,6 +58,7 @@ const browserSessionDetailValidator = browserSessionSummaryValidator.extend({
 export const replayOperationValidator = v.object({
   sequence: v.number(),
   state: browserOperationStateValidator,
+  clickCapture: v.union(browserClickCaptureValidator, v.null()),
 });
 
 export type ReplayOperation = Infer<typeof replayOperationValidator>;
@@ -197,6 +200,7 @@ export const replayData = internalQuery({
       operations: operations.map((operation) => ({
         sequence: operation.sequence,
         state: operation.state,
+        clickCapture: operation.clickCapture ?? null,
       })),
     };
   },
@@ -367,6 +371,7 @@ export const settleOperation = internalMutation({
     sessionId: v.id("scoutBrowserSessions"),
     toolCallId: v.string(),
     outcome: browserOutcomeValidator,
+    clickCapture: browserClickCaptureValidator,
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -378,17 +383,41 @@ export const settleOperation = internalMutation({
       .unique();
     if (!operation) throw new Error("browser operation not found");
     if (operation.state.kind !== "prepared") return null;
+    const capture = args.clickCapture;
+    if (capture.kind === "captured") {
+      if (
+        !Number.isFinite(capture.startedAtMs) ||
+        !Number.isFinite(capture.endedAtMs) ||
+        capture.endedAtMs < capture.startedAtMs ||
+        capture.clicks.length > MAX_BROWSER_CLICKS_PER_OPERATION ||
+        capture.clicks.some(
+          (click) =>
+            !click.tabId ||
+            click.tabId.length > 200 ||
+            !Number.isFinite(click.atMs) ||
+            !Number.isFinite(click.x) ||
+            !Number.isFinite(click.y) ||
+            click.x < 0 ||
+            click.x > 1 ||
+            click.y < 0 ||
+            click.y > 1,
+        )
+      )
+        throw new Error("Invalid browser click capture");
+    }
     const settledAtMs = Date.now();
     switch (args.outcome.kind) {
       case "applied":
       case "applied_snapshot_failed":
         await ctx.db.patch("scoutBrowserOperations", operation._id, {
+          clickCapture: capture,
           state: { kind: args.outcome.kind, settledAtMs, telemetry: args.outcome.telemetry },
         });
         break;
       case "failed_before_dispatch":
       case "indeterminate_after_dispatch":
         await ctx.db.patch("scoutBrowserOperations", operation._id, {
+          clickCapture: capture,
           state: {
             kind: args.outcome.kind,
             settledAtMs,

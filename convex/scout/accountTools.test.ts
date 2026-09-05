@@ -98,6 +98,10 @@ async function browserAccountContext() {
     return { scoutId, conradId, sessionId, chatId, operationId };
   });
   const runtime = {
+    startClickCapture: vi.fn(async () => undefined),
+    finishClickCapture: vi.fn<PlaywrightBrowser["finishClickCapture"]>(async () => ({
+      kind: "unavailable",
+    })),
     snapshot: vi.fn(async () => '- textbox "Password"'),
     navigate: vi.fn(async () => undefined),
     getPage: vi.fn(async () => "https://accounts.example.com/signup?source=home#form"),

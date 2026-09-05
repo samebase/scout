@@ -26,6 +26,10 @@ const passwordTarget = {
 
 function runtime() {
   return {
+    startClickCapture: vi.fn(async () => undefined),
+    finishClickCapture: vi.fn<PlaywrightBrowser["finishClickCapture"]>(async () => ({
+      kind: "unavailable",
+    })),
     snapshot: vi.fn(async () => '- textbox "Email" [ref=e1]'),
     navigate: vi.fn(async () => undefined),
     getPage: vi.fn(async (kind: "url" | "title") =>
@@ -197,6 +201,7 @@ describe("Lab browser harness", () => {
     });
     expect(onOperationSettled).toHaveBeenCalledWith({
       toolCallId: "tool-execute",
+      clickCapture: { kind: "unavailable" },
       outcome: {
         kind: "applied",
         telemetry: {
@@ -305,6 +310,7 @@ describe("Lab browser harness", () => {
     ).resolves.toMatchObject({ success: false, error: expect.stringContaining("not found") });
     expect(onOperationSettled).toHaveBeenLastCalledWith({
       toolCallId: "local-2",
+      clickCapture: { kind: "unavailable" },
       outcome: {
         kind: "indeterminate_after_dispatch",
         failure: expect.stringContaining("not found"),
@@ -503,6 +509,7 @@ describe("Lab browser harness", () => {
     expect(playwright.navigate).not.toHaveBeenCalled();
     expect(onOperationSettled).toHaveBeenCalledExactlyOnceWith({
       toolCallId: "tool-canceled-before-navigation",
+      clickCapture: { kind: "unavailable" },
       outcome: {
         kind: "failed_before_dispatch",
         failure: expect.stringContaining("Scout slice expired"),

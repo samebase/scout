@@ -1,5 +1,26 @@
 import { v } from "convex/values";
 
+export const MAX_BROWSER_CLICKS_PER_OPERATION = 64;
+
+export const browserClickCaptureValidator = v.union(
+  v.object({ kind: v.literal("unavailable") }),
+  v.object({
+    kind: v.literal("captured"),
+    startedAtMs: v.number(),
+    endedAtMs: v.number(),
+    incomplete: v.boolean(),
+    truncated: v.boolean(),
+    clicks: v.array(
+      v.object({
+        tabId: v.string(),
+        atMs: v.number(),
+        x: v.number(),
+        y: v.number(),
+      }),
+    ),
+  }),
+);
+
 export const browserActionValidator = v.union(
   v.object({ kind: v.literal("open"), url: v.string() }),
   v.object({ kind: v.literal("execute"), code: v.string() }),
