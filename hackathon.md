@@ -1021,4 +1021,5 @@ The embedded mark stays visible in light and dark themes
 Added a Scout overview and separate Play and Review identities (`src/products/`). Play invites
 existing Scouts through Convex and shows the browser, conversation, help requests, and stop control.
 Review has its own landing page and a link to the existing Lab while its dedicated flow is still being designed.
+Tailwind utilities and shared class variants keep the product styling alongside its components.
 Shared development mode lets the worktree frontend use configured Scouts without deploying backend code.

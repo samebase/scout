@@ -19,7 +19,19 @@ import { gameInvitePrompt, gameInviteSchema } from "./invite";
 import { AuthPanel } from "../../components/auth-panel";
 import { BrowserReplay } from "../../components/browser-replay";
 import { ChatHandoffNotice } from "../../components/chat-handoff-notice";
-import { PlayShell, ScoutPiece } from "./shell";
+import { PlayShell } from "./shell";
+import { ScoutPiece } from "./scout-piece";
+import { cn } from "#lib/utils";
+import { ProductCard, productButtonVariants } from "../ui";
+import {
+  playError,
+  playInput,
+  playLoading,
+  playNotice,
+  playPanelBar,
+  playRouteMessage,
+  playTextLink,
+} from "./ui";
 
 type Scout = FunctionReturnType<typeof api.scout.scouts.list>[number];
 type ChatThread = FunctionReturnType<typeof api.scout.chats.listThreads>["page"][number];
@@ -31,18 +43,25 @@ export function PlayPage() {
   const { isAuthenticated, isLoading } = useConvexAuth();
   return (
     <PlayShell>
-      <main id="main-content" className={thread ? "play-session-page" : "play-lobby-page"}>
+      <main
+        id="main-content"
+        className={
+          thread
+            ? "mx-auto min-h-[calc(100dvh-112px)] max-w-[1456px] px-16 pt-[22px] pb-[60px] max-[1100px]:px-[30px] max-[760px]:px-5 max-[760px]:pt-[15px] max-[760px]:pb-10"
+            : "min-h-[calc(100dvh-112px)] px-[25px] pt-[65px] pb-20 max-[760px]:min-h-[calc(100dvh-85px)] max-[760px]:pt-[35px]"
+        }
+      >
         {thread ? (
           isLoading ? (
-            <p className="play-loading" role="status">
+            <p className={playLoading} role="status">
               Loading your session...
             </p>
           ) : isAuthenticated ? (
             <SessionLoader threadId={thread} />
           ) : (
-            <div className="play-signin">
-              <h1>Back for another round?</h1>
-              <p>Sign in to open your session.</p>
+            <div className="mx-auto mt-[50px] mb-[100px] max-w-[400px] max-[760px]:px-[15px]">
+              <h1 className="text-[34px] tracking-[-1px]">Back for another round?</h1>
+              <p className="mt-[15px] mb-[25px] text-play-muted">Sign in to open your session.</p>
               <AuthPanel />
             </div>
           )
@@ -113,14 +132,16 @@ function PlayLobby() {
   }
 
   return (
-    <div className="play-lobby">
-      <h1>Invite Scout</h1>
-      <section className="play-invite-card" aria-label="Invite Scout">
+    <div className="mx-auto max-w-[420px]">
+      <h1 className="mb-[35px] text-[44px] leading-[1.1] font-semibold tracking-[-1.7px] max-[760px]:mb-[30px] max-[760px]:text-[38px]">
+        Invite Scout
+      </h1>
+      <section className="min-w-0" aria-label="Invite Scout">
         {signingIn && !isAuthenticated ? (
           <>
             <button
               type="button"
-              className="play-text-link play-back"
+              className={cn(playTextLink, "mb-6 text-play-muted")}
               onClick={() => setSigningIn(false)}
             >
               <ArrowLeftIcon size={15} aria-hidden="true" /> Back to your invite
@@ -133,13 +154,23 @@ function PlayLobby() {
               onSubmit={(event) => {
                 void inviteScout(event);
               }}
-              className="play-invite-form"
+              className="flex flex-col"
             >
-              <label htmlFor="game-room">Your game link</label>
-              <div className="play-url-field">
-                <LinkIcon size={19} aria-hidden="true" />
+              <label
+                htmlFor="game-room"
+                className="mb-[9px] flex items-center justify-between gap-2.5 text-xs font-semibold"
+              >
+                Your game link
+              </label>
+              <div className="relative">
+                <LinkIcon
+                  size={19}
+                  className="absolute top-[14px] left-[13px] text-[#87909f]"
+                  aria-hidden="true"
+                />
                 <input
                   id="game-room"
+                  className={cn(playInput, "h-12 pl-10")}
                   name="roomUrl"
                   type="url"
                   required
@@ -154,7 +185,7 @@ function PlayLobby() {
               </div>
               <button
                 type="button"
-                className="play-note-toggle play-text-link"
+                className={cn(playTextLink, "mt-4 mb-[25px] self-start text-play-muted")}
                 aria-expanded={showNote}
                 aria-controls="game-note"
                 disabled={request.kind === "pending"}
@@ -170,6 +201,7 @@ function PlayLobby() {
               </label>
               <textarea
                 id="game-note"
+                className={cn(playInput, "mb-[22px] min-h-[106px] resize-y leading-[1.6]")}
                 name="note"
                 hidden={!showNote}
                 rows={2}
@@ -181,9 +213,15 @@ function PlayLobby() {
               />
               {activeScouts.length > 1 && (
                 <>
-                  <label htmlFor="game-scout">Your player</label>
+                  <label
+                    htmlFor="game-scout"
+                    className="mb-[9px] flex items-center justify-between gap-2.5 text-xs font-semibold"
+                  >
+                    Your player
+                  </label>
                   <select
                     id="game-scout"
+                    className={cn(playInput, "mb-[22px]")}
                     value={selectedScout?._id ?? ""}
                     onChange={(event) => setSelectedScoutId(event.target.value)}
                     disabled={request.kind === "pending"}
@@ -197,20 +235,23 @@ function PlayLobby() {
                 </>
               )}
               {noScouts && (
-                <div className="play-notice" role="status">
-                  <strong>No Scout is available yet.</strong>
-                  <Link to="/scouts">
+                <div className={playNotice} role="status">
+                  <strong className="block">No Scout is available yet.</strong>
+                  <Link
+                    to="/scouts"
+                    className="mt-[9px] inline-flex items-center gap-1 underline underline-offset-[3px]"
+                  >
                     Set up a Scout <ArrowUpRightIcon size={14} aria-hidden="true" />
                   </Link>
                 </div>
               )}
               {request.kind === "failed" && (
-                <p className="play-error" role="alert">
+                <p className={playError} role="alert">
                   {request.message}
                 </p>
               )}
               <button
-                className="play-button"
+                className={productButtonVariants({ variant: "play" })}
                 type="submit"
                 disabled={loadingScouts || noScouts || request.kind === "pending"}
               >
@@ -244,22 +285,22 @@ function SessionLoader({ threadId }: { threadId: string }) {
   }, [thread, threads]);
   if (!thread) {
     return threads.status === "Exhausted" ? (
-      <div className="play-route-message">
-        <h1>Session not found</h1>
-        <p>This session isn't available for your account.</p>
-        <Link to="/play/session" search={{}} className="play-button">
+      <div className={playRouteMessage}>
+        <h1 className="text-[30px]">Session not found</h1>
+        <p className="text-play-muted">This session isn't available for your account.</p>
+        <Link to="/play/session" search={{}} className={productButtonVariants({ variant: "play" })}>
           Start a new game
         </Link>
       </div>
     ) : (
-      <p className="play-loading" role="status">
+      <p className={playLoading} role="status">
         Opening your session...
       </p>
     );
   }
   if (!scouts)
     return (
-      <p className="play-loading" role="status">
+      <p className={playLoading} role="status">
         Loading your player...
       </p>
     );
@@ -372,29 +413,36 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
 
   return (
     <>
-      <div className="play-session-heading">
+      <div className="mb-[25px] flex items-end justify-between gap-[25px] max-[760px]:flex-col max-[760px]:items-stretch max-[760px]:gap-[18px]">
         <div>
-          <Link to="/play/session" search={{}} className="play-text-link play-back">
+          <Link
+            to="/play/session"
+            search={{}}
+            className={cn(playTextLink, "mb-[18px] text-play-muted")}
+          >
             <ArrowLeftIcon size={15} aria-hidden="true" /> New invite
           </Link>
-          <h1>At the table with {scout?.displayName ?? "Scout"}</h1>
-          <p role="status">
+          <h1 className="text-[31px] font-semibold tracking-[-1px] max-[760px]:text-[27px]">
+            At the table with {scout?.displayName ?? "Scout"}
+          </h1>
+          <p role="status" className="mt-2 flex items-center gap-[7px] text-[11px] text-play-muted">
             <span
-              className={
-                ownActivity ? "play-status-dot play-status-dot--active" : "play-status-dot"
-              }
+              className={cn("size-1.5 rounded-full", ownActivity ? "bg-play-blue" : "bg-[#969da7]")}
             />
             {activityLabel(activity, threadId)}
           </p>
         </div>
-        <div className="play-session-actions">
-          <Link to="/chats" search={{ thread: threadId }} className="play-text-link">
+        <div className="flex items-center gap-[22px] max-[760px]:justify-between">
+          <Link to="/chats" search={{ thread: threadId }} className={playTextLink}>
             Open in lab <ArrowUpRightIcon size={15} aria-hidden="true" />
           </Link>
           {canStop && (
             <button
               type="button"
-              className="play-button play-button--secondary"
+              className={cn(
+                productButtonVariants({ variant: "playSecondary" }),
+                "min-h-[39px] px-[14px] text-[11px]",
+              )}
               onClick={() => {
                 void stop();
               }}
@@ -406,12 +454,12 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
         </div>
       </div>
       {request.kind === "failed" && (
-        <p role="alert" className="play-error">
+        <p role="alert" className={playError}>
           {request.message}
         </p>
       )}
       {lastTurn?.outcome.kind === "failed" && (
-        <p className="play-notice" role="alert">
+        <p className={playNotice} role="alert">
           Scout couldn't finish this turn. Send a message to try again, or open the lab for details.
         </p>
       )}
@@ -425,145 +473,178 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
           }}
         />
       )}
-      <div className="play-session-grid">
-        <section className="play-browser" aria-label="Scout's game browser">
-          <div className="play-panel-bar">
-            <span>
-              <MonitorIcon size={16} aria-hidden="true" /> Scout's view
-            </span>
-            {room?.success && (
-              <a href={room.data.roomUrl} target="_blank" rel="noreferrer">
-                Open your game <ArrowUpRightIcon size={15} aria-hidden="true" />
-              </a>
-            )}
-          </div>
-          {session?.lifecycle.kind === "closed" ? (
-            <BrowserReplay sessionId={session.sessionId} />
-          ) : liveView?.url ? (
-            <>
-              <iframe
-                src={liveView.url}
-                title="Scout's live game browser"
-                sandbox="allow-same-origin allow-scripts"
-                referrerPolicy="no-referrer"
-              />
-              <a
-                className="play-browser__external"
-                href={liveView.url}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Open Scout's view in another tab <ArrowUpRightIcon size={14} aria-hidden="true" />
-              </a>
-            </>
-          ) : (
-            <div className="play-browser__empty">
-              <ScoutPiece />
-              <h2>
-                {session?.lifecycle.kind === "closing"
-                  ? "Closing the browser"
-                  : activity?.kind === "running"
-                    ? "Scout is getting ready"
-                    : "Scout's view will appear here"}
-              </h2>
-              <p>
-                {activity?.kind === "running"
-                  ? "Keep your game open. You can follow Scout's progress here."
-                  : "Send Scout a message to continue playing."}
-              </p>
-            </div>
-          )}
-        </section>
-        <section className="play-chat" aria-label="Conversation with Scout">
-          <div className="play-panel-bar">
-            <span>
-              <span className="play-mini-avatar">
-                <ScoutPiece />
+      <div className="grid h-[min(650px,70dvh)] min-h-[500px] grid-cols-[minmax(0,1fr)_330px] gap-[18px] max-[1100px]:grid-cols-[minmax(0,1fr)_290px] max-[760px]:h-auto max-[760px]:grid-cols-1">
+        <ProductCard product="play" asChild className="flex min-h-0 flex-col max-[760px]:h-[350px]">
+          <section aria-label="Scout's game browser">
+            <div className={playPanelBar}>
+              <span className="inline-flex items-center gap-[7px] font-semibold">
+                <MonitorIcon size={16} aria-hidden="true" /> Scout's view
               </span>
-              {scout?.displayName ?? "Scout"}
-            </span>
-            <span>Chat</span>
-          </div>
-          <div
-            className="play-chat__messages"
-            ref={messageViewport}
-            role="log"
-            aria-label="Game messages"
-            aria-live="polite"
-            onScroll={() => {
-              const viewport = messageViewport.current;
-              if (viewport)
-                followMessages.current =
-                  viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 80;
-            }}
-          >
-            {messages.status === "CanLoadMore" && (
-              <button
-                type="button"
-                className="play-text-link"
-                onClick={() => {
-                  followMessages.current = false;
-                  messages.loadMore(50);
-                }}
-              >
-                Earlier messages
-              </button>
-            )}
-            {messages.status === "LoadingFirstPage" && <p role="status">Loading messages...</p>}
-            {visibleMessages.map((message) => (
-              <div
-                key={message.key}
-                className={`play-chat__message play-chat__message--${message.role}`}
-              >
-                <span>{message.role === "user" ? "You" : (scout?.displayName ?? "Scout")}</span>
-                <p>
-                  {message.text.startsWith("Play a game with me at ")
-                    ? message.text
-                        .split("\n\n")
-                        .filter((_, index) => index !== 1)
-                        .join("\n\n")
-                        .replace("My note: ", "")
-                    : message.text}
+              {room?.success && (
+                <a
+                  href={room.data.roomUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-[7px] text-[10px] text-play-muted"
+                >
+                  Open your game <ArrowUpRightIcon size={15} aria-hidden="true" />
+                </a>
+              )}
+            </div>
+            {session?.lifecycle.kind === "closed" ? (
+              <BrowserReplay sessionId={session.sessionId} />
+            ) : liveView?.url ? (
+              <>
+                <iframe
+                  src={liveView.url}
+                  className="min-h-0 w-full flex-1 border-0"
+                  title="Scout's live game browser"
+                  sandbox="allow-same-origin allow-scripts"
+                  referrerPolicy="no-referrer"
+                />
+                <a
+                  className="flex items-center justify-center gap-1.5 p-2.5 text-center text-[10px] text-play-muted"
+                  href={liveView.url}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open Scout's view in another tab <ArrowUpRightIcon size={14} aria-hidden="true" />
+                </a>
+              </>
+            ) : (
+              <div className="flex flex-1 flex-col items-center justify-center gap-[18px] bg-[#f0f2f8] p-[30px] text-center">
+                <ScoutPiece className="mb-[13px] -rotate-8" />
+                <h2 className="text-[22px] font-semibold tracking-[-0.6px]">
+                  {session?.lifecycle.kind === "closing"
+                    ? "Closing the browser"
+                    : activity?.kind === "running"
+                      ? "Scout is getting ready"
+                      : "Scout's view will appear here"}
+                </h2>
+                <p className="max-w-[300px] text-xs text-play-muted">
+                  {activity?.kind === "running"
+                    ? "Keep your game open. You can follow Scout's progress here."
+                    : "Send Scout a message to continue playing."}
                 </p>
               </div>
-            ))}
-            {ownActivity && activity.kind === "running" && (
-              <p className="play-chat__thinking">
-                <LoaderCircleIcon size={14} className="animate-spin" aria-hidden="true" /> Scout is
-                taking a turn...
-              </p>
             )}
-            <div ref={endOfMessages} />
-          </div>
-          <form
-            className="play-chat__composer"
-            onSubmit={(event) => {
-              void send(event);
-            }}
-          >
-            <label className="sr-only" htmlFor="game-message">
-              Message Scout
-            </label>
-            <div>
-              <textarea
-                id="game-message"
-                placeholder="A hint? A new plan?"
-                value={draft}
-                maxLength={16000}
-                rows={2}
-                onChange={(event) => setDraft(event.target.value)}
-                disabled={request.kind === "pending"}
-              />
-              <button type="submit" aria-label="Send message" disabled={!canSend || !draft.trim()}>
-                <SendIcon size={18} aria-hidden="true" />
-              </button>
+          </section>
+        </ProductCard>
+        <ProductCard product="play" asChild className="flex min-h-0 flex-col max-[760px]:h-[450px]">
+          <section aria-label="Conversation with Scout">
+            <div className={playPanelBar}>
+              <span className="inline-flex items-center gap-[7px] font-semibold">
+                <span className="relative inline-flex size-5 items-center gap-[7px]">
+                  <ScoutPiece className="absolute -top-[26px] -left-[26px] scale-[0.24]" />
+                </span>
+                {scout?.displayName ?? "Scout"}
+              </span>
+              <span className="inline-flex items-center gap-[7px]">Chat</span>
             </div>
-            {activity?.kind !== "idle" && <p>Stop Scout before sending new guidance.</p>}
-            {scout?.status !== "active" && (
-              <p>This Scout is unavailable. Choose another player in a new invite.</p>
-            )}
-          </form>
-        </section>
+            <div
+              className="flex min-h-0 flex-1 flex-col gap-5 overflow-auto px-[17px] py-5"
+              ref={messageViewport}
+              role="log"
+              aria-label="Game messages"
+              aria-live="polite"
+              onScroll={() => {
+                const viewport = messageViewport.current;
+                if (viewport)
+                  followMessages.current =
+                    viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 80;
+              }}
+            >
+              {messages.status === "CanLoadMore" && (
+                <button
+                  type="button"
+                  className={playTextLink}
+                  onClick={() => {
+                    followMessages.current = false;
+                    messages.loadMore(50);
+                  }}
+                >
+                  Earlier messages
+                </button>
+              )}
+              {messages.status === "LoadingFirstPage" && (
+                <p
+                  role="status"
+                  className="mt-2 flex items-center gap-[7px] text-[11px] text-play-muted"
+                >
+                  Loading messages...
+                </p>
+              )}
+              {visibleMessages.map((message) => (
+                <div key={message.key} className="min-w-0 text-xs [overflow-wrap:anywhere]">
+                  <span className="mb-[7px] block text-[10px] font-semibold">
+                    {message.role === "user" ? "You" : (scout?.displayName ?? "Scout")}
+                  </span>
+                  <p
+                    className={cn(
+                      "whitespace-pre-wrap",
+                      message.role === "user" && "rounded-[9px] bg-play-cloud p-3",
+                    )}
+                  >
+                    {message.text.startsWith("Play a game with me at ")
+                      ? message.text
+                          .split("\n\n")
+                          .filter((_, index) => index !== 1)
+                          .join("\n\n")
+                          .replace("My note: ", "")
+                      : message.text}
+                  </p>
+                </div>
+              ))}
+              {ownActivity && activity.kind === "running" && (
+                <p className="flex items-center gap-2 text-[11px] text-play-muted">
+                  <LoaderCircleIcon size={14} className="animate-spin" aria-hidden="true" /> Scout
+                  is taking a turn...
+                </p>
+              )}
+              <div ref={endOfMessages} />
+            </div>
+            <form
+              className="border-t border-play-line p-[14px]"
+              onSubmit={(event) => {
+                void send(event);
+              }}
+            >
+              <label className="sr-only" htmlFor="game-message">
+                Message Scout
+              </label>
+              <div className="relative">
+                <textarea
+                  id="game-message"
+                  className={cn(playInput, "min-h-[71px] max-h-[170px] resize-y pr-[46px]")}
+                  placeholder="A hint? A new plan?"
+                  value={draft}
+                  maxLength={16000}
+                  rows={2}
+                  onChange={(event) => setDraft(event.target.value)}
+                  disabled={request.kind === "pending"}
+                />
+                <button
+                  type="submit"
+                  aria-label="Send message"
+                  disabled={!canSend || !draft.trim()}
+                  className="absolute right-2.5 bottom-[13px] grid size-[29px] place-items-center rounded-md bg-play-blue text-white"
+                >
+                  <SendIcon size={18} aria-hidden="true" />
+                </button>
+              </div>
+              {activity?.kind !== "idle" && (
+                <p className="mt-2 text-[10px] text-play-muted">
+                  Stop Scout before sending new guidance.
+                </p>
+              )}
+              {scout?.status !== "active" && (
+                <p className="mt-2 text-[10px] text-play-muted">
+                  This Scout is unavailable. Choose another player in a new invite.
+                </p>
+              )}
+            </form>
+          </section>
+        </ProductCard>
       </div>
     </>
   );

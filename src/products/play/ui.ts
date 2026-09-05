@@ -1,0 +1,12 @@
+export const playTextLink =
+  "inline-flex items-center gap-[9px] text-xs font-semibold hover:text-play-blue";
+export const playInput =
+  "min-w-0 w-full rounded-[7px] border border-[#dce0e6] bg-white p-[13px] text-xs text-play-ink placeholder:text-[#87909f]";
+export const playError =
+  "mb-4 rounded-lg border border-[#edc1b7] bg-[#fff3ee] p-[13px] text-xs text-[#893d2b]";
+export const playNotice = "mb-[18px] rounded-lg bg-[#f9f1cd] p-[15px] text-xs";
+export const playLoading = "grid min-h-[350px] place-items-center text-[13px] text-play-muted";
+export const playRouteMessage =
+  "flex min-h-[60dvh] flex-col items-center justify-center gap-5 p-8 text-center";
+export const playPanelBar =
+  "flex min-h-[53px] items-center justify-between gap-3 border-b border-play-line px-[17px] py-[14px] text-[11px]";

@@ -57,10 +57,11 @@ Review uses IBM Plex Sans and IBM Plex Mono, green-gray paper `#F1F4F2`, ink `#2
 restrained green `#28584D`. The landing page pairs quiet typography with a document-style illustration.
 It has no game pieces or playful display type.
 
-The neutral overview does not dictate either product's shell. Each product owns its styles and
-pages under `src/products/`; each can be linked to directly. A future split can give each product
-its own root and deployment. Backend ownership, accounts, and any submission requirements would
-need a separate decision before that split.
+The neutral overview does not dictate either product's shell. Product pages use Tailwind utilities,
+with small class variants for repeated controls and panels in `src/products/ui.tsx`. Font declarations
+and palette tokens live in the existing `src/style.css`; there are no product stylesheets.
+Each product can be linked to directly. A future split can give each its own root and deployment.
+Backend ownership, accounts, and any submission requirements would need a separate decision first.
 
 ## What to learn next
 

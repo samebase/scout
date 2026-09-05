@@ -30,9 +30,10 @@ the existing Lab; the dedicated review flow is still to be designed.
 `/chats` is the lab for detailed transcripts, replays, and model controls. See
 [`docs/play-product-direction.md`](./docs/play-product-direction.md) for the product options and research.
 
-Product pages, styles, and local behavior live in `src/products/play/` and `src/products/review/`.
-They share the current app's infrastructure without a shared product shell or theme. This keeps
-future separate frontends possible; each would still need its own routing and deployment setup.
+Product pages and local behavior live in `src/products/play/` and `src/products/review/`.
+Tailwind utilities and small class variants style the UI, with repeated elements in `src/products/ui.tsx`.
+Font declarations and Tailwind theme tokens live in `src/style.css`. Each product keeps its own
+identity; separate frontends would still need their own routing and deployment setup.
 
 Scout provides private chats with persistent Scout identities. A chat can use the Scout's
 AgentMail inbox to read, send, and reply to email, plus its Firecrawl browser profile and accounts
