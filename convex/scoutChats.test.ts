@@ -22,64 +22,64 @@ function testBackend() {
 }
 
 describe("Scout chats", () => {
-  it("creates a Scout chat without a product or experiment and records its generation", async () => {
-    const backend = testBackend();
-    const userId = await backend.run(
-      async (ctx) => await ctx.db.insert("users", { email: ADMIN_EMAIL }),
-    );
-    const scoutId = await backend.run(
-      async (ctx) =>
-        await ctx.db.insert("scouts", {
-          displayName: "Conrad Scout",
-          websiteIdentity: { firstName: "Conrad", lastName: "Scout" },
-          slug: "conrad",
-          status: "active",
-          agentMail: { inboxId: "conrad-inbox", address: "conrad@example.test" },
-          firecrawl: { profileName: "conrad-profile" },
+  it.each(["openai/gpt-5.6-luna", "deepseek/deepseek-v4-flash-0731"] as const)(
+    "creates a Scout chat and records a follow-up using %s",
+    async (model) => {
+      const backend = testBackend();
+      const userId = await backend.run(
+        async (ctx) => await ctx.db.insert("users", { email: ADMIN_EMAIL }),
+      );
+      const scoutId = await backend.run(
+        async (ctx) =>
+          await ctx.db.insert("scouts", {
+            displayName: "Conrad Scout",
+            websiteIdentity: { firstName: "Conrad", lastName: "Scout" },
+            slug: "conrad",
+            status: "active",
+            agentMail: { inboxId: "conrad-inbox", address: "conrad@example.test" },
+            firecrawl: { profileName: "conrad-profile" },
+          }),
+      );
+      const admin = backend.withIdentity({ subject: `${userId}|test-session` });
+      const { threadId } = await admin.mutation(api.scout.chats.createThread, { scoutId });
+      await admin.mutation(api.scout.chats.sendMessage, {
+        threadId,
+        prompt: "Open the product and report what you see.",
+      });
+      const turn = await backend.run(
+        async (ctx) =>
+          await ctx.db
+            .query("scoutTurns")
+            .withIndex("by_thread_id_and_order", (index) => index.eq("threadId", threadId))
+            .unique(),
+      );
+      expect(turn).toEqual(
+        expect.objectContaining({
+          scoutId,
+          model: "qwen/qwen3.7-flash",
+          state: expect.objectContaining({ kind: "pending" }),
         }),
-    );
-    const admin = backend.withIdentity({ subject: `${userId}|test-session` });
-    const { threadId } = await admin.mutation(api.scout.chats.createThread, { scoutId });
-    await admin.mutation(api.scout.chats.sendMessage, {
-      threadId,
-      prompt: "Open the product and report what you see.",
-    });
-    const turn = await backend.run(
-      async (ctx) =>
-        await ctx.db
+      );
+      if (!turn) throw new Error("Scout turn was not recorded");
+      await admin.mutation(internal.scout.turns.complete, {
+        promptMessageId: turn.promptMessageId,
+        usage: { promptTokens: 100, completionTokens: 5 },
+      });
+      await admin.mutation(api.scout.chats.sendMessage, {
+        threadId,
+        prompt: "Continue in Cloudflare using the same Scout.",
+        model,
+      });
+      const followups = await backend.run(async (ctx) =>
+        ctx.db
           .query("scoutTurns")
-          .withIndex("by_thread_id_and_order", (index) => index.eq("threadId", threadId))
-          .unique(),
-    );
-    expect(turn).toEqual(
-      expect.objectContaining({
-        scoutId,
-        model: "qwen/qwen3.7-flash",
-        state: expect.objectContaining({ kind: "pending" }),
-      }),
-    );
-    if (!turn) throw new Error("Scout turn was not recorded");
-    await admin.mutation(internal.scout.turns.complete, {
-      promptMessageId: turn.promptMessageId,
-      usage: { promptTokens: 100, completionTokens: 5 },
-    });
-    await admin.mutation(api.scout.chats.sendMessage, {
-      threadId,
-      prompt: "Continue in Cloudflare using the same Scout.",
-      model: "openai/gpt-5.6-luna",
-    });
-    const followups = await backend.run(async (ctx) =>
-      ctx.db
-        .query("scoutTurns")
-        .withIndex("by_thread_id_and_order", (q) => q.eq("threadId", threadId))
-        .take(10),
-    );
-    expect(followups.map((entry) => entry.model)).toEqual([
-      "qwen/qwen3.7-flash",
-      "openai/gpt-5.6-luna",
-    ]);
-    expect(followups.every((entry) => entry.scoutId === scoutId)).toBe(true);
-  });
+          .withIndex("by_thread_id_and_order", (q) => q.eq("threadId", threadId))
+          .take(10),
+      );
+      expect(followups.map((entry) => entry.model)).toEqual(["qwen/qwen3.7-flash", model]);
+      expect(followups.every((entry) => entry.scoutId === scoutId)).toBe(true);
+    },
+  );
 
   it.each([
     "follow-up",
