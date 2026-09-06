@@ -31,7 +31,7 @@ the existing Lab; the dedicated review flow is still to be designed.
 [`docs/play-product-direction.md`](./docs/play-product-direction.md) for the product options and research.
 
 Product pages and local behavior live in `src/products/play/` and `src/products/review/`.
-Tailwind utilities and small class variants style the UI, with repeated elements in `src/products/ui.tsx`.
+Tailwind utilities style the UI, with shared class variants in `src/products/ui.ts`.
 Font declarations and Tailwind theme tokens live in `src/style.css`. Each product keeps its own
 identity; separate frontends would still need their own routing and deployment setup.
 

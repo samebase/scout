@@ -22,7 +22,7 @@ import { ChatHandoffNotice } from "../../components/chat-handoff-notice";
 import { PlayShell } from "./shell";
 import { ScoutPiece } from "./scout-piece";
 import { cn } from "#lib/utils";
-import { ProductCard, productButtonVariants } from "../ui";
+import { productCardVariants, productButtonVariants } from "../ui";
 import {
   playError,
   playInput,
@@ -366,11 +366,6 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
   );
   const lastMessage = visibleMessages.at(-1);
   const lastTurn = messages.results.findLast((message) => message.metadata)?.metadata;
-  const initialMessage = messages.results.find((message) => message.role === "user");
-  const roomMatch = initialMessage?.text.match(/^Play a game with me at (https?:\/\/\S+)/);
-  const room = roomMatch?.[1]
-    ? gameInviteSchema.safeParse({ roomUrl: roomMatch[1], note: "" })
-    : null;
 
   useEffect(() => {
     if (followMessages.current) endOfMessages.current?.scrollIntoView({ block: "nearest" });
@@ -474,171 +469,169 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
         />
       )}
       <div className="grid h-[min(650px,70dvh)] min-h-[500px] grid-cols-[minmax(0,1fr)_330px] gap-[18px] max-[1100px]:grid-cols-[minmax(0,1fr)_290px] max-[760px]:h-auto max-[760px]:grid-cols-1">
-        <ProductCard product="play" asChild className="flex min-h-0 flex-col max-[760px]:h-[350px]">
-          <section aria-label="Scout's game browser">
-            <div className={playPanelBar}>
-              <span className="inline-flex items-center gap-[7px] font-semibold">
-                <MonitorIcon size={16} aria-hidden="true" /> Scout's view
-              </span>
-              {room?.success && (
-                <a
-                  href={room.data.roomUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-[7px] text-[10px] text-play-muted"
-                >
-                  Open your game <ArrowUpRightIcon size={15} aria-hidden="true" />
-                </a>
-              )}
+        <section
+          aria-label="Scout's game browser"
+          className={cn(
+            productCardVariants({ product: "play" }),
+            "flex min-h-0 flex-col max-[760px]:h-[350px]",
+          )}
+        >
+          <div className={playPanelBar}>
+            <span className="inline-flex items-center gap-[7px] font-semibold">
+              <MonitorIcon size={16} aria-hidden="true" /> Scout's view
+            </span>
+          </div>
+          {session?.lifecycle.kind === "closed" ? (
+            <BrowserReplay sessionId={session.sessionId} />
+          ) : liveView?.url ? (
+            <>
+              <iframe
+                src={liveView.url}
+                className="min-h-0 w-full flex-1 border-0"
+                title="Scout's live game browser"
+                sandbox="allow-same-origin allow-scripts"
+                referrerPolicy="no-referrer"
+              />
+              <a
+                className="flex items-center justify-center gap-1.5 p-2.5 text-center text-[10px] text-play-muted"
+                href={liveView.url}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Open Scout's view in another tab <ArrowUpRightIcon size={14} aria-hidden="true" />
+              </a>
+            </>
+          ) : (
+            <div className="flex flex-1 flex-col items-center justify-center gap-[18px] bg-[#f0f2f8] p-[30px] text-center">
+              <ScoutPiece className="mb-[13px] -rotate-8" />
+              <h2 className="text-[22px] font-semibold tracking-[-0.6px]">
+                {session?.lifecycle.kind === "closing"
+                  ? "Closing the browser"
+                  : activity?.kind === "running"
+                    ? "Scout is getting ready"
+                    : "Scout's view will appear here"}
+              </h2>
+              <p className="max-w-[300px] text-xs text-play-muted">
+                {activity?.kind === "running"
+                  ? "Keep your game open. You can follow Scout's progress here."
+                  : "Send Scout a message to continue playing."}
+              </p>
             </div>
-            {session?.lifecycle.kind === "closed" ? (
-              <BrowserReplay sessionId={session.sessionId} />
-            ) : liveView?.url ? (
-              <>
-                <iframe
-                  src={liveView.url}
-                  className="min-h-0 w-full flex-1 border-0"
-                  title="Scout's live game browser"
-                  sandbox="allow-same-origin allow-scripts"
-                  referrerPolicy="no-referrer"
-                />
-                <a
-                  className="flex items-center justify-center gap-1.5 p-2.5 text-center text-[10px] text-play-muted"
-                  href={liveView.url}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Open Scout's view in another tab <ArrowUpRightIcon size={14} aria-hidden="true" />
-                </a>
-              </>
-            ) : (
-              <div className="flex flex-1 flex-col items-center justify-center gap-[18px] bg-[#f0f2f8] p-[30px] text-center">
-                <ScoutPiece className="mb-[13px] -rotate-8" />
-                <h2 className="text-[22px] font-semibold tracking-[-0.6px]">
-                  {session?.lifecycle.kind === "closing"
-                    ? "Closing the browser"
-                    : activity?.kind === "running"
-                      ? "Scout is getting ready"
-                      : "Scout's view will appear here"}
-                </h2>
-                <p className="max-w-[300px] text-xs text-play-muted">
-                  {activity?.kind === "running"
-                    ? "Keep your game open. You can follow Scout's progress here."
-                    : "Send Scout a message to continue playing."}
-                </p>
-              </div>
+          )}
+        </section>
+        <section
+          aria-label="Conversation with Scout"
+          className={cn(
+            productCardVariants({ product: "play" }),
+            "flex min-h-0 flex-col max-[760px]:h-[450px]",
+          )}
+        >
+          <div className={playPanelBar}>
+            <span className="inline-flex items-center gap-[7px] font-semibold">
+              <span className="relative inline-flex size-5 items-center gap-[7px]">
+                <ScoutPiece className="absolute -top-[26px] -left-[26px] scale-[0.24]" />
+              </span>
+              {scout?.displayName ?? "Scout"}
+            </span>
+            <span className="inline-flex items-center gap-[7px]">Chat</span>
+          </div>
+          <div
+            className="flex min-h-0 flex-1 flex-col gap-5 overflow-auto px-[17px] py-5"
+            ref={messageViewport}
+            role="log"
+            aria-label="Game messages"
+            aria-live="polite"
+            onScroll={() => {
+              const viewport = messageViewport.current;
+              if (viewport)
+                followMessages.current =
+                  viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 80;
+            }}
+          >
+            {messages.status === "CanLoadMore" && (
+              <button
+                type="button"
+                className={playTextLink}
+                onClick={() => {
+                  followMessages.current = false;
+                  messages.loadMore(50);
+                }}
+              >
+                Earlier messages
+              </button>
             )}
-          </section>
-        </ProductCard>
-        <ProductCard product="play" asChild className="flex min-h-0 flex-col max-[760px]:h-[450px]">
-          <section aria-label="Conversation with Scout">
-            <div className={playPanelBar}>
-              <span className="inline-flex items-center gap-[7px] font-semibold">
-                <span className="relative inline-flex size-5 items-center gap-[7px]">
-                  <ScoutPiece className="absolute -top-[26px] -left-[26px] scale-[0.24]" />
+            {messages.status === "LoadingFirstPage" && (
+              <p
+                role="status"
+                className="mt-2 flex items-center gap-[7px] text-[11px] text-play-muted"
+              >
+                Loading messages...
+              </p>
+            )}
+            {visibleMessages.map((message) => (
+              <div key={message.key} className="min-w-0 text-xs [overflow-wrap:anywhere]">
+                <span className="mb-[7px] block text-[10px] font-semibold">
+                  {message.role === "user" ? "You" : (scout?.displayName ?? "Scout")}
                 </span>
-                {scout?.displayName ?? "Scout"}
-              </span>
-              <span className="inline-flex items-center gap-[7px]">Chat</span>
-            </div>
-            <div
-              className="flex min-h-0 flex-1 flex-col gap-5 overflow-auto px-[17px] py-5"
-              ref={messageViewport}
-              role="log"
-              aria-label="Game messages"
-              aria-live="polite"
-              onScroll={() => {
-                const viewport = messageViewport.current;
-                if (viewport)
-                  followMessages.current =
-                    viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 80;
-              }}
-            >
-              {messages.status === "CanLoadMore" && (
-                <button
-                  type="button"
-                  className={playTextLink}
-                  onClick={() => {
-                    followMessages.current = false;
-                    messages.loadMore(50);
-                  }}
-                >
-                  Earlier messages
-                </button>
-              )}
-              {messages.status === "LoadingFirstPage" && (
                 <p
-                  role="status"
-                  className="mt-2 flex items-center gap-[7px] text-[11px] text-play-muted"
+                  className={cn(
+                    "whitespace-pre-wrap",
+                    message.role === "user" && "rounded-[9px] bg-play-cloud p-3",
+                  )}
                 >
-                  Loading messages...
+                  {message.role === "user" ? gameInviteDisplayText(message.text) : message.text}
                 </p>
-              )}
-              {visibleMessages.map((message) => (
-                <div key={message.key} className="min-w-0 text-xs [overflow-wrap:anywhere]">
-                  <span className="mb-[7px] block text-[10px] font-semibold">
-                    {message.role === "user" ? "You" : (scout?.displayName ?? "Scout")}
-                  </span>
-                  <p
-                    className={cn(
-                      "whitespace-pre-wrap",
-                      message.role === "user" && "rounded-[9px] bg-play-cloud p-3",
-                    )}
-                  >
-                    {message.role === "user" ? gameInviteDisplayText(message.text) : message.text}
-                  </p>
-                </div>
-              ))}
-              {ownActivity && activity.kind === "running" && (
-                <p className="flex items-center gap-2 text-[11px] text-play-muted">
-                  <LoaderCircleIcon size={14} className="animate-spin" aria-hidden="true" /> Scout
-                  is taking a turn...
-                </p>
-              )}
-              <div ref={endOfMessages} />
-            </div>
-            <form
-              className="border-t border-play-line p-[14px]"
-              onSubmit={(event) => {
-                void send(event);
-              }}
-            >
-              <label className="sr-only" htmlFor="game-message">
-                Message Scout
-              </label>
-              <div className="relative">
-                <textarea
-                  id="game-message"
-                  className={cn(playInput, "min-h-[71px] max-h-[170px] resize-y pr-[46px]")}
-                  placeholder="A hint? A new plan?"
-                  value={draft}
-                  maxLength={16000}
-                  rows={2}
-                  onChange={(event) => setDraft(event.target.value)}
-                  disabled={request.kind === "pending"}
-                />
-                <button
-                  type="submit"
-                  aria-label="Send message"
-                  disabled={!canSend || !draft.trim()}
-                  className="absolute right-2.5 bottom-[13px] grid size-[29px] place-items-center rounded-md bg-play-blue text-white"
-                >
-                  <SendIcon size={18} aria-hidden="true" />
-                </button>
               </div>
-              {activity?.kind !== "idle" && (
-                <p className="mt-2 text-[10px] text-play-muted">
-                  Stop Scout before sending new guidance.
-                </p>
-              )}
-              {scout?.status !== "active" && (
-                <p className="mt-2 text-[10px] text-play-muted">
-                  This Scout is unavailable. Choose another player in a new invite.
-                </p>
-              )}
-            </form>
-          </section>
-        </ProductCard>
+            ))}
+            {ownActivity && activity.kind === "running" && (
+              <p className="flex items-center gap-2 text-[11px] text-play-muted">
+                <LoaderCircleIcon size={14} className="animate-spin" aria-hidden="true" /> Scout is
+                taking a turn...
+              </p>
+            )}
+            <div ref={endOfMessages} />
+          </div>
+          <form
+            className="border-t border-play-line p-[14px]"
+            onSubmit={(event) => {
+              void send(event);
+            }}
+          >
+            <label className="sr-only" htmlFor="game-message">
+              Message Scout
+            </label>
+            <div className="relative">
+              <textarea
+                id="game-message"
+                className={cn(playInput, "min-h-[71px] max-h-[170px] resize-y pr-[46px]")}
+                placeholder="A hint? A new plan?"
+                value={draft}
+                maxLength={16000}
+                rows={2}
+                onChange={(event) => setDraft(event.target.value)}
+                disabled={request.kind === "pending"}
+              />
+              <button
+                type="submit"
+                aria-label="Send message"
+                disabled={!canSend || !draft.trim()}
+                className="absolute right-2.5 bottom-[13px] grid size-[29px] place-items-center rounded-md bg-play-blue text-white"
+              >
+                <SendIcon size={18} aria-hidden="true" />
+              </button>
+            </div>
+            {activity?.kind !== "idle" && (
+              <p className="mt-2 text-[10px] text-play-muted">
+                Stop Scout before sending new guidance.
+              </p>
+            )}
+            {scout?.status !== "active" && (
+              <p className="mt-2 text-[10px] text-play-muted">
+                This Scout is unavailable. Choose another player in a new invite.
+              </p>
+            )}
+          </form>
+        </section>
       </div>
     </>
   );

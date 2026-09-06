@@ -3,65 +3,61 @@ import { ArrowRightIcon, ArrowUpRightIcon, FocusIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "#lib/utils";
 import { ScoutPiece } from "../products/play/scout-piece";
-import { ProductCard } from "../products/ui";
+import { productCardVariants } from "../products/ui";
 
 function ProductChoice({ product, children }: { product: "play" | "review"; children: ReactNode }) {
   const isPlay = product === "play";
   return (
-    <ProductCard
-      product={product}
-      asChild
+    <Link
+      to={isPlay ? "/play" : "/review"}
+      aria-label={isPlay ? "Explore Scout Play" : "Explore Scout Review"}
       className={cn(
+        productCardVariants({ product }),
         "border-[#e2e5df] transition-[border-color,transform] duration-180 hover:-translate-y-[3px] hover:border-[#abb7b1] motion-reduce:transition-none",
         isPlay && "rounded-[19px]",
       )}
     >
-      <Link
-        to={isPlay ? "/play" : "/review"}
-        aria-label={isPlay ? "Explore Scout Play" : "Explore Scout Review"}
-      >
-        {children}
-        <div className="px-[30px] pt-[26px] pb-7 max-[760px]:p-[23px]">
-          <div className="flex flex-wrap items-center gap-[13px]">
-            <h2
-              className={cn(
-                "text-[29px] leading-[1.2] max-[760px]:text-[27px]",
-                isPlay
-                  ? "font-play-display font-bold tracking-[-1px]"
-                  : "font-review font-medium tracking-[-1.1px]",
-              )}
-            >
-              {isPlay ? (
-                <>
-                  Scout Play<span className="text-play-blue">.</span>
-                </>
-              ) : (
-                "Scout Review"
-              )}
-            </h2>
-            {!isPlay && (
-              <span className="rounded-[3px] border border-[#dfe5e1] px-1.5 py-[3px] text-[10px] text-[#737a77]">
-                Preview
-              </span>
-            )}
-          </div>
-          <p className="mt-3 mb-[23px] text-sm leading-[1.6] text-[#737a77]">
-            {isPlay
-              ? "One more player for your browser game."
-              : "A fresh look at your product, backed by a recording."}
-          </p>
-          <span
+      {children}
+      <div className="px-[30px] pt-[26px] pb-7 max-[760px]:p-[23px]">
+        <div className="flex flex-wrap items-center gap-[13px]">
+          <h2
             className={cn(
-              "flex items-center justify-between text-[13px] font-semibold",
-              isPlay ? "text-play-blue" : "text-[#28534e]",
+              "text-[29px] leading-[1.2] max-[760px]:text-[27px]",
+              isPlay
+                ? "font-play-display font-bold tracking-[-1px]"
+                : "font-review font-medium tracking-[-1.1px]",
             )}
           >
-            {isPlay ? "Explore Play" : "Explore Review"}{" "}
-            <ArrowRightIcon size={18} aria-hidden="true" />
-          </span>
+            {isPlay ? (
+              <>
+                Scout Play<span className="text-play-blue">.</span>
+              </>
+            ) : (
+              "Scout Review"
+            )}
+          </h2>
+          {!isPlay && (
+            <span className="rounded-[3px] border border-[#dfe5e1] px-1.5 py-[3px] text-[10px] text-[#737a77]">
+              Preview
+            </span>
+          )}
         </div>
-      </Link>
-    </ProductCard>
+        <p className="mt-3 mb-[23px] text-sm leading-[1.6] text-[#737a77]">
+          {isPlay
+            ? "One more player for your browser game."
+            : "A fresh look at your product, backed by a recording."}
+        </p>
+        <span
+          className={cn(
+            "flex items-center justify-between text-[13px] font-semibold",
+            isPlay ? "text-play-blue" : "text-[#28534e]",
+          )}
+        >
+          {isPlay ? "Explore Play" : "Explore Review"}{" "}
+          <ArrowRightIcon size={18} aria-hidden="true" />
+        </span>
+      </div>
+    </Link>
   );
 }
 

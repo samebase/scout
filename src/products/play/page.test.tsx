@@ -119,6 +119,22 @@ function fillInvite() {
 }
 
 describe("Play invitation", () => {
+  test("opening an existing session does not start or stop Scout", async () => {
+    await openPlay("/play/session?thread=game-thread");
+    expect(await screen.findByRole("region", { name: "Conversation with Scout" })).toBeTruthy();
+    expect(remote.createThread).not.toHaveBeenCalled();
+    expect(remote.sendMessage).not.toHaveBeenCalled();
+    expect(remote.stop).not.toHaveBeenCalled();
+  });
+
+  test("an unavailable session does not create a replacement chat", async () => {
+    await openPlay("/play/session?thread=missing-thread");
+    expect(await screen.findByRole("heading", { name: "Session not found" })).toBeTruthy();
+    expect(remote.createThread).not.toHaveBeenCalled();
+    expect(remote.sendMessage).not.toHaveBeenCalled();
+    expect(remote.stop).not.toHaveBeenCalled();
+  });
+
   test("keeps the invitation through sign-in without starting a game automatically", async () => {
     remote.authenticated = false;
     await openPlay();

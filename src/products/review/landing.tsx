@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowRightIcon, CircleAlertIcon, CornerDownRightIcon } from "lucide-react";
 import { cn } from "#lib/utils";
-import { ProductCard, productButtonVariants } from "../ui";
+import { productCardVariants, productButtonVariants } from "../ui";
 import { ReviewShell } from "./shell";
 
 const exampleField = "h-7 rounded-[2px] border border-[#d6ddd8] bg-white";
@@ -41,14 +41,18 @@ export function ReviewLanding() {
               </span>
             </div>
           </div>
-          <ProductCard product="review" className="shadow-[9px_9px_0_#e4ebe6]">
+          <div
+            className={cn(productCardVariants({ product: "review" }), "shadow-[9px_9px_0_#e4ebe6]")}
+          >
             <div className="flex justify-between gap-2.5 border-b border-[#dce5df] px-[18px] py-[14px] font-review-mono text-[9px] tracking-[0.35px] text-[#6e8377] max-[760px]:p-[13px] max-[760px]:text-[8px]">
               <span>EXAMPLE / SIGNUP FLOW</span>
               <span className="max-[760px]:hidden">SCOUT REVIEW</span>
             </div>
-            <ProductCard
-              product="review"
-              className="m-5 rounded-[3px] border-[#dbe2dd] max-[760px]:m-[14px]"
+            <div
+              className={cn(
+                productCardVariants({ product: "review" }),
+                "m-5 rounded-[3px] border-[#dbe2dd] max-[760px]:m-[14px]",
+              )}
               role="img"
               aria-label="Illustrated signup screen: the error clears the form"
             >
@@ -83,14 +87,14 @@ export function ReviewLanding() {
                   </div>
                 </div>
               </div>
-            </ProductCard>
+            </div>
             <div className="flex items-center gap-[13px] px-5 pt-[14px] pb-[17px] max-[760px]:px-[14px] max-[760px]:pt-[13px]">
               <span className="font-review-mono text-[11px] text-[#a4714f]">02</span>
               <p className="text-base tracking-[-0.3px] max-[760px]:text-sm">
                 The error clears the form.
               </p>
             </div>
-          </ProductCard>
+          </div>
         </div>
       </main>
     </ReviewShell>

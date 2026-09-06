@@ -1,9 +1,6 @@
 import { cva } from "class-variance-authority";
-import { Slot } from "radix-ui";
-import type { ComponentProps } from "react";
-import { cn } from "#lib/utils";
 
-const cardVariants = cva("min-w-0 overflow-hidden border bg-white", {
+export const productCardVariants = cva("min-w-0 overflow-hidden border bg-white", {
   variants: {
     product: {
       play: "rounded-xl border-play-line",
@@ -11,16 +8,6 @@ const cardVariants = cva("min-w-0 overflow-hidden border bg-white", {
     },
   },
 });
-
-export function ProductCard({
-  product,
-  asChild = false,
-  className,
-  ...props
-}: ComponentProps<"div"> & { product: "play" | "review"; asChild?: boolean }) {
-  const Component = asChild ? Slot.Root : "div";
-  return <Component className={cn(cardVariants({ product }), className)} {...props} />;
-}
 
 export const productButtonVariants = cva(
   "inline-flex items-center justify-center border text-[13px] transition-[background,transform] duration-180 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none",

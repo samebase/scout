@@ -37,7 +37,7 @@ claim about playing any game. These references support positioning, not Scout co
 - An authenticated invite chooses an existing active Scout, creates a normal Agent chat, and sends
   a game request through the existing backend. Failed sends reuse the already-created chat on retry.
 - `/play/session?thread=...` shows Scout's browser, text conversation, help requests, and a stop control.
-  Scout must stop before a new instruction is sent. The original game opens in the player's own tab.
+  Scout must stop before a new instruction is sent. The player keeps the original game open in their own tab.
 - `/chats`, `/scouts`, and `/settings` remain the lab. The play screen links there for detailed
   transcripts and setup. A new account with no configured Scout gets a setup link, not a pretend player.
 - `/review` introduces the review product with a static signup-flow illustration and a link to
@@ -58,7 +58,7 @@ restrained green `#28584D`. The landing page pairs quiet typography with a docum
 It has no game pieces or playful display type.
 
 The neutral overview does not dictate either product's shell. Product pages use Tailwind utilities,
-with small class variants for repeated controls and panels in `src/products/ui.tsx`. Font declarations
+with small class variants for repeated controls and panels in `src/products/ui.ts`. Font declarations
 and palette tokens live in the existing `src/style.css`; there are no product stylesheets.
 Each product can be linked to directly. A future split can give each its own root and deployment.
 Backend ownership, accounts, and any submission requirements would need a separate decision first.
