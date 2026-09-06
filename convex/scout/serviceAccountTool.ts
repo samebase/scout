@@ -2,7 +2,9 @@ import { tool } from "ai";
 import { z } from "zod";
 
 const serviceAccountEvidenceFields = {
-  accountAccess: z.enum(["created", "recovered"]),
+  accountAccess: z
+    .enum(["created", "recovered"])
+    .describe("created for a new signup; recovered for signing in to an existing account"),
   identifier: z
     .string()
     .min(1)
@@ -59,7 +61,7 @@ export function createServiceAccountRecordingTool(
 ) {
   return tool({
     description:
-      "Record successful account creation or login recovery immediately after observing success, then continue the task. Use the saved login identifier from this Scout's account inventory or the signup you just completed. A different display name, masked email, or missing logout button does not prevent recording; do not navigate elsewhere just to find those elements. This records your observed outcome, not an independent authentication check. Trusted code checks the current service URL, binds the account to this Scout, and saves a reference to the latest browser observation. Managed-password accounts must already be prepared or registered. For OAuth, include the provider account's exact service domain and identifier from this Scout's inventory. If recording fails, resolve the reported account or session mismatch; do not repeat an unchanged call.",
+      "Record each successful signup or sign-in immediately, including sign-ins to accounts already in the inventory, before continuing the task or signing out. Use the saved login identifier from this Scout's account inventory or the signup you just completed. A different display name, masked email, or missing logout button does not prevent recording; do not navigate elsewhere just to find those elements. This records your observed outcome, not an independent authentication check. Trusted code checks the current service URL, binds the account to this Scout, and saves a reference to the latest browser observation. Managed-password accounts must already be prepared or registered. For OAuth, include the provider account's exact service domain and identifier from this Scout's inventory. If recording fails, resolve the reported account or session mismatch; do not repeat an unchanged call.",
     inputSchema: serviceAccountEvidenceInputSchema,
     execute: async (evidence, options) => await record(evidence, options.abortSignal),
   });
