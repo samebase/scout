@@ -246,7 +246,7 @@ describe("Scout model-call inputs", () => {
     const backend = convexTest(schema, modules);
     agentTest.register(backend);
     const { ownerId, scoutId } = await backend.run(async (ctx) => ({
-      ownerId: await insertTestAccount(ctx, { email: ADMIN_EMAIL, role: "role_admin" }),
+      ownerId: await insertTestAccount(ctx, { email: ADMIN_EMAIL }),
       scoutId: await ctx.db.insert("scouts", {
         displayName: "Conrad Scout",
         websiteIdentity: { firstName: "Conrad", lastName: "Scout" },
@@ -342,8 +342,8 @@ describe("Scout model-call inputs", () => {
     const backend = convexTest(schema, modules);
     agentTest.register(backend);
     const { ownerId, outsiderId, scoutId } = await backend.run(async (ctx) => ({
-      ownerId: await insertTestAccount(ctx, { email: ADMIN_EMAIL, role: "role_admin" }),
-      outsiderId: await insertTestAccount(ctx, { email: ADMIN_EMAIL, role: "role_admin" }),
+      ownerId: await insertTestAccount(ctx, { email: ADMIN_EMAIL }),
+      outsiderId: await insertTestAccount(ctx, { email: ADMIN_EMAIL }),
       scoutId: await ctx.db.insert("scouts", {
         displayName: "Conrad Scout",
         websiteIdentity: { firstName: "Conrad", lastName: "Scout" },

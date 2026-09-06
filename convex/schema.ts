@@ -1,7 +1,6 @@
 import { authTables } from "@convex-dev/auth/server";
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
-import { accountAccessFields, accessAuditFields } from "./accessModel";
 import {
   browserActionValidator,
   browserClickCaptureValidator,
@@ -43,15 +42,9 @@ export const accountObservationValidator = v.union(
 
 export default defineSchema({
   ...authTables,
-  users: defineTable(
-    authTables.users.validator.extend(accountAccessFields.omit("userId").partial().fields),
-  )
+  users: defineTable(authTables.users.validator.extend({ isApproved: v.optional(v.boolean()) }))
     .index("email", ["email"])
-    .index("phone", ["phone"])
-    .index("by_role_and_approval", ["role", "isApproved"]),
-  accountAccessAudit: defineTable(accessAuditFields)
-    .index("by_kind", ["kind"])
-    .index("by_target_user_id", ["targetUserId"]),
+    .index("phone", ["phone"]),
   authEmailRateLimits: defineTable({ key: v.string(), lastSentAt: v.number() }).index("by_key", [
     "key",
   ]),

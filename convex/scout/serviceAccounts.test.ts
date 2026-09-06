@@ -1,5 +1,4 @@
 import { ADMIN_EMAIL, insertTestAccount } from "../testing/accounts";
-import type { AccountRole } from "../../shared/accessModel";
 import type { FunctionArgs } from "convex/server";
 import { convexTest } from "convex-test";
 import { describe, expect, it } from "vite-plus/test";
@@ -21,12 +20,8 @@ function testBackend() {
   return convexTest(schema, modules);
 }
 
-async function insertUser(
-  backend: ReturnType<typeof testBackend>,
-  email: string,
-  role: AccountRole,
-) {
-  return await backend.run(async (ctx) => await insertTestAccount(ctx, { email, role }));
+async function insertUser(backend: ReturnType<typeof testBackend>, email: string) {
+  return await backend.run(async (ctx) => await insertTestAccount(ctx, { email }));
 }
 
 async function insertScout(backend: ReturnType<typeof testBackend>, slug: string) {
@@ -68,7 +63,7 @@ async function insertManagedAccount(
 
 async function authenticatedBackend() {
   const backend = testBackend();
-  const userId = await insertUser(backend, ADMIN_EMAIL, "role_admin");
+  const userId = await insertUser(backend, ADMIN_EMAIL);
   return {
     backend,
     admin: backend.withIdentity({ subject: `${userId}|test-session` }),
@@ -218,7 +213,7 @@ describe("Scout service-account inventory", () => {
     await expect(backend.query(api.scout.serviceAccounts.list, {})).rejects.toThrow(
       "Not authorized",
     );
-    const nonAdminId = await insertUser(backend, "person@example.com", "role_member");
+    const nonAdminId = await insertUser(backend, "person@example.com");
     const nonAdmin = backend.withIdentity({ subject: `${nonAdminId}|test-session` });
     await expect(nonAdmin.query(api.scout.serviceAccounts.list, {})).rejects.toThrow(
       "Not authorized",

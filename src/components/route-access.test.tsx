@@ -9,7 +9,7 @@ import {
 } from "@tanstack/react-router";
 import { useSyncExternalStore, type ReactNode } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
-import { accountPermissions } from "../../shared/accessModel";
+import { readAccessKeysForRole, type ViewerRole } from "../../shared/accessModel";
 import { RouteAccessOutlet } from "./route-access";
 import { AppNavigation } from "./app-navigation";
 import { Route as SettingsRoute } from "../routes/settings";
@@ -50,19 +50,14 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-function setViewer(
-  role: "role_admin" | "role_member",
-  status: "active" | "suspended" = "active",
-  isApproved = true,
-) {
+function setViewer(role: ViewerRole, isApproved = role !== "role_pending_access") {
   act(() => {
     remote.values.set("viewer", {
       kind: "account",
       userId: "account",
       role,
-      status,
       isApproved,
-      accessKeys: accountPermissions(role, status, isApproved),
+      accessKeys: readAccessKeysForRole(role),
     });
     remote.revision += 1;
     for (const listener of remote.subscribers) listener();
@@ -112,7 +107,7 @@ test("protected children wait for access and unmount on revocation", async () =>
   await open("/chats");
   expect((await screen.findByRole("status")).textContent).toContain("Loading account");
   expect(remote.lab).not.toHaveBeenCalled();
-  setViewer("role_admin");
+  setViewer("role_staff");
   expect(await screen.findByRole("heading", { name: "Lab contents" })).toBeTruthy();
   expect(screen.getByRole("link", { name: "Members" })).toBeTruthy();
   setViewer("role_member");
@@ -132,11 +127,21 @@ test("a direct Lab link never mounts restricted content for a member", async () 
   expect(remote.lab).not.toHaveBeenCalled();
 });
 
-test("suspended accounts retain account controls", async () => {
-  setViewer("role_admin", "suspended");
+test("pending accounts retain account controls", async () => {
+  setViewer("role_pending_access");
   await open("/settings");
+  expect(await screen.findByRole("heading", { name: "Waiting for approval" })).toBeTruthy();
   expect(await screen.findByRole("heading", { name: "Your session" })).toBeTruthy();
   expect(screen.queryByRole("link", { name: "Members" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "Play" })).toBeNull();
+});
+
+test("staff keep Lab and settings admin access without approval", async () => {
+  setViewer("role_staff", false);
+  await open("/settings");
+  expect(await screen.findByRole("heading", { name: "Admin access" })).toBeTruthy();
+  expect(screen.getByText("You have admin access.")).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Members" })).toBeTruthy();
 });
 
 test("Review is a public preview and only permitted accounts see its Lab link", async () => {
@@ -147,33 +152,28 @@ test("Review is a public preview and only permitted accounts see its Lab link", 
   remote.authenticated = true;
   setViewer("role_member");
   expect(screen.queryByRole("link", { name: "Open the Lab" })).toBeNull();
-  setViewer("role_admin");
+  setViewer("role_staff");
   expect(await screen.findByRole("link", { name: "Open the Lab" })).toBeTruthy();
 });
 
 test("pending members keep account controls and receive approval without signing in again", async () => {
-  setViewer("role_member", "active", false);
+  setViewer("role_pending_access");
   await open("/settings");
   expect(await screen.findByRole("heading", { name: "Waiting for approval" })).toBeTruthy();
   expect(screen.getByRole("heading", { name: "Your session" })).toBeTruthy();
   expect(screen.queryByRole("link", { name: "Play" })).toBeNull();
-  setViewer("role_member", "active", true);
+  setViewer("role_member");
   expect(await screen.findByRole("heading", { name: "Account approved" })).toBeTruthy();
   expect(screen.getByRole("link", { name: "Play" })).toBeTruthy();
   expect(screen.queryByRole("link", { name: "Members" })).toBeNull();
-  setViewer("role_member", "active", false);
+  setViewer("role_pending_access");
   expect(await screen.findByRole("heading", { name: "Waiting for approval" })).toBeTruthy();
   expect(screen.queryByRole("link", { name: "Play" })).toBeNull();
 });
 
-test("pending admins cannot mount Lab content until approved and unmount when approval is revoked", async () => {
-  setViewer("role_admin", "active", false);
+test("staff can mount Lab content before member approval", async () => {
+  setViewer("role_staff", false);
   await open("/chats");
-  expect(await screen.findByRole("heading", { name: "Waiting for approval" })).toBeTruthy();
-  expect(remote.lab).not.toHaveBeenCalled();
-  setViewer("role_admin", "active", true);
   expect(await screen.findByRole("heading", { name: "Lab contents" })).toBeTruthy();
-  setViewer("role_admin", "active", false);
-  expect(await screen.findByRole("heading", { name: "Waiting for approval" })).toBeTruthy();
-  expect(screen.queryByRole("heading", { name: "Lab contents" })).toBeNull();
+  expect(screen.getByRole("link", { name: "Members" })).toBeTruthy();
 });

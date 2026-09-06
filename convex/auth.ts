@@ -97,8 +97,6 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
     afterUserCreatedOrUpdated: async (ctx, args) => {
       if (args.existingUserId === null) {
         await ctx.db.patch(args.userId, {
-          role: "role_member",
-          status: "active",
           isApproved: false,
         });
       }

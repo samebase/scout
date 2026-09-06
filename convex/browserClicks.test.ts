@@ -14,12 +14,8 @@ async function setup() {
   const backend = convexTest(schema, modules);
   agentTest.register(backend);
   workflowTest.register(backend);
-  const userId = await backend.run((ctx) =>
-    insertTestAccount(ctx, { email: ADMIN_EMAIL, role: "role_admin" }),
-  );
-  const otherId = await backend.run((ctx) =>
-    insertTestAccount(ctx, { email: ADMIN_EMAIL, role: "role_admin" }),
-  );
+  const userId = await backend.run((ctx) => insertTestAccount(ctx, { email: ADMIN_EMAIL }));
+  const otherId = await backend.run((ctx) => insertTestAccount(ctx, { email: ADMIN_EMAIL }));
   const scoutId = await backend.run((ctx) =>
     ctx.db.insert("scouts", {
       displayName: "Click Scout",

@@ -24,12 +24,7 @@ export function accountAccessMessage(viewer: ViewerAccess | undefined) {
       description: "This account’s access could not be loaded.",
     };
   if (viewer?.kind !== "account") return null;
-  if (viewer.status === "suspended")
-    return {
-      title: "Account suspended",
-      description: "An admin has suspended access to this account.",
-    };
-  if (!viewer.isApproved)
+  if (viewer.role === "role_pending_access")
     return {
       title: "Waiting for approval",
       description:

@@ -42,8 +42,7 @@ async function browserAccountContext() {
   const backend = convexTest(schema, modules);
   const seeded = await backend.run(async (ctx) => {
     const userId = await insertTestAccount(ctx, {
-      email: "test-admin@example.test",
-      role: "role_admin",
+      email: ADMIN_EMAIL,
     });
     const scoutIds = [];
     for (const name of ["conrad", "magda"]) {
@@ -333,7 +332,7 @@ describe("Autonomous managed-password preparation", () => {
     const { backend, request, scoutId, credentials, accountTools, runtime } =
       await browserAccountContext();
     const userId = await backend.run(
-      async (ctx) => await insertTestAccount(ctx, { email: ADMIN_EMAIL, role: "role_admin" }),
+      async (ctx) => await insertTestAccount(ctx, { email: ADMIN_EMAIL }),
     );
     const admin = backend.withIdentity({ subject: `${userId}|test-session` });
     const result = await admin.action(api.scout.serviceAccountCredentialActions.savePassword, {

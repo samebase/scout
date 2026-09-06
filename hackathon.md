@@ -1059,7 +1059,7 @@ Shared Scout activity hides other accounts' chat details.
 
 ### 2026-09-06 - working tree
 
-Approval, role, and suspension are stored on users, matching Samebase's account model.
-Members administration reads and updates those records directly (`convex/schema.ts`,
-`convex/accounts.ts`). Removed the separate access-row initialization and restored the original
+Simplified access to optional `users.isApproved` and Samebase's email-derived staff permissions.
+Members now manages approval only; approved members can enter Play/Review while existing Scout
+execution stays in the admin Lab (`convex/schema.ts`, `convex/accounts.ts`). Restored the v181
 Cloudflare deployment script.

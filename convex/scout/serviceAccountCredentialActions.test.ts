@@ -27,7 +27,7 @@ afterEach(() => vi.unstubAllEnvs());
 async function context() {
   const backend = convexTest(schema, modules);
   const { userId, scoutId, otherScoutId } = await backend.run(async (ctx) => {
-    const userId = await insertTestAccount(ctx, { email: ADMIN_EMAIL, role: "role_admin" });
+    const userId = await insertTestAccount(ctx, { email: ADMIN_EMAIL });
     const scout = {
       displayName: "Magda",
       websiteIdentity: { firstName: "Magda", lastName: "Scout" },

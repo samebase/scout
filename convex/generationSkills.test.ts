@@ -61,7 +61,7 @@ async function setup(responses: LanguageModelV4StreamPart[][]) {
   const backend = convexTest(schema, import.meta.glob("./**/*.ts"));
   agentTest.register(backend);
   const { userId, scoutId } = await backend.run(async (ctx) => ({
-    userId: await insertTestAccount(ctx, { email: ADMIN_EMAIL, role: "role_admin" }),
+    userId: await insertTestAccount(ctx, { email: ADMIN_EMAIL }),
     scoutId: await ctx.db.insert("scouts", {
       displayName: "Skill test Scout",
       slug: "skill-test",
