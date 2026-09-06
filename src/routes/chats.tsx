@@ -266,7 +266,7 @@ function ChatsPage() {
               Scout
             </h1>
             <AuthPanel />
-            <div className="mt-4 flex justify-center">
+            <div className="mt-4 flex justify-center text-muted-foreground">
               <SamebaseAttribution />
             </div>
           </div>
@@ -1133,7 +1133,11 @@ function ChatsWorkspace() {
         formatResizeHandleValueText={formatResizeHandleValueText}
         left={
           <PaneFrame
-            footer={<SamebaseAttribution />}
+            footer={
+              <div className="px-3 text-muted-foreground">
+                <SamebaseAttribution />
+              </div>
+            }
             content={
               <ChatNavigation
                 threads={threads.status === "LoadingFirstPage" ? undefined : availableThreads}
