@@ -98,6 +98,7 @@ const uiMessagesResultValidator = v.object({
 
 const scoutActivityValidator = v.union(
   v.object({ kind: v.literal("idle") }),
+  v.object({ kind: v.literal("busy") }),
   v.object({
     kind: v.literal("running"),
     threadId: v.string(),
@@ -116,6 +117,22 @@ const scoutActivityValidator = v.union(
     turnId: v.id("scoutTurns"),
   }),
 );
+
+type ScoutActivity = Infer<typeof scoutActivityValidator>;
+type InternalScoutActivity = Awaited<ReturnType<typeof scoutActivity>>;
+
+async function publicScoutActivity(
+  ctx: QueryCtx,
+  userId: Id<"users">,
+  activity: InternalScoutActivity,
+): Promise<ScoutActivity> {
+  if (activity.kind === "idle") return activity;
+  const activeBinding = await ctx.db
+    .query("scoutChats")
+    .withIndex("by_thread_id", (q) => q.eq("threadId", activity.threadId))
+    .unique();
+  return activeBinding?.userId === userId ? activity : { kind: "busy" };
+}
 
 function chatTurnOutcome(state: Doc<"scoutTurns">["state"]) {
   switch (state.kind) {
@@ -302,7 +319,7 @@ export const getScoutActivity = query({
     const userId = ctx.viewer.userId;
     await requireOwnedAgentThread(ctx, args.threadId, userId);
     const binding = await requireThreadBinding(ctx, { threadId: args.threadId, userId });
-    return await scoutActivity(ctx, binding.scoutId);
+    return await publicScoutActivity(ctx, userId, await scoutActivity(ctx, binding.scoutId));
   },
 });
 

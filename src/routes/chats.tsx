@@ -110,6 +110,8 @@ type ChatThread = FunctionReturnType<typeof api.scout.chats.listThreads>["page"]
 type BrowserSession = FunctionReturnType<typeof api.scout.browserSessions.list>[number];
 type BrowserSessionDetail = NonNullable<FunctionReturnType<typeof api.scout.browserSessions.get>>;
 type Scout = FunctionReturnType<typeof api.scout.scouts.list>[number];
+type ScoutActivity = FunctionReturnType<typeof api.scout.chats.getScoutActivity>;
+type ThreadScoutActivity = Extract<ScoutActivity, { threadId: string }>;
 type InspectorKind = "browser" | "model-call";
 type PendingThread = {
   threadId: string;
@@ -367,6 +369,39 @@ function selectBrowserSession(
   return sessions?.find((session) => session.sessionId === requestedSessionId) ?? sessions?.at(-1);
 }
 
+function selectedActivity(
+  activity: ScoutActivity | undefined,
+  threadId: string | null,
+): ThreadScoutActivity | undefined {
+  if (!activity || threadId === null) return undefined;
+  switch (activity.kind) {
+    case "running":
+    case "stopping":
+    case "handoff":
+      return activity.threadId === threadId ? activity : undefined;
+    case "busy":
+    case "idle":
+      return undefined;
+  }
+}
+
+function otherOwnedActivityThreadId(activity: ScoutActivity | undefined, threadId: string | null) {
+  if (!activity || threadId === null) return undefined;
+  switch (activity.kind) {
+    case "running":
+    case "stopping":
+    case "handoff":
+      return activity.threadId === threadId ? undefined : activity.threadId;
+    case "busy":
+    case "idle":
+      return undefined;
+  }
+}
+
+function hasActiveActivity(activity: ScoutActivity | undefined) {
+  return activity !== undefined && activity.kind !== "idle";
+}
+
 function ChatsWorkspace() {
   const search = Route.useSearch();
   const navigate = useNavigate();
@@ -447,26 +482,16 @@ function ChatsWorkspace() {
   );
   const canCompose = Boolean(selectedActiveScout && threadId !== null);
   const isActivityLoading = threadId !== null && scoutActivity === undefined;
-  const selectedThreadActivity =
-    scoutActivity?.kind !== "idle" && scoutActivity?.threadId === threadId
-      ? scoutActivity
-      : undefined;
+  const selectedThreadActivity = selectedActivity(scoutActivity, threadId);
   const canInterrupt =
     selectedThreadActivity?.kind === "running" || selectedThreadActivity?.kind === "handoff";
   const serverIsStopping = selectedThreadActivity?.kind === "stopping";
   const canRetryStopping = serverIsStopping && selectedThreadActivity.retryable;
+  const activeOwnedThreadId = otherOwnedActivityThreadId(scoutActivity, threadId);
   const scoutIsWorkingElsewhere =
-    scoutActivity !== undefined &&
-    scoutActivity.kind !== "idle" &&
-    scoutActivity.threadId !== threadId;
-  const workingThread = availableThreads.find(
-    (thread) => scoutActivity?.kind !== "idle" && thread.threadId === scoutActivity?.threadId,
-  );
+    scoutActivity?.kind === "busy" || activeOwnedThreadId !== undefined;
   const composerIsBusy = composerState.kind === "sending" || composerState.kind === "stopping";
-  const isWorking =
-    composerIsBusy ||
-    isActivityLoading ||
-    (scoutActivity !== undefined && scoutActivity.kind !== "idle");
+  const isWorking = composerIsBusy || isActivityLoading || hasActiveActivity(scoutActivity);
   const messageInputDisabled =
     !canCompose ||
     isActivityLoading ||
@@ -807,10 +832,10 @@ function ChatsWorkspace() {
           {scoutIsWorkingElsewhere ? (
             <div role="status" className="border-b bg-muted/40 px-4 py-3 text-sm">
               {selectedActiveScout?.displayName ?? "Scout"} is busy in another chat.
-              {workingThread ? (
+              {activeOwnedThreadId ? (
                 <Link
                   to="/chats"
-                  search={{ thread: workingThread.threadId }}
+                  search={{ thread: activeOwnedThreadId }}
                   className="ml-2 underline"
                 >
                   Open active chat

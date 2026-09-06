@@ -966,38 +966,55 @@ describe("Chat workspace", () => {
     });
   });
 
-  test.each([false, true])(
-    "explains activity in another chat and links only a known owned chat (%s)",
-    async (owned) => {
-      if (owned)
-        remote.queries.set(
-          "scout/chats:listThreads",
-          threadPage([
-            {
-              threadId: "thread-1",
-              title: "Inspect the form",
-              scoutId: "scout-1",
-              creationTime: 1,
-            },
-            { threadId: "thread-2", title: "Signup", scoutId: "scout-1", creationTime: 2 },
-          ]),
-        );
-      remote.queries.set("scout/chats:getScoutActivity", {
-        kind: "handoff",
-        threadId: "thread-2",
-        turnId: "turn-2",
-      });
-      await openChats("/chats?thread=thread-1");
-      expect(screen.getByText("Conrad is busy in another chat.")).not.toBeNull();
-      expect(
-        screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Message Scout" }).disabled,
-      ).toBe(true);
-      expect(screen.queryByRole("button", { name: "Stop Scout" })).toBeNull();
-      const link = screen.queryByRole("link", { name: "Open active chat" });
-      if (owned) expect(link?.getAttribute("href")).toBe("/chats?thread=thread-2");
-      else expect(link).toBeNull();
-    },
-  );
+  test("redacts another owner's activity while disabling chat controls", async () => {
+    remote.queries.set("scout/chats:getScoutActivity", { kind: "busy" });
+
+    await openChats("/chats?thread=thread-1");
+
+    expect(screen.getByText("Conrad is busy in another chat.")).not.toBeNull();
+    expect(screen.queryByRole("link", { name: "Open active chat" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Stop Scout" })).toBeNull();
+    expect(
+      screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Message Scout" }).disabled,
+    ).toBe(true);
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Send message" }).disabled).toBe(
+      true,
+    );
+    expect(document.body.textContent).not.toContain("thread-2");
+    expect(document.body.textContent).not.toContain("Firecrawl did not stop the browser session");
+    expect(screen.queryByText(/Browser cleanup failed/)).toBeNull();
+  });
+
+  test("keeps the Open active chat link for the caller's own other chat", async () => {
+    remote.queries.set(
+      "scout/chats:listThreads",
+      threadPage([
+        {
+          threadId: "thread-1",
+          title: "Inspect the form",
+          scoutId: "scout-1",
+          creationTime: 1,
+        },
+        { threadId: "thread-2", title: "Signup", scoutId: "scout-1", creationTime: 2 },
+      ]),
+    );
+    remote.queries.set("scout/chats:getScoutActivity", {
+      kind: "handoff",
+      threadId: "thread-2",
+      turnId: "turn-2",
+    });
+
+    await openChats("/chats?thread=thread-1");
+
+    expect(screen.getByText("Conrad is busy in another chat.")).not.toBeNull();
+    expect(screen.getByRole("link", { name: "Open active chat" }).getAttribute("href")).toBe(
+      "/chats?thread=thread-2",
+    );
+    expect(
+      screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Message Scout" }).disabled,
+    ).toBe(true);
+    expect(screen.queryByRole("button", { name: "Stop Scout" })).toBeNull();
+  });
 
   test("loads the requested closed browser session for replay", async () => {
     const closed = { ...session("session-closed", 1), lifecycle: { kind: "closed", closedAt: 2 } };

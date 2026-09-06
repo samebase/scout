@@ -1,30 +1,41 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { internalMutation } from "./_generated/server";
+import { authEmailRateLimitKey } from "./authEmail";
+import {
+  AUTH_EMAIL_COOLDOWN,
+  EMAIL_VERIFICATION_PROVIDER_ID,
+  PASSWORD_RESET_PROVIDER_ID,
+} from "../shared/auth";
 
-const RESET_EMAIL_COOLDOWN_MS = 60_000;
+const EMAIL_COOLDOWN_MS = 60_000;
 
 export const consume = internalMutation({
   args: {
-    key: v.string(),
-    now: v.number(),
+    email: v.string(),
+    providerId: v.union(
+      v.literal(EMAIL_VERIFICATION_PROVIDER_ID),
+      v.literal(PASSWORD_RESET_PROVIDER_ID),
+    ),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
+    const key = await authEmailRateLimitKey(args.providerId, args.email);
+    const now = Date.now();
     const existing = await ctx.db
       .query("authEmailRateLimits")
-      .withIndex("by_key", (query) => query.eq("key", args.key))
+      .withIndex("by_key", (query) => query.eq("key", key))
       .unique();
 
-    if (existing && args.now - existing.lastSentAt < RESET_EMAIL_COOLDOWN_MS) {
-      throw new Error("Wait before requesting another password reset code");
+    if (existing && now - existing.lastSentAt < EMAIL_COOLDOWN_MS) {
+      throw new ConvexError(AUTH_EMAIL_COOLDOWN);
     }
 
     if (existing) {
-      await ctx.db.patch(existing._id, { lastSentAt: args.now });
+      await ctx.db.patch(existing._id, { lastSentAt: now });
     } else {
       await ctx.db.insert("authEmailRateLimits", {
-        key: args.key,
-        lastSentAt: args.now,
+        key,
+        lastSentAt: now,
       });
     }
     return null;

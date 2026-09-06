@@ -27,6 +27,9 @@ traces Samebase’s current signup, pending access, and manual approval behavior
   Changes are transactional, audited, and cannot remove the last active, approved, verified admin. Promotion requires approval;
   approval alone never changes the role. Login and password recovery preserve all assignments.
 - A missing user, missing access row, or unverified account gets no protected access.
+- Signup and unverified sign-in share a per-address, 60-second verification-email cooldown.
+  Password-reset requests keep their separate cooldown. Both verification flows require a code;
+  submitting a code and signing in with a verified password account do not consume email quotas.
 
 ## Permission contract
 
@@ -49,6 +52,8 @@ builders. Auth library exports and public bearer-token handoffs keep their disti
 protocol boundaries. Internal work reloads the stored actor's current permission.
 Thread ownership checks still apply to admins. Admin status does not grant access to
 someone else's private thread.
+Shared Scout activity reports only `busy` when another account owns the active chat. An admin
+can still see activity and follow links between their own chats.
 
 The frontend reads one reactive viewer query. Restricted routes and navigation use the
 same permission keys. Restricted children do not mount before access resolves, and
@@ -126,6 +131,11 @@ for operator inspection. An operator can retry the internal
 `captureEvidence: false`. Previously dispatched provider operations can still finish.
 Existing handoff/turn cleanup also retains its own failure reporting.
 
+Known cleanup limitation: revocation can overlap an existing browser-close request. A duplicate
+provider response may record closure without usage metrics before the original response arrives,
+leaving incomplete usage totals. Resource closure remains idempotent; preserving late usage data
+requires a separate cleanup ownership/accounting change.
+
 Verification covers public signup and email verification, forged signup fields, development
 bootstrap, repeated initialization, approval/promotion/demotion/suspension, audit idempotency,
 competing last-admin demotions and approval revocations, direct API denial, private thread
@@ -138,7 +148,10 @@ That preview setting was repaired. Preview uploads now set it from Wrangler's re
 deployment tests cover missing metadata and failed setup. An auth regression test reproduces the
 interrupted signup and verifies recovery through sign-in after configuration, still pending approval.
 
-`pnpm run check` and `pnpm run build:app` passed: 478 tests passed, 3 pre-existing skips on the v181 base.
+`pnpm run build:app` passed, including the complete check: 486 tests passed, 3 pre-existing skips
+on the v181 base. Auth regressions cover missing-code verification, cooldowns that preserve valid
+codes, and failed credentials that leave resend available. Activity regressions cover cross-admin
+redaction in Lab and Play and same-owner Lab navigation.
 Browser checks used the local anonymous backend with disposable
 accounts and confirmed approval through Members, last-approved-admin protection, removal
 of an open admin page on revocation, retained Settings access, and automatic transition

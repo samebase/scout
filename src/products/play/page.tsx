@@ -37,6 +37,7 @@ import {
 type Scout = FunctionReturnType<typeof api.scout.scouts.list>[number];
 type ChatThread = FunctionReturnType<typeof api.scout.chats.listThreads>["page"][number];
 type Activity = FunctionReturnType<typeof api.scout.chats.getScoutActivity>;
+type ThreadActivity = Extract<Activity, { threadId: string }>;
 type RequestState = { kind: "idle" } | { kind: "pending" } | { kind: "failed"; message: string };
 
 export function PlayPage() {
@@ -340,19 +341,38 @@ function SessionLoader({ threadId }: { threadId: string }) {
   );
 }
 
+function activityForThread(
+  activity: Activity | undefined,
+  threadId: string,
+): ThreadActivity | undefined {
+  if (!activity) return undefined;
+  switch (activity.kind) {
+    case "running":
+    case "stopping":
+    case "handoff":
+      return activity.threadId === threadId ? activity : undefined;
+    case "busy":
+    case "idle":
+      return undefined;
+  }
+}
+
+function hasActiveActivity(activity: Activity | undefined) {
+  return activity !== undefined && activity.kind !== "idle";
+}
+
 function activityLabel(activity: Activity | undefined, threadId: string) {
   if (!activity) return "Connecting...";
-  if (activity.kind !== "idle" && activity.threadId !== threadId)
-    return "Playing in another session";
-  switch (activity.kind) {
-    case "idle":
-      return "Ready for your next message";
+  if (activity.kind === "idle") return "Ready for your next message";
+  const selectedActivity = activityForThread(activity, threadId);
+  if (!selectedActivity) return "Playing in another session";
+  switch (selectedActivity.kind) {
     case "running":
       return "Scout is playing";
     case "handoff":
       return "Scout needs your help";
     case "stopping":
-      return activity.retryable ? "Couldn't stop. Try again." : "Stopping Scout...";
+      return selectedActivity.retryable ? "Couldn't stop. Try again." : "Stopping Scout...";
   }
 }
 
@@ -382,8 +402,10 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
   const messageViewport = useRef<HTMLDivElement>(null);
   const followMessages = useRef(true);
   const pending = useRef(false);
-  const ownActivity = activity && activity.kind !== "idle" && activity.threadId === threadId;
-  const canStop = ownActivity && (activity.kind !== "stopping" || activity.retryable);
+  const ownActivity = activityForThread(activity, threadId);
+  const scoutIsBusy = hasActiveActivity(activity);
+  const canStop =
+    ownActivity !== undefined && (ownActivity.kind !== "stopping" || ownActivity.retryable);
   const canSend =
     scout?.status === "active" && activity?.kind === "idle" && request.kind !== "pending";
   const visibleMessages = messages.results.filter(
@@ -610,7 +632,7 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
                 </p>
               </div>
             ))}
-            {ownActivity && activity.kind === "running" && (
+            {ownActivity?.kind === "running" && (
               <p className="flex items-center gap-2 text-[11px] text-play-muted">
                 <LoaderCircleIcon size={14} className="animate-spin" aria-hidden="true" /> Scout is
                 taking a turn...
@@ -636,7 +658,7 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
                 maxLength={16000}
                 rows={2}
                 onChange={(event) => setDraft(event.target.value)}
-                disabled={request.kind === "pending"}
+                disabled={request.kind === "pending" || scoutIsBusy}
               />
               <button
                 type="submit"
@@ -647,9 +669,11 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
                 <SendIcon size={18} aria-hidden="true" />
               </button>
             </div>
-            {activity?.kind !== "idle" && (
+            {scoutIsBusy && (
               <p className="mt-2 text-[10px] text-play-muted">
-                Stop Scout before sending new guidance.
+                {ownActivity
+                  ? "Stop Scout before sending new guidance."
+                  : "Scout is busy in another session."}
               </p>
             )}
             {scout?.status !== "active" && (

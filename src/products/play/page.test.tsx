@@ -297,7 +297,7 @@ describe("Play invitation", () => {
     expect(remote.createThread).not.toHaveBeenCalled();
   });
 
-  test("stops its own active game but cannot stop another session", async () => {
+  test("stops its own active game but disables controls while Scout is busy elsewhere", async () => {
     remote.queries.set("scout/chats:getScoutActivity", {
       kind: "running",
       threadId: "game-thread",
@@ -309,15 +309,19 @@ describe("Play invitation", () => {
       expect(remote.stop).toHaveBeenCalledExactlyOnceWith({ threadId: "game-thread" }),
     );
     act(() => {
-      remote.queries.set("scout/chats:getScoutActivity", {
-        kind: "running",
-        threadId: "another-game",
-        turnId: "turn-2",
-      });
+      remote.queries.set("scout/chats:getScoutActivity", { kind: "busy" });
       remote.revision += 1;
       remote.subscribers.forEach((listener) => listener());
     });
     expect(screen.queryByRole("button", { name: "Stop Scout" })).toBeNull();
     expect(screen.getByText("Playing in another session")).toBeTruthy();
+    expect(screen.getByText("Scout is busy in another session.")).toBeTruthy();
+    expect(
+      screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Message Scout" }).disabled,
+    ).toBe(true);
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Send message" }).disabled).toBe(
+      true,
+    );
+    expect(document.body.textContent).not.toContain("another-game");
   });
 });

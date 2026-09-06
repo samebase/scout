@@ -4,6 +4,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import { api, internal } from "../../convex/_generated/api";
 import { ADMIN_EMAIL, insertTestAccount } from "../../convex/testing/accounts";
 import schema from "../../convex/schema";
+import { AUTH_EMAIL_COOLDOWN } from "../../shared/auth";
 
 type ScoutTest = TestConvex<typeof schema>;
 const modules = import.meta.glob("../../convex/**/*.*s");
@@ -29,6 +30,7 @@ beforeAll(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
 });
@@ -249,6 +251,7 @@ describe("password authentication", () => {
       }),
     );
 
+    vi.spyOn(Date, "now").mockReturnValue(Date.now() + 60_000);
     const retry = await captureAuthCode(() =>
       t.action(api.auth.signIn, {
         provider: "password",
@@ -289,6 +292,7 @@ describe("password authentication", () => {
     });
 
     vi.stubEnv("SITE_URL", "https://feature-scout.example.workers.dev");
+    vi.spyOn(Date, "now").mockReturnValue(Date.now() + 60_000);
     const retry = await captureAuthCode(() =>
       t.action(api.auth.signIn, {
         provider: "password",
@@ -332,7 +336,7 @@ describe("password authentication", () => {
           flow: "reset",
         },
       }),
-    ).rejects.toThrow("Wait before requesting another password reset code");
+    ).rejects.toThrow(AUTH_EMAIL_COOLDOWN);
 
     await expect(
       t.action(api.auth.signIn, {
@@ -345,6 +349,131 @@ describe("password authentication", () => {
         },
       }),
     ).resolves.toMatchObject({ tokens: expect.any(Object) });
+  });
+
+  it.each([
+    { flow: "email-verification" },
+    { flow: "reset-verification", newPassword: "replacement-password" },
+  ])("rejects code-less $flow without sending mail or replacing a reset code", async (params) => {
+    const t = convexTest(schema, modules);
+    await createVerifiedUser(t, ADMIN_EMAIL, "secure-password");
+    const reset = await captureAuthCode(() =>
+      t.action(api.auth.signIn, {
+        provider: "password",
+        params: { email: ADMIN_EMAIL, flow: "reset" },
+      }),
+    );
+    const send = vi.fn(() => {
+      throw new Error("Unexpected email dispatch");
+    });
+    vi.stubGlobal("fetch", send);
+    await expect(
+      t.action(api.auth.signIn, {
+        provider: "password",
+        params: { email: ADMIN_EMAIL, ...params },
+      }),
+    ).rejects.toThrow("Enter the verification code");
+    expect(send).not.toHaveBeenCalled();
+    await expect(
+      t.action(api.auth.signIn, {
+        provider: "password",
+        params: {
+          email: ADMIN_EMAIL,
+          code: reset.code,
+          newPassword: "replacement-password",
+          flow: "reset-verification",
+        },
+      }),
+    ).resolves.toMatchObject({ tokens: expect.any(Object) });
+  });
+
+  it("does not consume the email cooldown for an invalid signup", async () => {
+    const t = convexTest(schema, modules);
+    await expect(
+      t.action(api.auth.signIn, {
+        provider: "password",
+        params: { email: ADMIN_EMAIL, password: "short", flow: "signUp" },
+      }),
+    ).rejects.toThrow("Invalid password");
+
+    const signUp = await captureAuthCode(() =>
+      t.action(api.auth.signIn, {
+        provider: "password",
+        params: { email: ADMIN_EMAIL, password: "secure-password", flow: "signUp" },
+      }),
+    );
+    expect(signUp.result.tokens).toBeNull();
+  });
+
+  it("does not consume the email cooldown for invalid unverified sign-in attempts", async () => {
+    const t = convexTest(schema, modules);
+    await captureAuthCode(() =>
+      t.action(api.auth.signIn, {
+        provider: "password",
+        params: { email: ADMIN_EMAIL, password: "secure-password", flow: "signUp" },
+      }),
+    );
+    const retryAt = Date.now() + 60_000;
+    vi.spyOn(Date, "now").mockReturnValue(retryAt);
+    const send = vi.fn(() => {
+      throw new Error("Unexpected email dispatch");
+    });
+    vi.stubGlobal("fetch", send);
+
+    await expect(
+      t.action(api.auth.signIn, {
+        provider: "password",
+        params: { email: ADMIN_EMAIL, password: "wrong-password", flow: "signIn" },
+      }),
+    ).rejects.toThrow();
+    await expect(
+      t.action(api.auth.signIn, {
+        provider: "password",
+        params: { email: ADMIN_EMAIL, flow: "signIn" },
+      }),
+    ).rejects.toThrow();
+    expect(send).not.toHaveBeenCalled();
+
+    const retry = await captureAuthCode(() =>
+      t.action(api.auth.signIn, {
+        provider: "password",
+        params: { email: ADMIN_EMAIL, password: "secure-password", flow: "signIn" },
+      }),
+    );
+    expect(retry.result.tokens).toBeNull();
+  });
+
+  it("throttles unverified sign-in resends while keeping the first code and verified sign-in usable", async () => {
+    const t = convexTest(schema, modules);
+    const signUp = await captureAuthCode(() =>
+      t.action(api.auth.signIn, {
+        provider: "password",
+        params: { email: ADMIN_EMAIL, password: "secure-password", flow: "signUp" },
+      }),
+    );
+    const send = vi.fn(() => {
+      throw new Error("Unexpected email dispatch");
+    });
+    vi.stubGlobal("fetch", send);
+    await expect(
+      t.action(api.auth.signIn, {
+        provider: "password",
+        params: { email: ADMIN_EMAIL, password: "secure-password", flow: "signIn" },
+      }),
+    ).rejects.toThrow(AUTH_EMAIL_COOLDOWN);
+    expect(send).not.toHaveBeenCalled();
+    await t.action(api.auth.signIn, {
+      provider: "password",
+      params: { email: ADMIN_EMAIL, code: signUp.code, flow: "email-verification" },
+    });
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      await expect(
+        t.action(api.auth.signIn, {
+          provider: "password",
+          params: { email: ADMIN_EMAIL, password: "secure-password", flow: "signIn" },
+        }),
+      ).resolves.toMatchObject({ tokens: expect.any(Object) });
+    }
   });
 
   it("allows public signup but ignores attempts to approve or promote the account", async () => {
@@ -549,7 +678,9 @@ async function captureAuthCode<Result>(operation: () => Promise<Result>) {
   );
 
   const result = await operation();
-  vi.unstubAllGlobals();
+  vi.stubGlobal("fetch", () => {
+    throw new Error("Unexpected email dispatch outside captureAuthCode");
+  });
   if (!code) {
     throw new Error("Expected an eight-digit authentication code");
   }

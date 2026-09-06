@@ -1054,4 +1054,5 @@ Added member/admin roles and public signup with admin approval required for acce
 Members controls audit approval and role changes, protect the last approved admin, and stop revoked
 Lab work (`convex/accounts.ts`, `convex/functions.ts`, `convex/accountRevocation.ts`).
 Pending accounts update when approved; Scout allocation remains open in `docs/access-control-rfc.md`.
-Preview deploys configure their auth origin from Cloudflare's returned branch URL.
+Preview deploys configure their auth origin; code checks and resend limits protect verification emails.
+Shared Scout activity hides other accounts' chat details.

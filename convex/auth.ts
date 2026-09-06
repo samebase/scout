@@ -1,7 +1,8 @@
 import { Password } from "@convex-dev/auth/providers/Password";
+import type { ConvexCredentialsUserConfig } from "@convex-dev/auth/providers/ConvexCredentials";
 import { convexAuth } from "@convex-dev/auth/server";
 import { internal } from "./_generated/api";
-import { authEmailRateLimitKey, normalizeAuthEmail } from "./authEmail";
+import { normalizeAuthEmail } from "./authEmail";
 import { emailVerificationCode, passwordResetCode } from "./authEmails";
 import { readDevSeedPasswordAccountConfig } from "./devAuthConfig";
 
@@ -11,19 +12,51 @@ function assertPasswordLoggingIsSafe() {
   }
 }
 
-const basePasswordProvider = Password({
-  verify: emailVerificationCode,
-  reset: passwordResetCode,
-  profile(params) {
-    assertPasswordLoggingIsSafe();
-    const email = normalizeAuthEmail(params["email"]);
-    params["email"] = email;
-    return { email };
-  },
-});
+function createPasswordProvider(
+  verify: typeof emailVerificationCode,
+  reset: typeof passwordResetCode,
+) {
+  return Password({
+    verify,
+    reset,
+    profile(params) {
+      assertPasswordLoggingIsSafe();
+      const email = normalizeAuthEmail(params["email"]);
+      params["email"] = email;
+      return { email };
+    },
+  });
+}
 
-// @ts-expect-error Convex Auth stores this config in `options` at runtime but omits it publicly.
-const basePasswordOptions = basePasswordProvider.options;
+function passwordOptions(
+  provider: ReturnType<typeof createPasswordProvider>,
+): ConvexCredentialsUserConfig {
+  // @ts-expect-error Convex Auth stores this config in `options` at runtime but omits it publicly.
+  return provider.options;
+}
+
+const basePasswordProvider = createPasswordProvider(emailVerificationCode, passwordResetCode);
+const basePasswordOptions = passwordOptions(basePasswordProvider);
+
+function withEmailCooldown(
+  provider: typeof emailVerificationCode,
+  email: string,
+  ctx: Parameters<typeof basePasswordOptions.authorize>[1],
+) {
+  return {
+    ...provider,
+    options: {
+      ...provider.options,
+      async generateVerificationToken() {
+        await ctx.runMutation(internal.authEmailRateLimit.consume, {
+          email,
+          providerId: provider.options.id,
+        });
+        return await provider.options.generateVerificationToken();
+      },
+    },
+  };
+}
 
 const passwordProvider = {
   ...basePasswordProvider,
@@ -42,13 +75,18 @@ const passwordProvider = {
       }
       params["email"] = email;
 
-      if (params["flow"] === "reset") {
-        await ctx.runMutation(internal.authEmailRateLimit.consume, {
-          key: await authEmailRateLimitKey(passwordResetCode.id, email),
-          now: Date.now(),
-        });
+      const flow = params["flow"];
+      if (
+        (flow === "email-verification" || flow === "reset-verification") &&
+        params["code"] === undefined
+      ) {
+        throw new Error("Enter the verification code");
       }
-      return await basePasswordOptions.authorize(params, ctx);
+      const requestPasswordProvider = createPasswordProvider(
+        withEmailCooldown(emailVerificationCode, email, ctx),
+        withEmailCooldown(passwordResetCode, email, ctx),
+      );
+      return await passwordOptions(requestPasswordProvider).authorize(params, ctx);
     },
   },
 };
