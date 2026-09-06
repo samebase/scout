@@ -1,8 +1,10 @@
 "use node";
 
+import { publicAction as action } from "./functions";
+
 import { type Infer, v } from "convex/values";
 import { internal } from "./_generated/api";
-import { action } from "./_generated/server";
+
 import { humanHandoffPageValidator } from "./humanHandoffsModel";
 import { omitNullish } from "../shared/omitNullish";
 import { requireFirecrawlLiveViewUrl } from "./scout/lib/firecrawlLiveView";
@@ -34,6 +36,7 @@ function accessInput(args: { handoffId: string; accessToken?: string }) {
 }
 
 export const load = action({
+  access: "access_public",
   args: accessArgs,
   returns: humanHandoffPageValidator,
   handler: async (ctx, args): Promise<HandoffPage> => {
@@ -96,6 +99,7 @@ export const load = action({
 });
 
 export const continueHandoff = action({
+  access: "access_public",
   args: accessArgs,
   returns: humanHandoffPageValidator,
   handler: async (ctx, args): Promise<HandoffPage> => {

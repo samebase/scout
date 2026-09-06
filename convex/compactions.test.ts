@@ -1,3 +1,4 @@
+import { ADMIN_EMAIL, insertTestAccount } from "./testing/accounts";
 /// <reference types="vite/client" />
 import agentTest from "@convex-dev/agent/test";
 import { docsToModelMessages } from "@convex-dev/agent";
@@ -5,7 +6,6 @@ import type { FunctionArgs } from "convex/server";
 import { convexTest } from "convex-test";
 import { expect, test, vi } from "vite-plus/test";
 import { api, components, internal } from "./_generated/api";
-import { ADMIN_EMAIL } from "./authConfig";
 import schema from "./schema";
 import { omitNullish } from "../shared/omitNullish";
 import { loadUncompactedMessages, prepareConversationContext } from "./scout/compactionContext";
@@ -21,8 +21,8 @@ async function setup(objective = "Research these services and draft an email. Do
   const backend = convexTest(schema, import.meta.glob("./**/*.ts"));
   agentTest.register(backend);
   const { ownerId, outsiderId, scoutId } = await backend.run(async (ctx) => ({
-    ownerId: await ctx.db.insert("users", { email: ADMIN_EMAIL }),
-    outsiderId: await ctx.db.insert("users", { email: ADMIN_EMAIL }),
+    ownerId: await insertTestAccount(ctx, { email: ADMIN_EMAIL, role: "role_admin" }),
+    outsiderId: await insertTestAccount(ctx, { email: ADMIN_EMAIL, role: "role_admin" }),
     scoutId: await ctx.db.insert("scouts", {
       displayName: "Compaction Scout",
       slug: "compaction",

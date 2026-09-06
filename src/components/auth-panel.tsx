@@ -1,5 +1,7 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import { type FormEvent, useState } from "react";
+import { ConvexError } from "convex/values";
+import { AUTH_EMAIL_COOLDOWN } from "../../shared/auth";
 import { Button } from "#components/ui/button";
 import { Input } from "#components/ui/input";
 
@@ -298,8 +300,8 @@ function AuthHeading({ state }: { state: AuthState }) {
         </h2>
         <p className="mt-2 text-sm text-muted-foreground">
           {state.flow === "signIn"
-            ? "Sign in to chat with your Scouts."
-            : "Set up access to the Scout workspace."}
+            ? "Sign in to your Scout account."
+            : "Create an account, then wait for admin approval."}
         </p>
       </div>
     );
@@ -353,6 +355,9 @@ function pendingLabel(flow: CredentialsFlow, isPending: boolean) {
 
 function authErrorMessage(error: unknown, action: AuthAction) {
   const message = error instanceof Error ? error.message : "";
+  if (error instanceof ConvexError && error.data === AUTH_EMAIL_COOLDOWN) {
+    return "Wait a minute before requesting another code.";
+  }
   if (action === "signIn" && /(invalid credentials|invalidsecret)/i.test(message)) {
     return "Email or password is incorrect.";
   }

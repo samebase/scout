@@ -1,3 +1,4 @@
+import { ADMIN_EMAIL, insertTestAccount } from "./testing/accounts";
 /// <reference types="vite/client" />
 
 import agentTest from "@convex-dev/agent/test";
@@ -5,7 +6,6 @@ import workflowTest from "@convex-dev/workflow/test";
 import { convexTest } from "convex-test";
 import { describe, expect, test } from "vite-plus/test";
 import { api, internal } from "./_generated/api";
-import { ADMIN_EMAIL } from "./authConfig";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -14,8 +14,12 @@ async function setup() {
   const backend = convexTest(schema, modules);
   agentTest.register(backend);
   workflowTest.register(backend);
-  const userId = await backend.run((ctx) => ctx.db.insert("users", { email: ADMIN_EMAIL }));
-  const otherId = await backend.run((ctx) => ctx.db.insert("users", { email: ADMIN_EMAIL }));
+  const userId = await backend.run((ctx) =>
+    insertTestAccount(ctx, { email: ADMIN_EMAIL, role: "role_admin" }),
+  );
+  const otherId = await backend.run((ctx) =>
+    insertTestAccount(ctx, { email: ADMIN_EMAIL, role: "role_admin" }),
+  );
   const scoutId = await backend.run((ctx) =>
     ctx.db.insert("scouts", {
       displayName: "Click Scout",

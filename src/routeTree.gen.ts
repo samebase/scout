@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ChatsRouteImport } from './routes/chats'
+import { Route as MembersRouteImport } from './routes/members'
 import { Route as PlayRouteImport } from './routes/play'
 import { Route as ReviewRouteImport } from './routes/review'
 import { Route as ScoutsRouteImport } from './routes/scouts'
@@ -29,6 +30,11 @@ const IndexRoute = IndexRouteImport.update({
 const ChatsRoute = ChatsRouteImport.update({
   id: '/chats',
   path: '/chats',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MembersRoute = MembersRouteImport.update({
+  id: '/members',
+  path: '/members',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PlayRoute = PlayRouteImport.update({
@@ -80,6 +86,7 @@ const ScoutsSlugRoute = ScoutsSlugRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/chats': typeof ChatsRoute
+  '/members': typeof MembersRoute
   '/play': typeof PlayRouteWithChildren
   '/review': typeof ReviewRoute
   '/scouts': typeof ScoutsRouteWithChildren
@@ -93,6 +100,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/chats': typeof ChatsRoute
+  '/members': typeof MembersRoute
   '/review': typeof ReviewRoute
   '/settings': typeof SettingsRoute
   '/handoff/$handoffId': typeof HandoffHandoffIdRoute
@@ -105,6 +113,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/chats': typeof ChatsRoute
+  '/members': typeof MembersRoute
   '/play': typeof PlayRouteWithChildren
   '/review': typeof ReviewRoute
   '/scouts': typeof ScoutsRouteWithChildren
@@ -120,6 +129,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/chats'
+    | '/members'
     | '/play'
     | '/review'
     | '/scouts'
@@ -133,6 +143,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/chats'
+    | '/members'
     | '/review'
     | '/settings'
     | '/handoff/$handoffId'
@@ -144,6 +155,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/chats'
+    | '/members'
     | '/play'
     | '/review'
     | '/scouts'
@@ -158,6 +170,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ChatsRoute: typeof ChatsRoute
+  MembersRoute: typeof MembersRoute
   PlayRoute: typeof PlayRouteWithChildren
   ReviewRoute: typeof ReviewRoute
   ScoutsRoute: typeof ScoutsRouteWithChildren
@@ -179,6 +192,13 @@ declare module '@tanstack/react-router' {
       path: '/chats'
       fullPath: '/chats'
       preLoaderRoute: typeof ChatsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/members': {
+      id: '/members'
+      path: '/members'
+      fullPath: '/members'
+      preLoaderRoute: typeof MembersRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/play': {
@@ -275,6 +295,7 @@ const ScoutsRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ChatsRoute: ChatsRoute,
+  MembersRoute: MembersRoute,
   PlayRoute: PlayRouteWithChildren,
   ReviewRoute: ReviewRoute,
   ScoutsRoute: ScoutsRouteWithChildren,

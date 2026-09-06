@@ -66,6 +66,8 @@ export const seedPasswordAccount = internalAction({
           secret: config.password,
         },
       });
+      await ctx.runMutation(internal.accounts.initialize, { userId: resolution.userId });
+      await ctx.runMutation(internal.accounts.bootstrapAdmin, { userId: resolution.userId });
       return { created: false, email: config.email };
     }
 
@@ -74,7 +76,7 @@ export const seedPasswordAccount = internalAction({
       emailVerified: true,
     };
     // @ts-expect-error Convex Auth 0.0.94 does not accept exact optional fields under TypeScript 6.
-    await createAccount(ctx, {
+    const created = await createAccount(ctx, {
       provider: "password",
       account: {
         id: config.email,
@@ -84,6 +86,7 @@ export const seedPasswordAccount = internalAction({
       shouldLinkViaEmail: false,
       shouldLinkViaPhone: false,
     });
+    await ctx.runMutation(internal.accounts.bootstrapAdmin, { userId: created.user._id });
 
     return { created: true, email: config.email };
   },

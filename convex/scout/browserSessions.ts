@@ -1,14 +1,14 @@
+import { query } from "../functions";
 import { type Infer, v } from "convex/values";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import {
   internalMutation,
   internalQuery,
-  query,
   type MutationCtx,
   type QueryCtx,
 } from "../_generated/server";
-import { requireAppUser } from "../access";
+import { requirePermission } from "../access";
 import schema from "../schema";
 import { failHumanHandoffForSession } from "../humanHandoffsModel";
 import {
@@ -24,12 +24,12 @@ import {
 import { requireFirecrawlLiveViewUrl } from "./lib/firecrawlLiveView";
 import { requireFirecrawlCdpUrl } from "./lib/firecrawlCdpUrl";
 import { omitNullish } from "../../shared/omitNullish";
-import { activeBrowserForChat } from "./chatAccess";
+import { activeBrowserForChat, requireLabThread } from "./chatAccess";
 
 const MAX_BROWSER_SESSION_ID_LENGTH = 500;
 const MAX_BROWSER_TOOL_CALL_ID_LENGTH = 200;
 const MAX_BROWSER_FAILURE_LENGTH = 2_000;
-const MAX_BROWSER_SESSIONS_PER_THREAD = 50;
+export const MAX_BROWSER_SESSIONS_PER_THREAD = 50;
 const BROWSER_VIEWPORT = { width: 1_280, height: 800 } as const;
 
 const browserOperationValidator = v.object({
@@ -126,10 +126,11 @@ async function sessionOperations(ctx: Pick<QueryCtx, "db">, sessionId: Id<"scout
 }
 
 export const list = query({
+  access: "access_lab",
   args: { threadId: v.string() },
   returns: v.array(browserSessionSummaryValidator),
   handler: async (ctx, args) => {
-    const userId = await requireAppUser(ctx);
+    const userId = ctx.viewer.userId;
     const binding = await requireThreadBinding(ctx, args.threadId);
     if (binding.userId !== userId) return [];
     const sessions = await ctx.db
@@ -142,10 +143,11 @@ export const list = query({
 });
 
 export const get = query({
+  access: "access_lab",
   args: { sessionId: v.id("scoutBrowserSessions") },
   returns: v.union(browserSessionDetailValidator, v.null()),
   handler: async (ctx, args) => {
-    const userId = await requireAppUser(ctx);
+    const userId = ctx.viewer.userId;
     const session = await ownedSession(ctx, { sessionId: args.sessionId, userId });
     if (!session) return null;
     const operations = await sessionOperations(ctx, session._id);
@@ -163,10 +165,11 @@ export const get = query({
 });
 
 export const liveView = query({
+  access: "access_lab",
   args: { sessionId: v.id("scoutBrowserSessions") },
   returns: v.union(v.object({ url: v.string() }), v.null()),
   handler: async (ctx, args) => {
-    const userId = await requireAppUser(ctx);
+    const userId = ctx.viewer.userId;
     const session = await ownedSession(ctx, { sessionId: args.sessionId, userId });
     if (!session || session.lifecycle.kind !== "active") return null;
     const liveView = await ctx.db
@@ -189,7 +192,7 @@ export const replayData = internalQuery({
     v.null(),
   ),
   handler: async (ctx, args) => {
-    const userId = await requireAppUser(ctx);
+    const userId = (await requirePermission(ctx, "access_lab")).userId;
     const session = await ownedSession(ctx, { sessionId: args.sessionId, userId });
     if (!session) return null;
     const operations = await sessionOperations(ctx, session._id);
@@ -234,7 +237,7 @@ export const open = internalMutation({
       args.interactiveLiveViewUrl === null
         ? null
         : requireFirecrawlLiveViewUrl(args.interactiveLiveViewUrl);
-    const binding = await requireThreadBinding(ctx, args.threadId);
+    const binding = await requireLabThread(ctx, args.threadId);
     if (binding.scoutId !== args.scoutId) throw new Error("browser Scout does not match");
     if (args.source.kind === "turn") {
       const turn = await ctx.db.get("scoutTurns", args.source.turnId);
@@ -310,6 +313,7 @@ export const replaceConnection = internalMutation({
     if (!session || session.lifecycle.kind !== "active") {
       throw new Error("Active browser session not found");
     }
+    await requireLabThread(ctx, session.threadId);
     await ctx.db.patch("scoutBrowserSessions", session._id, {
       lifecycle: {
         ...session.lifecycle,
@@ -340,6 +344,7 @@ export const prepareOperation = internalMutation({
     if (!session || session.lifecycle.kind !== "active") {
       throw new Error("Active browser session not found");
     }
+    await requireLabThread(ctx, session.threadId);
     await activeBrowserForChat(ctx, session.scoutId, session.threadId);
     const duplicate = await ctx.db
       .query("scoutBrowserOperations")
@@ -495,6 +500,7 @@ export const setLiveView = internalMutation({
   handler: async (ctx, args) => {
     const session = await ctx.db.get("scoutBrowserSessions", args.sessionId);
     if (!session || session.lifecycle.kind !== "active") return null;
+    await requireLabThread(ctx, session.threadId);
     const liveViewUrl = requireFirecrawlLiveViewUrl(args.liveViewUrl);
     const existing = await ctx.db
       .query("scoutLiveViews")

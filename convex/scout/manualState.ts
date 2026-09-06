@@ -1,11 +1,11 @@
 import { v } from "convex/values";
 import { internalQuery, type MutationCtx, type QueryCtx } from "../_generated/server";
-import { requireAppUser } from "../access";
+import { requirePermission } from "../access";
 import schema from "../schema";
 import { activeBrowserForChat, requireOwnedAgentThread, scoutIsWorking } from "./chatAccess";
 
 async function requireManualThread(ctx: QueryCtx | MutationCtx, threadId: string) {
-  const userId = await requireAppUser(ctx);
+  const userId = (await requirePermission(ctx, "access_lab")).userId;
   await requireOwnedAgentThread(ctx, threadId, userId);
   const binding = await ctx.db
     .query("scoutChats")
@@ -20,6 +20,15 @@ async function requireManualThread(ctx: QueryCtx | MutationCtx, threadId: string
   }
   return { binding, scout, userId };
 }
+
+export const authorize = internalQuery({
+  args: { threadId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await requireManualThread(ctx, args.threadId);
+    return null;
+  },
+});
 
 export const runtimeContext = internalQuery({
   args: { threadId: v.string() },

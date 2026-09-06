@@ -1,3 +1,4 @@
+import { mutation, query } from "../functions";
 import { listUIMessages, syncStreams, vStreamArgs } from "@convex-dev/agent";
 import { vStreamDelta, vStreamMessage } from "@convex-dev/agent/validators";
 import { paginationOptsValidator, paginationResultValidator } from "convex/server";
@@ -7,18 +8,16 @@ import type { Doc, Id } from "../_generated/dataModel";
 import {
   internalQuery,
   internalMutation,
-  mutation,
-  query,
   type MutationCtx,
   type QueryCtx,
 } from "../_generated/server";
-import { requireAppUser } from "../access";
 import { handoffCommon, handoffClaim } from "../humanHandoffsModel";
 import schema from "../schema";
 import { scoutAgent } from "./agent";
 import {
   activeBrowserForChat,
   requireOwnedAgentThread,
+  requireLabThread,
   scoutActivity,
   scoutIsWorking,
 } from "./chatAccess";
@@ -99,6 +98,7 @@ const uiMessagesResultValidator = v.object({
 
 const scoutActivityValidator = v.union(
   v.object({ kind: v.literal("idle") }),
+  v.object({ kind: v.literal("busy") }),
   v.object({
     kind: v.literal("running"),
     threadId: v.string(),
@@ -117,6 +117,22 @@ const scoutActivityValidator = v.union(
     turnId: v.id("scoutTurns"),
   }),
 );
+
+type ScoutActivity = Infer<typeof scoutActivityValidator>;
+type InternalScoutActivity = Awaited<ReturnType<typeof scoutActivity>>;
+
+async function publicScoutActivity(
+  ctx: QueryCtx,
+  userId: Id<"users">,
+  activity: InternalScoutActivity,
+): Promise<ScoutActivity> {
+  if (activity.kind === "idle") return activity;
+  const activeBinding = await ctx.db
+    .query("scoutChats")
+    .withIndex("by_thread_id", (q) => q.eq("threadId", activity.threadId))
+    .unique();
+  return activeBinding?.userId === userId ? activity : { kind: "busy" };
+}
 
 function chatTurnOutcome(state: Doc<"scoutTurns">["state"]) {
   switch (state.kind) {
@@ -186,10 +202,11 @@ async function requireThreadBinding(
 }
 
 export const listThreads = query({
+  access: "access_lab",
   args: { paginationOpts: paginationOptsValidator },
   returns: paginationResultValidator(recentThreadValidator),
   handler: async (ctx, args) => {
-    const userId = await requireAppUser(ctx);
+    const userId = ctx.viewer.userId;
     const bindings = await ctx.db
       .query("scoutChats")
       .withIndex("by_user_id_and_created_at", (q) => q.eq("userId", userId))
@@ -214,10 +231,11 @@ export const listThreads = query({
 });
 
 export const createThread = mutation({
+  access: "access_lab",
   args: { scoutId: v.id("scouts") },
   returns: v.object({ threadId: v.string() }),
   handler: async (ctx, args) => {
-    const userId = await requireAppUser(ctx);
+    const userId = ctx.viewer.userId;
     await requireActiveScout(ctx, args.scoutId);
     const created = await scoutAgent.createThread(ctx, { userId });
     await ctx.db.insert("scoutChats", {
@@ -244,10 +262,11 @@ export const getThreadScoutId = internalQuery({
 });
 
 export const getThreadAgentContext = query({
+  access: "access_lab",
   args: { threadId: v.string() },
   returns: v.object({ instructions: v.string() }),
   handler: async (ctx, args) => {
-    const userId = await requireAppUser(ctx);
+    const userId = ctx.viewer.userId;
     await requireOwnedAgentThread(ctx, args.threadId, userId);
     const binding = await requireThreadBinding(ctx, { threadId: args.threadId, userId });
     const scout = await ctx.db.get(binding.scoutId);
@@ -291,19 +310,21 @@ export const getThreadAgentContext = query({
 });
 
 export const getScoutActivity = query({
+  access: "access_lab",
   args: {
     threadId: v.string(),
   },
   returns: scoutActivityValidator,
   handler: async (ctx, args) => {
-    const userId = await requireAppUser(ctx);
+    const userId = ctx.viewer.userId;
     await requireOwnedAgentThread(ctx, args.threadId, userId);
     const binding = await requireThreadBinding(ctx, { threadId: args.threadId, userId });
-    return await scoutActivity(ctx, binding.scoutId);
+    return await publicScoutActivity(ctx, userId, await scoutActivity(ctx, binding.scoutId));
   },
 });
 
 export const stop = mutation({
+  access: "access_lab",
   args: {
     threadId: v.string(),
     replacement: v.optional(
@@ -315,7 +336,7 @@ export const stop = mutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const userId = await requireAppUser(ctx);
+    const userId = ctx.viewer.userId;
     await requireOwnedAgentThread(ctx, args.threadId, userId);
     const binding = await requireThreadBinding(ctx, { threadId: args.threadId, userId });
     const replacement = args.replacement
@@ -355,6 +376,7 @@ export const stop = mutation({
 });
 
 export const sendMessage = mutation({
+  access: "access_lab",
   args: {
     threadId: v.string(),
     prompt: v.string(),
@@ -362,7 +384,7 @@ export const sendMessage = mutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const userId = await requireAppUser(ctx);
+    const userId = ctx.viewer.userId;
     const thread = await requireOwnedAgentThread(ctx, args.threadId, userId);
     const { scoutId } = await requireThreadBinding(ctx, { threadId: args.threadId, userId });
     await requireActiveScout(ctx, scoutId);
@@ -383,6 +405,7 @@ export const sendMessage = mutation({
 });
 
 export const listMessages = query({
+  access: "access_lab",
   args: {
     threadId: v.string(),
     paginationOpts: paginationOptsValidator,
@@ -390,7 +413,7 @@ export const listMessages = query({
   },
   returns: uiMessagesResultValidator,
   handler: async (ctx, args) => {
-    const userId = await requireAppUser(ctx);
+    const userId = ctx.viewer.userId;
     await requireOwnedAgentThread(ctx, args.threadId, userId);
     await requireThreadBinding(ctx, { threadId: args.threadId, userId });
     const messages = await listUIMessages(ctx, components.agent, args);
@@ -497,11 +520,8 @@ export const runtimeContext = internalQuery({
       .withIndex("by_prompt_message_id", (q) => q.eq("promptMessageId", args.promptMessageId))
       .unique();
     if (!turn || turn.state.kind !== "pending") throw new Error("Active Scout turn not found");
-    const chat = await ctx.db
-      .query("scoutChats")
-      .withIndex("by_thread_id", (q) => q.eq("threadId", turn.threadId))
-      .unique();
-    if (!chat || chat.scoutId !== turn.scoutId) throw new Error("Chat not found");
+    const chat = await requireLabThread(ctx, turn.threadId);
+    if (chat.scoutId !== turn.scoutId) throw new Error("Chat not found");
     const session = await activeBrowserForChat(ctx, chat.scoutId, chat.threadId);
     return {
       turnId: turn._id,
@@ -528,11 +548,8 @@ export const loadSkills = internalMutation({
     if (!turn || turn.state.kind !== "pending" || turn.state.leaseExpiresAt <= Date.now()) {
       throw new Error("Active Scout turn not found");
     }
-    const chat = await ctx.db
-      .query("scoutChats")
-      .withIndex("by_thread_id", (q) => q.eq("threadId", turn.threadId))
-      .unique();
-    if (!chat || chat.scoutId !== turn.scoutId) throw new Error("Chat not found");
+    const chat = await requireLabThread(ctx, turn.threadId);
+    if (chat.scoutId !== turn.scoutId) throw new Error("Chat not found");
     const names = orderedSkills(args.names);
     if (JSON.stringify(chat.activeSkills ?? []) !== JSON.stringify(names)) {
       await ctx.db.patch(chat._id, { activeSkills: names });

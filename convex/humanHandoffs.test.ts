@@ -1,3 +1,4 @@
+import { ADMIN_EMAIL, insertTestAccount } from "./testing/accounts";
 /// <reference types="vite/client" />
 
 import { convexTest } from "convex-test";
@@ -5,7 +6,6 @@ import agentTest from "@convex-dev/agent/test";
 import workflowTest from "@convex-dev/workflow/test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { api, components, internal } from "./_generated/api";
-import { ADMIN_EMAIL } from "./authConfig";
 import schema from "./schema";
 import { HUMAN_HANDOFF_ACTIVE_MS, HUMAN_HANDOFF_CLAIM_MS } from "./humanHandoffs";
 import { activeBrowserForChat } from "./scout/chatAccess";
@@ -58,7 +58,7 @@ async function setupContext() {
   agentTest.register(backend);
   workflowTest.register(backend);
   const identity = await backend.run(async (ctx) => {
-    const userId = await ctx.db.insert("users", { email: ADMIN_EMAIL });
+    const userId = await insertTestAccount(ctx, { email: ADMIN_EMAIL, role: "role_admin" });
     const scoutId = await ctx.db.insert("scouts", {
       displayName: "Conrad Scout",
       websiteIdentity: { firstName: "Conrad", lastName: "Scout" },
@@ -145,6 +145,81 @@ async function claim(
 }
 
 describe("human handoffs", () => {
+  test.each([
+    { status: "available", revocation: "role" },
+    { status: "active", revocation: "role" },
+    { status: "available", revocation: "approval" },
+    { status: "active", revocation: "approval" },
+  ])(
+    "revoking an owner’s $revocation invalidates a $status bearer link and closes its browser",
+    async ({ status, revocation }) => {
+      const { backend, owner, userId, requested, turnId, sessionId, promptMessageId } =
+        await setup();
+      const adminId = await backend.run((ctx) =>
+        insertTestAccount(ctx, { email: "second-admin@example.test", role: "role_admin" }),
+      );
+      const admin = backend.withIdentity({ subject: `${adminId}|session` });
+      if (status === "active") await claim(backend, requested.handoffId);
+      await admin.mutation(api.accounts.changeAccess, {
+        userId,
+        change:
+          revocation === "role"
+            ? { kind: "role", role: "role_member" }
+            : { kind: "approval", isApproved: false },
+      });
+      await expect(backend.query(internal.scout.turns.assertPending, { turnId })).rejects.toThrow(
+        "Not authorized",
+      );
+      await expect(
+        backend.query(internal.scout.chats.runtimeContext, { promptMessageId }),
+      ).rejects.toThrow("Not authorized");
+      await expect(owner.query(api.scout.browserSessions.liveView, { sessionId })).rejects.toThrow(
+        "Not authorized",
+      );
+      expect(await claim(backend, requested.handoffId)).toEqual({ status: "invalid" });
+      await backend.mutation(internal.accountRevocation.cleanupChats, { userId, cursor: null });
+      expect(
+        await backend.run(async (ctx) => (await ctx.db.get(requested.handoffId))?.status),
+      ).toBe("stopped");
+      expect(await backend.run(async (ctx) => (await ctx.db.get(sessionId))?.lifecycle.kind)).toBe(
+        "closing",
+      );
+      await backend.action(internal.humanHandoffBrowser.finishBrowserSession, {
+        sessionId,
+        captureEvidence: false,
+      });
+      expect(browserProvider.close).toHaveBeenCalledOnce();
+      expect(await backend.run(async (ctx) => (await ctx.db.get(sessionId))?.lifecycle.kind)).toBe(
+        "closed",
+      );
+      await backend.run((ctx) => finishStoppingTurn(ctx, turnId));
+      await backend.mutation(internal.scout.turns.finalizeStopping, { turnId });
+      expect(await backend.run(async (ctx) => (await ctx.db.get(turnId))?.state.kind)).toBe(
+        "stopped",
+      );
+    },
+  );
+
+  test("revocation closes a manual browser with no turn and retries a transient provider failure", async () => {
+    const { backend, userId, turnId, sessionId } = await setupContext();
+    const adminId = await backend.run((ctx) =>
+      insertTestAccount(ctx, { email: "second-admin@example.test", role: "role_admin" }),
+    );
+    await backend.run((ctx) => ctx.db.delete(turnId));
+    browserProvider.close.mockRejectedValueOnce(new Error("Transient provider failure"));
+    await backend
+      .withIdentity({ subject: `${adminId}|session` })
+      .mutation(api.accounts.changeAccess, {
+        userId,
+        change: { kind: "status", status: "suspended" },
+      });
+    await backend.finishAllScheduledFunctions(() => vi.runAllTimers());
+    expect(browserProvider.close).toHaveBeenCalledTimes(2);
+    expect(await backend.run(async (ctx) => (await ctx.db.get(sessionId))?.lifecycle.kind)).toBe(
+      "closed",
+    );
+  });
+
   test.each(["pending", "stopping"])(
     "retries failed cleanup of a closing browser for a %s turn",
     async (kind) => {
@@ -491,7 +566,7 @@ describe("human handoffs", () => {
   test("only the chat owner receives the return destination", async () => {
     const { backend, requested } = await setup();
     const otherUserId = await backend.run(
-      async (ctx) => await ctx.db.insert("users", { email: ADMIN_EMAIL }),
+      async (ctx) => await insertTestAccount(ctx, { email: ADMIN_EMAIL, role: "role_admin" }),
     );
     const otherUser = backend.withIdentity({ subject: `${otherUserId}|other-session` });
     const args = { handoffId: requested.handoffId, now: Date.now() };

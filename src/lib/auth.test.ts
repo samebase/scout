@@ -2,8 +2,9 @@ import { generateKeyPairSync } from "node:crypto";
 import { convexTest, type TestConvex } from "convex-test";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import { api, internal } from "../../convex/_generated/api";
-import { ADMIN_EMAIL } from "../../convex/authConfig";
+import { ADMIN_EMAIL, insertTestAccount } from "../../convex/testing/accounts";
 import schema from "../../convex/schema";
+import { AUTH_EMAIL_COOLDOWN } from "../../shared/auth";
 
 type ScoutTest = TestConvex<typeof schema>;
 const modules = import.meta.glob("../../convex/**/*.*s");
@@ -29,6 +30,7 @@ beforeAll(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
 });
@@ -47,6 +49,12 @@ describe("password authentication", () => {
     await t.run(async (ctx) => {
       const account = await ctx.db.query("authAccounts").first();
       expect(account?.secret).not.toBe("preview-password-123");
+      expect(await ctx.db.query("accountAccess").first()).toMatchObject({
+        role: "role_admin",
+        status: "active",
+        isApproved: true,
+      });
+      expect(await ctx.db.query("accountAccessAudit").collect()).toHaveLength(1);
     });
 
     vi.stubEnv("DEV_SEED_AUTH_PASSWORD", "replacement-password-456");
@@ -76,7 +84,7 @@ describe("password authentication", () => {
     ).resolves.toMatchObject({ tokens: expect.any(Object) });
   });
 
-  it("does not seed or admit a development account unless seeding is enabled", async () => {
+  it("does not create a development account when seeding is disabled", async () => {
     const t = convexTest(schema, modules);
 
     await expect(t.action(internal.devAuth.seedPasswordAccount, {})).rejects.toThrow(
@@ -91,7 +99,7 @@ describe("password authentication", () => {
           flow: "signIn",
         },
       }),
-    ).rejects.toThrow("Scout is currently restricted to the administrator");
+    ).rejects.toThrow();
   });
 
   it("blocks seed account creation and recovery flows", async () => {
@@ -149,6 +157,11 @@ describe("password authentication", () => {
     expect(signUp.result.tokens).toBeNull();
     await t.run(async (ctx) => {
       expect(await ctx.db.query("authSessions").collect()).toHaveLength(0);
+      expect(await ctx.db.query("accountAccess").first()).toMatchObject({
+        role: "role_member",
+        status: "active",
+        isApproved: false,
+      });
       expect(await ctx.db.query("users").first()).toMatchObject({
         email: ADMIN_EMAIL,
       });
@@ -169,6 +182,9 @@ describe("password authentication", () => {
     expect(verified.tokens).not.toBeNull();
     await t.run(async (ctx) => {
       expect(await ctx.db.query("authSessions").collect()).toHaveLength(1);
+      expect(await ctx.db.query("accountAccess").collect()).toEqual([
+        expect.objectContaining({ role: "role_member", status: "active", isApproved: false }),
+      ]);
       expect(await ctx.db.query("authAccounts").first()).toMatchObject({
         emailVerified: ADMIN_EMAIL,
       });
@@ -235,6 +251,7 @@ describe("password authentication", () => {
       }),
     );
 
+    vi.spyOn(Date, "now").mockReturnValue(Date.now() + 60_000);
     const retry = await captureAuthCode(() =>
       t.action(api.auth.signIn, {
         provider: "password",
@@ -259,6 +276,44 @@ describe("password authentication", () => {
     ).resolves.toMatchObject({ tokens: expect.any(Object) });
   });
 
+  it("recovers an interrupted signup after the deployment's SITE_URL is configured", async () => {
+    const t = convexTest(schema, modules);
+    const email = "interrupted-signup@example.test";
+    vi.stubEnv("SITE_URL", undefined);
+    await expect(
+      t.action(api.auth.signIn, {
+        provider: "password",
+        params: { email, password: "secure-password", flow: "signUp" },
+      }),
+    ).rejects.toThrow("Missing environment variable `SITE_URL`");
+    await t.run(async (ctx) => {
+      expect(await ctx.db.query("users").collect()).toHaveLength(1);
+      expect(await ctx.db.query("authSessions").collect()).toHaveLength(0);
+    });
+
+    vi.stubEnv("SITE_URL", "https://feature-scout.example.workers.dev");
+    vi.spyOn(Date, "now").mockReturnValue(Date.now() + 60_000);
+    const retry = await captureAuthCode(() =>
+      t.action(api.auth.signIn, {
+        provider: "password",
+        params: { email, password: "secure-password", flow: "signIn" },
+      }),
+    );
+    expect(retry.result.tokens).toBeNull();
+    await expect(
+      t.action(api.auth.signIn, {
+        provider: "password",
+        params: { email, code: retry.code, flow: "email-verification" },
+      }),
+    ).resolves.toMatchObject({ tokens: expect.any(Object) });
+    await t.run(async (ctx) => {
+      expect(await ctx.db.query("users").collect()).toHaveLength(1);
+      expect(await ctx.db.query("accountAccess").collect()).toEqual([
+        expect.objectContaining({ role: "role_member", isApproved: false }),
+      ]);
+    });
+  });
+
   it("rate-limits repeated password-reset emails", async () => {
     const t = convexTest(schema, modules);
     await createVerifiedUser(t, ADMIN_EMAIL, "secure-password");
@@ -281,7 +336,7 @@ describe("password authentication", () => {
           flow: "reset",
         },
       }),
-    ).rejects.toThrow("Wait before requesting another password reset code");
+    ).rejects.toThrow(AUTH_EMAIL_COOLDOWN);
 
     await expect(
       t.action(api.auth.signIn, {
@@ -296,24 +351,241 @@ describe("password authentication", () => {
     ).resolves.toMatchObject({ tokens: expect.any(Object) });
   });
 
-  it("rejects accounts other than the configured administrator", async () => {
+  it.each([
+    { flow: "email-verification" },
+    { flow: "reset-verification", newPassword: "replacement-password" },
+  ])("rejects code-less $flow without sending mail or replacing a reset code", async (params) => {
     const t = convexTest(schema, modules);
-
+    await createVerifiedUser(t, ADMIN_EMAIL, "secure-password");
+    const reset = await captureAuthCode(() =>
+      t.action(api.auth.signIn, {
+        provider: "password",
+        params: { email: ADMIN_EMAIL, flow: "reset" },
+      }),
+    );
+    const send = vi.fn(() => {
+      throw new Error("Unexpected email dispatch");
+    });
+    vi.stubGlobal("fetch", send);
+    await expect(
+      t.action(api.auth.signIn, {
+        provider: "password",
+        params: { email: ADMIN_EMAIL, ...params },
+      }),
+    ).rejects.toThrow("Enter the verification code");
+    expect(send).not.toHaveBeenCalled();
     await expect(
       t.action(api.auth.signIn, {
         provider: "password",
         params: {
-          email: "someone@example.com",
-          password: "secure-password",
-          flow: "signUp",
+          email: ADMIN_EMAIL,
+          code: reset.code,
+          newPassword: "replacement-password",
+          flow: "reset-verification",
         },
       }),
-    ).rejects.toThrow("Scout is currently restricted to the administrator");
-
-    await t.run(async (ctx) => {
-      expect(await ctx.db.query("users").first()).toBeNull();
-    });
+    ).resolves.toMatchObject({ tokens: expect.any(Object) });
   });
+
+  it("does not consume the email cooldown for an invalid signup", async () => {
+    const t = convexTest(schema, modules);
+    await expect(
+      t.action(api.auth.signIn, {
+        provider: "password",
+        params: { email: ADMIN_EMAIL, password: "short", flow: "signUp" },
+      }),
+    ).rejects.toThrow("Invalid password");
+
+    const signUp = await captureAuthCode(() =>
+      t.action(api.auth.signIn, {
+        provider: "password",
+        params: { email: ADMIN_EMAIL, password: "secure-password", flow: "signUp" },
+      }),
+    );
+    expect(signUp.result.tokens).toBeNull();
+  });
+
+  it("does not consume the email cooldown for invalid unverified sign-in attempts", async () => {
+    const t = convexTest(schema, modules);
+    await captureAuthCode(() =>
+      t.action(api.auth.signIn, {
+        provider: "password",
+        params: { email: ADMIN_EMAIL, password: "secure-password", flow: "signUp" },
+      }),
+    );
+    const retryAt = Date.now() + 60_000;
+    vi.spyOn(Date, "now").mockReturnValue(retryAt);
+    const send = vi.fn(() => {
+      throw new Error("Unexpected email dispatch");
+    });
+    vi.stubGlobal("fetch", send);
+
+    await expect(
+      t.action(api.auth.signIn, {
+        provider: "password",
+        params: { email: ADMIN_EMAIL, password: "wrong-password", flow: "signIn" },
+      }),
+    ).rejects.toThrow();
+    await expect(
+      t.action(api.auth.signIn, {
+        provider: "password",
+        params: { email: ADMIN_EMAIL, flow: "signIn" },
+      }),
+    ).rejects.toThrow();
+    expect(send).not.toHaveBeenCalled();
+
+    const retry = await captureAuthCode(() =>
+      t.action(api.auth.signIn, {
+        provider: "password",
+        params: { email: ADMIN_EMAIL, password: "secure-password", flow: "signIn" },
+      }),
+    );
+    expect(retry.result.tokens).toBeNull();
+  });
+
+  it("throttles unverified sign-in resends while keeping the first code and verified sign-in usable", async () => {
+    const t = convexTest(schema, modules);
+    const signUp = await captureAuthCode(() =>
+      t.action(api.auth.signIn, {
+        provider: "password",
+        params: { email: ADMIN_EMAIL, password: "secure-password", flow: "signUp" },
+      }),
+    );
+    const send = vi.fn(() => {
+      throw new Error("Unexpected email dispatch");
+    });
+    vi.stubGlobal("fetch", send);
+    await expect(
+      t.action(api.auth.signIn, {
+        provider: "password",
+        params: { email: ADMIN_EMAIL, password: "secure-password", flow: "signIn" },
+      }),
+    ).rejects.toThrow(AUTH_EMAIL_COOLDOWN);
+    expect(send).not.toHaveBeenCalled();
+    await t.action(api.auth.signIn, {
+      provider: "password",
+      params: { email: ADMIN_EMAIL, code: signUp.code, flow: "email-verification" },
+    });
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      await expect(
+        t.action(api.auth.signIn, {
+          provider: "password",
+          params: { email: ADMIN_EMAIL, password: "secure-password", flow: "signIn" },
+        }),
+      ).resolves.toMatchObject({ tokens: expect.any(Object) });
+    }
+  });
+
+  it("allows public signup but ignores attempts to approve or promote the account", async () => {
+    const t = convexTest(schema, modules);
+    const email = "new-member@example.test";
+    const signUp = await captureAuthCode(() =>
+      t.action(api.auth.signIn, {
+        provider: "password",
+        params: {
+          email,
+          password: "secure-password",
+          flow: "signUp",
+          isApproved: true,
+          role: "role_admin",
+        },
+      }),
+    );
+    expect(signUp.result.tokens).toBeNull();
+    const verified = await t.action(api.auth.signIn, {
+      provider: "password",
+      params: {
+        email,
+        code: signUp.code,
+        flow: "email-verification",
+        isApproved: true,
+        role: "role_admin",
+      },
+    });
+    expect(verified.tokens).not.toBeNull();
+    const user = await t.run((ctx) => ctx.db.query("users").unique());
+    if (!user) throw new Error("Expected signup to create a user");
+    const member = t.withIdentity({ subject: `${user._id}|session` });
+    expect(await member.query(api.accounts.currentViewerAccess, {})).toEqual({
+      kind: "account",
+      userId: user._id,
+      role: "role_member",
+      status: "active",
+      isApproved: false,
+      accessKeys: ["access_public", "access_account"],
+    });
+    await expect(member.query(api.scout.scouts.list, {})).rejects.toThrow("Not authorized");
+    await expect(
+      member.mutation(api.accounts.changeAccess, {
+        userId: user._id,
+        change: { kind: "approval", isApproved: true },
+      }),
+    ).rejects.toThrow("Not authorized");
+  });
+
+  it.each([true, false])(
+    "login and password recovery preserve approval=%s, role, and suspension",
+    async (isApproved) => {
+      const t = convexTest(schema, modules);
+      const email = "returning-member@example.test";
+      await createVerifiedUser(t, email, "old-password");
+      const user = await t.run((ctx) => ctx.db.query("users").unique());
+      if (!user) throw new Error("Expected verified user");
+      await t.mutation(internal.accounts.bootstrapAdmin, { userId: user._id });
+      const adminId = await t.run((ctx) =>
+        insertTestAccount(ctx, { email: "admin@example.test", role: "role_admin" }),
+      );
+      const admin = t.withIdentity({ subject: `${adminId}|session` });
+      await admin.mutation(api.accounts.changeAccess, {
+        userId: user._id,
+        change: { kind: "approval", isApproved },
+      });
+      await admin.mutation(api.accounts.changeAccess, {
+        userId: user._id,
+        change: { kind: "status", status: "suspended" },
+      });
+      const viewer = t.withIdentity({ subject: `${user._id}|session` });
+      const expected = {
+        role: "role_admin",
+        status: "suspended",
+        isApproved,
+        accessKeys: ["access_public", "access_account"],
+      };
+      await expect(
+        t.action(api.auth.signIn, {
+          provider: "password",
+          params: {
+            email,
+            password: "old-password",
+            flow: "signIn",
+            isApproved: true,
+            role: "role_member",
+          },
+        }),
+      ).resolves.toMatchObject({ tokens: expect.any(Object) });
+      expect(await viewer.query(api.accounts.currentViewerAccess, {})).toMatchObject(expected);
+      const reset = await captureAuthCode(() =>
+        t.action(api.auth.signIn, {
+          provider: "password",
+          params: { email, flow: "reset" },
+        }),
+      );
+      await expect(
+        t.action(api.auth.signIn, {
+          provider: "password",
+          params: {
+            email,
+            code: reset.code,
+            newPassword: "new-password",
+            flow: "reset-verification",
+            isApproved: true,
+            role: "role_member",
+          },
+        }),
+      ).resolves.toMatchObject({ tokens: expect.any(Object) });
+      expect(await viewer.query(api.accounts.currentViewerAccess, {})).toMatchObject(expected);
+    },
+  );
 
   it("does not configure anonymous authentication", async () => {
     const t = convexTest(schema, modules);
@@ -406,7 +678,9 @@ async function captureAuthCode<Result>(operation: () => Promise<Result>) {
   );
 
   const result = await operation();
-  vi.unstubAllGlobals();
+  vi.stubGlobal("fetch", () => {
+    throw new Error("Unexpected email dispatch outside captureAuthCode");
+  });
   if (!code) {
     throw new Error("Expected an eight-digit authentication code");
   }

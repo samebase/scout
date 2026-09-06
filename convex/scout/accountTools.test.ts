@@ -1,9 +1,9 @@
+import { ADMIN_EMAIL, insertTestAccount } from "../testing/accounts";
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
-import { ADMIN_EMAIL } from "../authConfig";
 import schema from "../schema";
 import {
   createAccountTools,
@@ -41,7 +41,10 @@ afterEach(() => vi.unstubAllEnvs());
 async function browserAccountContext() {
   const backend = convexTest(schema, modules);
   const seeded = await backend.run(async (ctx) => {
-    const userId = await ctx.db.insert("users", {});
+    const userId = await insertTestAccount(ctx, {
+      email: "test-admin@example.test",
+      role: "role_admin",
+    });
     const scoutIds = [];
     for (const name of ["conrad", "magda"]) {
       scoutIds.push(
@@ -330,7 +333,7 @@ describe("Autonomous managed-password preparation", () => {
     const { backend, request, scoutId, credentials, accountTools, runtime } =
       await browserAccountContext();
     const userId = await backend.run(
-      async (ctx) => await ctx.db.insert("users", { email: ADMIN_EMAIL }),
+      async (ctx) => await insertTestAccount(ctx, { email: ADMIN_EMAIL, role: "role_admin" }),
     );
     const admin = backend.withIdentity({ subject: `${userId}|test-session` });
     const result = await admin.action(api.scout.serviceAccountCredentialActions.savePassword, {

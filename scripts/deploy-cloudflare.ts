@@ -1,7 +1,12 @@
 /// <reference types="node" />
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { mkdir, open, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import process from "node:process";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { z } from "zod";
 
 const modes = {
   deploy: ["deploy"],
@@ -42,11 +47,12 @@ function readWorkerName(env: NodeJS.ProcessEnv) {
   return workerName;
 }
 
-function run(command: string, args: readonly string[]) {
+function run(command: string, args: readonly string[], env: NodeJS.ProcessEnv) {
   return new Promise<void>((resolve, reject) => {
     const child = spawn(command, [...args], {
-      shell: process.platform === "win32",
+      shell: process.platform === "win32" && command !== process.execPath,
       stdio: "inherit",
+      env,
     });
 
     child.on("error", reject);
@@ -65,6 +71,7 @@ type CloudflareDeployPlan = {
   buildArgs: readonly string[] | null;
   convexStaticHostingArgs: readonly string[] | null;
   wranglerArgs: readonly string[];
+  previewAuth: { previewName: string; deployKey: string; workerName: string } | null;
 };
 
 export function selectCloudflareDeployPlan(
@@ -94,6 +101,17 @@ export function selectCloudflareDeployPlan(
   const isDryRun = extraArgs.some(isDryRunFlag);
   const uploadsConvexSite =
     isWorkersBuild && modeArg === "deploy" && env["WORKERS_CI_BRANCH"] === "main" && !isDryRun;
+  let previewAuth: CloudflareDeployPlan["previewAuth"] = null;
+  if (isWorkersBuild && modeArg === "preview" && !isDryRun) {
+    const previewName = env["WORKERS_CI_BRANCH"];
+    if (!previewName) throw new Error("WORKERS_CI_BRANCH is required for preview auth setup.");
+    if (previewName !== "main") {
+      const deployKey = env["PREVIEW_CONVEX_DEPLOY_KEY"];
+      if (!deployKey)
+        throw new Error("PREVIEW_CONVEX_DEPLOY_KEY is required for preview auth setup.");
+      previewAuth = { previewName, deployKey, workerName };
+    }
+  }
 
   return {
     buildArgs: isWorkersBuild ? null : ["run", isDryRun ? "build:app" : "build:cloudflare"],
@@ -101,7 +119,38 @@ export function selectCloudflareDeployPlan(
       ? ["exec", "static-hosting", "upload", "--dist", "./dist/client", "--prod"]
       : null,
     wranglerArgs: [...modes[modeArg], "--name", workerName, ...extraArgs],
+    previewAuth,
   };
+}
+
+// Wrangler 4 emits these version-1 records to WRANGLER_OUTPUT_FILE_PATH during versions upload.
+const previewOutputEntry = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("wrangler-session"), version: z.literal(1) }),
+  z.object({
+    type: z.literal("version-upload"),
+    version: z.literal(1),
+    worker_name: z.string(),
+    preview_alias_url: z.url().refine((value) => {
+      const url = new URL(value);
+      return (
+        url.protocol === "https:" && url.origin === value && url.hostname.endsWith(".workers.dev")
+      );
+    }, "Expected a Cloudflare branch preview origin"),
+  }),
+]);
+
+export function readPreviewOrigin(output: string, workerName: string) {
+  const uploads = output
+    .split("\n")
+    .filter((line) => line.trim())
+    .map((line) => {
+      const value: unknown = JSON.parse(line);
+      return previewOutputEntry.parse(value);
+    })
+    .filter((entry) => entry.type === "version-upload");
+  if (uploads.length !== 1 || uploads[0].worker_name !== workerName)
+    throw new Error("Expected one preview upload for the connected Worker.");
+  return uploads[0].preview_alias_url;
 }
 
 export async function main(
@@ -111,13 +160,49 @@ export async function main(
   const plan = selectCloudflareDeployPlan(args, env);
 
   if (plan.buildArgs) {
-    await run("vp", plan.buildArgs);
+    await run("vp", plan.buildArgs, env);
   }
 
-  await run("wrangler", plan.wranglerArgs);
+  if (plan.previewAuth) {
+    const temporaryOutput =
+      !env["WRANGLER_OUTPUT_FILE_PATH"] && !env["WRANGLER_OUTPUT_FILE_DIRECTORY"];
+    const outputPath =
+      env["WRANGLER_OUTPUT_FILE_PATH"] ??
+      join(
+        env["WRANGLER_OUTPUT_FILE_DIRECTORY"] ?? tmpdir(),
+        `wrangler-output-scout-${randomUUID()}.json`,
+      );
+    await mkdir(dirname(outputPath), { recursive: true });
+    const output = await open(outputPath, "a+");
+    try {
+      const { size: previousBytes } = await output.stat();
+      await run("wrangler", plan.wranglerArgs, { ...env, WRANGLER_OUTPUT_FILE_PATH: outputPath });
+      const newOutput = (await output.readFile()).subarray(previousBytes).toString("utf8");
+      const origin = readPreviewOrigin(newOutput, plan.previewAuth.workerName);
+      console.log(`Configuring SITE_URL for preview ${plan.previewAuth.previewName}: ${origin}`);
+      await run(
+        process.execPath,
+        [
+          fileURLToPath(new URL("../node_modules/convex/bin/main.js", import.meta.url)),
+          "env",
+          "set",
+          "SITE_URL",
+          origin,
+          "--preview-name",
+          plan.previewAuth.previewName,
+        ],
+        { ...env, CONVEX_DEPLOY_KEY: plan.previewAuth.deployKey },
+      );
+    } finally {
+      await output.close();
+      if (temporaryOutput) await rm(outputPath);
+    }
+  } else {
+    await run("wrangler", plan.wranglerArgs, env);
+  }
 
   if (plan.convexStaticHostingArgs) {
-    await run("vp", plan.convexStaticHostingArgs);
+    await run("vp", plan.convexStaticHostingArgs, env);
   }
 }
 

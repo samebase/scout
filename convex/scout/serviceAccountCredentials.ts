@@ -1,7 +1,8 @@
+import { requireLabThread } from "./chatAccess";
 import { ConvexError, v } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 import { internalMutation, internalQuery, type QueryCtx } from "../_generated/server";
-import { requireAppUser } from "../access";
+import { requirePermission } from "../access";
 import { canonicalCredentialHost, canonicalServiceDomain } from "../serviceDomains";
 import { scoutManagedPasswordLoginMethodValidator, profileAccountUpdateValidator } from "./model";
 import { resolveProfileAccount, serviceAccountIdentifierKey } from "./serviceAccounts";
@@ -109,7 +110,7 @@ async function resolveRegistration(
 ) {
   switch (request.kind) {
     case "profile":
-      await requireAppUser(ctx);
+      await requirePermission(ctx, "access_scout_manage");
       return normalizeRegistration(request);
     case "profile_update": {
       const { registration } = await resolveProfileAccount(ctx, {
@@ -131,6 +132,7 @@ async function resolveRegistration(
       if (!chat || chat.scoutId !== session.scoutId) {
         throw new Error("Browser session does not match its Scout chat");
       }
+      await requireLabThread(ctx, chat.threadId);
       const latestOperation = await ctx.db
         .query("scoutBrowserOperations")
         .withIndex("by_session_id_and_sequence", (query) => query.eq("sessionId", session._id))

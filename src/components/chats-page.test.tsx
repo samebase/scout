@@ -1,3 +1,4 @@
+import { ROLE_ACCESS_GRANTS } from "../../shared/accessModel";
 // @vitest-environment happy-dom
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -47,6 +48,7 @@ vi.mock("convex/react", () => ({
   Unauthenticated: ({ children }: { children: ReactNode }) =>
     remote.authenticated ? null : children,
   AuthLoading: () => null,
+  useConvexAuth: () => ({ isAuthenticated: remote.authenticated, isLoading: false }),
   useQuery: (reference: FunctionReference<"query">, args: unknown) => {
     useSyncExternalStore(subscribeToQueries, () => remote.revision);
     const name = getFunctionName(reference);
@@ -130,6 +132,14 @@ beforeEach(() => {
   vi.clearAllMocks();
   remote.authenticated = true;
   remote.queries.clear();
+  remote.queries.set("accounts:currentViewerAccess", {
+    kind: "account",
+    userId: "admin",
+    role: "role_admin",
+    status: "active",
+    isApproved: true,
+    accessKeys: ROLE_ACCESS_GRANTS.role_admin,
+  });
   remote.actions.clear();
   remote.mutations.clear();
   window.localStorage.clear();
@@ -172,6 +182,7 @@ afterEach(() => {
 
 async function openChats(path = "/chats?thread=thread-1") {
   const root = createRootRoute({
+    staticData: { access: "access_public" },
     component: () => (
       <ScoutSidebarProvider>
         {remote.authenticated ? <AppNavigation /> : null}
@@ -187,12 +198,14 @@ async function openChats(path = "/chats?thread=thread-1") {
   }
   const chats = createRoute({
     path: "/chats",
+    staticData: { access: "access_lab" },
     getParentRoute: () => root,
     component,
     validateSearch,
   });
   const index = createRoute({
     path: "/",
+    staticData: { access: "access_public" },
     getParentRoute: () => root,
     component: indexComponent,
   });
@@ -240,7 +253,7 @@ describe("Chat workspace", () => {
       within(navigation)
         .getAllByRole("link")
         .map((link) => link.textContent),
-    ).toEqual(["Play", "Chats", "Scouts"]);
+    ).toEqual(["Play", "Chats", "Scouts", "Review", "Members"]);
     const history = screen.getByRole("navigation", { name: "Chats" });
     expect(within(history).getAllByRole("list")).toHaveLength(1);
     expect(within(history).getByRole("link").getAttribute("href")).toBe("/chats?thread=thread-1");
@@ -953,38 +966,55 @@ describe("Chat workspace", () => {
     });
   });
 
-  test.each([false, true])(
-    "explains activity in another chat and links only a known owned chat (%s)",
-    async (owned) => {
-      if (owned)
-        remote.queries.set(
-          "scout/chats:listThreads",
-          threadPage([
-            {
-              threadId: "thread-1",
-              title: "Inspect the form",
-              scoutId: "scout-1",
-              creationTime: 1,
-            },
-            { threadId: "thread-2", title: "Signup", scoutId: "scout-1", creationTime: 2 },
-          ]),
-        );
-      remote.queries.set("scout/chats:getScoutActivity", {
-        kind: "handoff",
-        threadId: "thread-2",
-        turnId: "turn-2",
-      });
-      await openChats("/chats?thread=thread-1");
-      expect(screen.getByText("Conrad is busy in another chat.")).not.toBeNull();
-      expect(
-        screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Message Scout" }).disabled,
-      ).toBe(true);
-      expect(screen.queryByRole("button", { name: "Stop Scout" })).toBeNull();
-      const link = screen.queryByRole("link", { name: "Open active chat" });
-      if (owned) expect(link?.getAttribute("href")).toBe("/chats?thread=thread-2");
-      else expect(link).toBeNull();
-    },
-  );
+  test("redacts another owner's activity while disabling chat controls", async () => {
+    remote.queries.set("scout/chats:getScoutActivity", { kind: "busy" });
+
+    await openChats("/chats?thread=thread-1");
+
+    expect(screen.getByText("Conrad is busy in another chat.")).not.toBeNull();
+    expect(screen.queryByRole("link", { name: "Open active chat" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Stop Scout" })).toBeNull();
+    expect(
+      screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Message Scout" }).disabled,
+    ).toBe(true);
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Send message" }).disabled).toBe(
+      true,
+    );
+    expect(document.body.textContent).not.toContain("thread-2");
+    expect(document.body.textContent).not.toContain("Firecrawl did not stop the browser session");
+    expect(screen.queryByText(/Browser cleanup failed/)).toBeNull();
+  });
+
+  test("keeps the Open active chat link for the caller's own other chat", async () => {
+    remote.queries.set(
+      "scout/chats:listThreads",
+      threadPage([
+        {
+          threadId: "thread-1",
+          title: "Inspect the form",
+          scoutId: "scout-1",
+          creationTime: 1,
+        },
+        { threadId: "thread-2", title: "Signup", scoutId: "scout-1", creationTime: 2 },
+      ]),
+    );
+    remote.queries.set("scout/chats:getScoutActivity", {
+      kind: "handoff",
+      threadId: "thread-2",
+      turnId: "turn-2",
+    });
+
+    await openChats("/chats?thread=thread-1");
+
+    expect(screen.getByText("Conrad is busy in another chat.")).not.toBeNull();
+    expect(screen.getByRole("link", { name: "Open active chat" }).getAttribute("href")).toBe(
+      "/chats?thread=thread-2",
+    );
+    expect(
+      screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Message Scout" }).disabled,
+    ).toBe(true);
+    expect(screen.queryByRole("button", { name: "Stop Scout" })).toBeNull();
+  });
 
   test("loads the requested closed browser session for replay", async () => {
     const closed = { ...session("session-closed", 1), lifecycle: { kind: "closed", closedAt: 2 } };

@@ -7,6 +7,7 @@ import { ServiceAccountsSection } from "#components/scout-service-accounts";
 import { Button } from "#components/ui/button";
 
 export const Route = createFileRoute("/scouts/$slug")({
+  staticData: { access: "access_scout_manage" },
   component: ScoutDetailPage,
 });
 

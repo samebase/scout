@@ -11,6 +11,7 @@ describe("deploy-cloudflare", () => {
     ).toEqual({
       buildArgs: ["run", "build:app"],
       convexStaticHostingArgs: null,
+      previewAuth: null,
       wranglerArgs: ["deploy", "--name", "example-app", "--dry-run"],
     });
   });
@@ -23,6 +24,7 @@ describe("deploy-cloudflare", () => {
     ).toEqual({
       buildArgs: ["run", "build:app"],
       convexStaticHostingArgs: null,
+      previewAuth: null,
       wranglerArgs: ["deploy", "--name", "example-app", "--dry-run=true"],
     });
   });
@@ -36,6 +38,7 @@ describe("deploy-cloudflare", () => {
     ).toEqual({
       buildArgs: ["run", "build:cloudflare"],
       convexStaticHostingArgs: null,
+      previewAuth: null,
       wranglerArgs: ["deploy", "--name", "example-app", "--dry-run=false"],
     });
   });
@@ -48,6 +51,7 @@ describe("deploy-cloudflare", () => {
     ).toEqual({
       buildArgs: ["run", "build:cloudflare"],
       convexStaticHostingArgs: null,
+      previewAuth: null,
       wranglerArgs: ["versions", "upload", "--name", "example-app"],
     });
   });
@@ -61,6 +65,7 @@ describe("deploy-cloudflare", () => {
       }),
     ).toEqual({
       buildArgs: null,
+      previewAuth: null,
       convexStaticHostingArgs: [
         "exec",
         "static-hosting",
@@ -83,6 +88,7 @@ describe("deploy-cloudflare", () => {
     ).toEqual({
       buildArgs: null,
       convexStaticHostingArgs: null,
+      previewAuth: null,
       wranglerArgs: ["versions", "upload", "--name", "connected-worker"],
     });
   });
@@ -97,6 +103,7 @@ describe("deploy-cloudflare", () => {
     ).toEqual({
       buildArgs: null,
       convexStaticHostingArgs: null,
+      previewAuth: null,
       wranglerArgs: ["deploy", "--name", "connected-worker"],
     });
   });
@@ -111,6 +118,7 @@ describe("deploy-cloudflare", () => {
     ).toEqual({
       buildArgs: null,
       convexStaticHostingArgs: null,
+      previewAuth: null,
       wranglerArgs: ["deploy", "--name", "connected-worker", "--dry-run"],
     });
   });

@@ -1,9 +1,11 @@
 "use node";
 
+import { action } from "../functions";
+
 import { randomUUID } from "node:crypto";
 import { ConvexError, v } from "convex/values";
 import { internal } from "../_generated/api";
-import { action, type ActionCtx } from "../_generated/server";
+import { type ActionCtx } from "../_generated/server";
 import { getRuntimeEnv } from "../runtimeEnv";
 import {
   credentialKeyFingerprint,
@@ -26,6 +28,7 @@ const passwordChoiceValidator = v.union(
 );
 
 export const savePassword = action({
+  access: "access_scout_manage",
   args: {
     account: profileAccountTargetValidator,
     credentialHost: v.string(),

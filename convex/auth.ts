@@ -1,9 +1,9 @@
 import { Password } from "@convex-dev/auth/providers/Password";
+import type { ConvexCredentialsUserConfig } from "@convex-dev/auth/providers/ConvexCredentials";
 import { convexAuth } from "@convex-dev/auth/server";
 import { internal } from "./_generated/api";
-import { authEmailRateLimitKey, normalizeAuthEmail } from "./authEmail";
+import { normalizeAuthEmail } from "./authEmail";
 import { emailVerificationCode, passwordResetCode } from "./authEmails";
-import { isAllowedAccountEmail } from "./authConfig";
 import { readDevSeedPasswordAccountConfig } from "./devAuthConfig";
 
 function assertPasswordLoggingIsSafe() {
@@ -12,19 +12,51 @@ function assertPasswordLoggingIsSafe() {
   }
 }
 
-const basePasswordProvider = Password({
-  verify: emailVerificationCode,
-  reset: passwordResetCode,
-  profile(params) {
-    assertPasswordLoggingIsSafe();
-    const email = normalizeAuthEmail(params["email"]);
-    params["email"] = email;
-    return { email };
-  },
-});
+function createPasswordProvider(
+  verify: typeof emailVerificationCode,
+  reset: typeof passwordResetCode,
+) {
+  return Password({
+    verify,
+    reset,
+    profile(params) {
+      assertPasswordLoggingIsSafe();
+      const email = normalizeAuthEmail(params["email"]);
+      params["email"] = email;
+      return { email };
+    },
+  });
+}
 
-// @ts-expect-error Convex Auth stores this config in `options` at runtime but omits it publicly.
-const basePasswordOptions = basePasswordProvider.options;
+function passwordOptions(
+  provider: ReturnType<typeof createPasswordProvider>,
+): ConvexCredentialsUserConfig {
+  // @ts-expect-error Convex Auth stores this config in `options` at runtime but omits it publicly.
+  return provider.options;
+}
+
+const basePasswordProvider = createPasswordProvider(emailVerificationCode, passwordResetCode);
+const basePasswordOptions = passwordOptions(basePasswordProvider);
+
+function withEmailCooldown(
+  provider: typeof emailVerificationCode,
+  email: string,
+  ctx: Parameters<typeof basePasswordOptions.authorize>[1],
+) {
+  return {
+    ...provider,
+    options: {
+      ...provider.options,
+      async generateVerificationToken() {
+        await ctx.runMutation(internal.authEmailRateLimit.consume, {
+          email,
+          providerId: provider.options.id,
+        });
+        return await provider.options.generateVerificationToken();
+      },
+    },
+  };
+}
 
 const passwordProvider = {
   ...basePasswordProvider,
@@ -38,25 +70,32 @@ const passwordProvider = {
       const email = normalizeAuthEmail(params["email"]);
       const devSeedConfig = readDevSeedPasswordAccountConfig();
       const devSeedEmail = devSeedConfig.kind === "enabled" ? devSeedConfig.email : undefined;
-      if (!isAllowedAccountEmail(email, devSeedEmail)) {
-        throw new Error("Scout is currently restricted to the administrator");
-      }
       if (email === devSeedEmail && params["flow"] !== "signIn") {
         throw new Error("The development seed account only allows password sign-in");
       }
       params["email"] = email;
 
-      if (params["flow"] === "reset") {
-        await ctx.runMutation(internal.authEmailRateLimit.consume, {
-          key: await authEmailRateLimitKey(passwordResetCode.id, email),
-          now: Date.now(),
-        });
+      const flow = params["flow"];
+      if (
+        (flow === "email-verification" || flow === "reset-verification") &&
+        params["code"] === undefined
+      ) {
+        throw new Error("Enter the verification code");
       }
-      return await basePasswordOptions.authorize(params, ctx);
+      const requestPasswordProvider = createPasswordProvider(
+        withEmailCooldown(emailVerificationCode, email, ctx),
+        withEmailCooldown(passwordResetCode, email, ctx),
+      );
+      return await passwordOptions(requestPasswordProvider).authorize(params, ctx);
     },
   },
 };
 
 export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
   providers: [passwordProvider],
+  callbacks: {
+    afterUserCreatedOrUpdated: async (ctx, args) => {
+      await ctx.runMutation(internal.accounts.initialize, { userId: args.userId });
+    },
+  },
 });

@@ -1,3 +1,4 @@
+import { ADMIN_EMAIL, insertTestAccount } from "./testing/accounts";
 /// <reference types="vite/client" />
 import agentTest from "@convex-dev/agent/test";
 import { MockLanguageModelV4, convertArrayToReadableStream } from "ai/test";
@@ -5,7 +6,6 @@ import type { LanguageModelV4StreamPart } from "@ai-sdk/provider";
 import { convexTest } from "convex-test";
 import { afterEach, expect, test, vi } from "vite-plus/test";
 import { api, components, internal } from "./_generated/api";
-import { ADMIN_EMAIL } from "./authConfig";
 import schema from "./schema";
 import * as models from "./scout/models";
 import { bundledSkills } from "./scout/skills";
@@ -61,7 +61,7 @@ async function setup(responses: LanguageModelV4StreamPart[][]) {
   const backend = convexTest(schema, import.meta.glob("./**/*.ts"));
   agentTest.register(backend);
   const { userId, scoutId } = await backend.run(async (ctx) => ({
-    userId: await ctx.db.insert("users", { email: ADMIN_EMAIL }),
+    userId: await insertTestAccount(ctx, { email: ADMIN_EMAIL, role: "role_admin" }),
     scoutId: await ctx.db.insert("scouts", {
       displayName: "Skill test Scout",
       slug: "skill-test",

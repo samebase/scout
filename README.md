@@ -24,11 +24,18 @@ inside the repository.
 - Node.js 24 for application and automation code
 
 The public home page offers two product entries. `/play` introduces the game player, and
-`/play/session` accepts a room link and opens a browser-and-chat session with an existing Scout.
-`/review` is a landing page with its own visual identity and a static illustration. Its button opens
-the existing Lab; the dedicated review flow is still to be designed.
+`/play/session` lets approved admins open a browser-and-chat session with an existing Scout.
+Member execution awaits a resource policy; signup does not create or assign Scouts.
+`/review` is a landing page with its own visual identity and a static illustration. Approved admins
+can follow its link to the existing Lab; the dedicated review flow is still to be designed.
 `/chats` is the lab for detailed transcripts, replays, and model controls. See
 [`docs/play-product-direction.md`](./docs/play-product-direction.md) for the product options and research.
+
+Anyone can create an account and verify their email. New accounts wait for admin approval;
+admins approve them through `/members`. Approval and member/admin roles are separate.
+The account model, permission boundaries, and rollout procedure are in
+[`docs/access-control-rfc.md`](./docs/access-control-rfc.md), with the Samebase source findings in
+[`docs/account-approval-research.md`](./docs/account-approval-research.md).
 
 Product pages and local behavior live in `src/products/play/` and `src/products/review/`.
 Tailwind utilities style the UI, with shared class variants in `src/products/ui.ts`.
@@ -102,6 +109,8 @@ Cloudflare Workers Builds runs `pnpm run build` for all branches. It then uses:
 the branch identity is missing. `scripts/verify-current-branch-head.ts` prevents an older concurrent
 build from deploying backend code after a newer commit reaches the same branch. `convex deploy
 --cmd` supplies `VITE_CONVEX_URL` to the frontend build, so it is not a Cloudflare build variable.
+After each preview upload, the deploy script configures that Convex preview's `SITE_URL` from
+the branch URL returned by Wrangler, enabling signup email verification and handoff links.
 
 `pnpm run deploy:convex` provides a separate manual production deployment to Convex Static Hosting.
 For an automatic `main` deployment, the Cloudflare deploy command publishes the Worker first, then
