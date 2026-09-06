@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-06T16:15:00Z
+- **Last updated:** 2026-09-06T16:28:55Z
 
 ## Log
 
@@ -1037,7 +1037,13 @@ and password-field checks. Browser guidance allows DOM inspection when labels ar
 and handoff guidance covers actions the user needs to perform without requiring a visible challenge
 (`convex/scout/browserTarget.ts`, `convex/scout/humanHandoffTool.ts`).
 
-### 2026-09-06 - working tree
+### 2026-09-06 - 41ff7c4 - v180
 
 Matched the embedded Samebase mark to its text and aligned the credit to the sign-in and navigation
 content edges (`src/components/samebase-attribution.tsx`, `src/routes/chats.tsx`).
+
+### 2026-09-06 - working tree
+
+Horizontal scrolling from the conversation can reach both sidebars. Removed message rendering
+containment and bubble clipping so chat text uses normal browser selection and layout
+(`src/components/ui/message-scroller.tsx`, `src/components/ui/bubble.tsx`).
