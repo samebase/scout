@@ -297,6 +297,35 @@ describe("Autonomous managed-password preparation", () => {
     });
   });
 
+  it("checks password input types and the saved host for CSS targets before filling", async () => {
+    const { backend, request, accountTools, runtime } = await browserAccountContext();
+    const target = { kind: "css", selector: 'input[name="password"]' } as const;
+    await backend.action(async (ctx) => {
+      await prepareManagedPassword(ctx, request);
+      const fill = accountTools(ctx).fill_account_password;
+      runtime.getElementAttribute.mockResolvedValueOnce("text");
+      await expect(fill.execute({ passwordTarget: target }, toolOptions)).rejects.toThrow(
+        "only be filled into password inputs",
+      );
+      expect(runtime.fill).not.toHaveBeenCalled();
+
+      await expect(fill.execute({ passwordTarget: target }, toolOptions)).resolves.toEqual({
+        filledFields: 1,
+      });
+      expect(runtime.fill).toHaveBeenCalledWith(
+        target,
+        expect.any(String),
+        toolOptions.abortSignal,
+      );
+      runtime.fill.mockClear();
+      runtime.getPage.mockResolvedValue("https://other.example.com/login");
+      await expect(fill.execute({ passwordTarget: target }, toolOptions)).rejects.toThrow(
+        "no managed password for the current login host",
+      );
+      expect(runtime.fill).not.toHaveBeenCalled();
+    });
+  });
+
   it("reuses and fills a manually saved password whose service domain differs from its login host", async () => {
     const { backend, request, scoutId, credentials, accountTools, runtime } =
       await browserAccountContext();

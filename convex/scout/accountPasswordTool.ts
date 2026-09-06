@@ -63,7 +63,7 @@ export function createAccountPasswordFillTool(
 ) {
   return tool({
     description:
-      "Fill the configured Scout account password without revealing it. Identify the visible password field and, when present, its confirmation field with Playwright targets. Never enter a password through browser_execute.",
+      "Fill the configured Scout account password without revealing it. Identify the visible password field and, when present, its confirmation field by role, label, or text, or use a CSS selector from the inspected page DOM. Each CSS target must identify one visible field. The tool verifies the saved login host and password input type. Never enter a password through browser_execute.",
     inputSchema: accountPasswordTargetsSchema,
     execute: async (targets, options) =>
       await fill(targets, options.toolCallId, options.abortSignal),

@@ -63,7 +63,7 @@ Sent by ${scoutName} from its Scout inbox.`,
 export function createHumanHandoffTool(callbacks: HumanHandoffCallbacks) {
   return tool({
     description:
-      "Hand the open browser to the user when they ask to take over, or when a visible CAPTCHA, device verification, or another human-only control blocks the task. A user-requested takeover does not require a visible challenge. Open the user's requested page first if no browser is open. Describe the requested interaction in at most 500 characters. This tool creates the private handoff and queues its email to the chat owner's saved address; do not send a separate email. Report a handoff only after this tool succeeds. Call this exactly once as the only tool call in the response, then stop.",
+      "Hand the open browser to the user when they ask to take over or the task requires an action only they can perform. If no browser is open, open the relevant page first. Call this as the only tool in the response. Success pauses Scout, creates a private handoff, and queues its email to the chat owner's saved address. Do not send a separate handoff email or report a handoff before the tool succeeds.",
     inputSchema: humanHandoffInputSchema,
     execute: async (input) => await beginHumanHandoff(callbacks, input),
   });

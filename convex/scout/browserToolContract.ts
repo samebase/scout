@@ -16,7 +16,7 @@ export const BROWSER_STATE_HELPER_SOURCE = `const browserState = async (selected
 
 export const BROWSER_EXECUTE_DESCRIPTION = `Run JavaScript with page, the active Playwright Page, and browserState(selectedPage = page), a provided helper returning { currentUrl, title, tabs: [{ url, title }] }. Reported URLs omit query strings and fragments. Await every Playwright operation. The current accessibility snapshot is always included, including after an error.
 
-Use semantic locators from the latest snapshot. Quoted text after a role is its accessible name for getByRole; text after a colon is visible DOM text. Use page.context() for tabs. After navigation or tab work, return await browserState(page), or pass another Page to report it as current. Select tabs by visible URL or title instead of remembered positions.
+Prefer semantic locators from the latest snapshot. Quoted text after a role is its accessible name for getByRole; text after a colon is visible DOM text. If the snapshot does not identify a control, inspect the page DOM to choose a locator. Use page.context() for tabs. After navigation or tab work, return await browserState(page), or pass another Page to report it as current. Select tabs by visible URL or title instead of remembered positions.
 
 Each call has a ${BROWSER_EXECUTION_TIMEOUT_SECONDS}-second execution limit, including waits. Check the current state before waiting. Prefer bounded Playwright waits for an observable change over fixed sleeps, and return before the execution limit so the next call can reevaluate progress or completion. After an error, use the fresh snapshot to correct the failed locator or assumption before retrying.
 

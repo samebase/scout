@@ -73,6 +73,36 @@ describe("Scout account password tool", () => {
     expect(fill).not.toHaveBeenCalled();
   });
 
+  it("accepts a CSS target for an unlabeled password field without extra arguments", async () => {
+    const fill = vi.fn(async () => ({ filledFields: 1 }));
+    const passwordTool = createAccountPasswordFillTool(fill);
+    const passwordTarget = { kind: "css", selector: 'input[name="password"]' } as const;
+    const input = await validateTypes({
+      value: { passwordTarget },
+      schema: passwordTool.inputSchema,
+    });
+
+    await expect(passwordTool.execute(input, toolOptions)).resolves.toEqual({ filledFields: 1 });
+    expect(fill).toHaveBeenCalledWith({ passwordTarget }, "tool-1", abortSignal);
+  });
+
+  it("rejects CSS targets that enter another frame outside the verified login page", async () => {
+    const fill = vi.fn(async () => ({ filledFields: 1 }));
+    const passwordTool = createAccountPasswordFillTool(fill);
+    await expect(
+      validateTypes({
+        value: {
+          passwordTarget: {
+            kind: "css",
+            selector: 'iframe >> internal:control=enter-frame >> input[type="password"]',
+          },
+        },
+        schema: passwordTool.inputSchema,
+      }),
+    ).rejects.toThrow("without Playwright selector chaining");
+    expect(fill).not.toHaveBeenCalled();
+  });
+
   it("accepts only verified password input types", () => {
     expect(() => requirePasswordInputType(" password\n")).not.toThrow();
     expect(() => requirePasswordInputType("text")).toThrow("only be filled into password inputs");
