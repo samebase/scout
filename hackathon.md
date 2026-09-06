@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-06T15:41:11Z
+- **Last updated:** 2026-09-06T16:15:00Z
 
 ## Log
 
@@ -1030,9 +1030,14 @@ for exact email text or logout controls. Each report links to its browser operat
 service, and Scout checks retain the existing credential bindings
 (`convex/scout/serviceAccounts.ts`, `convex/scout/accountTools.ts`).
 
-### 2026-09-06 - working tree
+### 2026-09-06 - 3ad2a63 - v179
 
 Scout can fill unlabeled password fields through a CSS target while retaining the saved-host
 and password-field checks. Browser guidance allows DOM inspection when labels are insufficient,
 and handoff guidance covers actions the user needs to perform without requiring a visible challenge
 (`convex/scout/browserTarget.ts`, `convex/scout/humanHandoffTool.ts`).
+
+### 2026-09-06 - working tree
+
+Matched the embedded Samebase mark to its text and aligned the credit to the sign-in and navigation
+content edges (`src/components/samebase-attribution.tsx`, `src/routes/chats.tsx`).
