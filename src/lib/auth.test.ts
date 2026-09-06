@@ -273,6 +273,43 @@ describe("password authentication", () => {
     ).resolves.toMatchObject({ tokens: expect.any(Object) });
   });
 
+  it("recovers an interrupted signup after the deployment's SITE_URL is configured", async () => {
+    const t = convexTest(schema, modules);
+    const email = "interrupted-signup@example.test";
+    vi.stubEnv("SITE_URL", undefined);
+    await expect(
+      t.action(api.auth.signIn, {
+        provider: "password",
+        params: { email, password: "secure-password", flow: "signUp" },
+      }),
+    ).rejects.toThrow("Missing environment variable `SITE_URL`");
+    await t.run(async (ctx) => {
+      expect(await ctx.db.query("users").collect()).toHaveLength(1);
+      expect(await ctx.db.query("authSessions").collect()).toHaveLength(0);
+    });
+
+    vi.stubEnv("SITE_URL", "https://feature-scout.example.workers.dev");
+    const retry = await captureAuthCode(() =>
+      t.action(api.auth.signIn, {
+        provider: "password",
+        params: { email, password: "secure-password", flow: "signIn" },
+      }),
+    );
+    expect(retry.result.tokens).toBeNull();
+    await expect(
+      t.action(api.auth.signIn, {
+        provider: "password",
+        params: { email, code: retry.code, flow: "email-verification" },
+      }),
+    ).resolves.toMatchObject({ tokens: expect.any(Object) });
+    await t.run(async (ctx) => {
+      expect(await ctx.db.query("users").collect()).toHaveLength(1);
+      expect(await ctx.db.query("accountAccess").collect()).toEqual([
+        expect.objectContaining({ role: "role_member", isApproved: false }),
+      ]);
+    });
+  });
+
   it("rate-limits repeated password-reset emails", async () => {
     const t = convexTest(schema, modules);
     await createVerifiedUser(t, ADMIN_EMAIL, "secure-password");

@@ -1,6 +1,6 @@
 # Account roles and approval, first stage
 
-Status: implemented and verified locally, September 6, 2026. Not deployed to a shared environment.
+Status: implemented and available in PR #72's branch preview, September 6, 2026. Production unchanged.
 
 Give Scout accounts a stored role and enforce named permissions in the backend and UI.
 Allow signup with admin approval required for product access. Leave the relationship
@@ -80,7 +80,7 @@ provider URLs cannot be recalled by a database permission change. Do not claim o
 4. Reactive route/navigation gates, member product states, and account administration UI.
 5. Focused backend/UI tests, complete project checks, and an isolated local backend/browser check.
 
-Use only the isolated worktree deployment for verification. Preserve real accounts and
+Use the isolated worktree deployment for account-state tests; preserve real preview accounts and
 Scouts. A retained deployment needs its existing accounts initialized and a verified user
 bootstrapped before normal admin access works. Use the rollout procedure below.
 
@@ -99,8 +99,7 @@ bootstrapped before normal admin access works. Use the rollout procedure below.
 
 For an isolated worktree, `pnpm run dev` creates the local backend and explicitly bootstraps
 its seeded verified development account. Repeating the seed preserves subsequent role changes.
-No shared deployment was changed for this implementation. Both stages are intended to
-ship together. The earlier local role experiment’s disposable `accountAccess` and
+Both stages are published together in the branch preview. The earlier local role experiment’s disposable `accountAccess` and
 `accountAccessAudit` fixtures were reset before adding the required approval field; users
 and auth sessions were retained. Do not use that reset for retained or production data.
 
@@ -134,7 +133,12 @@ ownership, live route changes, member Play query suppression, revoked handoff li
 cleanup retry. Login and password recovery preserve both approval states and suspension.
 Provider operations and outbound email are mocked in tests; no paid Scout run was started.
 
-`pnpm run check` and `pnpm run build:app` passed: 465 tests passed, 3 pre-existing skips after rebasing onto v181.
+The first preview signup exposed a missing `SITE_URL` before email verification could start.
+That preview setting was repaired. Preview uploads now set it from Wrangler's returned branch URL;
+deployment tests cover missing metadata and failed setup. An auth regression test reproduces the
+interrupted signup and verifies recovery through sign-in after configuration, still pending approval.
+
+`pnpm run check` and `pnpm run build:app` passed: 478 tests passed, 3 pre-existing skips on the v181 base.
 Browser checks used the local anonymous backend with disposable
 accounts and confirmed approval through Members, last-approved-admin protection, removal
 of an open admin page on revocation, retained Settings access, and automatic transition

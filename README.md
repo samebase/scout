@@ -109,6 +109,8 @@ Cloudflare Workers Builds runs `pnpm run build` for all branches. It then uses:
 the branch identity is missing. `scripts/verify-current-branch-head.ts` prevents an older concurrent
 build from deploying backend code after a newer commit reaches the same branch. `convex deploy
 --cmd` supplies `VITE_CONVEX_URL` to the frontend build, so it is not a Cloudflare build variable.
+After each preview upload, the deploy script configures that Convex preview's `SITE_URL` from
+the branch URL returned by Wrangler, enabling signup email verification and handoff links.
 
 `pnpm run deploy:convex` provides a separate manual production deployment to Convex Static Hosting.
 For an automatic `main` deployment, the Cloudflare deploy command publishes the Worker first, then
