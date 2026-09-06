@@ -5,12 +5,7 @@ const serviceAccountEvidenceFields = {
   accountAccess: z
     .enum(["created", "recovered"])
     .describe("created for a new signup; recovered for signing in to an existing account"),
-  identifier: z
-    .string()
-    .min(1)
-    .describe(
-      "The account's saved login email or username, even when the page masks it or displays a different name",
-    ),
+  identifier: z.string().min(1).describe("The account's saved login email or username"),
 };
 
 const serviceAccountEvidenceInputSchema = z
@@ -61,7 +56,7 @@ export function createServiceAccountRecordingTool(
 ) {
   return tool({
     description:
-      "Record each successful signup or sign-in immediately, including sign-ins to accounts already in the inventory, before continuing the task or signing out. Use the saved login identifier from this Scout's account inventory or the signup you just completed. A different display name, masked email, or missing logout button does not prevent recording; do not navigate elsewhere just to find those elements. This records your observed outcome, not an independent authentication check. Trusted code checks the current service URL, binds the account to this Scout, and saves a reference to the latest browser observation. Managed-password accounts must already be prepared or registered. For OAuth, include the provider account's exact service domain and identifier from this Scout's inventory. If recording fails, resolve the reported account or session mismatch; do not repeat an unchanged call.",
+      "Record an observed successful signup or sign-in for future tasks. Use when an account is new or its successful authentication has not been recorded. The current browser session determines the service. Managed-password accounts must already be prepared or registered; OAuth requires a provider account in this Scout's inventory. Repeated calls update the existing account.",
     inputSchema: serviceAccountEvidenceInputSchema,
     execute: async (evidence, options) => await record(evidence, options.abortSignal),
   });
