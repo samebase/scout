@@ -418,8 +418,7 @@ describe("Chat workspace", () => {
       input: {
         accountAccess: "recovered",
         loginMethod: "managed_password",
-        identityText: "scout-1@example.com",
-        sessionControlText: "Sign out",
+        identifier: "scout-1@example.com",
       },
     },
   ])("runs $toolName from the manual picker", async ({ toolName, input }) => {

@@ -128,29 +128,11 @@ export function createAccountTools(
       };
     }),
     record_authenticated_service_account: createServiceAccountRecordingTool(
-      async ({ accountAccess, identityText, loginMethod, sessionControlText }, abortSignal) => {
+      async ({ accountAccess, identifier, loginMethod }, abortSignal) => {
         const observationStartedAt = Date.now();
-        const identity = await args.browser.actions.getElement(
-          {
-            kind: "text",
-            text: identityText,
-            exact: true,
-          },
-          abortSignal,
-        );
-        const sessionControl = await args.browser.actions.getElement(
-          {
-            kind: "text",
-            text: sessionControlText,
-            exact: true,
-          },
-          abortSignal,
-        );
         const currentUrl = await args.browser.actions.getPage("url", abortSignal);
-        if (!identity.success || !sessionControl.success || !currentUrl.success) {
-          throw new Error(
-            "The authenticated account evidence could not be read from the current page",
-          );
+        if (!currentUrl.success) {
+          throw new Error("The current service URL could not be read");
         }
         const browserSessionId = args.sessionId();
         if (!browserSessionId) throw new Error("Browser session was not registered");
@@ -160,8 +142,7 @@ export function createAccountTools(
           accountAccess,
           loginMethod,
           observedUrl: currentUrl.output,
-          visibleIdentity: identity.output,
-          visibleSessionControl: sessionControl.output,
+          identifier,
         });
       },
     ),

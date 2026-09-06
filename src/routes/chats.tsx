@@ -215,10 +215,9 @@ const MANUAL_TOOL_OPTIONS = [
   {
     value: "record_authenticated_service_account",
     label: "Record authenticated account",
-    description:
-      "Record a login after the current browser page shows this Scout's exact account identity and a sign-out control.",
+    description: "Record successful signup or login using this Scout's saved account identifier.",
     input:
-      '{\n  "accountAccess": "recovered",\n  "loginMethod": "managed_password",\n  "identityText": "",\n  "sessionControlText": "Sign out"\n}',
+      '{\n  "accountAccess": "recovered",\n  "loginMethod": "managed_password",\n  "identifier": ""\n}',
   },
   {
     value: "inspect_tool_arguments",

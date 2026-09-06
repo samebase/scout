@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-06T14:12:48Z
+- **Last updated:** 2026-09-06T14:29:48Z
 
 ## Log
 
@@ -1016,9 +1016,16 @@ Added a "Managed with Samebase" credit below sign-in and in the chat navigation 
 The embedded mark stays visible in light and dark themes
 (`src/components/samebase-attribution.tsx`, `src/routes/chats.tsx`).
 
-### 2026-09-06 - working tree
+### 2026-09-06 - ee022cf - v177
 
 Added a Scout overview and separate Play and Review identities (`src/products/`). Play invites
 existing Scouts through Convex and shows the browser, conversation, help requests, and stop control.
 Review has its own landing page and a link to the existing Lab while its dedicated flow is still being designed.
 Tailwind utilities and shared class variants keep the product styling alongside its components.
+
+### 2026-09-06 - working tree
+
+Scout records successful signup and login using its saved account identifier, without searching
+for exact email text or logout controls. Each report links to its browser operation while account,
+service, and Scout checks retain the existing credential bindings
+(`convex/scout/serviceAccounts.ts`, `convex/scout/accountTools.ts`).

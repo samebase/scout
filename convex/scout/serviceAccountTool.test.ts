@@ -6,7 +6,7 @@ const abortSignal = new AbortController().signal;
 const toolOptions = { toolCallId: "tool-1", messages: [], context: {}, abortSignal };
 
 describe("Scout service-account recording tool", () => {
-  it("normalizes flat managed-password evidence for trusted code", async () => {
+  it("records a saved login without page text selectors", async () => {
     const record = vi.fn(async () => ({ serviceAccountId: "account-1", created: false }));
     const recordingTool = createServiceAccountRecordingTool(record);
 
@@ -14,8 +14,7 @@ describe("Scout service-account recording tool", () => {
       value: {
         accountAccess: "created",
         loginMethod: "managed_password",
-        identityText: "conrad@example.test",
-        sessionControlText: "Sign out",
+        identifier: "conrad@example.test",
       },
       schema: recordingTool.inputSchema,
     });
@@ -28,42 +27,35 @@ describe("Scout service-account recording tool", () => {
       {
         accountAccess: "created",
         loginMethod: { kind: "managed_password" },
-        identityText: "conrad@example.test",
-        sessionControlText: "Sign out",
+        identifier: "conrad@example.test",
       },
       abortSignal,
     );
   });
 
-  it.each([
-    "identifier",
-    "serviceAccountId",
-    "scoutId",
-    "sessionId",
-    "serviceDomain",
-    "observedUrl",
-  ])("rejects model-supplied account or browser scope: %s", async (field) => {
-    const record = vi.fn(async () => ({ serviceAccountId: "account-1", created: false }));
-    const recordingTool = createServiceAccountRecordingTool(record);
-    const invalidInput: {
-      accountAccess: "created";
-      loginMethod: "managed_password";
-      identityText: string;
-      sessionControlText: string;
-      [field: string]: string;
-    } = {
-      accountAccess: "created",
-      loginMethod: "managed_password",
-      identityText: "conrad@example.test",
-      sessionControlText: "Sign out",
-      [field]: "other@example.test",
-    };
+  it.each(["serviceAccountId", "scoutId", "sessionId", "serviceDomain", "observedUrl"])(
+    "rejects model-supplied account or browser scope: %s",
+    async (field) => {
+      const record = vi.fn(async () => ({ serviceAccountId: "account-1", created: false }));
+      const recordingTool = createServiceAccountRecordingTool(record);
+      const invalidInput: {
+        accountAccess: "created";
+        loginMethod: "managed_password";
+        identifier: string;
+        [field: string]: string;
+      } = {
+        accountAccess: "created",
+        loginMethod: "managed_password",
+        identifier: "conrad@example.test",
+        [field]: "other@example.test",
+      };
 
-    await expect(
-      validateTypes({ value: invalidInput, schema: recordingTool.inputSchema }),
-    ).rejects.toThrow();
-    expect(record).not.toHaveBeenCalled();
-  });
+      await expect(
+        validateTypes({ value: invalidInput, schema: recordingTool.inputSchema }),
+      ).rejects.toThrow();
+      expect(record).not.toHaveBeenCalled();
+    },
+  );
 
   it("passes an exact OAuth provider account identity to trusted code", async () => {
     const record = vi.fn(async () => ({ serviceAccountId: "account-1", created: true }));
@@ -75,8 +67,7 @@ describe("Scout service-account recording tool", () => {
         loginMethod: "oauth",
         oauthProviderServiceDomain: "github.com",
         oauthProviderIdentifier: "conrad-scout",
-        identityText: "conrad@example.test",
-        sessionControlText: "Sign out",
+        identifier: "conrad@example.test",
       },
       schema: recordingTool.inputSchema,
     });
@@ -91,8 +82,7 @@ describe("Scout service-account recording tool", () => {
           providerServiceDomain: "github.com",
           providerIdentifier: "conrad-scout",
         },
-        identityText: "conrad@example.test",
-        sessionControlText: "Sign out",
+        identifier: "conrad@example.test",
       },
       abortSignal,
     );
@@ -107,8 +97,7 @@ describe("Scout service-account recording tool", () => {
         value: {
           accountAccess: "created",
           loginMethod: "oauth",
-          identityText: "conrad@example.test",
-          sessionControlText: "Sign out",
+          identifier: "conrad@example.test",
         },
         schema: recordingTool.inputSchema,
       }),

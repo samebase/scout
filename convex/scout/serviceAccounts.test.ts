@@ -136,8 +136,7 @@ async function accountContext() {
     sessionId: browser.sessionId,
     accountAccess: "created",
     observedUrl,
-    visibleIdentity: "Account\nconrad@example.test",
-    visibleSessionControl: "Log out",
+    identifier: "conrad@example.test",
     loginMethod: {
       kind: "oauth",
       providerServiceDomain: "github.com",
@@ -203,7 +202,7 @@ describe("Scout service-account inventory", () => {
         backend.mutation(internal.scout.serviceAccounts.recordAuthenticated, {
           ...evidence,
           observationStartedAt: updated.loginUpdatedAt + 1,
-          visibleIdentity: identifier,
+          identifier,
         }),
       ).resolves.toEqual({ serviceAccountId: saved.serviceAccountId, created: false });
     },
@@ -277,8 +276,8 @@ describe("Scout service-account inventory", () => {
             sessionId,
             recordedAt: expect.any(Number),
             observedUrl: evidence.observedUrl,
-            visibleIdentity: evidence.visibleIdentity,
-            visibleSessionControl: evidence.visibleSessionControl,
+            kind: "agent_report",
+            operationId: expect.any(String),
             accountAccess: "created",
           },
         }),
@@ -332,8 +331,8 @@ describe("Scout service-account inventory", () => {
         sessionId: evidence.sessionId,
         recordedAt: expect.any(Number),
         observedUrl: evidence.observedUrl,
-        visibleIdentity: evidence.visibleIdentity,
-        visibleSessionControl: evidence.visibleSessionControl,
+        kind: "agent_report",
+        operationId: expect.any(String),
         accountAccess: "recovered",
       },
     });
@@ -413,38 +412,21 @@ describe("Scout service-account inventory", () => {
     ).rejects.toThrow("The authenticated account evidence is not from the latest service page");
   });
 
-  it.each([
-    {
-      visibleIdentity: "Team Settings\nconrad's team",
-      visibleSessionControl: "Log out",
-      error: "Visible account identity does not match this Scout",
-    },
-    {
-      visibleIdentity: "other@example.test",
-      visibleSessionControl: "Log out",
-      error: "Visible account identity does not match this Scout",
-    },
-    {
-      visibleIdentity: "conrad@example.test",
-      visibleSessionControl: "Settings",
-      error: "The visible account menu does not expose a Sign out or Log out control",
-    },
-  ])(
-    "rejects unsupported account evidence: $visibleIdentity / $visibleSessionControl",
-    async (input) => {
+  it.each(["other@example.test", "conrad's team"])(
+    "rejects an OAuth account identifier that does not belong to the Scout: %s",
+    async (identifier) => {
       const { backend, evidence } = await accountContext();
       await expect(
         backend.mutation(internal.scout.serviceAccounts.recordAuthenticated, {
           ...evidence,
-          visibleIdentity: input.visibleIdentity,
-          visibleSessionControl: input.visibleSessionControl,
+          identifier,
         }),
-      ).rejects.toThrow(input.error);
+      ).rejects.toThrow("The account identifier does not belong to this Scout");
     },
   );
 
-  it("requires the saved login identity when a service displays a different username", async () => {
-    const { backend, scoutId, evidence } = await accountContext();
+  it("requires the saved account identifier without requiring it to appear on the page", async () => {
+    const { backend, scoutId, operationId, evidence } = await accountContext();
     const serviceAccountId = await insertManagedAccount(backend, {
       scoutId,
       serviceName: "Example",
@@ -455,15 +437,19 @@ describe("Scout service-account inventory", () => {
     await expect(
       backend.mutation(internal.scout.serviceAccounts.recordAuthenticated, {
         ...observation,
-        visibleIdentity: "conrad-scout",
+        identifier: "conrad-scout",
       }),
-    ).rejects.toThrow('The visible identity does not match the saved login: "conrad@example.test"');
+    ).rejects.toThrow('Use the registered account identifier: "conrad@example.test"');
     expect(await backend.run(async (ctx) => await ctx.db.get(serviceAccountId))).toMatchObject({
       authenticationEvidence: { kind: "none" },
     });
     await expect(
       backend.mutation(internal.scout.serviceAccounts.recordAuthenticated, observation),
     ).resolves.toEqual({ serviceAccountId, created: false });
+    expect(await backend.run(async (ctx) => await ctx.db.get(serviceAccountId))).toMatchObject({
+      authenticationEvidence: { kind: "succeeded" },
+      lastObserved: { kind: "agent_report", operationId },
+    });
   });
 
   it("does not create a managed-password account from browser evidence", async () => {
@@ -474,6 +460,50 @@ describe("Scout service-account inventory", () => {
         loginMethod: { kind: "managed_password" },
       }),
     ).rejects.toThrow("A managed-password account must be registered before it is used");
+  });
+
+  it.each(["another Scout", "another service"])(
+    "does not update a password account belonging to %s",
+    async (scope) => {
+      const { backend, scoutId, evidence } = await accountContext();
+      const otherScoutId = await insertScout(backend, "ada");
+      const serviceAccountId = await insertManagedAccount(backend, {
+        scoutId: scope === "another Scout" ? otherScoutId : scoutId,
+        serviceName: "Example",
+        serviceDomain: scope === "another service" ? "other.example" : "example.com",
+        identifier: evidence.identifier,
+      });
+      const before = await backend.run(async (ctx) => await ctx.db.get(serviceAccountId));
+      await expect(
+        backend.mutation(internal.scout.serviceAccounts.recordAuthenticated, {
+          ...evidence,
+          loginMethod: { kind: "managed_password" },
+        }),
+      ).rejects.toThrow("A managed-password account must be registered before it is used");
+      expect(await backend.run(async (ctx) => await ctx.db.get(serviceAccountId))).toEqual(before);
+    },
+  );
+
+  it("keeps historical observations readable when recording a new account", async () => {
+    const { backend, admin, scoutId, providerAccountId, threadId, sessionId, evidence } =
+      await accountContext();
+    const lastObserved = {
+      threadId,
+      sessionId,
+      recordedAt: 1,
+      observedUrl: "https://github.com/settings/profile",
+      visibleIdentity: "conrad-scout",
+      visibleSessionControl: "Sign out",
+      accountAccess: "created" as const,
+    };
+    await backend.run(async (ctx) => {
+      await ctx.db.patch(providerAccountId, { lastObserved });
+    });
+    await backend.mutation(internal.scout.serviceAccounts.recordAuthenticated, evidence);
+    const accounts = await admin.query(api.scout.serviceAccounts.list, { scoutId });
+    expect(accounts.find((account) => account._id === providerAccountId)?.lastObserved).toEqual(
+      lastObserved,
+    );
   });
 
   it("does not replace an existing OAuth provider link", async () => {

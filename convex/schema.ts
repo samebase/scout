@@ -20,15 +20,25 @@ import {
   scoutTurnStateValidator,
 } from "./scout/models";
 
-export const accountObservationValidator = v.object({
+const accountObservationFieldsValidator = v.object({
   threadId: v.string(),
   sessionId: v.id("scoutBrowserSessions"),
   recordedAt: v.number(),
   observedUrl: v.string(),
-  visibleIdentity: v.string(),
-  visibleSessionControl: v.string(),
   accountAccess: v.union(v.literal("created"), v.literal("recovered")),
 });
+
+export const accountObservationValidator = v.union(
+  accountObservationFieldsValidator.extend({
+    kind: v.literal("agent_report"),
+    operationId: v.id("scoutBrowserOperations"),
+  }),
+  // Earlier observations remain readable in production.
+  accountObservationFieldsValidator.extend({
+    visibleIdentity: v.string(),
+    visibleSessionControl: v.string(),
+  }),
+);
 
 export default defineSchema({
   ...authTables,
