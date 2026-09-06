@@ -15,7 +15,7 @@ export function SamebaseAttribution() {
             width="0.75em"
             height="0.75em"
             shapeRendering="crispEdges"
-            className="inline-block align-baseline mr-[0.15em] -mb-[0.02em]"
+            className="inline-block align-baseline mr-[0.15em]"
             aria-hidden="true"
           >
             <path d="M0 0h60v60H0z M20 20h20v20H20z" fill="currentColor" fillRule="evenodd" />

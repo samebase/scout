@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-06T16:13:55.451Z
+Aligned the embedded Samebase mark with the credit text at its final size without a fractional baseline offset
 
 ## Log
 
@@ -1037,8 +1037,13 @@ and password-field checks. Browser guidance allows DOM inspection when labels ar
 and handoff guidance covers actions the user needs to perform without requiring a visible challenge
 (`convex/scout/browserTarget.ts`, `convex/scout/humanHandoffTool.ts`).
 
-
 ### 2026-09-06 - working tree
 
+<<<<<<< HEAD
 Matched the embedded Samebase mark to the attribution text at its final size and baseline
+||||||| parent of 894de9e (Remove the fractional mark offset)
+Aligned the embedded Samebase mark with the credit text at its final size and baseline
+=======
+Aligned the embedded Samebase mark with the credit text at its final size without a fractional baseline offset
+>>>>>>> 894de9e (Remove the fractional mark offset)
 (`src/components/samebase-attribution.tsx`).
