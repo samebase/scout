@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-05T21:37:40Z
+- **Last updated:** 2026-09-06T12:24:50Z
 
 ## Log
 
@@ -1004,8 +1004,14 @@ with follow-ups retaining their guides automatically. Selections and full instru
 in Model calls (`convex/scout/skills.ts`,
 `convex/scout/chats.ts`, `convex/scout/generation.ts`).
 
-### 2026-09-05 - working tree
+### 2026-09-05 - 0799f08 - v175
 
 Enabled DeepSeek V4 Flash in the existing Scout chat flow through Convex AI Gateway.
 Existing conversations can select it for later turns, with the choice retained in turn history
 (`convex/scout/models.ts`, `src/routes/chats.tsx`, `src/components/scout-run-message.tsx`).
+
+### 2026-09-06 - working tree
+
+Added a "Managed with Samebase" credit below sign-in and in the chat navigation footer.
+The embedded mark stays visible in light and dark themes
+(`src/components/samebase-attribution.tsx`, `src/routes/chats.tsx`).

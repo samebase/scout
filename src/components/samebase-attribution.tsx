@@ -14,7 +14,7 @@ export function SamebaseAttribution() {
           width={15}
           height={15}
           shapeRendering="crispEdges"
-          className="samebase-attribution-mark dark:invert"
+          className="dark:invert [@media(prefers-color-scheme:dark)]:[:root:not(.light)_&]:invert"
           aria-hidden="true"
         >
           <rect width="60" height="60" fill="#ffffff" />

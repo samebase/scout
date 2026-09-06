@@ -329,12 +329,6 @@
   border-top-width: 1px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not(.light) .samebase-attribution-mark {
-    filter: invert(1);
-  }
-}
-
 [data-sidebar-layout-part="pane"][data-pane-side="left"] {
   border-color: var(--sidebar-border);
   background: var(--sidebar);
