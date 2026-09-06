@@ -7,15 +7,11 @@ export async function insertTestAccount(
   ctx: Pick<MutationCtx, "db">,
   account: { email: string; role: AccountRole },
 ) {
-  const userId = await ctx.db.insert("users", {
+  return await ctx.db.insert("users", {
     email: account.email,
     emailVerificationTime: Date.now(),
-  });
-  await ctx.db.insert("accountAccess", {
-    userId,
     role: account.role,
     status: "active",
     isApproved: true,
   });
-  return userId;
 }

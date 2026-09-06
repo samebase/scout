@@ -66,7 +66,6 @@ export const seedPasswordAccount = internalAction({
           secret: config.password,
         },
       });
-      await ctx.runMutation(internal.accounts.initialize, { userId: resolution.userId });
       await ctx.runMutation(internal.accounts.bootstrapAdmin, { userId: resolution.userId });
       return { created: false, email: config.email };
     }

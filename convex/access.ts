@@ -1,11 +1,19 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { ConvexError, type Infer } from "convex/values";
 import { accountPermissions, canAccess, type AccountAccessKey } from "../shared/accessModel";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { viewerAccessValidator } from "./accessModel";
 
 export type ViewerAccess = Infer<typeof viewerAccessValidator>;
+
+export function accountState(user: Doc<"users">) {
+  return {
+    role: user.role ?? "role_member",
+    status: user.status ?? "active",
+    isApproved: user.isApproved ?? false,
+  };
+}
 
 export async function readUserAccess(
   ctx: Pick<QueryCtx, "db">,
@@ -13,11 +21,7 @@ export async function readUserAccess(
 ): Promise<ViewerAccess> {
   const user = await ctx.db.get(userId);
   if (!user || user.emailVerificationTime === undefined) return { kind: "unavailable" };
-  const access = await ctx.db
-    .query("accountAccess")
-    .withIndex("by_user_id", (q) => q.eq("userId", userId))
-    .unique();
-  if (!access) return { kind: "unavailable" };
+  const access = accountState(user);
   return {
     kind: "account",
     userId,

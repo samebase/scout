@@ -1,10 +1,9 @@
 import { paginationOptsValidator, paginationResultValidator } from "convex/server";
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
-import { internalMutation, internalQuery, type MutationCtx } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
+import { internalMutation, internalQuery } from "./_generated/server";
 import { mutation, publicQuery, query } from "./functions";
-import { resolveViewer } from "./access";
+import { accountState, resolveViewer } from "./access";
 import { accessChangeValidator, accountAccessFields, viewerAccessValidator } from "./accessModel";
 import { accountPermissions, canAccess } from "../shared/accessModel";
 
@@ -18,26 +17,6 @@ export const viewerForAction = internalQuery({
   args: {},
   returns: viewerAccessValidator,
   handler: resolveViewer,
-});
-
-export async function initializeAccountAccess(ctx: MutationCtx, userId: Id<"users">) {
-  if (!(await ctx.db.get(userId))) throw new ConvexError("Account not found");
-  const existing = await ctx.db
-    .query("accountAccess")
-    .withIndex("by_user_id", (q) => q.eq("userId", userId))
-    .unique();
-  if (existing) return existing._id;
-  return await ctx.db.insert("accountAccess", {
-    userId,
-    role: "role_member",
-    status: "active",
-    isApproved: false,
-  });
-}
-export const initialize = internalMutation({
-  args: { userId: v.id("users") },
-  returns: v.id("accountAccess"),
-  handler: (ctx, args) => initializeAccountAccess(ctx, args.userId),
 });
 
 export const bootstrapAdmin = internalMutation({
@@ -56,11 +35,9 @@ export const bootstrapAdmin = internalMutation({
     const user = await ctx.db.get(args.userId);
     if (!user || user.emailVerificationTime === undefined)
       throw new ConvexError("A verified account is required");
-    const accessId = await initializeAccountAccess(ctx, args.userId);
-    const access = await ctx.db.get(accessId);
-    if (!access || access.status !== "active")
+    if (accountState(user).status !== "active")
       throw new ConvexError("An active account is required");
-    await ctx.db.patch(accessId, { role: "role_admin", isApproved: true });
+    await ctx.db.patch(user._id, { role: "role_admin", status: "active", isApproved: true });
     await ctx.db.insert("accountAccessAudit", {
       kind: "bootstrap",
       targetUserId: args.userId,
@@ -78,24 +55,16 @@ export const list = query({
   ),
   handler: async (ctx, args) => {
     const result = await ctx.db
-      .query("accountAccess")
+      .query("users")
       .withIndex("by_creation_time")
       .order("desc")
       .paginate(args.paginationOpts);
-    const page = await Promise.all(
-      result.page.map(async (access) => {
-        const user = await ctx.db.get(access.userId);
-        if (!user) throw new ConvexError("Account reference is invalid");
-        return {
-          userId: access.userId,
-          role: access.role,
-          status: access.status,
-          isApproved: access.isApproved,
-          email: user.email ?? null,
-          verified: user.emailVerificationTime !== undefined,
-        };
-      }),
-    );
+    const page = result.page.map((user) => ({
+      userId: user._id,
+      ...accountState(user),
+      email: user.email ?? null,
+      verified: user.emailVerificationTime !== undefined,
+    }));
     return { ...result, page };
   },
 });
@@ -106,16 +75,8 @@ export const changeAccess = mutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId);
-    const previous = await ctx.db
-      .query("accountAccess")
-      .withIndex("by_user_id", (q) => q.eq("userId", args.userId))
-      .unique();
-    if (!user || !previous) throw new ConvexError("Account not found");
-    const before = {
-      role: previous.role,
-      status: previous.status,
-      isApproved: previous.isApproved,
-    };
+    if (!user) throw new ConvexError("Account not found");
+    const before = accountState(user);
     const after = { ...before };
     switch (args.change.kind) {
       case "role":
@@ -151,20 +112,19 @@ export const changeAccess = mutation({
     ) {
       let anotherAdmin = false;
       for await (const candidate of ctx.db
-        .query("accountAccess")
-        .withIndex("by_role_status_and_approval", (q) =>
-          q.eq("role", "role_admin").eq("status", "active").eq("isApproved", true),
+        .query("users")
+        .withIndex("by_role_and_approval", (q) =>
+          q.eq("role", "role_admin").eq("isApproved", true),
         )) {
-        if (candidate.userId === args.userId) continue;
-        const other = await ctx.db.get(candidate.userId);
-        if (other?.emailVerificationTime !== undefined) {
+        if (candidate._id === args.userId) continue;
+        if (candidate.status !== "suspended" && candidate.emailVerificationTime !== undefined) {
           anotherAdmin = true;
           break;
         }
       }
       if (!anotherAdmin) throw new ConvexError("Keep at least one active approved admin");
     }
-    await ctx.db.patch(previous._id, after);
+    await ctx.db.patch(user._id, after);
     await ctx.db.insert("accountAccessAudit", {
       kind: "change",
       actorUserId: ctx.viewer.userId,

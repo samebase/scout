@@ -21,13 +21,11 @@ async function setup() {
   return { backend, adminId, memberId, admin, member };
 }
 
-test("unavailable identities fail closed and initialization always starts as a member", async () => {
+test("missing identity or approval fields never grant protected access", async () => {
   const backend = convexTest(schema, modules);
   expect(await backend.query(api.accounts.currentViewerAccess, {})).toEqual({ kind: "anonymous" });
   const userId = await backend.run((ctx) => ctx.db.insert("users", { email: ADMIN_EMAIL }));
   const user = backend.withIdentity({ subject: `${userId}|session` });
-  expect(await user.query(api.accounts.currentViewerAccess, {})).toEqual({ kind: "unavailable" });
-  await backend.mutation(internal.accounts.initialize, { userId });
   expect(await user.query(api.accounts.currentViewerAccess, {})).toEqual({ kind: "unavailable" });
   await expect(backend.mutation(internal.accounts.bootstrapAdmin, { userId })).rejects.toThrow(
     "verified",
@@ -45,31 +43,53 @@ test("unavailable identities fail closed and initialization always starts as a m
   await expect(user.query(api.scout.scouts.list, {})).rejects.toThrow("Not authorized");
 });
 
-test("initialization preserves an assigned role and suspension", async () => {
-  const { backend, admin, member, memberId } = await setup();
-  await admin.mutation(api.accounts.changeAccess, {
-    userId: memberId,
-    change: { kind: "role", role: "role_admin" },
+test("approval stored directly on users changes access in the current session", async () => {
+  const { backend, admin } = await setup();
+  const userId = await backend.run((ctx) =>
+    ctx.db.insert("users", { email: "pending@example.test", emailVerificationTime: Date.now() }),
+  );
+  const user = backend.withIdentity({ subject: `${userId}|session` });
+  const accounts = await admin.query(api.accounts.list, {
+    paginationOpts: { numItems: 10, cursor: null },
   });
-  await admin.mutation(api.accounts.changeAccess, {
-    userId: memberId,
-    change: { kind: "status", status: "suspended" },
+  expect(accounts.page.find((account) => account.userId === userId)).toMatchObject({
+    role: "role_member",
+    status: "active",
+    isApproved: false,
   });
-  await backend.mutation(internal.accounts.initialize, { userId: memberId });
-  await backend.mutation(internal.accounts.initialize, { userId: memberId });
-  expect(await member.query(api.accounts.currentViewerAccess, {})).toMatchObject({
-    role: "role_admin",
-    status: "suspended",
+  await backend.run((ctx) => ctx.db.patch(userId, { isApproved: true }));
+  expect(await user.query(api.accounts.currentViewerAccess, {})).toMatchObject({
+    isApproved: true,
+    accessKeys: ["access_public", "access_account", "access_play", "access_review"],
+  });
+  await backend.run((ctx) => ctx.db.patch(userId, { isApproved: false }));
+  expect(await user.query(api.accounts.currentViewerAccess, {})).toMatchObject({
+    isApproved: false,
     accessKeys: ["access_public", "access_account"],
   });
-  expect(
-    await backend.run((ctx) =>
-      ctx.db
-        .query("accountAccess")
-        .withIndex("by_user_id", (q) => q.eq("userId", memberId))
-        .collect(),
-    ),
-  ).toHaveLength(1);
+});
+
+test("an approved admin with default active status counts towards last-admin protection", async () => {
+  const { backend, admin, adminId } = await setup();
+  const otherId = await backend.run((ctx) =>
+    ctx.db.insert("users", {
+      email: "other-admin@example.test",
+      emailVerificationTime: Date.now(),
+      role: "role_admin",
+      isApproved: true,
+    }),
+  );
+  await admin.mutation(api.accounts.changeAccess, {
+    userId: adminId,
+    change: { kind: "status", status: "suspended" },
+  });
+  const other = backend.withIdentity({ subject: `${otherId}|session` });
+  await expect(
+    other.mutation(api.accounts.changeAccess, {
+      userId: otherId,
+      change: { kind: "approval", isApproved: false },
+    }),
+  ).rejects.toThrow("at least one active approved admin");
 });
 
 test("bootstrap runs once and cannot restore a later demoted admin", async () => {
@@ -91,12 +111,7 @@ test("bootstrap runs once and cannot restore a later demoted admin", async () =>
     change: { kind: "approval", isApproved: false },
   });
   await backend.mutation(internal.accounts.bootstrapAdmin, { userId: memberId });
-  const rows = await backend.run((ctx) =>
-    ctx.db
-      .query("accountAccess")
-      .withIndex("by_user_id", (q) => q.eq("userId", memberId))
-      .unique(),
-  );
+  const rows = await backend.run((ctx) => ctx.db.get(memberId));
   expect(rows).toMatchObject({ role: "role_member", isApproved: false });
   expect(
     await backend.run((ctx) =>
@@ -215,9 +230,9 @@ test.each(["role", "approval"] as const)(
     expect(
       await backend.run((ctx) =>
         ctx.db
-          .query("accountAccess")
-          .withIndex("by_role_status_and_approval", (q) =>
-            q.eq("role", "role_admin").eq("status", "active").eq("isApproved", true),
+          .query("users")
+          .withIndex("by_role_and_approval", (q) =>
+            q.eq("role", "role_admin").eq("isApproved", true),
           )
           .collect(),
       ),
@@ -241,7 +256,6 @@ test("approval grants member permissions, is audited once, and never provisions 
   const userId = await backend.run((ctx) =>
     ctx.db.insert("users", { email: "pending@example.test", emailVerificationTime: Date.now() }),
   );
-  await backend.mutation(internal.accounts.initialize, { userId });
   const member = backend.withIdentity({ subject: `${userId}|same-session` });
   await expect(
     admin.mutation(api.accounts.changeAccess, {
@@ -290,7 +304,6 @@ test("approval grants member permissions, is audited once, and never provisions 
     userId,
     change: { kind: "approval", isApproved: false },
   });
-  await backend.mutation(internal.accounts.initialize, { userId });
   expect(await member.query(api.accounts.currentViewerAccess, {})).toMatchObject({
     role: "role_member",
     isApproved: false,
@@ -337,7 +350,7 @@ test("approval requires verification and does not lift a suspension", async () =
 });
 
 test("an unapproved admin cannot act or count towards last-admin protection", async () => {
-  const { backend, admin, adminId, member, memberId } = await setup();
+  const { admin, adminId, member, memberId } = await setup();
   await admin.mutation(api.accounts.changeAccess, {
     userId: memberId,
     change: { kind: "role", role: "role_admin" },
@@ -366,7 +379,6 @@ test("an unapproved admin cannot act or count towards last-admin protection", as
       change: { kind: "approval", isApproved: false },
     }),
   ).rejects.toThrow("at least one active approved admin");
-  await backend.mutation(internal.accounts.initialize, { userId: memberId });
   await admin.mutation(api.accounts.changeAccess, {
     userId: memberId,
     change: { kind: "approval", isApproved: true },

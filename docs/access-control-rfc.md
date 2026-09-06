@@ -1,6 +1,6 @@
 # Account roles and approval, first stage
 
-Status: implemented and available in PR #72's branch preview, September 6, 2026. Production unchanged.
+Status: follow-up to PR #72, September 7, 2026. Account state now follows Samebase's users-table pattern.
 
 Give Scout accounts a stored role and enforce named permissions in the backend and UI.
 Allow signup with admin approval required for product access. Leave the relationship
@@ -12,9 +12,10 @@ traces Samebase’s current signup, pending access, and manual approval behavior
 ## Account contract
 
 - Convex Auth continues to own identity, verification, passwords, and sessions.
-- One `accountAccess` row per user stores `role_member | role_admin` and
-  `active | suspended`, and required `isApproved: boolean`. New accounts start as active,
-  unapproved members. Email verification does not approve an account.
+- `users` stores `role_member | role_admin`, `active | suspended`, and `isApproved: boolean`.
+  Signup writes active, unapproved member defaults directly to the new user. The fields are
+  optional in the schema for existing users and Convex Auth's insert lifecycle. Missing values
+  mean member, active, and unapproved. Email verification does not approve an account.
 - Roles grant permissions through one shared map. The account model contains no Scout,
   workspace, organization, browser, or credential ownership fields. Unapproved or suspended
   accounts receive only public and account/session permissions, regardless of stored role.
@@ -22,11 +23,11 @@ traces Samebase’s current signup, pending access, and manual approval behavior
   anyone can create and verify an account. Client-supplied role/approval fields are ignored.
 - A trusted internal bootstrap approves and promotes the first verified admin. It is explicit and
   idempotent, with a persisted event preventing a different account from repeating it.
-  Bootstrap initializes its target when needed; login never silently promotes an account.
+  Bootstrap updates its target user directly; login never silently promotes an account.
 - Admins can approve verified accounts, revoke approval, change roles, and suspend accounts.
   Changes are transactional, audited, and cannot remove the last active, approved, verified admin. Promotion requires approval;
   approval alone never changes the role. Login and password recovery preserve all assignments.
-- A missing user, missing access row, or unverified account gets no protected access.
+- A missing or unverified user gets no protected access. Missing approval means pending access.
 - Signup and unverified sign-in share a per-address, 60-second verification-email cooldown.
   Password-reset requests keep their separate cooldown. Both verification flows require a code;
   submitting a code and signing in with a verified password account do not consume email quotas.
@@ -79,15 +80,14 @@ provider URLs cannot be recalled by a database permission change. Do not claim o
 
 ## Implementation order
 
-1. Shared role/permission schema, account storage, auth initialization, and explicit bootstrap.
+1. Shared role/permission schema, user fields, signup defaults, and explicit bootstrap.
 2. Public function builders and classification of existing APIs; internal runtime rechecks.
 3. Account administration, audit, last-admin protection, and revocation cleanup.
 4. Reactive route/navigation gates, member product states, and account administration UI.
 5. Focused backend/UI tests, complete project checks, and an isolated local backend/browser check.
 
 Use the isolated worktree deployment for account-state tests; preserve real preview accounts and
-Scouts. A retained deployment needs its existing accounts initialized and a verified user
-bootstrapped before normal admin access works. Use the rollout procedure below.
+Scouts. Use the rollout procedure below for retained accounts.
 
 ## Acceptance
 
@@ -104,11 +104,16 @@ bootstrapped before normal admin access works. Use the rollout procedure below.
 
 For an isolated worktree, `pnpm run dev` creates the local backend and explicitly bootstraps
 its seeded verified development account. Repeating the seed preserves subsequent role changes.
-Both stages are published together in the branch preview. The earlier local role experiment’s disposable `accountAccess` and
-`accountAccessAudit` fixtures were reset before adding the required approval field; users
-and auth sessions were retained. Do not use that reset for retained or production data.
+For deployments running PR #72, copy each existing `accountAccess` row's `role`, `status`, and
+`isApproved` onto the matching `users` record using its `userId` during rollout. Keep the old
+rows until the copy is verified. Undeclared tables remain visible in the
+[Convex dashboard](https://docs.convex.dev/dashboard/deployments/schema).
+Removing the table definition does not copy these values;
+until copied, existing users are pending members. This includes former admins. Their bootstrap
+audit is retained, so rerunning bootstrap does not replace the copy. The application no longer
+reads or creates separate access rows.
 
-For a retained deployment, select that deployment in the Convex dashboard before running
+For a deployment without an admin bootstrap, select that deployment in the Convex dashboard before running
 internal functions. Inspect the existing `users` records and select the intended verified
 administrator by user ID. Run `accounts:bootstrapAdmin` with:
 
@@ -116,11 +121,9 @@ administrator by user ID. Run `accounts:bootstrapAdmin` with:
 { "userId": "<verified-user-id>" }
 ```
 
-The mutation initializes the account if needed and records the one-time bootstrap. Run
-`accounts:initialize` with the same argument shape for each additional existing user;
-it creates an active, unapproved member only when an access record is missing. Then use
-`/members` to approve access and separately assign roles or suspend accounts. Ordinary
-clients cannot call these internal bootstrap functions.
+The mutation updates the user and records the one-time bootstrap. Other users need no
+initialization step. Use `/members` to approve access and separately assign roles or suspend
+accounts. Ordinary clients cannot call the internal bootstrap function.
 Use the Members controls for ongoing administration. Direct database edits bypass audit,
 last-admin protection, and proactive revocation cleanup. Runtime guards still read current data.
 
@@ -137,22 +140,19 @@ leaving incomplete usage totals. Resource closure remains idempotent; preserving
 requires a separate cleanup ownership/accounting change.
 
 Verification covers public signup and email verification, forged signup fields, development
-bootstrap, repeated initialization, approval/promotion/demotion/suspension, audit idempotency,
+bootstrap, signup defaults, approval/promotion/demotion/suspension, audit idempotency,
 competing last-admin demotions and approval revocations, direct API denial, private thread
 ownership, live route changes, member Play query suppression, revoked handoff links, and
 cleanup retry. Login and password recovery preserve both approval states and suspension.
 Provider operations and outbound email are mocked in tests; no paid Scout run was started.
 
-The first preview signup exposed a missing `SITE_URL` before email verification could start.
-That preview setting was repaired. Preview uploads now set it from Wrangler's returned branch URL;
-deployment tests cover missing metadata and failed setup. An auth regression test reproduces the
-interrupted signup and verifies recovery through sign-in after configuration, still pending approval.
+The first preview signup failed because the deployment was missing `SITE_URL`. That setting
+was repaired directly. `deploy-cloudflare.ts` uses its original deployment workflow.
 
-`pnpm run build:app` passed, including the complete check: 486 tests passed, 3 pre-existing skips
-on the v181 base. Auth regressions cover missing-code verification, cooldowns that preserve valid
-codes, and failed credentials that leave resend available. Activity regressions cover cross-admin
-redaction in Lab and Play and same-owner Lab navigation.
-Browser checks used the local anonymous backend with disposable
+`pnpm run build:app` passed with 475 tests passing and 3 existing skips. It includes the complete
+project check and frontend build, covering signup defaults,
+login/recovery preserving user fields, direct approval edits, and last-admin protection.
+PR #72 browser checks used the local anonymous backend with disposable
 accounts and confirmed approval through Members, last-approved-admin protection, removal
 of an open admin page on revocation, retained Settings access, and automatic transition
 from waiting to approved member without another login. Public navigation exposes signup

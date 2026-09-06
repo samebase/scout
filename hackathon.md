@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-06T18:54:52Z
+- **Last updated:** 2026-09-06T21:21:01Z
 
 ## Log
 
@@ -1048,7 +1048,7 @@ Horizontal scrolling from the conversation can reach both sidebars. Removed mess
 containment and bubble clipping so chat text uses normal browser selection and layout
 (`src/components/ui/message-scroller.tsx`, `src/components/ui/bubble.tsx`).
 
-### 2026-09-06 - working tree
+### 2026-09-06 - 0dc91a9 - v182
 
 Added member/admin roles and public signup with admin approval required for access.
 Members controls audit approval and role changes, protect the last approved admin, and stop revoked
@@ -1056,3 +1056,10 @@ Lab work (`convex/accounts.ts`, `convex/functions.ts`, `convex/accountRevocation
 Pending accounts update when approved; Scout allocation remains open in `docs/access-control-rfc.md`.
 Preview deploys configure their auth origin; code checks and resend limits protect verification emails.
 Shared Scout activity hides other accounts' chat details.
+
+### 2026-09-06 - working tree
+
+Approval, role, and suspension are stored on users, matching Samebase's account model.
+Members administration reads and updates those records directly (`convex/schema.ts`,
+`convex/accounts.ts`). Removed the separate access-row initialization and restored the original
+Cloudflare deployment script.

@@ -49,7 +49,7 @@ describe("password authentication", () => {
     await t.run(async (ctx) => {
       const account = await ctx.db.query("authAccounts").first();
       expect(account?.secret).not.toBe("preview-password-123");
-      expect(await ctx.db.query("accountAccess").first()).toMatchObject({
+      expect(await ctx.db.query("users").first()).toMatchObject({
         role: "role_admin",
         status: "active",
         isApproved: true,
@@ -157,7 +157,7 @@ describe("password authentication", () => {
     expect(signUp.result.tokens).toBeNull();
     await t.run(async (ctx) => {
       expect(await ctx.db.query("authSessions").collect()).toHaveLength(0);
-      expect(await ctx.db.query("accountAccess").first()).toMatchObject({
+      expect(await ctx.db.query("users").first()).toMatchObject({
         role: "role_member",
         status: "active",
         isApproved: false,
@@ -182,7 +182,7 @@ describe("password authentication", () => {
     expect(verified.tokens).not.toBeNull();
     await t.run(async (ctx) => {
       expect(await ctx.db.query("authSessions").collect()).toHaveLength(1);
-      expect(await ctx.db.query("accountAccess").collect()).toEqual([
+      expect(await ctx.db.query("users").collect()).toEqual([
         expect.objectContaining({ role: "role_member", status: "active", isApproved: false }),
       ]);
       expect(await ctx.db.query("authAccounts").first()).toMatchObject({
@@ -308,7 +308,7 @@ describe("password authentication", () => {
     ).resolves.toMatchObject({ tokens: expect.any(Object) });
     await t.run(async (ctx) => {
       expect(await ctx.db.query("users").collect()).toHaveLength(1);
-      expect(await ctx.db.query("accountAccess").collect()).toEqual([
+      expect(await ctx.db.query("users").collect()).toEqual([
         expect.objectContaining({ role: "role_member", isApproved: false }),
       ]);
     });

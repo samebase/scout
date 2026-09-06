@@ -43,9 +43,12 @@ export const accountObservationValidator = v.union(
 
 export default defineSchema({
   ...authTables,
-  accountAccess: defineTable(accountAccessFields)
-    .index("by_user_id", ["userId"])
-    .index("by_role_status_and_approval", ["role", "status", "isApproved"]),
+  users: defineTable(
+    authTables.users.validator.extend(accountAccessFields.omit("userId").partial().fields),
+  )
+    .index("email", ["email"])
+    .index("phone", ["phone"])
+    .index("by_role_and_approval", ["role", "isApproved"]),
   accountAccessAudit: defineTable(accessAuditFields)
     .index("by_kind", ["kind"])
     .index("by_target_user_id", ["targetUserId"]),

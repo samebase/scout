@@ -30,8 +30,8 @@ should be mistaken for the ordinary unapproved default.
 
 ## What Scout adopts
 
-Scout stores required `isApproved: boolean` beside its role and suspension status in
-`accountAccess`. Public password signup starts as an active, unapproved member. Email
+Scout stores `isApproved` beside its role and suspension status directly on `users`,
+matching Samebase. Missing approval is treated as false. Public password signup starts as an active, unapproved member. Email
 verification establishes identity; admin approval grants application permissions.
 Login, verification, and password recovery never approve or promote an existing account.
 
@@ -47,8 +47,8 @@ approval as well as role/status. Revoking approval also invokes existing Lab cle
 
 Scout does not adopt Samebase's staff email allowlist, automatic-approval environment
 flag, Terms gate, organization memberships, or invitation approval exception. There is
-no need for those concepts in this stage. Required fields suit Scout's disposable
-pre-user development data; no optional legacy approval field is necessary.
+no need for those concepts in this stage. Signup explicitly writes the defaults. Optional user
+fields support Convex Auth's insert lifecycle and retained users without granting access.
 
 Approval does not assign either existing Scout, create a Scout, or determine ownership.
 Approved members can enter Play and Review, while Play execution remains unavailable
