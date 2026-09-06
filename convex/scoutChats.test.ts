@@ -1,3 +1,4 @@
+import { ADMIN_EMAIL, insertTestAccount } from "./testing/accounts";
 /// <reference types="vite/client" />
 
 import agentTest from "@convex-dev/agent/test";
@@ -5,7 +6,6 @@ import workflowTest from "@convex-dev/workflow/test";
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { api, components, internal } from "./_generated/api";
-import { ADMIN_EMAIL } from "./authConfig";
 import schema from "./schema";
 import { finishStoppingTurn } from "./scout/turns";
 
@@ -27,7 +27,7 @@ describe("Scout chats", () => {
     async (model) => {
       const backend = testBackend();
       const userId = await backend.run(
-        async (ctx) => await ctx.db.insert("users", { email: ADMIN_EMAIL }),
+        async (ctx) => await insertTestAccount(ctx, { email: ADMIN_EMAIL, role: "role_admin" }),
       );
       const scoutId = await backend.run(
         async (ctx) =>
@@ -96,7 +96,7 @@ describe("Scout chats", () => {
       const preserve = scenario === "follow-up" || scenario === "execution-finished";
       const backend = testBackend();
       const userId = await backend.run(
-        async (ctx) => await ctx.db.insert("users", { email: ADMIN_EMAIL }),
+        async (ctx) => await insertTestAccount(ctx, { email: ADMIN_EMAIL, role: "role_admin" }),
       );
       const scoutId = await backend.run(
         async (ctx) =>
@@ -297,7 +297,7 @@ describe("Scout chats", () => {
   it("runs a manual tool without a model and stores its call and result in the agent thread", async () => {
     const backend = testBackend();
     const userId = await backend.run(
-      async (ctx) => await ctx.db.insert("users", { email: ADMIN_EMAIL }),
+      async (ctx) => await insertTestAccount(ctx, { email: ADMIN_EMAIL, role: "role_admin" }),
     );
     const scoutId = await backend.run(
       async (ctx) =>
@@ -386,10 +386,10 @@ describe("Scout chats", () => {
   it("keeps manual browser provider handles server-side and bound to the owned thread", async () => {
     const backend = testBackend();
     const userId = await backend.run(
-      async (ctx) => await ctx.db.insert("users", { email: ADMIN_EMAIL }),
+      async (ctx) => await insertTestAccount(ctx, { email: ADMIN_EMAIL, role: "role_admin" }),
     );
     const otherUserId = await backend.run(
-      async (ctx) => await ctx.db.insert("users", { email: ADMIN_EMAIL }),
+      async (ctx) => await insertTestAccount(ctx, { email: ADMIN_EMAIL, role: "role_admin" }),
     );
     const scoutId = await backend.run(
       async (ctx) =>

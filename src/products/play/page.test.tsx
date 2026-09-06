@@ -12,6 +12,7 @@ import { getFunctionName, type FunctionReference } from "convex/server";
 import { useSyncExternalStore } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { Route as PlayRoute } from "../../routes/play.session";
+import { ROLE_ACCESS_GRANTS } from "../../../shared/accessModel";
 import { omitNullish } from "../../../shared/omitNullish";
 
 const remote = vi.hoisted(() => ({
@@ -23,6 +24,7 @@ const remote = vi.hoisted(() => ({
   sendMessage: vi.fn(),
   stop: vi.fn(),
   signIn: vi.fn(),
+  queryCalls: vi.fn(),
 }));
 
 function subscribe(listener: () => void) {
@@ -37,6 +39,7 @@ vi.mock("convex/react", () => ({
   },
   useQuery: (reference: FunctionReference<"query">, args: unknown) => {
     useSyncExternalStore(subscribe, () => remote.revision);
+    remote.queryCalls(getFunctionName(reference), args);
     return args === "skip" ? undefined : remote.queries.get(getFunctionName(reference));
   },
   usePaginatedQuery: (reference: FunctionReference<"query">) => {
@@ -67,8 +70,17 @@ vi.mock("@convex-dev/auth/react", () => ({
 
 beforeEach(() => {
   remote.authenticated = true;
+  remote.queryCalls.mockClear();
   remote.revision = 0;
   remote.queries.clear();
+  remote.queries.set("accounts:currentViewerAccess", {
+    kind: "account",
+    userId: "admin",
+    role: "role_admin",
+    status: "active",
+    isApproved: true,
+    accessKeys: ROLE_ACCESS_GRANTS.role_admin,
+  });
   remote.queries.set("scout/scouts:list", [
     { _id: "scout-1", displayName: "Pip", status: "active" },
     { _id: "scout-2", displayName: "Moss", status: "active" },
@@ -90,10 +102,11 @@ beforeEach(() => {
 afterEach(cleanup);
 
 async function openPlay(path = "/play/session") {
-  const root = createRootRoute();
+  const root = createRootRoute({ staticData: { access: "access_public" } });
   const route = createRoute({
     getParentRoute: () => root,
     path: "/play/session",
+    staticData: { access: "access_public" },
     ...omitNullish({
       component: PlayRoute.options.component,
       validateSearch: PlayRoute.options.validateSearch,
@@ -119,6 +132,87 @@ function fillInvite() {
 }
 
 describe("Play invitation", () => {
+  test.each(["/play/session", "/play/session?thread=game-thread"])(
+    "members never mount Lab data queries at %s",
+    async (path) => {
+      remote.queries.set("accounts:currentViewerAccess", {
+        kind: "account",
+        userId: "member",
+        role: "role_member",
+        status: "active",
+        isApproved: true,
+        accessKeys: ROLE_ACCESS_GRANTS.role_member,
+      });
+      await openPlay(path);
+      expect(await screen.findByRole("heading", { name: "Play access is coming" })).toBeTruthy();
+      expect(
+        remote.queryCalls.mock.calls.filter(
+          ([name, args]) => name.startsWith("scout/") && args !== "skip",
+        ),
+      ).toEqual([]);
+      expect(remote.createThread).not.toHaveBeenCalled();
+    },
+  );
+
+  test.each(["/play/session", "/play/session?thread=game-thread"])(
+    "pending accounts wait for approval without loading Lab data at %s",
+    async (path) => {
+      remote.queries.set("accounts:currentViewerAccess", {
+        kind: "account",
+        userId: "member",
+        role: "role_member",
+        status: "active",
+        isApproved: false,
+        accessKeys: ["access_public", "access_account"],
+      });
+      await openPlay(path);
+      expect(await screen.findByRole("heading", { name: "Waiting for approval" })).toBeTruthy();
+      expect(
+        remote.queryCalls.mock.calls.filter(
+          ([name, args]) => name.startsWith("scout/") && args !== "skip",
+        ),
+      ).toEqual([]);
+      expect(remote.createThread).not.toHaveBeenCalled();
+      act(() => {
+        remote.queries.set("accounts:currentViewerAccess", {
+          kind: "account",
+          userId: "member",
+          role: "role_member",
+          status: "active",
+          isApproved: true,
+          accessKeys: ROLE_ACCESS_GRANTS.role_member,
+        });
+        remote.revision += 1;
+        for (const notify of remote.subscribers) notify();
+      });
+      expect(await screen.findByRole("heading", { name: "Play access is coming" })).toBeTruthy();
+      expect(
+        remote.queryCalls.mock.calls.filter(
+          ([name, args]) => name.startsWith("scout/") && args !== "skip",
+        ),
+      ).toEqual([]);
+    },
+  );
+
+  test("access loss unmounts an open session without another sign-in", async () => {
+    await openPlay("/play/session?thread=game-thread");
+    expect(await screen.findByRole("region", { name: "Conversation with Scout" })).toBeTruthy();
+    act(() => {
+      remote.queries.set("accounts:currentViewerAccess", {
+        kind: "account",
+        userId: "admin",
+        role: "role_member",
+        status: "active",
+        isApproved: true,
+        accessKeys: ROLE_ACCESS_GRANTS.role_member,
+      });
+      remote.revision += 1;
+      for (const notify of remote.subscribers) notify();
+    });
+    expect(await screen.findByRole("heading", { name: "Play access is coming" })).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "Conversation with Scout" })).toBeNull();
+  });
+
   test("opening an existing session does not start or stop Scout", async () => {
     await openPlay("/play/session?thread=game-thread");
     expect(await screen.findByRole("region", { name: "Conversation with Scout" })).toBeTruthy();

@@ -24,6 +24,34 @@ export default defineConfig(({ command }) => {
       ignorePatterns: [".agents/**", "convex/_generated/**", "src/routeTree.gen.ts"],
       options: { typeAware: true },
       rules: {
+        "no-restricted-imports": [
+          "error",
+          {
+            patterns: [
+              {
+                group: ["**/_generated/server", "**/_generated/server.*"],
+                importNames: ["query", "mutation", "action", "httpAction", "*"],
+                message:
+                  "Declare public application policies through convex/functions.ts. Keep raw builders at protocol boundaries.",
+              },
+              {
+                group: ["convex/server"],
+                importNames: [
+                  "queryGeneric",
+                  "mutationGeneric",
+                  "actionGeneric",
+                  "httpActionGeneric",
+                ],
+                message: "Use the application permission builders in convex/functions.ts.",
+              },
+              {
+                group: ["convex-helpers/server/customFunctions"],
+                importNames: ["customQuery", "customMutation", "customAction"],
+                message: "Define public permission builders only in convex/functions.ts.",
+              },
+            ],
+          },
+        ],
         "@typescript-eslint/ban-ts-comment": [
           "error",
           {

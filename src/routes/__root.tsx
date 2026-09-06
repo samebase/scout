@@ -1,18 +1,14 @@
-import {
-  HeadContent,
-  Outlet,
-  Scripts,
-  createRootRoute,
-  useRouterState,
-} from "@tanstack/react-router";
+import { HeadContent, Scripts, createRootRoute, useRouterState } from "@tanstack/react-router";
 import { Authenticated } from "convex/react";
 import type { ReactNode } from "react";
 import { ConvexClientProvider } from "../lib/convex";
 import { ScoutSidebarProvider } from "../sidebars/ScoutSidebarProvider";
 import appCss from "../style.css?url";
+import { RouteAccessOutlet } from "../components/route-access";
 import { AppNavigation } from "#components/app-navigation";
 
 export const Route = createRootRoute({
+  staticData: { access: "access_public" },
   head: () => ({
     meta: [
       {
@@ -57,7 +53,7 @@ function RootComponent() {
               <AppNavigation />
             </Authenticated>
           )}
-          <Outlet />
+          <RouteAccessOutlet />
         </ConvexClientProvider>
       </ScoutSidebarProvider>
     </RootDocument>

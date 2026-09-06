@@ -1,3 +1,4 @@
+import { ROLE_ACCESS_GRANTS } from "../../shared/accessModel";
 // @vitest-environment happy-dom
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -47,6 +48,7 @@ vi.mock("convex/react", () => ({
   Unauthenticated: ({ children }: { children: ReactNode }) =>
     remote.authenticated ? null : children,
   AuthLoading: () => null,
+  useConvexAuth: () => ({ isAuthenticated: remote.authenticated, isLoading: false }),
   useQuery: (reference: FunctionReference<"query">, args: unknown) => {
     useSyncExternalStore(subscribeToQueries, () => remote.revision);
     const name = getFunctionName(reference);
@@ -130,6 +132,14 @@ beforeEach(() => {
   vi.clearAllMocks();
   remote.authenticated = true;
   remote.queries.clear();
+  remote.queries.set("accounts:currentViewerAccess", {
+    kind: "account",
+    userId: "admin",
+    role: "role_admin",
+    status: "active",
+    isApproved: true,
+    accessKeys: ROLE_ACCESS_GRANTS.role_admin,
+  });
   remote.actions.clear();
   remote.mutations.clear();
   window.localStorage.clear();
@@ -172,6 +182,7 @@ afterEach(() => {
 
 async function openChats(path = "/chats?thread=thread-1") {
   const root = createRootRoute({
+    staticData: { access: "access_public" },
     component: () => (
       <ScoutSidebarProvider>
         {remote.authenticated ? <AppNavigation /> : null}
@@ -187,12 +198,14 @@ async function openChats(path = "/chats?thread=thread-1") {
   }
   const chats = createRoute({
     path: "/chats",
+    staticData: { access: "access_lab" },
     getParentRoute: () => root,
     component,
     validateSearch,
   });
   const index = createRoute({
     path: "/",
+    staticData: { access: "access_public" },
     getParentRoute: () => root,
     component: indexComponent,
   });
@@ -240,7 +253,7 @@ describe("Chat workspace", () => {
       within(navigation)
         .getAllByRole("link")
         .map((link) => link.textContent),
-    ).toEqual(["Play", "Chats", "Scouts"]);
+    ).toEqual(["Play", "Chats", "Scouts", "Review", "Members"]);
     const history = screen.getByRole("navigation", { name: "Chats" });
     expect(within(history).getAllByRole("list")).toHaveLength(1);
     expect(within(history).getByRole("link").getAttribute("href")).toBe("/chats?thread=thread-1");

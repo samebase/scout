@@ -11,6 +11,7 @@ import { Button } from "#components/ui/button";
 import { Input } from "#components/ui/input";
 
 export const Route = createFileRoute("/scouts/")({
+  staticData: { access: "access_scout_manage" },
   component: ScoutsIndexPage,
 });
 

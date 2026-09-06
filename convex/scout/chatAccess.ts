@@ -2,6 +2,17 @@ import type { ActionCtx, MutationCtx, QueryCtx } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
 import { MAX_BROWSER_OPERATIONS } from "../browserModel";
 import { scoutAgent } from "./agent";
+import { requireUserPermission } from "../access";
+
+export async function requireLabThread(ctx: Pick<QueryCtx, "db">, threadId: string) {
+  const chat = await ctx.db
+    .query("scoutChats")
+    .withIndex("by_thread_id", (q) => q.eq("threadId", threadId))
+    .unique();
+  if (!chat) throw new Error("Chat not found");
+  await requireUserPermission(ctx, chat.userId, "access_lab");
+  return chat;
+}
 
 type AgentThreadContext = QueryCtx | MutationCtx | ActionCtx;
 

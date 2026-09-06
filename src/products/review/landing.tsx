@@ -1,3 +1,4 @@
+import { canAccess, useViewerAccess } from "../../lib/access";
 import { Link } from "@tanstack/react-router";
 import { ArrowRightIcon, CircleAlertIcon, CornerDownRightIcon } from "lucide-react";
 import { cn } from "#lib/utils";
@@ -7,6 +8,8 @@ import { ReviewShell } from "./shell";
 const exampleField = "h-7 rounded-[2px] border border-[#d6ddd8] bg-white";
 
 export function ReviewLanding() {
+  const viewer = useViewerAccess();
+  const showLab = viewer?.kind === "account" && canAccess("access_lab", viewer.accessKeys);
   return (
     <ReviewShell>
       <main
@@ -23,15 +26,19 @@ export function ReviewLanding() {
             <p className="mt-[25px] max-w-[345px] text-base leading-[1.7] text-[#64776f] max-[760px]:mt-5 max-[760px]:text-sm">
               Send Scout a link and a task. Get findings with the recording behind them.
             </p>
-            <Link
-              to="/chats"
-              className={cn(
-                productButtonVariants({ variant: "review" }),
-                "mt-[31px] max-[760px]:mt-[23px]",
-              )}
-            >
-              Open the Lab <ArrowRightIcon size={18} aria-hidden="true" />
-            </Link>
+            {showLab ? (
+              <Link
+                to="/chats"
+                className={cn(
+                  productButtonVariants({ variant: "review" }),
+                  "mt-[31px] max-[760px]:mt-[23px]",
+                )}
+              >
+                Open the Lab <ArrowRightIcon size={18} aria-hidden="true" />
+              </Link>
+            ) : (
+              <p className="mt-6 text-sm text-[#64776f]">Scout Review is in preview.</p>
+            )}
             <div className="mt-[41px] flex items-start gap-3 text-xs leading-[1.75] text-[#718178] max-[760px]:mt-[27px]">
               <CornerDownRightIcon size={17} className="mt-[3px] shrink-0" aria-hidden="true" />
               <span>

@@ -1,5 +1,6 @@
+import { action } from "../functions";
 import { internal } from "../_generated/api";
-import { action, env } from "../_generated/server";
+import { env } from "../_generated/server";
 import { ConvexError } from "convex/values";
 import { createAgentMailInboxClient } from "./lib/agentMail";
 import {
@@ -12,6 +13,7 @@ import {
 const AGENTMAIL_INBOX_LOOKUP_TIMEOUT_MS = 10_000;
 
 export const register = action({
+  access: "access_scout_manage",
   args: scoutRegistrationFieldsValidator.fields,
   returns: registrationResultValidator,
   handler: async (ctx, args): Promise<ScoutRegistrationResult> => {

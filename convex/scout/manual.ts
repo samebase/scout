@@ -1,5 +1,7 @@
 "use node";
 
+import { action } from "../functions";
+
 import { createMCPClient, type MCPClient } from "@ai-sdk/mcp";
 import type { Message } from "@convex-dev/agent";
 import { randomUUID } from "node:crypto";
@@ -7,7 +9,7 @@ import { type JSONValue, type ModelMessage, type ToolSet } from "ai";
 import { v } from "convex/values";
 import { z } from "zod";
 import { internal } from "../_generated/api";
-import { action } from "../_generated/server";
+
 import { getRuntimeEnv } from "../runtimeEnv";
 import { createAccountTools, restoreManagedPasswordRedaction } from "./accountTools";
 import { createAgentMailWriteTools } from "./agentMailTools";
@@ -87,6 +89,7 @@ function needsExistingBrowser(toolName: ManualToolName) {
 }
 
 export const executeTool = action({
+  access: "access_lab",
   args: {
     threadId: v.string(),
     toolName: manualToolNameValidator,
@@ -144,7 +147,13 @@ export const executeTool = action({
             },
           },
         });
-        selectedTools = selectAgentMailTools(await agentMailClient.tools(), runtime.inboxId);
+        selectedTools = selectAgentMailTools(
+          await agentMailClient.tools(),
+          runtime.inboxId,
+          async () => {
+            await ctx.runQuery(internal.scout.manualState.authorize, { threadId: args.threadId });
+          },
+        );
       } else if (usesAgentMailWriteTool(args.toolName)) {
         selectedTools = createAgentMailWriteTools(
           createAgentMailInboxClient({
@@ -168,6 +177,9 @@ export const executeTool = action({
         }
         browser = createBrowserHarness({
           profileName: runtime.profileName,
+          beforeDispatch: async () => {
+            await ctx.runQuery(internal.scout.manualState.authorize, { threadId: args.threadId });
+          },
           onSessionCreated: async (session) => {
             const registered = await ctx.runMutation(internal.scout.browserSessions.open, {
               threadId: args.threadId,
@@ -279,6 +291,7 @@ export const executeTool = action({
           selectedTools = browser.tools;
         }
       }
+      await ctx.runQuery(internal.scout.manualState.authorize, { threadId: args.threadId });
       output = jsonValueSchema.parse(
         await requireRuntimeTool(selectedTools, args.toolName).execute(input, {
           toolCallId,

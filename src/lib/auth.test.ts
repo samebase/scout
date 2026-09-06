@@ -2,7 +2,7 @@ import { generateKeyPairSync } from "node:crypto";
 import { convexTest, type TestConvex } from "convex-test";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import { api, internal } from "../../convex/_generated/api";
-import { ADMIN_EMAIL } from "../../convex/authConfig";
+import { ADMIN_EMAIL, insertTestAccount } from "../../convex/testing/accounts";
 import schema from "../../convex/schema";
 
 type ScoutTest = TestConvex<typeof schema>;
@@ -47,6 +47,12 @@ describe("password authentication", () => {
     await t.run(async (ctx) => {
       const account = await ctx.db.query("authAccounts").first();
       expect(account?.secret).not.toBe("preview-password-123");
+      expect(await ctx.db.query("accountAccess").first()).toMatchObject({
+        role: "role_admin",
+        status: "active",
+        isApproved: true,
+      });
+      expect(await ctx.db.query("accountAccessAudit").collect()).toHaveLength(1);
     });
 
     vi.stubEnv("DEV_SEED_AUTH_PASSWORD", "replacement-password-456");
@@ -76,7 +82,7 @@ describe("password authentication", () => {
     ).resolves.toMatchObject({ tokens: expect.any(Object) });
   });
 
-  it("does not seed or admit a development account unless seeding is enabled", async () => {
+  it("does not create a development account when seeding is disabled", async () => {
     const t = convexTest(schema, modules);
 
     await expect(t.action(internal.devAuth.seedPasswordAccount, {})).rejects.toThrow(
@@ -91,7 +97,7 @@ describe("password authentication", () => {
           flow: "signIn",
         },
       }),
-    ).rejects.toThrow("Scout is currently restricted to the administrator");
+    ).rejects.toThrow();
   });
 
   it("blocks seed account creation and recovery flows", async () => {
@@ -149,6 +155,11 @@ describe("password authentication", () => {
     expect(signUp.result.tokens).toBeNull();
     await t.run(async (ctx) => {
       expect(await ctx.db.query("authSessions").collect()).toHaveLength(0);
+      expect(await ctx.db.query("accountAccess").first()).toMatchObject({
+        role: "role_member",
+        status: "active",
+        isApproved: false,
+      });
       expect(await ctx.db.query("users").first()).toMatchObject({
         email: ADMIN_EMAIL,
       });
@@ -169,6 +180,9 @@ describe("password authentication", () => {
     expect(verified.tokens).not.toBeNull();
     await t.run(async (ctx) => {
       expect(await ctx.db.query("authSessions").collect()).toHaveLength(1);
+      expect(await ctx.db.query("accountAccess").collect()).toEqual([
+        expect.objectContaining({ role: "role_member", status: "active", isApproved: false }),
+      ]);
       expect(await ctx.db.query("authAccounts").first()).toMatchObject({
         emailVerified: ADMIN_EMAIL,
       });
@@ -296,24 +310,116 @@ describe("password authentication", () => {
     ).resolves.toMatchObject({ tokens: expect.any(Object) });
   });
 
-  it("rejects accounts other than the configured administrator", async () => {
+  it("allows public signup but ignores attempts to approve or promote the account", async () => {
     const t = convexTest(schema, modules);
-
-    await expect(
+    const email = "new-member@example.test";
+    const signUp = await captureAuthCode(() =>
       t.action(api.auth.signIn, {
         provider: "password",
         params: {
-          email: "someone@example.com",
+          email,
           password: "secure-password",
           flow: "signUp",
+          isApproved: true,
+          role: "role_admin",
         },
       }),
-    ).rejects.toThrow("Scout is currently restricted to the administrator");
-
-    await t.run(async (ctx) => {
-      expect(await ctx.db.query("users").first()).toBeNull();
+    );
+    expect(signUp.result.tokens).toBeNull();
+    const verified = await t.action(api.auth.signIn, {
+      provider: "password",
+      params: {
+        email,
+        code: signUp.code,
+        flow: "email-verification",
+        isApproved: true,
+        role: "role_admin",
+      },
     });
+    expect(verified.tokens).not.toBeNull();
+    const user = await t.run((ctx) => ctx.db.query("users").unique());
+    if (!user) throw new Error("Expected signup to create a user");
+    const member = t.withIdentity({ subject: `${user._id}|session` });
+    expect(await member.query(api.accounts.currentViewerAccess, {})).toEqual({
+      kind: "account",
+      userId: user._id,
+      role: "role_member",
+      status: "active",
+      isApproved: false,
+      accessKeys: ["access_public", "access_account"],
+    });
+    await expect(member.query(api.scout.scouts.list, {})).rejects.toThrow("Not authorized");
+    await expect(
+      member.mutation(api.accounts.changeAccess, {
+        userId: user._id,
+        change: { kind: "approval", isApproved: true },
+      }),
+    ).rejects.toThrow("Not authorized");
   });
+
+  it.each([true, false])(
+    "login and password recovery preserve approval=%s, role, and suspension",
+    async (isApproved) => {
+      const t = convexTest(schema, modules);
+      const email = "returning-member@example.test";
+      await createVerifiedUser(t, email, "old-password");
+      const user = await t.run((ctx) => ctx.db.query("users").unique());
+      if (!user) throw new Error("Expected verified user");
+      await t.mutation(internal.accounts.bootstrapAdmin, { userId: user._id });
+      const adminId = await t.run((ctx) =>
+        insertTestAccount(ctx, { email: "admin@example.test", role: "role_admin" }),
+      );
+      const admin = t.withIdentity({ subject: `${adminId}|session` });
+      await admin.mutation(api.accounts.changeAccess, {
+        userId: user._id,
+        change: { kind: "approval", isApproved },
+      });
+      await admin.mutation(api.accounts.changeAccess, {
+        userId: user._id,
+        change: { kind: "status", status: "suspended" },
+      });
+      const viewer = t.withIdentity({ subject: `${user._id}|session` });
+      const expected = {
+        role: "role_admin",
+        status: "suspended",
+        isApproved,
+        accessKeys: ["access_public", "access_account"],
+      };
+      await expect(
+        t.action(api.auth.signIn, {
+          provider: "password",
+          params: {
+            email,
+            password: "old-password",
+            flow: "signIn",
+            isApproved: true,
+            role: "role_member",
+          },
+        }),
+      ).resolves.toMatchObject({ tokens: expect.any(Object) });
+      expect(await viewer.query(api.accounts.currentViewerAccess, {})).toMatchObject(expected);
+      const reset = await captureAuthCode(() =>
+        t.action(api.auth.signIn, {
+          provider: "password",
+          params: { email, flow: "reset" },
+        }),
+      );
+      await expect(
+        t.action(api.auth.signIn, {
+          provider: "password",
+          params: {
+            email,
+            code: reset.code,
+            newPassword: "new-password",
+            flow: "reset-verification",
+            isApproved: true,
+            role: "role_member",
+          },
+        }),
+      ).resolves.toMatchObject({ tokens: expect.any(Object) });
+      expect(await viewer.query(api.accounts.currentViewerAccess, {})).toMatchObject(expected);
+    },
+  );
 
   it("does not configure anonymous authentication", async () => {
     const t = convexTest(schema, modules);

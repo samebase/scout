@@ -1,9 +1,11 @@
+import { query } from "./functions";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
-import { internalMutation, internalQuery, query } from "./_generated/server";
-import { getAppUserId, requireAppUser } from "./access";
+import { internalMutation, internalQuery } from "./_generated/server";
+import { readUserAccess, resolveViewer } from "./access";
+import { canAccess } from "../shared/accessModel";
 import {
   chatHumanHandoffValidator,
   expiredHandoff,
@@ -21,7 +23,7 @@ import {
 import { humanHandoffDeliveryArgsValidator } from "./humanHandoffDeliveryModel";
 import { humanHandoffWorkflow } from "./humanHandoffWorkflow";
 import { humanHandoffInputSchema } from "./scout/humanHandoffInput";
-import { browserReadyForTransfer } from "./scout/chatAccess";
+import { browserReadyForTransfer, requireLabThread } from "./scout/chatAccess";
 
 export const HUMAN_HANDOFF_CLAIM_MS = 45 * 60 * 1_000;
 export const HUMAN_HANDOFF_ACTIVE_MS = 5 * 60 * 1_000;
@@ -157,8 +159,11 @@ async function authorizedHandoff(ctx: DatabaseCtx, args: AccessArgs, now: number
   if (!handoff) return null;
   const context = await handoffContext(ctx, handoff);
   if (!context) return null;
-  const userId = await getAppUserId(ctx);
-  const ownerAuthorized = userId === context.chat.userId;
+  const ownerAccess = await readUserAccess(ctx, context.chat.userId);
+  if (ownerAccess.kind !== "account" || !canAccess("access_lab", ownerAccess.accessKeys))
+    return null;
+  const viewer = await resolveViewer(ctx);
+  const ownerAuthorized = viewer.kind === "account" && viewer.userId === context.chat.userId;
   const bearerAuthorized =
     args.accessTokenHash !== undefined &&
     ACCESS_TOKEN_HASH_PATTERN.test(args.accessTokenHash) &&
@@ -282,10 +287,11 @@ async function activePreparedAccess(
 }
 
 export const forSession = query({
+  access: "access_lab",
   args: { sessionId: v.id("scoutBrowserSessions") },
   returns: v.union(chatHumanHandoffValidator, v.null()),
   handler: async (ctx, args) => {
-    const userId = await requireAppUser(ctx);
+    const userId = ctx.viewer.userId;
     const handoff = await ctx.db
       .query("scoutHumanHandoffs")
       .withIndex("by_session_id", (index) => index.eq("sessionId", args.sessionId))
@@ -349,6 +355,7 @@ export const request = internalMutation({
     if (!chat || chat.scoutId !== turn.scoutId) {
       throw new Error("Scout chat not found");
     }
+    await requireLabThread(ctx, chat.threadId);
     const session = await ctx.db
       .query("scoutBrowserSessions")
       .withIndex("by_thread_id_and_sequence", (index) => index.eq("threadId", chat.threadId))
@@ -467,6 +474,7 @@ export const prepareDelivery = internalQuery({
       ctx.db.get("scoutTurns", handoff.turnId),
     ]);
     if (!delivery || !turn) return { kind: "definitive_failure" as const };
+    await requireLabThread(ctx, turn.threadId);
     return {
       kind: "ready" as const,
       claimExpiresAt: handoff.claimExpiresAt,

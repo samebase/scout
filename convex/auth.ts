@@ -3,7 +3,6 @@ import { convexAuth } from "@convex-dev/auth/server";
 import { internal } from "./_generated/api";
 import { authEmailRateLimitKey, normalizeAuthEmail } from "./authEmail";
 import { emailVerificationCode, passwordResetCode } from "./authEmails";
-import { isAllowedAccountEmail } from "./authConfig";
 import { readDevSeedPasswordAccountConfig } from "./devAuthConfig";
 
 function assertPasswordLoggingIsSafe() {
@@ -38,9 +37,6 @@ const passwordProvider = {
       const email = normalizeAuthEmail(params["email"]);
       const devSeedConfig = readDevSeedPasswordAccountConfig();
       const devSeedEmail = devSeedConfig.kind === "enabled" ? devSeedConfig.email : undefined;
-      if (!isAllowedAccountEmail(email, devSeedEmail)) {
-        throw new Error("Scout is currently restricted to the administrator");
-      }
       if (email === devSeedEmail && params["flow"] !== "signIn") {
         throw new Error("The development seed account only allows password sign-in");
       }
@@ -59,4 +55,9 @@ const passwordProvider = {
 
 export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
   providers: [passwordProvider],
+  callbacks: {
+    afterUserCreatedOrUpdated: async (ctx, args) => {
+      await ctx.runMutation(internal.accounts.initialize, { userId: args.userId });
+    },
+  },
 });

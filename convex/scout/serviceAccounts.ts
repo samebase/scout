@@ -1,14 +1,14 @@
+import { requireLabThread } from "./chatAccess";
+import { mutation, query } from "../functions";
 import { ConvexError, v } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 import {
   internalMutation,
   internalQuery,
-  mutation,
-  query,
   type MutationCtx,
   type QueryCtx,
 } from "../_generated/server";
-import { requireAppUser } from "../access";
+import { requirePermission } from "../access";
 import { accountObservationValidator } from "../schema";
 import { canonicalServiceDomain } from "../serviceDomains";
 import {
@@ -70,7 +70,7 @@ export async function resolveProfileAccount(
   ctx: Pick<QueryCtx, "auth" | "db">,
   target: typeof profileAccountTargetValidator.type,
 ) {
-  await requireAppUser(ctx);
+  await requirePermission(ctx, "access_scout_manage");
   const account =
     target.kind === "update"
       ? await ctx.db.get("scoutServiceAccounts", target.serviceAccountId)
@@ -135,6 +135,7 @@ export async function resolveProfileAccount(
 }
 
 export const saveOAuth = mutation({
+  access: "access_scout_manage",
   args: { account: profileAccountTargetValidator, providerAccountId: v.id("scoutServiceAccounts") },
   returns: v.object({ serviceAccountId: v.id("scoutServiceAccounts") }),
   handler: async (ctx, args) => {
@@ -249,12 +250,12 @@ function loginMethodsMatch(
 }
 
 export const list = query({
+  access: "access_scout_manage",
   args: {
     scoutId: v.optional(v.id("scouts")),
   },
   returns: v.array(serviceAccountPublicValidator),
   handler: async (ctx, args) => {
-    await requireAppUser(ctx);
     const scoutId = args.scoutId;
     const accounts = scoutId
       ? await ctx.db
@@ -307,6 +308,7 @@ export const recordAuthenticated = internalMutation({
     if (!chat || chat.scoutId !== session.scoutId) {
       throw new Error("Browser session does not match its Scout chat");
     }
+    await requireLabThread(ctx, chat.threadId);
     const latestOperation = await ctx.db
       .query("scoutBrowserOperations")
       .withIndex("by_session_id_and_sequence", (query) => query.eq("sessionId", session._id))

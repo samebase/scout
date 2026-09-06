@@ -1,3 +1,4 @@
+import { accountAccessMessage, canAccess, useViewerAccess } from "../../lib/access";
 import { useUIMessages } from "@convex-dev/agent/react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useConvexAuth, useMutation, usePaginatedQuery, useQuery } from "convex/react";
@@ -40,6 +41,8 @@ type RequestState = { kind: "idle" } | { kind: "pending" } | { kind: "failed"; m
 
 export function PlayPage() {
   const { thread } = Route.useSearch();
+  const viewer = useViewerAccess();
+  const canRun = viewer?.kind === "account" && canAccess("access_lab", viewer.accessKeys);
   const { isAuthenticated, isLoading } = useConvexAuth();
   return (
     <PlayShell>
@@ -52,12 +55,16 @@ export function PlayPage() {
         }
       >
         {thread ? (
-          isLoading ? (
+          isLoading || (isAuthenticated && !viewer) ? (
             <p className={playLoading} role="status">
               Loading your session...
             </p>
           ) : isAuthenticated ? (
-            <SessionLoader threadId={thread} />
+            canRun ? (
+              <SessionLoader threadId={thread} />
+            ) : (
+              <PlayUnavailable />
+            )
           ) : (
             <div className="mx-auto mt-[50px] mb-[100px] max-w-[400px] max-[760px]:px-[15px]">
               <h1 className="text-[34px] tracking-[-1px]">Back for another round?</h1>
@@ -73,9 +80,27 @@ export function PlayPage() {
   );
 }
 
+function PlayUnavailable() {
+  const message = accountAccessMessage(useViewerAccess());
+  return (
+    <div className="mx-auto max-w-[420px]">
+      <h1 className="text-3xl font-semibold">{message?.title ?? "Play access is coming"}</h1>
+      <p className="mt-4 text-play-muted">
+        {message?.description ??
+          "Your account is approved. Scout Play isn’t available for members yet."}
+      </p>
+      <Link to="/settings" className={cn(playTextLink, "mt-6 inline-flex")}>
+        Account settings
+      </Link>
+    </div>
+  );
+}
+
 function PlayLobby() {
+  const viewer = useViewerAccess();
+  const canRun = viewer?.kind === "account" && canAccess("access_lab", viewer.accessKeys);
   const { isAuthenticated, isLoading } = useConvexAuth();
-  const scouts = useQuery(api.scout.scouts.list, isAuthenticated ? {} : "skip");
+  const scouts = useQuery(api.scout.scouts.list, canRun ? {} : "skip");
   const createThread = useMutation(api.scout.chats.createThread);
   const sendMessage = useMutation(api.scout.chats.sendMessage);
   const navigate = useNavigate();
@@ -109,7 +134,7 @@ function PlayLobby() {
       setSigningIn(true);
       return;
     }
-    if (!selectedScout) return;
+    if (!canRun || !selectedScout) return;
     submitting.current = true;
     setRequest({ kind: "pending" });
     try {
@@ -130,6 +155,8 @@ function PlayLobby() {
       submitting.current = false;
     }
   }
+
+  if (isAuthenticated && viewer && !canRun) return <PlayUnavailable />;
 
   return (
     <div className="mx-auto max-w-[420px]">

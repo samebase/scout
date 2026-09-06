@@ -4,8 +4,10 @@ import { Authenticated, AuthLoading, Unauthenticated } from "convex/react";
 import { LogOutIcon, ShieldCheckIcon } from "lucide-react";
 import { useState } from "react";
 import { Button } from "#components/ui/button";
+import { accountAccessMessage, useViewerAccess } from "#lib/access";
 
 export const Route = createFileRoute("/settings")({
+  staticData: { access: "access_account" },
   head: () => ({
     meta: [{ title: "Settings | Scout" }],
   }),
@@ -29,9 +31,25 @@ function SettingsPage() {
         <Navigate to="/" replace />
       </Unauthenticated>
       <Authenticated>
+        <AccountStatus />
         <SessionSettings />
       </Authenticated>
     </main>
+  );
+}
+
+function AccountStatus() {
+  const viewer = useViewerAccess();
+  const message = accountAccessMessage(viewer);
+  if (viewer?.kind !== "account") return null;
+  return (
+    <section className="surface-panel mt-8 p-5 sm:p-6" aria-live="polite">
+      <h2 className="text-base font-semibold">{message?.title ?? "Account approved"}</h2>
+      <p className="mt-2 text-sm text-muted-foreground">
+        {message?.description ??
+          `You have ${viewer.role === "role_admin" ? "admin" : "member"} access.`}
+      </p>
+    </section>
   );
 }
 
@@ -64,7 +82,7 @@ function SessionSettings() {
           </span>
           <div>
             <h2 id="session-settings-heading" className="text-base font-semibold">
-              Administrator session
+              Your session
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">You are signed in on this browser.</p>
           </div>

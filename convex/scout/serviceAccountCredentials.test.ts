@@ -1,8 +1,8 @@
+import { ADMIN_EMAIL, insertTestAccount } from "../testing/accounts";
 import { convexTest } from "convex-test";
 import { describe, expect, test } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
-import { ADMIN_EMAIL } from "../authConfig";
 import schema from "../schema";
 
 const modules = {
@@ -23,7 +23,7 @@ function testBackend() {
 async function authenticatedBackend() {
   const backend = testBackend();
   const userId = await backend.run(
-    async (ctx) => await ctx.db.insert("users", { email: ADMIN_EMAIL }),
+    async (ctx) => await insertTestAccount(ctx, { email: ADMIN_EMAIL, role: "role_admin" }),
   );
   const scoutId = await backend.run(
     async (ctx) =>

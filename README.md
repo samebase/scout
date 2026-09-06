@@ -24,11 +24,18 @@ inside the repository.
 - Node.js 24 for application and automation code
 
 The public home page offers two product entries. `/play` introduces the game player, and
-`/play/session` accepts a room link and opens a browser-and-chat session with an existing Scout.
-`/review` is a landing page with its own visual identity and a static illustration. Its button opens
-the existing Lab; the dedicated review flow is still to be designed.
+`/play/session` lets approved admins open a browser-and-chat session with an existing Scout.
+Member execution awaits a resource policy; signup does not create or assign Scouts.
+`/review` is a landing page with its own visual identity and a static illustration. Approved admins
+can follow its link to the existing Lab; the dedicated review flow is still to be designed.
 `/chats` is the lab for detailed transcripts, replays, and model controls. See
 [`docs/play-product-direction.md`](./docs/play-product-direction.md) for the product options and research.
+
+Anyone can create an account and verify their email. New accounts wait for admin approval;
+admins approve them through `/members`. Approval and member/admin roles are separate.
+The account model, permission boundaries, and rollout procedure are in
+[`docs/access-control-rfc.md`](./docs/access-control-rfc.md), with the Samebase source findings in
+[`docs/account-approval-research.md`](./docs/account-approval-research.md).
 
 Product pages and local behavior live in `src/products/play/` and `src/products/review/`.
 Tailwind utilities style the UI, with shared class variants in `src/products/ui.ts`.

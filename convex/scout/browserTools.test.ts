@@ -760,6 +760,7 @@ describe("AgentMail Lab catalog", () => {
     const selected = selectAgentMailTools(
       { list_messages: readTool, search_messages: readTool, get_thread: readTool },
       "magda@agentmail.to",
+      async () => {},
     );
     const options = { toolCallId: "tool-1", messages: [], context: undefined };
 
@@ -794,7 +795,7 @@ describe("AgentMail Lab catalog", () => {
       search_messages: readTool,
       get_thread: readTool,
     };
-    const selected = selectAgentMailTools(allTools, "conrad@agentmail.to");
+    const selected = selectAgentMailTools(allTools, "conrad@agentmail.to", async () => {});
     const options = { toolCallId: "tool-1", messages: [], context: undefined };
 
     await selected.list_messages.execute({ limit: 5 }, options);

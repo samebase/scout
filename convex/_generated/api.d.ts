@@ -9,8 +9,10 @@
  */
 
 import type * as access from "../access.js";
+import type * as accessModel from "../accessModel.js";
+import type * as accountRevocation from "../accountRevocation.js";
+import type * as accounts from "../accounts.js";
 import type * as auth from "../auth.js";
-import type * as authConfig from "../authConfig.js";
 import type * as authEmail from "../authEmail.js";
 import type * as authEmailRateLimit from "../authEmailRateLimit.js";
 import type * as authEmails from "../authEmails.js";
@@ -19,6 +21,7 @@ import type * as browserReplay from "../browserReplay.js";
 import type * as devAuth from "../devAuth.js";
 import type * as devAuthConfig from "../devAuthConfig.js";
 import type * as email from "../email.js";
+import type * as functions from "../functions.js";
 import type * as http from "../http.js";
 import type * as humanHandoffAccess from "../humanHandoffAccess.js";
 import type * as humanHandoffBrowser from "../humanHandoffBrowser.js";
@@ -81,6 +84,7 @@ import type * as scout_turnWorkflow from "../scout/turnWorkflow.js";
 import type * as scout_turns from "../scout/turns.js";
 import type * as scout_webTools from "../scout/webTools.js";
 import type * as serviceDomains from "../serviceDomains.js";
+import type * as testing_accounts from "../testing/accounts.js";
 
 import type {
   ApiFromModules,
@@ -90,8 +94,10 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   access: typeof access;
+  accessModel: typeof accessModel;
+  accountRevocation: typeof accountRevocation;
+  accounts: typeof accounts;
   auth: typeof auth;
-  authConfig: typeof authConfig;
   authEmail: typeof authEmail;
   authEmailRateLimit: typeof authEmailRateLimit;
   authEmails: typeof authEmails;
@@ -100,6 +106,7 @@ declare const fullApi: ApiFromModules<{
   devAuth: typeof devAuth;
   devAuthConfig: typeof devAuthConfig;
   email: typeof email;
+  functions: typeof functions;
   http: typeof http;
   humanHandoffAccess: typeof humanHandoffAccess;
   humanHandoffBrowser: typeof humanHandoffBrowser;
@@ -162,6 +169,7 @@ declare const fullApi: ApiFromModules<{
   "scout/turns": typeof scout_turns;
   "scout/webTools": typeof scout_webTools;
   serviceDomains: typeof serviceDomains;
+  "testing/accounts": typeof testing_accounts;
 }>;
 
 /**

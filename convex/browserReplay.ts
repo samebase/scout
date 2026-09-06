@@ -1,7 +1,8 @@
+import { action } from "./functions";
 import { type Infer, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { action, type ActionCtx } from "./_generated/server";
+import { type ActionCtx } from "./_generated/server";
 import { browserViewportValidator } from "./browserModel";
 import { replayOperationValidator } from "./scout/browserSessions";
 import {
@@ -40,6 +41,7 @@ type ReplayPlaylistResult =
   | { status: "ready"; playlist: string };
 
 export const listPages = action({
+  access: "access_lab",
   args: { sessionId: v.id("scoutBrowserSessions") },
   returns: v.union(
     replayNotReadyValidator,
@@ -71,6 +73,7 @@ export const listPages = action({
 });
 
 export const loadPlaylist = action({
+  access: "access_lab",
   args: {
     sessionId: v.id("scoutBrowserSessions"),
     pageId: v.string(),

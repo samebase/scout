@@ -1,14 +1,9 @@
+import { action, query } from "../functions";
 import { type Infer, v } from "convex/values";
-import { requireAppUser } from "../access";
+import { requirePermission } from "../access";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
-import {
-  action,
-  internalMutation,
-  internalQuery,
-  query,
-  type MutationCtx,
-} from "../_generated/server";
+import { internalMutation, internalQuery, type MutationCtx } from "../_generated/server";
 import { requireOwnedAgentThread } from "./chatAccess";
 import schema from "../schema";
 import { omitNullish } from "../../shared/omitNullish";
@@ -196,10 +191,11 @@ export const failPending = internalMutation({
 });
 
 export const listForTurn = query({
+  access: "access_lab",
   args: { turnId: v.id("scoutTurns") },
   returns: v.array(modelCallSummaryValidator),
   handler: async (ctx, args) => {
-    const userId = await requireAppUser(ctx);
+    const userId = ctx.viewer.userId;
     const turn = await ctx.db.get(args.turnId);
     if (!turn) return [];
     await requireOwnedAgentThread(ctx, turn.threadId, userId);
@@ -224,7 +220,7 @@ export const authorizedContext = internalQuery({
     v.null(),
   ),
   handler: async (ctx, args): Promise<AuthorizedModelCallContext> => {
-    const userId = await requireAppUser(ctx);
+    const userId = (await requirePermission(ctx, "access_lab")).userId;
     const modelCallId = ctx.db.normalizeId("scoutModelCalls", args.modelCallId);
     if (!modelCallId) return null;
     const call = await ctx.db.get(modelCallId);
@@ -257,6 +253,7 @@ export const authorizedContext = internalQuery({
 });
 
 export const getContext = action({
+  access: "access_lab",
   args: { modelCallId: v.string(), threadId: v.string() },
   returns: v.union(
     v.object({

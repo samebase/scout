@@ -1,7 +1,7 @@
+import { ADMIN_EMAIL, insertTestAccount } from "../testing/accounts";
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { api, internal } from "../_generated/api";
-import { ADMIN_EMAIL } from "../authConfig";
 import schema from "../schema";
 import { decryptRuntimeManagedPassword } from "./accountTools";
 
@@ -27,7 +27,7 @@ afterEach(() => vi.unstubAllEnvs());
 async function context() {
   const backend = convexTest(schema, modules);
   const { userId, scoutId, otherScoutId } = await backend.run(async (ctx) => {
-    const userId = await ctx.db.insert("users", { email: ADMIN_EMAIL });
+    const userId = await insertTestAccount(ctx, { email: ADMIN_EMAIL, role: "role_admin" });
     const scout = {
       displayName: "Magda",
       websiteIdentity: { firstName: "Magda", lastName: "Scout" },

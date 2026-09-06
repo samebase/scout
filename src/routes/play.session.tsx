@@ -6,6 +6,7 @@ import { productButtonVariants } from "../products/ui";
 import { playRouteMessage } from "../products/play/ui";
 
 export const Route = createFileRoute("/play/session")({
+  staticData: { access: "access_public" },
   validateSearch: z.object({ thread: z.string().min(1).optional() }),
   head: () => ({ meta: [{ title: "Play with Scout" }, { name: "robots", content: "noindex" }] }),
   component: PlayPage,

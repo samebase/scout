@@ -452,6 +452,7 @@ export const runSlice = internalAction({
         ...selectAgentMailTools(
           await loadAgentMailTools(agentMailClient, sliceAbortSignal),
           scout.agentMail.inboxId,
+          beforeModelToolDispatch,
         ),
         ...createAgentMailWriteTools(agentMailInbox, {
           kind: "model",

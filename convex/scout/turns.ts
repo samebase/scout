@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { requireLabThread } from "./chatAccess";
 import { components, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import { internalMutation, internalQuery, type MutationCtx } from "../_generated/server";
@@ -148,6 +149,9 @@ export async function enqueueTurn(
     model: ScoutModel;
   },
 ) {
+  const chat = await requireLabThread(ctx, args.threadId);
+  if (chat.userId !== args.userId || chat.scoutId !== args.scoutId)
+    throw new Error("Chat not found");
   const { messageId, message } = await scoutAgent.saveMessage(ctx, {
     threadId: args.threadId,
     userId: args.userId,
@@ -439,6 +443,7 @@ export const assertPending = internalQuery({
     if (!turn || turn.state.kind !== "pending") {
       throw new Error("Scout turn is no longer running");
     }
+    await requireLabThread(ctx, turn.threadId);
     return null;
   },
 });

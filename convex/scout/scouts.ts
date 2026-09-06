@@ -1,7 +1,8 @@
+import { query } from "../functions";
 import { v } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
-import { internalMutation, internalQuery, query, type QueryCtx } from "../_generated/server";
-import { requireAppUser } from "../access";
+import { internalMutation, internalQuery, type QueryCtx } from "../_generated/server";
+import { requirePermission } from "../access";
 import { scoutWebsiteIdentityValidator } from "./model";
 
 const MAX_SCOUTS = 50;
@@ -173,22 +174,22 @@ async function requireScoutAvailable(
 }
 
 export const list = query({
+  access: "access_scout_manage",
   args: {},
   returns: v.array(scoutPublicValidator),
   handler: async (ctx) => {
-    await requireAppUser(ctx);
     const scouts = await ctx.db.query("scouts").order("desc").take(MAX_SCOUTS);
     return scouts.map(projectScout);
   },
 });
 
 export const get = query({
+  access: "access_scout_manage",
   args: {
     slug: v.string(),
   },
   returns: v.union(scoutPublicValidator, v.null()),
   handler: async (ctx, args) => {
-    await requireAppUser(ctx);
     const scout = await ctx.db
       .query("scouts")
       .withIndex("by_slug", (q) => q.eq("slug", canonicalSlug(args.slug)))
@@ -220,7 +221,7 @@ export const prepareRegistration = internalQuery({
   args: scoutRegistrationFieldsValidator.fields,
   returns: scoutFieldsValidator,
   handler: async (ctx, args) => {
-    await requireAppUser(ctx);
+    await requirePermission(ctx, "access_scout_manage");
     const fields = normalizeScoutFields({ ...args, status: "active" });
     await requireScoutAvailable(ctx, fields);
     return fields;
@@ -231,7 +232,7 @@ export const commitRegistration = internalMutation({
   args: scoutFieldsValidator.fields,
   returns: registrationResultValidator,
   handler: async (ctx, fields) => {
-    await requireAppUser(ctx);
+    await requirePermission(ctx, "access_scout_manage");
     await requireScoutAvailable(ctx, fields);
     return { scoutId: await ctx.db.insert("scouts", fields) };
   },

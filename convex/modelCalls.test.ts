@@ -1,10 +1,10 @@
+import { ADMIN_EMAIL, insertTestAccount } from "./testing/accounts";
 /// <reference types="vite/client" />
 
 import agentTest from "@convex-dev/agent/test";
 import { convexTest } from "convex-test";
 import { describe, expect, test } from "vite-plus/test";
 import { api, components, internal } from "./_generated/api";
-import { ADMIN_EMAIL } from "./authConfig";
 import schema from "./schema";
 import { EXPIRED_TURN_FAILURE } from "./scout/turns";
 
@@ -246,7 +246,7 @@ describe("Scout model-call inputs", () => {
     const backend = convexTest(schema, modules);
     agentTest.register(backend);
     const { ownerId, scoutId } = await backend.run(async (ctx) => ({
-      ownerId: await ctx.db.insert("users", { email: ADMIN_EMAIL }),
+      ownerId: await insertTestAccount(ctx, { email: ADMIN_EMAIL, role: "role_admin" }),
       scoutId: await ctx.db.insert("scouts", {
         displayName: "Conrad Scout",
         websiteIdentity: { firstName: "Conrad", lastName: "Scout" },
@@ -342,8 +342,8 @@ describe("Scout model-call inputs", () => {
     const backend = convexTest(schema, modules);
     agentTest.register(backend);
     const { ownerId, outsiderId, scoutId } = await backend.run(async (ctx) => ({
-      ownerId: await ctx.db.insert("users", { email: ADMIN_EMAIL }),
-      outsiderId: await ctx.db.insert("users", { email: ADMIN_EMAIL }),
+      ownerId: await insertTestAccount(ctx, { email: ADMIN_EMAIL, role: "role_admin" }),
+      outsiderId: await insertTestAccount(ctx, { email: ADMIN_EMAIL, role: "role_admin" }),
       scoutId: await ctx.db.insert("scouts", {
         displayName: "Conrad Scout",
         websiteIdentity: { firstName: "Conrad", lastName: "Scout" },

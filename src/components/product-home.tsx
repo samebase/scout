@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { ArrowRightIcon, ArrowUpRightIcon, FocusIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "#lib/utils";
+import { canAccess, useViewerAccess } from "#lib/access";
 import { ScoutPiece } from "../products/play/scout-piece";
 import { productCardVariants } from "../products/ui";
 
@@ -65,6 +66,7 @@ const homeTile =
   "grid h-36 w-[105px] place-items-center rounded-[14px] bg-[#fffdf1] shadow-[0_5px_0_#d4bf68] max-[760px]:h-[129px] max-[760px]:w-[90px]";
 
 export function ProductHome() {
+  const viewer = useViewerAccess();
   return (
     <div className="min-h-dvh bg-[#fafbf9] font-play-body text-[#27312f] antialiased scheme-light [&_:is(a,button):focus-visible]:outline-3 [&_:is(a,button):focus-visible]:outline-offset-6 [&_:is(a,button):focus-visible]:outline-play-blue">
       <a
@@ -81,12 +83,16 @@ export function ProductHome() {
         >
           scout.
         </Link>
-        <Link
-          to="/chats"
-          className="inline-flex items-center gap-1.5 text-[13px] text-[#707772] hover:text-[#27312f]"
-        >
-          Lab <ArrowUpRightIcon size={14} aria-hidden="true" />
-        </Link>
+        <nav aria-label="Account" className="flex items-center gap-6 text-[13px] text-[#707772]">
+          {viewer?.kind === "account" && canAccess("access_lab", viewer.accessKeys) && (
+            <Link to="/chats" className="inline-flex items-center gap-1.5 hover:text-[#27312f]">
+              Lab <ArrowUpRightIcon size={14} aria-hidden="true" />
+            </Link>
+          )}
+          <Link to="/settings" className="hover:text-[#27312f]">
+            {viewer?.kind === "anonymous" ? "Sign in / Create account" : "Account"}
+          </Link>
+        </nav>
       </header>
       <main
         id="main-content"

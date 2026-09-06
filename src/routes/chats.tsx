@@ -92,6 +92,7 @@ const manualSubmissionSchema = z.object({
 const manualSubmissionsSchema = z.array(manualSubmissionSchema);
 
 export const Route = createFileRoute("/chats")({
+  staticData: { access: "access_lab" },
   validateSearch: (search) => chatSearchSchema.parse(search),
   head: () => ({
     meta: [{ title: "Chats | Scout" }],

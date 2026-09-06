@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ProductHome } from "#components/product-home";
 
 export const Route = createFileRoute("/")({
+  staticData: { access: "access_public" },
   head: () => ({
     meta: [
       { title: "Scout | Play and Review" },
