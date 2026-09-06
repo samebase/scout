@@ -181,8 +181,8 @@ async function openChats(path = "/chats?thread=thread-1") {
   });
   const component = ChatsRoute.options.component;
   const validateSearch = ChatsRoute.options.validateSearch;
-  const beforeLoad = IndexRoute.options.beforeLoad;
-  if (!component || typeof validateSearch !== "function" || typeof beforeLoad !== "function") {
+  const indexComponent = IndexRoute.options.component;
+  if (!component || typeof validateSearch !== "function" || !indexComponent) {
     throw new Error("Chat route configuration is missing");
   }
   const chats = createRoute({
@@ -194,7 +194,7 @@ async function openChats(path = "/chats?thread=thread-1") {
   const index = createRoute({
     path: "/",
     getParentRoute: () => root,
-    beforeLoad,
+    component: indexComponent,
   });
   const router = createRouter({
     routeTree: root.addChildren([chats, index]),
@@ -206,9 +206,24 @@ async function openChats(path = "/chats?thread=thread-1") {
 }
 
 describe("Chat workspace", () => {
-  test("opens chats at the root and retains the existing sign-in form", async () => {
+  test("shows the public landing at the root without redirecting to sign-in", async () => {
     remote.authenticated = false;
     const router = await openChats("/");
+
+    expect(await screen.findByRole("heading", { name: "What are we doing today?" })).toBeTruthy();
+    expect(router.state.location.pathname).toBe("/");
+    expect(screen.getByRole("link", { name: "Explore Scout Play" }).getAttribute("href")).toBe(
+      "/play",
+    );
+    expect(screen.getByRole("link", { name: "Explore Scout Review" }).getAttribute("href")).toBe(
+      "/review",
+    );
+    expect(screen.queryByLabelText("Password")).toBeNull();
+  });
+
+  test("retains the existing lab sign-in form at chats", async () => {
+    remote.authenticated = false;
+    const router = await openChats("/chats");
 
     expect(await screen.findByRole("button", { name: "Sign in" })).toBeTruthy();
     expect(router.state.location.pathname).toBe("/chats");
@@ -225,7 +240,7 @@ describe("Chat workspace", () => {
       within(navigation)
         .getAllByRole("link")
         .map((link) => link.textContent),
-    ).toEqual(["Chats", "Scouts"]);
+    ).toEqual(["Play", "Chats", "Scouts"]);
     const history = screen.getByRole("navigation", { name: "Chats" });
     expect(within(history).getAllByRole("list")).toHaveLength(1);
     expect(within(history).getByRole("link").getAttribute("href")).toBe("/chats?thread=thread-1");

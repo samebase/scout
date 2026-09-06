@@ -63,9 +63,8 @@ export default defineConfig(({ command }) => {
         },
         spa: {
           enabled: true,
-          // Both static hosts serve this shell for app routes. Render it from
-          // /chats so the root redirect is not part of shell generation.
-          maskPath: "/chats",
+          // Both static hosts serve this shell for the landing and app routes.
+          maskPath: "/",
           prerender: {
             outputPath: "/index.html",
           },

@@ -4,7 +4,52 @@
 
 @custom-variant dark (&:is(.dark *));
 
+@font-face {
+  font-family: "Bricolage Grotesque";
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url("/fonts/bricolage-grotesque.woff2") format("woff2");
+}
+@font-face {
+  font-family: "DM Sans";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("/fonts/dm-sans.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Review Sans";
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url("/fonts/ibm-plex-sans.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Review Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/ibm-plex-mono.woff2") format("woff2");
+}
+
 @theme inline {
+  --font-play-body: "DM Sans", "Avenir Next", sans-serif;
+  --font-play-display: "Bricolage Grotesque", "Avenir Next", sans-serif;
+  --font-review: "Review Sans", Arial, sans-serif;
+  --font-review-mono: "Review Mono", monospace;
+  --color-play-paper: #fafaf6;
+  --color-play-ink: #253044;
+  --color-play-blue: #3558da;
+  --color-play-muted: #667080;
+  --color-play-cloud: #edf0f9;
+  --color-play-line: #dfe2e4;
+  --color-play-sand: #f5e597;
+  --color-review-ink: #203c36;
+  --color-review-muted: #72817c;
+  --color-review-line: #d8e0dc;
+  --color-review-accent: #28584d;
+  --color-review-paper: #f1f4f2;
   --font-heading: var(--font-sans);
   --font-sans:
     "Avenir Next", "Segoe UI Variable", "Segoe UI", ui-sans-serif, system-ui, sans-serif,

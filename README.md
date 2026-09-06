@@ -1,6 +1,7 @@
 # Scout
 
-Give a Scout its own accounts, then work with it through chat.
+Explore Scout Play for browser games, Scout Review's product-review design preview, and the lab
+for connected accounts and detailed agent work.
 
 Live app: [usable-spider-599.eu-west-1.convex.site](https://usable-spider-599.eu-west-1.convex.site)
 
@@ -22,7 +23,19 @@ inside the repository.
 - Vite+ for development, formatting, linting, tests, and builds
 - Node.js 24 for application and automation code
 
-Scout currently provides private chats with persistent Scout identities. A chat can use the Scout's
+The public home page offers two product entries. `/play` introduces the game player, and
+`/play/session` accepts a room link and opens a browser-and-chat session with an existing Scout.
+`/review` is a landing page with its own visual identity and a static illustration. Its button opens
+the existing Lab; the dedicated review flow is still to be designed.
+`/chats` is the lab for detailed transcripts, replays, and model controls. See
+[`docs/play-product-direction.md`](./docs/play-product-direction.md) for the product options and research.
+
+Product pages and local behavior live in `src/products/play/` and `src/products/review/`.
+Tailwind utilities style the UI, with shared class variants in `src/products/ui.ts`.
+Font declarations and Tailwind theme tokens live in `src/style.css`. Each product keeps its own
+identity; separate frontends would still need their own routing and deployment setup.
+
+Scout provides private chats with persistent Scout identities. A chat can use the Scout's
 AgentMail inbox to read, send, and reply to email, plus its Firecrawl browser profile and accounts
 across multiple services. Choose Qwen, Luna, or Manual, and inspect tool calls, Live/Replay, usage,
 and human handoffs in the same workspace.

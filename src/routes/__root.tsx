@@ -1,4 +1,10 @@
-import { HeadContent, Outlet, Scripts, createRootRoute } from "@tanstack/react-router";
+import {
+  HeadContent,
+  Outlet,
+  Scripts,
+  createRootRoute,
+  useRouterState,
+} from "@tanstack/react-router";
 import { Authenticated } from "convex/react";
 import type { ReactNode } from "react";
 import { ConvexClientProvider } from "../lib/convex";
@@ -35,13 +41,22 @@ export const Route = createRootRoute({
 });
 
 function RootComponent() {
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const isProductPage =
+    pathname === "/" ||
+    pathname === "/play" ||
+    pathname.startsWith("/play/") ||
+    pathname === "/review" ||
+    pathname.startsWith("/review/");
   return (
     <RootDocument>
       <ScoutSidebarProvider>
         <ConvexClientProvider>
-          <Authenticated>
-            <AppNavigation />
-          </Authenticated>
+          {!isProductPage && (
+            <Authenticated>
+              <AppNavigation />
+            </Authenticated>
+          )}
           <Outlet />
         </ConvexClientProvider>
       </ScoutSidebarProvider>
