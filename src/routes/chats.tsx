@@ -265,7 +265,7 @@ function ChatsPage() {
               Scout
             </h1>
             <AuthPanel />
-            <div className="mt-4 flex justify-center text-muted-foreground">
+            <div className="mt-4 flex justify-end text-muted-foreground">
               <SamebaseAttribution />
             </div>
           </div>
@@ -1133,7 +1133,7 @@ function ChatsWorkspace() {
         left={
           <PaneFrame
             footer={
-              <div className="px-3 text-muted-foreground">
+              <div className="flex justify-end px-3 text-muted-foreground">
                 <SamebaseAttribution />
               </div>
             }

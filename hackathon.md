@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-Aligned the embedded Samebase mark with the credit text at its final size without a fractional baseline offset
+- **Last updated:** 2026-09-06T16:15:00Z
 
 ## Log
 
@@ -1039,11 +1039,5 @@ and handoff guidance covers actions the user needs to perform without requiring 
 
 ### 2026-09-06 - working tree
 
-<<<<<<< HEAD
-Matched the embedded Samebase mark to the attribution text at its final size and baseline
-||||||| parent of 894de9e (Remove the fractional mark offset)
-Aligned the embedded Samebase mark with the credit text at its final size and baseline
-=======
-Aligned the embedded Samebase mark with the credit text at its final size without a fractional baseline offset
->>>>>>> 894de9e (Remove the fractional mark offset)
-(`src/components/samebase-attribution.tsx`).
+Matched the embedded Samebase mark to its text and aligned the credit to the sign-in and navigation
+content edges (`src/components/samebase-attribution.tsx`, `src/routes/chats.tsx`).
