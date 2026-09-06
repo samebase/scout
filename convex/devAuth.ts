@@ -5,23 +5,12 @@ import { internalAction, internalMutation } from "./_generated/server";
 import { normalizeAuthEmail } from "./authEmail";
 import { readDevSeedPasswordAccountConfig } from "./devAuthConfig";
 
-const seedPasswordAccountUserResolution = v.union(
-  v.object({
-    kind: v.literal("existing"),
-    userId: v.id("users"),
-  }),
-  v.object({
-    kind: v.literal("missing"),
-  }),
-);
-type SeedPasswordAccountUserResolution = Infer<typeof seedPasswordAccountUserResolution>;
-
-export const resolveSeedPasswordAccountUser = internalMutation({
+export const approveSeedPasswordAccount = internalMutation({
   args: {
     email: v.string(),
   },
-  returns: seedPasswordAccountUserResolution,
-  handler: async (ctx, args): Promise<SeedPasswordAccountUserResolution> => {
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
     const email = normalizeAuthEmail(args.email);
     const accounts = await ctx.db
       .query("authAccounts")
@@ -34,7 +23,12 @@ export const resolveSeedPasswordAccountUser = internalMutation({
       throw new Error(`Multiple password accounts exist for ${email}`);
     }
     const account = accounts[0];
-    return account ? { kind: "existing", userId: account.userId } : { kind: "missing" };
+    if (!account) return false;
+    const user = await ctx.db.get(account.userId);
+    if (!user || user.emailVerificationTime === undefined)
+      throw new Error("A verified seed account is required");
+    await ctx.db.patch(user._id, { isApproved: true });
+    return true;
   },
 });
 
@@ -53,11 +47,10 @@ export const seedPasswordAccount = internalAction({
       throw new Error("Development password account seeding is disabled");
     }
 
-    const resolution: SeedPasswordAccountUserResolution = await ctx.runMutation(
-      internal.devAuth.resolveSeedPasswordAccountUser,
-      { email: config.email },
-    );
-    if (resolution.kind === "existing") {
+    const exists: boolean = await ctx.runMutation(internal.devAuth.approveSeedPasswordAccount, {
+      email: config.email,
+    });
+    if (exists) {
       // @ts-expect-error Convex Auth 0.0.94 does not accept exact optional fields under TypeScript 6.
       await modifyAccountCredentials(ctx, {
         provider: "password",
@@ -66,8 +59,6 @@ export const seedPasswordAccount = internalAction({
           secret: config.password,
         },
       });
-      await ctx.runMutation(internal.accounts.initialize, { userId: resolution.userId });
-      await ctx.runMutation(internal.accounts.bootstrapAdmin, { userId: resolution.userId });
       return { created: false, email: config.email };
     }
 
@@ -76,7 +67,7 @@ export const seedPasswordAccount = internalAction({
       emailVerified: true,
     };
     // @ts-expect-error Convex Auth 0.0.94 does not accept exact optional fields under TypeScript 6.
-    const created = await createAccount(ctx, {
+    await createAccount(ctx, {
       provider: "password",
       account: {
         id: config.email,
@@ -86,7 +77,7 @@ export const seedPasswordAccount = internalAction({
       shouldLinkViaEmail: false,
       shouldLinkViaPhone: false,
     });
-    await ctx.runMutation(internal.accounts.bootstrapAdmin, { userId: created.user._id });
+    await ctx.runMutation(internal.devAuth.approveSeedPasswordAccount, { email: config.email });
 
     return { created: true, email: config.email };
   },

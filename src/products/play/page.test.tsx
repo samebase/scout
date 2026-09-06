@@ -76,10 +76,9 @@ beforeEach(() => {
   remote.queries.set("accounts:currentViewerAccess", {
     kind: "account",
     userId: "admin",
-    role: "role_admin",
-    status: "active",
-    isApproved: true,
-    accessKeys: ROLE_ACCESS_GRANTS.role_admin,
+    role: "role_staff",
+    isApproved: false,
+    accessKeys: ROLE_ACCESS_GRANTS.role_staff,
   });
   remote.queries.set("scout/scouts:list", [
     { _id: "scout-1", displayName: "Pip", status: "active" },
@@ -139,7 +138,6 @@ describe("Play invitation", () => {
         kind: "account",
         userId: "member",
         role: "role_member",
-        status: "active",
         isApproved: true,
         accessKeys: ROLE_ACCESS_GRANTS.role_member,
       });
@@ -160,10 +158,9 @@ describe("Play invitation", () => {
       remote.queries.set("accounts:currentViewerAccess", {
         kind: "account",
         userId: "member",
-        role: "role_member",
-        status: "active",
+        role: "role_pending_access",
         isApproved: false,
-        accessKeys: ["access_public", "access_account"],
+        accessKeys: ROLE_ACCESS_GRANTS.role_pending_access,
       });
       await openPlay(path);
       expect(await screen.findByRole("heading", { name: "Waiting for approval" })).toBeTruthy();
@@ -178,7 +175,6 @@ describe("Play invitation", () => {
           kind: "account",
           userId: "member",
           role: "role_member",
-          status: "active",
           isApproved: true,
           accessKeys: ROLE_ACCESS_GRANTS.role_member,
         });
@@ -202,7 +198,6 @@ describe("Play invitation", () => {
         kind: "account",
         userId: "admin",
         role: "role_member",
-        status: "active",
         isApproved: true,
         accessKeys: ROLE_ACCESS_GRANTS.role_member,
       });

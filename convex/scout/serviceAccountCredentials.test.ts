@@ -23,7 +23,7 @@ function testBackend() {
 async function authenticatedBackend() {
   const backend = testBackend();
   const userId = await backend.run(
-    async (ctx) => await insertTestAccount(ctx, { email: ADMIN_EMAIL, role: "role_admin" }),
+    async (ctx) => await insertTestAccount(ctx, { email: ADMIN_EMAIL }),
   );
   const scoutId = await backend.run(
     async (ctx) =>

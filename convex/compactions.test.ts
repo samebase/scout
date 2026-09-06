@@ -21,8 +21,8 @@ async function setup(objective = "Research these services and draft an email. Do
   const backend = convexTest(schema, import.meta.glob("./**/*.ts"));
   agentTest.register(backend);
   const { ownerId, outsiderId, scoutId } = await backend.run(async (ctx) => ({
-    ownerId: await insertTestAccount(ctx, { email: ADMIN_EMAIL, role: "role_admin" }),
-    outsiderId: await insertTestAccount(ctx, { email: ADMIN_EMAIL, role: "role_admin" }),
+    ownerId: await insertTestAccount(ctx, { email: ADMIN_EMAIL }),
+    outsiderId: await insertTestAccount(ctx, { email: ADMIN_EMAIL }),
     scoutId: await ctx.db.insert("scouts", {
       displayName: "Compaction Scout",
       slug: "compaction",

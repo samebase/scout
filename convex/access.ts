@@ -1,11 +1,23 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { ConvexError, type Infer } from "convex/values";
-import { accountPermissions, canAccess, type AccountAccessKey } from "../shared/accessModel";
-import type { Id } from "./_generated/dataModel";
+import {
+  readAccessKeysForRole,
+  canAccess,
+  type AccountAccessKey,
+  type ViewerRole,
+} from "../shared/accessModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { viewerAccessValidator } from "./accessModel";
 
 export type ViewerAccess = Infer<typeof viewerAccessValidator>;
+
+const ADMIN_EMAILS = new Set(["nicuchiciuc@gmail.com", "nicu@samebase.com"]);
+
+export function readViewerRoleForUser(user: Doc<"users">): ViewerRole {
+  if (user.email && ADMIN_EMAILS.has(user.email.toLowerCase())) return "role_staff";
+  return user.isApproved ? "role_member" : "role_pending_access";
+}
 
 export async function readUserAccess(
   ctx: Pick<QueryCtx, "db">,
@@ -13,18 +25,13 @@ export async function readUserAccess(
 ): Promise<ViewerAccess> {
   const user = await ctx.db.get(userId);
   if (!user || user.emailVerificationTime === undefined) return { kind: "unavailable" };
-  const access = await ctx.db
-    .query("accountAccess")
-    .withIndex("by_user_id", (q) => q.eq("userId", userId))
-    .unique();
-  if (!access) return { kind: "unavailable" };
+  const role = readViewerRoleForUser(user);
   return {
     kind: "account",
     userId,
-    role: access.role,
-    status: access.status,
-    isApproved: access.isApproved,
-    accessKeys: [...accountPermissions(access.role, access.status, access.isApproved)],
+    role,
+    isApproved: user.isApproved ?? false,
+    accessKeys: [...readAccessKeysForRole(role)],
   };
 }
 export async function resolveViewer(ctx: Pick<QueryCtx, "auth" | "db">): Promise<ViewerAccess> {

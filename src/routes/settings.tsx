@@ -44,10 +44,12 @@ function AccountStatus() {
   if (viewer?.kind !== "account") return null;
   return (
     <section className="surface-panel mt-8 p-5 sm:p-6" aria-live="polite">
-      <h2 className="text-base font-semibold">{message?.title ?? "Account approved"}</h2>
+      <h2 className="text-base font-semibold">
+        {message?.title ?? (viewer.role === "role_staff" ? "Admin access" : "Account approved")}
+      </h2>
       <p className="mt-2 text-sm text-muted-foreground">
         {message?.description ??
-          `You have ${viewer.role === "role_admin" ? "admin" : "member"} access.`}
+          `You have ${viewer.role === "role_staff" ? "admin" : "member"} access.`}
       </p>
     </section>
   );

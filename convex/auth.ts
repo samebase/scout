@@ -95,7 +95,11 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
   providers: [passwordProvider],
   callbacks: {
     afterUserCreatedOrUpdated: async (ctx, args) => {
-      await ctx.runMutation(internal.accounts.initialize, { userId: args.userId });
+      if (args.existingUserId === null) {
+        await ctx.db.patch(args.userId, {
+          isApproved: false,
+        });
+      }
     },
   },
 });

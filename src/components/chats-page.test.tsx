@@ -1,4 +1,3 @@
-import { ROLE_ACCESS_GRANTS } from "../../shared/accessModel";
 // @vitest-environment happy-dom
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -18,6 +17,7 @@ import {
   BROWSER_EXECUTE_DESCRIPTION,
   BROWSER_EXECUTE_EXAMPLE,
 } from "../../convex/scout/browserToolContract";
+import { ROLE_ACCESS_GRANTS } from "../../shared/accessModel";
 import { Route as ChatsRoute } from "../routes/chats";
 import { Route as IndexRoute } from "../routes/index";
 import { ScoutSidebarProvider } from "../sidebars/ScoutSidebarProvider";
@@ -135,10 +135,9 @@ beforeEach(() => {
   remote.queries.set("accounts:currentViewerAccess", {
     kind: "account",
     userId: "admin",
-    role: "role_admin",
-    status: "active",
-    isApproved: true,
-    accessKeys: ROLE_ACCESS_GRANTS.role_admin,
+    role: "role_staff",
+    isApproved: false,
+    accessKeys: ROLE_ACCESS_GRANTS.role_staff,
   });
   remote.actions.clear();
   remote.mutations.clear();

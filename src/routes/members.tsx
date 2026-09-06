@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, usePaginatedQuery } from "convex/react";
 import { ConvexError } from "convex/values";
-import type { FunctionArgs, FunctionReturnType } from "convex/server";
+import type { FunctionReturnType } from "convex/server";
 import { useState } from "react";
 import { api } from "../../convex/_generated/api";
 import { Button } from "#components/ui/button";
@@ -21,17 +21,13 @@ function MembersPage() {
   return (
     <main className="route-page max-w-6xl">
       <h1 className="route-heading">Members</h1>
-      <p className="mt-3 text-muted-foreground">
-        Approve new accounts and manage roles and access.
-      </p>
+      <p className="mt-3 text-muted-foreground">Approve or revoke member access.</p>
       <div className="surface-panel mt-8 overflow-x-auto">
         <table className="w-full text-left text-sm">
           <thead>
             <tr className="border-b">
               <th className="p-4">Account</th>
-              <th className="p-4">Role</th>
               <th className="p-4">Approval</th>
-              <th className="p-4">Status</th>
               <th className="p-4">Actions</th>
             </tr>
           </thead>
@@ -67,23 +63,23 @@ function MemberRow({
 }: {
   account: FunctionReturnType<typeof api.accounts.list>["page"][number];
 }) {
-  const changeAccess = useMutation(api.accounts.changeAccess);
+  const setApproval = useMutation(api.accounts.setApproval);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
-  async function change(change: FunctionArgs<typeof api.accounts.changeAccess>["change"]) {
+  async function changeApproval() {
     if (pending) return;
     setPending(true);
     setError("");
     try {
-      await changeAccess({
+      await setApproval({
         userId: account.userId,
-        change,
+        isApproved: !account.isApproved,
       });
     } catch (caught) {
       setError(
         caught instanceof ConvexError && typeof caught.data === "string"
           ? caught.data
-          : "Could not update access. Try again.",
+          : "Could not update approval. Try again.",
       );
     } finally {
       setPending(false);
@@ -97,51 +93,26 @@ function MemberRow({
           <span className="block text-xs text-muted-foreground">Unverified</span>
         )}
       </td>
-      <td className="p-4">{account.role === "role_admin" ? "Admin" : "Member"}</td>
-      <td className="p-4">{account.isApproved ? "Approved" : "Pending"}</td>
-      <td className="p-4">{account.status === "active" ? "Active" : "Suspended"}</td>
       <td className="p-4">
-        <div className="flex flex-wrap gap-2">
+        {account.role === "role_staff"
+          ? "Admin, approval not required"
+          : account.isApproved
+            ? "Approved"
+            : "Pending"}
+      </td>
+      <td className="p-4">
+        {account.role !== "role_staff" && (
           <Button
             size="sm"
             variant={account.isApproved ? "outline" : "default"}
-            disabled={pending || (!account.isApproved && !account.verified)}
+            disabled={pending}
             onClick={() => {
-              void change({ kind: "approval", isApproved: !account.isApproved });
+              void changeApproval();
             }}
           >
             {account.isApproved ? "Revoke approval" : "Approve"}
           </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={
-              pending ||
-              (account.role === "role_member" && (!account.verified || !account.isApproved))
-            }
-            onClick={() => {
-              void change({
-                kind: "role",
-                role: account.role === "role_admin" ? "role_member" : "role_admin",
-              });
-            }}
-          >
-            {account.role === "role_admin" ? "Make member" : "Make admin"}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={pending}
-            onClick={() => {
-              void change({
-                kind: "status",
-                status: account.status === "active" ? "suspended" : "active",
-              });
-            }}
-          >
-            {account.status === "active" ? "Suspend" : "Reactivate"}
-          </Button>
-        </div>
+        )}
         {error && (
           <p role="alert" className="mt-2 text-destructive">
             {error}

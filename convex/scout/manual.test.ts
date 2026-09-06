@@ -38,7 +38,7 @@ it.each([undefined, Buffer.alloc(32, 8).toString("base64")])(
     const backend = convexTest(schema, modules);
     agentTest.register(backend);
     const { userId, scoutId } = await backend.run(async (ctx) => ({
-      userId: await insertTestAccount(ctx, { email: ADMIN_EMAIL, role: "role_admin" }),
+      userId: await insertTestAccount(ctx, { email: ADMIN_EMAIL }),
       scoutId: await ctx.db.insert("scouts", {
         displayName: "Magda",
         websiteIdentity: { firstName: "Magda", lastName: "Scout" },

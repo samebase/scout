@@ -27,7 +27,7 @@ describe("Scout chats", () => {
     async (model) => {
       const backend = testBackend();
       const userId = await backend.run(
-        async (ctx) => await insertTestAccount(ctx, { email: ADMIN_EMAIL, role: "role_admin" }),
+        async (ctx) => await insertTestAccount(ctx, { email: ADMIN_EMAIL }),
       );
       const scoutId = await backend.run(
         async (ctx) =>
@@ -84,12 +84,10 @@ describe("Scout chats", () => {
   it("redacts another owner's Scout activity while preserving owned active chat activity", async () => {
     const backend = testBackend();
     const ownerId = await backend.run(
-      async (ctx) =>
-        await insertTestAccount(ctx, { email: "owner@example.test", role: "role_admin" }),
+      async (ctx) => await insertTestAccount(ctx, { email: ADMIN_EMAIL }),
     );
     const observerId = await backend.run(
-      async (ctx) =>
-        await insertTestAccount(ctx, { email: "observer@example.test", role: "role_admin" }),
+      async (ctx) => await insertTestAccount(ctx, { email: "nicu@samebase.com" }),
     );
     const scoutId = await backend.run(
       async (ctx) =>
@@ -168,7 +166,7 @@ describe("Scout chats", () => {
       const preserve = scenario === "follow-up" || scenario === "execution-finished";
       const backend = testBackend();
       const userId = await backend.run(
-        async (ctx) => await insertTestAccount(ctx, { email: ADMIN_EMAIL, role: "role_admin" }),
+        async (ctx) => await insertTestAccount(ctx, { email: ADMIN_EMAIL }),
       );
       const scoutId = await backend.run(
         async (ctx) =>
@@ -369,7 +367,7 @@ describe("Scout chats", () => {
   it("runs a manual tool without a model and stores its call and result in the agent thread", async () => {
     const backend = testBackend();
     const userId = await backend.run(
-      async (ctx) => await insertTestAccount(ctx, { email: ADMIN_EMAIL, role: "role_admin" }),
+      async (ctx) => await insertTestAccount(ctx, { email: ADMIN_EMAIL }),
     );
     const scoutId = await backend.run(
       async (ctx) =>
@@ -458,10 +456,10 @@ describe("Scout chats", () => {
   it("keeps manual browser provider handles server-side and bound to the owned thread", async () => {
     const backend = testBackend();
     const userId = await backend.run(
-      async (ctx) => await insertTestAccount(ctx, { email: ADMIN_EMAIL, role: "role_admin" }),
+      async (ctx) => await insertTestAccount(ctx, { email: ADMIN_EMAIL }),
     );
     const otherUserId = await backend.run(
-      async (ctx) => await insertTestAccount(ctx, { email: ADMIN_EMAIL, role: "role_admin" }),
+      async (ctx) => await insertTestAccount(ctx, { email: ADMIN_EMAIL }),
     );
     const scoutId = await backend.run(
       async (ctx) =>
