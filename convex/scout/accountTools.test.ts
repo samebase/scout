@@ -207,7 +207,11 @@ describe("Autonomous managed-password preparation", () => {
     expect(JSON.stringify(result)).not.toContain(password);
   });
 
-  it("prepares, fills, records, and reuses a new scout's password without returning secrets", async () => {
+  it.each([
+    '- heading "MagdaPlayer"\n- button "Log Out"',
+    '- heading "Account settings"\n- paragraph: m****@e******.test\n- button "Log Out on All Devices"',
+    '- heading "Welcome, MagdaPlayer"\n- link "Start playing"',
+  ])("prepares, records, and reuses a password with page contents: %s", async (page) => {
     const { accountTools, runtime, credentials, backend, scoutId, conradId } =
       await browserAccountContext();
     await backend.action(async (ctx) => {
@@ -238,15 +242,19 @@ describe("Autonomous managed-password preparation", () => {
         tools.fill_account_password.execute({ passwordTarget }, toolOptions),
       ).resolves.toEqual({ filledFields: 1 });
       expect(runtime.fill).toHaveBeenCalledWith(passwordTarget, password, toolOptions.abortSignal);
+      runtime.snapshot.mockResolvedValue(page);
+      runtime.getElement.mockRejectedValue(new Error("The saved email is not visible"));
+      runtime.getPage.mockClear();
       await tools.record_authenticated_service_account.execute(
         {
           accountAccess: "created",
-          identityText: "magda@example.test",
-          sessionControlText: "Sign out",
+          identifier: "magda@example.test",
           loginMethod: { kind: "managed_password" },
         },
         toolOptions,
       );
+      expect(runtime.getPage).toHaveBeenCalledExactlyOnceWith("url", toolOptions.abortSignal);
+      expect(runtime.getElement).not.toHaveBeenCalled();
       const recorded = await account();
       expect(recorded).toMatchObject({
         authenticationEvidence: { kind: "succeeded" },

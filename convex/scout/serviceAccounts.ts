@@ -22,8 +22,6 @@ const MAX_ACCOUNTS = 200;
 const MAX_ACCOUNTS_PER_SCOUT = 50;
 const MAX_IDENTIFIER_LENGTH = 320;
 const MAX_OBSERVED_URL_LENGTH = 2_048;
-const MAX_VISIBLE_EVIDENCE_LENGTH = 2_000;
-const AUTHENTICATED_SESSION_CONTROLS = new Set(["sign out", "log out", "logout", "signoff"]);
 
 const serviceAccountPublicValidator = scoutServiceAccountFieldsValidator.extend({
   _id: v.id("scoutServiceAccounts"),
@@ -187,25 +185,6 @@ export function serviceAccountIdentifierKey(identifier: string) {
   return normalizedEvidenceText(identifier).trim().replace(/^@+/, "");
 }
 
-function evidenceShowsIdentifier(visibleIdentity: string, identifier: string) {
-  const expected = serviceAccountIdentifierKey(identifier);
-  return normalizedEvidenceText(visibleIdentity)
-    .split(/\r?\n/)
-    .map((line) => line.trim().replaceAll(/\s+/g, " "))
-    .some(
-      (line) =>
-        line === expected ||
-        line === `@${expected}` ||
-        line.endsWith(` ${expected}`) ||
-        line.endsWith(` @${expected}`),
-    );
-}
-
-function evidenceShowsSessionControl(visibleSessionControl: string) {
-  const control = normalizedEvidenceText(visibleSessionControl).trim().replaceAll(/\s+/g, " ");
-  return AUTHENTICATED_SESSION_CONTROLS.has(control);
-}
-
 function observedHttpsUrl(value: string) {
   const raw = requiredText(value, "Observed URL", MAX_OBSERVED_URL_LENGTH);
   const url = new URL(raw);
@@ -312,8 +291,7 @@ export const recordAuthenticated = internalMutation({
     sessionId: v.id("scoutBrowserSessions"),
     accountAccess: v.union(v.literal("created"), v.literal("recovered")),
     observedUrl: v.string(),
-    visibleIdentity: v.string(),
-    visibleSessionControl: v.string(),
+    identifier: v.string(),
     loginMethod: observedLoginMethodValidator,
   },
   returns: serviceAccountRecordingResultValidator,
@@ -344,16 +322,8 @@ export const recordAuthenticated = internalMutation({
       );
     }
     const observedUrl = observedHttpsUrl(args.observedUrl);
-    const visibleIdentity = requiredText(
-      args.visibleIdentity,
-      "Visible account identity",
-      MAX_VISIBLE_EVIDENCE_LENGTH,
-    );
-    const visibleSessionControl = requiredText(
-      args.visibleSessionControl,
-      "Visible session control",
-      MAX_VISIBLE_EVIDENCE_LENGTH,
-    );
+    const identifier = canonicalIdentifier(args.identifier);
+    const identifierKey = serviceAccountIdentifierKey(identifier);
     const activeTab = latestOperation.state.telemetry.after.tabs.find((tab) => tab.active);
     const telemetryUrl = activeTab?.url ? observedHttpsUrl(activeTab.url) : null;
     let observedDomain: string;
@@ -364,9 +334,6 @@ export const recordAuthenticated = internalMutation({
     }
     if (observedUrl !== telemetryUrl) {
       throw new Error("The authenticated account evidence is not from the latest service page");
-    }
-    if (!evidenceShowsSessionControl(visibleSessionControl)) {
-      throw new Error("The visible account menu does not expose a Sign out or Log out control");
     }
 
     const accounts = await ctx.db
@@ -389,22 +356,22 @@ export const recordAuthenticated = internalMutation({
         "Account login settings changed. Read the current page again before recording authentication.",
       );
     }
-    const matchingAccounts = serviceAccounts.filter((account) =>
-      evidenceShowsIdentifier(visibleIdentity, canonicalIdentifier(account.identifier)),
+    const matchingAccounts = serviceAccounts.filter(
+      (account) => serviceAccountIdentifierKey(account.identifier) === identifierKey,
     );
     if (matchingAccounts.length > 1) {
-      throw new Error("Visible account evidence must match exactly one Scout service account");
+      throw new Error("The login identifier must match exactly one Scout service account");
     }
     const loginMethod = await resolveObservedLoginMethod(ctx, chat.scoutId, args.loginMethod);
     const recordedAt = Date.now();
     const evidence = { kind: "succeeded" as const, checkedAt: recordedAt };
     const lastObserved = {
+      kind: "agent_report" as const,
+      operationId: latestOperation._id,
       threadId: chat.threadId,
       sessionId: session._id,
       recordedAt,
       observedUrl,
-      visibleIdentity,
-      visibleSessionControl,
       accountAccess: args.accountAccess,
     };
     const boundAccount = matchingAccounts[0];
@@ -428,7 +395,7 @@ export const recordAuthenticated = internalMutation({
         .map((account) => account.identifier);
       if (registeredIdentifiers.length > 0) {
         throw new Error(
-          `The visible identity does not match the saved login: ${registeredIdentifiers.map((identifier) => JSON.stringify(identifier)).join(", ")}. Open account settings showing the registered username or email together with a Sign out or Log out control, then retry. A display name alone does not verify the saved login.`,
+          `No saved login matches ${JSON.stringify(identifier)} on this service. Use the registered account identifier: ${registeredIdentifiers.map((identifier) => JSON.stringify(identifier)).join(", ")}.`,
         );
       }
       throw new Error("A managed-password account must be registered before it is used");
@@ -441,11 +408,11 @@ export const recordAuthenticated = internalMutation({
     ]
       .map(canonicalIdentifier)
       .filter((identifier, index, identifiers) => identifiers.indexOf(identifier) === index);
-    const accountIdentifier = knownIdentifiers.find((identifier) =>
-      evidenceShowsIdentifier(visibleIdentity, identifier),
+    const accountIdentifier = knownIdentifiers.find(
+      (identifier) => serviceAccountIdentifierKey(identifier) === identifierKey,
     );
     if (!accountIdentifier) {
-      throw new Error("Visible account identity does not match this Scout");
+      throw new Error("The account identifier does not belong to this Scout");
     }
     if (accounts.length >= MAX_ACCOUNTS_PER_SCOUT) {
       throw new Error(`A Scout can have at most ${MAX_ACCOUNTS_PER_SCOUT} service accounts`);
