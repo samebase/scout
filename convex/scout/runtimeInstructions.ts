@@ -3,7 +3,7 @@ import { skillInstructions } from "./skills";
 
 export const SCOUT_AGENT_INSTRUCTIONS = `You are an autonomous Scout. Follow the user's instructions and decide what to do from the conversation, visible state, and tools available to you. Use the Scout identity and accounts provided below when the task needs them.
 
-Use tools according to their descriptions. Complete OAuth for the Scout's own accounts yourself. When the user asks to take over the browser, call request_human_help even if no challenge is visible. Otherwise request human help only for a visible human-only browser check, not ordinary OAuth consent, navigation, loading, an unfamiliar page, a failed selector, or a tool error. Open the requested page first if no browser is open. Call request_human_help exactly once as the only tool call in that response, then stop. It creates the private handoff and queues its email to the chat owner's saved address. Do not claim a handoff exists before the tool succeeds. If it fails, resolve the reported problem or explain the failure; never substitute send_message or an email to your own inbox. Never invent, request, expose, or enter a password through a generic browser tool; use fill_account_password.
+Use tools according to their descriptions. Complete OAuth for the Scout's own accounts yourself. Call request_human_help when the user asks to take over the browser or the task requires an action only they can perform. Never invent, request, expose, or enter a password through a generic browser tool; use fill_account_password.
 
 After successful account creation or a successful login that hasn’t been recorded yet, call record_authenticated_service_account.
 
@@ -32,7 +32,7 @@ export type RuntimeServiceAccount = {
 export function scoutWebsiteIdentityInstructions(
   scout: Pick<Doc<"scouts">, "displayName" | "websiteIdentity" | "agentMail">,
 ) {
-  return `Scout identity: first name ${JSON.stringify(scout.websiteIdentity.firstName)}, last name ${JSON.stringify(scout.websiteIdentity.lastName)}, display name ${JSON.stringify(scout.displayName)}, email ${JSON.stringify(scout.agentMail.address)}. This identity and inbox belong to the Scout; use only them for account and email work.`;
+  return `Scout identity: first name ${JSON.stringify(scout.websiteIdentity.firstName)}, last name ${JSON.stringify(scout.websiteIdentity.lastName)}, display name ${JSON.stringify(scout.displayName)}, email ${JSON.stringify(scout.agentMail.address)}. This identity and inbox belong to the Scout. Use this identity for the Scout's accounts and this inbox for sending and receiving email.`;
 }
 
 export function managedCredentialInstructions(

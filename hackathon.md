@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-06T14:29:48Z
+- **Last updated:** 2026-09-06T15:41:11Z
 
 ## Log
 
@@ -1023,9 +1023,16 @@ existing Scouts through Convex and shows the browser, conversation, help request
 Review has its own landing page and a link to the existing Lab while its dedicated flow is still being designed.
 Tailwind utilities and shared class variants keep the product styling alongside its components.
 
-### 2026-09-06 - working tree
+### 2026-09-06 - 1947f45 - v178
 
 Scout records successful signup and login using its saved account identifier, without searching
 for exact email text or logout controls. Each report links to its browser operation while account,
 service, and Scout checks retain the existing credential bindings
 (`convex/scout/serviceAccounts.ts`, `convex/scout/accountTools.ts`).
+
+### 2026-09-06 - working tree
+
+Scout can fill unlabeled password fields through a CSS target while retaining the saved-host
+and password-field checks. Browser guidance allows DOM inspection when labels are insufficient,
+and handoff guidance covers actions the user needs to perform without requiring a visible challenge
+(`convex/scout/browserTarget.ts`, `convex/scout/humanHandoffTool.ts`).

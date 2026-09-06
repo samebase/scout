@@ -1,6 +1,7 @@
 import { chromium } from "playwright-core";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { omitNullish } from "../../shared/omitNullish";
+import { browserTargetSchema } from "./browserTarget";
 import { connectPlaywrightBrowser } from "./playwrightBrowser";
 
 function fakePage(
@@ -85,6 +86,57 @@ afterEach(() => {
 });
 
 describe("trusted Playwright observer", () => {
+  test.skipIf(process.env["SCOUT_RUN_BROWSER_PROOF"] !== "true")(
+    "fills unlabeled password inputs without selecting hidden or ambiguous fields",
+    async () => {
+      const nativeBrowser = await chromium.launch(
+        omitNullish({
+          executablePath: process.env["SCOUT_BROWSER_PROOF_CHROMIUM"],
+          headless: true,
+        }),
+      );
+      try {
+        const context = await nativeBrowser.newContext();
+        const page = await context.newPage();
+        await page.setContent(`
+          <input type="password" name="password" hidden>
+          <input type="password" name="password">
+          <input type="password" name="confirmation">
+        `);
+        vi.spyOn(chromium, "connectOverCDP").mockResolvedValue(nativeBrowser);
+        const browser = await connectPlaywrightBrowser("wss://browser.firecrawl.dev/cdp");
+        const target = browserTargetSchema.parse({
+          kind: "css",
+          selector: 'input[name="password"]',
+        });
+
+        await expect(browser.getElementAttribute(target, "type")).resolves.toBe("password");
+        await browser.fill(target, "test-password");
+
+        expect(await page.locator("input[hidden]").inputValue()).toBe("");
+        expect(await page.locator('input[name="password"]:visible').inputValue()).toBe(
+          "test-password",
+        );
+        const ambiguous = browserTargetSchema.parse({
+          kind: "css",
+          selector: 'input[type="password"]',
+        });
+        await expect(browser.getElementAttribute(ambiguous, "type")).rejects.toThrow(
+          "strict mode violation",
+        );
+        await expect(browser.fill(ambiguous, "wrong-password")).rejects.toThrow(
+          "strict mode violation",
+        );
+        expect(await page.locator('input[name="confirmation"]').inputValue()).toBe("");
+        expect(await page.locator('input[name="password"]:visible').inputValue()).toBe(
+          "test-password",
+        );
+      } finally {
+        await nativeBrowser.close();
+      }
+    },
+  );
+
   test.skipIf(process.env["SCOUT_RUN_BROWSER_PROOF"] !== "true")(
     "preserves native iframe snapshots and semantic targets without internal references",
     async () => {

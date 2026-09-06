@@ -162,6 +162,8 @@ class ConnectedPlaywrightBrowser implements PlaywrightBrowser {
   private locator(target: BrowserTarget): Locator {
     const page = this.page();
     switch (target.kind) {
+      case "css":
+        return page.locator(`css=${target.selector}`).filter({ visible: true });
       case "role":
         return page
           .getByRole(target.role, {

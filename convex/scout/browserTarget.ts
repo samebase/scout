@@ -16,6 +16,23 @@ export const browserRoles = [
 export const browserTargetSchema = z.discriminatedUnion("kind", [
   z
     .object({
+      kind: z.literal("css"),
+      selector: z
+        .string()
+        .trim()
+        .min(1)
+        .max(1_000)
+        .refine(
+          (selector) => !selector.includes(">>"),
+          "Use a CSS selector within the current page, without Playwright selector chaining",
+        )
+        .describe(
+          "CSS selector from the inspected current page DOM that identifies one visible field",
+        ),
+    })
+    .strict(),
+  z
+    .object({
       kind: z.literal("role"),
       role: z.enum(browserRoles),
       name: z.string().min(1).max(1_000),

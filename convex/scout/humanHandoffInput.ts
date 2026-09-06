@@ -9,7 +9,7 @@ export const humanHandoffInputSchema = z.object({
     .min(1)
     .max(MAX_HANDOFF_REASON_LENGTH)
     .describe(
-      "In at most 500 characters, describe the user's requested takeover or the visible human-only check in the open browser. Do not include private links or credentials.",
+      "Briefly describe what the user needs to do in the browser. Do not include private links or credentials.",
     ),
 });
 
