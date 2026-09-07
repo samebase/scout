@@ -20,7 +20,8 @@ reactive access updates. Its explicit differences are:
 - A verified email is required before protected app access.
 - `/members` provides approval controls that edit the same field as the Convex dashboard.
 - Public signup remains unapproved; there is no automatic-approval setting.
-- Terms, account deletion, organization memberships, and invitation approval are outside scope.
+- Terms, organization memberships, and invitation approval are outside scope. Account deletion
+  is covered separately in the [deletion contract](./account-deletion-rfc.md).
 - Approved members get Play/Review entry; existing shared Scout execution stays in the admin Lab.
 
 [staff]: https://github.com/samebase/samebase/blob/be38438b9aafe08fe320f4ee97c871c031498022/apps/samebase/convex/identity/access.ts

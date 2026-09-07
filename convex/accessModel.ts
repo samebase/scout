@@ -10,6 +10,8 @@ export const accountAccessFields = v.object({
 export const viewerAccessValidator = v.union(
   v.object({ kind: v.literal("anonymous") }),
   v.object({ kind: v.literal("unavailable") }),
+  v.object({ kind: v.literal("deleting") }),
+  v.object({ kind: v.literal("deleted") }),
   accountAccessFields.extend({
     kind: v.literal("account"),
     accessKeys: v.array(accessKeyValidator),

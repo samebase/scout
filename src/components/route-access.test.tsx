@@ -96,7 +96,17 @@ async function open(path: string) {
     component: ReviewLanding,
   });
   const router = createRouter({
-    routeTree: root.addChildren([lab, settings, review]),
+    routeTree: root.addChildren([
+      lab,
+      settings,
+      review,
+      createRoute({
+        getParentRoute: () => root,
+        path: "/account-deletion",
+        staticData: { access: "access_public" },
+        component: () => <h1>Account deletion</h1>,
+      }),
+    ]),
     history: createMemoryHistory({ initialEntries: [path] }),
   });
   render(<RouterProvider router={router} />);
@@ -177,3 +187,19 @@ test("staff can mount Lab content before member approval", async () => {
   expect(await screen.findByRole("heading", { name: "Lab contents" })).toBeTruthy();
   expect(screen.getByRole("link", { name: "Members" })).toBeTruthy();
 });
+
+test.each(["deleting", "deleted"])(
+  "%s accounts leave protected content for the deletion page",
+  async (kind) => {
+    setViewer("role_staff");
+    await open("/chats");
+    expect(await screen.findByRole("heading", { name: "Lab contents" })).toBeTruthy();
+    act(() => {
+      remote.values.set("viewer", { kind });
+      remote.revision += 1;
+      for (const listener of remote.subscribers) listener();
+    });
+    expect(await screen.findByRole("heading", { name: "Account deletion" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Lab contents" })).toBeNull();
+  },
+);

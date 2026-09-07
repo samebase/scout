@@ -5,6 +5,7 @@ import { api, internal } from "../../convex/_generated/api";
 import { ADMIN_EMAIL, insertTestAccount } from "../../convex/testing/accounts";
 import schema from "../../convex/schema";
 import { AUTH_EMAIL_COOLDOWN } from "../../shared/auth";
+import type { Doc } from "../../convex/_generated/dataModel";
 
 type ScoutTest = TestConvex<typeof schema>;
 const modules = import.meta.glob("../../convex/**/*.*s");
@@ -637,6 +638,28 @@ describe("password authentication", () => {
     expectPersistedApproval(afterRecovery, isApproved);
   });
 
+  it("refuses a password session for a deleted user even if credentials still exist", async () => {
+    const t = convexTest(schema, modules);
+    await createVerifiedUser(t, MEMBER_EMAIL, "secure-password");
+    const userId = await t.run(async (ctx) => {
+      const user = await ctx.db.query("users").unique();
+      if (!user) throw new Error("Expected a verified account");
+      await ctx.db.replace(user._id, { state: "deleted", deletedAt: Date.now() });
+      return user._id;
+    });
+
+    await expect(
+      t.action(api.auth.signIn, {
+        provider: "password",
+        params: { email: MEMBER_EMAIL, password: "secure-password", flow: "signIn" },
+      }),
+    ).rejects.toThrow("This account is being deleted or has been deleted");
+    await t.run(async (ctx) => {
+      expect(await ctx.db.query("authSessions").collect()).toHaveLength(1);
+      expect(await ctx.db.get(userId)).toMatchObject({ state: "deleted" });
+    });
+  });
+
   it("does not configure anonymous authentication", async () => {
     const t = convexTest(schema, modules);
 
@@ -683,7 +706,7 @@ async function createVerifiedUser(t: ScoutTest, email: string, password: string)
   });
 }
 
-function expectPersistedApproval(user: { isApproved?: boolean }, isApproved: boolean) {
+function expectPersistedApproval(user: Doc<"users">, isApproved: boolean) {
   expect(user).toMatchObject({ isApproved });
   expect(user).not.toHaveProperty("role");
   expect(user).not.toHaveProperty("status");

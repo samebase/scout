@@ -94,10 +94,15 @@ const passwordProvider = {
 export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
   providers: [passwordProvider],
   callbacks: {
+    beforeSessionCreation: async (ctx, { userId }) => {
+      await ctx.runQuery(internal.accounts.assertActiveForAuth, { userId });
+    },
     afterUserCreatedOrUpdated: async (ctx, args) => {
+      await ctx.runQuery(internal.accounts.assertActiveForAuth, { userId: args.userId });
       if (args.existingUserId === null) {
         await ctx.db.patch(args.userId, {
           isApproved: false,
+          state: "active",
         });
       }
     },

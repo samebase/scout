@@ -25,7 +25,12 @@ export const approveSeedPasswordAccount = internalMutation({
     const account = accounts[0];
     if (!account) return false;
     const user = await ctx.db.get(account.userId);
-    if (!user || user.emailVerificationTime === undefined)
+    if (
+      !user ||
+      user.state === "deleted" ||
+      user.state === "deleting" ||
+      user.emailVerificationTime === undefined
+    )
       throw new Error("A verified seed account is required");
     await ctx.db.patch(user._id, { isApproved: true });
     return true;
