@@ -98,18 +98,27 @@ async function setup() {
       input: JSON.stringify({ command }),
       operationId: crypto.randomUUID(),
     });
-  const read = (url = "https://example.com/docs/billing") =>
+  const read = (
+    url = "https://example.com/docs/billing",
+    format?: "markdown" | "html" | "rawHtml",
+  ) =>
     owner.action(api.scout.manual.executeTool, {
       threadId,
       toolName: "web_read",
-      input: JSON.stringify({ url }),
+      input: JSON.stringify({ url, format }),
       operationId: crypto.randomUUID(),
     });
-  const readAsAgent = (url = "https://example.com/docs/billing") =>
+  const readAsAgent = (
+    url = "https://example.com/docs/billing",
+    format?: "markdown" | "html" | "rawHtml",
+  ) =>
     owner.action(async (ctx) => {
       const tool = createWebTools(ctx, { threadId, userId }).web_read;
       if (!tool.execute) throw new Error("web_read has no executor");
-      return tool.execute({ url }, { toolCallId: crypto.randomUUID(), messages: [], context: {} });
+      return tool.execute(
+        { url, format },
+        { toolCallId: crypto.randomUUID(), messages: [], context: {} },
+      );
     });
   return {
     backend,
@@ -413,6 +422,139 @@ js-exec report.ts`);
 });
 
 describe("web reads saved to the workspace", () => {
+  it.each(["html", "rawHtml"] satisfies Array<"html" | "rawHtml">)(
+    "saves complete %s with safe provenance, HTML naming, and a bounded excerpt",
+    async (format) => {
+      const { owner, threadId, read, readAsAgent, run } = await setup();
+      const content = `<!doctype html><html><body>${"<p>A &amp; B 🚀</p>".repeat(300)}<a href="/next">Last link</a></body></html>`;
+      const title = "Before --><script>bad()</script><!-- After";
+      scrape.mockResolvedValue({
+        markdown: "Wrong format",
+        html: format === "html" ? content : "Wrong format",
+        rawHtml: format === "rawHtml" ? content : "Wrong format",
+        metadata: { title, sourceURL: "https://redirect.example/actual", creditsUsed: 1 },
+      });
+      const url = "https://example.com/docs/billing?plan=pro#price";
+      const store = vi.spyOn(R2.prototype, "store");
+      const manual = await read(url, format);
+      if (manual.outcome.kind !== "success") throw new Error(manual.outcome.error);
+      const result = await readAsAgent(url, format);
+      expect(JSON.parse(manual.outcome.output)).toMatchObject({ format });
+      expect(result).toMatchObject({
+        format,
+        requestedUrl: url,
+        sourceUrl: "https://redirect.example/actual",
+        title,
+        retrievedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+        statusCode: null,
+        creditsUsed: 1,
+        excerpt: Array.from(content).slice(0, 2_000).join(""),
+        excerptTruncated: true,
+      });
+      const suffix = format === "rawHtml" ? "\\.raw\\.html" : "\\.html";
+      expect(result).toMatchObject({
+        path: expect.stringMatching(
+          new RegExp(`^/workspace/sources/example\\.com/docs-billing-[a-f0-9]{8}${suffix}$`),
+        ),
+      });
+      const { entries } = await owner.query(api.scout.workspaces.list, { threadId });
+      const file = entries.find((entry) => entry.kind === "file");
+      if (!file || file.kind !== "file") throw new Error("Source file not registered");
+      const preview = await owner.action(api.scout.workspaceTools.readFile, {
+        threadId,
+        path: file.path,
+      });
+      expect(preview.text?.startsWith("<!--\n")).toBe(true);
+      expect(preview.text?.endsWith(`-->\n${content}`)).toBe(true);
+      const header = preview.text?.split("-->\n")[0]?.slice(5);
+      if (!header) throw new Error("Missing HTML provenance");
+      expect(header).not.toContain("--");
+      expect(header).not.toContain("<");
+      expect(JSON.parse(header)).toMatchObject({ requestedUrl: url, title, format });
+      expect(result).toMatchObject({ byteCount: preview.bytes.byteLength });
+      expect(store).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.any(Uint8Array),
+        expect.objectContaining({ type: "text/html; charset=utf-8" }),
+      );
+      expect(scrape).toHaveBeenLastCalledWith(url, {
+        formats: [format],
+        onlyMainContent: format !== "rawHtml",
+        removeBase64Images: true,
+        timeout: 60_000,
+        autoResume: false,
+      });
+      const searched = await run(`rg -o 'Last link' '${file.path}'`);
+      if (searched.outcome.kind !== "success") throw new Error(searched.outcome.error);
+      expect(bashResultSchema.parse(JSON.parse(searched.outcome.output)).stdout).toBe(
+        "Last link\n",
+      );
+    },
+  );
+
+  it.each(["markdown", "html", "rawHtml"] satisfies Array<"markdown" | "html" | "rawHtml">)(
+    "rejects missing or empty %s instead of falling back to another format",
+    async (format) => {
+      const { owner, threadId, read } = await setup();
+      for (const content of [undefined, "", " \n\t"]) {
+        scrape.mockResolvedValue({
+          markdown: "Other",
+          html: "Other",
+          rawHtml: "Other",
+          [format]: content,
+        });
+        expect((await read("https://example.com", format)).outcome).toMatchObject({
+          kind: "error",
+          error: expect.stringContaining(`Firecrawl returned no ${format} content`),
+        });
+      }
+      expect(blobs.size).toBe(0);
+      expect((await owner.query(api.scout.workspaces.list, { threadId })).entries).toEqual([]);
+    },
+  );
+
+  it("rejects unsupported formats before fetching", async () => {
+    const { owner, threadId } = await setup();
+    const result = await owner.action(api.scout.manual.executeTool, {
+      threadId,
+      toolName: "web_read",
+      input: JSON.stringify({ url: "https://example.com", format: "json" }),
+      operationId: crypto.randomUUID(),
+    });
+    expect(result.outcome.kind).toBe("error");
+    expect(scrape).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { statusCode: 403, error: "Blocked" },
+    { statusCode: 404 },
+    { statusCode: 200, error: "Renderer failed" },
+  ])("rejects provider page failures before uploading: %j", async (metadata) => {
+    const { read } = await setup();
+    scrape.mockResolvedValue({ html: "<p>Error page</p>", metadata });
+    expect((await read("https://example.com", "html")).outcome).toMatchObject({
+      kind: "error",
+      error: expect.stringContaining("Firecrawl page failed"),
+    });
+    expect(blobs.size).toBe(0);
+  });
+
+  it("preserves the provider failure when the selected content is missing", async () => {
+    const { read } = await setup();
+    scrape.mockResolvedValue({ metadata: { statusCode: 403, error: "Blocked by origin" } });
+    expect((await read("https://example.com", "rawHtml")).outcome).toMatchObject({
+      kind: "error",
+      error: expect.stringContaining("Firecrawl page failed (403): Blocked by origin"),
+    });
+    expect(blobs.size).toBe(0);
+  });
+
+  it.each([200, 304])("accepts a clean provider page status %s", async (statusCode) => {
+    const { read } = await setup();
+    scrape.mockResolvedValue({ html: "<p>Page</p>", metadata: { statusCode } });
+    expect((await read("https://example.com", "html")).outcome.kind).toBe("success");
+  });
+
   it("saves the complete page, returns only an excerpt, and lets Bash find an answer past 20,000 characters", async () => {
     const { owner, other, threadId, userId, read, run } = await setup();
     const markdown = `${"Introduction\n".repeat(2_000)}\nThe secret answer is 42.\n`;
@@ -552,29 +694,32 @@ describe("web reads saved to the workspace", () => {
     expect(await owner.query(api.scout.workspaces.list, { threadId })).toEqual(before);
   });
 
-  it("enforces UTF-8 bytes including provenance at the exact per-file boundary", async () => {
-    const { owner, threadId, read } = await setup();
-    scrape.mockResolvedValue({ markdown: "a" });
-    await read();
-    const initial = await owner.query(api.scout.workspaces.list, { threadId });
-    const file = initial.entries.find((entry) => entry.kind === "file");
-    if (!file || file.kind !== "file") throw new Error("Missing source");
-    const remaining = MAX_WORKSPACE_FILE_BYTES - (file.size - 1);
-    const markdown = "é".repeat(Math.floor(remaining / 2)) + "a".repeat(remaining % 2);
-    scrape.mockResolvedValue({ markdown });
-    expect((await read()).outcome.kind).toBe("success");
-    const before = await owner.query(api.scout.workspaces.list, { threadId });
-    expect(before.entries).toContainEqual(
-      expect.objectContaining({ size: MAX_WORKSPACE_FILE_BYTES }),
-    );
-    scrape.mockResolvedValue({ markdown: `${markdown}a` });
-    expect((await read()).outcome).toMatchObject({
-      kind: "error",
-      error: expect.stringContaining("Page is too large"),
-    });
-    expect(await owner.query(api.scout.workspaces.list, { threadId })).toEqual(before);
-    expect(blobs.size).toBe(2);
-  });
+  it.each(["markdown", "html", "rawHtml"] satisfies Array<"markdown" | "html" | "rawHtml">)(
+    "enforces UTF-8 bytes including provenance at the exact %s file boundary",
+    async (format) => {
+      const { owner, threadId, read } = await setup();
+      scrape.mockResolvedValue({ [format]: "a" });
+      await read("https://example.com", format);
+      const initial = await owner.query(api.scout.workspaces.list, { threadId });
+      const file = initial.entries.find((entry) => entry.kind === "file");
+      if (!file || file.kind !== "file") throw new Error("Missing source");
+      const remaining = MAX_WORKSPACE_FILE_BYTES - (file.size - 1);
+      const content = "é".repeat(Math.floor(remaining / 2)) + "a".repeat(remaining % 2);
+      scrape.mockResolvedValue({ [format]: content });
+      expect((await read("https://example.com", format)).outcome.kind).toBe("success");
+      const before = await owner.query(api.scout.workspaces.list, { threadId });
+      expect(before.entries).toContainEqual(
+        expect.objectContaining({ size: MAX_WORKSPACE_FILE_BYTES }),
+      );
+      scrape.mockResolvedValue({ [format]: `${content}a` });
+      expect((await read("https://example.com", format)).outcome).toMatchObject({
+        kind: "error",
+        error: expect.stringContaining("Page is too large"),
+      });
+      expect(await owner.query(api.scout.workspaces.list, { threadId })).toEqual(before);
+      expect(blobs.size).toBe(2);
+    },
+  );
 
   it("fails before fetching if R2 configuration or chat ownership is missing", async () => {
     const { owner, userId, threadId, otherThreadId, readAsAgent } = await setup();

@@ -19,10 +19,26 @@ not. Text previews are read-only and render HTML as text. Binary files can be do
 
 ## Saved web pages
 
-`web_read({ url })` saves the complete extracted Markdown directly to R2, then adds it to the
-chat's workspace. This works for both Scout and **Read a web page** in the manual tool menu.
-It returns a 2,000-character excerpt, the saved path, source metadata, and the exact file byte
-count. Use Bash to search the saved page or read a section without fetching it again.
+`web_read({ url, format? })` saves the complete selected Firecrawl output directly to R2, then adds
+it to the chat's workspace. Omitting `format` keeps the existing Markdown default. This works for
+both Scout and **Read a web page** in the manual tool menu.
+It returns the selected format, a 2,000-character excerpt, the saved path, source metadata, retrieval
+time, provider page status, and the exact file byte count. Use Bash to search the saved page or read
+a section without fetching it again.
+
+| `format`   | Provider content                      | Filename ending |
+| ---------- | ------------------------------------- | --------------- |
+| `markdown` | Extracted main content as Markdown    | `.md`           |
+| `html`     | Cleaned main-content HTML             | `.html`         |
+| `rawHtml`  | Unmodified HTML returned by Firecrawl | `.raw.html`     |
+
+These names follow [Firecrawl's scrape formats](https://docs.firecrawl.dev/features/scrape).
+HTML is useful when tags, attributes, or embedded page data matter. `rawHtml` retains provider HTML
+before content cleanup; it is not a browser session, a downloaded site with assets, or a guarantee
+of the origin server's exact response bytes. The importer adds provenance but keeps every character
+of the selected provider content. It never substitutes another format if the requested one is missing
+or blank. Missing output names the requested format; provider page failures preserve their status
+and error detail even when there is no content.
 
 For example, `https://example.com/docs/billing?plan=pro` produces:
 
@@ -34,7 +50,10 @@ Names come from the requested URL, not a page title or redirect. The hostname an
 bounded safe characters; the slug is at most 80 characters, and `/` becomes `index`. Query strings
 and fragments stay out of the filename. Each read gets a short UUID suffix, so reading the same URL twice keeps
 two separate files. The document's provenance header preserves the complete requested URL, the
-provider-reported source URL, title, and retrieval time.
+provider-reported source URL, title, retrieval time, and selected format. Markdown uses YAML
+frontmatter. HTML uses a leading comment containing JSON with comment-sensitive characters escaped,
+followed by the complete provider HTML. HTML downloads use `text/html`; workspace previews display
+the source as text.
 
 The importer creates missing parent directories and refuses to overwrite existing paths or follow
 symlink parents. Concurrent web reads add files independently; a stale Bash save cannot remove a
@@ -45,6 +64,40 @@ The 256 KiB per-file limit includes the UTF-8 provenance header. Oversized pages
 explicitly, without a truncated file or automatic splitting. R2 must be configured before a read;
 success requires both an upload and registration. A registration failure can leave an unreferenced
 R2 object. If saving is not confirmed, inspect the workspace before retrying.
+Provider page errors and non-success page status codes also fail before upload, even when the
+Firecrawl API request itself succeeded. Page status 304 is accepted, matching Firecrawl's documented
+[clean-load behavior](https://docs.firecrawl.dev/features/scrape#response-metadata-and-status-codes).
+
+### Firecrawl options
+
+The tool sends one selected format, `onlyMainContent: true` for Markdown and cleaned HTML, and
+`onlyMainContent: false` for raw HTML. It keeps `removeBase64Images: true`, a 60-second timeout, and
+SDK `autoResume: false`. The shared client makes one SDK attempt. Firecrawl documents
+`removeBase64Images` as affecting Markdown only; HTML may therefore reach the file limit sooner.
+Other provider options retain their defaults. In particular, Firecrawl currently allows cached
+content up to two days old by default, so the saved retrieval time records when Scout received the
+result, not when Firecrawl fetched the origin page.
+See the [scrape API reference](https://docs.firecrawl.dev/api-reference/endpoint/scrape).
+
+If a concrete use case needs more control, the next useful explicit options are `onlyMainContent`
+for keeping navigation in cleaned output and `maxAge` for freshness, with zero requesting a fresh
+scrape. `includeTags` and `excludeTags` can target a page section; a bounded `waitFor` can help with
+late content after a demonstrated timing problem. These are recommendations, not supported inputs.
+Keep each option typed and documented instead of adding an arbitrary provider-options object.
+
+### HTML tools in the sandbox
+
+The installed `just-bash` 3.4.2 includes `html-to-markdown`. A local HTML fixture verified that it
+decodes entities and converts headings, lists, and links without network configuration. Scout's
+current command allowlist does not enable it. Enabling this existing converter would be the smallest
+follow-up for local HTML-to-Markdown conversion.
+
+It does not provide a CSS-selector or XPath HTML query command. The installed command inventory has
+no `htmlq`, `pup`, `xq`, or `xmllint`; its `yq` supports XML rather than general HTML and is also
+outside Scout's allowlist. In the installed QuickJS runtime, a fixture confirmed that `DOMParser`
+is undefined and importing `cheerio` fails. `rg`, `sed`, and `js-exec` can inspect source text, but
+they do not provide a browser DOM or a general HTML parser. Add a parser only when a task actually
+needs structured HTML queries.
 
 ## Saved tool results
 
