@@ -78,4 +78,20 @@ describe("worktree deployment", () => {
       rmSync(directory, { recursive: true });
     }
   });
+
+  it.each(["CONVEX_DEPLOY_KEY", "CONVEX_DEPLOYMENT_TOKEN"])(
+    "recognizes dotenv colon syntax for %s",
+    (key) => {
+      const directory = mkdtempSync(path.join(tmpdir(), "scout-dotenv-"));
+      try {
+        writeFileSync(path.join(directory, ".env"), `${key}: dev:primary-123|override\n`);
+        writeFileSync(path.join(directory, ".env.local"), "CONVEX_DEPLOYMENT=dev:worktree-456\n");
+        expect(() => requireWorktreeDeployment(readDeploymentEnv(directory), primary, [])).toThrow(
+          key,
+        );
+      } finally {
+        rmSync(directory, { recursive: true });
+      }
+    },
+  );
 });

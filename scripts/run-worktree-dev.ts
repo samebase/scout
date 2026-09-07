@@ -1,11 +1,11 @@
-// Samebase starter dev launcher sha256:f99708793fd742646bd3e463e75a2a835ac14e3101d81ad8c72e5cf8f68d12fb
+// Samebase starter dev launcher sha256:704cdd4ab69672fa6befc1aa2ddc698312a164224b0d03d056231f9c2bcd690f
 /// <reference types="node" />
 import process from "node:process";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { parseEnv } from "node:util";
 import { fileURLToPath } from "node:url";
+import { parse } from "dotenv";
 
 import { runPrimaryDev } from "./run-primary-dev.ts";
 
@@ -13,7 +13,7 @@ export function readDeploymentEnv(directory: string) {
   const env: NodeJS.ProcessEnv = {};
   for (const name of [".env", ".env.local"]) {
     const file = path.join(directory, name);
-    if (existsSync(file)) Object.assign(env, parseEnv(readFileSync(file, "utf8")));
+    if (existsSync(file)) Object.assign(env, parse(readFileSync(file, "utf8")));
   }
   return env;
 }
