@@ -85,13 +85,13 @@ The core workflow runs on macOS, Linux, and Windows. See
 
 ## Checks and builds
 
-| Command                           | Purpose                                                     |
-| --------------------------------- | ----------------------------------------------------------- |
-| `pnpm run check`                  | Format, lint, type-check, test, and verify the dev launcher |
-| `pnpm run build`                  | Run the complete Cloudflare build path                      |
-| `pnpm run deploy:convex`          | Build and deploy the production app to `convex.site`        |
-| `pnpm run deploy:dry-run`         | Validate a production upload without publishing it          |
-| `pnpm run deploy:preview:dry-run` | Validate a preview upload without publishing it             |
+| Command                           | Purpose                                              |
+| --------------------------------- | ---------------------------------------------------- |
+| `pnpm run check`                  | Format, lint, type-check, and test                   |
+| `pnpm run build`                  | Run the complete Cloudflare build path               |
+| `pnpm run deploy:convex`          | Build and deploy the production app to `convex.site` |
+| `pnpm run deploy:dry-run`         | Validate a production upload without publishing it   |
+| `pnpm run deploy:preview:dry-run` | Validate a preview upload without publishing it      |
 
 The dry-run commands need `CLOUDFLARE_WORKER_NAME`.
 
