@@ -800,6 +800,7 @@ describe("Chat workspace", () => {
     });
     await user.click(screen.getByRole("button", { name: "Run tool" }));
 
+    await waitFor(() => expect(remote.executeTool).toHaveBeenCalledTimes(2));
     const firstCall = remote.executeTool.mock.calls[0]?.[0];
     const secondCall = remote.executeTool.mock.calls[1]?.[0];
     expect(firstCall).toMatchObject({ operationId: expect.any(String) });
@@ -837,6 +838,7 @@ describe("Chat workspace", () => {
     });
     await user.click(screen.getByRole("button", { name: "Run tool" }));
 
+    await waitFor(() => expect(remote.executeTool).toHaveBeenCalledTimes(2));
     expect(remote.executeTool.mock.calls[1]?.[0].operationId).toBe(
       remote.executeTool.mock.calls[0]?.[0].operationId,
     );

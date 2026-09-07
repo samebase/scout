@@ -85,6 +85,7 @@ import type * as scout_turnLifecycle from "../scout/turnLifecycle.js";
 import type * as scout_turnWorkflow from "../scout/turnWorkflow.js";
 import type * as scout_turns from "../scout/turns.js";
 import type * as scout_webTools from "../scout/webTools.js";
+import type * as scout_workspaceFs from "../scout/workspaceFs.js";
 import type * as scout_workspaceShell from "../scout/workspaceShell.js";
 import type * as scout_workspaceTools from "../scout/workspaceTools.js";
 import type * as scout_workspaces from "../scout/workspaces.js";
@@ -177,6 +178,7 @@ declare const fullApi: ApiFromModules<{
   "scout/turnWorkflow": typeof scout_turnWorkflow;
   "scout/turns": typeof scout_turns;
   "scout/webTools": typeof scout_webTools;
+  "scout/workspaceFs": typeof scout_workspaceFs;
   "scout/workspaceShell": typeof scout_workspaceShell;
   "scout/workspaceTools": typeof scout_workspaceTools;
   "scout/workspaces": typeof scout_workspaces;

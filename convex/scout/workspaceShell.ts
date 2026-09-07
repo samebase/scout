@@ -1,7 +1,8 @@
 "use node";
 
 import { createHash } from "node:crypto";
-import { Bash, InMemoryFs, type BashOptions, type InitialFiles } from "just-bash";
+import { Bash, type BashOptions, type InitialFiles } from "just-bash";
+import { WorkspaceFs } from "./workspaceFs";
 import {
   MAX_WORKSPACE_BYTES,
   MAX_WORKSPACE_ENTRIES,
@@ -79,7 +80,7 @@ export async function runWorkspaceShell(args: {
     if (inputBytes > MAX_WORKSPACE_BYTES) throw new Error("Workspace size limit exceeded");
     initialFiles[entry.path] = { content: bytes, mode: entry.mode, mtime: new Date(entry.mtime) };
   }
-  const fs = new InMemoryFs(initialFiles, { maxTotalBytes: MAX_WORKSPACE_BYTES });
+  const fs = new WorkspaceFs(initialFiles, { maxTotalBytes: MAX_WORKSPACE_BYTES });
   await fs.mkdir(WORKSPACE_ROOT, { recursive: true });
   for (const entry of args.entries) {
     if (entry.kind === "directory") {

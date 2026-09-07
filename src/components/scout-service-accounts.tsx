@@ -2,7 +2,7 @@ import { useAction, useMutation } from "convex/react";
 import type { FunctionArgs, FunctionReturnType } from "convex/server";
 import { ConvexError } from "convex/values";
 import { LoaderCircleIcon, PlusIcon } from "lucide-react";
-import { type FormEvent, type ReactNode, useRef, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { api } from "../../convex/_generated/api";
 import { ServiceIcon } from "./service-icon";
@@ -40,11 +40,9 @@ export function ServiceAccountsSection({
   editor: AccountEditor;
   onEdit: (editor: AccountEditor) => void;
 }) {
-  const [submitting, setSubmitting] = useState(false);
   const trigger = useRef<HTMLButtonElement | null>(null);
 
   const close = () => {
-    setSubmitting(false);
     onEdit({ kind: "closed" });
     requestAnimationFrame(() => trigger.current?.focus());
   };
@@ -79,7 +77,6 @@ export function ServiceAccountsSection({
           account={editor.kind === "update" ? editor.account : null}
           onSaved={close}
           onCancel={close}
-          onSubmittingChange={setSubmitting}
         />
       )}
 
@@ -114,7 +111,7 @@ export function ServiceAccountsSection({
                   size="sm"
                   variant="outline"
                   aria-label={`Edit ${account.serviceName} login`}
-                  disabled={scout.status !== "active" || submitting || editor.kind !== "closed"}
+                  disabled={scout.status !== "active" || editor.kind !== "closed"}
                   onClick={(event) => {
                     trigger.current = event.currentTarget;
                     onEdit({ kind: "update", account });
@@ -189,14 +186,12 @@ function AccountForm({
   account,
   onSaved,
   onCancel,
-  onSubmittingChange,
 }: {
   scout: Scout;
   accounts: ServiceAccount[];
   account: ServiceAccount | null;
   onSaved: () => void;
   onCancel: () => void;
-  onSubmittingChange: (submitting: boolean) => void;
 }) {
   const savePassword = useAction(api.scout.serviceAccountCredentialActions.savePassword);
   const saveOAuth = useMutation(api.scout.serviceAccounts.saveOAuth);
@@ -213,6 +208,13 @@ function AccountForm({
         },
   );
   const [state, setState] = useState<SaveState>({ kind: "idle" });
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const submitting = state.kind === "submitting";
   const providers = accounts.filter((candidate) => candidate._id !== account?._id);
 
@@ -223,7 +225,6 @@ function AccountForm({
       ? { kind: "update", serviceAccountId: account._id, identifier }
       : { kind: "create", scoutId: scout._id, serviceName, serviceDomain, identifier };
     setState({ kind: "submitting" });
-    onSubmittingChange(true);
     try {
       switch (login.kind) {
         case "password":
@@ -242,10 +243,9 @@ function AccountForm({
           return exhaustive;
         }
       }
-      onSaved();
+      if (mounted.current) onSaved();
     } catch (error) {
-      onSubmittingChange(false);
-      setState({ kind: "failed", message: accountSaveError(error) });
+      if (mounted.current) setState({ kind: "failed", message: accountSaveError(error) });
     }
   };
 

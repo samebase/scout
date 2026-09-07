@@ -151,14 +151,24 @@ recovery manifest are outside this MVP.
 ## Limits and failure behavior
 
 - 200 entries, including directories and the workspace root.
+- During execution, 1,000 virtual filesystem entries in total, including runtime files and temporary
+  paths outside `/workspace`. New paths are limited to 32 components and 1,024 characters; symlink
+  targets are also limited to 1,024 characters. These limits apply before creation, including implicit
+  parents, recursive copies, moves, and links. At full capacity, a move can require freeing an entry
+  first because the interpreter creates its destination before removing its source.
 - 256 KiB per file and 5 MiB of persisted file content per chat.
 - 15 seconds of shell execution and 128 KiB of command output. Storage transfer adds time.
 - Each `js-exec` is limited to 5 seconds and the library's 64 MiB QuickJS memory budget.
+  This is a guest-engine limit, not a cap on the hosting Node process's total memory. `WorkspaceFs`
+  adds metadata limits through the pinned interpreter's public creation methods; it does not add VM
+  isolation or change the filesystem implementation.
 - Commands start from the latest saved workspace. A revision check rejects concurrent stale
   writes instead of overwriting another command's changes.
-- A nonzero shell exit can still save earlier file changes, just like a normal shell. Size and
-  integrity failures leave the previous workspace intact. If storage or a commit fails, inspect
-  the workspace before retrying; the action does not claim those changes were saved.
+- Final saves recheck current Lab permission and chat ownership, including after uploads finish.
+- A nonzero shell exit, including a runtime quota error, can still save earlier file changes, just
+  like a normal shell. Persisted-size and integrity failures leave the previous workspace intact.
+  If storage or a commit fails, inspect the workspace before retrying; the action does not claim
+  those changes were saved.
 
 Terminal history is local to the open panel; the chat transcript retains manual tool results.
 There is no file-upload UI, rich editor, live process output, or automatic command retry.

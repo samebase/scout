@@ -255,6 +255,20 @@ TS`);
     expect(result.output.stderr).toMatch(/out of memory/i);
   }, 12_000);
 
+  it.each([
+    `js-exec -c 'require("fs").mkdirSync("/tmp/"+"a/".repeat(1800),{recursive:true})'`,
+    `mkdir -p /tmp/$(printf 'a/%.0s' $(seq 1 100))`,
+    `js-exec -c 'for(let i=0;i<1200;i++) require("fs").mkdirSync("/tmp/dir-"+i,{recursive:true})'`,
+    `for i in $(seq 1 1200); do mkdir -p /tmp/dir-$i; done`,
+  ])("bounds temporary metadata through shell and JavaScript: %s", async (command) => {
+    const session = workspaceSession();
+    await session.run("printf saved > report.txt");
+    const result = await session.run(command);
+    expect(result.output.exitCode).not.toBe(0);
+    expect(result.output.stderr).toMatch(/filesystem .*limit/);
+    expect((await session.run("cat report.txt")).output.stdout).toBe("saved");
+  });
+
   it("isolates concurrently submitted workspaces", async () => {
     const session = workspaceSession();
     const other = workspaceSession();

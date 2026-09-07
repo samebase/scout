@@ -161,18 +161,21 @@ export const addFile = internalMutation({
 export const commit = internalMutation({
   args: {
     workspaceId: v.id("scoutWorkspaces"),
+    userId: v.id("users"),
     expectedRevision: v.number(),
     cwd: v.string(),
     entries: v.array(workspaceEntryValidator),
   },
   returns: v.number(),
   handler: async (ctx, args) => {
+    await requireUserPermission(ctx, args.userId, "access_lab");
     const workspace = await ctx.db.get("scoutWorkspaces", args.workspaceId);
     if (!workspace || workspace.revision !== args.expectedRevision) {
       throw new Error(
         "Another command changed this workspace. These changes were not saved; inspect the files before retrying.",
       );
     }
+    await requireWorkspaceChat(ctx, workspace.threadId, args.userId);
     if (args.entries.length > MAX_WORKSPACE_ENTRIES)
       throw new Error("Workspace entry limit exceeded");
     const rows = await workspaceRows(ctx, workspace._id);

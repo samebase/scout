@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
   Outlet,
@@ -120,5 +120,52 @@ test.each([
     await waitFor(() => expect(screen.queryByRole("textbox", { name: field })).toBeNull());
     expect(remote.action).not.toHaveBeenCalled();
     expect(remote.mutation).not.toHaveBeenCalled();
+  },
+);
+
+test.each(["successful", "failed"])(
+  "ignores a %s account save after Back opens a new draft",
+  async (outcome) => {
+    let completeSave: () => void = () => {
+      throw new Error("No account save is pending");
+    };
+    remote.action.mockImplementationOnce(
+      () =>
+        new Promise<null>((resolve, reject) => {
+          completeSave = () => {
+            if (outcome === "successful") resolve(null);
+            else reject(new Error("First save failed"));
+          };
+        }),
+    );
+    const router = await openPage("/scouts/conrad");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Add account" }));
+    fireEvent.change(screen.getByLabelText("Service name"), { target: { value: "First" } });
+    fireEvent.change(screen.getByLabelText("Service domain"), {
+      target: { value: "first.test" },
+    });
+    fireEvent.change(screen.getByLabelText("Password", { selector: 'input[type="password"]' }), {
+      target: { value: "first password" },
+    });
+    await user.click(screen.getByRole("button", { name: "Save account" }));
+    expect(remote.action).toHaveBeenCalledTimes(1);
+
+    act(() => router.history.back());
+    await waitFor(() => expect(screen.queryByRole("form")).toBeNull());
+    await user.click(screen.getByRole("button", { name: "Add account" }));
+    await user.type(screen.getByLabelText("Service name"), "Second unsaved account");
+    const draft = screen.getByRole("form", { name: "Add account" });
+    await act(async () => completeSave());
+
+    expect(screen.getByRole("form", { name: "Add account" })).toBe(draft);
+    expect(screen.getByLabelText<HTMLInputElement>("Service name").value).toBe(
+      "Second unsaved account",
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByRole("button", { name: "Save account" }).hasAttribute("disabled")).toBe(
+      false,
+    );
+    expect(router.state.location.search).toEqual({ view: "add-account" });
   },
 );

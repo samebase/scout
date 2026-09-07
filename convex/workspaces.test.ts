@@ -107,6 +107,7 @@ async function setup() {
     owner,
     other,
     userId,
+    otherId,
     threadId,
     otherThreadId: otherThread.threadId,
     run,
@@ -240,6 +241,66 @@ js-exec report.ts`);
     expect(deleted).toEqual([]);
   });
 
+  it("preserves the workspace when lab access is revoked during a Bash upload", async () => {
+    const { backend, owner, userId, threadId, run } = await setup();
+    await run("printf original > report.txt; printf keep > keep.txt");
+    const before = await owner.query(api.scout.workspaces.list, { threadId });
+    vi.spyOn(R2.prototype, "store").mockImplementationOnce(async (_ctx, file, options) => {
+      const key = typeof options === "string" ? options : options?.key;
+      if (!key) throw new Error("Expected an explicitly scoped key");
+      blobs.set(key, file instanceof Blob ? new Uint8Array(await file.arrayBuffer()) : file);
+      await backend.run((ctx) =>
+        ctx.db.patch(userId, { email: "member@example.test", isApproved: true }),
+      );
+      return key;
+    });
+    expect(
+      (await run("printf replacement > report.txt; rm keep.txt; mkdir reports; cd reports"))
+        .outcome,
+    ).toMatchObject({ kind: "error", error: expect.stringContaining("Not authorized") });
+    await backend.run((ctx) => ctx.db.patch(userId, { email: ADMIN_EMAIL }));
+    expect(await owner.query(api.scout.workspaces.list, { threadId })).toEqual(before);
+    expect(
+      await owner.action(api.scout.workspaceTools.readFile, {
+        threadId,
+        path: "/workspace/report.txt",
+      }),
+    ).toMatchObject({ text: "original" });
+    expect(deleted).toEqual([]);
+  });
+
+  it("preserves the workspace when chat ownership changes during a Bash upload", async () => {
+    const { backend, owner, other, otherId, threadId, run } = await setup();
+    await run("printf original > report.txt; printf keep > keep.txt");
+    const before = await owner.query(api.scout.workspaces.list, { threadId });
+    vi.spyOn(R2.prototype, "store").mockImplementationOnce(async (_ctx, file, options) => {
+      const key = typeof options === "string" ? options : options?.key;
+      if (!key) throw new Error("Expected an explicitly scoped key");
+      blobs.set(key, file instanceof Blob ? new Uint8Array(await file.arrayBuffer()) : file);
+      await backend.run(async (ctx) => {
+        const chat = await ctx.db
+          .query("scoutChats")
+          .withIndex("by_thread_id", (q) => q.eq("threadId", threadId))
+          .unique();
+        if (!chat) throw new Error("Expected the owner's chat");
+        await ctx.db.patch(chat._id, { userId: otherId });
+      });
+      return key;
+    });
+    expect(
+      (await run("printf replacement > report.txt; rm keep.txt; mkdir reports; cd reports"))
+        .outcome,
+    ).toMatchObject({ kind: "error", error: expect.stringContaining("Chat not found") });
+    expect(await other.query(api.scout.workspaces.list, { threadId })).toEqual(before);
+    expect(
+      await other.action(api.scout.workspaceTools.readFile, {
+        threadId,
+        path: "/workspace/report.txt",
+      }),
+    ).toMatchObject({ text: "original" });
+    expect(deleted).toEqual([]);
+  });
+
   it.each(["member", "unverified", "deleted"])(
     "denies existing workspace access when its owner becomes %s",
     async (state) => {
@@ -279,6 +340,7 @@ js-exec report.ts`);
     await expect(
       backend.mutation(internal.scout.workspaces.commit, {
         workspaceId: stale.workspaceId,
+        userId,
         expectedRevision: stale.revision,
         entries: stale.entries,
         cwd: stale.cwd,
@@ -451,6 +513,7 @@ describe("web reads saved to the workspace", () => {
     await expect(
       backend.mutation(internal.scout.workspaces.commit, {
         workspaceId: stale.workspaceId,
+        userId,
         expectedRevision: stale.revision,
         entries: stale.entries,
         cwd: stale.cwd,

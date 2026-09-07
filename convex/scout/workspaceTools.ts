@@ -69,6 +69,7 @@ export function createWorkspaceTools(
         });
         const revision = await ctx.runMutation(internal.scout.workspaces.commit, {
           workspaceId: snapshot.workspaceId,
+          userId: scope.userId,
           expectedRevision: snapshot.revision,
           cwd: result.output.cwd,
           entries,

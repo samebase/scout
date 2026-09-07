@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-07T19:26:43Z
+- **Last updated:** 2026-09-07T21:08:24Z
 
 ## Log
 
@@ -1086,8 +1086,8 @@ Worktree development uses a separate cloud deployment so model calls can reach C
 ### 2026-09-07 - working tree
 
 Added private per-chat Bash workspaces with file browsing, verified previews/downloads, and a terminal.
-Plain TypeScript runs with standard APIs through QuickJS; Convex keeps metadata and R2 stores bytes
-under deployment, user, chat, and file-path keys. Development and preview defaults are connected.
-Web reads save complete Markdown sources for later Bash searches while returning only short excerpts.
-Views, files, replay tabs, browser sessions, registration panels, and chat panes support URL bookmarks
-and Back/Forward navigation (`convex/scout/`, `src/routes/`, `src/components/`, `src/products/play/page.tsx`).
+Plain TypeScript runs through QuickJS with bounded virtual files; Convex keeps metadata and R2 stores
+bytes under deployment/user/chat/file paths. Development/preview and separate production storage are connected.
+Web reads save complete Markdown sources for later searches and return short excerpts.
+Views, files, replays, sessions, account forms, and chat panes support URL bookmarks and Back/Forward.
+Workspace saves recheck current access (`convex/scout/`, `src/routes/`, `src/components/`).
