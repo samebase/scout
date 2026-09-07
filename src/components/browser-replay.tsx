@@ -22,13 +22,18 @@ type ReplayLoadState =
   | { kind: "ready"; replay: ReplayReady }
   | { kind: "unavailable" | "delayed" | "failed" };
 
+type ReplaySelection = {
+  selectedPageId: string | null;
+  onSelectPage: (pageId: string | null) => void;
+};
+
 export function BrowserReplay(
-  props: { sessionId: BrowserSessionId } & (
+  props: { sessionId: BrowserSessionId } & ReplaySelection & (
     | { mode: "playback"; header: ReactNode }
     | { mode: "inspector" }
   ),
 ) {
-  const { sessionId, mode } = props;
+  const { sessionId, mode, selectedPageId, onSelectPage } = props;
   const listPages = useAction(api.browserReplay.listPages);
   const [requestVersion, setRequestVersion] = useState(0);
   const [state, setState] = useState<ReplayLoadState>({ kind: "loading" });
@@ -112,6 +117,8 @@ export function BrowserReplay(
             sessionId={sessionId}
             mode={mode}
             onRetry={refresh}
+            selectedPageId={selectedPageId}
+            onSelectPage={onSelectPage}
           />
         </>
       ) : (
@@ -163,20 +170,21 @@ function BrowserReplayPlayer({
   sessionId,
   mode,
   onRetry,
+  selectedPageId,
+  onSelectPage,
 }: {
   replay: ReplayReady;
   requestVersion: number;
   sessionId: BrowserSessionId;
   mode: ReplayMode;
   onRetry: () => void;
-}) {
+} & ReplaySelection) {
   const loadPlaylist = useAction(api.browserReplay.loadPlaylist);
   const [playlistState, setPlaylistState] = useState<ReplayPlaylistsState>({ kind: "loading" });
   const [currentTimeMs, setCurrentTimeMs] = useState(0);
   const currentTimeRef = useRef(0);
   const playbackAnchorRef = useRef({ currentTimeMs: 0, performanceMs: 0 });
   const [playing, setPlaying] = useState(false);
-  const [manualPageId, setManualPageId] = useState<string | null>(null);
   const [failedMediaPageIds, setFailedMediaPageIds] = useState<string[]>([]);
   const [showClicks, setShowClicks] = useState(true);
   const [clickOffsetMs, setClickOffsetMs] = useState(0);
@@ -236,9 +244,21 @@ function BrowserReplayPlayer({
     currentTimeRef.current = 0;
     setCurrentTimeMs(0);
     setPlaying(false);
-    setManualPageId(null);
     setFailedMediaPageIds([]);
   }, [sessionId, requestVersion]);
+
+  useEffect(() => {
+    const page = timeline.pages.find((page) => page.pageId === selectedPageId);
+    if (!page) return;
+    setPlaying(false);
+    if (
+      currentTimeRef.current < page.relativeStartMs ||
+      currentTimeRef.current > page.relativeEndMs
+    ) {
+      currentTimeRef.current = page.relativeStartMs;
+      setCurrentTimeMs(page.relativeStartMs);
+    }
+  }, [selectedPageId, timeline.pages, requestVersion]);
 
   const reportMediaFailure = useCallback((pageId: string) => {
     setFailedMediaPageIds((current) => (current.includes(pageId) ? current : [...current, pageId]));
@@ -282,7 +302,7 @@ function BrowserReplayPlayer({
   };
 
   const automaticPageId = activePageIdAt(timeline, currentTimeMs);
-  const activePageId = manualPageId ?? automaticPageId;
+  const activePageId = selectedPageId ?? automaticPageId;
   const activePage = timeline.pages.find((page) => page.pageId === activePageId) ?? null;
 
   const togglePlayback = () => {
@@ -291,7 +311,7 @@ function BrowserReplayPlayer({
   };
 
   const selectPage = (pageId: string | null) => {
-    setManualPageId(pageId);
+    onSelectPage(pageId);
     if (pageId === null) return;
     setPlaying(false);
     const page = timeline.pages.find((page) => page.pageId === pageId);
@@ -391,7 +411,7 @@ function BrowserReplayPlayer({
               "This recording could not be played. Choose another track or refresh the replay."
             )}
           </div>
-        ) : activePageId === null ? (
+        ) : activePage === null ? (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-neutral-950/90 px-8 text-center text-sm text-neutral-300">
             {mode === "playback"
               ? "Choose a recording below."
@@ -457,10 +477,10 @@ function BrowserReplayPlayer({
           </div>
           {mode === "playback" && (
             <BrowserReplayExport
-              key={manualPageId ?? "automatic"}
+              key={selectedPageId ?? "automatic"}
               sessionId={sessionId}
               timeline={timeline}
-              manualPageId={manualPageId}
+              manualPageId={selectedPageId}
               viewport={replay.viewport}
               clicks={showClicks ? clickData.clicks : []}
               mode="download"
@@ -471,7 +491,7 @@ function BrowserReplayPlayer({
         {mode === "playback" && (timeline.pages.length > 1 || automaticPageId === null) && (
           <select
             aria-label="Recorded tab"
-            value={manualPageId ?? ""}
+            value={selectedPageId ?? ""}
             onChange={(event) => selectPage(event.currentTarget.value || null)}
             className="mt-2 min-h-11 w-full min-w-0 rounded-lg border bg-background px-2 text-sm"
           >
@@ -493,11 +513,11 @@ function BrowserReplayPlayer({
                 type="button"
                 onClick={() => selectPage(null)}
                 className={`shrink-0 rounded-md border px-2 py-1 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 ${
-                  manualPageId === null
+                  selectedPageId === null
                     ? "border-foreground/30 bg-foreground text-background"
                     : "bg-background text-muted-foreground hover:text-foreground"
                 }`}
-                aria-pressed={manualPageId === null}
+                aria-pressed={selectedPageId === null}
               >
                 Follow activity
               </button>
@@ -586,7 +606,7 @@ function BrowserReplayPlayer({
             <BrowserReplayExport
               sessionId={sessionId}
               timeline={timeline}
-              manualPageId={manualPageId}
+              manualPageId={selectedPageId}
               viewport={replay.viewport}
               clicks={showClicks ? clickData.clicks : []}
               mode="inspector"

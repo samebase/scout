@@ -6,7 +6,8 @@ import type { FunctionReturnType } from "convex/server";
 import { ConvexError } from "convex/values";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { api } from "../../convex/_generated/api";
-import { ServiceAccountsSection } from "./scout-service-accounts";
+import { ServiceAccountsSection, type AccountEditor } from "./scout-service-accounts";
+import { useState } from "react";
 
 const remote = vi.hoisted(() => ({ savePassword: vi.fn(), saveOAuth: vi.fn() }));
 vi.mock("convex/react", () => ({
@@ -42,10 +43,21 @@ beforeEach(() => {
 });
 afterEach(() => cleanup());
 
+function AccountEditorView({
+  accounts,
+}: {
+  accounts: FunctionReturnType<typeof api.scout.serviceAccounts.list>;
+}) {
+  const [editor, setEditor] = useState<AccountEditor>({ kind: "closed" });
+  return (
+    <ServiceAccountsSection scout={scout} accounts={accounts} editor={editor} onEdit={setEditor} />
+  );
+}
+
 describe("Scout profile account form", () => {
   test("saves the password the user entered and clears it after success", async () => {
     const user = userEvent.setup();
-    render(<ServiceAccountsSection scout={scout} accounts={[]} />);
+    render(<AccountEditorView accounts={[]} />);
     await user.click(screen.getByRole("button", { name: "Add account" }));
     await user.type(screen.getByLabelText("Service name"), "GitHub");
     await user.type(screen.getByLabelText("Service domain"), "github.com");
@@ -79,7 +91,7 @@ describe("Scout profile account form", () => {
 
   test("records the selected provider account and discards any password when switching methods", async () => {
     const user = userEvent.setup();
-    render(<ServiceAccountsSection scout={scout} accounts={[github]} />);
+    render(<AccountEditorView accounts={[github]} />);
     await user.click(screen.getByRole("button", { name: "Add account" }));
     await user.type(screen.getByLabelText("Service name"), "Cloudflare");
     await user.type(screen.getByLabelText("Service domain"), "cloudflare.com");
@@ -111,7 +123,7 @@ describe("Scout profile account form", () => {
     remote.savePassword.mockRejectedValueOnce(
       new ConvexError("Password storage is not configured for this deployment."),
     );
-    render(<ServiceAccountsSection scout={scout} accounts={[github]} />);
+    render(<AccountEditorView accounts={[github]} />);
     await user.click(screen.getByRole("button", { name: "Edit GitHub login" }));
     await user.type(screen.getByLabelText("New password"), "replacement password");
     await user.click(screen.getByRole("button", { name: "Save account" }));

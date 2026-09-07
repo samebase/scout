@@ -44,6 +44,7 @@ import { scoutRuntimeInstructions } from "./runtimeInstructions";
 import { createPlayTools } from "./play";
 import { createWebTools } from "./webTools";
 import { createSkillTools } from "./skills";
+import { createWorkspaceTools } from "./workspaceTools";
 
 export const GENERATION_SLICE_STEPS = 1;
 export const GENERATION_SLICE_WORK_BUDGET_MS = 6 * 60 * 1_000;
@@ -508,6 +509,11 @@ export const runSlice = internalAction({
           : {}),
         ...browser.tools,
         ...createWebTools(beforeModelToolDispatch),
+        ...createWorkspaceTools(
+          ctx,
+          { threadId: args.threadId, userId: args.userId },
+          beforeModelToolDispatch,
+        ),
         ...agentMailTools,
         request_human_help: createHumanHandoffTool(humanHandoffCallbacks),
         ...accountTools,

@@ -7,7 +7,10 @@ import { playRouteMessage } from "../products/play/ui";
 
 export const Route = createFileRoute("/play/session")({
   staticData: { access: "access_public" },
-  validateSearch: z.object({ thread: z.string().min(1).optional() }),
+  validateSearch: z.object({
+    thread: z.string().min(1).optional(),
+    replay: z.object({ sessionId: z.string(), pageId: z.string() }).optional(),
+  }),
   head: () => ({ meta: [{ title: "Play with Scout" }, { name: "robots", content: "noindex" }] }),
   component: PlayPage,
   errorComponent: () => (

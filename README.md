@@ -48,6 +48,15 @@ AgentMail inbox to read, send, and reply to email, plus its Firecrawl browser pr
 across multiple services. Choose Qwen, Luna, or Manual, and inspect tool calls, Live/Replay, usage,
 and human handoffs in the same workspace.
 
+Each chat also has a [Bash workspace](./docs/workspaces.md) with a file tree, text preview, downloads,
+and terminal. The agent shares those files with the user. It runs inside Convex with file bytes in
+private Cloudflare R2 storage. Development and Preview defaults are configured; existing or
+isolated deployments need the [four R2 environment variables](./docs/workspaces.md#connect-r2).
+
+Views are URL-backed: chat and browser-session selection, recorded tabs, workspace files,
+new-chat and registration panels, and chat-pane visibility support Back, Forward, and bookmarks.
+Drafts, form contents, pane widths, and replay playback time remain local.
+
 ## Local development
 
 Install [Vite+](https://viteplus.dev/guide/) and use it to supply the Node.js version in

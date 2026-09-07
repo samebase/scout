@@ -13,7 +13,10 @@ type Scout = NonNullable<FunctionReturnType<typeof api.scout.scouts.get>>;
 type ServiceAccount = FunctionReturnType<typeof api.scout.serviceAccounts.list>[number];
 type AuthenticationEvidence = ServiceAccount["authenticationEvidence"];
 type PasswordArgs = FunctionArgs<typeof api.scout.serviceAccountCredentialActions.savePassword>;
-type Editor = { kind: "closed" } | { kind: "create" } | { kind: "update"; account: ServiceAccount };
+export type AccountEditor =
+  | { kind: "closed" }
+  | { kind: "create" }
+  | { kind: "update"; account: ServiceAccount };
 type SaveState = { kind: "idle" } | { kind: "submitting" } | { kind: "failed"; message: string };
 type Login =
   | { kind: "password"; password: PasswordArgs["password"]; credentialHost: string }
@@ -29,17 +32,20 @@ const selectClassName =
 export function ServiceAccountsSection({
   scout,
   accounts,
+  editor,
+  onEdit,
 }: {
   scout: Scout;
   accounts: ServiceAccount[] | undefined;
+  editor: AccountEditor;
+  onEdit: (editor: AccountEditor) => void;
 }) {
-  const [editor, setEditor] = useState<Editor>({ kind: "closed" });
   const [submitting, setSubmitting] = useState(false);
   const trigger = useRef<HTMLButtonElement | null>(null);
 
   const close = () => {
     setSubmitting(false);
-    setEditor({ kind: "closed" });
+    onEdit({ kind: "closed" });
     requestAnimationFrame(() => trigger.current?.focus());
   };
 
@@ -58,7 +64,7 @@ export function ServiceAccountsSection({
           disabled={scout.status !== "active" || accounts === undefined || editor.kind !== "closed"}
           onClick={(event) => {
             trigger.current = event.currentTarget;
-            setEditor({ kind: "create" });
+            onEdit({ kind: "create" });
           }}
         >
           <PlusIcon /> Add account
@@ -111,7 +117,7 @@ export function ServiceAccountsSection({
                   disabled={scout.status !== "active" || submitting || editor.kind !== "closed"}
                   onClick={(event) => {
                     trigger.current = event.currentTarget;
-                    setEditor({ kind: "update", account });
+                    onEdit({ kind: "update", account });
                   }}
                 >
                   Edit login

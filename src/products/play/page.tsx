@@ -318,6 +318,8 @@ function activityNotice(activity: Activity | undefined, threadId: string) {
 }
 
 function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | undefined }) {
+  const search = Route.useSearch();
+  const navigate = useNavigate({ from: "/play/session" });
   const { threadId } = thread;
   const activity = useQuery(api.scout.chats.getScoutActivity, { threadId });
   const sessions = useQuery(api.scout.browserSessions.list, { threadId });
@@ -617,6 +619,17 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
               sessionId={session.sessionId}
               mode="playback"
               header={browserHeader}
+              selectedPageId={
+                search.replay?.sessionId === session.sessionId ? search.replay.pageId : null
+              }
+              onSelectPage={(pageId) => {
+                void navigate({
+                  search: (previous) => ({
+                    ...previous,
+                    replay: pageId === null ? undefined : { sessionId: session.sessionId, pageId },
+                  }),
+                });
+              }}
             />
           ) : (
             <>

@@ -86,7 +86,7 @@ This uses the catalog, model-driven activation, and context-retention patterns f
 [AI SDK skills guide](https://ai-sdk.dev/cookbook/guides/agent-skills) and the
 [Agent Skills integration guide](https://agentskills.io/client-implementation/adding-skills-support).
 
-Manual calls run the same browser, account, mail, and research tools without invoking a model.
+Manual calls run the same browser, account, mail, research, and Bash tools without invoking a model.
 Their inputs and outputs appear in the same transcript. Manual browser sessions stay open between
 calls until closed or expired; a model generation can attach to that chat's open session. Automatic
 generations close their browser on completion, except when waiting for human help. A Scout's
@@ -111,6 +111,12 @@ The tool documents its 60-second execution limit and directs the model to check 
 use bounded conditional waits, and correct failed assumptions from fresh observations.
 Old page observations are compacted in model context;
 the stored transcript retains the full tool results.
+
+`bash` runs a bounded just-bash interpreter inside Convex. Each chat has a private `/workspace`
+shared by the agent and the Workspace panel. Convex stores its directory metadata; Cloudflare R2
+stores the file bytes under deployment, user, and thread prefixes with recognizable file paths.
+The shell has no network, Python, or host-machine access. See [chat workspaces](./workspaces.md)
+for setup, limits, persistence, and recovery details.
 
 ## Inspection and handoff
 

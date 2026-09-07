@@ -85,8 +85,13 @@ import type * as scout_turnLifecycle from "../scout/turnLifecycle.js";
 import type * as scout_turnWorkflow from "../scout/turnWorkflow.js";
 import type * as scout_turns from "../scout/turns.js";
 import type * as scout_webTools from "../scout/webTools.js";
+import type * as scout_workspaceShell from "../scout/workspaceShell.js";
+import type * as scout_workspaceTools from "../scout/workspaceTools.js";
+import type * as scout_workspaces from "../scout/workspaces.js";
 import type * as serviceDomains from "../serviceDomains.js";
 import type * as testing_accounts from "../testing/accounts.js";
+import type * as workspaceModel from "../workspaceModel.js";
+import type * as workspaceStorage from "../workspaceStorage.js";
 
 import type {
   ApiFromModules,
@@ -172,8 +177,13 @@ declare const fullApi: ApiFromModules<{
   "scout/turnWorkflow": typeof scout_turnWorkflow;
   "scout/turns": typeof scout_turns;
   "scout/webTools": typeof scout_webTools;
+  "scout/workspaceShell": typeof scout_workspaceShell;
+  "scout/workspaceTools": typeof scout_workspaceTools;
+  "scout/workspaces": typeof scout_workspaces;
   serviceDomains: typeof serviceDomains;
   "testing/accounts": typeof testing_accounts;
+  workspaceModel: typeof workspaceModel;
+  workspaceStorage: typeof workspaceStorage;
 }>;
 
 /**
@@ -204,6 +214,7 @@ export declare const internal: FilterApi<
 
 export declare const components: {
   agent: import("@convex-dev/agent/_generated/component.js").ComponentApi<"agent">;
+  r2: import("@convex-dev/r2/_generated/component.js").ComponentApi<"r2">;
   workflow: import("@convex-dev/workflow/_generated/component.js").ComponentApi<"workflow">;
   staticHosting: import("@convex-dev/static-hosting/_generated/component.js").ComponentApi<"staticHosting">;
 };

@@ -2,12 +2,19 @@ import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
 import { ArrowLeftIcon, LoaderCircleIcon, PlusIcon } from "lucide-react";
 import { useState } from "react";
+import { z } from "zod";
 import { api } from "../../convex/_generated/api";
-import { ServiceAccountsSection } from "#components/scout-service-accounts";
+import { ServiceAccountsSection, type AccountEditor } from "#components/scout-service-accounts";
 import { Button } from "#components/ui/button";
+
+const searchSchema = z.object({
+  view: z.literal("add-account").optional().catch(undefined),
+  account: z.string().optional().catch(undefined),
+});
 
 export const Route = createFileRoute("/scouts/$slug")({
   staticData: { access: "access_scout_manage" },
+  validateSearch: (search) => searchSchema.parse(search),
   component: ScoutDetailPage,
 });
 
@@ -18,7 +25,8 @@ type RegistrationState =
 
 function ScoutDetailPage() {
   const { slug } = Route.useParams();
-  const navigate = useNavigate();
+  const search = Route.useSearch();
+  const navigate = useNavigate({ from: "/scouts/$slug" });
   const createThread = useMutation(api.scout.chats.createThread);
   const [chatState, setChatState] = useState<RegistrationState>({ kind: "idle" });
   const scout = useQuery(api.scout.scouts.get, { slug });
@@ -57,6 +65,13 @@ function ScoutDetailPage() {
     );
   }
 
+  const selectedAccount = serviceAccounts?.find((account) => account._id === search.account);
+  const editor: AccountEditor =
+    search.view === "add-account"
+      ? { kind: "create" }
+      : selectedAccount
+        ? { kind: "update", account: selectedAccount }
+        : { kind: "closed" };
   const statusLabel = scout.status === "active" ? "Active" : "Disabled";
   const statusDotClass = scout.status === "active" ? "bg-emerald-500" : "bg-muted-foreground";
   const startChat = async () => {
@@ -158,7 +173,27 @@ function ScoutDetailPage() {
         </dl>
       </section>
 
-      <ServiceAccountsSection scout={scout} accounts={serviceAccounts} />
+      {search.account && serviceAccounts !== undefined && !selectedAccount ? (
+        <p role="alert">Account not found.</p>
+      ) : null}
+      <ServiceAccountsSection
+        scout={scout}
+        accounts={serviceAccounts}
+        editor={editor}
+        onEdit={(next) => {
+          switch (next.kind) {
+            case "closed":
+              void navigate({ search: {} });
+              break;
+            case "create":
+              void navigate({ search: { view: "add-account" } });
+              break;
+            case "update":
+              void navigate({ search: { account: next.account._id } });
+              break;
+          }
+        }}
+      />
     </>
   );
 }

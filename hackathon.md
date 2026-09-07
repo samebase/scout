@@ -7,7 +7,7 @@
 - **Repo:** private
 - **Frontend:** Convex static hosting
 - **Convex deployment:** https://usable-spider-599.eu-west-1.convex.cloud
-- **Components:** @convex-dev/agent, @convex-dev/static-hosting, @convex-dev/workflow
+- **Components:** @convex-dev/agent, @convex-dev/r2, @convex-dev/static-hosting, @convex-dev/workflow
 - **Convex features:** schema, tables, indexes, queries, paginated queries, realtime queries, mutations, actions, scheduled functions, HTTP actions, AI Gateway
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway)
@@ -1075,10 +1075,19 @@ Added self-service account deletion from Settings, with typed confirmation and m
 The existing Convex Workflow removes profile and login data while retaining a deleted user stub,
 chats, messages, files, and shared Scouts (`convex/accountDeletion.ts`, `src/routes/account-deletion.tsx`).
 
-### 2026-09-07 - working tree
+### 2026-09-07 - 1e05dca - v186
 
 Play starts with a message and keeps Scout’s commentary beside its browser in a resizable sidebar.
 The same panel opens by swipe on mobile and includes replay, download, and browser session selection.
 The agent can save its current activity on the chat; existing turns still own stopping and handoffs.
 Full transcripts remain in Lab (`src/products/play/page.tsx`, `convex/scout/play.ts`).
 Worktree development uses a separate cloud deployment so model calls can reach Convex AI Gateway.
+
+### 2026-09-07 - working tree
+
+Added private per-chat Bash workspaces with a file tree, preview, downloads, and terminal. Convex
+keeps metadata and revisions; R2 stores bytes under deployment, user, chat, and file-path keys.
+Connected development and preview defaults and verified AI Gateway creating and reading a Bash
+file on a cloud worktree; the launcher honors selected cloud dev deployments. Views, files, replay
+tabs, registration panels, and chat panes now support URL bookmarks and Back/Forward navigation
+(`convex/scout/workspace*.ts`, `src/routes/`, `src/components/`, `scripts/run-context-dev.ts`).
