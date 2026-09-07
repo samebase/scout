@@ -111,7 +111,7 @@ export function ScoutWorkspace({
               path={selected.path}
             />
           ) : selected?.kind === "symlink" ? (
-            <p className="p-4 font-mono text-xs">
+            <p className="break-words p-4 font-mono text-xs">
               {selected.path} → {selected.target}
             </p>
           ) : (
@@ -231,7 +231,7 @@ function WorkspaceFileTree({
         <li key={entry.path}>
           {entry.kind === "directory" ? (
             <details open>
-              <summary className="cursor-pointer whitespace-nowrap rounded px-1 py-1.5 hover:bg-muted">
+              <summary className="cursor-pointer break-words rounded px-1 py-1.5 hover:bg-muted">
                 <FolderIcon className="mr-1 inline size-3.5" />
                 {entry.path.split("/").at(-1)}
               </summary>
@@ -250,14 +250,14 @@ function WorkspaceFileTree({
               aria-pressed={selectedPath === entry.path}
               onClick={() => onSelect(entry.path)}
               title={entry.path}
-              className={`flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-left focus-visible:outline-2 focus-visible:outline-ring ${selectedPath === entry.path ? "bg-muted font-medium" : "hover:bg-muted/60"}`}
+              className={`flex w-full items-start gap-1.5 rounded px-2 py-1.5 text-left focus-visible:outline-2 focus-visible:outline-ring ${selectedPath === entry.path ? "bg-muted font-medium" : "hover:bg-muted/60"}`}
             >
               {entry.kind === "symlink" ? (
-                <LinkIcon className="size-3.5 shrink-0" />
+                <LinkIcon className="mt-0.5 size-3.5 shrink-0" />
               ) : (
-                <FileIcon className="size-3.5 shrink-0" />
+                <FileIcon className="mt-0.5 size-3.5 shrink-0" />
               )}
-              <span className="truncate">{entry.path.split("/").at(-1)}</span>
+              <span className="min-w-0 break-words">{entry.path.split("/").at(-1)}</span>
             </button>
           )}
         </li>
@@ -304,8 +304,8 @@ function WorkspaceFileViewer({ threadId, path }: { threadId: string; path: strin
   }, [attempt, path, readFile, threadId]);
   return (
     <>
-      <div className="flex min-h-9 items-center justify-between gap-2 border-b px-3 text-xs">
-        <span className="truncate font-mono" title={path}>
+      <div className="flex min-h-9 shrink-0 items-start justify-between gap-2 border-b px-3 py-2 text-xs">
+        <span className="min-w-0 break-words font-mono" title={path}>
           {path.slice(WORKSPACE_ROOT.length + 1)}
         </span>
         {state.kind === "ready" ? (
@@ -343,7 +343,7 @@ function WorkspaceFileViewer({ threadId, path }: { threadId: string; path: strin
       ) : (
         <pre
           aria-label="File contents"
-          className="min-h-0 flex-1 overflow-auto p-3 font-mono text-xs leading-relaxed"
+          className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-xs leading-relaxed"
         >
           {state.file.text}
         </pre>
