@@ -1,6 +1,6 @@
 # Account approval and derived access
 
-Status: PR #73 implementation contract, September 7, 2026. This replaces the stored-role
+Status: implementation contract, September 7, 2026. This replaces the stored-role
 account design from PR #72. [Samebase source notes](./account-approval-research.md) record
 the reference behavior and Scout-specific differences.
 
@@ -23,9 +23,8 @@ role fields are ignored.
 ## Derived permissions
 
 Scout requires a verified email before granting protected app access. For a verified user,
-staff authority comes from the exact Samebase allowlist, matched case-insensitively:
-`nicuchiciuc@gmail.com` and `nicu@samebase.com`. It does not depend on `isApproved`.
-`nicu.dev@gmail.com` is deliberately not staff; approving it makes it an ordinary member.
+staff authority comes from Scout's allowlist, matched case-insensitively:
+`nicu.dev@gmail.com` and `nicu@samebase.com`. It does not depend on `isApproved`.
 
 | Verified account                           | Derived role          | Access                                                                              |
 | ------------------------------------------ | --------------------- | ----------------------------------------------------------------------------------- |

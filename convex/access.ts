@@ -12,7 +12,7 @@ import { viewerAccessValidator } from "./accessModel";
 
 export type ViewerAccess = Infer<typeof viewerAccessValidator>;
 
-const ADMIN_EMAILS = new Set(["nicuchiciuc@gmail.com", "nicu@samebase.com"]);
+const ADMIN_EMAILS = new Set(["nicu.dev@gmail.com", "nicu@samebase.com"]);
 
 export function readViewerRoleForUser(user: Doc<"users">): ViewerRole {
   if (user.email && ADMIN_EMAILS.has(user.email.toLowerCase())) return "role_staff";
