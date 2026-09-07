@@ -109,24 +109,6 @@ async function setConvexEnv(
   });
 }
 
-async function seedLocalWorktreePasswordAccount(env: NodeJS.ProcessEnv, runConvex: RunConvex) {
-  if (env["SCOUT_LOCAL_WORKTREE_AUTH"] !== "true") {
-    return;
-  }
-
-  const email = env["VITE_LOCAL_WORKTREE_PASSWORD_EMAIL"];
-  const password = env["VITE_LOCAL_WORKTREE_PASSWORD_VALUE"];
-  if (!email || !password) {
-    throw new Error("The local worktree account credentials are missing.");
-  }
-
-  await setConvexEnv("DEV_SEED_AUTH_ENABLED", "true", env, runConvex);
-  await setConvexEnv("DEV_SEED_AUTH_EMAIL", email, env, runConvex);
-  await setConvexEnv("DEV_SEED_AUTH_PASSWORD", password, env, runConvex);
-  await runConvex(["run", "devAuth:seedPasswordAccount", "{}"], { env });
-  console.log(`Local worktree account ready: ${email}`);
-}
-
 export async function ensureConvexAuth(
   env: NodeJS.ProcessEnv,
   runConvex: RunConvex = runConvexCli,
@@ -144,8 +126,6 @@ export async function ensureConvexAuth(
     await setConvexEnv("JWKS", keys.JWKS, env, runConvex);
     console.log("Convex Auth keys configured.");
   }
-
-  await seedLocalWorktreePasswordAccount(env, runConvex);
 }
 
 const entrypoint = process.argv[1];

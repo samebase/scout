@@ -50,7 +50,12 @@ export function ChatHandoffNotice({
       role={handoff.status === "failed" ? "alert" : "status"}
       className="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/40 px-4 py-3"
     >
-      <div className="space-y-1 text-sm">
+      <div
+        role="region"
+        aria-label="Handoff details"
+        tabIndex={0}
+        className="max-h-[20dvh] min-w-0 space-y-1 overflow-y-auto overscroll-y-contain text-sm [overflow-wrap:anywhere]"
+      >
         <p className="font-medium">{handoffOutcome(handoff)}</p>
         {waiting ? (
           <>
@@ -72,11 +77,15 @@ export function ChatHandoffNotice({
         ) : null}
       </div>
       {waiting || handoff.status === "continued" ? (
-        <div className="flex gap-2">
+        <div className="flex max-w-full flex-wrap gap-2">
           {waiting ? (
             <Button asChild size="sm" variant="outline">
-              <Link to="/handoff/$handoffId" params={{ handoffId: handoff.handoffId }}>
-                Open browser handoff
+              <Link
+                to="/handoff/$handoffId"
+                params={{ handoffId: handoff.handoffId }}
+                aria-label="Open browser handoff"
+              >
+                Open browser
               </Link>
             </Button>
           ) : null}
@@ -86,8 +95,9 @@ export function ChatHandoffNotice({
             variant="outline"
             disabled={!canCancel}
             onClick={onCancel}
+            aria-label="Cancel handoff"
           >
-            Cancel handoff
+            Cancel
           </Button>
         </div>
       ) : null}

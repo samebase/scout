@@ -47,10 +47,11 @@ pnpm exec convex deployment create <team>:<project>:dev/<feature> --type dev --s
 pnpm run dev
 ```
 
-New cloud dev deployments inherit the project's dev environment defaults. The worktree
-launcher seeds the standard development account and adds an **Autofill & sign in** action.
-It refuses anonymous deployments and a deployment shared with the primary checkout.
-Changing deployments does not move existing chats, Scouts, or saved accounts.
+New cloud dev deployments inherit the project's dev environment defaults. Sign up or sign in
+normally; the launcher does not create an account or set a password. It refuses anonymous
+deployments, deployment-key overrides, and the primary checkout's selected deployment.
+The worktree startup command accepts no extra arguments. Use the Convex CLI separately to
+configure deployments. Changing deployments does not move chats, Scouts, or saved accounts.
 
 The primary checkout reserves `http://localhost:5173` and stops if that port is occupied.
 Linked worktrees start at port `5174` and try higher ports when needed. Open the local URL

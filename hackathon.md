@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-07T13:56:00Z
+- **Last updated:** 2026-09-07T16:16:21Z
 
 ## Log
 
@@ -1077,7 +1077,8 @@ chats, messages, files, and shared Scouts (`convex/accountDeletion.ts`, `src/rou
 
 ### 2026-09-07 - working tree
 
-Play starts with a message and keeps Scout’s commentary beside its browser, with mobile view switching.
+Play starts with a message and keeps Scout’s commentary beside its browser in a resizable sidebar.
+The same panel opens by swipe on mobile and includes replay, download, and browser session selection.
 The agent can save its current activity on the chat; existing turns still own stopping and handoffs.
 Full transcripts remain in Lab (`src/products/play/page.tsx`, `convex/scout/play.ts`).
 Worktree development uses a separate cloud deployment so model calls can reach Convex AI Gateway.

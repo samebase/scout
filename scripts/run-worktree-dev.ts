@@ -1,4 +1,4 @@
-// Samebase starter dev launcher sha256:c5838be8323587449fe6129173c4484356a599dbf9dd448d81467d71a3ded86f
+// Samebase starter dev launcher sha256:f99708793fd742646bd3e463e75a2a835ac14e3101d81ad8c72e5cf8f68d12fb
 /// <reference types="node" />
 import process from "node:process";
 import { execFileSync } from "node:child_process";
@@ -9,19 +9,37 @@ import { fileURLToPath } from "node:url";
 
 import { runPrimaryDev } from "./run-primary-dev.ts";
 
-function readDeploymentEnv(directory: string) {
-  const file = path.join(directory, ".env.local");
-  return existsSync(file) ? parseEnv(readFileSync(file, "utf8")) : {};
+export function readDeploymentEnv(directory: string) {
+  const env: NodeJS.ProcessEnv = {};
+  for (const name of [".env", ".env.local"]) {
+    const file = path.join(directory, name);
+    if (existsSync(file)) Object.assign(env, parseEnv(readFileSync(file, "utf8")));
+  }
+  return env;
 }
 
-export function requireWorktreeDeployment(selected: NodeJS.ProcessEnv, primary: NodeJS.ProcessEnv) {
+export function requireWorktreeDeployment(
+  selected: NodeJS.ProcessEnv,
+  primary: NodeJS.ProcessEnv,
+  args: string[],
+) {
+  if (args.length) {
+    throw new Error(
+      "Worktree dev uses the selected deployment and accepts no CLI arguments. " +
+        "Run pnpm exec convex separately to configure a deployment.",
+    );
+  }
   const deployment = selected["CONVEX_DEPLOYMENT"];
-  if (!deployment?.startsWith("dev:") || selected["CONVEX_DEPLOY_KEY"]) {
+  if (
+    !deployment?.startsWith("dev:") ||
+    selected["CONVEX_DEPLOY_KEY"] ||
+    selected["CONVEX_DEPLOYMENT_TOKEN"]
+  ) {
     throw new Error(
       "Scout uses Convex AI Gateway, which requires a cloud deployment. " +
         "Create a dev deployment for this worktree with: " +
         "pnpm exec convex deployment create <team>:<project>:dev/<feature> --type dev --select. " +
-        "Remove any CONVEX_DEPLOY_KEY override before running dev.",
+        "Remove any CONVEX_DEPLOY_KEY or CONVEX_DEPLOYMENT_TOKEN override before running dev.",
     );
   }
   if (deployment === primary["CONVEX_DEPLOYMENT"]) {
@@ -41,11 +59,9 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const deployment = requireWorktreeDeployment(
     { ...readDeploymentEnv(process.cwd()), ...process.env },
     readDeploymentEnv(path.dirname(commonGitDirectory)),
+    process.argv.slice(2),
   );
   process.env["CONVEX_DEPLOYMENT"] = deployment;
   delete process.env["CONVEX_AGENT_MODE"];
-  process.env["SCOUT_LOCAL_WORKTREE_AUTH"] = "true";
-  process.env["VITE_LOCAL_WORKTREE_PASSWORD_EMAIL"] = "nicu.dev@gmail.com";
-  process.env["VITE_LOCAL_WORKTREE_PASSWORD_VALUE"] = "pass1234";
   runPrimaryDev();
 }

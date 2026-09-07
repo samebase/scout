@@ -37,7 +37,7 @@ describe("ensure-convex-auth", () => {
     expect(calls[3]?.[4]).toBeTruthy();
   });
 
-  it("seeds the password account only for local worktree development", async () => {
+  it("does not seed an account even when old worktree credentials remain in the environment", async () => {
     const calls: string[][] = [];
 
     await ensureConvexAuth(
@@ -59,10 +59,6 @@ describe("ensure-convex-auth", () => {
     expect(calls).toEqual([
       ["env", "get", "JWT_PRIVATE_KEY"],
       ["env", "get", "JWKS"],
-      ["env", "set", "--", "DEV_SEED_AUTH_ENABLED", "true"],
-      ["env", "set", "--", "DEV_SEED_AUTH_EMAIL", "nicu.dev@gmail.com"],
-      ["env", "set", "--", "DEV_SEED_AUTH_PASSWORD", "pass1234"],
-      ["run", "devAuth:seedPasswordAccount", "{}"],
     ]);
   });
 });

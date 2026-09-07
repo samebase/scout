@@ -1,4 +1,4 @@
-// Samebase starter dev launcher sha256:c5838be8323587449fe6129173c4484356a599dbf9dd448d81467d71a3ded86f
+// Samebase starter dev launcher sha256:f99708793fd742646bd3e463e75a2a835ac14e3101d81ad8c72e5cf8f68d12fb
 /// <reference types="node" />
 import { spawn, spawnSync } from "node:child_process";
 import process from "node:process";

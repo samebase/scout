@@ -39,7 +39,8 @@ claim about playing any game. These references support positioning, not Scout co
   The user's message is saved as written; Play guidance belongs in the system instructions.
   Failed sends reuse the already-created chat on retry.
 - `/play/session?thread=...` puts the text conversation beside Scout's live browser or replay.
-  Mobile switches between Chat and Scout's view without discarding the draft or browser.
+  A resizable Samebase sidebar holds the browser and replays. Mobile opens it with a button or swipe
+  without discarding the draft or browser; its selector appears when there are multiple sessions.
   Stop and human handoff controls remain available in either view. The player keeps their own game open.
 - Scout's `set_activity_step` tool saves `research`, `account_setup`, or `play` on the chat.
   These optional activities describe current work, not a mandatory checklist or proof of success.
