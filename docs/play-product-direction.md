@@ -33,18 +33,29 @@ claim about playing any game. These references support positioning, not Scout co
 - `/` offers the two products with a preview of each visual identity.
 - `/play` pairs the invitation and two-player illustration with a short explanation of how to start.
   The introduction sets expectations about Scout's imperfect play.
-- `/play/session` accepts a room link, with an optional note revealed on request. Signing in keeps the draft.
-- An authenticated invite chooses an existing active Scout, creates a normal Agent chat, and sends
-  a game request through the existing backend. Failed sends reuse the already-created chat on retry.
-- `/play/session?thread=...` shows Scout's browser, text conversation, help requests, and a stop control.
-  Scout must stop before a new instruction is sent. The player keeps the original game open in their own tab.
+- `/play/session` starts with one chat composer. A message can include a game link, ask for research,
+  or request preparation. Signing in keeps the draft and does not send it automatically.
+- An authenticated request chooses an existing active Scout and creates an Agent chat marked for Play.
+  The user's message is saved as written; Play guidance belongs in the system instructions.
+  Failed sends reuse the already-created chat on retry.
+- `/play/session?thread=...` puts the text conversation beside Scout's live browser or replay.
+  Mobile switches between Chat and Scout's view without discarding the draft or browser.
+  Stop and human handoff controls remain available in either view. The player keeps their own game open.
+- Scout's `set_activity_step` tool saves `research`, `account_setup`, or `play` on the chat.
+  These optional activities describe current work, not a mandatory checklist or proof of success.
+  Run, stop, and handoff state still comes from the existing turn lifecycle.
+- Normal assistant messages carry brief observations and move commentary. Tool code and provider
+  reasoning stay in Lab. The conversation uses Lab's message scroller and keeps native text selection.
+  A draft can be written while Scout works; Scout must stop before it can be sent.
 - `/chats`, `/scouts`, and `/settings` remain the lab. The play screen links there for detailed
   transcripts and setup. A new account with no configured Scout gets a setup link, not a pretend player.
 - `/review` introduces the review product with a static signup-flow illustration and a link to
   the existing Lab. There are no dedicated review forms or report pages yet.
 
-No new agent, schema, model, or provider integration is introduced. Sessions remain ordinary chats
-and are recoverable through the lab. No named game has been claimed as supported.
+Sessions remain ordinary Agent chats with optional Play context in `scoutChats`; there is no new
+agent, workflow engine, model, or provider integration. Research storage and Scout allocation remain
+separate decisions. Execution still requires Lab access: this UI does not grant members access to
+shared Scout accounts. No named game has been claimed as supported.
 
 ## Two design languages
 

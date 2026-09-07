@@ -13,6 +13,7 @@ import { humanHandoffDeliveryRecordValidator } from "./humanHandoffDeliveryModel
 import { humanHandoffValidator } from "./humanHandoffsModel";
 import { scoutServiceAccountFieldsValidator, scoutWebsiteIdentityValidator } from "./scout/model";
 import { activeSkillsValidator } from "./scout/skills";
+import { playContextValidator } from "./scout/play";
 import {
   compactionFields,
   modelCallPurposeValidator,
@@ -114,6 +115,7 @@ export default defineSchema({
     scoutId: v.id("scouts"),
     createdAt: v.number(),
     activeSkills: v.optional(activeSkillsValidator),
+    play: v.optional(playContextValidator),
   })
     .index("by_thread_id", ["threadId"])
     .index("by_user_id_and_created_at", ["userId", "createdAt"]),

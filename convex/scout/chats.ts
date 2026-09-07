@@ -31,6 +31,7 @@ import {
 import { continueStoppingTurn, enqueueTurn, stopTurn } from "./turns";
 import { scoutRuntimeInstructions } from "./runtimeInstructions";
 import { activeSkillsValidator, orderedSkills } from "./skills";
+import { playContextValidator, playStepValidator } from "./play";
 
 const MAX_PROMPT_LENGTH = 16_000;
 const MAX_THREAD_TITLE_LENGTH = 80;
@@ -40,6 +41,7 @@ const recentThreadValidator = v.object({
   creationTime: v.number(),
   title: v.union(v.string(), v.null()),
   scoutId: v.id("scouts"),
+  play: v.optional(playContextValidator),
 });
 
 const chatMessageMetadataValidator = v.object({
@@ -220,6 +222,7 @@ export const listThreads = query({
           creationTime: thread._creationTime,
           title: thread.title ?? null,
           scoutId: binding.scoutId,
+          ...omitNullish({ play: binding.play }),
         };
       }),
     );
@@ -232,7 +235,7 @@ export const listThreads = query({
 
 export const createThread = mutation({
   access: "access_lab",
-  args: { scoutId: v.id("scouts") },
+  args: { scoutId: v.id("scouts"), purpose: v.optional(v.literal("play")) },
   returns: v.object({ threadId: v.string() }),
   handler: async (ctx, args) => {
     const userId = ctx.viewer.userId;
@@ -244,6 +247,7 @@ export const createThread = mutation({
       scoutId: args.scoutId,
       createdAt: Date.now(),
       activeSkills: [],
+      ...omitNullish({ play: args.purpose === "play" ? { step: null } : undefined }),
     });
     return created;
   },
@@ -296,6 +300,7 @@ export const getThreadAgentContext = query({
         credentials,
         serviceAccounts,
         activeSkills: binding.activeSkills ?? [],
+        play: binding.play,
         browserSessionOpen:
           (
             await ctx.db
@@ -509,6 +514,7 @@ export const runtimeContext = internalQuery({
     userId: v.id("users"),
     scoutId: v.id("scouts"),
     activeSkills: activeSkillsValidator,
+    play: v.union(playContextValidator, v.null()),
     browserSession: v.union(
       schema.doc("scoutBrowserSessions").pick("_id", "providerSessionId", "lifecycle"),
       v.null(),
@@ -529,6 +535,7 @@ export const runtimeContext = internalQuery({
       userId: chat.userId,
       scoutId: chat.scoutId,
       activeSkills: chat.activeSkills ?? [],
+      play: chat.play ?? null,
       browserSession: session
         ? {
             _id: session._id,
@@ -555,6 +562,23 @@ export const loadSkills = internalMutation({
       await ctx.db.patch(chat._id, { activeSkills: names });
     }
     return names;
+  },
+});
+
+export const setActivityStep = internalMutation({
+  args: { turnId: v.id("scoutTurns"), step: playStepValidator },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const turn = await ctx.db.get(args.turnId);
+    if (!turn || turn.state.kind !== "pending" || turn.state.leaseExpiresAt <= Date.now()) {
+      throw new Error("Active Scout turn not found");
+    }
+    const chat = await requireLabThread(ctx, turn.threadId);
+    if (chat.scoutId !== turn.scoutId || !chat.play) throw new Error("Play chat not found");
+    if (chat.play.step !== args.step) {
+      await ctx.db.patch(chat._id, { play: { step: args.step } });
+    }
+    return null;
   },
 });
 
