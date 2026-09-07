@@ -101,10 +101,12 @@ export async function runWorkspaceShell(args: {
     fs,
     cwd: args.cwd,
     commands,
+    javascript: true,
     executionLimitProfile: "hardened",
     executionLimits: {
       maxSourceBytes: 64 * 1024,
       maxExecutionTimeMs: 15_000,
+      maxJsTimeoutMs: 5_000,
       maxOutputSize: 128 * 1024,
       maxFileSystemBytes: MAX_WORKSPACE_BYTES,
       maxLiveBytes: 16 * 1024 * 1024,

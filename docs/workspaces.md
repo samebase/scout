@@ -10,12 +10,51 @@ Terminal visibility is also URL-backed, but command input and output history sta
 
 This MVP uses `just-bash` inside a Convex Node action. It is an in-memory shell interpreter, not a
 container or Linux VM. No separate sandbox service is needed. The command allowlist includes file
-operations, pipes, redirects, `grep`, `sed`, `awk`, and `jq`. It excludes network access, Python,
-JavaScript execution, package installation, native programs, and background services.
+operations, pipes, redirects, `grep`, `sed`, `awk`, `jq`, and `js-exec` for JavaScript and TypeScript.
+It excludes network access, Python, package installation, native programs, and background services.
 
 Only `/workspace` persists. Files, empty directories, symlinks, permissions, modification times,
 and the working directory survive subsequent commands. Shell variables and files elsewhere do
 not. Text previews are read-only and render HTML as text. Binary files can be downloaded.
+
+## JavaScript and TypeScript
+
+Run `js-exec script.ts` or `js-exec script.js` from the terminal or the agent's Bash tool.
+For a short expression, use `js-exec -c 'console.log(1 + 1)'`.
+
+Scripts run in QuickJS WebAssembly, **not a full Node process**. Standard JavaScript APIs such as
+JSON, Math, arrays, and regular expressions are available, along with limited Node-compatible
+modules: `fs`, `path`, `assert`, `buffer`, `console`, `events`, `os`, `process`, `querystring`,
+`stream`, `string_decoder`, `url`, `util`, and `child_process` (with or without the `node:` prefix).
+File APIs access only the virtual filesystem. The `child_process` shim runs sandbox shell commands,
+not native processes. Network access and host environment variables are not exposed.
+
+`.ts` and `.mts` files have types stripped automatically and run as ES modules. Interfaces,
+annotations, generics, and `satisfies` work; enums, parameter properties, and other syntax requiring
+transformation do not. This does not type-check the script. Relative imports can load other workspace
+files, including `.ts` files. No npm resolver, package installer, vendored libraries, or custom
+bootstrap is included in this MVP. Use explicit file extensions in imports.
+
+For example, run this in the workspace terminal:
+
+```bash
+cat > report.ts <<'TS'
+import { writeFileSync } from "node:fs";
+interface Row { name: string; score: number }
+const rows: Row[] = [{ name: "Alpha", score: 8 }, { name: "Beta", score: 9 }];
+const total = rows.reduce((sum, row) => sum + row.score, 0);
+writeFileSync("/workspace/report.json", JSON.stringify({ total, count: rows.length }));
+console.log(total);
+TS
+js-exec report.ts
+cat report.json
+```
+
+The resulting files persist in R2 and can be read in a later call. JavaScript variables do not.
+`convex.json` pins the host Node runtime to 24 for TypeScript stripping and marks `just-bash` as an
+[external package](https://docs.convex.dev/functions/bundling#external-packages) so its worker and
+WASM assets remain available. This server-side dependency setup does not let guest scripts install
+or import npm packages.
 
 ## Connect R2
 
@@ -46,8 +85,9 @@ development credentials.
 Scout's private `scout-workspaces` bucket is configured for Development and Preview defaults and
 the existing cloud development deployment. Production is not configured. The local workspace UI
 has been verified against real R2 for file creation, preview, reload, rename, update, and cleanup.
-An isolated cloud dev deployment has also passed an AI Gateway test that creates a file through
-the agent's Bash tool and reads it back from R2. See [cloud worktree setup](./local-setup.md#cloud-backend-for-a-worktree)
+An isolated cloud dev deployment has also passed manual and AI Gateway tests running TypeScript
+with local imports, saving JSON to R2, and reading it in a separate tool call and a fresh page load.
+See [cloud worktree setup](./local-setup.md#cloud-backend-for-a-worktree)
 to run the full agent instead of only the anonymous backend's manual terminal.
 
 Uploads and text-preview reads happen server-side. Downloads use short-lived signed links. The
@@ -78,6 +118,7 @@ recovery manifest are outside this MVP.
 - 200 entries, including directories and the workspace root.
 - 256 KiB per file and 5 MiB of persisted file content per chat.
 - 15 seconds of shell execution and 128 KiB of command output. Storage transfer adds time.
+- Each `js-exec` is limited to 5 seconds and the library's 64 MiB QuickJS memory budget.
 - Commands start from the latest saved workspace. A revision check rejects concurrent stale
   writes instead of overwriting another command's changes.
 - A nonzero shell exit can still save earlier file changes, just like a normal shell. Size and
@@ -89,7 +130,8 @@ There is no file-upload UI, rich editor, live process output, or automatic comma
 
 ## Verify
 
-Run `pnpm run check`. `convex/scout/workspaceShell.test.ts` exercises shell behavior and limits;
+Run `pnpm run check`. `convex/scout/workspaceShell.test.ts` exercises shell and JS/TS behavior,
+local imports, isolation, denied host/network access, and storage/time/memory limits;
 `convex/workspaces.test.ts` exercises persistence, failed writes, stale commits, and owner-only
 access with a stubbed R2 boundary. Chat component tests cover the terminal, safe preview,
 missing-configuration state, and URL navigation through Back, Forward, and fresh page loads.

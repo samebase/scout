@@ -134,6 +134,55 @@ describe("workspace persistence and access", () => {
     ).rejects.toThrow("Chat not found");
   });
 
+  it("persists TypeScript-generated files in R2 and keeps them private to their chat owner", async () => {
+    const { owner, other, backend, threadId, userId, run } = await setup();
+    const result = await run(`cat > report.ts <<'TS'
+import { writeFileSync } from "node:fs";
+const scores: number[] = [8, 9];
+writeFileSync("/workspace/report.json", JSON.stringify({ total: scores.reduce((a, b) => a + b, 0) }));
+TS
+js-exec report.ts`);
+    if (result.outcome.kind !== "success") throw new Error(result.outcome.error);
+    expect(bashResultSchema.parse(JSON.parse(result.outcome.output)).exitCode).toBe(0);
+    expect([...blobs.keys()]).toContainEqual(
+      expect.stringMatching(
+        new RegExp(
+          `^deployments/workspace-test\\.convex\\.cloud/users/${userId}/threads/${threadId}/files/[^/]+/report\\.json$`,
+        ),
+      ),
+    );
+    expect(
+      await owner.action(api.scout.workspaceTools.readFile, {
+        threadId,
+        path: "/workspace/report.json",
+      }),
+    ).toMatchObject({ text: '{"total":17}' });
+    const reloaded = await run(
+      `js-exec -c 'console.log(require("fs").readFileSync("report.json", "utf8"))'`,
+    );
+    if (reloaded.outcome.kind !== "success") throw new Error(reloaded.outcome.error);
+    expect(bashResultSchema.parse(JSON.parse(reloaded.outcome.output))).toMatchObject({
+      exitCode: 0,
+      stdout: '{"total":17}\n',
+    });
+    await expect(
+      other.action(api.scout.workspaceTools.readFile, {
+        threadId,
+        path: "/workspace/report.json",
+      }),
+    ).rejects.toThrow("Chat not found");
+    for (const caller of [other, backend]) {
+      await expect(
+        caller.action(api.scout.manual.executeTool, {
+          threadId,
+          toolName: "bash",
+          input: JSON.stringify({ command: "js-exec report.ts" }),
+          operationId: crypto.randomUUID(),
+        }),
+      ).rejects.toThrow(/Thread not found|Not authorized/);
+    }
+  });
+
   it("keeps the prior files and revision when R2 refuses a write", async () => {
     const { owner, threadId, run } = await setup();
     await run("printf original > report.txt");

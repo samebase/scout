@@ -115,7 +115,9 @@ the stored transcript retains the full tool results.
 `bash` runs a bounded just-bash interpreter inside Convex. Each chat has a private `/workspace`
 shared by the agent and the Workspace panel. Convex stores its directory metadata; Cloudflare R2
 stores the file bytes under deployment, user, and thread prefixes with recognizable file paths.
-The shell has no network, Python, or host-machine access. See [chat workspaces](./workspaces.md)
+The shell also runs plain JavaScript and erasable TypeScript through `js-exec` in QuickJS, with
+standard APIs and a limited Node-compatible library. It has no npm, network, Python, or
+host-machine access. See [chat workspaces](./workspaces.md)
 for setup, limits, persistence, and recovery details.
 
 ## Inspection and handoff

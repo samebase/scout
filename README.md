@@ -49,7 +49,8 @@ across multiple services. Choose Qwen, Luna, or Manual, and inspect tool calls, 
 and human handoffs in the same workspace.
 
 Each chat also has a [Bash workspace](./docs/workspaces.md) with a file tree, text preview, downloads,
-and terminal. The agent shares those files with the user. It runs inside Convex with file bytes in
+and terminal. Plain JavaScript and TypeScript run with `js-exec`, using standard APIs and no npm.
+The agent shares those files with the user. It runs inside Convex with file bytes in
 private Cloudflare R2 storage. Development and Preview defaults are configured; existing or
 isolated deployments need the [four R2 environment variables](./docs/workspaces.md#connect-r2).
 
