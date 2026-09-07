@@ -2,6 +2,8 @@
 
 import agentTest from "@convex-dev/agent/test";
 import { R2 } from "@convex-dev/r2";
+import { tool } from "ai";
+import { z } from "zod";
 import { convexTest } from "convex-test";
 import { Firecrawl } from "firecrawl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -15,6 +17,9 @@ import {
   MAX_WORKSPACE_FILE_BYTES,
   type WorkspaceEntry,
 } from "./workspaceModel";
+import { saveLargeToolResult, withWorkspaceResults } from "./scout/toolResults";
+import { requireRuntimeTool } from "./scout/lib/runtimeTool";
+import { createWorkspaceTools } from "./scout/workspaceTools";
 import { createWebTools } from "./scout/webTools";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -138,7 +143,7 @@ describe("workspace persistence and access", () => {
     if (second.outcome.kind !== "success") throw new Error(second.outcome.error);
     expect(bashResultSchema.parse(JSON.parse(second.outcome.output))).toMatchObject({
       stdout: "hello\n",
-      revision: 2,
+      revision: 1,
     });
     expect(blobs.size).toBe(1);
   });
@@ -423,12 +428,10 @@ describe("web reads saved to the workspace", () => {
     ).toEqual(["/workspace", "/workspace/sources", "/workspace/sources/example.com"]);
     const file = entries.find((entry) => entry.kind === "file");
     if (!file || file.kind !== "file") throw new Error("Source file not registered");
-    expect(file.path).toMatch(
-      /^\/workspace\/sources\/example\.com\/docs-billing-[a-f0-9-]{36}\.md$/,
-    );
+    expect(file.path).toMatch(/^\/workspace\/sources\/example\.com\/docs-billing-[a-f0-9]{8}\.md$/);
     expect(file.key).toMatch(
       new RegExp(
-        `^deployments/workspace-test\\.convex\\.cloud/users/${userId}/threads/${threadId}/files/[a-f0-9-]{36}/sources/example\\.com/docs-billing-[a-f0-9-]{36}\\.md$`,
+        `^deployments/workspace-test\\.convex\\.cloud/users/${userId}/threads/${threadId}/files/[a-f0-9-]{36}/sources/example\\.com/docs-billing-[a-f0-9]{8}\\.md$`,
       ),
     );
     expect(file.path).not.toMatch(/plan|price|redirect/);
@@ -493,7 +496,7 @@ describe("web reads saved to the workspace", () => {
     const { readAsAgent } = await setup();
     expect(await readAsAgent(url)).toMatchObject({
       path: expect.stringMatching(
-        new RegExp(`^/workspace/sources/example\\.com/${slug}-[a-f0-9-]{36}\\.md$`),
+        new RegExp(`^/workspace/sources/example\\.com/${slug}-[a-f0-9]{8}\\.md$`),
       ),
     });
   });
@@ -716,4 +719,185 @@ describe("web reads saved to the workspace", () => {
       expect(await owner.query(api.scout.workspaces.list, { threadId })).toEqual(before);
     },
   );
+});
+
+describe("Workspace tool results", () => {
+  it("lets the model inspect a complete large email result with bash across calls", async () => {
+    const { owner, other, threadId, userId, run } = await setup();
+    const payload = {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            messages: [{ body: "邮件 🌍".repeat(16000) + "TAIL_EVIDENCE" }],
+            nextPageToken: "next-page",
+          }),
+        },
+      ],
+      isError: false,
+    };
+    const messageData = JSON.parse(payload.content[0]?.text ?? "null");
+    const providerResponse = { ...payload, structuredContent: messageData };
+    expect(new TextEncoder().encode(JSON.stringify(providerResponse)).byteLength).toBeGreaterThan(
+      MAX_WORKSPACE_FILE_BYTES,
+    );
+    const providerAdapter = vi.fn(() => ({
+      type: "text" as const,
+      value: "small provider result",
+    }));
+    const modelOutput = await owner.action(async (ctx) => {
+      const tools = withWorkspaceResults(
+        ctx,
+        { threadId, userId },
+        {
+          get_thread: tool({
+            inputSchema: z.object({ threadId: z.string() }),
+            execute: async () => providerResponse,
+            toModelOutput: providerAdapter,
+          }),
+        },
+      );
+      const selected = requireRuntimeTool(tools, "get_thread");
+      const input = { threadId: "mail-thread" };
+      const output = await selected.execute(input, {
+        toolCallId: "mail-read",
+        messages: [],
+        context: {},
+      });
+      return selected.toModelOutput?.({ toolCallId: "mail-read", input, output });
+    });
+    expect(providerAdapter).not.toHaveBeenCalled();
+    expect(modelOutput?.type).toBe("json");
+    if (modelOutput?.type !== "json") throw new Error("Expected file reference");
+    const ref = z
+      .object({ path: z.string(), byteCount: z.number(), excerpt: z.string() })
+      .parse(modelOutput.value);
+    expect(ref.excerpt).not.toContain("TAIL_EVIDENCE");
+    expect(ref.byteCount).toBeLessThan(MAX_WORKSPACE_FILE_BYTES);
+    const file = await owner.action(api.scout.workspaceTools.readFile, {
+      threadId,
+      path: ref.path,
+    });
+    expect(JSON.parse(file.text ?? "null")).toEqual(JSON.parse(payload.content[0]?.text ?? "null"));
+    expect(file.bytes.byteLength).toBe(ref.byteCount);
+    const inspected = await run(
+      `jq -r '.messages[0].body | endswith("TAIL_EVIDENCE")' ${ref.path}`,
+    );
+    if (inspected.outcome.kind !== "success") throw new Error(inspected.outcome.error);
+    expect(bashResultSchema.parse(JSON.parse(inspected.outcome.output))).toMatchObject({
+      exitCode: 0,
+      stdout: "true\n",
+    });
+    await expect(
+      other.action(api.scout.workspaceTools.readFile, { threadId, path: ref.path }),
+    ).rejects.toThrow("Chat not found");
+  });
+
+  it("preserves small MCP outputs and large provider errors without requiring storage", async () => {
+    const { owner, threadId, userId } = await setup();
+    vi.stubEnv("R2_BUCKET", "");
+    const failure = {
+      isError: true,
+      content: [{ type: "text", text: "Provider failure ".repeat(1000) }],
+    };
+    for (const payload of [{ content: [{ type: "text", text: "one message" }] }, failure]) {
+      const adapter = vi.fn(({ output }: { output: unknown }) => ({
+        type: "json" as const,
+        value: z.json().parse(output),
+      }));
+      const result = await owner.action(async (ctx) => {
+        const selected = requireRuntimeTool(
+          withWorkspaceResults(
+            ctx,
+            { threadId, userId },
+            {
+              list_messages: tool({
+                inputSchema: z.object({}),
+                execute: async () => payload,
+                toModelOutput: adapter,
+              }),
+            },
+          ),
+          "list_messages",
+        );
+        const output = await selected.execute(
+          {},
+          { toolCallId: "read", messages: [], context: {} },
+        );
+        return selected.toModelOutput?.({ toolCallId: "read", input: {}, output });
+      });
+      expect(result).toEqual({ type: "json", value: payload });
+      expect(adapter).toHaveBeenCalledOnce();
+    }
+    expect(blobs.size).toBe(0);
+  });
+
+  it("saves the same complete crawl result for a manual call and its persisted transcript", async () => {
+    const { owner, threadId } = await setup();
+    const text = "page content ".repeat(1000) + "END_OF_PAGE";
+    vi.spyOn(Firecrawl.prototype, "crawl").mockResolvedValue({
+      id: "crawl-id",
+      status: "completed",
+      total: 1,
+      completed: 1,
+      creditsUsed: 1,
+      data: [{ markdown: text, metadata: { sourceURL: "https://example.com/deep" } }],
+    });
+    const result = await owner.action(api.scout.manual.executeTool, {
+      threadId,
+      toolName: "web_crawl",
+      input: JSON.stringify({ url: "https://example.com", limit: 1 }),
+      operationId: crypto.randomUUID(),
+    });
+    if (result.outcome.kind !== "success") throw new Error(result.outcome.error);
+    const ref = z
+      .object({ path: z.string(), excerpt: z.string() })
+      .parse(JSON.parse(result.outcome.output));
+    expect(ref.excerpt).not.toContain("END_OF_PAGE");
+    const file = await owner.action(api.scout.workspaceTools.readFile, {
+      threadId,
+      path: ref.path,
+    });
+    expect(JSON.parse(file.text ?? "null")).toMatchObject({
+      crawlId: "crawl-id",
+      creditsUsed: 1,
+      pages: [{ text, url: "https://example.com/deep" }],
+    });
+    const messages = await owner.query(api.scout.chats.listMessages, {
+      threadId,
+      paginationOpts: { numItems: 20, cursor: null },
+    });
+    expect(JSON.stringify(messages)).toContain(ref.path);
+  });
+
+  it("reports storage and oversize failures without confirming or truncating a saved result", async () => {
+    const { owner, threadId, userId } = await setup();
+    const save = (output: unknown) =>
+      owner.action((ctx) => saveLargeToolResult(ctx, { threadId, userId }, "web_map", output));
+    await expect(save({ text: "x".repeat(MAX_WORKSPACE_FILE_BYTES) })).rejects.toThrow(
+      "No truncated copy",
+    );
+    expect(blobs.size).toBe(0);
+    vi.spyOn(R2.prototype, "store").mockRejectedValueOnce(new Error("R2 unavailable"));
+    await expect(save({ text: "x".repeat(9000) })).rejects.toThrow("R2 unavailable");
+    expect((await owner.query(api.scout.workspaces.list, { threadId })).entries).toEqual([]);
+  });
+
+  it("does not revise an unchanged workspace when bash reads run in parallel", async () => {
+    const { owner, threadId, userId, run } = await setup();
+    await run("echo existing > saved.txt");
+    const before = await owner.query(api.scout.workspaces.list, { threadId });
+    const outputs = await Promise.all(
+      ["cat saved.txt", "wc -l saved.txt"].map((command) =>
+        owner.action(async (ctx) => {
+          return createWorkspaceTools(ctx, { threadId, userId }, async () => {}).bash.execute(
+            { command },
+            { toolCallId: crypto.randomUUID(), messages: [], context: {} },
+          );
+        }),
+      ),
+    );
+    expect(outputs.map((output) => bashResultSchema.parse(output).exitCode)).toEqual([0, 0]);
+    expect(await owner.query(api.scout.workspaces.list, { threadId })).toEqual(before);
+  });
 });

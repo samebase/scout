@@ -17,7 +17,6 @@ const DEFAULT_MAP_LIMIT = 25;
 const MAX_MAP_LIMIT = 50;
 const DEFAULT_CRAWL_LIMIT = 5;
 const MAX_CRAWL_LIMIT = 10;
-const MAX_CRAWL_PAGE_CHARACTERS = 4_000;
 
 const publicHttpsUrlSchema = z.url().refine((value) => {
   const url = new URL(value);
@@ -71,7 +70,7 @@ export function createWebTools(
             .replace(/^-+|-+$/g, "")
             .slice(0, 80)
             .replace(/-+$/g, "") || "index";
-        const filename = `${slug}-${readId}.md`;
+        const filename = `${slug}-${readId.slice(0, 8)}.md`;
         const path = `${WORKSPACE_ROOT}/sources/${host}/${filename}`;
         const key = workspaceFileKey({ ...scope, uploadId: readId, path });
         const snapshot = await ctx.runMutation(internal.scout.workspaces.snapshot, scope);
@@ -191,8 +190,7 @@ export function createWebTools(
             return {
               url: document.metadata?.sourceURL ?? document.metadata?.url ?? url,
               title: document.metadata?.title ?? null,
-              text: text.slice(0, MAX_CRAWL_PAGE_CHARACTERS),
-              truncated: text.length > MAX_CRAWL_PAGE_CHARACTERS,
+              text,
             };
           }),
         };

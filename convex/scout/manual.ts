@@ -21,6 +21,7 @@ import { createAgentMailInboxClient, requiredAgentMailApiKey } from "./lib/agent
 import { diagnosticMessage } from "./lib/redaction";
 import { requireRuntimeTool } from "./lib/runtimeTool";
 import { createToolArgumentProbe } from "./toolArgumentProbe";
+import { hasWorkspaceResult, saveLargeToolResult } from "./toolResults";
 import { createWebTools } from "./webTools";
 import { createWorkspaceTools } from "./workspaceTools";
 
@@ -99,7 +100,7 @@ export const executeTool = action({
     operationId: v.string(),
   },
   returns: manualToolResultValidator,
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<typeof manualToolResultValidator.type> => {
     const runtime = await ctx.runQuery(internal.scout.manualState.runtimeContext, {
       threadId: args.threadId,
       requireBrowserAccess: args.toolName !== "bash",
@@ -315,6 +316,16 @@ export const executeTool = action({
           context: undefined,
         }),
       );
+      if (hasWorkspaceResult(args.toolName)) {
+        output = (
+          await saveLargeToolResult(
+            ctx,
+            { threadId: args.threadId, userId: runtime.userId },
+            args.toolName,
+            output,
+          )
+        ).value;
+      }
     } catch (error) {
       executionError = diagnosticMessage(error);
       if (args.toolName === "create_new_firecrawl_session") {

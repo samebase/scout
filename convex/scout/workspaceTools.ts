@@ -1,6 +1,7 @@
 "use node";
 
 import { createHash, randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { tool } from "ai";
 import { v } from "convex/values";
 import { internal } from "../_generated/api";
@@ -51,6 +52,12 @@ export function createWorkspaceTools(
           entries: snapshot.entries,
           readFile: readStoredFile,
         });
+        if (
+          result.output.cwd === snapshot.cwd &&
+          isDeepStrictEqual(result.entries, snapshot.entries)
+        ) {
+          return { ...result.output, revision: snapshot.revision };
+        }
         const keys = new Map<string, string>();
         for (const write of result.writes) {
           const key = workspaceFileKey({ ...scope, uploadId: randomUUID(), path: write.path });

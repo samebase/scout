@@ -59,7 +59,7 @@ describe("Public web tools", () => {
     });
   });
 
-  it("returns bounded crawl pages with provider usage", async () => {
+  it("retains complete crawl pages with provider usage", async () => {
     firecrawl.crawl.mockResolvedValue({
       id: "crawl-1",
       status: "completed",
@@ -96,8 +96,7 @@ describe("Public web tools", () => {
         {
           url: "https://example.com/docs",
           title: "Docs",
-          text: "a".repeat(4_000),
-          truncated: true,
+          text: "a".repeat(4_001),
         },
       ],
     });
