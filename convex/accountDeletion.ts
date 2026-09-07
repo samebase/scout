@@ -109,15 +109,11 @@ export const run = deletionWorkflow
           if (chat.kind === "waiting") {
             await step.sleep(2_000);
           } else {
-            await step.runAction(
-              internal.humanHandoffBrowser.finishBrowserSession,
-              {
-                sessionId: chat.sessionId,
-                captureEvidence: false,
-                ...omitNullish({ usageTurnId: chat.turnId }),
-              },
-              { retry: { maxAttempts: 3, initialBackoffMs: 1_000, base: 2 } },
-            );
+            await step.runAction(internal.humanHandoffBrowser.finishBrowserSession, {
+              sessionId: chat.sessionId,
+              captureEvidence: false,
+              ...omitNullish({ usageTurnId: chat.turnId }),
+            });
           }
         }
       }

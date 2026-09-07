@@ -10,7 +10,11 @@ Settings links to `/account-deletion`. The user types `delete my account`.
 Pending members, approved members, and admins can delete only their own account.
 Deletion starts immediately, blocks app access and new sign-ins, stops the user's
 active Lab work, and removes authentication records. The initiating browser can
-see progress and retry a failed cleanup. Success signs it out. There is no undo.
+see progress and manually retry a failed cleanup. Success signs it out. There is no undo.
+
+Cleanup failures remain visible; the deletion workflow does not automatically retry failed
+actions. For manual repair, use the deleting user's `workflowId` to inspect the existing Workflow
+execution and its error, fix the cause, then click Retry deletion to rerun cleanup.
 
 The `users` schema adds a lifecycle union: normal accounts, `state: "deleting"`
 with a cleanup workflow ID, and `state: "deleted"` with `deletedAt`. Existing

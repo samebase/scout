@@ -1071,6 +1071,6 @@ The replaced address follows ordinary account approval (`convex/access.ts`).
 
 ### 2026-09-07 - working tree
 
-Added self-service account deletion from Settings, with typed confirmation and retryable cleanup.
+Added self-service account deletion from Settings, with typed confirmation and manual retry after failure.
 The existing Convex Workflow removes profile and login data while retaining a deleted user stub,
 chats, messages, files, and shared Scouts (`convex/accountDeletion.ts`, `src/routes/account-deletion.tsx`).
