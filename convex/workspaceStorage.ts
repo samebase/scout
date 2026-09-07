@@ -23,7 +23,7 @@ export function workspaceFileKey({
     .split("/")
     .map(encodeURIComponent)
     .join("/");
-  return `${prefix}/${uploadId}/${relativePath}`;
+  return `${prefix}/${relativePath}/${uploadId}`;
 }
 
 export function workspaceStorageConfigured() {

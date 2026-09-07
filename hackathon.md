@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-07T22:23:36Z
+- **Last updated:** 2026-09-07T22:39:36Z
 
 ## Log
 
@@ -1092,9 +1092,14 @@ Web reads save complete Markdown sources for later searches and return short exc
 Views, files, replays, sessions, account forms, and chat panes support URL bookmarks and Back/Forward.
 Workspace saves recheck current access (`convex/scout/`, `src/routes/`, `src/components/`).
 
-### 2026-09-07 - working tree
+### 2026-09-07 - 6fc3f70 - v188
 
 Web and email reads always save complete results in the private chat workspace, while model
 context receives full previews for small results and excerpts for large ones. MCP email payloads are unpacked for direct JSON queries.
 Unchanged Bash reads no longer contend for a saved revision (`convex/scout/toolResults.ts`,
 `convex/scout/workspaceTools.ts`).
+
+### 2026-09-07 - working tree
+
+R2 uploads now group by workspace file path before the upload ID, making files easier to browse
+in the bucket while retaining the existing save and cleanup behavior (`convex/workspaceStorage.ts`).
