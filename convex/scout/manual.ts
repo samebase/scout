@@ -21,7 +21,7 @@ import { createAgentMailInboxClient, requiredAgentMailApiKey } from "./lib/agent
 import { diagnosticMessage } from "./lib/redaction";
 import { requireRuntimeTool } from "./lib/runtimeTool";
 import { createToolArgumentProbe } from "./toolArgumentProbe";
-import { hasWorkspaceResult, saveLargeToolResult } from "./toolResults";
+import { hasWorkspaceResult, saveToolResult } from "./toolResults";
 import { createWebTools } from "./webTools";
 import { createWorkspaceTools } from "./workspaceTools";
 
@@ -318,7 +318,7 @@ export const executeTool = action({
       );
       if (hasWorkspaceResult(args.toolName)) {
         output = (
-          await saveLargeToolResult(
+          await saveToolResult(
             ctx,
             { threadId: args.threadId, userId: runtime.userId },
             args.toolName,

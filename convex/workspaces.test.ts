@@ -17,7 +17,11 @@ import {
   MAX_WORKSPACE_FILE_BYTES,
   type WorkspaceEntry,
 } from "./workspaceModel";
-import { saveLargeToolResult, withWorkspaceResults } from "./scout/toolResults";
+import {
+  INLINE_TOOL_RESULT_BYTES,
+  saveToolResult,
+  withWorkspaceResults,
+} from "./scout/toolResults";
 import { requireRuntimeTool } from "./scout/lib/runtimeTool";
 import { createWorkspaceTools } from "./scout/workspaceTools";
 import { createWebTools } from "./scout/webTools";
@@ -722,6 +726,97 @@ describe("web reads saved to the workspace", () => {
 });
 
 describe("Workspace tool results", () => {
+  it.each([
+    {
+      toolName: "web_search",
+      payload: { results: [] },
+      text: JSON.stringify({ results: [] }, null, 2),
+      extension: "json",
+    },
+    {
+      toolName: "list_messages",
+      payload: { content: [{ type: "text", text: '{"messages":[]}' }] },
+      text: JSON.stringify({ messages: [] }, null, 2),
+      extension: "json",
+    },
+    {
+      toolName: "get_thread",
+      payload: { content: [{ type: "text", text: "One message." }] },
+      text: "One message.",
+      extension: "txt",
+    },
+  ])(
+    "saves small $toolName results and includes their full preview",
+    async ({ toolName, payload, text, extension }) => {
+      const { owner, threadId, userId, run } = await setup();
+      const modelOutput = await owner.action(async (ctx) => {
+        const selected = requireRuntimeTool(
+          withWorkspaceResults(
+            ctx,
+            { threadId, userId },
+            {
+              [toolName]: tool({ inputSchema: z.object({}), execute: async () => payload }),
+            },
+          ),
+          toolName,
+        );
+        const output = await selected.execute(
+          {},
+          { toolCallId: "small-read", messages: [], context: {} },
+        );
+        return selected.toModelOutput?.({ toolCallId: "small-read", input: {}, output });
+      });
+      if (modelOutput?.type !== "json") throw new Error("Expected file reference");
+      const ref = z
+        .object({
+          path: z.string(),
+          byteCount: z.number(),
+          excerpt: z.string(),
+          excerptTruncated: z.boolean(),
+        })
+        .parse(modelOutput.value);
+      expect(ref.path).toMatch(
+        new RegExp(`^/workspace/results/${toolName}-[a-f0-9]{8}\\.${extension}$`),
+      );
+      expect(ref).toMatchObject({
+        excerpt: text,
+        excerptTruncated: false,
+        byteCount: new TextEncoder().encode(text).byteLength,
+      });
+      const inspected = await run(`cat ${ref.path}`);
+      if (inspected.outcome.kind !== "success") throw new Error(inspected.outcome.error);
+      expect(bashResultSchema.parse(JSON.parse(inspected.outcome.output))).toMatchObject({
+        exitCode: 0,
+        stdout: text,
+      });
+    },
+  );
+
+  it.each([
+    { text: "邮".repeat(2666) + "ab", truncated: false },
+    { text: "邮".repeat(2666) + "abc", truncated: true },
+  ])(
+    "uses UTF-8 size only to limit the preview (truncated: $truncated)",
+    async ({ text, truncated }) => {
+      const { owner, threadId, userId } = await setup();
+      const result = await owner.action((ctx) =>
+        saveToolResult(ctx, { threadId, userId }, "get_thread", {
+          content: [{ type: "text", text }],
+        }),
+      );
+      if (result.kind !== "file") throw new Error("Expected saved result");
+      expect(result.value.byteCount).toBe(INLINE_TOOL_RESULT_BYTES + Number(truncated));
+      expect(result.value.excerptTruncated).toBe(truncated);
+      if (truncated) expect(result.value.excerpt.length).toBeLessThan(text.length);
+      else expect(result.value.excerpt).toBe(text);
+      const file = await owner.action(api.scout.workspaceTools.readFile, {
+        threadId,
+        path: result.value.path,
+      });
+      expect(file.text).toBe(text);
+    },
+  );
+
   it("lets the model inspect a complete large email result with bash across calls", async () => {
     const { owner, other, threadId, userId, run } = await setup();
     const payload = {
@@ -793,14 +888,14 @@ describe("Workspace tool results", () => {
     ).rejects.toThrow("Chat not found");
   });
 
-  it("preserves small MCP outputs and large provider errors without requiring storage", async () => {
+  it("preserves provider errors without requiring storage", async () => {
     const { owner, threadId, userId } = await setup();
     vi.stubEnv("R2_BUCKET", "");
     const failure = {
       isError: true,
       content: [{ type: "text", text: "Provider failure ".repeat(1000) }],
     };
-    for (const payload of [{ content: [{ type: "text", text: "one message" }] }, failure]) {
+    for (const payload of [{ success: false, error: "Not available" }, failure]) {
       const adapter = vi.fn(({ output }: { output: unknown }) => ({
         type: "json" as const,
         value: z.json().parse(output),
@@ -832,54 +927,56 @@ describe("Workspace tool results", () => {
     expect(blobs.size).toBe(0);
   });
 
-  it("saves the same complete crawl result for a manual call and its persisted transcript", async () => {
-    const { owner, threadId } = await setup();
-    const text = "page content ".repeat(1000) + "END_OF_PAGE";
-    vi.spyOn(Firecrawl.prototype, "crawl").mockResolvedValue({
-      id: "crawl-id",
-      status: "completed",
-      total: 1,
-      completed: 1,
-      creditsUsed: 1,
-      data: [{ markdown: text, metadata: { sourceURL: "https://example.com/deep" } }],
-    });
-    const result = await owner.action(api.scout.manual.executeTool, {
-      threadId,
-      toolName: "web_crawl",
-      input: JSON.stringify({ url: "https://example.com", limit: 1 }),
-      operationId: crypto.randomUUID(),
-    });
-    if (result.outcome.kind !== "success") throw new Error(result.outcome.error);
-    const ref = z
-      .object({ path: z.string(), excerpt: z.string() })
-      .parse(JSON.parse(result.outcome.output));
-    expect(ref.excerpt).not.toContain("END_OF_PAGE");
-    const file = await owner.action(api.scout.workspaceTools.readFile, {
-      threadId,
-      path: ref.path,
-    });
-    expect(JSON.parse(file.text ?? "null")).toMatchObject({
-      crawlId: "crawl-id",
-      creditsUsed: 1,
-      pages: [{ text, url: "https://example.com/deep" }],
-    });
-    const messages = await owner.query(api.scout.chats.listMessages, {
-      threadId,
-      paginationOpts: { numItems: 20, cursor: null },
-    });
-    expect(JSON.stringify(messages)).toContain(ref.path);
-  });
+  it.each(["Short page.", "page content ".repeat(1000) + "END_OF_PAGE"])(
+    "saves complete crawl results for manual calls and their persisted transcripts",
+    async (text) => {
+      const { owner, threadId } = await setup();
+      vi.spyOn(Firecrawl.prototype, "crawl").mockResolvedValue({
+        id: "crawl-id",
+        status: "completed",
+        total: 1,
+        completed: 1,
+        creditsUsed: 1,
+        data: [{ markdown: text, metadata: { sourceURL: "https://example.com/deep" } }],
+      });
+      const result = await owner.action(api.scout.manual.executeTool, {
+        threadId,
+        toolName: "web_crawl",
+        input: JSON.stringify({ url: "https://example.com", limit: 1 }),
+        operationId: crypto.randomUUID(),
+      });
+      if (result.outcome.kind !== "success") throw new Error(result.outcome.error);
+      const ref = z
+        .object({ path: z.string(), excerpt: z.string() })
+        .parse(JSON.parse(result.outcome.output));
+      expect(ref.excerpt).not.toContain("END_OF_PAGE");
+      const file = await owner.action(api.scout.workspaceTools.readFile, {
+        threadId,
+        path: ref.path,
+      });
+      expect(JSON.parse(file.text ?? "null")).toMatchObject({
+        crawlId: "crawl-id",
+        creditsUsed: 1,
+        pages: [{ text, url: "https://example.com/deep" }],
+      });
+      const messages = await owner.query(api.scout.chats.listMessages, {
+        threadId,
+        paginationOpts: { numItems: 20, cursor: null },
+      });
+      expect(JSON.stringify(messages)).toContain(ref.path);
+    },
+  );
 
   it("reports storage and oversize failures without confirming or truncating a saved result", async () => {
     const { owner, threadId, userId } = await setup();
     const save = (output: unknown) =>
-      owner.action((ctx) => saveLargeToolResult(ctx, { threadId, userId }, "web_map", output));
+      owner.action((ctx) => saveToolResult(ctx, { threadId, userId }, "web_map", output));
     await expect(save({ text: "x".repeat(MAX_WORKSPACE_FILE_BYTES) })).rejects.toThrow(
       "No truncated copy",
     );
     expect(blobs.size).toBe(0);
     vi.spyOn(R2.prototype, "store").mockRejectedValueOnce(new Error("R2 unavailable"));
-    await expect(save({ text: "x".repeat(9000) })).rejects.toThrow("R2 unavailable");
+    await expect(save({ links: [] })).rejects.toThrow("R2 unavailable");
     expect((await owner.query(api.scout.workspaces.list, { threadId })).entries).toEqual([]);
   });
 

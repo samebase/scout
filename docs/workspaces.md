@@ -46,11 +46,13 @@ explicitly, without a truncated file or automatic splitting. R2 must be configur
 success requires both an upload and registration. A registration failure can leave an unreferenced
 R2 object. If saving is not confirmed, inspect the workspace before retrying.
 
-## Large tool results
+## Saved tool results
 
-`web_search`, `web_map`, `web_crawl`, `list_messages`, `search_messages`, and `get_thread` keep
-small responses inline. Responses above 8,000 UTF-8 bytes are saved under `/workspace/results`.
-The model receives the path, byte count, retrieval time, and a 1,500-character excerpt. The same
+`web_search`, `web_map`, `web_crawl`, `list_messages`, `search_messages`, and `get_thread` always
+save successful results under `/workspace/results`, including empty results. The model receives
+the path, byte count, retrieval time, and a preview. Payloads up to 8,000 UTF-8 bytes include their
+complete text; larger payloads include a 1,500-character excerpt with `excerptTruncated: true`.
+Size controls the preview only: the complete saved file is available in either case. The same
 behavior applies to manual calls. Arguments and provider pagination stay the same.
 
 JSON files contain the complete result, including page text, identifiers, pagination cursors,
@@ -237,6 +239,10 @@ These runs used Qwen 3.7 Flash through Scout's normal chat UI, with one initial 
   index from the saved crawl JSON, including 8,348 bytes of page text (past the former 4,000-character
   cutoff). The first run fetched one page again; automatic file saving does not guarantee optimal
   model choices.
+- [Small-result checks](http://localhost:5173/chats?thread=m576bj6jbkzyae5ba7tzsfkf118dzdyt):
+  ordinary research and inbox-export prompts produced a reading list and CSV without corrections.
+  Search results of 6,392 bytes and 19 bytes (empty), plus a 2,592-byte map result, were all saved;
+  their full previews in Model calls matched the files.
 
 The tests establish file availability, use across turns, and smaller model-facing results. They do
 not establish that Qwen's reports or tool choices are consistently correct. Browser snapshot

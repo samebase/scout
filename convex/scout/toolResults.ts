@@ -28,23 +28,20 @@ export function hasWorkspaceResult(toolName: string) {
   ].includes(toolName);
 }
 
-export async function saveLargeToolResult(
+export async function saveToolResult(
   ctx: ActionCtx,
   scope: { threadId: string; userId: Id<"users"> },
   toolName: string,
   output: unknown,
 ) {
   const value = jsonValueSchema.parse(output);
-  const serialized = JSON.stringify(value, null, 2);
   // Provider errors must remain immediately visible, including MCP isError responses.
   const failed =
     value !== null &&
     typeof value === "object" &&
     !Array.isArray(value) &&
     (value["isError"] === true || value["success"] === false);
-  if (new TextEncoder().encode(serialized).byteLength <= INLINE_TOOL_RESULT_BYTES || failed) {
-    return { kind: "inline" as const, value };
-  }
+  if (failed) return { kind: "error" as const, value };
   // Save the payload of a single-text MCP response, not JSON nested inside a JSON string.
   const mcp = mcpTextResultSchema.safeParse(value);
   let fileValue = value;
@@ -90,6 +87,7 @@ export async function saveLargeToolResult(
       mtime: retrievedAt.getTime(),
     },
   });
+  const excerptTruncated = bytes.byteLength > INLINE_TOOL_RESULT_BYTES;
   return {
     kind: "file" as const,
     value: {
@@ -97,8 +95,8 @@ export async function saveLargeToolResult(
       byteCount: bytes.byteLength,
       tool: toolName,
       retrievedAt: retrievedAt.toISOString(),
-      excerpt: Array.from(text).slice(0, EXCERPT_CHARACTERS).join(""),
-      excerptTruncated: true,
+      excerpt: excerptTruncated ? Array.from(text).slice(0, EXCERPT_CHARACTERS).join("") : text,
+      excerptTruncated,
     },
   };
 }
@@ -115,15 +113,15 @@ export function withWorkspaceResults(
       if (!hasWorkspaceResult(name) || !execute) return [name, source];
       return [
         name,
-        tool<unknown, Awaited<ReturnType<typeof saveLargeToolResult>>, Record<string, unknown>>({
+        tool<unknown, Awaited<ReturnType<typeof saveToolResult>>, Record<string, unknown>>({
           inputSchema: source.inputSchema,
           ...omitNullish({ strict: source.strict }),
           description: (options) =>
-            `${(typeof source.description === "function" ? source.description(options) : source.description) ?? ""} Large results are saved in /workspace/results as JSON (or plain text); use bash to search the returned path.`,
+            `${(typeof source.description === "function" ? source.description(options) : source.description) ?? ""} Successful results are always saved in /workspace/results as JSON (or plain text). Returns the path and full text for small results or an excerpt for large ones; use bash to inspect the file.`,
           execute: async (input, options) =>
-            saveLargeToolResult(ctx, scope, name, await execute(input, options)),
+            saveToolResult(ctx, scope, name, await execute(input, options)),
           toModelOutput: ({ output, ...options }) => {
-            if (output.kind === "inline" && source.toModelOutput) {
+            if (output.kind === "error" && source.toModelOutput) {
               return source.toModelOutput({ ...options, output: output.value });
             }
             return { type: "json", value: output.value };

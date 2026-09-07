@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-07T22:03:27Z
+- **Last updated:** 2026-09-07T22:23:36Z
 
 ## Log
 
@@ -1094,7 +1094,7 @@ Workspace saves recheck current access (`convex/scout/`, `src/routes/`, `src/com
 
 ### 2026-09-07 - working tree
 
-Scout can search complete web and email results in its existing private workspace, while model
-context receives excerpts and file paths. MCP email payloads are unpacked for direct JSON queries.
+Web and email reads always save complete results in the private chat workspace, while model
+context receives full previews for small results and excerpts for large ones. MCP email payloads are unpacked for direct JSON queries.
 Unchanged Bash reads no longer contend for a saved revision (`convex/scout/toolResults.ts`,
 `convex/scout/workspaceTools.ts`).
