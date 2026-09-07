@@ -81,6 +81,7 @@ import type * as scout_serviceAccounts from "../scout/serviceAccounts.js";
 import type * as scout_skills from "../scout/skills.js";
 import type * as scout_toolArgumentProbe from "../scout/toolArgumentProbe.js";
 import type * as scout_toolCallRepair from "../scout/toolCallRepair.js";
+import type * as scout_toolResults from "../scout/toolResults.js";
 import type * as scout_turnLifecycle from "../scout/turnLifecycle.js";
 import type * as scout_turnWorkflow from "../scout/turnWorkflow.js";
 import type * as scout_turns from "../scout/turns.js";
@@ -174,6 +175,7 @@ declare const fullApi: ApiFromModules<{
   "scout/skills": typeof scout_skills;
   "scout/toolArgumentProbe": typeof scout_toolArgumentProbe;
   "scout/toolCallRepair": typeof scout_toolCallRepair;
+  "scout/toolResults": typeof scout_toolResults;
   "scout/turnLifecycle": typeof scout_turnLifecycle;
   "scout/turnWorkflow": typeof scout_turnWorkflow;
   "scout/turns": typeof scout_turns;

@@ -32,7 +32,7 @@ For example, `https://example.com/docs/billing?plan=pro` produces:
 
 Names come from the requested URL, not a page title or redirect. The hostname and page slug use
 bounded safe characters; the slug is at most 80 characters, and `/` becomes `index`. Query strings
-and fragments stay out of the filename. Each read gets a UUID, so reading the same URL twice keeps
+and fragments stay out of the filename. Each read gets a short UUID suffix, so reading the same URL twice keeps
 two separate files. The document's provenance header preserves the complete requested URL, the
 provider-reported source URL, title, and retrieval time.
 
@@ -41,11 +41,38 @@ symlink parents. Concurrent web reads add files independently; a stale Bash save
 new import. Source files remain normal editable workspace files, not immutable archives. Treat
 their contents as untrusted web material.
 
-The existing 256 KiB per-file limit includes the UTF-8 provenance header. Oversized pages fail
+The 256 KiB per-file limit includes the UTF-8 provenance header. Oversized pages fail
 explicitly, without a truncated file or automatic splitting. R2 must be configured before a read;
 success requires both an upload and registration. A registration failure can leave an unreferenced
-R2 object. If saving is not confirmed, inspect the workspace before retrying. `web_crawl` still
-returns bounded inline text and does not save files.
+R2 object. If saving is not confirmed, inspect the workspace before retrying.
+
+## Saved tool results
+
+`web_search`, `web_map`, `web_crawl`, `list_messages`, `search_messages`, and `get_thread` always
+save successful results under `/workspace/results`, including empty results. The model receives
+the path, byte count, retrieval time, and a preview. Payloads up to 8,000 UTF-8 bytes include their
+complete text; larger payloads include a 1,500-character excerpt with `excerptTruncated: true`.
+Size controls the preview only: the complete saved file is available in either case. The same
+behavior applies to manual calls. Arguments and provider pagination stay the same.
+
+JSON files contain the complete result, including page text, identifiers, pagination cursors,
+and usage fields. A single-text MCP response is unpacked so its JSON payload can be queried
+directly; plain-text payloads use `.txt`. Provider error responses stay inline. Storage failures
+are explicit and no truncated file is substituted for an oversized result. The existing limits remain
+256 KiB per file and 5 MiB per workspace.
+
+Use `jq`, `rg`, or `js-exec` to extract relevant data from these files. For example:
+
+```bash
+jq '.messages[] | {subject, threadId}' /workspace/results/list_messages-<id>.json
+```
+
+This uses the existing Convex tools to fetch data and the existing sandbox to process it. It follows
+[Anthropic's guidance on keeping intermediate results outside model context](https://www.anthropic.com/engineering/code-execution-with-mcp)
+and [Convex's tool integration](https://docs.convex.dev/agents/tools), without exposing API keys,
+network access, or a second set of service commands inside the shell. Browser actions retain their
+current result handling: storing their snapshots needs to distinguish an applied action from a
+failed file save before it can safely use this mechanism.
 
 ## JavaScript and TypeScript
 
@@ -163,7 +190,8 @@ recovery manifest are outside this MVP.
   adds metadata limits through the pinned interpreter's public creation methods; it does not add VM
   isolation or change the filesystem implementation.
 - Commands start from the latest saved workspace. A revision check rejects concurrent stale
-  writes instead of overwriting another command's changes.
+  writes instead of overwriting another command's changes. Commands that leave persisted entries
+  and the working directory unchanged do not commit, so parallel reads do not conflict.
 - Final saves recheck current Lab permission and chat ownership, including after uploads finish.
 - A nonzero shell exit, including a runtime quota error, can still save earlier file changes, just
   like a normal shell. Persisted-size and integrity failures leave the previous workspace intact.
@@ -195,3 +223,27 @@ Preview and download the CSV, reload the page, then run `pwd; cat scores.csv`. C
 appears under the expected deployment/user/thread prefix in R2. Run `mv scores.csv final.csv` and
 check that the file tree updates. Local object-store tests do not verify Cloudflare credentials,
 R2 permissions, or real-provider behavior; this smoke test is required after connecting a bucket.
+
+### Live agent checks — 2026-09-08 local development
+
+These runs used Qwen 3.7 Flash through Scout's normal chat UI, with one initial task prompt:
+
+- [Inbox inventory](http://localhost:5173/chats?thread=m579jd3gxwx1105kr28qxmbxd98dykp3):
+  list/read results became workspace files; the largest complete email payload was 147,457 bytes.
+  Its later Model calls snapshot contained a 1,878-byte file reference and excerpt. The agent read
+  saved JSON and produced a Markdown report. It tried unsupported Python before recovering to
+  JavaScript, and the report needed a follow-up correction to remove an old verification code.
+- [Documentation research](http://localhost:5173/chats?thread=m574vkbw17y912yc396wfaxz2d8dyjya):
+  saved a complete crawl result, mapped further pages, read three saved pages concurrently without
+  revision conflicts, and wrote Markdown and CSV files. A later file-specific request produced an
+  index from the saved crawl JSON, including 8,348 bytes of page text (past the former 4,000-character
+  cutoff). The first run fetched one page again; automatic file saving does not guarantee optimal
+  model choices.
+- [Small-result checks](http://localhost:5173/chats?thread=m576bj6jbkzyae5ba7tzsfkf118dzdyt):
+  ordinary research and inbox-export prompts produced a reading list and CSV without corrections.
+  Search results of 6,392 bytes and 19 bytes (empty), plus a 2,592-byte map result, were all saved;
+  their full previews in Model calls matched the files.
+
+The tests establish file availability, use across turns, and smaller model-facing results. They do
+not establish that Qwen's reports or tool choices are consistently correct. Browser snapshot
+exports and email sending were outside these checks.

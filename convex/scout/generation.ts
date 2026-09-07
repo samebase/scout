@@ -42,6 +42,7 @@ import { createToolArgumentProbe } from "./toolArgumentProbe";
 import { repairStringifiedToolInput } from "./toolCallRepair";
 import { scoutRuntimeInstructions } from "./runtimeInstructions";
 import { createPlayTools } from "./play";
+import { withWorkspaceResults } from "./toolResults";
 import { createWebTools } from "./webTools";
 import { createSkillTools } from "./skills";
 import { createWorkspaceTools } from "./workspaceTools";
@@ -498,37 +499,41 @@ export const runSlice = internalAction({
         scoutId,
         sessionId: () => browserSessionId,
       });
-      const tools = {
-        ...(runtimeContext.play
-          ? createPlayTools(async (step) => {
-              await ctx.runMutation(internal.scout.chats.setActivityStep, {
-                turnId: activeTurnId,
-                step,
-              });
-            })
-          : {}),
-        ...browser.tools,
-        ...createWebTools(
-          ctx,
-          { threadId: args.threadId, userId: args.userId },
-          beforeModelToolDispatch,
-        ),
-        ...createWorkspaceTools(
-          ctx,
-          { threadId: args.threadId, userId: args.userId },
-          beforeModelToolDispatch,
-        ),
-        ...agentMailTools,
-        request_human_help: createHumanHandoffTool(humanHandoffCallbacks),
-        ...accountTools,
-        inspect_tool_arguments: createToolArgumentProbe(),
-        ...createSkillTools(async (names) =>
-          ctx.runMutation(internal.scout.chats.loadSkills, {
-            turnId: activeTurnId,
-            names,
-          }),
-        ),
-      };
+      const tools = withWorkspaceResults(
+        ctx,
+        { threadId: args.threadId, userId: args.userId },
+        {
+          ...(runtimeContext.play
+            ? createPlayTools(async (step) => {
+                await ctx.runMutation(internal.scout.chats.setActivityStep, {
+                  turnId: activeTurnId,
+                  step,
+                });
+              })
+            : {}),
+          ...browser.tools,
+          ...createWebTools(
+            ctx,
+            { threadId: args.threadId, userId: args.userId },
+            beforeModelToolDispatch,
+          ),
+          ...createWorkspaceTools(
+            ctx,
+            { threadId: args.threadId, userId: args.userId },
+            beforeModelToolDispatch,
+          ),
+          ...agentMailTools,
+          request_human_help: createHumanHandoffTool(humanHandoffCallbacks),
+          ...accountTools,
+          inspect_tool_arguments: createToolArgumentProbe(),
+          ...createSkillTools(async (names) =>
+            ctx.runMutation(internal.scout.chats.loadSkills, {
+              turnId: activeTurnId,
+              names,
+            }),
+          ),
+        },
+      );
       const instructions = scoutRuntimeInstructions({
         scout,
         credentials: runtimeCredentials,
