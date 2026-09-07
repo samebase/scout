@@ -162,7 +162,8 @@ const MANUAL_TOOL_OPTIONS = [
   {
     value: "web_read",
     label: "Read a web page",
-    description: "Read the content of one public web page with Firecrawl.",
+    description:
+      "Read a public page with Firecrawl and save its Markdown to this chat's Workspace. Returns a short excerpt and the saved path.",
     input: '{\n  "url": "https://samebase.com"\n}',
   },
   {

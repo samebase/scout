@@ -6,16 +6,18 @@ export const MAX_WORKSPACE_ENTRIES = 200;
 export const MAX_WORKSPACE_FILE_BYTES = 256 * 1024;
 export const MAX_WORKSPACE_BYTES = 5 * 1024 * 1024;
 
+export const workspaceFileValidator = v.object({
+  kind: v.literal("file"),
+  path: v.string(),
+  key: v.string(),
+  size: v.number(),
+  sha256: v.string(),
+  mode: v.number(),
+  mtime: v.number(),
+});
+
 export const workspaceEntryValidator = v.union(
-  v.object({
-    kind: v.literal("file"),
-    path: v.string(),
-    key: v.string(),
-    size: v.number(),
-    sha256: v.string(),
-    mode: v.number(),
-    mtime: v.number(),
-  }),
+  workspaceFileValidator,
   v.object({
     kind: v.literal("directory"),
     path: v.string(),

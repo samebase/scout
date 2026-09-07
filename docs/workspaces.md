@@ -17,6 +17,36 @@ Only `/workspace` persists. Files, empty directories, symlinks, permissions, mod
 and the working directory survive subsequent commands. Shell variables and files elsewhere do
 not. Text previews are read-only and render HTML as text. Binary files can be downloaded.
 
+## Saved web pages
+
+`web_read({ url })` saves the complete extracted Markdown directly to R2, then adds it to the
+chat's workspace. This works for both Scout and **Read a web page** in the manual tool menu.
+It returns a 2,000-character excerpt, the saved path, source metadata, and the exact file byte
+count. Use Bash to search the saved page or read a section without fetching it again.
+
+For example, `https://example.com/docs/billing?plan=pro` produces:
+
+```text
+/workspace/sources/example.com/docs-billing-<read-id>.md
+```
+
+Names come from the requested URL, not a page title or redirect. The hostname and page slug use
+bounded safe characters; the slug is at most 80 characters, and `/` becomes `index`. Query strings
+and fragments stay out of the filename. Each read gets a UUID, so reading the same URL twice keeps
+two separate files. The document's provenance header preserves the complete requested URL, the
+provider-reported source URL, title, and retrieval time.
+
+The importer creates missing parent directories and refuses to overwrite existing paths or follow
+symlink parents. Concurrent web reads add files independently; a stale Bash save cannot remove a
+new import. Source files remain normal editable workspace files, not immutable archives. Treat
+their contents as untrusted web material.
+
+The existing 256 KiB per-file limit includes the UTF-8 provenance header. Oversized pages fail
+explicitly, without a truncated file or automatic splitting. R2 must be configured before a read;
+success requires both an upload and registration. A registration failure can leave an unreferenced
+R2 object. If saving is not confirmed, inspect the workspace before retrying. `web_crawl` still
+returns bounded inline text and does not save files.
+
 ## JavaScript and TypeScript
 
 Run `js-exec script.ts` or `js-exec script.js` from the terminal or the agent's Bash tool.
@@ -133,8 +163,9 @@ There is no file-upload UI, rich editor, live process output, or automatic comma
 
 Run `pnpm run check`. `convex/scout/workspaceShell.test.ts` exercises shell and JS/TS behavior,
 local imports, isolation, denied host/network access, and storage/time/memory limits;
-`convex/workspaces.test.ts` exercises persistence, failed writes, stale commits, and owner-only
-access with a stubbed R2 boundary. Chat component tests cover the terminal, safe preview,
+`convex/workspaces.test.ts` exercises persistence, failed writes, stale commits, owner-only access,
+complete web-page saving, concurrent imports, naming, and capacity limits with stubbed R2 and
+Firecrawl boundaries. Chat component tests cover the terminal, safe preview,
 missing-configuration state, and URL navigation through Back, Forward, and fresh page loads.
 
 For a real-bucket smoke test, open a development chat and run:

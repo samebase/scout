@@ -7,15 +7,13 @@ import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { action } from "../functions";
-import { getRuntimeEnv } from "../runtimeEnv";
 import {
   BASH_DESCRIPTION,
   bashInputSchema,
   MAX_WORKSPACE_FILE_BYTES,
-  WORKSPACE_ROOT,
   type WorkspaceEntry,
 } from "../workspaceModel";
-import { workspaceStorage } from "../workspaceStorage";
+import { workspaceFileKey, workspaceStorage } from "../workspaceStorage";
 import { runWorkspaceShell } from "./workspaceShell";
 
 async function readStoredFile(entry: Extract<WorkspaceEntry, { kind: "file" }>) {
@@ -53,17 +51,9 @@ export function createWorkspaceTools(
           entries: snapshot.entries,
           readFile: readStoredFile,
         });
-        const deploymentUrl = getRuntimeEnv("CONVEX_CLOUD_URL");
-        if (!deploymentUrl) throw new Error("Convex deployment URL is not configured");
-        const prefix = `deployments/${encodeURIComponent(new URL(deploymentUrl).host)}/users/${scope.userId}/threads/${encodeURIComponent(scope.threadId)}/files`;
         const keys = new Map<string, string>();
         for (const write of result.writes) {
-          const relativePath = write.path
-            .slice(WORKSPACE_ROOT.length + 1)
-            .split("/")
-            .map(encodeURIComponent)
-            .join("/");
-          const key = `${prefix}/${randomUUID()}/${relativePath}`;
+          const key = workspaceFileKey({ ...scope, uploadId: randomUUID(), path: write.path });
           await storage.store(ctx, write.bytes, {
             key,
             type: "application/octet-stream",

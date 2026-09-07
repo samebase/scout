@@ -8,7 +8,14 @@ import {
 } from "../_generated/server";
 import { requirePermission, requireUserPermission } from "../access";
 import { query } from "../functions";
-import { MAX_WORKSPACE_ENTRIES, WORKSPACE_ROOT, workspaceEntryValidator } from "../workspaceModel";
+import {
+  MAX_WORKSPACE_ENTRIES,
+  MAX_WORKSPACE_BYTES,
+  MAX_WORKSPACE_FILE_BYTES,
+  WORKSPACE_ROOT,
+  workspaceEntryValidator,
+  workspaceFileValidator,
+} from "../workspaceModel";
 import { workspaceStorage, workspaceStorageConfigured } from "../workspaceStorage";
 
 async function requireWorkspaceChat(
@@ -86,6 +93,68 @@ export const snapshot = internalMutation({
       revision: 0,
     });
     return { workspaceId, cwd: WORKSPACE_ROOT, revision: 0, entries: [] };
+  },
+});
+
+export const addFile = internalMutation({
+  args: {
+    workspaceId: v.id("scoutWorkspaces"),
+    userId: v.id("users"),
+    entry: workspaceFileValidator,
+  },
+  returns: v.number(),
+  handler: async (ctx, { workspaceId, userId, entry }) => {
+    await requireUserPermission(ctx, userId, "access_lab");
+    const workspace = await ctx.db.get("scoutWorkspaces", workspaceId);
+    if (!workspace) throw new Error("Workspace not found");
+    await requireWorkspaceChat(ctx, workspace.threadId, userId);
+    const segments = entry.path.split("/");
+    if (
+      !entry.path.startsWith(`${WORKSPACE_ROOT}/`) ||
+      segments
+        .slice(1)
+        .some(
+          (segment) =>
+            !segment || segment === "." || segment === ".." || /[\\\p{Cc}]/u.test(segment),
+        )
+    )
+      throw new Error("File path must be an absolute path inside /workspace");
+    if (
+      !Number.isSafeInteger(entry.size) ||
+      entry.size < 0 ||
+      entry.size > MAX_WORKSPACE_FILE_BYTES
+    )
+      throw new Error(`Workspace file exceeds ${MAX_WORKSPACE_FILE_BYTES} bytes: ${entry.path}`);
+    const rows = await workspaceRows(ctx, workspaceId);
+    const existing = new Map(rows.map((row) => [row.entry.path, row.entry]));
+    if (existing.has(entry.path)) throw new Error(`Workspace path already exists: ${entry.path}`);
+    const parents: string[] = [];
+    for (let depth = 2; depth < segments.length; depth++) {
+      const path = segments.slice(0, depth).join("/");
+      const parent = existing.get(path);
+      if (parent && parent.kind !== "directory")
+        throw new Error(`Workspace parent is not a directory: ${path}`);
+      if (!parent) parents.push(path);
+    }
+    if (rows.length + parents.length + 1 > MAX_WORKSPACE_ENTRIES)
+      throw new Error(
+        "Workspace entry limit exceeded; remove files or folders before reading another page",
+      );
+    const totalBytes = rows.reduce(
+      (sum, row) => sum + (row.entry.kind === "file" ? row.entry.size : 0),
+      entry.size,
+    );
+    if (totalBytes > MAX_WORKSPACE_BYTES)
+      throw new Error("Workspace byte limit exceeded; remove files before reading another page");
+    for (const path of parents)
+      await ctx.db.insert("scoutWorkspaceFiles", {
+        workspaceId,
+        entry: { kind: "directory", path, mode: 0o755, mtime: entry.mtime },
+      });
+    await ctx.db.insert("scoutWorkspaceFiles", { workspaceId, entry });
+    const revision = workspace.revision + 1;
+    await ctx.db.patch("scoutWorkspaces", workspaceId, { revision });
+    return revision;
   },
 });
 

@@ -508,7 +508,11 @@ export const runSlice = internalAction({
             })
           : {}),
         ...browser.tools,
-        ...createWebTools(beforeModelToolDispatch),
+        ...createWebTools(
+          ctx,
+          { threadId: args.threadId, userId: args.userId },
+          beforeModelToolDispatch,
+        ),
         ...createWorkspaceTools(
           ctx,
           { threadId: args.threadId, userId: args.userId },

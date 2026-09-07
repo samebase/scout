@@ -182,7 +182,11 @@ export const executeTool = action({
         args.toolName === "web_map" ||
         args.toolName === "web_crawl"
       ) {
-        selectedTools = createWebTools();
+        selectedTools = createWebTools(
+          ctx,
+          { threadId: args.threadId, userId: runtime.userId },
+          () => ctx.runQuery(internal.scout.manualState.authorize, { threadId: args.threadId }),
+        );
       } else {
         if (args.toolName === "create_new_firecrawl_session" && runtime.browserSession) {
           throw new Error("This chat already has an open browser session");
