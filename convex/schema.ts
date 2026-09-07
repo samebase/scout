@@ -1,6 +1,7 @@
 import { authTables } from "@convex-dev/auth/server";
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { vWorkflowId } from "@convex-dev/workflow";
 import {
   browserActionValidator,
   browserClickCaptureValidator,
@@ -40,11 +41,22 @@ export const accountObservationValidator = v.union(
   }),
 );
 
+const userProfile = authTables.users.validator.extend({ isApproved: v.optional(v.boolean()) });
+
 export default defineSchema({
   ...authTables,
-  users: defineTable(authTables.users.validator.extend({ isApproved: v.optional(v.boolean()) }))
+  users: defineTable(
+    v.union(
+      userProfile.extend({ state: v.optional(v.literal("active")) }),
+      userProfile.extend({ state: v.literal("deleting"), workflowId: vWorkflowId }),
+      v.object({ state: v.literal("deleted"), deletedAt: v.number() }),
+    ),
+  )
     .index("email", ["email"])
     .index("phone", ["phone"]),
+  authVerifiers: defineTable(authTables.authVerifiers.validator)
+    .index("signature", ["signature"])
+    .index("sessionId", ["sessionId"]),
   authEmailRateLimits: defineTable({ key: v.string(), lastSentAt: v.number() }).index("by_key", [
     "key",
   ]),

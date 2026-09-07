@@ -50,8 +50,10 @@ its users page. Approval can be set before verification, but access still requir
 verified email. Revoking approval does not remove allowlisted staff authority or schedule
 a cleanup workflow.
 
-Scout does not add Samebase's Terms gate, account-deletion lifecycle, organization or
-invitation approval rules, or automatic public-signup approval setting.
+Scout does not add Samebase's Terms gate, organization or invitation approval rules,
+or automatic public-signup approval setting. Self-service deletion is specified
+separately in the [account deletion contract](./account-deletion-rfc.md); deleting and
+deleted accounts have no protected app access.
 
 Approved members can enter Play and Review. Existing Play execution uses shared Scouts
 and Lab APIs, so it remains staff/admin-only pending a resource design. Members see an

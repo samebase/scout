@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-07T12:27:27Z
+- **Last updated:** 2026-09-07T13:02:47Z
 
 ## Log
 
@@ -1064,7 +1064,13 @@ Members now manages approval only; approved members can enter Play/Review while 
 execution stays in the admin Lab (`convex/schema.ts`, `convex/accounts.ts`). Restored the v181
 Cloudflare deployment script.
 
-### 2026-09-07 - working tree
+### 2026-09-07 - 5f5219e - v184
 
 Restored the intended Scout administrator email in the derived staff permissions.
 The replaced address follows ordinary account approval (`convex/access.ts`).
+
+### 2026-09-07 - working tree
+
+Added self-service account deletion from Settings, with typed confirmation and retryable cleanup.
+The existing Convex Workflow removes profile and login data while retaining a deleted user stub,
+chats, messages, files, and shared Scouts (`convex/accountDeletion.ts`, `src/routes/account-deletion.tsx`).

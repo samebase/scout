@@ -1,5 +1,5 @@
 import { useAuthActions } from "@convex-dev/auth/react";
-import { Navigate, createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Link, Navigate, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Authenticated, AuthLoading, Unauthenticated } from "convex/react";
 import { LogOutIcon, ShieldCheckIcon } from "lucide-react";
 import { useState } from "react";
@@ -21,7 +21,9 @@ function SettingsPage() {
     <main className="route-page max-w-3xl">
       <header>
         <h1 className="route-heading">Settings</h1>
-        <p className="mt-3 text-base text-muted-foreground">Manage this browser session.</p>
+        <p className="mt-3 text-base text-muted-foreground">
+          Manage your account and browser session.
+        </p>
       </header>
 
       <AuthLoading>
@@ -33,6 +35,18 @@ function SettingsPage() {
       <Authenticated>
         <AccountStatus />
         <SessionSettings />
+        <section className="surface-panel mt-8 p-5 sm:p-6">
+          <h2 className="text-base font-semibold">Delete account</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Remove your profile and sign-in access. Chats, messages, and files stay in Scout.
+          </p>
+          <Link
+            to="/account-deletion"
+            className="mt-4 inline-block text-sm text-destructive underline"
+          >
+            Delete my account
+          </Link>
+        </section>
       </Authenticated>
     </main>
   );

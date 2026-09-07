@@ -15,7 +15,11 @@ import { api } from "../../convex/_generated/api";
 import { Route as MembersRoute } from "../routes/members";
 
 type ListedMember = FunctionReturnType<typeof api.accounts.list>["page"][number];
-type MemberFixture = Omit<ListedMember, "userId"> & { userId: string };
+type MemberFixture = {
+  [Kind in ListedMember["kind"]]: Omit<Extract<ListedMember, { kind: Kind }>, "userId"> & {
+    userId: string;
+  };
+}[ListedMember["kind"]];
 
 const remote = vi.hoisted<{
   accounts: MemberFixture[];
@@ -48,6 +52,7 @@ beforeEach(() => {
   remote.accounts = [
     {
       userId: "staff",
+      kind: "active",
       role: "role_staff",
       isApproved: false,
       email: "nicu.dev@gmail.com",
@@ -55,6 +60,7 @@ beforeEach(() => {
     },
     {
       userId: "pending",
+      kind: "active",
       role: "role_pending_access",
       isApproved: false,
       email: "pending@example.test",
@@ -62,6 +68,7 @@ beforeEach(() => {
     },
     {
       userId: "member",
+      kind: "active",
       role: "role_member",
       isApproved: true,
       email: "member@example.test",
@@ -133,4 +140,17 @@ test("members can be approved or revoked without role or suspension controls", a
   expect(screen.queryByRole("button", { name: /promote/i })).toBeNull();
   expect(screen.queryByRole("button", { name: /admin/i })).toBeNull();
   expect(screen.queryByRole("button", { name: /suspend/i })).toBeNull();
+});
+
+test("deleted accounts lose identity and approval controls in the members list", async () => {
+  remote.accounts = [
+    { kind: "deleted", userId: "deleted-user" },
+    { kind: "deleting", userId: "deleting-user", email: "deleting@example.test" },
+  ];
+  await openMembers();
+  await screen.findByText("Deleted account");
+  const deleted = rowFor("Deleted account");
+  expect(within(deleted).queryByRole("button")).toBeNull();
+  expect(within(rowFor("deleting@example.test")).getByText("Deleting")).toBeTruthy();
+  expect(within(rowFor("deleting@example.test")).queryByRole("button")).toBeNull();
 });

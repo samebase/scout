@@ -378,7 +378,10 @@ export const request = internalMutation({
       ctx.db.get("users", chat.userId),
       ctx.db.get("scouts", chat.scoutId),
     ]);
-    const recipientEmail = user?.email?.trim();
+    const recipientEmail =
+      user && user.state !== "deleted" && user.state !== "deleting"
+        ? user.email?.trim()
+        : undefined;
     if (!recipientEmail) throw new Error("Chat owner has no email address");
     if (!scout) throw new Error("Human handoff context is unavailable");
 

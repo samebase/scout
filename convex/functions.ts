@@ -99,6 +99,22 @@ export const publicQuery = customQuery<
   }),
 );
 
+export const publicMutation = customMutation<
+  Empty,
+  { viewer: ViewerAccess },
+  Empty,
+  "public",
+  // @ts-expect-error Convex Auth optional fields include undefined; Convex helpers' GenericDocument excludes it under exactOptionalPropertyTypes. Persisted documents omit absent fields.
+  DataModel,
+  PublicPolicy
+>(
+  baseMutation,
+  customCtx(async (ctx: MutationCtx, policy: PublicPolicy) => {
+    if (policy.access !== "access_public") throw new Error("Declare a public access policy");
+    return { viewer: await resolveViewer(ctx) };
+  }),
+);
+
 export const publicAction = customAction<
   Empty,
   Record<never, never>,

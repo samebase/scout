@@ -10,6 +10,8 @@
 
 import type * as access from "../access.js";
 import type * as accessModel from "../accessModel.js";
+import type * as accountDeletion from "../accountDeletion.js";
+import type * as accountDeletionCleanup from "../accountDeletionCleanup.js";
 import type * as accounts from "../accounts.js";
 import type * as auth from "../auth.js";
 import type * as authEmail from "../authEmail.js";
@@ -94,6 +96,8 @@ import type {
 declare const fullApi: ApiFromModules<{
   access: typeof access;
   accessModel: typeof accessModel;
+  accountDeletion: typeof accountDeletion;
+  accountDeletionCleanup: typeof accountDeletionCleanup;
   accounts: typeof accounts;
   auth: typeof auth;
   authEmail: typeof authEmail;

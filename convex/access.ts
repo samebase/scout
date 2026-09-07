@@ -14,7 +14,9 @@ export type ViewerAccess = Infer<typeof viewerAccessValidator>;
 
 const ADMIN_EMAILS = new Set(["nicu.dev@gmail.com", "nicu@samebase.com"]);
 
-export function readViewerRoleForUser(user: Doc<"users">): ViewerRole {
+export function readViewerRoleForUser(
+  user: Exclude<Doc<"users">, { state: "deleted" }>,
+): ViewerRole {
   if (user.email && ADMIN_EMAILS.has(user.email.toLowerCase())) return "role_staff";
   return user.isApproved ? "role_member" : "role_pending_access";
 }
@@ -24,7 +26,10 @@ export async function readUserAccess(
   userId: Id<"users">,
 ): Promise<ViewerAccess> {
   const user = await ctx.db.get(userId);
-  if (!user || user.emailVerificationTime === undefined) return { kind: "unavailable" };
+  if (!user) return { kind: "unavailable" };
+  if (user.state === "deleted") return { kind: "deleted" };
+  if (user.state === "deleting") return { kind: "deleting" };
+  if (user.emailVerificationTime === undefined) return { kind: "unavailable" };
   const role = readViewerRoleForUser(user);
   return {
     kind: "account",

@@ -67,7 +67,7 @@ function MemberRow({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   async function changeApproval() {
-    if (pending) return;
+    if (pending || account.kind !== "active") return;
     setPending(true);
     setError("");
     try {
@@ -85,6 +85,16 @@ function MemberRow({
       setPending(false);
     }
   }
+  if (account.kind !== "active")
+    return (
+      <tr className="border-b last:border-0">
+        <td className="p-4">
+          {account.kind === "deleted" ? "Deleted account" : (account.email ?? "No email")}
+        </td>
+        <td className="p-4">{account.kind === "deleted" ? "Deleted" : "Deleting"}</td>
+        <td className="p-4" />
+      </tr>
+    );
   return (
     <tr className="border-b last:border-0">
       <td className="p-4">

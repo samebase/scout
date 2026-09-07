@@ -1,5 +1,5 @@
 import { useAuthActions } from "@convex-dev/auth/react";
-import { Link, Outlet, useMatches } from "@tanstack/react-router";
+import { Link, Navigate, Outlet, useMatches } from "@tanstack/react-router";
 import { useState } from "react";
 import { accountAccessMessage, canAccess, useViewerAccess } from "../lib/access";
 import { AuthPanel } from "./auth-panel";
@@ -9,7 +9,12 @@ export function RouteAccessOutlet() {
   const policies = useMatches({
     select: (matches) => matches.map((match) => match.staticData.access),
   });
+  const deletionPage = useMatches({
+    select: (matches) => matches.some((match) => match.pathname === "/account-deletion"),
+  });
   const viewer = useViewerAccess();
+  if ((viewer?.kind === "deleting" || viewer?.kind === "deleted") && !deletionPage)
+    return <Navigate to="/account-deletion" replace />;
   if (policies.every((access) => access === "access_public")) return <Outlet />;
   if (!viewer)
     return (
