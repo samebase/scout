@@ -10,8 +10,11 @@ import { ServiceIcon } from "#components/service-icon";
 import { Button } from "#components/ui/button";
 import { Input } from "#components/ui/input";
 
+const searchSchema = z.object({ view: z.literal("register").optional().catch(undefined) });
+
 export const Route = createFileRoute("/scouts/")({
   staticData: { access: "access_scout_manage" },
+  validateSearch: (search) => searchSchema.parse(search),
   component: ScoutsIndexPage,
 });
 
@@ -44,9 +47,11 @@ const EMPTY_REGISTRATION: RegistrationFields = {
 };
 
 function ScoutsIndexPage() {
+  const search = Route.useSearch();
+  const navigate = useNavigate({ from: "/scouts/" });
   const scouts = useQuery(api.scout.scouts.list);
   const serviceAccounts = useQuery(api.scout.serviceAccounts.list, {});
-  const [registrationOpen, setRegistrationOpen] = useState(false);
+  const registrationOpen = search.view === "register";
   const [registrationSubmitting, setRegistrationSubmitting] = useState(false);
   const registrationButton = useRef<HTMLButtonElement>(null);
   const servicesByScout =
@@ -56,7 +61,7 @@ function ScoutsIndexPage() {
     if (registrationSubmitting) {
       return;
     }
-    setRegistrationOpen(false);
+    void navigate({ search: {} });
     requestAnimationFrame(() => registrationButton.current?.focus());
   };
 
@@ -82,7 +87,9 @@ function ScoutsIndexPage() {
             aria-expanded={registrationOpen}
             aria-controls="register-scout-panel"
             disabled={registrationSubmitting}
-            onClick={() => setRegistrationOpen((open) => !open)}
+            onClick={() => {
+              void navigate({ search: { view: registrationOpen ? undefined : "register" } });
+            }}
           >
             {registrationOpen ? <XIcon /> : <PlusIcon />}
             {registrationOpen ? "Close" : "Register scout"}

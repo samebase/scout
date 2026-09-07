@@ -486,7 +486,10 @@ describe("Scout chats", () => {
     });
 
     await expect(
-      admin.query(internal.scout.manualState.runtimeContext, { threadId }),
+      admin.query(internal.scout.manualState.runtimeContext, {
+        threadId,
+        requireBrowserAccess: true,
+      }),
     ).resolves.toMatchObject({
       browserSession: {
         providerSessionId: "provider-session-secret",
@@ -511,7 +514,10 @@ describe("Scout chats", () => {
     expect(JSON.stringify([publicSessions, publicSession])).not.toContain("token=secret");
     const other = backend.withIdentity({ subject: `${otherUserId}|test-session` });
     await expect(
-      other.query(internal.scout.manualState.runtimeContext, { threadId }),
+      other.query(internal.scout.manualState.runtimeContext, {
+        threadId,
+        requireBrowserAccess: true,
+      }),
     ).rejects.toThrow();
     await expect(other.query(api.scout.browserSessions.list, { threadId })).resolves.toEqual([]);
     const anotherChat = await admin.mutation(api.scout.chats.createThread, { scoutId });
@@ -524,15 +530,25 @@ describe("Scout chats", () => {
     await expect(
       admin.query(internal.scout.manualState.runtimeContext, {
         threadId: anotherChat.threadId,
+        requireBrowserAccess: true,
       }),
     ).rejects.toThrow("open browser in another chat");
+    await expect(
+      admin.query(internal.scout.manualState.runtimeContext, {
+        threadId: anotherChat.threadId,
+        requireBrowserAccess: false,
+      }),
+    ).resolves.toMatchObject({ browserSession: null });
     await admin.mutation(internal.scout.browserSessions.close, {
       sessionId: recorded.sessionId,
       providerDurationMs: 1_000,
       creditsBilled: 2,
     });
     await expect(
-      admin.query(internal.scout.manualState.runtimeContext, { threadId }),
+      admin.query(internal.scout.manualState.runtimeContext, {
+        threadId,
+        requireBrowserAccess: true,
+      }),
     ).resolves.toMatchObject({ browserSession: null });
     await expect(
       backend.run(async (ctx) => await ctx.db.get("scoutBrowserSessions", recorded.sessionId)),

@@ -31,7 +31,7 @@ export const authorize = internalQuery({
 });
 
 export const runtimeContext = internalQuery({
-  args: { threadId: v.string() },
+  args: { threadId: v.string(), requireBrowserAccess: v.boolean() },
   returns: v.object({
     userId: v.id("users"),
     scoutId: v.id("scouts"),
@@ -46,7 +46,9 @@ export const runtimeContext = internalQuery({
     const { scout, userId } = await requireManualThread(ctx, args.threadId);
     if (await scoutIsWorking(ctx, scout._id))
       throw new Error("Scout is already working or waiting for human help");
-    const activeSession = await activeBrowserForChat(ctx, scout._id, args.threadId);
+    const activeSession = args.requireBrowserAccess
+      ? await activeBrowserForChat(ctx, scout._id, args.threadId)
+      : null;
     return {
       userId,
       scoutId: scout._id,

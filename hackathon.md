@@ -7,12 +7,12 @@
 - **Repo:** private
 - **Frontend:** Convex static hosting
 - **Convex deployment:** https://usable-spider-599.eu-west-1.convex.cloud
-- **Components:** @convex-dev/agent, @convex-dev/static-hosting, @convex-dev/workflow
+- **Components:** @convex-dev/agent, @convex-dev/r2, @convex-dev/static-hosting, @convex-dev/workflow
 - **Convex features:** schema, tables, indexes, queries, paginated queries, realtime queries, mutations, actions, scheduled functions, HTTP actions, AI Gateway
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-07T16:16:21Z
+- **Last updated:** 2026-09-07T21:08:24Z
 
 ## Log
 
@@ -1075,10 +1075,19 @@ Added self-service account deletion from Settings, with typed confirmation and m
 The existing Convex Workflow removes profile and login data while retaining a deleted user stub,
 chats, messages, files, and shared Scouts (`convex/accountDeletion.ts`, `src/routes/account-deletion.tsx`).
 
-### 2026-09-07 - working tree
+### 2026-09-07 - 1e05dca - v186
 
 Play starts with a message and keeps Scout’s commentary beside its browser in a resizable sidebar.
 The same panel opens by swipe on mobile and includes replay, download, and browser session selection.
 The agent can save its current activity on the chat; existing turns still own stopping and handoffs.
 Full transcripts remain in Lab (`src/products/play/page.tsx`, `convex/scout/play.ts`).
 Worktree development uses a separate cloud deployment so model calls can reach Convex AI Gateway.
+
+### 2026-09-07 - working tree
+
+Added private per-chat Bash workspaces with file browsing, verified previews/downloads, and a terminal.
+Plain TypeScript runs through QuickJS with bounded virtual files; Convex keeps metadata and R2 stores
+bytes under deployment/user/chat/file paths. Development/preview and separate production storage are connected.
+Web reads save complete Markdown sources for later searches and return short excerpts.
+Views, files, replays, sessions, account forms, and chat panes support URL bookmarks and Back/Forward.
+Workspace saves recheck current access (`convex/scout/`, `src/routes/`, `src/components/`).

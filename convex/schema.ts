@@ -21,6 +21,7 @@ import {
   scoutModelValidator,
   scoutTurnStateValidator,
 } from "./scout/models";
+import { workspaceEntryValidator } from "./workspaceModel";
 
 const accountObservationFieldsValidator = v.object({
   threadId: v.string(),
@@ -119,6 +120,15 @@ export default defineSchema({
   })
     .index("by_thread_id", ["threadId"])
     .index("by_user_id_and_created_at", ["userId", "createdAt"]),
+  scoutWorkspaces: defineTable({
+    threadId: v.string(),
+    cwd: v.string(),
+    revision: v.number(),
+  }).index("by_thread_id", ["threadId"]),
+  scoutWorkspaceFiles: defineTable({
+    workspaceId: v.id("scoutWorkspaces"),
+    entry: workspaceEntryValidator,
+  }).index("by_workspace_id_and_entry_path", ["workspaceId", "entry.path"]),
   scoutTurns: defineTable({
     threadId: v.string(),
     order: v.number(),

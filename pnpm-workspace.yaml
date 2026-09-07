@@ -1,6 +1,8 @@
 allowBuilds:
+  "@mongodb-js/zstd": false
   esbuild: true
   msw: true
+  node-liblzma: false
   sharp: false
   workerd: true
 overrides:

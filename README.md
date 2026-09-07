@@ -48,6 +48,16 @@ AgentMail inbox to read, send, and reply to email, plus its Firecrawl browser pr
 across multiple services. Choose Qwen, Luna, or Manual, and inspect tool calls, Live/Replay, usage,
 and human handoffs in the same workspace.
 
+Each chat also has a [Bash workspace](./docs/workspaces.md) with a file tree, text preview, downloads,
+and terminal. Plain JavaScript and TypeScript run with `js-exec`, using standard APIs and no npm.
+The agent shares those files with the user. It runs inside Convex with file bytes in
+private Cloudflare R2 storage. Development and Preview defaults are configured; existing or
+isolated deployments need the [four R2 environment variables](./docs/workspaces.md#connect-r2).
+
+Views are URL-backed: chat and browser-session selection, recorded tabs, workspace files,
+new-chat and registration panels, and chat-pane visibility support Back, Forward, and bookmarks.
+Drafts, form contents, pane widths, and replay playback time remain local.
+
 ## Local development
 
 Install [Vite+](https://viteplus.dev/guide/) and use it to supply the Node.js version in
@@ -75,13 +85,13 @@ The core workflow runs on macOS, Linux, and Windows. See
 
 ## Checks and builds
 
-| Command                           | Purpose                                                     |
-| --------------------------------- | ----------------------------------------------------------- |
-| `pnpm run check`                  | Format, lint, type-check, test, and verify the dev launcher |
-| `pnpm run build`                  | Run the complete Cloudflare build path                      |
-| `pnpm run deploy:convex`          | Build and deploy the production app to `convex.site`        |
-| `pnpm run deploy:dry-run`         | Validate a production upload without publishing it          |
-| `pnpm run deploy:preview:dry-run` | Validate a preview upload without publishing it             |
+| Command                           | Purpose                                              |
+| --------------------------------- | ---------------------------------------------------- |
+| `pnpm run check`                  | Format, lint, type-check, and test                   |
+| `pnpm run build`                  | Run the complete Cloudflare build path               |
+| `pnpm run deploy:convex`          | Build and deploy the production app to `convex.site` |
+| `pnpm run deploy:dry-run`         | Validate a production upload without publishing it   |
+| `pnpm run deploy:preview:dry-run` | Validate a preview upload without publishing it      |
 
 The dry-run commands need `CLOUDFLARE_WORKER_NAME`.
 

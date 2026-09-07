@@ -130,6 +130,10 @@ function threadPage(
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.spyOn(URL, "createObjectURL").mockImplementation(
+    () => `blob:https://scout.test/${crypto.randomUUID()}`,
+  );
+  vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
   remote.authenticated = true;
   remote.queries.clear();
   remote.queries.set("accounts:currentViewerAccess", {
@@ -177,6 +181,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 async function openChats(path = "/chats?thread=thread-1") {
@@ -218,6 +223,311 @@ async function openChats(path = "/chats?thread=thread-1") {
 }
 
 describe("Chat workspace", () => {
+  function mockWorkspaceFiles() {
+    remote.queries.set("scout/workspaces:list", {
+      configured: true,
+      cwd: "/workspace",
+      revision: 1,
+      entries: ["first.txt", "second file.txt"].map((name) => ({
+        kind: "file",
+        path: `/workspace/${name}`,
+        key: name,
+        size: 10,
+        sha256: "hash",
+        mode: 420,
+        mtime: 0,
+      })),
+    });
+    remote.actions.set(
+      "scout/workspaceTools:readFile",
+      vi.fn().mockImplementation(({ path }: { path: string }) =>
+        Promise.resolve({
+          path,
+          text: `Contents of ${path}`,
+          bytes: new TextEncoder().encode(`Contents of ${path}`).buffer,
+        }),
+      ),
+    );
+  }
+
+  test("restores workspace and file views through Back, Forward, and a fresh page load", async () => {
+    mockWorkspaceFiles();
+    const router = await openChats();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Workspace" }));
+    expect(router.state.location.search.view).toBe("workspace");
+    await user.click(screen.getByRole("button", { name: "first.txt" }));
+    expect((await screen.findByLabelText("File contents")).textContent).toContain("first.txt");
+    await user.click(screen.getByRole("button", { name: "second file.txt" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("File contents").textContent).toContain("second file.txt"),
+    );
+    expect(router.state.location.search.file).toBe("/workspace/second file.txt");
+    const bookmark = router.state.location.href;
+
+    act(() => router.history.back());
+    await waitFor(() =>
+      expect(screen.getByLabelText("File contents").textContent).toContain("first.txt"),
+    );
+    act(() => router.history.back());
+    await screen.findByText("Select a file to preview it.");
+    act(() => router.history.back());
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Workspace" })).toBeNull());
+    act(() => router.history.forward());
+    expect(await screen.findByRole("region", { name: "Workspace" })).toBeTruthy();
+    cleanup();
+    const reloaded = await openChats(bookmark);
+    expect((await screen.findByLabelText("File contents")).textContent).toContain(
+      "second file.txt",
+    );
+    expect(reloaded.state.location.search.file).toBe("/workspace/second file.txt");
+  });
+
+  test("keeps a deep-linked file selected when canonicalizing the browser session", async () => {
+    mockWorkspaceFiles();
+    remote.queries.set("scout/browserSessions:list", [session("session-1", 1)]);
+    const router = await openChats(
+      "/chats?thread=thread-1&view=workspace&file=%2Fworkspace%2Ffirst.txt",
+    );
+    expect((await screen.findByLabelText("File contents")).textContent).toContain("first.txt");
+    await waitFor(() => expect(router.state.location.search.session).toBe("session-1"));
+    expect(router.state.location.search.view).toBe("workspace");
+    expect(router.state.location.search.file).toBe("/workspace/first.txt");
+  });
+
+  test("clears workspace selection for another chat and restores it on Back", async () => {
+    mockWorkspaceFiles();
+    remote.queries.set(
+      "scout/chats:listThreads",
+      threadPage([
+        { threadId: "thread-1", title: "First chat", scoutId: "scout-1", creationTime: 1 },
+        { threadId: "thread-2", title: "Second chat", scoutId: "scout-2", creationTime: 2 },
+      ]),
+    );
+    const router = await openChats(
+      "/chats?thread=thread-1&view=workspace&file=%2Fworkspace%2Ffirst.txt",
+    );
+    await screen.findByLabelText("File contents");
+    await userEvent.setup().click(screen.getByRole("link", { name: /Second chat/ }));
+    expect(router.state.location.search).toEqual({ thread: "thread-2" });
+    expect(screen.queryByRole("region", { name: "Workspace" })).toBeNull();
+    act(() => router.history.back());
+    expect((await screen.findByLabelText("File contents")).textContent).toContain("first.txt");
+    expect(router.state.location.search.thread).toBe("thread-1");
+  });
+
+  test("does not add history entries when resizing panes", async () => {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
+      new DOMRect(0, 0, 1440, 900),
+    );
+    mockWorkspaceFiles();
+    const router = await openChats();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Workspace" }));
+    const originalUrl = router.state.location.href;
+    const historyLength = router.history.length;
+    const resize = screen.getByRole("separator", { name: "Resize chat navigation" });
+    const originalWidth = resize.getAttribute("aria-valuenow");
+    resize.focus();
+    await user.keyboard("{ArrowRight}{ArrowRight}");
+    expect(resize.getAttribute("aria-valuenow")).not.toBe(originalWidth);
+    expect(router.state.location.href).toBe(originalUrl);
+    expect(router.history.length).toBe(historyLength);
+    act(() => router.history.back());
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Workspace" })).toBeNull());
+  });
+
+  test("navigates to the new-chat form and back without creating a chat", async () => {
+    const router = await openChats();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "New chat" }));
+    expect(router.state.location.search.view).toBe("new");
+    expect(screen.getByRole("button", { name: "Close" })).toBeTruthy();
+    act(() => router.history.back());
+    expect(await screen.findByRole("button", { name: "New chat" })).toBeTruthy();
+    act(() => router.history.forward());
+    expect(await screen.findByRole("button", { name: "Close" })).toBeTruthy();
+    expect(remote.createThread).not.toHaveBeenCalled();
+  });
+
+  test("restores desktop panes from history instead of their last saved visibility", async () => {
+    mockWorkspaceFiles();
+    const router = await openChats("/chats?thread=thread-1&view=workspace");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Hide chats" }));
+    expect(router.state.location.search.chats).toBe("hidden");
+    await user.click(screen.getByRole("button", { name: "Hide workspace" }));
+    expect(router.state.location.search.inspector).toBe("hidden");
+    act(() => router.history.back());
+    await screen.findByRole("button", { name: "Hide workspace" });
+    expect(screen.getByRole("button", { name: "Show chats" })).toBeTruthy();
+    act(() => router.history.back());
+    await screen.findByRole("button", { name: "Hide chats" });
+    act(() => router.history.forward());
+    await screen.findByRole("button", { name: "Show chats" });
+    cleanup();
+    await openChats("/chats?thread=thread-1&view=workspace");
+    expect(await screen.findByRole("button", { name: "Hide chats" })).toBeTruthy();
+  });
+
+  test("restores mobile navigation, workspace, and conversation panes", async () => {
+    vi.spyOn(window, "innerWidth", "get").mockReturnValue(390);
+    mockWorkspaceFiles();
+    const router = await openChats("/chats?thread=thread-1&view=workspace");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Show chats" }));
+    expect(router.state.location.search.pane).toBe("left");
+    await user.click(screen.getByRole("button", { name: "Workspace" }));
+    expect(router.state.location.search.pane).toBeUndefined();
+    await user.click(screen.getByRole("button", { name: "Show chat" }));
+    expect(router.state.location.search.pane).toBe("main");
+    act(() => router.history.back());
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Workspace" }).getAttribute("aria-pressed")).toBe(
+        "true",
+      ),
+    );
+    act(() => router.history.back());
+    expect(await screen.findByRole("button", { name: "Hide chats" })).toBeTruthy();
+    act(() => router.history.forward());
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Workspace" }).getAttribute("aria-pressed")).toBe(
+        "true",
+      ),
+    );
+  });
+
+  test("restores context and terminal disclosures without putting drafts in the URL", async () => {
+    mockWorkspaceFiles();
+    const router = await openChats("/chats?thread=thread-1&view=workspace");
+    const user = userEvent.setup();
+    const composer = await screen.findByRole<HTMLTextAreaElement>("textbox", {
+      name: "Message Scout",
+    });
+    const originalUrl = router.state.location.href;
+    await user.type(composer, "A private draft");
+    expect(router.state.location.href).toBe(originalUrl);
+    await user.click(screen.getByText("Agent context"));
+    expect(router.state.location.search.context).toBe("open");
+    await user.click(screen.getByText("Terminal"));
+    expect(router.state.location.search.terminal).toBe("hidden");
+    act(() => router.history.back());
+    await waitFor(() => expect(screen.getByText("Terminal").closest("details")?.open).toBe(true));
+    act(() => router.history.back());
+    await waitFor(() =>
+      expect(screen.getByText("Agent context").closest("details")?.open).toBe(false),
+    );
+    expect(composer.value).toBe("A private draft");
+  });
+
+  test("opens the file workspace beside the existing conversation and runs a command", async () => {
+    remote.queries.set("scout/workspaces:list", {
+      configured: true,
+      cwd: "/workspace",
+      revision: 0,
+      entries: [],
+    });
+    remote.executeTool.mockResolvedValue({
+      toolCallId: "bash-call",
+      outcome: {
+        kind: "success",
+        output: JSON.stringify({
+          stdout: "hello\n",
+          stderr: "",
+          exitCode: 0,
+          cwd: "/workspace",
+          revision: 1,
+        }),
+      },
+    });
+    await openChats();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Workspace" }));
+    expect(screen.getByRole("region", { name: "Conversation" })).toBeTruthy();
+    await user.type(screen.getByLabelText("Bash command"), "echo hello");
+    await user.click(screen.getByRole("button", { name: "Run command" }));
+    await waitFor(() =>
+      expect(remote.executeTool).toHaveBeenCalledWith(
+        expect.objectContaining({
+          threadId: "thread-1",
+          toolName: "bash",
+          input: '{"command":"echo hello"}',
+        }),
+      ),
+    );
+    expect(
+      await within(screen.getByRole("log", { name: "Terminal output" })).findByText("hello"),
+    ).toBeTruthy();
+    expect(screen.getByText("Exit 0")).toBeTruthy();
+    expect(screen.getByLabelText("Bash command").textContent).toBe("");
+  });
+
+  test("downloads the previewed bytes without expiry, treats HTML as text, and releases the URL on close", async () => {
+    const createObjectURL = vi.spyOn(URL, "createObjectURL");
+    const revokeObjectURL = vi.spyOn(URL, "revokeObjectURL");
+    remote.queries.set("scout/workspaces:list", {
+      configured: true,
+      cwd: "/workspace",
+      revision: 1,
+      entries: [
+        { kind: "directory", path: "/workspace", mode: 493, mtime: 0 },
+        {
+          kind: "file",
+          path: "/workspace/report.html",
+          key: "private-key",
+          size: 20,
+          sha256: "hash",
+          mode: 420,
+          mtime: 0,
+        },
+      ],
+    });
+    remote.actions.set(
+      "scout/workspaceTools:readFile",
+      vi.fn().mockResolvedValue({
+        path: "/workspace/report.html",
+        text: "<script>bad()</script>",
+        bytes: new TextEncoder().encode("<script>bad()</script>").buffer,
+      }),
+    );
+    await openChats();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Workspace" }));
+    await user.click(screen.getByRole("button", { name: "report.html" }));
+    expect((await screen.findByLabelText("File contents")).textContent).toBe(
+      "<script>bad()</script>",
+    );
+    expect(screen.getByLabelText("File contents").querySelector("script")).toBeNull();
+    const download = screen.getByRole("link", { name: "Download" });
+    const url = download.getAttribute("href");
+    expect(url).toMatch(/^blob:/);
+    expect(download.getAttribute("download")).toBe("report.html");
+    const blob = createObjectURL.mock.calls[0]?.[0];
+    if (!(blob instanceof Blob)) throw new Error("Expected a downloadable Blob");
+    expect(blob.type).toBe("application/octet-stream");
+    expect(await blob.text()).toBe("<script>bad()</script>");
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.now() + 16 * 60 * 1_000);
+    expect(download.getAttribute("href")).toBe(url);
+    expect(revokeObjectURL).not.toHaveBeenCalled();
+    cleanup();
+    expect(revokeObjectURL).toHaveBeenCalledExactlyOnceWith(url);
+  });
+
+  test("disables the terminal with an actionable message when storage is missing", async () => {
+    remote.queries.set("scout/workspaces:list", {
+      configured: false,
+      cwd: "/workspace",
+      revision: 0,
+      entries: [],
+    });
+    await openChats();
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Workspace" }));
+    expect(screen.getByRole("status").textContent).toContain("Connect R2 storage");
+    expect(screen.getByRole("button", { name: "Run command" }).hasAttribute("disabled")).toBe(true);
+    expect(remote.executeTool).not.toHaveBeenCalled();
+  });
+
   test("shows the public landing at the root without redirecting to sign-in", async () => {
     remote.authenticated = false;
     const router = await openChats("/");
@@ -490,6 +800,7 @@ describe("Chat workspace", () => {
     });
     await user.click(screen.getByRole("button", { name: "Run tool" }));
 
+    await waitFor(() => expect(remote.executeTool).toHaveBeenCalledTimes(2));
     const firstCall = remote.executeTool.mock.calls[0]?.[0];
     const secondCall = remote.executeTool.mock.calls[1]?.[0];
     expect(firstCall).toMatchObject({ operationId: expect.any(String) });
@@ -527,6 +838,7 @@ describe("Chat workspace", () => {
     });
     await user.click(screen.getByRole("button", { name: "Run tool" }));
 
+    await waitFor(() => expect(remote.executeTool).toHaveBeenCalledTimes(2));
     expect(remote.executeTool.mock.calls[1]?.[0].operationId).toBe(
       remote.executeTool.mock.calls[0]?.[0].operationId,
     );
@@ -1062,10 +1374,23 @@ describe("Chat workspace", () => {
     const closed = { ...session("session-1", 1), lifecycle: { kind: "closed", closedAt: 2 } };
     remote.queries.set("scout/browserSessions:list", [closed]);
     remote.queries.set("scout/browserSessions:get:session-1", { ...closed, operations: [] });
+    remote.listReplayPages.mockResolvedValue({
+      status: "ready",
+      viewport: closed.viewport,
+      pages: [
+        { pageId: "old-page", pageUrl: "https://first.test", startTimeMs: 0, endTimeMs: 5_000 },
+      ],
+      operations: [],
+    });
+    remote.actions.set(
+      "browserReplay:loadPlaylist",
+      vi.fn().mockResolvedValue({ status: "ready", playlist: "#EXTM3U" }),
+    );
     const user = userEvent.setup();
     const router = await openChats();
-    await screen.findByText("No replay");
+    await user.click(await screen.findByRole("button", { name: "first.test" }));
     await waitFor(() => expect(router.state.location.search.session).toBe("session-1"));
+    expect(router.state.location.search.replayPage).toBe("old-page");
     await user.type(screen.getByRole("textbox", { name: "Message Scout" }), "Continue later");
 
     const active = session("session-2", 2);
@@ -1082,13 +1407,80 @@ describe("Chat workspace", () => {
     expect(picker.value).toBe("session-2");
     expect(await screen.findByTitle("Live browser session 2")).toBeTruthy();
     expect(router.state.location.search.session).toBe("session-2");
+    expect(router.state.location.search.replayPage).toBeUndefined();
     expect(screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Message Scout" }).value).toBe(
       "Continue later",
     );
 
     await user.selectOptions(picker, "session-1");
-    expect(await screen.findByText("No replay")).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "first.test" })).toBeTruthy();
     expect(router.state.location.search.session).toBe("session-1");
+  });
+
+  test("restores recorded tabs on Back, Forward, and reload without serializing playback", async () => {
+    const closed = { ...session("session-1", 1), lifecycle: { kind: "closed", closedAt: 2 } };
+    const active = session("session-2", 2);
+    remote.queries.set("scout/browserSessions:list", [closed, active]);
+    remote.queries.set("scout/browserSessions:get:session-1", { ...closed, operations: [] });
+    remote.queries.set("scout/browserSessions:get:session-2", { ...active, operations: [] });
+    remote.queries.set("scout/browserSessions:liveView:session-2", { url: "about:blank#live" });
+    remote.listReplayPages.mockResolvedValue({
+      status: "ready",
+      viewport: closed.viewport,
+      pages: [
+        { pageId: "page-1", pageUrl: "https://first.test", startTimeMs: 0, endTimeMs: 5_000 },
+        { pageId: "page-2", pageUrl: "https://second.test", startTimeMs: 6_000, endTimeMs: 9_000 },
+      ],
+      operations: [],
+    });
+    remote.actions.set(
+      "browserReplay:loadPlaylist",
+      vi.fn().mockResolvedValue({ status: "ready", playlist: "#EXTM3U" }),
+    );
+    const router = await openChats("/chats?thread=thread-1&session=session-1");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "first.test" }));
+    expect(router.state.location.search.replayPage).toBe("page-1");
+    await user.click(screen.getByRole("button", { name: "second.test" }));
+    expect(router.state.location.search.replayPage).toBe("page-2");
+    const bookmark = router.state.location.href;
+    expect(screen.getByRole<HTMLInputElement>("slider", { name: "Replay position" }).value).toBe(
+      "6000",
+    );
+    fireEvent.change(screen.getByRole("slider", { name: "Replay position" }), {
+      target: { value: "7000" },
+    });
+    expect(router.state.location.href).toBe(bookmark);
+    act(() => router.history.back());
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "first.test" }).getAttribute("aria-pressed")).toBe(
+        "true",
+      ),
+    );
+    act(() => router.history.forward());
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "second.test" }).getAttribute("aria-pressed")).toBe(
+        "true",
+      ),
+    );
+    await user.click(screen.getByRole("button", { name: "Follow activity" }));
+    expect(router.state.location.search.replayPage).toBeUndefined();
+    act(() => router.history.back());
+    await waitFor(() => expect(router.state.location.search.replayPage).toBe("page-2"));
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Browser session" }),
+      "session-2",
+    );
+    expect(await screen.findByTitle("Live browser session 2")).toBeTruthy();
+    expect(router.state.location.search.replayPage).toBeUndefined();
+    cleanup();
+    await openChats(bookmark);
+    expect(
+      (await screen.findByRole("button", { name: "second.test" })).getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(screen.getByRole<HTMLInputElement>("slider", { name: "Replay position" }).value).toBe(
+      "6000",
+    );
   });
 
   test("keeps the conversation in the main pane when the first browser appears", async () => {
@@ -1117,10 +1509,10 @@ describe("Chat workspace", () => {
     );
   });
 
-  test("selects a new browser on a small screen and allows returning to chat", async () => {
+  test("keeps mobile chat selected when a browser arrives and restores pane history", async () => {
     vi.spyOn(window, "innerWidth", "get").mockReturnValue(390);
     const user = userEvent.setup();
-    await openChats();
+    const router = await openChats();
     await screen.findByRole("textbox", { name: "Message Scout" });
 
     const browser = session("session-1", 1);
@@ -1129,15 +1521,21 @@ describe("Chat workspace", () => {
     remote.queries.set("scout/browserSessions:liveView", { url: "about:blank#scout-live" });
     refreshQueries();
 
-    const showChat = await screen.findByRole("button", { name: "Show chat" });
-    expect(showChat.getAttribute("aria-pressed")).toBe("true");
-    await user.click(showChat);
-    const showBrowser = screen.getByRole("button", { name: "Show browser" });
+    const showBrowser = await screen.findByRole("button", { name: "Show browser" });
     expect(showBrowser.getAttribute("aria-pressed")).toBe("false");
     await user.click(showBrowser);
     expect(screen.getByRole("button", { name: "Show chat" }).getAttribute("aria-pressed")).toBe(
       "true",
     );
+    expect(router.state.location.search.pane).toBe("right");
+    await user.click(screen.getByRole("button", { name: "Show chat" }));
+    expect(router.state.location.search.pane).toBeUndefined();
+    act(() => router.history.back());
+    await screen.findByRole("button", { name: "Show chat" });
+    expect(router.state.location.search.pane).toBe("right");
+    act(() => router.history.back());
+    await screen.findByRole("button", { name: "Show browser" });
+    expect(router.state.location.search.pane).toBeUndefined();
     expect(screen.getByRole("textbox", { name: "Message Scout" })).toBeTruthy();
   });
 
@@ -1150,7 +1548,7 @@ describe("Chat workspace", () => {
     expect(remote.sendMessage).not.toHaveBeenCalled();
   });
 
-  test("stores only the selected chat, browser session, and model call in the URL", () => {
+  test("accepts supported view parameters and discards malformed or unknown values", () => {
     const validateSearch = ChatsRoute.options.validateSearch;
     if (typeof validateSearch !== "function") throw new Error("Chat search validator is missing");
     expect(
@@ -1162,6 +1560,32 @@ describe("Chat workspace", () => {
         experiment: "discarded",
       }),
     ).toEqual({ thread: "thread-1", session: "session-1", call: "model-call-1" });
-    expect(validateSearch({ thread: 7, session: {}, call: [], view: "product" })).toEqual({});
+    const view = {
+      thread: "thread-1",
+      session: "session-1",
+      replayPage: "page-1",
+      view: "workspace",
+      file: "/workspace/report.txt",
+      pane: "main",
+      chats: "hidden",
+      inspector: "hidden",
+      context: "open",
+      terminal: "hidden",
+    };
+    expect(validateSearch(view)).toEqual(view);
+    expect(
+      validateSearch({
+        thread: 7,
+        session: {},
+        replayPage: [],
+        view: "product",
+        file: "/etc/passwd",
+        pane: "unknown",
+        chats: "open",
+        inspector: false,
+        context: true,
+        terminal: "open",
+      }),
+    ).toEqual({});
   });
 });

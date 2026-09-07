@@ -22,8 +22,10 @@ import { diagnosticMessage } from "./lib/redaction";
 import { requireRuntimeTool } from "./lib/runtimeTool";
 import { createToolArgumentProbe } from "./toolArgumentProbe";
 import { createWebTools } from "./webTools";
+import { createWorkspaceTools } from "./workspaceTools";
 
 const manualToolNameValidator = v.union(
+  v.literal("bash"),
   v.literal("create_new_firecrawl_session"),
   v.literal("browser_execute"),
   v.literal("browser_close"),
@@ -100,6 +102,7 @@ export const executeTool = action({
   handler: async (ctx, args) => {
     const runtime = await ctx.runQuery(internal.scout.manualState.runtimeContext, {
       threadId: args.threadId,
+      requireBrowserAccess: args.toolName !== "bash",
     });
     const operationId = manualOperationIdSchema.parse(args.operationId);
     const toolCallId = randomUUID();
@@ -136,7 +139,16 @@ export const executeTool = action({
     let executionError: string | undefined;
     try {
       let selectedTools: ToolSet;
-      if (usesAgentMailReadTool(args.toolName)) {
+      if (args.toolName === "bash") {
+        selectedTools = createWorkspaceTools(
+          ctx,
+          {
+            threadId: args.threadId,
+            userId: runtime.userId,
+          },
+          () => ctx.runQuery(internal.scout.manualState.authorize, { threadId: args.threadId }),
+        );
+      } else if (usesAgentMailReadTool(args.toolName)) {
         const agentMailApiKey = requiredAgentMailApiKey(getRuntimeEnv("AGENTMAIL_API_KEY"));
         agentMailClient = await createMCPClient({
           transport: {
@@ -170,7 +182,11 @@ export const executeTool = action({
         args.toolName === "web_map" ||
         args.toolName === "web_crawl"
       ) {
-        selectedTools = createWebTools();
+        selectedTools = createWebTools(
+          ctx,
+          { threadId: args.threadId, userId: runtime.userId },
+          () => ctx.runQuery(internal.scout.manualState.authorize, { threadId: args.threadId }),
+        );
       } else {
         if (args.toolName === "create_new_firecrawl_session" && runtime.browserSession) {
           throw new Error("This chat already has an open browser session");

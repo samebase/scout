@@ -20,6 +20,7 @@ import type { FunctionArgs, FunctionReturnType } from "convex/server";
 import {
   ArrowLeftIcon,
   ExternalLinkIcon,
+  FolderIcon,
   LoaderCircleIcon,
   MonitorIcon,
   PanelLeftIcon,
@@ -63,6 +64,8 @@ import { SamebaseAttribution } from "#components/samebase-attribution";
 import { AuthPanel } from "#components/auth-panel";
 import { BrowserReplay } from "#components/browser-replay";
 import { ChatHandoffNotice } from "#components/chat-handoff-notice";
+import { ScoutWorkspace } from "#components/scout-workspace";
+import { BASH_DESCRIPTION } from "../../convex/workspaceModel";
 import { Button } from "#components/ui/button";
 import {
   MessageScroller,
@@ -73,12 +76,8 @@ import {
   MessageScrollerViewport,
 } from "#components/ui/message-scroller";
 import { Textarea } from "#components/ui/textarea";
+import { chatSearchSchema } from "#lib/chat-search";
 
-const chatSearchSchema = z.object({
-  thread: z.string().optional().catch(undefined),
-  session: z.string().optional().catch(undefined),
-  call: z.string().optional().catch(undefined),
-});
 const jsonValueSchema = z.json();
 const MANUAL_SUBMISSION_STORAGE_KEY = "scout_pending_manual_email_submissions_v2";
 const MANUAL_EMAIL_RETRY_WINDOW_MS = 24 * 60 * 60 * 1_000;
@@ -112,7 +111,7 @@ type BrowserSessionDetail = NonNullable<FunctionReturnType<typeof api.scout.brow
 type Scout = FunctionReturnType<typeof api.scout.scouts.list>[number];
 type ScoutActivity = FunctionReturnType<typeof api.scout.chats.getScoutActivity>;
 type ThreadScoutActivity = Extract<ScoutActivity, { threadId: string }>;
-type InspectorKind = "browser" | "model-call";
+type InspectorKind = "browser" | "model-call" | "workspace";
 type PendingThread = {
   threadId: string;
   scoutId: Scout["_id"];
@@ -155,9 +154,16 @@ const MANUAL_TOOL_OPTIONS = [
     input: '{\n  "query": "form builder pricing"\n}',
   },
   {
+    value: "bash",
+    label: "Run Bash",
+    description: BASH_DESCRIPTION,
+    input: '{\n  "command": "ls -la /workspace"\n}',
+  },
+  {
     value: "web_read",
     label: "Read a web page",
-    description: "Read the content of one public web page with Firecrawl.",
+    description:
+      "Read a public page with Firecrawl and save its Markdown to this chat's Workspace. Returns a short excerpt and the saved path.",
     input: '{\n  "url": "https://samebase.com"\n}',
   },
   {
@@ -404,8 +410,7 @@ function hasActiveActivity(activity: ScoutActivity | undefined) {
 
 function ChatsWorkspace() {
   const search = Route.useSearch();
-  const navigate = useNavigate();
-  const { setMobilePane } = useSidebarActions();
+  const navigate = useNavigate({ from: "/chats" });
   const threads = usePaginatedQuery(
     api.scout.chats.listThreads,
     {},
@@ -426,8 +431,9 @@ function ChatsWorkspace() {
   const [contextPanelHeight, setContextPanelHeight] = useState(DEFAULT_CONTEXT_PANEL_HEIGHT);
   const [composerState, setComposerState] = useState<ComposerState>({ kind: "idle" });
   const [pendingThread, setPendingThread] = useState<PendingThread | null>(null);
-  const [createChatOpen, setCreateChatOpen] = useState(false);
+  const createChatOpen = search.view === "new";
   const [createChatSubmitting, setCreateChatSubmitting] = useState(false);
+  const workspaceOpen = search.view === "workspace";
   const createChatButton = useRef<HTMLButtonElement>(null);
   const pendingManualSubmissions = useRef<ManualSubmission[]>(readPendingManualSubmissions());
   const manualSubmissionInFlight = useRef(false);
@@ -532,11 +538,12 @@ function ChatsWorkspace() {
     void navigate({
       to: "/chats",
       replace: true,
-      search: {
+      search: (previous) => ({
+        ...previous,
         thread: threadId,
-        ...(sessionId ? { session: sessionId } : {}),
-        ...(search.call ? { call: search.call } : {}),
-      },
+        session: sessionId,
+        replayPage: previous.session === sessionId ? previous.replayPage : undefined,
+      }),
     });
   }, [
     browserSessions,
@@ -569,13 +576,14 @@ function ChatsWorkspace() {
     setDraft("");
     setComposerState((current) => (current.kind === "failed" ? { kind: "idle" } : current));
     setPendingThread(null);
-    setCreateChatOpen(false);
   };
 
   const closeCreateChat = () => {
     if (createChatSubmitting) return;
-    setCreateChatOpen(false);
-    setMobilePane("main");
+    void navigate({
+      to: "/chats",
+      search: (previous) => ({ ...previous, view: undefined, file: undefined, pane: undefined }),
+    });
     requestAnimationFrame(() => createChatButton.current?.focus());
   };
 
@@ -584,9 +592,7 @@ function ChatsWorkspace() {
     setPendingThread(created);
     setDraft("");
     setComposerState({ kind: "idle" });
-    setCreateChatOpen(false);
     void navigate({ to: "/chats", search: { thread: created.threadId } });
-    setMobilePane("main");
   };
 
   const stopCurrentWork = async (
@@ -799,31 +805,34 @@ function ChatsWorkspace() {
   const openModelCall = (modelCallId: string) => {
     void navigate({
       to: "/chats",
-      replace: true,
-      search: { ...search, call: modelCallId },
+      search: (previous) => ({
+        ...previous,
+        call: modelCallId,
+        view: undefined,
+        inspector: undefined,
+        pane: undefined,
+      }),
     });
   };
 
   const closeModelCall = () => {
     void navigate({
       to: "/chats",
-      replace: true,
-      search: {
-        ...(search.thread ? { thread: search.thread } : {}),
-        ...(search.session ? { session: search.session } : {}),
-      },
+      search: (previous) => ({ ...previous, call: undefined, pane: undefined }),
     });
-    if (!selectedBrowserSession) setMobilePane("main");
   };
 
   const hasBrowser = selectedBrowserSession !== undefined && !createChatOpen;
+  const hasWorkspace = workspaceOpen && threadId !== null && !createChatOpen;
   const inspectorKind: InspectorKind | null = createChatOpen
     ? null
-    : search.call
-      ? "model-call"
-      : hasBrowser
-        ? "browser"
-        : null;
+    : hasWorkspace
+      ? "workspace"
+      : search.call
+        ? "model-call"
+        : hasBrowser
+          ? "browser"
+          : null;
   const conversation = (
     <PaneFrame
       header={<div className="flex h-full items-center px-4 text-xs font-semibold">Chat</div>}
@@ -909,8 +918,25 @@ function ChatsWorkspace() {
               </p>
             ) : null}
             {threadId ? (
-              <details className="mb-2 rounded-lg border border-input bg-card text-xs">
-                <summary className="cursor-pointer px-3 py-2 font-medium">Agent context</summary>
+              <details
+                open={search.context === "open"}
+                className="mb-2 rounded-lg border border-input bg-card text-xs"
+              >
+                <summary
+                  className="cursor-pointer px-3 py-2 font-medium"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    void navigate({
+                      to: "/chats",
+                      search: (previous) => ({
+                        ...previous,
+                        context: previous.context === "open" ? undefined : "open",
+                      }),
+                    });
+                  }}
+                >
+                  Agent context
+                </summary>
                 <div
                   role="separator"
                   aria-label="Resize agent context"
@@ -1091,45 +1117,76 @@ function ChatsWorkspace() {
       scrollRestorationId={`chat-thread:${threadId ?? "empty"}`}
     />
   );
-  const inspector =
-    search.call && threadId ? (
-      <PaneFrame
-        header={
-          <div className="flex h-full items-center gap-2 px-2 text-xs font-semibold">
-            <Button type="button" variant="ghost" size="sm" onClick={closeModelCall}>
-              <ArrowLeftIcon />
-              Back
-            </Button>
-            <span>SDK model input</span>
-          </div>
-        }
-        content={<SdkModelInputInspector modelCallId={search.call} threadId={threadId} />}
-        scrollRestorationId={`model-call:${search.call}`}
-      />
-    ) : hasBrowser ? (
-      <PaneFrame
-        header={
-          browserSessions && browserSessions.length > 1 ? (
-            <BrowserSessionPicker
-              sessions={browserSessions}
-              selectedSessionId={selectedBrowserSession.sessionId}
-              onSelectSession={(sessionId) =>
-                void navigate({
-                  to: "/chats",
-                  search: { ...search, session: sessionId },
-                })
-              }
-            />
-          ) : undefined
-        }
-        content={
-          <ChatBrowserView
-            liveViewUrl={liveView?.url ?? null}
-            session={browserSession ?? undefined}
+  const inspector = createChatOpen ? undefined : hasWorkspace ? (
+    <PaneFrame
+      header={<div className="flex h-full items-center px-3 text-xs font-medium">Workspace</div>}
+      content={
+        <ScoutWorkspace
+          key={threadId}
+          threadId={threadId}
+          disabled={isWorking || !canCompose}
+          selectedPath={search.file ?? null}
+          onSelectPath={(file) => {
+            void navigate({ to: "/chats", search: (previous) => ({ ...previous, file }) });
+          }}
+          terminalOpen={search.terminal !== "hidden"}
+          onToggleTerminal={() => {
+            void navigate({
+              to: "/chats",
+              search: (previous) => ({
+                ...previous,
+                terminal: previous.terminal === "hidden" ? undefined : "hidden",
+              }),
+            });
+          }}
+        />
+      }
+    />
+  ) : search.call && threadId ? (
+    <PaneFrame
+      header={
+        <div className="flex h-full items-center gap-2 px-2 text-xs font-semibold">
+          <Button type="button" variant="ghost" size="sm" onClick={closeModelCall}>
+            <ArrowLeftIcon />
+            Back
+          </Button>
+          <span>SDK model input</span>
+        </div>
+      }
+      content={<SdkModelInputInspector modelCallId={search.call} threadId={threadId} />}
+      scrollRestorationId={`model-call:${search.call}`}
+    />
+  ) : hasBrowser ? (
+    <PaneFrame
+      header={
+        browserSessions && browserSessions.length > 1 ? (
+          <BrowserSessionPicker
+            sessions={browserSessions}
+            selectedSessionId={selectedBrowserSession.sessionId}
+            onSelectSession={(sessionId) =>
+              void navigate({
+                to: "/chats",
+                search: (previous) => ({ ...previous, session: sessionId, replayPage: undefined }),
+              })
+            }
           />
-        }
-      />
-    ) : undefined;
+        ) : undefined
+      }
+      content={
+        <ChatBrowserView
+          liveViewUrl={liveView?.url ?? null}
+          session={browserSession ?? undefined}
+          selectedReplayPageId={search.replayPage ?? null}
+          onSelectReplayPage={(replayPage) => {
+            void navigate({
+              to: "/chats",
+              search: (previous) => ({ ...previous, replayPage: replayPage ?? undefined }),
+            });
+          }}
+        />
+      }
+    />
+  ) : undefined;
 
   return (
     <>
@@ -1141,7 +1198,19 @@ function ChatsWorkspace() {
             createSubmitting={createChatSubmitting}
             loadingScouts={scouts === undefined}
             inspectorKind={inspectorKind}
-            inspectionKey={search.call ?? selectedBrowserSession?.sessionId ?? null}
+            canOpenWorkspace={threadId !== null && !createChatOpen}
+            onToggleWorkspace={() => {
+              void navigate({
+                to: "/chats",
+                search: (previous) => ({
+                  ...previous,
+                  view: workspaceOpen ? undefined : "workspace",
+                  call: undefined,
+                  inspector: undefined,
+                  pane: undefined,
+                }),
+              });
+            }}
             driver={selectedDriver}
             thread={selectedThread}
             scout={selectedScout}
@@ -1149,8 +1218,10 @@ function ChatsWorkspace() {
               if (createChatOpen) {
                 closeCreateChat();
               } else {
-                setCreateChatOpen(true);
-                setMobilePane("main");
+                void navigate({
+                  to: "/chats",
+                  search: (previous) => ({ ...previous, view: "new", pane: undefined }),
+                });
               }
             }}
           />
@@ -1173,7 +1244,6 @@ function ChatsWorkspace() {
                 onLoadMore={() => threads.loadMore(THREAD_PAGE_SIZE)}
                 onNavigate={() => {
                   resetForNavigation();
-                  setMobilePane("main");
                 }}
               />
             }
@@ -1250,13 +1320,25 @@ function BrowserSessionPicker({
 function ChatBrowserView({
   liveViewUrl,
   session,
+  selectedReplayPageId,
+  onSelectReplayPage,
 }: {
   liveViewUrl: string | null;
   session: BrowserSessionDetail | undefined;
+  selectedReplayPageId: string | null;
+  onSelectReplayPage: (pageId: string | null) => void;
 }) {
   if (!session) return <ChatViewStatus>Loading browser session</ChatViewStatus>;
   if (session.lifecycle.kind === "closed") {
-    return <BrowserReplay key={session.sessionId} sessionId={session.sessionId} mode="inspector" />;
+    return (
+      <BrowserReplay
+        key={session.sessionId}
+        sessionId={session.sessionId}
+        mode="inspector"
+        selectedPageId={selectedReplayPageId}
+        onSelectPage={onSelectReplayPage}
+      />
+    );
   }
   if (session.lifecycle.kind === "closing") {
     return <ChatViewStatus>Closing browser session</ChatViewStatus>;
@@ -1306,7 +1388,8 @@ function ChatChrome({
   createSubmitting,
   loadingScouts,
   inspectorKind,
-  inspectionKey,
+  canOpenWorkspace,
+  onToggleWorkspace,
   driver,
   thread,
   scout,
@@ -1317,7 +1400,8 @@ function ChatChrome({
   createSubmitting: boolean;
   loadingScouts: boolean;
   inspectorKind: InspectorKind | null;
-  inspectionKey: string | null;
+  canOpenWorkspace: boolean;
+  onToggleWorkspace: () => void;
   driver: ChatDriver;
   thread: ChatThread | undefined;
   scout: Scout | undefined;
@@ -1328,20 +1412,7 @@ function ChatChrome({
     useSidebarLayoutPresentation();
   const navigationShown = isMobile ? mobilePane === "left" : leftDesktopOpen;
   const inspectorShown = isMobile ? mobilePane === "right" : rightDesktopOpen;
-  const inspectorLabel = inspectorKind === "model-call" ? "model call" : "browser";
-  const previousInspectionKey = useRef<string | null>(null);
-
-  useEffect(() => {
-    const changed = inspectionKey !== null && inspectionKey !== previousInspectionKey.current;
-    previousInspectionKey.current = inspectionKey;
-    if (!changed) return;
-
-    if (isMobile) {
-      setMobilePane("right");
-    } else if (!rightDesktopOpen) {
-      toggleRightPane();
-    }
-  }, [inspectionKey, isMobile, rightDesktopOpen, setMobilePane, toggleRightPane]);
+  const inspectorLabel = inspectorKind === "model-call" ? "model call" : inspectorKind;
 
   return (
     <div className="flex h-12 min-w-0 items-center gap-2 px-2 sm:px-4">
@@ -1375,6 +1446,23 @@ function ChatChrome({
           {chatDriverLabel(driver)}
         </p>
       </div>
+      {canOpenWorkspace ? (
+        <Button
+          type="button"
+          size="sm"
+          variant={inspectorKind === "workspace" ? "secondary" : "ghost"}
+          aria-label="Workspace"
+          aria-pressed={inspectorKind === "workspace" && inspectorShown}
+          onClick={() =>
+            isMobile && inspectorKind === "workspace" && !inspectorShown
+              ? setMobilePane("right")
+              : onToggleWorkspace()
+          }
+        >
+          <FolderIcon />
+          <span className="hidden sm:inline">Workspace</span>
+        </Button>
+      ) : null}
       {inspectorKind ? (
         isMobile ? (
           <Button
