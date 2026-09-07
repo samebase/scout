@@ -599,7 +599,7 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
           )}
         >
           {session?.lifecycle.kind === "closed" ? (
-            <BrowserReplay sessionId={session.sessionId} />
+            <BrowserReplay sessionId={session.sessionId} mode="playback" />
           ) : (
             <>
               <div className="flex min-h-14 items-center gap-2 border-b border-play-line px-5 text-[13px] font-medium">

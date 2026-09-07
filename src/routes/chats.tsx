@@ -1256,7 +1256,7 @@ function ChatBrowserView({
 }) {
   if (!session) return <ChatViewStatus>Loading browser session</ChatViewStatus>;
   if (session.lifecycle.kind === "closed") {
-    return <BrowserReplay key={session.sessionId} sessionId={session.sessionId} />;
+    return <BrowserReplay key={session.sessionId} sessionId={session.sessionId} mode="inspector" />;
   }
   if (session.lifecycle.kind === "closing") {
     return <ChatViewStatus>Closing browser session</ChatViewStatus>;
