@@ -27,6 +27,7 @@ const remote = vi.hoisted(() => ({
   stop: vi.fn(),
   signIn: vi.fn(),
   queryCalls: vi.fn(),
+  listReplayPages: vi.fn(),
 }));
 
 function subscribe(listener: () => void) {
@@ -42,7 +43,16 @@ vi.mock("convex/react", () => ({
   useQuery: (reference: FunctionReference<"query">, args: unknown) => {
     useSyncExternalStore(subscribe, () => remote.revision);
     remote.queryCalls(getFunctionName(reference), args);
-    return args === "skip" ? undefined : remote.queries.get(getFunctionName(reference));
+    if (args === "skip") return undefined;
+    if (args && typeof args === "object" && "sessionId" in args) {
+      const scopedKey = `${getFunctionName(reference)}:${String(args.sessionId)}`;
+      if (remote.queries.has(scopedKey)) return remote.queries.get(scopedKey);
+    }
+    return remote.queries.get(getFunctionName(reference));
+  },
+  useAction: (reference: FunctionReference<"action">) => {
+    if (getFunctionName(reference) === "browserReplay:listPages") return remote.listReplayPages;
+    throw new Error("Unexpected action");
   },
   usePaginatedQuery: (reference: FunctionReference<"query">) => {
     useSyncExternalStore(subscribe, () => remote.revision);
@@ -74,6 +84,7 @@ vi.mock("@convex-dev/auth/react", () => ({
 }));
 
 beforeEach(() => {
+  vi.spyOn(window, "innerWidth", "get").mockReturnValue(390);
   remote.messages = [];
   remote.authenticated = true;
   remote.queryCalls.mockClear();
@@ -100,11 +111,15 @@ beforeEach(() => {
   remote.sendMessage.mockReset().mockResolvedValue(null);
   remote.stop.mockReset().mockResolvedValue(null);
   remote.signIn.mockReset();
+  remote.listReplayPages.mockReset().mockResolvedValue({ status: "unavailable" });
   // happy-dom does not implement the browser's scrolling API.
   Element.prototype.scrollIntoView = vi.fn();
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 async function openPlay(path = "/play/session") {
   const root = createRootRoute({ staticData: { access: "access_public" } });
@@ -417,8 +432,8 @@ test("shows persisted activity and assistant commentary while hiding tool payloa
   fireEvent.change(screen.getByLabelText("Message Scout"), {
     target: { value: "I'll be back in a minute." },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Scout’s view" }));
-  fireEvent.click(screen.getByRole("button", { name: "Chat" }));
+  fireEvent.click(screen.getByRole("button", { name: "Show Scout’s view" }));
+  fireEvent.click(screen.getByRole("button", { name: "Back to chat" }));
   expect(screen.getByDisplayValue("I'll be back in a minute.")).toBeTruthy();
   expect(remote.sendMessage).not.toHaveBeenCalled();
 });
@@ -460,16 +475,92 @@ test("keeps the live browser and handoff controls when switching views", async (
   });
   await openPlay("/play/session?thread=game-thread");
   const browser = await screen.findByTitle("Scout's live game browser");
-  fireEvent.click(screen.getByRole("button", { name: "Scout’s view" }));
+  fireEvent.click(screen.getByRole("button", { name: "Show Scout’s view" }));
   expect(screen.getByTitle("Scout's live game browser")).toBe(browser);
   expect(screen.getByRole("link", { name: "Open browser handoff" }).getAttribute("href")).toBe(
     "/handoff/handoff-1",
   );
   expect(screen.getAllByRole("button", { name: "Stop Scout" })).toHaveLength(2);
-  fireEvent.click(screen.getByRole("button", { name: "Chat" }));
+  fireEvent.click(screen.getByRole("button", { name: "Back to chat" }));
   expect(screen.getByTitle("Scout's live game browser")).toBe(browser);
   fireEvent.click(screen.getByRole("button", { name: "Cancel handoff" }));
   await waitFor(() =>
     expect(remote.stop).toHaveBeenCalledExactlyOnceWith({ threadId: "game-thread" }),
   );
+});
+
+test("selects older replays without changing the conversation or current handoff", async () => {
+  const sessions = [
+    { sessionId: "older", createdAt: 1_000, lifecycle: { kind: "closed" } },
+    { sessionId: "current", createdAt: 2_000, lifecycle: { kind: "active" } },
+  ];
+  remote.queries.set("scout/browserSessions:list", sessions);
+  remote.queries.set("scout/browserSessions:liveView:current", { url: "about:blank" });
+  remote.queries.set("humanHandoffs:forSession:current", {
+    handoffId: "current-handoff",
+    status: "available",
+    reason: "Complete the verification.",
+    requestedAt: Date.now(),
+    expiresAt: Date.now() + 60_000,
+  });
+  remote.queries.set("humanHandoffs:forSession:older", null);
+  await openPlay("/play/session?thread=game-thread");
+  fireEvent.click(screen.getByRole("button", { name: "Show Scout’s view" }));
+  const selector = screen.getByRole<HTMLSelectElement>("combobox", { name: "Browser session" });
+  expect(selector.value).toBe("current");
+  expect(Array.from(selector.options, (option) => option.value)).toEqual(["current", "older"]);
+  fireEvent.change(screen.getByLabelText("Message Scout"), {
+    target: { value: "Keep this draft." },
+  });
+  fireEvent.change(selector, { target: { value: "older" } });
+  await waitFor(() => expect(remote.listReplayPages).toHaveBeenCalledWith({ sessionId: "older" }));
+  expect(screen.queryByTitle("Scout's live game browser")).toBeNull();
+  expect(screen.getByRole("link", { name: "Open browser handoff" }).getAttribute("href")).toBe(
+    "/handoff/current-handoff",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Back to chat" }));
+  expect(screen.getByDisplayValue("Keep this draft.")).toBeTruthy();
+  expect(remote.sendMessage).not.toHaveBeenCalled();
+  expect(remote.stop).not.toHaveBeenCalled();
+
+  act(() => {
+    remote.queries.set("scout/browserSessions:list", [
+      ...sessions,
+      { sessionId: "newest", createdAt: 3_000, lifecycle: { kind: "active" } },
+    ]);
+    remote.revision += 1;
+    remote.subscribers.forEach((listener) => listener());
+  });
+  expect(screen.getByRole<HTMLSelectElement>("combobox", { name: "Browser session" }).value).toBe(
+    "older",
+  );
+});
+
+test("follows new browser sessions until the user chooses a session", async () => {
+  remote.queries.set("scout/browserSessions:list", [
+    { sessionId: "first", createdAt: 1_000, lifecycle: { kind: "active" } },
+  ]);
+  remote.queries.set("scout/browserSessions:liveView:first", { url: "about:blank#first" });
+  await openPlay("/play/session?thread=game-thread");
+  expect(screen.queryByRole("combobox", { name: "Browser session" })).toBeNull();
+  expect(screen.getByTitle("Scout's live game browser").getAttribute("src")).toBe(
+    "about:blank#first",
+  );
+  act(() => {
+    remote.queries.set("scout/browserSessions:list", [
+      { sessionId: "first", createdAt: 1_000, lifecycle: { kind: "closed" } },
+      { sessionId: "second", createdAt: 2_000, lifecycle: { kind: "active" } },
+    ]);
+    remote.queries.set("scout/browserSessions:liveView:second", { url: "about:blank#second" });
+    remote.revision += 1;
+    remote.subscribers.forEach((listener) => listener());
+  });
+  expect(screen.getByRole<HTMLSelectElement>("combobox", { name: "Browser session" }).value).toBe(
+    "second",
+  );
+  expect(screen.getByTitle("Scout's live game browser").getAttribute("src")).toBe(
+    "about:blank#second",
+  );
+  expect(remote.sendMessage).not.toHaveBeenCalled();
+  expect(remote.stop).not.toHaveBeenCalled();
 });

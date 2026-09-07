@@ -1,4 +1,5 @@
 import { accountAccessMessage, canAccess, useViewerAccess } from "../../lib/access";
+import { SidebarLayout } from "@samebase/sidebars/SidebarLayout";
 import { useUIMessages } from "@convex-dev/agent/react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useConvexAuth, useMutation, usePaginatedQuery, useQuery } from "convex/react";
@@ -9,14 +10,13 @@ import {
   ArrowUpRightIcon,
   LoaderCircleIcon,
   MonitorIcon,
-  MessageCircleIcon,
-  SquareIcon,
 } from "lucide-react";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import { Route } from "../../routes/play.session";
 import { gameInviteDisplayText } from "./invite";
 import { PlayComposer } from "./composer";
+import { PlaySidebar, PlayBrowserToggle, PlayBrowserStop } from "./sidebar";
 import {
   MessageScrollerProvider,
   MessageScroller,
@@ -36,6 +36,7 @@ import { playError, playLoading, playNotice, playRouteMessage, playTextLink } fr
 
 type Scout = FunctionReturnType<typeof api.scout.scouts.list>[number];
 type ChatThread = FunctionReturnType<typeof api.scout.chats.listThreads>["page"][number];
+type BrowserSession = FunctionReturnType<typeof api.scout.browserSessions.list>[number];
 type Activity = FunctionReturnType<typeof api.scout.chats.getScoutActivity>;
 type ThreadActivity = Extract<Activity, { threadId: string }>;
 type RequestState = { kind: "idle" } | { kind: "pending" } | { kind: "failed"; message: string };
@@ -280,11 +281,9 @@ function SessionLoader({ threadId }: { threadId: string }) {
       </p>
     );
   return (
-    <PlaySession
-      key={threadId}
-      thread={thread}
-      scout={scouts.find((scout) => scout._id === thread.scoutId)}
-    />
+    <PlaySidebar key={threadId}>
+      <PlaySession thread={thread} scout={scouts.find((scout) => scout._id === thread.scoutId)} />
+    </PlaySidebar>
   );
 }
 
@@ -322,14 +321,19 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
   const { threadId } = thread;
   const activity = useQuery(api.scout.chats.getScoutActivity, { threadId });
   const sessions = useQuery(api.scout.browserSessions.list, { threadId });
-  const session = sessions?.at(-1);
+  const [selectedSessionId, setSelectedSessionId] = useState<BrowserSession["sessionId"] | null>(
+    null,
+  );
+  const latestSession = sessions?.at(-1);
+  const session =
+    sessions?.find((session) => session.sessionId === selectedSessionId) ?? latestSession;
   const liveView = useQuery(
     api.scout.browserSessions.liveView,
-    session ? { sessionId: session.sessionId } : "skip",
+    session && session.lifecycle.kind !== "closed" ? { sessionId: session.sessionId } : "skip",
   );
   const handoff = useQuery(
     api.humanHandoffs.forSession,
-    session ? { sessionId: session.sessionId } : "skip",
+    latestSession ? { sessionId: latestSession.sessionId } : "skip",
   );
   const messages = useUIMessages(
     api.scout.chats.listMessages,
@@ -339,7 +343,6 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
   const sendMessage = useMutation(api.scout.chats.sendMessage);
   const stopScout = useMutation(api.scout.chats.stop);
   const [draft, setDraft] = useState("");
-  const [view, setView] = useState<"chat" | "browser">("chat");
   const [request, setRequest] = useState<RequestState>({ kind: "idle" });
   const pending = useRef(false);
   const ownActivity = activityForThread(activity, threadId);
@@ -394,110 +397,121 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
     }
   }
 
-  return (
-    <>
-      <div className="mb-5 flex items-center justify-between gap-4 max-[760px]:mb-3">
-        <Link
-          to="/play/session"
-          search={{}}
-          className={cn(playTextLink, "min-h-11 text-play-muted")}
+  const browserHeader = (
+    <div className="flex min-h-14 shrink-0 items-center gap-2 border-b border-play-line px-3 text-[13px]">
+      <MonitorIcon size={16} className="shrink-0" aria-hidden="true" />
+      {sessions && sessions.length > 1 && session ? (
+        <select
+          aria-label="Browser session"
+          value={session.sessionId}
+          onChange={(event) => {
+            const selected = sessions.find(
+              (session) => session.sessionId === event.currentTarget.value,
+            );
+            if (selected) setSelectedSessionId(selected.sessionId);
+          }}
+          className="min-h-11 min-w-0 flex-1 rounded-lg bg-transparent pr-1 font-medium"
         >
-          <ArrowLeftIcon size={16} aria-hidden="true" />{" "}
-          <span className="whitespace-nowrap">New chat</span>
-        </Link>
-        <div className="flex items-center gap-5 max-[760px]:gap-4">
-          <Link
-            to="/chats"
-            search={{ thread: threadId }}
-            aria-label="Open in lab"
-            className={cn(playTextLink, "min-h-11 text-play-muted")}
-          >
-            <span className="whitespace-nowrap">
-              <span className="max-[760px]:hidden">Open in </span>Lab
-            </span>{" "}
-            <ArrowUpRightIcon size={15} aria-hidden="true" />
-          </Link>
-          {canStop && view === "browser" && (
-            <button
-              type="button"
-              aria-label="Stop Scout"
-              onClick={() => {
+          {sessions.toReversed().map((session) => (
+            <option key={session.sessionId} value={session.sessionId}>
+              {new Date(session.createdAt).toLocaleString(undefined, {
+                month: "short",
+                day: "numeric",
+                hour: "numeric",
+                minute: "2-digit",
+                second: "2-digit",
+              })}
+              {session.lifecycle.kind === "active"
+                ? " · Live"
+                : session.lifecycle.kind === "closing"
+                  ? " · Closing"
+                  : ""}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <span className="min-w-0 flex-1 font-medium">
+          {session?.lifecycle.kind === "closed" ? "Replay" : "Scout’s view"}
+        </span>
+      )}
+      <PlayBrowserToggle action="close" />
+    </div>
+  );
+
+  return (
+    <SidebarLayout
+      mobileMinResizeBehavior="min_resize_to_slide"
+      resizeHandleLabels={{ left: "Resize chat navigation", right: "Resize Scout’s view" }}
+      addressChrome={
+        <>
+          <div className="mb-5 flex items-center justify-between gap-4 max-[760px]:mb-3">
+            <Link
+              to="/play/session"
+              search={{}}
+              className={cn(playTextLink, "min-h-11 text-play-muted")}
+            >
+              <ArrowLeftIcon size={16} aria-hidden="true" />{" "}
+              <span className="whitespace-nowrap">New chat</span>
+            </Link>
+            <div className="flex items-center gap-5 max-[760px]:gap-4">
+              <Link
+                to="/chats"
+                search={{ thread: threadId }}
+                aria-label="Open in lab"
+                className={cn(playTextLink, "min-h-11 text-play-muted")}
+              >
+                <span className="whitespace-nowrap">
+                  <span className="max-[760px]:hidden">Open in </span>Lab
+                </span>{" "}
+                <ArrowUpRightIcon size={15} aria-hidden="true" />
+              </Link>
+              <PlayBrowserToggle action="open" />
+              {canStop && (
+                <PlayBrowserStop
+                  onStop={() => {
+                    void stop();
+                  }}
+                  disabled={request.kind === "pending"}
+                />
+              )}
+            </div>
+          </div>
+          <div className="mb-5 flex min-w-0 items-center gap-4 max-[760px]:mb-4">
+            <ScoutPiece size="brand" className="max-[760px]:hidden" />
+            <h1
+              className="truncate text-[28px] font-semibold tracking-[-0.8px] max-[760px]:text-[24px]"
+              title={thread.title ?? undefined}
+            >
+              {thread.title ?? `Play with ${scout?.displayName ?? "Scout"}`}
+            </h1>
+          </div>
+          {request.kind === "failed" && (
+            <p role="alert" className={playError}>
+              {request.message}
+            </p>
+          )}
+          {lastTurn?.outcome.kind === "failed" && (
+            <p className={playNotice} role="alert">
+              Scout couldn't finish this turn. Send a message to try again, or open the lab for
+              details.
+            </p>
+          )}
+          {handoff && (
+            <ChatHandoffNotice
+              handoff={handoff}
+              browserClosed={latestSession?.lifecycle.kind === "closed"}
+              canCancel={Boolean(canStop) && request.kind !== "pending"}
+              onCancel={() => {
                 void stop();
               }}
-              disabled={request.kind === "pending"}
-              className="inline-flex min-h-11 items-center gap-2 rounded-lg px-1 text-play-ink hover:text-play-blue min-[761px]:hidden"
-            >
-              <SquareIcon size={14} aria-hidden="true" />
-              <span className="whitespace-nowrap">
-                Stop<span className="max-[760px]:hidden"> Scout</span>
-              </span>
-            </button>
+            />
           )}
-        </div>
-      </div>
-      <div className="mb-5 flex min-w-0 items-center gap-4 max-[760px]:mb-4">
-        <ScoutPiece size="brand" className="max-[760px]:hidden" />
-        <h1
-          className="truncate text-[28px] font-semibold tracking-[-0.8px] max-[760px]:text-[24px]"
-          title={thread.title ?? undefined}
-        >
-          {thread.title ?? `Play with ${scout?.displayName ?? "Scout"}`}
-        </h1>
-      </div>
-      <div
-        className="mb-3 flex gap-1 rounded-xl bg-play-cloud p-1 min-[761px]:hidden"
-        role="group"
-        aria-label="Session view"
-      >
-        <button
-          type="button"
-          aria-pressed={view === "chat"}
-          onClick={() => setView("chat")}
-          className={cn(
-            "flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg text-sm",
-            view === "chat" && "bg-white shadow-sm",
-          )}
-        >
-          <MessageCircleIcon size={16} aria-hidden="true" />
-          Chat
-        </button>
-        <button
-          type="button"
-          aria-pressed={view === "browser"}
-          onClick={() => setView("browser")}
-          className={cn(
-            "flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg text-sm",
-            view === "browser" && "bg-white shadow-sm",
-          )}
-        >
-          <MonitorIcon size={16} aria-hidden="true" />
-          Scout’s view
-        </button>
-      </div>
-      {request.kind === "failed" && (
-        <p role="alert" className={playError}>
-          {request.message}
-        </p>
-      )}
-      {lastTurn?.outcome.kind === "failed" && (
-        <p className={playNotice} role="alert">
-          Scout couldn't finish this turn. Send a message to try again, or open the lab for details.
-        </p>
-      )}
-      {handoff && (
-        <ChatHandoffNotice
-          handoff={handoff}
-          browserClosed={session?.lifecycle.kind === "closed"}
-          canCancel={Boolean(canStop) && request.kind !== "pending"}
-          onCancel={() => {
-            void stop();
-          }}
-        />
-      )}
-      <div className="grid min-h-0 flex-1 grid-cols-[minmax(360px,0.9fr)_minmax(0,1.1fr)] gap-8 max-[1100px]:gap-5 max-[760px]:grid-cols-1">
+        </>
+      }
+      main={
         <section
           aria-label="Conversation with Scout"
-          className={cn("flex min-h-0 flex-col", view !== "chat" && "max-[760px]:hidden")}
+          className="flex h-full min-h-0 flex-col min-[768px]:pr-6"
         >
           <div className="min-h-0 flex-1">
             <MessageScrollerProvider autoScroll defaultScrollPosition="end">
@@ -591,24 +605,26 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
             </span>
           </PlayComposer>
         </section>
+      }
+      right={
         <section
           aria-label="Scout's game browser"
-          className={cn(
-            "flex min-h-0 flex-col rounded-[22px] border border-play-line bg-play-cloud/50",
-            view !== "browser" && "max-[760px]:hidden",
-          )}
+          className="flex h-full min-h-0 flex-col overflow-hidden rounded-[22px] border border-play-line bg-play-cloud/50"
         >
           {session?.lifecycle.kind === "closed" ? (
-            <BrowserReplay sessionId={session.sessionId} mode="playback" />
+            <BrowserReplay
+              key={session.sessionId}
+              sessionId={session.sessionId}
+              mode="playback"
+              header={browserHeader}
+            />
           ) : (
             <>
-              <div className="flex min-h-14 items-center gap-2 border-b border-play-line px-5 text-[13px] font-medium">
-                <MonitorIcon size={16} aria-hidden="true" />
-                Scout’s view
-              </div>
+              {browserHeader}
               {liveView?.url ? (
                 <>
                   <iframe
+                    key={session?.sessionId}
                     src={liveView.url}
                     className="min-h-0 w-full flex-1 border-0 bg-white"
                     title="Scout's live game browser"
@@ -639,7 +655,7 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
             </>
           )}
         </section>
-      </div>
-    </>
+      }
+    />
   );
 }

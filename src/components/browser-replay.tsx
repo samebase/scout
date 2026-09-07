@@ -2,7 +2,7 @@ import { useAction } from "convex/react";
 import type { FunctionArgs, FunctionReturnType } from "convex/server";
 import type HlsType from "hls.js";
 import { LoaderCircleIcon, PauseIcon, PlayIcon, RotateCcwIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api } from "../../convex/_generated/api";
 import { Button } from "#components/ui/button";
 import { activePageIdAt, buildReplayTimeline } from "#lib/browserReplayTimeline";
@@ -22,13 +22,13 @@ type ReplayLoadState =
   | { kind: "ready"; replay: ReplayReady }
   | { kind: "unavailable" | "delayed" | "failed" };
 
-export function BrowserReplay({
-  sessionId,
-  mode,
-}: {
-  sessionId: BrowserSessionId;
-  mode: ReplayMode;
-}) {
+export function BrowserReplay(
+  props: { sessionId: BrowserSessionId } & (
+    | { mode: "playback"; header: ReactNode }
+    | { mode: "inspector" }
+  ),
+) {
+  const { sessionId, mode } = props;
   const listPages = useAction(api.browserReplay.listPages);
   const [requestVersion, setRequestVersion] = useState(0);
   const [state, setState] = useState<ReplayLoadState>({ kind: "loading" });
@@ -82,28 +82,25 @@ export function BrowserReplay({
           ? "flex min-h-0 flex-1 flex-col overflow-hidden rounded-[22px]"
           : "browser-replay"
       }
-      aria-labelledby="browser-replay-heading"
+      aria-label={mode === "playback" ? "Replay" : undefined}
+      aria-labelledby={mode === "inspector" ? "browser-replay-heading" : undefined}
     >
-      <div
-        className={
-          mode === "playback"
-            ? "flex min-h-14 shrink-0 items-center border-b border-play-line px-5"
-            : "flex min-w-0 items-center justify-between gap-2 border-b px-2 py-1.5 @xs:px-3"
-        }
-      >
-        <div className="flex min-w-0 items-center gap-2">
-          <PlayIcon className="size-3.5 shrink-0 text-primary" aria-hidden="true" />
-          <h3 id="browser-replay-heading" className="truncate text-xs font-semibold">
-            Replay
-          </h3>
-        </div>
-        {mode === "inspector" && (
+      {props.mode === "playback" ? (
+        props.header
+      ) : (
+        <div className="flex min-w-0 items-center justify-between gap-2 border-b px-2 py-1.5 @xs:px-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <PlayIcon className="size-3.5 shrink-0 text-primary" aria-hidden="true" />
+            <h3 id="browser-replay-heading" className="truncate text-xs font-semibold">
+              Replay
+            </h3>
+          </div>
           <Button type="button" size="xs" variant="ghost" onClick={refresh}>
             <RotateCcwIcon />
             Refresh
           </Button>
-        )}
-      </div>
+        </div>
+      )}
       {state.kind === "ready" ? (
         <>
           {mode === "inspector" && (
