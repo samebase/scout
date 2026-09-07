@@ -1,4 +1,3 @@
-// Samebase starter dev launcher sha256:704cdd4ab69672fa6befc1aa2ddc698312a164224b0d03d056231f9c2bcd690f
 /// <reference types="node" />
 import process from "node:process";
 import { execFileSync } from "node:child_process";

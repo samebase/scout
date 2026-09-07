@@ -132,6 +132,4 @@ pnpm run dev:worktree
 ```
 
 The context launcher selects `run-primary-dev.ts` or `run-worktree-dev.ts`.
-Both modes use the same Windows-safe service launcher. The three launcher files
-carry one shared content hash in their first line, and `pnpm run check` verifies
-that hash.
+Both modes use the same Windows-safe service launcher.
