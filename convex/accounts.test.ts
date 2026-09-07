@@ -27,8 +27,8 @@ test("anonymous, missing, and unverified accounts cannot use protected functions
   await expect(admin.query(api.scout.scouts.list, {})).rejects.toThrow("Not authorized");
 });
 
-test.each(["nicuchiciuc@gmail.com", "nicu@samebase.com", "NICUCHICIUC@GMAIL.COM"])(
-  "Samebase staff email %s grants admin access independently of approval",
+test.each(["nicu.dev@gmail.com", "nicu@samebase.com", "NICU.DEV@GMAIL.COM"])(
+  "Scout staff email %s grants admin access independently of approval",
   async (email) => {
     const backend = convexTest(schema, modules);
     const userId = await backend.run((ctx) =>
@@ -48,7 +48,7 @@ test.each(["nicuchiciuc@gmail.com", "nicu@samebase.com", "NICUCHICIUC@GMAIL.COM"
   },
 );
 
-test.each(["member@example.test", "nicu.dev@gmail.com"])(
+test.each(["member@example.test", "nicuchiciuc@gmail.com", "NICUCHICIUC@GMAIL.COM"])(
   "%s gets member access only through users.isApproved in the same session",
   async (email) => {
     const { backend, admin } = await setup();

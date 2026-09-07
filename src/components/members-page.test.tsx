@@ -50,7 +50,7 @@ beforeEach(() => {
       userId: "staff",
       role: "role_staff",
       isApproved: false,
-      email: "nicuchiciuc@gmail.com",
+      email: "nicu.dev@gmail.com",
       verified: true,
     },
     {
@@ -108,7 +108,7 @@ test("members can be approved or revoked without role or suspension controls", a
   expect(screen.queryByRole("columnheader", { name: "Role" })).toBeNull();
   expect(screen.queryByRole("columnheader", { name: "Status" })).toBeNull();
 
-  const staffRow = rowFor("nicuchiciuc@gmail.com");
+  const staffRow = rowFor("nicu.dev@gmail.com");
   expect(within(staffRow).getByText("Admin, approval not required")).toBeTruthy();
   expect(within(staffRow).queryByRole("button")).toBeNull();
 
