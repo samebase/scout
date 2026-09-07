@@ -26,18 +26,25 @@ export function BrowserReplayExport({
   manualPageId,
   viewport,
   clicks,
+  mode,
 }: {
   sessionId: FunctionArgs<typeof api.browserReplay.loadPlaylist>["sessionId"];
   timeline: ReplayTimeline;
   manualPageId: string | null;
   viewport: { width: number; height: number };
   clicks: ReplayClick[];
+  mode: "download" | "inspector";
 }) {
   const loadPlaylist = useAction(api.browserReplay.loadPlaylist);
   const [state, setState] = useState<ExportState>({ kind: "idle" });
   const workerRef = useRef<Worker | null>(null);
   const runRef = useRef(0);
   const urlRef = useRef<string | null>(null);
+  const downloadRef = useRef<HTMLAnchorElement>(null);
+
+  useEffect(() => {
+    if (mode === "download" && state.kind === "ready") downloadRef.current?.click();
+  }, [mode, state]);
 
   useEffect(
     () => () => {
@@ -124,6 +131,53 @@ export function BrowserReplayExport({
         });
     }
   };
+
+  if (mode === "download") {
+    return (
+      <div className="relative shrink-0">
+        {state.kind === "ready" ? (
+          <a
+            ref={downloadRef}
+            href={state.url}
+            download={`scout-replay-${sessionId}.mp4`}
+            aria-label="Download replay"
+            title="Download replay"
+            className="grid size-11 place-items-center rounded-lg hover:bg-muted focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            <DownloadIcon size={18} aria-hidden="true" />
+          </a>
+        ) : (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-11"
+            aria-label={
+              state.kind === "exporting"
+                ? `Cancel download (${Math.round(state.progress * 100)}%)`
+                : "Download replay"
+            }
+            title={state.kind === "exporting" ? "Cancel download" : "Download replay"}
+            onClick={state.kind === "exporting" ? cancel : () => void start()}
+          >
+            {state.kind === "exporting" ? (
+              <LoaderCircleIcon className="animate-spin" aria-hidden="true" />
+            ) : (
+              <DownloadIcon aria-hidden="true" />
+            )}
+          </Button>
+        )}
+        {state.kind === "failed" && (
+          <p
+            role="alert"
+            className="absolute right-0 bottom-full mb-2 w-64 rounded-lg border bg-background p-3 text-xs shadow-sm"
+          >
+            {state.message}
+          </p>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="mt-3 border-t pt-3">

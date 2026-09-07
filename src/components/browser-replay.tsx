@@ -458,6 +458,17 @@ function BrowserReplayPlayer({
               </div>
             )}
           </div>
+          {mode === "playback" && (
+            <BrowserReplayExport
+              key={manualPageId ?? "automatic"}
+              sessionId={sessionId}
+              timeline={timeline}
+              manualPageId={manualPageId}
+              viewport={replay.viewport}
+              clicks={showClicks ? clickData.clicks : []}
+              mode="download"
+            />
+          )}
         </div>
 
         {mode === "playback" && (timeline.pages.length > 1 || automaticPageId === null) && (
@@ -581,6 +592,7 @@ function BrowserReplayPlayer({
               manualPageId={manualPageId}
               viewport={replay.viewport}
               clicks={showClicks ? clickData.clicks : []}
+              mode="inspector"
             />
           </>
         )}
