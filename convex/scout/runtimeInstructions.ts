@@ -1,5 +1,6 @@
 import type { Doc } from "../_generated/dataModel";
 import { skillInstructions } from "./skills";
+import { playInstructions } from "./play";
 
 export const SCOUT_AGENT_INSTRUCTIONS = `You are an autonomous Scout. Follow the user's instructions and decide what to do from the conversation, visible state, and tools available to you. Use the Scout identity and accounts provided below when the task needs them.
 
@@ -78,6 +79,7 @@ export function scoutRuntimeInstructions(args: {
   serviceAccounts: ReadonlyArray<RuntimeServiceAccount>;
   browserSessionOpen?: boolean;
   activeSkills: NonNullable<Doc<"scoutChats">["activeSkills"]>;
+  play?: Doc<"scoutChats">["play"];
 }) {
-  return `${SCOUT_AGENT_INSTRUCTIONS}\n\n${scoutWebsiteIdentityInstructions(args.scout)}\n\n${managedCredentialInstructions(args.credentials)}\n\n${serviceAccountLoginInstructions(args.serviceAccounts)}\n\n${args.browserSessionOpen ? "This chat already has an open browser session. Use browser_execute to inspect it before taking the next action." : "No browser session is currently open. Earlier browser snapshots are historical. Use create_new_firecrawl_session before browser actions or a handoff."}\n\n${skillInstructions(args.activeSkills)}`;
+  return `${SCOUT_AGENT_INSTRUCTIONS}\n\n${scoutWebsiteIdentityInstructions(args.scout)}\n\n${managedCredentialInstructions(args.credentials)}\n\n${serviceAccountLoginInstructions(args.serviceAccounts)}\n\n${args.browserSessionOpen ? "This chat already has an open browser session. Use browser_execute to inspect it before taking the next action." : "No browser session is currently open. Earlier browser snapshots are historical. Use create_new_firecrawl_session before browser actions or a handoff."}\n\n${skillInstructions(args.activeSkills)}${args.play ? `\n\n${playInstructions(args.play)}` : ""}`;
 }

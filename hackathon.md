@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-07T13:02:47Z
+- **Last updated:** 2026-09-07T16:16:21Z
 
 ## Log
 
@@ -1069,8 +1069,16 @@ Cloudflare deployment script.
 Restored the intended Scout administrator email in the derived staff permissions.
 The replaced address follows ordinary account approval (`convex/access.ts`).
 
-### 2026-09-07 - working tree
+### 2026-09-07 - 12e31e3 - v185
 
 Added self-service account deletion from Settings, with typed confirmation and manual retry after failure.
 The existing Convex Workflow removes profile and login data while retaining a deleted user stub,
 chats, messages, files, and shared Scouts (`convex/accountDeletion.ts`, `src/routes/account-deletion.tsx`).
+
+### 2026-09-07 - working tree
+
+Play starts with a message and keeps Scout’s commentary beside its browser in a resizable sidebar.
+The same panel opens by swipe on mobile and includes replay, download, and browser session selection.
+The agent can save its current activity on the chat; existing turns still own stopping and handoffs.
+Full transcripts remain in Lab (`src/products/play/page.tsx`, `convex/scout/play.ts`).
+Worktree development uses a separate cloud deployment so model calls can reach Convex AI Gateway.

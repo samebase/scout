@@ -92,7 +92,7 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
   and required shipped browser artifacts can be valid exceptions. Do not add a repository-wide
   extension scanner.
 - Run `pnpm run check`. It checks formatting, lint, browser TypeScript, Node TypeScript, Convex
-  TypeScript, tests, and the generated dev-launcher version.
+  TypeScript, and tests.
 - Run `pnpm run build` before a deploy. The real Cloudflare build path runs the complete check before
   it builds the app.
 

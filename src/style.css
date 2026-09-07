@@ -420,6 +420,18 @@
   box-shadow: none;
 }
 
+.play-session-layout [data-sidebar-layout-part="root"],
+.play-session-layout [data-sidebar-layout-part="address-chrome"],
+.play-session-layout [data-sidebar-layout-part="pane"],
+.play-session-layout [data-sidebar-layout-part="pane-surface"] {
+  background: var(--color-play-paper);
+}
+
+.play-session-layout [data-sidebar-layout-part="address-chrome"] {
+  border: 0;
+  box-shadow: none;
+}
+
 .chat-composer {
   max-height: 75%;
 }

@@ -41,6 +41,7 @@ import { prepareConversationContext } from "./compactionContext";
 import { createToolArgumentProbe } from "./toolArgumentProbe";
 import { repairStringifiedToolInput } from "./toolCallRepair";
 import { scoutRuntimeInstructions } from "./runtimeInstructions";
+import { createPlayTools } from "./play";
 import { createWebTools } from "./webTools";
 import { createSkillTools } from "./skills";
 
@@ -497,6 +498,14 @@ export const runSlice = internalAction({
         sessionId: () => browserSessionId,
       });
       const tools = {
+        ...(runtimeContext.play
+          ? createPlayTools(async (step) => {
+              await ctx.runMutation(internal.scout.chats.setActivityStep, {
+                turnId: activeTurnId,
+                step,
+              });
+            })
+          : {}),
         ...browser.tools,
         ...createWebTools(beforeModelToolDispatch),
         ...agentMailTools,
@@ -516,6 +525,7 @@ export const runSlice = internalAction({
         serviceAccounts: runtimeServiceAccounts,
         browserSessionOpen: browserSessionId !== null,
         activeSkills: runtimeContext.activeSkills,
+        play: runtimeContext.play ?? undefined,
       });
       const streamErrors = createStreamErrorCapture();
       let activeModelCallId: Id<"scoutModelCalls"> | null = null;

@@ -17,15 +17,6 @@ type AuthState =
 
 type AuthAction = CredentialsFlow | "verifyEmail" | "requestReset" | "resetPassword";
 
-function readLocalWorktreePasswordCredentials() {
-  if (!import.meta.env.DEV) {
-    return null;
-  }
-  const email = import.meta.env["VITE_LOCAL_WORKTREE_PASSWORD_EMAIL"]?.trim();
-  const password = import.meta.env["VITE_LOCAL_WORKTREE_PASSWORD_VALUE"];
-  return email && password ? { email, password } : null;
-}
-
 export function AuthPanel() {
   const { signIn } = useAuthActions();
   const [state, setState] = useState<AuthState>({
@@ -36,7 +27,6 @@ export function AuthPanel() {
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState("");
   const [password, setPassword] = useState("");
-  const localWorktreeCredentials = readLocalWorktreePasswordCredentials();
 
   const run = async (action: AuthAction, operation: () => Promise<void>) => {
     setError("");
@@ -119,31 +109,6 @@ export function AuthPanel() {
   return (
     <section className="surface-panel flex flex-col gap-6 p-5 sm:p-7" aria-label="Account access">
       <AuthHeading state={state} />
-
-      {state.kind === "credentials" && localWorktreeCredentials ? (
-        <Button
-          type="button"
-          variant="outline"
-          disabled={isPending}
-          onClick={() => {
-            setState({
-              kind: "credentials",
-              flow: "signIn",
-              email: localWorktreeCredentials.email,
-            });
-            setPassword(localWorktreeCredentials.password);
-            void run("signIn", async () => {
-              await signIn("password", {
-                flow: "signIn",
-                email: localWorktreeCredentials.email,
-                password: localWorktreeCredentials.password,
-              });
-            });
-          }}
-        >
-          Autofill &amp; sign in
-        </Button>
-      ) : null}
 
       {state.kind === "credentials" ? (
         <form className="flex flex-col gap-4" onSubmit={submitCredentials}>

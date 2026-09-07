@@ -2,7 +2,7 @@ import { useAction } from "convex/react";
 import type { FunctionArgs, FunctionReturnType } from "convex/server";
 import type HlsType from "hls.js";
 import { LoaderCircleIcon, PauseIcon, PlayIcon, RotateCcwIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api } from "../../convex/_generated/api";
 import { Button } from "#components/ui/button";
 import { activePageIdAt, buildReplayTimeline } from "#lib/browserReplayTimeline";
@@ -12,6 +12,7 @@ import { BrowserReplayExport } from "./browser-replay-export";
 type ReplayPagesResult = FunctionReturnType<typeof api.browserReplay.listPages>;
 type ReplayReady = Extract<ReplayPagesResult, { status: "ready" }>;
 type BrowserSessionId = FunctionArgs<typeof api.browserReplay.listPages>["sessionId"];
+type ReplayMode = "playback" | "inspector";
 
 const REPLAY_PREPARATION_RETRIES = 10;
 const REPLAY_RETRY_DELAY_MS = 2_000;
@@ -21,7 +22,13 @@ type ReplayLoadState =
   | { kind: "ready"; replay: ReplayReady }
   | { kind: "unavailable" | "delayed" | "failed" };
 
-export function BrowserReplay({ sessionId }: { sessionId: BrowserSessionId }) {
+export function BrowserReplay(
+  props: { sessionId: BrowserSessionId } & (
+    | { mode: "playback"; header: ReactNode }
+    | { mode: "inspector" }
+  ),
+) {
+  const { sessionId, mode } = props;
   const listPages = useAction(api.browserReplay.listPages);
   const [requestVersion, setRequestVersion] = useState(0);
   const [state, setState] = useState<ReplayLoadState>({ kind: "loading" });
@@ -69,26 +76,42 @@ export function BrowserReplay({ sessionId }: { sessionId: BrowserSessionId }) {
   }, [listPages, sessionId, requestVersion]);
 
   return (
-    <section className="browser-replay" aria-labelledby="browser-replay-heading">
-      <div className="flex min-w-0 items-center justify-between gap-2 border-b px-2 py-1.5 @xs:px-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <PlayIcon className="size-3.5 shrink-0 text-primary" aria-hidden="true" />
-          <h3 id="browser-replay-heading" className="truncate text-xs font-semibold">
-            Replay
-          </h3>
+    <section
+      className={
+        mode === "playback"
+          ? "flex min-h-0 flex-1 flex-col overflow-hidden rounded-[22px]"
+          : "browser-replay"
+      }
+      aria-label={mode === "playback" ? "Replay" : undefined}
+      aria-labelledby={mode === "inspector" ? "browser-replay-heading" : undefined}
+    >
+      {props.mode === "playback" ? (
+        props.header
+      ) : (
+        <div className="flex min-w-0 items-center justify-between gap-2 border-b px-2 py-1.5 @xs:px-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <PlayIcon className="size-3.5 shrink-0 text-primary" aria-hidden="true" />
+            <h3 id="browser-replay-heading" className="truncate text-xs font-semibold">
+              Replay
+            </h3>
+          </div>
+          <Button type="button" size="xs" variant="ghost" onClick={refresh}>
+            <RotateCcwIcon />
+            Refresh
+          </Button>
         </div>
-        <Button type="button" size="xs" variant="ghost" onClick={refresh}>
-          <RotateCcwIcon />
-          Refresh
-        </Button>
-      </div>
+      )}
       {state.kind === "ready" ? (
         <>
-          <div className="browser-replay__narrow">Widen pane to view replay</div>
+          {mode === "inspector" && (
+            <div className="browser-replay__narrow">Widen pane to view replay</div>
+          )}
           <BrowserReplayPlayer
             replay={state.replay}
             requestVersion={requestVersion}
             sessionId={sessionId}
+            mode={mode}
+            onRetry={refresh}
           />
         </>
       ) : (
@@ -138,10 +161,14 @@ function BrowserReplayPlayer({
   replay,
   requestVersion,
   sessionId,
+  mode,
+  onRetry,
 }: {
   replay: ReplayReady;
   requestVersion: number;
   sessionId: BrowserSessionId;
+  mode: ReplayMode;
+  onRetry: () => void;
 }) {
   const loadPlaylist = useAction(api.browserReplay.loadPlaylist);
   const [playlistState, setPlaylistState] = useState<ReplayPlaylistsState>({ kind: "loading" });
@@ -263,7 +290,20 @@ function BrowserReplayPlayer({
     setPlaying((current) => !current);
   };
 
+  const selectPage = (pageId: string | null) => {
+    setManualPageId(pageId);
+    if (pageId === null) return;
+    setPlaying(false);
+    const page = timeline.pages.find((page) => page.pageId === pageId);
+    if (page && (currentTimeMs < page.relativeStartMs || currentTimeMs > page.relativeEndMs)) {
+      seek(page.relativeStartMs);
+    }
+  };
+
   if (playlistState.kind !== "ready") {
+    if (mode === "playback") {
+      return <ReplayStatus state={playlistState.kind} onRetry={onRetry} />;
+    }
     return (
       <div
         className="flex items-center justify-center bg-neutral-950 px-4 text-center"
@@ -288,10 +328,20 @@ function BrowserReplayPlayer({
   ).length;
 
   return (
-    <div className="browser-replay__player">
+    <div
+      className={mode === "playback" ? "flex min-h-0 flex-1 flex-col" : "browser-replay__player"}
+    >
       <div
-        className="relative isolate overflow-hidden bg-neutral-950"
-        style={{ aspectRatio: `${replay.viewport.width} / ${replay.viewport.height}` }}
+        className={
+          mode === "playback"
+            ? "relative isolate min-h-0 flex-1 overflow-hidden bg-white"
+            : "relative isolate overflow-hidden bg-neutral-950"
+        }
+        style={
+          mode === "inspector"
+            ? { aspectRatio: `${replay.viewport.width} / ${replay.viewport.height}` }
+            : undefined
+        }
       >
         {timeline.pages.map((page) => {
           const playlist = playlistState.playlists.get(page.pageId);
@@ -329,17 +379,28 @@ function BrowserReplayPlayer({
           </svg>
         ) : null}
         {activeTrackFailed ? (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-neutral-950/90 px-8 text-center text-sm text-neutral-300">
-            This recording could not be played. Choose another track or refresh the replay.
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-neutral-950/90 px-8 text-center text-sm text-neutral-300">
+            {mode === "playback" ? (
+              <>
+                <p role="status">Couldn't play this recording.</p>
+                <Button type="button" variant="outline" onClick={onRetry}>
+                  Retry
+                </Button>
+              </>
+            ) : (
+              "This recording could not be played. Choose another track or refresh the replay."
+            )}
           </div>
         ) : activePageId === null ? (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-neutral-950/90 px-8 text-center text-sm text-neutral-300">
-            The active browser tab could not be matched to a recorded video track.
+            {mode === "playback"
+              ? "Choose a recording below."
+              : "The active browser tab could not be matched to a recorded video track."}
           </div>
         ) : null}
       </div>
 
-      <div className="border-t bg-background px-3 py-3 @md:px-4">
+      <div className="shrink-0 border-t bg-background px-3 py-3 @md:px-4">
         <div className="flex min-w-0 items-center gap-2">
           <Button
             type="button"
@@ -347,6 +408,7 @@ function BrowserReplayPlayer({
             variant="ghost"
             aria-label={playing ? "Pause replay" : "Play replay"}
             onClick={togglePlayback}
+            className={mode === "playback" ? "size-11" : undefined}
           >
             {playing ? <PauseIcon /> : <PlayIcon />}
           </Button>
@@ -364,136 +426,173 @@ function BrowserReplayPlayer({
                 seek(Number(event.currentTarget.value));
               }}
               aria-label="Replay position"
-              className="accent-primary block h-5 w-full cursor-pointer"
+              className={
+                mode === "playback"
+                  ? "accent-primary block h-11 w-full cursor-pointer"
+                  : "accent-primary block h-5 w-full cursor-pointer"
+              }
             />
-            <div className="pointer-events-none absolute inset-x-0 top-1/2 h-0" aria-hidden="true">
-              {timeline.transitions.map((transition) => (
-                <span
-                  key={`${transition.sequence}-${transition.fromTabId}-${transition.toTabId}`}
-                  className="absolute top-[-6px] h-3 min-w-px bg-foreground/60"
-                  style={{
-                    left: `${(transition.earliestTimeMs / Math.max(1, timeline.durationMs)) * 100}%`,
-                    width: `${Math.max(
-                      0.15,
-                      ((transition.latestTimeMs - transition.earliestTimeMs) /
-                        Math.max(1, timeline.durationMs)) *
-                        100,
-                    )}%`,
-                  }}
-                />
+            {mode === "inspector" && (
+              <div
+                className="pointer-events-none absolute inset-x-0 top-1/2 h-0"
+                aria-hidden="true"
+              >
+                {timeline.transitions.map((transition) => (
+                  <span
+                    key={`${transition.sequence}-${transition.fromTabId}-${transition.toTabId}`}
+                    className="absolute top-[-6px] h-3 min-w-px bg-foreground/60"
+                    style={{
+                      left: `${(transition.earliestTimeMs / Math.max(1, timeline.durationMs)) * 100}%`,
+                      width: `${Math.max(
+                        0.15,
+                        ((transition.latestTimeMs - transition.earliestTimeMs) /
+                          Math.max(1, timeline.durationMs)) *
+                          100,
+                      )}%`,
+                    }}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+          {mode === "playback" && (
+            <BrowserReplayExport
+              key={manualPageId ?? "automatic"}
+              sessionId={sessionId}
+              timeline={timeline}
+              manualPageId={manualPageId}
+              viewport={replay.viewport}
+              clicks={showClicks ? clickData.clicks : []}
+              mode="download"
+            />
+          )}
+        </div>
+
+        {mode === "playback" && (timeline.pages.length > 1 || automaticPageId === null) && (
+          <select
+            aria-label="Recorded tab"
+            value={manualPageId ?? ""}
+            onChange={(event) => selectPage(event.currentTarget.value || null)}
+            className="mt-2 min-h-11 w-full min-w-0 rounded-lg border bg-background px-2 text-sm"
+          >
+            <option value="">Automatic</option>
+            {timeline.pages.map((page, index) => (
+              <option key={page.pageId} value={page.pageId}>
+                {page.pageUrl
+                  ? `${index + 1}. ${new URL(page.pageUrl).hostname}`
+                  : `Recording ${index + 1}`}
+              </option>
+            ))}
+          </select>
+        )}
+
+        {mode === "inspector" && (
+          <>
+            <div className="mt-2 flex min-w-0 items-center gap-1 overflow-x-auto pb-1">
+              <button
+                type="button"
+                onClick={() => selectPage(null)}
+                className={`shrink-0 rounded-md border px-2 py-1 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 ${
+                  manualPageId === null
+                    ? "border-foreground/30 bg-foreground text-background"
+                    : "bg-background text-muted-foreground hover:text-foreground"
+                }`}
+                aria-pressed={manualPageId === null}
+              >
+                Follow activity
+              </button>
+              {timeline.pages.map((page, index) => (
+                <button
+                  key={page.pageId}
+                  type="button"
+                  onClick={() => selectPage(page.pageId)}
+                  className={`shrink-0 rounded-md border px-2 py-1 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 ${
+                    page.pageId === activePageId
+                      ? "border-foreground/30 bg-foreground text-background"
+                      : "bg-background text-muted-foreground hover:text-foreground"
+                  }`}
+                  aria-pressed={page.pageId === activePageId}
+                >
+                  {replayPageLabel(page, index)}
+                </button>
               ))}
             </div>
-          </div>
-        </div>
 
-        <div className="mt-2 flex min-w-0 items-center gap-1 overflow-x-auto pb-1">
-          <button
-            type="button"
-            onClick={() => setManualPageId(null)}
-            className={`shrink-0 rounded-md border px-2 py-1 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 ${
-              manualPageId === null
-                ? "border-foreground/30 bg-foreground text-background"
-                : "bg-background text-muted-foreground hover:text-foreground"
-            }`}
-            aria-pressed={manualPageId === null}
-          >
-            Follow activity
-          </button>
-          {timeline.pages.map((page, index) => (
-            <button
-              key={page.pageId}
-              type="button"
-              onClick={() => {
-                setPlaying(false);
-                setManualPageId(page.pageId);
-                if (currentTimeMs < page.relativeStartMs || currentTimeMs > page.relativeEndMs) {
-                  seek(page.relativeStartMs);
-                }
-              }}
-              className={`shrink-0 rounded-md border px-2 py-1 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 ${
-                page.pageId === activePageId
-                  ? "border-foreground/30 bg-foreground text-background"
-                  : "bg-background text-muted-foreground hover:text-foreground"
-              }`}
-              aria-pressed={page.pageId === activePageId}
-            >
-              {replayPageLabel(page, index)}
-            </button>
-          ))}
-        </div>
-
-        <div className="text-muted-foreground mt-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px]">
-          <span className="truncate">
-            {activePage
-              ? replayPageLabel(activePage, timeline.pages.indexOf(activePage))
-              : "Unmatched tab"}
-          </span>
-          <span>
-            {timeline.actionCount} {timeline.actionCount === 1 ? "action" : "actions"},{" "}
-            {timeline.pages.length} recorded {timeline.pages.length === 1 ? "tab" : "tabs"}
-          </span>
-        </div>
-        <p className="text-muted-foreground mt-2 text-[11px] leading-4">
-          {timeline.hasIntegrityGap ? "The operation log contains an evidence gap. " : ""}
-          {unmatchedPageCount > 0
-            ? `${unmatchedPageCount} ${unmatchedPageCount === 1 ? "recording is" : "recordings are"} unmatched and ${unmatchedPageCount === 1 ? "remains" : "remain"} available for manual inspection. `
-            : ""}
-          {timeline.transitions.length > 0
-            ? `${timeline.transitions.length} ${timeline.transitions.length === 1 ? "tab change is" : "tab changes are"} shown at the first confirming sample; each marker spans the interval in which the change occurred. `
-            : "No tab change was observed. "}
-          Tracks match automatically when a URL uniquely identifies one observed browser tab.
-          {failedPageIds.size > 0
-            ? ` ${failedPageIds.size} ${failedPageIds.size === 1 ? "recording could" : "recordings could"} not be loaded.`
-            : ""}
-        </p>
-        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={showClicks}
-              onChange={(event) => setShowClicks(event.currentTarget.checked)}
+            <div className="text-muted-foreground mt-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px]">
+              <span className="truncate">
+                {activePage
+                  ? replayPageLabel(activePage, timeline.pages.indexOf(activePage))
+                  : "Unmatched tab"}
+              </span>
+              <span>
+                {timeline.actionCount} {timeline.actionCount === 1 ? "action" : "actions"},{" "}
+                {timeline.pages.length} recorded {timeline.pages.length === 1 ? "tab" : "tabs"}
+              </span>
+            </div>
+            <p className="text-muted-foreground mt-2 text-[11px] leading-4">
+              {timeline.hasIntegrityGap ? "The operation log contains an evidence gap. " : ""}
+              {unmatchedPageCount > 0
+                ? `${unmatchedPageCount} ${unmatchedPageCount === 1 ? "recording is" : "recordings are"} unmatched and ${unmatchedPageCount === 1 ? "remains" : "remain"} available for manual inspection. `
+                : ""}
+              {timeline.transitions.length > 0
+                ? `${timeline.transitions.length} ${timeline.transitions.length === 1 ? "tab change is" : "tab changes are"} shown at the first confirming sample; each marker spans the interval in which the change occurred. `
+                : "No tab change was observed. "}
+              Tracks match automatically when a URL uniquely identifies one observed browser tab.
+              {failedPageIds.size > 0
+                ? ` ${failedPageIds.size} ${failedPageIds.size === 1 ? "recording could" : "recordings could"} not be loaded.`
+                : ""}
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={showClicks}
+                  onChange={(event) => setShowClicks(event.currentTarget.checked)}
+                />
+                Show clicks ({clickData.recorded})
+              </label>
+              {clickData.recorded > 0 ? (
+                <label className="flex items-center gap-2">
+                  Click timing (seconds)
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="-60"
+                    max="60"
+                    value={clickOffsetMs / 1_000}
+                    className="w-20 rounded border bg-background px-2 py-1"
+                    onChange={(event) => {
+                      const value = event.currentTarget.valueAsNumber;
+                      if (Number.isFinite(value))
+                        setClickOffsetMs(Math.max(-60, Math.min(60, value)) * 1_000);
+                    }}
+                  />
+                </label>
+              ) : null}
+            </div>
+            <p className="mt-2 text-[11px] leading-4 text-muted-foreground">
+              {clickData.recorded === 0
+                ? "No recorded clicks. Automatic markers require a new browser session with click capture enabled."
+                : "Timing is approximate. Adjust it while reviewing, then export. Positive values show clicks later."}
+              {clickData.unmapped > 0
+                ? ` ${clickData.unmapped} clicks could not be matched to a recorded tab and will not be shown.`
+                : ""}
+              {clickData.recorded > 0 && clickData.incomplete
+                ? " Some actions have missing or partial click capture."
+                : ""}{" "}
+              Captures top-level page clicks during agent actions. Iframe clicks and human-control
+              intervals are not captured.
+            </p>
+            <BrowserReplayExport
+              sessionId={sessionId}
+              timeline={timeline}
+              manualPageId={manualPageId}
+              viewport={replay.viewport}
+              clicks={showClicks ? clickData.clicks : []}
+              mode="inspector"
             />
-            Show clicks ({clickData.recorded})
-          </label>
-          {clickData.recorded > 0 ? (
-            <label className="flex items-center gap-2">
-              Click timing (seconds)
-              <input
-                type="number"
-                step="0.1"
-                min="-60"
-                max="60"
-                value={clickOffsetMs / 1_000}
-                className="w-20 rounded border bg-background px-2 py-1"
-                onChange={(event) => {
-                  const value = event.currentTarget.valueAsNumber;
-                  if (Number.isFinite(value))
-                    setClickOffsetMs(Math.max(-60, Math.min(60, value)) * 1_000);
-                }}
-              />
-            </label>
-          ) : null}
-        </div>
-        <p className="mt-2 text-[11px] leading-4 text-muted-foreground">
-          {clickData.recorded === 0
-            ? "No recorded clicks. Automatic markers require a new browser session with click capture enabled."
-            : "Timing is approximate. Adjust it while reviewing, then export. Positive values show clicks later."}
-          {clickData.unmapped > 0
-            ? ` ${clickData.unmapped} clicks could not be matched to a recorded tab and will not be shown.`
-            : ""}
-          {clickData.recorded > 0 && clickData.incomplete
-            ? " Some actions have missing or partial click capture."
-            : ""}{" "}
-          Captures top-level page clicks during agent actions. Iframe clicks and human-control
-          intervals are not captured.
-        </p>
-        <BrowserReplayExport
-          sessionId={sessionId}
-          timeline={timeline}
-          manualPageId={manualPageId}
-          viewport={replay.viewport}
-          clicks={showClicks ? clickData.clicks : []}
-        />
+          </>
+        )}
       </div>
     </div>
   );

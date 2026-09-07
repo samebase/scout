@@ -8,6 +8,7 @@ import { afterEach, expect, test, vi } from "vite-plus/test";
 import { api, components, internal } from "./_generated/api";
 import schema from "./schema";
 import * as models from "./scout/models";
+import { omitNullish } from "../shared/omitNullish";
 import { bundledSkills } from "./scout/skills";
 
 vi.mock("@ai-sdk/mcp", async () => {
@@ -38,7 +39,7 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-async function setup(responses: LanguageModelV4StreamPart[][]) {
+async function setup(responses: LanguageModelV4StreamPart[][], purpose?: "play") {
   vi.stubEnv("FIRECRAWL_API_KEY", "test-firecrawl");
   vi.stubEnv("AGENTMAIL_API_KEY", "test-agentmail");
   const model = new MockLanguageModelV4({
@@ -72,7 +73,10 @@ async function setup(responses: LanguageModelV4StreamPart[][]) {
     }),
   }));
   const owner = backend.withIdentity({ subject: `${userId}|session` });
-  const { threadId } = await owner.mutation(api.scout.chats.createThread, { scoutId });
+  const { threadId } = await owner.mutation(api.scout.chats.createThread, {
+    scoutId,
+    ...omitNullish({ purpose }),
+  });
   const startTurn = async (content: string) => {
     const {
       messages: [prompt],
@@ -108,7 +112,7 @@ async function setup(responses: LanguageModelV4StreamPart[][]) {
       state: () => backend.run(async (ctx) => (await ctx.db.get(turnId))?.state),
     };
   };
-  return { backend, model, startTurn };
+  return { backend, model, startTurn, owner, threadId };
 }
 
 function reply(text: string): LanguageModelV4StreamPart[] {
@@ -206,4 +210,93 @@ test("starts directly, retains guides on follow-ups, and switches or clears them
       expect(prompt.split(body)).toHaveLength(expectedGuides[index].includes(name) ? 2 : 1);
     }
   }
+});
+
+test("persists Play activity through slices and follow-ups without rewriting the transcript", async () => {
+  const t = await setup(
+    [
+      [
+        {
+          type: "tool-call",
+          toolCallId: "activity-1",
+          toolName: "set_activity_step",
+          input: '{"step":"research"}',
+        },
+      ],
+      reply("We can play without an account. Here are the rules."),
+      [
+        {
+          type: "tool-call",
+          toolCallId: "activity-2",
+          toolName: "set_activity_step",
+          input: '{"step":"play"}',
+        },
+      ],
+      reply("I'll take blue. Your turn."),
+    ],
+    "play",
+  );
+  const turn = await t.startTurn("Help me learn this game.");
+  await expect(turn.run()).resolves.toEqual({ kind: "continued" });
+  const threads = () =>
+    t.owner.query(api.scout.chats.listThreads, { paginationOpts: { cursor: null, numItems: 10 } });
+  expect((await threads()).page[0].play).toEqual({ step: "research" });
+  await expect(turn.run()).resolves.toEqual({ kind: "completed" });
+  expect(JSON.stringify(t.model.doStreamCalls[1].prompt)).toContain("Current activity: research");
+  expect((await threads()).page[0].play).toEqual({ step: "research" });
+  const followup = await t.startTurn("Let's play now.");
+  await expect(followup.run()).resolves.toEqual({ kind: "continued" });
+  expect((await threads()).page[0].play).toEqual({ step: "play" });
+  await expect(followup.run()).resolves.toEqual({ kind: "completed" });
+  const messages = await t.owner.query(api.scout.chats.listMessages, {
+    threadId: t.threadId,
+    paginationOpts: { cursor: null, numItems: 50 },
+  });
+  expect(
+    messages.page.filter((message) => message.role === "user").map((message) => message.text),
+  ).toEqual(["Help me learn this game.", "Let's play now."]);
+  expect(
+    messages.page.some((message) => JSON.stringify(message.parts).includes("set_activity_step")),
+  ).toBe(true);
+  const context = await t.owner.query(api.scout.chats.getThreadAgentContext, {
+    threadId: t.threadId,
+  });
+  expect(context.instructions).toContain("Current activity: play");
+  await expect(
+    t.backend.mutation(internal.scout.chats.setActivityStep, {
+      turnId: turn.turnId,
+      step: "account_setup",
+    }),
+  ).rejects.toThrow("Active Scout turn not found");
+});
+
+test("Play tools and scope are absent from ordinary Lab chats", async () => {
+  const t = await setup([reply("4")]);
+  const turn = await t.startTurn("What is 2 + 2?");
+  await turn.run();
+  expect(t.model.doStreamCalls[0].tools).not.toEqual(
+    expect.arrayContaining([expect.objectContaining({ name: "set_activity_step" })]),
+  );
+  expect(JSON.stringify(t.model.doStreamCalls[0].prompt)).not.toContain("This is Scout Play.");
+});
+
+test("only a live Play turn can change its activity", async () => {
+  const lab = await setup([]);
+  const labTurn = await lab.startTurn("Hello");
+  await expect(
+    lab.backend.mutation(internal.scout.chats.setActivityStep, {
+      turnId: labTurn.turnId,
+      step: "play",
+    }),
+  ).rejects.toThrow("Play chat not found");
+  const t = await setup([], "play");
+  const turn = await t.startTurn("Let's play");
+  await t.backend.run(async (ctx) => {
+    const doc = await ctx.db.get(turn.turnId);
+    if (!doc || doc.state.kind !== "pending") throw new Error("Missing pending turn");
+    await ctx.db.patch(doc._id, { state: { ...doc.state, leaseExpiresAt: Date.now() - 1 } });
+  });
+  await expect(
+    t.backend.mutation(internal.scout.chats.setActivityStep, { turnId: turn.turnId, step: "play" }),
+  ).rejects.toThrow("Active Scout turn not found");
 });
