@@ -36,7 +36,6 @@ import { playError, playLoading, playNotice, playRouteMessage, playTextLink } fr
 
 type Scout = FunctionReturnType<typeof api.scout.scouts.list>[number];
 type ChatThread = FunctionReturnType<typeof api.scout.chats.listThreads>["page"][number];
-type BrowserSession = FunctionReturnType<typeof api.scout.browserSessions.list>[number];
 type Activity = FunctionReturnType<typeof api.scout.chats.getScoutActivity>;
 type ThreadActivity = Extract<Activity, { threadId: string }>;
 type RequestState = { kind: "idle" } | { kind: "pending" } | { kind: "failed"; message: string };
@@ -323,12 +322,9 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
   const { threadId } = thread;
   const activity = useQuery(api.scout.chats.getScoutActivity, { threadId });
   const sessions = useQuery(api.scout.browserSessions.list, { threadId });
-  const [selectedSessionId, setSelectedSessionId] = useState<BrowserSession["sessionId"] | null>(
-    null,
-  );
   const latestSession = sessions?.at(-1);
   const session =
-    sessions?.find((session) => session.sessionId === selectedSessionId) ?? latestSession;
+    sessions?.find((session) => session.sessionId === search.session) ?? latestSession;
   const liveView = useQuery(
     api.scout.browserSessions.liveView,
     session && session.lifecycle.kind !== "closed" ? { sessionId: session.sessionId } : "skip",
@@ -410,7 +406,14 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
             const selected = sessions.find(
               (session) => session.sessionId === event.currentTarget.value,
             );
-            if (selected) setSelectedSessionId(selected.sessionId);
+            if (selected)
+              void navigate({
+                search: (previous) => ({
+                  ...previous,
+                  session: selected.sessionId,
+                  replay: undefined,
+                }),
+              });
           }}
           className="min-h-11 min-w-0 flex-1 rounded-lg bg-transparent pr-1 font-medium"
         >
@@ -626,6 +629,7 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
                 void navigate({
                   search: (previous) => ({
                     ...previous,
+                    session: session.sessionId,
                     replay: pageId === null ? undefined : { sessionId: session.sessionId, pageId },
                   }),
                 });

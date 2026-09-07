@@ -76,13 +76,7 @@ export async function runWorkspaceShell(args: {
     if (entry.kind !== "file") continue;
     const bytes = await args.readFile(entry);
     inputBytes += bytes.byteLength;
-    if (
-      bytes.byteLength > MAX_WORKSPACE_FILE_BYTES ||
-      inputBytes > MAX_WORKSPACE_BYTES ||
-      bytes.byteLength !== entry.size ||
-      createHash("sha256").update(bytes).digest("hex") !== entry.sha256
-    )
-      throw new Error(`Workspace file failed its size or integrity check: ${entry.path}`);
+    if (inputBytes > MAX_WORKSPACE_BYTES) throw new Error("Workspace size limit exceeded");
     initialFiles[entry.path] = { content: bytes, mode: entry.mode, mtime: new Date(entry.mtime) };
   }
   const fs = new InMemoryFs(initialFiles, { maxTotalBytes: MAX_WORKSPACE_BYTES });
@@ -158,7 +152,10 @@ export async function runWorkspaceShell(args: {
       if (!key) writes.push({ path, bytes });
     }
   }
-  const nextCwd = result.env["PWD"] ?? args.cwd;
+  const requestedCwd = result.env["PWD"] ?? args.cwd;
+  const nextCwd = (await fs.exists(requestedCwd))
+    ? await fs.realpath(requestedCwd)
+    : WORKSPACE_ROOT;
   const cwd = entries.some((entry) => entry.path === nextCwd && entry.kind === "directory")
     ? nextCwd
     : WORKSPACE_ROOT;

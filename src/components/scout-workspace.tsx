@@ -271,14 +271,23 @@ function WorkspaceFileViewer({ threadId, path }: { threadId: string; path: strin
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<
     | { kind: "loading" }
-    | { kind: "ready"; file: FunctionReturnType<typeof api.scout.workspaceTools.readFile> }
+    | {
+        kind: "ready";
+        file: FunctionReturnType<typeof api.scout.workspaceTools.readFile>;
+        downloadUrl: string;
+      }
     | { kind: "failed"; error: string }
   >({ kind: "loading" });
   useEffect(() => {
     let cancelled = false;
+    let downloadUrl: string | undefined;
     void readFile({ threadId, path }).then(
       (file) => {
-        if (!cancelled) setState({ kind: "ready", file });
+        if (cancelled) return;
+        downloadUrl = URL.createObjectURL(
+          new Blob([file.bytes], { type: "application/octet-stream" }),
+        );
+        setState({ kind: "ready", file, downloadUrl });
       },
       (error: unknown) => {
         if (!cancelled)
@@ -290,6 +299,7 @@ function WorkspaceFileViewer({ threadId, path }: { threadId: string; path: strin
     );
     return () => {
       cancelled = true;
+      if (downloadUrl) URL.revokeObjectURL(downloadUrl);
     };
   }, [attempt, path, readFile, threadId]);
   return (
@@ -300,9 +310,8 @@ function WorkspaceFileViewer({ threadId, path }: { threadId: string; path: strin
         </span>
         {state.kind === "ready" ? (
           <a
-            href={state.file.url}
-            target="_blank"
-            rel="noreferrer"
+            href={state.downloadUrl}
+            download={state.file.path.split("/").at(-1)}
             className="shrink-0 underline underline-offset-4"
           >
             Download

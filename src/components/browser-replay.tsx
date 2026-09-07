@@ -28,10 +28,8 @@ type ReplaySelection = {
 };
 
 export function BrowserReplay(
-  props: { sessionId: BrowserSessionId } & ReplaySelection & (
-    | { mode: "playback"; header: ReactNode }
-    | { mode: "inspector" }
-  ),
+  props: { sessionId: BrowserSessionId } & ReplaySelection &
+    ({ mode: "playback"; header: ReactNode } | { mode: "inspector" }),
 ) {
   const { sessionId, mode, selectedPageId, onSelectPage } = props;
   const listPages = useAction(api.browserReplay.listPages);

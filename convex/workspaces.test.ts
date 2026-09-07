@@ -91,12 +91,13 @@ describe("workspace persistence and access", () => {
       key: expect.stringContaining(`/users/${userId}/threads/${threadId}/files/`),
     });
     expect([...blobs.keys()][0]).toMatch(/\/reports\/hello\.txt$/);
-    expect(
-      await owner.action(api.scout.workspaceTools.readFile, {
-        threadId,
-        path: "/workspace/reports/hello.txt",
-      }),
-    ).toMatchObject({ text: "hello\n" });
+    const preview = await owner.action(api.scout.workspaceTools.readFile, {
+      threadId,
+      path: "/workspace/reports/hello.txt",
+    });
+    expect(preview.text).toBe("hello\n");
+    expect(new Uint8Array(preview.bytes)).toEqual(new TextEncoder().encode("hello\n"));
+    expect(preview).not.toHaveProperty("url");
     const second = await run("cat hello.txt");
     if (second.outcome.kind !== "success") throw new Error(second.outcome.error);
     expect(bashResultSchema.parse(JSON.parse(second.outcome.output))).toMatchObject({
@@ -254,20 +255,46 @@ js-exec report.ts`);
     expect(deleted).toHaveLength(2);
   });
 
-  it("reports missing or corrupt stored files rather than silently substituting empty content", async () => {
+  it("returns exact binary bytes for download without a text preview", async () => {
     const { owner, threadId, run } = await setup();
-    await run("printf original > report.txt");
-    const before = await owner.query(api.scout.workspaces.list, { threadId });
-    for (const key of blobs.keys()) blobs.set(key, new TextEncoder().encode("corrupt"));
-    expect((await run("cat report.txt")).outcome).toMatchObject({
-      kind: "error",
-      error: expect.stringContaining("integrity"),
+    await run("printf /wAB | base64 -d > bytes.bin");
+    const file = await owner.action(api.scout.workspaceTools.readFile, {
+      threadId,
+      path: "/workspace/bytes.bin",
     });
-    blobs.clear();
-    expect((await run("cat report.txt")).outcome).toMatchObject({
-      kind: "error",
-      error: expect.stringContaining("404"),
-    });
-    expect(await owner.query(api.scout.workspaces.list, { threadId })).toEqual(before);
+    expect(file.text).toBeNull();
+    expect(new Uint8Array(file.bytes)).toEqual(new Uint8Array([255, 0, 1]));
   });
+
+  it.each(["corrupt", "modified"])(
+    "rejects missing or corrupt bytes in both shell and preview reads: %s",
+    async (corrupted) => {
+      const { owner, threadId, run } = await setup();
+      await run("printf original > report.txt");
+      const before = await owner.query(api.scout.workspaces.list, { threadId });
+      for (const key of blobs.keys()) blobs.set(key, new TextEncoder().encode(corrupted));
+      await expect(
+        owner.action(api.scout.workspaceTools.readFile, {
+          threadId,
+          path: "/workspace/report.txt",
+        }),
+      ).rejects.toThrow("integrity");
+      expect((await run("cat report.txt")).outcome).toMatchObject({
+        kind: "error",
+        error: expect.stringContaining("integrity"),
+      });
+      blobs.clear();
+      await expect(
+        owner.action(api.scout.workspaceTools.readFile, {
+          threadId,
+          path: "/workspace/report.txt",
+        }),
+      ).rejects.toThrow("404");
+      expect((await run("cat report.txt")).outcome).toMatchObject({
+        kind: "error",
+        error: expect.stringContaining("404"),
+      });
+      expect(await owner.query(api.scout.workspaces.list, { threadId })).toEqual(before);
+    },
+  );
 });

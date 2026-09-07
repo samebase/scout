@@ -1,6 +1,6 @@
 "use node";
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { tool } from "ai";
 import { v } from "convex/values";
 import { internal } from "../_generated/api";
@@ -18,15 +18,19 @@ import {
 import { workspaceStorage } from "../workspaceStorage";
 import { runWorkspaceShell } from "./workspaceShell";
 
-async function readStoredFile(key: string) {
-  const response = await fetch(await workspaceStorage().getUrl(key), {
+async function readStoredFile(entry: Extract<WorkspaceEntry, { kind: "file" }>) {
+  const response = await fetch(await workspaceStorage().getUrl(entry.key), {
     signal: AbortSignal.timeout(20_000),
   });
   if (!response.ok)
     throw new Error(`Workspace file could not be read from R2 (${response.status})`);
   const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.byteLength > MAX_WORKSPACE_FILE_BYTES)
-    throw new Error("Workspace file exceeds the size limit");
+  if (
+    bytes.byteLength > MAX_WORKSPACE_FILE_BYTES ||
+    bytes.byteLength !== entry.size ||
+    createHash("sha256").update(bytes).digest("hex") !== entry.sha256
+  )
+    throw new Error(`Workspace file failed its size or integrity check: ${entry.path}`);
   return bytes;
 }
 
@@ -47,7 +51,7 @@ export function createWorkspaceTools(
           command,
           cwd: snapshot.cwd,
           entries: snapshot.entries,
-          readFile: (entry) => readStoredFile(entry.key),
+          readFile: readStoredFile,
         });
         const deploymentUrl = getRuntimeEnv("CONVEX_CLOUD_URL");
         if (!deploymentUrl) throw new Error("Convex deployment URL is not configured");
@@ -88,7 +92,7 @@ export function createWorkspaceTools(
 const filePreviewValidator = v.object({
   path: v.string(),
   text: v.union(v.string(), v.null()),
-  url: v.string(),
+  bytes: v.bytes(),
 });
 
 export const readFile = action({
@@ -98,7 +102,7 @@ export const readFile = action({
   handler: async (ctx, args): Promise<typeof filePreviewValidator.type> => {
     const entry: WorkspaceEntry = await ctx.runQuery(internal.scout.workspaces.fileForViewer, args);
     if (entry.kind !== "file") throw new Error("Select a regular file to preview");
-    const bytes = await readStoredFile(entry.key);
+    const bytes = await readStoredFile(entry);
     let text: string | null = null;
     try {
       const decoded = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
@@ -106,6 +110,6 @@ export const readFile = action({
     } catch {
       // Non-UTF-8 files remain downloadable without lossy text conversion.
     }
-    return { path: entry.path, text, url: await workspaceStorage().getUrl(entry.key) };
+    return { path: entry.path, text, bytes: bytes.buffer };
   },
 });

@@ -87,12 +87,13 @@ the existing cloud development deployment. Production is not configured. The loc
 has been verified against real R2 for file creation, preview, reload, rename, update, and cleanup.
 An isolated cloud dev deployment has also passed manual and AI Gateway tests running TypeScript
 with local imports, saving JSON to R2, and reading it in a separate tool call and a fresh page load.
-See [cloud worktree setup](./local-setup.md#cloud-backend-for-a-worktree)
-to run the full agent instead of only the anonymous backend's manual terminal.
+See [cloud worktree setup](./local-setup.md#run-the-app) to select an isolated cloud development
+deployment. Scout's worktree launcher requires cloud mode for AI Gateway.
 
-Uploads and text-preview reads happen server-side. Downloads use short-lived signed links. The
-MVP needs neither a public bucket nor browser-upload CORS. Signed links grant access to the file
-until they expire, so treat them as private.
+Uploads and file reads happen server-side. Both Bash and the preview check the stored byte count
+and hash before using a file. Download saves those same verified preview bytes through a browser
+object URL, which stays valid until the preview closes or changes. No public bucket or browser
+R2 CORS is needed; signed R2 links stay on the server.
 
 ## Where files live
 

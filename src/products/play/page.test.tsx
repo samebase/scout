@@ -504,7 +504,7 @@ test("selects older replays without changing the conversation or current handoff
     expiresAt: Date.now() + 60_000,
   });
   remote.queries.set("humanHandoffs:forSession:older", null);
-  await openPlay("/play/session?thread=game-thread");
+  const router = await openPlay("/play/session?thread=game-thread");
   fireEvent.click(screen.getByRole("button", { name: "Show Scout’s view" }));
   const selector = screen.getByRole<HTMLSelectElement>("combobox", { name: "Browser session" });
   expect(selector.value).toBe("current");
@@ -514,6 +514,8 @@ test("selects older replays without changing the conversation or current handoff
   });
   fireEvent.change(selector, { target: { value: "older" } });
   await waitFor(() => expect(remote.listReplayPages).toHaveBeenCalledWith({ sessionId: "older" }));
+  expect(router.state.location.search.session).toBe("older");
+  const bookmark = router.state.location.href;
   expect(screen.queryByTitle("Scout's live game browser")).toBeNull();
   expect(screen.getByRole("link", { name: "Open browser handoff" }).getAttribute("href")).toBe(
     "/handoff/current-handoff",
@@ -523,6 +525,19 @@ test("selects older replays without changing the conversation or current handoff
   expect(remote.sendMessage).not.toHaveBeenCalled();
   expect(remote.stop).not.toHaveBeenCalled();
 
+  act(() => router.history.back());
+  await waitFor(() =>
+    expect(screen.getByRole<HTMLSelectElement>("combobox", { name: "Browser session" }).value).toBe(
+      "current",
+    ),
+  );
+  act(() => router.history.forward());
+  await waitFor(() =>
+    expect(screen.getByRole<HTMLSelectElement>("combobox", { name: "Browser session" }).value).toBe(
+      "older",
+    ),
+  );
+
   act(() => {
     remote.queries.set("scout/browserSessions:list", [
       ...sessions,
@@ -531,6 +546,11 @@ test("selects older replays without changing the conversation or current handoff
     remote.revision += 1;
     remote.subscribers.forEach((listener) => listener());
   });
+  expect(screen.getByRole<HTMLSelectElement>("combobox", { name: "Browser session" }).value).toBe(
+    "older",
+  );
+  cleanup();
+  await openPlay(bookmark);
   expect(screen.getByRole<HTMLSelectElement>("combobox", { name: "Browser session" }).value).toBe(
     "older",
   );

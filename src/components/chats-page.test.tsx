@@ -130,6 +130,10 @@ function threadPage(
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.spyOn(URL, "createObjectURL").mockImplementation(
+    () => `blob:https://scout.test/${crypto.randomUUID()}`,
+  );
+  vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
   remote.authenticated = true;
   remote.queries.clear();
   remote.queries.set("accounts:currentViewerAccess", {
@@ -177,6 +181,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 async function openChats(path = "/chats?thread=thread-1") {
@@ -235,11 +240,13 @@ describe("Chat workspace", () => {
     });
     remote.actions.set(
       "scout/workspaceTools:readFile",
-      vi
-        .fn()
-        .mockImplementation(({ path }: { path: string }) =>
-          Promise.resolve({ path, text: `Contents of ${path}`, url: "https://example.test/file" }),
-        ),
+      vi.fn().mockImplementation(({ path }: { path: string }) =>
+        Promise.resolve({
+          path,
+          text: `Contents of ${path}`,
+          bytes: new TextEncoder().encode(`Contents of ${path}`).buffer,
+        }),
+      ),
     );
   }
 
@@ -455,7 +462,9 @@ describe("Chat workspace", () => {
     expect(screen.getByLabelText("Bash command").textContent).toBe("");
   });
 
-  test("shows a named file preview and download while treating HTML as text", async () => {
+  test("downloads the previewed bytes without expiry, treats HTML as text, and releases the URL on close", async () => {
+    const createObjectURL = vi.spyOn(URL, "createObjectURL");
+    const revokeObjectURL = vi.spyOn(URL, "revokeObjectURL");
     remote.queries.set("scout/workspaces:list", {
       configured: true,
       cwd: "/workspace",
@@ -478,7 +487,7 @@ describe("Chat workspace", () => {
       vi.fn().mockResolvedValue({
         path: "/workspace/report.html",
         text: "<script>bad()</script>",
-        url: "https://storage.example.test/signed-file",
+        bytes: new TextEncoder().encode("<script>bad()</script>").buffer,
       }),
     );
     await openChats();
@@ -489,9 +498,20 @@ describe("Chat workspace", () => {
       "<script>bad()</script>",
     );
     expect(screen.getByLabelText("File contents").querySelector("script")).toBeNull();
-    expect(screen.getByRole("link", { name: "Download" }).getAttribute("href")).toBe(
-      "https://storage.example.test/signed-file",
-    );
+    const download = screen.getByRole("link", { name: "Download" });
+    const url = download.getAttribute("href");
+    expect(url).toMatch(/^blob:/);
+    expect(download.getAttribute("download")).toBe("report.html");
+    const blob = createObjectURL.mock.calls[0]?.[0];
+    if (!(blob instanceof Blob)) throw new Error("Expected a downloadable Blob");
+    expect(blob.type).toBe("application/octet-stream");
+    expect(await blob.text()).toBe("<script>bad()</script>");
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.now() + 16 * 60 * 1_000);
+    expect(download.getAttribute("href")).toBe(url);
+    expect(revokeObjectURL).not.toHaveBeenCalled();
+    cleanup();
+    expect(revokeObjectURL).toHaveBeenCalledExactlyOnceWith(url);
   });
 
   test("disables the terminal with an actionable message when storage is missing", async () => {

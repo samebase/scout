@@ -59,6 +59,43 @@ describe("persistent just-bash workspace", () => {
     expect(result.writes).toHaveLength(0);
   });
 
+  it("keeps an empty directory selected through a symlink and writes there on the next call", async () => {
+    const session = workspaceSession();
+    const first = await session.run(
+      "mkdir -p reports/empty; ln -s reports/empty latest; cd latest; pwd",
+    );
+    expect(first.output).toMatchObject({
+      exitCode: 0,
+      stdout: "/workspace/latest\n",
+      cwd: "/workspace/reports/empty",
+    });
+    expect(session.entries()).toContainEqual(
+      expect.objectContaining({
+        kind: "directory",
+        path: "/workspace/reports/empty",
+      }),
+    );
+    expect(session.entries().some((entry) => entry.kind === "file")).toBe(false);
+    expect((await session.run("printf saved > report.txt; pwd")).output).toMatchObject({
+      exitCode: 0,
+      stdout: "/workspace/reports/empty\n",
+    });
+    expect((await session.run("cat /workspace/latest/report.txt")).output.stdout).toBe("saved");
+    expect(session.entries().some((entry) => entry.path === "/workspace/report.txt")).toBe(false);
+  });
+
+  it.each([
+    "mkdir empty; cd empty; rmdir /workspace/empty",
+    "mkdir /tmp; ln -s /tmp temporary; cd temporary",
+  ])("returns to the root when the selected directory is not persisted: %s", async (command) => {
+    const session = workspaceSession();
+    expect((await session.run(command)).output).toMatchObject({
+      exitCode: 0,
+      cwd: WORKSPACE_ROOT,
+    });
+    expect((await session.run("pwd")).output.stdout).toBe("/workspace\n");
+  });
+
   it("persists append, folder rename, copy, and recursive deletion", async () => {
     const session = workspaceSession();
     await session.run("mkdir -p source; printf 'one\\n' > source/a.txt");
