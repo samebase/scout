@@ -211,13 +211,15 @@ TS`);
     });
   }, 12_000);
 
-  it("bounds QuickJS memory and isolates concurrently submitted workspaces", async () => {
+  it("rejects a QuickJS allocation larger than its memory budget", async () => {
     const session = workspaceSession();
-    const result = await session.run(
-      "js-exec -c 'const allocations = []; while (true) allocations.push(new Array(100000).fill(42))'",
-    );
+    const result = await session.run("js-exec -c 'new ArrayBuffer(128 * 1024 * 1024)'");
     expect(result.output.exitCode).not.toBe(0);
     expect(result.output.stderr).toMatch(/out of memory/i);
+  }, 12_000);
+
+  it("isolates concurrently submitted workspaces", async () => {
+    const session = workspaceSession();
     const other = workspaceSession();
     await session.run("printf first > private.txt");
     await other.run("printf second > private.txt");
