@@ -1372,10 +1372,23 @@ describe("Chat workspace", () => {
     const closed = { ...session("session-1", 1), lifecycle: { kind: "closed", closedAt: 2 } };
     remote.queries.set("scout/browserSessions:list", [closed]);
     remote.queries.set("scout/browserSessions:get:session-1", { ...closed, operations: [] });
+    remote.listReplayPages.mockResolvedValue({
+      status: "ready",
+      viewport: closed.viewport,
+      pages: [
+        { pageId: "old-page", pageUrl: "https://first.test", startTimeMs: 0, endTimeMs: 5_000 },
+      ],
+      operations: [],
+    });
+    remote.actions.set(
+      "browserReplay:loadPlaylist",
+      vi.fn().mockResolvedValue({ status: "ready", playlist: "#EXTM3U" }),
+    );
     const user = userEvent.setup();
     const router = await openChats();
-    await screen.findByText("No replay");
+    await user.click(await screen.findByRole("button", { name: "first.test" }));
     await waitFor(() => expect(router.state.location.search.session).toBe("session-1"));
+    expect(router.state.location.search.replayPage).toBe("old-page");
     await user.type(screen.getByRole("textbox", { name: "Message Scout" }), "Continue later");
 
     const active = session("session-2", 2);
@@ -1392,12 +1405,13 @@ describe("Chat workspace", () => {
     expect(picker.value).toBe("session-2");
     expect(await screen.findByTitle("Live browser session 2")).toBeTruthy();
     expect(router.state.location.search.session).toBe("session-2");
+    expect(router.state.location.search.replayPage).toBeUndefined();
     expect(screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Message Scout" }).value).toBe(
       "Continue later",
     );
 
     await user.selectOptions(picker, "session-1");
-    expect(await screen.findByText("No replay")).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "first.test" })).toBeTruthy();
     expect(router.state.location.search.session).toBe("session-1");
   });
 

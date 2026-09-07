@@ -538,7 +538,12 @@ function ChatsWorkspace() {
     void navigate({
       to: "/chats",
       replace: true,
-      search: (previous) => ({ ...previous, thread: threadId, session: sessionId }),
+      search: (previous) => ({
+        ...previous,
+        thread: threadId,
+        session: sessionId,
+        replayPage: previous.session === sessionId ? previous.replayPage : undefined,
+      }),
     });
   }, [
     browserSessions,
