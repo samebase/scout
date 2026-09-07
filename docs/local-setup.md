@@ -36,8 +36,21 @@ pnpm run dev
 `pnpm run dev` starts Convex and TanStack Start together. On the first run,
 Convex may ask you to sign in and choose or create a development deployment.
 The dev script also creates Convex Auth JWT keys in that development deployment
-if they are missing. In a linked Git worktree, it automatically uses an isolated
-local backend, seeds the standard development account, and adds an **Autofill & sign in** action.
+if they are missing. Scout uses Convex AI Gateway, which requires a cloud backend;
+anonymous and local backends cannot run its model calls.
+
+For a linked Git worktree, create and select a separate cloud dev deployment once.
+Replace the team, project, and feature below with your own values:
+
+```sh
+pnpm exec convex deployment create <team>:<project>:dev/<feature> --type dev --select
+pnpm run dev
+```
+
+New cloud dev deployments inherit the project's dev environment defaults. The worktree
+launcher seeds the standard development account and adds an **Autofill & sign in** action.
+It refuses anonymous deployments and a deployment shared with the primary checkout.
+Changing deployments does not move existing chats, Scouts, or saved accounts.
 
 The primary checkout reserves `http://localhost:5173` and stops if that port is occupied.
 Linked worktrees start at port `5174` and try higher ports when needed. Open the local URL
@@ -57,6 +70,18 @@ deployment does not copy development Scouts or credentials into production.
 
 Set `AGENTMAIL_API_KEY` before registering a Scout. Registration verifies an existing AgentMail
 inbox; it does not create one. Browser tasks also require `FIRECRAWL_API_KEY`.
+
+Configure `AGENTMAIL_API_KEY`, `FIRECRAWL_API_KEY`, and `SCOUT_CREDENTIAL_MASTER_KEY_V1`
+as project defaults for both **dev** and **preview** deployments. For example, omit the
+value to enter it privately:
+
+```sh
+pnpm exec convex env default set FIRECRAWL_API_KEY --type dev
+pnpm exec convex env default set FIRECRAWL_API_KEY --type preview
+```
+
+Convex applies defaults when creating a deployment; changing defaults does not update
+existing deployments. Use deployment-specific commands for those:
 
 ```sh
 pnpm exec convex env set AGENTMAIL_API_KEY
@@ -96,10 +121,10 @@ Preparation does not prove the remote account exists: successful signup or login
 with `record_authenticated_service_account`. OAuth accounts refer to the exact provider account
 belonging to the same scout.
 
-## Force worktree mode
+## Worktree mode
 
-Use the normal `pnpm run dev` command in a linked Git worktree. Use the explicit
-worktree command to force an isolated local backend in another checkout.
+Use the normal `pnpm run dev` command in a linked Git worktree. The explicit command
+runs the same worktree checks and startup:
 
 ```sh
 pnpm run dev:worktree

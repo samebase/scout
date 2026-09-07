@@ -1080,4 +1080,4 @@ chats, messages, files, and shared Scouts (`convex/accountDeletion.ts`, `src/rou
 Play starts with a message and keeps Scout’s commentary beside its browser, with mobile view switching.
 The agent can save its current activity on the chat; existing turns still own stopping and handoffs.
 Full transcripts remain in Lab (`src/products/play/page.tsx`, `convex/scout/play.ts`).
-
+Worktree development uses a separate cloud deployment so model calls can reach Convex AI Gateway.
