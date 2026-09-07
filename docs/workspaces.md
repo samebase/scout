@@ -162,10 +162,11 @@ Convex stores the directory listing, ownership binding, hashes, and current revi
 file bytes. An object key looks like:
 
 ```text
-deployments/<deployment>/users/<user-id>/threads/<thread-id>/files/<upload-id>/reports/scores.csv
+deployments/<deployment>/users/<user-id>/threads/<thread-id>/files/reports/scores.csv/<upload-id>
 ```
 
-Names are URL-encoded by path segment. Each changed file gets a new upload ID, so a failed upload
+The workspace path comes first so uploads are grouped by file when browsing R2. Names are
+URL-encoded by path segment. Each changed file gets a new upload ID, so a failed upload
 cannot overwrite the currently saved bytes. Unchanged files reuse their existing object. A
 successful commit schedules deletion of replaced or removed objects through the R2 component.
 

@@ -135,7 +135,7 @@ describe("workspace persistence and access", () => {
     expect(workspace.entries.find((entry) => entry.kind === "file")).toMatchObject({
       key: expect.stringContaining(`/users/${userId}/threads/${threadId}/files/`),
     });
-    expect([...blobs.keys()][0]).toMatch(/\/reports\/hello\.txt$/);
+    expect([...blobs.keys()][0]).toMatch(/\/files\/reports\/hello\.txt\/[a-f0-9-]{36}$/);
     const preview = await owner.action(api.scout.workspaceTools.readFile, {
       threadId,
       path: "/workspace/reports/hello.txt",
@@ -193,7 +193,7 @@ js-exec report.ts`);
     expect([...blobs.keys()]).toContainEqual(
       expect.stringMatching(
         new RegExp(
-          `^deployments/workspace-test\\.convex\\.cloud/users/${userId}/threads/${threadId}/files/[^/]+/report\\.json$`,
+          `^deployments/workspace-test\\.convex\\.cloud/users/${userId}/threads/${threadId}/files/report\\.json/[a-f0-9-]{36}$`,
         ),
       ),
     );
@@ -346,6 +346,13 @@ js-exec report.ts`);
     const stale = await backend.mutation(internal.scout.workspaces.snapshot, { threadId, userId });
     await run("printf replacement > report.txt");
     const current = await owner.query(api.scout.workspaces.list, { threadId });
+    const originalFile = stale.entries.find((entry) => entry.kind === "file");
+    const replacementFile = current.entries.find((entry) => entry.kind === "file");
+    if (originalFile?.kind !== "file" || replacementFile?.kind !== "file")
+      throw new Error("Expected both saved file versions");
+    expect(originalFile.key).toMatch(/\/files\/report\.txt\/[a-f0-9-]{36}$/);
+    expect(replacementFile.key).toMatch(/\/files\/report\.txt\/[a-f0-9-]{36}$/);
+    expect(replacementFile.key).not.toBe(originalFile.key);
     await expect(
       backend.mutation(internal.scout.workspaces.commit, {
         workspaceId: stale.workspaceId,
@@ -356,9 +363,9 @@ js-exec report.ts`);
       }),
     ).rejects.toThrow("Another command");
     expect(await owner.query(api.scout.workspaces.list, { threadId })).toEqual(current);
-    expect(deleted).toHaveLength(1);
+    expect(deleted).toEqual([originalFile.key]);
     await run("rm report.txt");
-    expect(deleted).toHaveLength(2);
+    expect(deleted).toEqual([originalFile.key, replacementFile.key]);
   });
 
   it("returns exact binary bytes for download without a text preview", async () => {
@@ -435,7 +442,7 @@ describe("web reads saved to the workspace", () => {
     expect(file.path).toMatch(/^\/workspace\/sources\/example\.com\/docs-billing-[a-f0-9]{8}\.md$/);
     expect(file.key).toMatch(
       new RegExp(
-        `^deployments/workspace-test\\.convex\\.cloud/users/${userId}/threads/${threadId}/files/[a-f0-9-]{36}/sources/example\\.com/docs-billing-[a-f0-9]{8}\\.md$`,
+        `^deployments/workspace-test\\.convex\\.cloud/users/${userId}/threads/${threadId}/files/sources/example\\.com/docs-billing-[a-f0-9]{8}\\.md/[a-f0-9-]{36}$`,
       ),
     );
     expect(file.path).not.toMatch(/plan|price|redirect/);
