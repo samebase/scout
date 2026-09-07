@@ -113,8 +113,12 @@ update existing deployments. Set those separately and leave **Production** unsel
 development credentials.
 
 Scout's private `scout-workspaces` bucket is configured for Development and Preview defaults and
-the existing cloud development deployment. Production is not configured. The local workspace UI
-has been verified against real R2 for file creation, preview, reload, rename, update, and cleanup.
+the existing cloud development deployment. Production uses the separate private
+`scout-workspaces-prod` bucket with its own bucket-scoped account credential. Its four deployment
+variables and real R2 upload, read, replacement, and deletion are verified; that credential cannot
+access the development bucket. Run the production application smoke test after deploying the feature.
+The local workspace UI has been verified against real R2 for file creation, preview, reload,
+rename, update, and cleanup.
 An isolated cloud dev deployment has also passed manual and AI Gateway tests running TypeScript
 with local imports, saving JSON to R2, and reading it in a separate tool call and a fresh page load.
 See [cloud worktree setup](./local-setup.md#run-the-app) to select an isolated cloud development
