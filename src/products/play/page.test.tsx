@@ -315,9 +315,27 @@ describe("Play invitation", () => {
       turnId: "turn-1",
     });
     await openPlay("/play/session?thread=game-thread");
+    const input = await screen.findByRole("textbox", { name: "Message Scout" });
+    fireEvent.change(input, { target: { value: "Try another game." } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(remote.sendMessage).not.toHaveBeenCalled();
+    expect(remote.stop).not.toHaveBeenCalled();
     fireEvent.click(await screen.findByRole("button", { name: "Stop Scout" }));
     await waitFor(() =>
       expect(remote.stop).toHaveBeenCalledExactlyOnceWith({ threadId: "game-thread" }),
+    );
+    expect(screen.getByDisplayValue("Try another game.")).toBeTruthy();
+    act(() => {
+      remote.queries.set("scout/chats:getScoutActivity", { kind: "idle" });
+      remote.revision += 1;
+      remote.subscribers.forEach((listener) => listener());
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    await waitFor(() =>
+      expect(remote.sendMessage).toHaveBeenCalledExactlyOnceWith({
+        threadId: "game-thread",
+        prompt: "Try another game.",
+      }),
     );
     act(() => {
       remote.queries.set("scout/chats:getScoutActivity", { kind: "busy" });
@@ -326,7 +344,6 @@ describe("Play invitation", () => {
     });
     expect(screen.queryByRole("button", { name: "Stop Scout" })).toBeNull();
     expect(screen.getByText("Busy in another session")).toBeTruthy();
-    expect(screen.getByText("Scout is busy in another session.")).toBeTruthy();
     expect(
       screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Message Scout" }).disabled,
     ).toBe(false);
@@ -393,10 +410,7 @@ test("shows persisted activity and assistant commentary while hiding tool payloa
     },
   ];
   await openPlay("/play/session?thread=game-thread");
-  expect(await screen.findByLabelText("Current activity")).toHaveProperty(
-    "textContent",
-    "Researching the game",
-  );
+  expect(await screen.findByText("Researching the game")).toBeTruthy();
   expect(screen.getByText("I'll check the rules before we start.")).toBeTruthy();
   expect(document.body.textContent).not.toContain("secret_browser_code");
   expect(document.body.textContent).not.toContain("private reasoning");
@@ -451,7 +465,7 @@ test("keeps the live browser and handoff controls when switching views", async (
   expect(screen.getByRole("link", { name: "Open browser handoff" }).getAttribute("href")).toBe(
     "/handoff/handoff-1",
   );
-  expect(screen.getByRole("button", { name: "Stop Scout" })).toBeTruthy();
+  expect(screen.getAllByRole("button", { name: "Stop Scout" })).toHaveLength(2);
   fireEvent.click(screen.getByRole("button", { name: "Chat" }));
   expect(screen.getByTitle("Scout's live game browser")).toBe(browser);
   fireEvent.click(screen.getByRole("button", { name: "Cancel handoff" }));

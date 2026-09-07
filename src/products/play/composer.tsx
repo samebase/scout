@@ -1,4 +1,4 @@
-import { ArrowUpIcon } from "lucide-react";
+import { ArrowUpIcon, SquareIcon } from "lucide-react";
 import type { FormEvent, ReactNode } from "react";
 
 export function PlayComposer({
@@ -7,6 +7,7 @@ export function PlayComposer({
   onSubmit,
   disabled,
   canSend,
+  onStop,
   placeholder,
   children,
 }: {
@@ -15,6 +16,7 @@ export function PlayComposer({
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   disabled: boolean;
   canSend: boolean;
+  onStop: (() => void) | null;
   placeholder: string;
   children: ReactNode;
 }) {
@@ -45,12 +47,18 @@ export function PlayComposer({
       <div className="mt-2 flex min-h-11 items-center justify-between gap-3 pl-2">
         <div className="min-w-0 text-sm text-play-muted">{children}</div>
         <button
-          type="submit"
-          aria-label="Send message"
-          disabled={disabled || !canSend || !value.trim()}
+          type={onStop ? "button" : "submit"}
+          aria-label={onStop ? "Stop Scout" : "Send message"}
+          title={onStop ? "Stop Scout" : "Send message"}
+          onClick={onStop ?? undefined}
+          disabled={disabled || (!onStop && (!canSend || !value.trim()))}
           className="grid size-11 shrink-0 place-items-center rounded-[14px] bg-play-blue text-white transition-colors hover:bg-[#2445bb]"
         >
-          <ArrowUpIcon size={22} aria-hidden="true" />
+          {onStop ? (
+            <SquareIcon size={18} fill="currentColor" aria-hidden="true" />
+          ) : (
+            <ArrowUpIcon size={22} aria-hidden="true" />
+          )}
         </button>
       </div>
     </form>

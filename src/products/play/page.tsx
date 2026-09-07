@@ -10,9 +10,6 @@ import {
   LoaderCircleIcon,
   MonitorIcon,
   MessageCircleIcon,
-  SearchIcon,
-  KeyRoundIcon,
-  Gamepad2Icon,
   SquareIcon,
 } from "lucide-react";
 import { type FormEvent, useEffect, useRef, useState } from "react";
@@ -204,6 +201,7 @@ function PlayLobby() {
               }}
               disabled={request.kind === "pending"}
               canSend={!loadingScouts && !noScouts}
+              onStop={null}
               placeholder="Let's play… Paste a game link or tell me what you have in mind."
             >
               {loadingScouts ? (
@@ -306,20 +304,15 @@ function activityForThread(
   }
 }
 
-function hasActiveActivity(activity: Activity | undefined) {
-  return activity !== undefined && activity.kind !== "idle";
-}
-
-function activityLabel(activity: Activity | undefined, threadId: string) {
+function activityNotice(activity: Activity | undefined, threadId: string) {
   if (!activity) return "Connecting...";
-  if (activity.kind === "idle") return "Ready for your next message";
+  if (activity.kind === "idle") return null;
   const selectedActivity = activityForThread(activity, threadId);
   if (!selectedActivity) return "Busy in another session";
   switch (selectedActivity.kind) {
     case "running":
-      return "Working";
     case "handoff":
-      return "Scout needs your help";
+      return null;
     case "stopping":
       return selectedActivity.retryable ? "Couldn't stop. Try again." : "Stopping Scout...";
   }
@@ -350,7 +343,6 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
   const [request, setRequest] = useState<RequestState>({ kind: "idle" });
   const pending = useRef(false);
   const ownActivity = activityForThread(activity, threadId);
-  const scoutIsBusy = hasActiveActivity(activity);
   const canStop =
     ownActivity !== undefined && (ownActivity.kind !== "stopping" || ownActivity.retryable);
   const canSend =
@@ -365,10 +357,7 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
     ? { research: "Researching the game", account_setup: "Setting up an account", play: "Playing" }[
         phase
       ]
-    : "Getting started";
-  const PhaseIcon = phase
-    ? { research: SearchIcon, account_setup: KeyRoundIcon, play: Gamepad2Icon }[phase]
-    : MessageCircleIcon;
+    : null;
   const lastTurn = messages.results.findLast((message) => message.metadata)?.metadata;
 
   async function stop() {
@@ -428,7 +417,7 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
             </span>{" "}
             <ArrowUpRightIcon size={15} aria-hidden="true" />
           </Link>
-          {canStop && (
+          {canStop && view === "browser" && (
             <button
               type="button"
               aria-label="Stop Scout"
@@ -436,7 +425,7 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
                 void stop();
               }}
               disabled={request.kind === "pending"}
-              className="inline-flex min-h-11 items-center gap-2 rounded-lg px-1 text-play-ink hover:text-play-blue"
+              className="inline-flex min-h-11 items-center gap-2 rounded-lg px-1 text-play-ink hover:text-play-blue min-[761px]:hidden"
             >
               <SquareIcon size={14} aria-hidden="true" />
               <span className="whitespace-nowrap">
@@ -446,37 +435,14 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
           )}
         </div>
       </div>
-      <div className="mb-5 flex items-center justify-between gap-4 max-[760px]:mb-4">
-        <div className="flex min-w-0 items-center gap-4">
-          <ScoutPiece size="brand" className="max-[760px]:hidden" />
-          <div className="min-w-0">
-            <h1
-              className="truncate text-[28px] font-semibold tracking-[-0.8px] max-[760px]:text-[24px]"
-              title={thread.title ?? undefined}
-            >
-              {thread.title ?? `Play with ${scout?.displayName ?? "Scout"}`}
-            </h1>
-            <p role="status" className="mt-1 flex items-center gap-2 text-[13px] text-play-muted">
-              <span
-                className={cn(
-                  "size-1.5 rounded-full",
-                  ownActivity?.kind === "running" ? "bg-play-blue" : "bg-play-muted",
-                )}
-              />
-              {thread.play && <span className="min-[761px]:hidden">{phaseLabel} ·</span>}
-              {activityLabel(activity, threadId)}
-            </p>
-          </div>
-        </div>
-        {thread.play && (
-          <div
-            className="flex shrink-0 items-center gap-2 rounded-full bg-play-sand/70 px-4 py-2.5 text-[13px] max-[760px]:hidden"
-            aria-label="Current activity"
-          >
-            <PhaseIcon size={16} aria-hidden="true" />
-            {phaseLabel}
-          </div>
-        )}
+      <div className="mb-5 flex min-w-0 items-center gap-4 max-[760px]:mb-4">
+        <ScoutPiece size="brand" className="max-[760px]:hidden" />
+        <h1
+          className="truncate text-[28px] font-semibold tracking-[-0.8px] max-[760px]:text-[24px]"
+          title={thread.title ?? undefined}
+        >
+          {thread.title ?? `Play with ${scout?.displayName ?? "Scout"}`}
+        </h1>
       </div>
       <div
         className="mb-3 flex gap-1 rounded-xl bg-play-cloud p-1 min-[761px]:hidden"
@@ -568,14 +534,11 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
                           message.role === "user" ? "ml-auto" : "mr-auto",
                         )}
                       >
-                        <span
-                          className={cn(
-                            "mb-2 block text-xs font-medium text-play-muted",
-                            message.role === "user" && "text-right",
-                          )}
-                        >
-                          {message.role === "user" ? "You" : (scout?.displayName ?? "Scout")}
-                        </span>
+                        {message.role !== "user" && (
+                          <span className="mb-2 block text-xs font-medium text-play-muted">
+                            {scout?.displayName ?? "Scout"}
+                          </span>
+                        )}
                         <p
                           className={cn(
                             "whitespace-pre-wrap",
@@ -590,9 +553,12 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
                       </MessageScrollerItem>
                     ))}
                     {ownActivity?.kind === "running" && (
-                      <p className="flex items-center gap-2.5 text-sm text-play-muted">
+                      <p
+                        role="status"
+                        className="flex items-center gap-2.5 text-sm text-play-muted"
+                      >
                         <LoaderCircleIcon size={15} className="animate-spin" aria-hidden="true" />
-                        {thread.play ? phaseLabel : "Scout is working…"}
+                        {phaseLabel ?? <span className="sr-only">Scout is working</span>}
                       </p>
                     )}
                   </MessageScrollerContent>
@@ -609,23 +575,21 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
             }}
             disabled={request.kind === "pending"}
             canSend={canSend}
+            onStop={
+              canStop
+                ? () => {
+                    void stop();
+                  }
+                : null
+            }
             placeholder="Message Scout…"
           >
-            {ownActivity?.kind === "running"
-              ? `With ${scout?.displayName ?? "Scout"}`
-              : ownActivity?.kind === "stopping"
-                ? "Stopping Scout…"
-                : scoutIsBusy
-                  ? "Scout is busy in another session."
-                  : scout?.status !== "active"
-                    ? "This Scout is unavailable."
-                    : `With ${scout?.displayName ?? "Scout"}`}
+            <span role="status">
+              {scout?.status !== "active"
+                ? "This Scout is unavailable."
+                : activityNotice(activity, threadId)}
+            </span>
           </PlayComposer>
-          {canStop && (
-            <p className="mt-2 text-center text-xs text-play-muted">
-              Stop Scout to send a new message.
-            </p>
-          )}
         </section>
         <section
           aria-label="Scout's game browser"
@@ -634,56 +598,45 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
             view !== "browser" && "max-[760px]:hidden",
           )}
         >
-          <div className="flex min-h-14 items-center justify-between gap-3 border-b border-play-line px-5 text-[13px]">
-            <span className="inline-flex items-center gap-2 font-medium">
-              <MonitorIcon size={16} aria-hidden="true" />
-              Scout’s view
-            </span>
-            {session?.lifecycle.kind === "closed" ? (
-              <span className="text-play-muted">Replay</span>
-            ) : liveView?.url ? (
-              <span className="inline-flex items-center gap-2 text-play-muted">
-                <span className="size-1.5 rounded-full bg-play-blue" />
-                Live
-              </span>
-            ) : null}
-          </div>
           {session?.lifecycle.kind === "closed" ? (
             <BrowserReplay sessionId={session.sessionId} />
-          ) : liveView?.url ? (
-            <>
-              <iframe
-                src={liveView.url}
-                className="min-h-0 w-full flex-1 border-0 bg-white"
-                title="Scout's live game browser"
-                sandbox="allow-same-origin allow-scripts"
-                referrerPolicy="no-referrer"
-              />
-              <a
-                className="flex min-h-11 items-center justify-center gap-1.5 p-2.5 text-xs text-play-muted hover:text-play-blue"
-                href={liveView.url}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Open browser <ArrowUpRightIcon size={14} aria-hidden="true" />
-              </a>
-            </>
           ) : (
-            <div className="flex flex-1 flex-col items-center justify-center gap-6 p-7 text-center">
-              <div className="grid size-32 place-items-center rounded-full bg-play-sand/80">
-                <ScoutPiece className="-rotate-6" />
+            <>
+              <div className="flex min-h-14 items-center gap-2 border-b border-play-line px-5 text-[13px] font-medium">
+                <MonitorIcon size={16} aria-hidden="true" />
+                Scout’s view
               </div>
-              <h2 className="max-w-[280px] text-[25px] leading-tight font-medium tracking-[-0.6px]">
-                {session?.lifecycle.kind === "closing"
-                  ? "Closing the browser"
-                  : "A seat at Scout’s table"}
-              </h2>
-              <p className="max-w-[270px] text-sm text-play-muted">
-                {session?.lifecycle.kind === "closing"
-                  ? "You can continue when the browser has closed."
-                  : "When Scout opens the game, you can follow along here."}
-              </p>
-            </div>
+              {liveView?.url ? (
+                <>
+                  <iframe
+                    src={liveView.url}
+                    className="min-h-0 w-full flex-1 border-0 bg-white"
+                    title="Scout's live game browser"
+                    sandbox="allow-same-origin allow-scripts"
+                    referrerPolicy="no-referrer"
+                  />
+                  <a
+                    className="flex min-h-11 items-center justify-center gap-1.5 p-2.5 text-xs text-play-muted hover:text-play-blue"
+                    href={liveView.url}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Open browser <ArrowUpRightIcon size={14} aria-hidden="true" />
+                  </a>
+                </>
+              ) : (
+                <div className="flex flex-1 flex-col items-center justify-center gap-6 p-7 text-center">
+                  <div className="grid size-32 place-items-center rounded-full bg-play-sand/80">
+                    <ScoutPiece className="-rotate-6" />
+                  </div>
+                  <p className="max-w-[270px] text-sm text-play-muted">
+                    {session?.lifecycle.kind === "closing"
+                      ? "Closing the browser…"
+                      : "Scout hasn’t opened a browser yet."}
+                  </p>
+                </div>
+              )}
+            </>
           )}
         </section>
       </div>
