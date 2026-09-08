@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-08T12:27:48Z
+- **Last updated:** 2026-09-08T12:45:38Z
 
 ## Log
 
@@ -1108,5 +1108,6 @@ in the bucket while retaining the existing save and cleanup behavior (`convex/wo
 
 Web reads can save Markdown, cleaned HTML, or raw HTML for later inspection in the chat workspace.
 Bash can also select a shared site workspace by hostname, reusing saved files across Scouts and
-chats. Live trials confirmed explicit sharing and reading, while autonomous discovery and guide
+chats. The Sites pages expose those files and a terminal independently of chat. Live trials
+confirmed explicit sharing and reading, while autonomous discovery and guide
 accuracy still failed (`convex/scout/workspaceTools.ts`, `docs/shared-site-workspace-trial-2026-09-08.md`).

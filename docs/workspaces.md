@@ -38,10 +38,17 @@ Shared files are reference material to check against the current page, not autho
 user's request. Concurrent writes fail visibly using the existing revision check; this MVP does
 not retain previous file versions.
 
+Open **Sites** in the navigation to browse existing shared workspaces at `/sites`. The list is
+alphabetical and paginated. `/sites/chessmerge.com` opens that site's files, previews, downloads,
+and terminal without requiring or creating a chat. The `file` and `terminal` URL parameters retain
+the selected file and terminal visibility through Back, Forward, and reload. Terminal history
+stays local to the page. Commands edit shared files using the same shell and save logic as Bash.
+Opening an unknown site does not create it. These pages use the existing Lab permission.
+
 Site files use `deployments/<deployment>/sites/<hostname>/files/<path>/<upload-id>` in R2.
-The current UI displays private chat files. Inspect site files through Bash in the manual tool
-menu by supplying `workspace`; the list and file-preview APIs accept that same optional input.
-This MVP adds no product page, discovery service, guide schema, or transfer tool.
+The file-list and preview APIs take `target: { site }` or `target: { threadId }`; only the private
+variant requires ownership of a chat. The agent-facing Bash input remains `{ command, workspace? }`.
+This MVP adds no separate product records, guide schema, or transfer tool.
 
 ## Saved web pages
 

@@ -1123,7 +1123,7 @@ function ChatsWorkspace() {
       content={
         <ScoutWorkspace
           key={threadId}
-          threadId={threadId}
+          target={{ threadId }}
           disabled={isWorking || !canCompose}
           selectedPath={search.file ?? null}
           onSelectPath={(file) => {

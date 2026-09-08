@@ -114,3 +114,15 @@ accuracy. A transfer operation would address the concrete failed copy attempts; 
 schemas, product agents, or product UI would not resolve those failures by themselves. Keep the
 ordinary prompts above for the next comparison. Do not treat this small, assisted trial as proof
 of automatic learning or improved game performance.
+
+## Site page verification
+
+The subsequent UI exposes existing workspaces at `/sites` and `/sites/<hostname>` with the same
+file browser, preview, download, and terminal. On the primary dev deployment, the ChessMerge page
+loaded Magda's existing guide, saved `ui-check.txt` through the terminal, and reopened the file from
+its bookmarked URL after reload. The Download link selected that file.
+
+Conrad was then asked, "What does ui-check.txt in the shared chessmerge.com workspace say?"
+It read the file through Bash and returned the exact line written in the site terminal. The
+temporary file was removed afterward. This verifies that the standalone UI and agent access the
+same persisted files. It is a storage integration check, not another autonomous-discovery trial.

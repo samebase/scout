@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { paginationOptsValidator, paginationResultValidator } from "convex/server";
 import type { Id } from "../_generated/dataModel";
 import {
   internalMutation,
@@ -16,6 +17,8 @@ import {
   workspaceEntryValidator,
   workspaceFileValidator,
   siteWorkspaceSchema,
+  workspaceTargetValidator,
+  type WorkspaceTarget,
 } from "../workspaceModel";
 import { workspaceStorage, workspaceStorageConfigured } from "../workspaceStorage";
 
@@ -42,31 +45,51 @@ async function workspaceRows(ctx: QueryCtx | MutationCtx, workspaceId: Id<"scout
   return rows;
 }
 
-function findWorkspace(
-  ctx: QueryCtx | MutationCtx,
-  args: { threadId: string; workspace?: string },
-) {
+function findWorkspace(ctx: QueryCtx | MutationCtx, target: WorkspaceTarget) {
   const query = ctx.db.query("scoutWorkspaces");
-  return args.workspace === undefined
-    ? query.withIndex("by_thread_id", (q) => q.eq("threadId", args.threadId)).unique()
+  return "threadId" in target
+    ? query.withIndex("by_thread_id", (q) => q.eq("threadId", target.threadId)).unique()
     : query
-        .withIndex("by_site", (q) => q.eq("site", siteWorkspaceSchema.parse(args.workspace)))
+        .withIndex("by_site", (q) => q.eq("site", siteWorkspaceSchema.parse(target.site)))
         .unique();
 }
 
+export const listSites = query({
+  access: "access_lab",
+  args: { paginationOpts: paginationOptsValidator },
+  returns: paginationResultValidator(v.string()),
+  handler: async (ctx, args) => {
+    const result = await ctx.db
+      .query("scoutWorkspaces")
+      .withIndex("by_site", (q) => q.gt("site", ""))
+      .order("asc")
+      .paginate(args.paginationOpts);
+    return {
+      ...result,
+      page: result.page.map((workspace) => {
+        if (!("site" in workspace)) throw new Error("Expected a site workspace");
+        return workspace.site;
+      }),
+    };
+  },
+});
+
 export const list = query({
   access: "access_lab",
-  args: { threadId: v.string(), workspace: v.optional(v.string()) },
+  args: { target: workspaceTargetValidator },
   returns: v.object({
+    exists: v.boolean(),
     configured: v.boolean(),
     cwd: v.string(),
     revision: v.number(),
     entries: v.array(workspaceEntryValidator),
   }),
   handler: async (ctx, args) => {
-    await requireWorkspaceChat(ctx, args.threadId, ctx.viewer.userId);
-    const workspace = await findWorkspace(ctx, args);
+    if ("threadId" in args.target)
+      await requireWorkspaceChat(ctx, args.target.threadId, ctx.viewer.userId);
+    const workspace = await findWorkspace(ctx, args.target);
     return {
+      exists: workspace !== null,
       configured: workspaceStorageConfigured(),
       cwd: workspace?.cwd ?? WORKSPACE_ROOT,
       revision: workspace?.revision ?? 0,
@@ -76,7 +99,7 @@ export const list = query({
 });
 
 export const snapshot = internalMutation({
-  args: { threadId: v.string(), userId: v.id("users"), workspace: v.optional(v.string()) },
+  args: { target: workspaceTargetValidator, userId: v.id("users") },
   returns: v.object({
     workspaceId: v.id("scoutWorkspaces"),
     site: v.union(v.string(), v.null()),
@@ -86,8 +109,9 @@ export const snapshot = internalMutation({
   }),
   handler: async (ctx, args) => {
     await requireUserPermission(ctx, args.userId, "access_lab");
-    await requireWorkspaceChat(ctx, args.threadId, args.userId);
-    const workspace = await findWorkspace(ctx, args);
+    if ("threadId" in args.target)
+      await requireWorkspaceChat(ctx, args.target.threadId, args.userId);
+    const workspace = await findWorkspace(ctx, args.target);
     if (workspace)
       return {
         workspaceId: workspace._id,
@@ -97,9 +121,9 @@ export const snapshot = internalMutation({
         entries: (await workspaceRows(ctx, workspace._id)).map((row) => row.entry),
       };
     const owner =
-      args.workspace === undefined
-        ? { threadId: args.threadId }
-        : { site: siteWorkspaceSchema.parse(args.workspace) };
+      "threadId" in args.target
+        ? args.target
+        : { site: siteWorkspaceSchema.parse(args.target.site) };
     const workspaceId = await ctx.db.insert("scoutWorkspaces", {
       ...owner,
       cwd: WORKSPACE_ROOT,
@@ -230,15 +254,13 @@ export const commit = internalMutation({
 });
 
 export const fileForViewer = internalQuery({
-  args: { threadId: v.string(), path: v.string(), workspace: v.optional(v.string()) },
+  args: { target: workspaceTargetValidator, path: v.string() },
   returns: workspaceEntryValidator,
   handler: async (ctx, args) => {
-    await requireWorkspaceChat(
-      ctx,
-      args.threadId,
-      (await requirePermission(ctx, "access_lab")).userId,
-    );
-    const workspace = await findWorkspace(ctx, args);
+    const viewer = await requirePermission(ctx, "access_lab");
+    if ("threadId" in args.target)
+      await requireWorkspaceChat(ctx, args.target.threadId, viewer.userId);
+    const workspace = await findWorkspace(ctx, args.target);
     if (!workspace) throw new Error("File not found");
     const row = await ctx.db
       .query("scoutWorkspaceFiles")

@@ -33,6 +33,12 @@ export const workspaceEntryValidator = v.union(
 
 export type WorkspaceEntry = typeof workspaceEntryValidator.type;
 
+export const workspaceTargetValidator = v.union(
+  v.object({ threadId: v.string() }),
+  v.object({ site: v.string() }),
+);
+export type WorkspaceTarget = typeof workspaceTargetValidator.type;
+
 export const siteWorkspaceSchema = z
   .string()
   .trim()

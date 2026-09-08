@@ -3,7 +3,12 @@ import type { FunctionReturnType } from "convex/server";
 import { FileIcon, FolderIcon, LinkIcon, LoaderCircleIcon, PlayIcon } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "../../convex/_generated/api";
-import { bashResultSchema, WORKSPACE_ROOT, type WorkspaceEntry } from "../../convex/workspaceModel";
+import {
+  bashResultSchema,
+  WORKSPACE_ROOT,
+  type WorkspaceEntry,
+  type WorkspaceTarget,
+} from "../../convex/workspaceModel";
 import { Button } from "./ui/button";
 import { Textarea } from "./ui/textarea";
 
@@ -14,22 +19,23 @@ type CommandRecord = { id: string; command: string } & (
 );
 
 export function ScoutWorkspace({
-  threadId,
+  target,
   disabled,
   selectedPath,
   onSelectPath,
   terminalOpen,
   onToggleTerminal,
 }: {
-  threadId: string;
+  target: WorkspaceTarget;
   disabled: boolean;
   selectedPath: string | null;
   onSelectPath: (path: string) => void;
   terminalOpen: boolean;
   onToggleTerminal: () => void;
 }) {
-  const workspace = useQuery(api.scout.workspaces.list, { threadId });
+  const workspace = useQuery(api.scout.workspaces.list, { target });
   const executeTool = useAction(api.scout.manual.executeTool);
+  const executeSiteCommand = useAction(api.scout.workspaceTools.executeSiteCommand);
   const [command, setCommand] = useState("");
   const [history, setHistory] = useState<CommandRecord[]>([]);
   const running = useRef(false);
@@ -51,21 +57,26 @@ export function ScoutWorkspace({
     setHistory((records) => [...records.slice(-49), { id, command: submitted, kind: "running" }]);
     let record: CommandRecord;
     try {
-      const response = await executeTool({
-        threadId,
-        toolName: "bash",
-        input: JSON.stringify({ command: submitted }),
-        operationId: id,
-      });
-      if (response.outcome.kind === "error") {
-        record = { id, command: submitted, kind: "failed", error: response.outcome.error };
+      if ("site" in target) {
+        const result = await executeSiteCommand({ site: target.site, command: submitted });
+        record = { id, command: submitted, kind: "completed", result };
       } else {
-        record = {
-          id,
-          command: submitted,
-          kind: "completed",
-          result: bashResultSchema.parse(JSON.parse(response.outcome.output)),
-        };
+        const response = await executeTool({
+          threadId: target.threadId,
+          toolName: "bash",
+          input: JSON.stringify({ command: submitted }),
+          operationId: id,
+        });
+        if (response.outcome.kind === "error") {
+          record = { id, command: submitted, kind: "failed", error: response.outcome.error };
+        } else {
+          record = {
+            id,
+            command: submitted,
+            kind: "completed",
+            result: bashResultSchema.parse(JSON.parse(response.outcome.output)),
+          };
+        }
       }
     } catch (error) {
       record = {
@@ -79,6 +90,9 @@ export function ScoutWorkspace({
     }
     setHistory((records) => records.map((item) => (item.id === id ? record : item)));
   }
+
+  if (workspace?.exists === false && "site" in target)
+    return <p className="p-4 text-muted-foreground">Site workspace not found.</p>;
 
   return (
     <section aria-label="Workspace" className="flex h-full min-h-0 min-w-0 flex-col">
@@ -107,7 +121,7 @@ export function ScoutWorkspace({
           {selected?.kind === "file" ? (
             <WorkspaceFileViewer
               key={`${selected.path}:${selected.key}`}
-              threadId={threadId}
+              target={target}
               path={selected.path}
             />
           ) : selected?.kind === "symlink" ? (
@@ -117,7 +131,6 @@ export function ScoutWorkspace({
           ) : (
             <div className="text-muted-foreground grid flex-1 place-content-center gap-2 p-4 text-center text-sm">
               <p>Select a file to preview it.</p>
-              <p className="text-xs">Ask Scout to create a file, or use the terminal below.</p>
             </div>
           )}
         </div>
@@ -266,8 +279,10 @@ function WorkspaceFileTree({
   );
 }
 
-function WorkspaceFileViewer({ threadId, path }: { threadId: string; path: string }) {
+function WorkspaceFileViewer({ target, path }: { target: WorkspaceTarget; path: string }) {
   const readFile = useAction(api.scout.workspaceTools.readFile);
+  const isChat = "threadId" in target;
+  const targetId = "threadId" in target ? target.threadId : target.site;
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<
     | { kind: "loading" }
@@ -281,7 +296,7 @@ function WorkspaceFileViewer({ threadId, path }: { threadId: string; path: strin
   useEffect(() => {
     let cancelled = false;
     let downloadUrl: string | undefined;
-    void readFile({ threadId, path }).then(
+    void readFile({ target: isChat ? { threadId: targetId } : { site: targetId }, path }).then(
       (file) => {
         if (cancelled) return;
         downloadUrl = URL.createObjectURL(
@@ -301,7 +316,7 @@ function WorkspaceFileViewer({ threadId, path }: { threadId: string; path: strin
       cancelled = true;
       if (downloadUrl) URL.revokeObjectURL(downloadUrl);
     };
-  }, [attempt, path, readFile, threadId]);
+  }, [attempt, path, readFile, isChat, targetId]);
   return (
     <>
       <div className="flex min-h-9 shrink-0 items-start justify-between gap-2 border-b px-3 py-2 text-xs">

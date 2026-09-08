@@ -79,7 +79,10 @@ export function createWebTools(
         const filename = `${slug}-${readId.slice(0, 8)}.${extension}`;
         const path = `${WORKSPACE_ROOT}/sources/${host}/${filename}`;
         const key = workspaceFileKey({ ...scope, uploadId: readId, path });
-        const snapshot = await ctx.runMutation(internal.scout.workspaces.snapshot, scope);
+        const snapshot = await ctx.runMutation(internal.scout.workspaces.snapshot, {
+          target: { threadId: scope.threadId },
+          userId: scope.userId,
+        });
         const page = await createFirecrawlClient().scrape(url, {
           formats: [format],
           onlyMainContent: format !== "rawHtml",

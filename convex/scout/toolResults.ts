@@ -61,7 +61,10 @@ export async function saveToolResult(
     );
   }
   const storage = workspaceStorage();
-  const snapshot = await ctx.runMutation(internal.scout.workspaces.snapshot, scope);
+  const snapshot = await ctx.runMutation(internal.scout.workspaces.snapshot, {
+    target: { threadId: scope.threadId },
+    userId: scope.userId,
+  });
   const uploadId = randomUUID();
   const extension = typeof fileValue === "string" ? "txt" : "json";
   const path = `${WORKSPACE_ROOT}/results/${toolName}-${uploadId.slice(0, 8)}.${extension}`;

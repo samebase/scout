@@ -174,6 +174,7 @@ beforeEach(() => {
   remote.mutations.set("scout/chats:sendMessage", remote.sendMessage);
   remote.mutations.set("scout/chats:stop", remote.stopScout);
   remote.actions.set("scout/manual:executeTool", remote.executeTool);
+  remote.actions.set("scout/workspaceTools:executeSiteCommand", vi.fn());
   remote.actions.set("scout/modelCalls:getContext", remote.getModelCallContext);
   remote.actions.set("browserReplay:listPages", remote.listReplayPages);
 });
@@ -562,7 +563,7 @@ describe("Chat workspace", () => {
       within(navigation)
         .getAllByRole("link")
         .map((link) => link.textContent),
-    ).toEqual(["Play", "Chats", "Scouts", "Review", "Members"]);
+    ).toEqual(["Play", "Chats", "Scouts", "Sites", "Review", "Members"]);
     const history = screen.getByRole("navigation", { name: "Chats" });
     expect(within(history).getAllByRole("list")).toHaveLength(1);
     expect(within(history).getByRole("link").getAttribute("href")).toBe("/chats?thread=thread-1");
