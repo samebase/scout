@@ -31,7 +31,7 @@ vi.mock("convex/react", () => ({
   ) => {
     remote.query(args);
     return {
-      exists: "site" in args.target && args.target.site !== "missing.example",
+      exists: args.target.kind === "site" && args.target.site !== "missing.example",
       configured: true,
       cwd: "/workspace",
       revision: 1,
@@ -124,7 +124,7 @@ test("opens a site, previews and downloads files, and runs commands without a ch
   await user.click(await screen.findByRole("button", { name: "guide.md" }));
   expect((await screen.findByLabelText("File contents")).textContent).toBe("Site guide");
   expect(remote.read).toHaveBeenCalledWith({
-    target: { site: "chessmerge.com" },
+    target: { kind: "site", site: "chessmerge.com" },
     path: "/workspace/guide.md",
   });
   const download = screen.getByRole("link", { name: "Download" });
@@ -177,7 +177,7 @@ test("switches sites from the sidebar and clears the previous file and terminal 
   expect(router.state.location.search.file).toBeUndefined();
   expect(screen.queryByLabelText("File contents")).toBeNull();
   expect(screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Bash command" }).value).toBe("");
-  expect(remote.query).toHaveBeenCalledWith({ target: { site: "papergames.io" } });
+  expect(remote.query).toHaveBeenCalledWith({ target: { kind: "site", site: "papergames.io" } });
   expect(screen.getByRole("link", { name: "papergames.io" }).getAttribute("aria-current")).toBe(
     "page",
   );

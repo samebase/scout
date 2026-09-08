@@ -57,7 +57,7 @@ export function ScoutWorkspace({
     setHistory((records) => [...records.slice(-49), { id, command: submitted, kind: "running" }]);
     let record: CommandRecord;
     try {
-      if ("site" in target) {
+      if (target.kind === "site") {
         const result = await executeSiteCommand({ site: target.site, command: submitted });
         record = { id, command: submitted, kind: "completed", result };
       } else {
@@ -91,7 +91,7 @@ export function ScoutWorkspace({
     setHistory((records) => records.map((item) => (item.id === id ? record : item)));
   }
 
-  if (workspace?.exists === false && "site" in target)
+  if (workspace?.exists === false && target.kind === "site")
     return <p className="p-4 text-muted-foreground">Site workspace not found.</p>;
 
   return (
@@ -281,8 +281,8 @@ function WorkspaceFileTree({
 
 function WorkspaceFileViewer({ target, path }: { target: WorkspaceTarget; path: string }) {
   const readFile = useAction(api.scout.workspaceTools.readFile);
-  const isChat = "threadId" in target;
-  const targetId = "threadId" in target ? target.threadId : target.site;
+  const kind = target.kind;
+  const targetId = target.kind === "chat" ? target.threadId : target.site;
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<
     | { kind: "loading" }
@@ -296,7 +296,10 @@ function WorkspaceFileViewer({ target, path }: { target: WorkspaceTarget; path: 
   useEffect(() => {
     let cancelled = false;
     let downloadUrl: string | undefined;
-    void readFile({ target: isChat ? { threadId: targetId } : { site: targetId }, path }).then(
+    void readFile({
+      target: kind === "chat" ? { kind, threadId: targetId } : { kind, site: targetId },
+      path,
+    }).then(
       (file) => {
         if (cancelled) return;
         downloadUrl = URL.createObjectURL(
@@ -316,7 +319,7 @@ function WorkspaceFileViewer({ target, path }: { target: WorkspaceTarget; path: 
       cancelled = true;
       if (downloadUrl) URL.revokeObjectURL(downloadUrl);
     };
-  }, [attempt, path, readFile, isChat, targetId]);
+  }, [attempt, path, readFile, kind, targetId]);
   return (
     <>
       <div className="flex min-h-9 shrink-0 items-start justify-between gap-2 border-b px-3 py-2 text-xs">

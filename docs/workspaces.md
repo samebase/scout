@@ -25,8 +25,9 @@ chat workspace. The value is an exact hostname, normalized to lowercase, without
 or port. Subdomains remain separate; `score-four.pfp.workers.dev` does not share files with other
 Workers sites. No product registration is required. A new site workspace starts empty.
 
-Both scopes use the same workspace records, file limits, R2 storage, in-memory shell, and revision
-check. Each has its own `/workspace` and saved working directory. A call accesses one workspace;
+Both scopes use the same workspace table, with `kind: "chat"` or `kind: "site"`, file limits,
+R2 storage, in-memory shell, and revision check. Each has its own `/workspace` and saved working
+directory. A call accesses one workspace;
 other workspaces are not mounted, and no files are copied automatically. Shell results identify
 the selected hostname, or `null` for the private chat workspace. Saved scripts can run with
 `js-exec file.ts` in either scope. Browser interaction still uses the browser tools.
@@ -49,8 +50,9 @@ The left sidebar lists sites and can be resized or hidden. On mobile, selecting 
 to its workspace. Switching sites clears the previous file selection and terminal draft.
 
 Site files use `deployments/<deployment>/sites/<hostname>/files/<path>/<upload-id>` in R2.
-The file-list and preview APIs take `target: { site }` or `target: { threadId }`; only the private
-variant requires ownership of a chat. The agent-facing Bash input remains `{ command, workspace? }`.
+The file-list and preview APIs take `target: { kind: "site", site }` or
+`target: { kind: "chat", threadId }`; only the private variant requires ownership of a chat.
+The agent-facing Bash input remains `{ command, workspace? }`.
 This MVP adds no separate product records, guide schema, or transfer tool.
 
 ## Saved web pages

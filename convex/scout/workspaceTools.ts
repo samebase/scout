@@ -47,7 +47,10 @@ export function createWorkspaceTools(
       execute: async ({ command, workspace }) => {
         await beforeDispatch();
         return executeCommand(ctx, {
-          target: workspace === undefined ? { threadId: scope.threadId } : { site: workspace },
+          target:
+            workspace === undefined
+              ? { kind: "chat", threadId: scope.threadId }
+              : { kind: "site", site: workspace },
           userId: scope.userId,
           command,
         });
@@ -120,7 +123,7 @@ export const executeSiteCommand = action({
       .required({ workspace: true })
       .parse({ workspace: args.site, command: args.command });
     return executeCommand(ctx, {
-      target: { site: input.workspace },
+      target: { kind: "site", site: input.workspace },
       userId: ctx.viewer.userId,
       command: input.command,
     });

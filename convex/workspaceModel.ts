@@ -34,8 +34,8 @@ export const workspaceEntryValidator = v.union(
 export type WorkspaceEntry = typeof workspaceEntryValidator.type;
 
 export const workspaceTargetValidator = v.union(
-  v.object({ threadId: v.string() }),
-  v.object({ site: v.string() }),
+  v.object({ kind: v.literal("chat"), threadId: v.string() }),
+  v.object({ kind: v.literal("site"), site: v.string() }),
 );
 export type WorkspaceTarget = typeof workspaceTargetValidator.type;
 

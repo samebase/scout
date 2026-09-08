@@ -122,8 +122,18 @@ export default defineSchema({
     .index("by_user_id_and_created_at", ["userId", "createdAt"]),
   scoutWorkspaces: defineTable(
     v.union(
-      v.object({ threadId: v.string(), cwd: v.string(), revision: v.number() }),
-      v.object({ site: v.string(), cwd: v.string(), revision: v.number() }),
+      v.object({
+        kind: v.literal("chat"),
+        threadId: v.string(),
+        cwd: v.string(),
+        revision: v.number(),
+      }),
+      v.object({
+        kind: v.literal("site"),
+        site: v.string(),
+        cwd: v.string(),
+        revision: v.number(),
+      }),
     ),
   )
     .index("by_thread_id", ["threadId"])

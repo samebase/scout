@@ -2,18 +2,19 @@ import { R2 } from "@convex-dev/r2";
 import { components } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { getRuntimeEnv } from "./runtimeEnv";
-import { WORKSPACE_ROOT } from "./workspaceModel";
+import { WORKSPACE_ROOT, type WorkspaceTarget } from "./workspaceModel";
 
 export function workspaceFileKey(
   args: {
     uploadId: string;
     path: string;
-  } & ({ threadId: string; userId: Id<"users"> } | { site: string }),
+    userId: Id<"users">;
+  } & WorkspaceTarget,
 ) {
   const deploymentUrl = getRuntimeEnv("CONVEX_CLOUD_URL");
   if (!deploymentUrl) throw new Error("Convex deployment URL is not configured");
   const owner =
-    "site" in args
+    args.kind === "site"
       ? `sites/${encodeURIComponent(args.site)}`
       : `users/${args.userId}/threads/${encodeURIComponent(args.threadId)}`;
   const prefix = `deployments/${encodeURIComponent(new URL(deploymentUrl).host)}/${owner}/files`;

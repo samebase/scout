@@ -115,7 +115,7 @@ function SiteWorkspaceLayout() {
               content={
                 <ScoutWorkspace
                   key={parsed.data}
-                  target={{ site: parsed.data }}
+                  target={{ kind: "site", site: parsed.data }}
                   disabled={false}
                   selectedPath={search.file ?? null}
                   onSelectPath={(file) => {

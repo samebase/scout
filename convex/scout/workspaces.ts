@@ -47,7 +47,7 @@ async function workspaceRows(ctx: QueryCtx | MutationCtx, workspaceId: Id<"scout
 
 function findWorkspace(ctx: QueryCtx | MutationCtx, target: WorkspaceTarget) {
   const query = ctx.db.query("scoutWorkspaces");
-  return "threadId" in target
+  return target.kind === "chat"
     ? query.withIndex("by_thread_id", (q) => q.eq("threadId", target.threadId)).unique()
     : query
         .withIndex("by_site", (q) => q.eq("site", siteWorkspaceSchema.parse(target.site)))
@@ -67,7 +67,7 @@ export const listSites = query({
     return {
       ...result,
       page: result.page.map((workspace) => {
-        if (!("site" in workspace)) throw new Error("Expected a site workspace");
+        if (workspace.kind !== "site") throw new Error("Expected a site workspace");
         return workspace.site;
       }),
     };
@@ -85,7 +85,7 @@ export const list = query({
     entries: v.array(workspaceEntryValidator),
   }),
   handler: async (ctx, args) => {
-    if ("threadId" in args.target)
+    if (args.target.kind === "chat")
       await requireWorkspaceChat(ctx, args.target.threadId, ctx.viewer.userId);
     const workspace = await findWorkspace(ctx, args.target);
     return {
@@ -109,21 +109,21 @@ export const snapshot = internalMutation({
   }),
   handler: async (ctx, args) => {
     await requireUserPermission(ctx, args.userId, "access_lab");
-    if ("threadId" in args.target)
+    if (args.target.kind === "chat")
       await requireWorkspaceChat(ctx, args.target.threadId, args.userId);
     const workspace = await findWorkspace(ctx, args.target);
     if (workspace)
       return {
         workspaceId: workspace._id,
-        site: "site" in workspace ? workspace.site : null,
+        site: workspace.kind === "site" ? workspace.site : null,
         cwd: workspace.cwd,
         revision: workspace.revision,
         entries: (await workspaceRows(ctx, workspace._id)).map((row) => row.entry),
       };
-    const owner =
-      "threadId" in args.target
+    const owner: WorkspaceTarget =
+      args.target.kind === "chat"
         ? args.target
-        : { site: siteWorkspaceSchema.parse(args.target.site) };
+        : { kind: "site", site: siteWorkspaceSchema.parse(args.target.site) };
     const workspaceId = await ctx.db.insert("scoutWorkspaces", {
       ...owner,
       cwd: WORKSPACE_ROOT,
@@ -131,7 +131,7 @@ export const snapshot = internalMutation({
     });
     return {
       workspaceId,
-      site: "site" in owner ? owner.site : null,
+      site: owner.kind === "site" ? owner.site : null,
       cwd: WORKSPACE_ROOT,
       revision: 0,
       entries: [],
@@ -149,7 +149,7 @@ export const addFile = internalMutation({
   handler: async (ctx, { workspaceId, userId, entry }) => {
     await requireUserPermission(ctx, userId, "access_lab");
     const workspace = await ctx.db.get("scoutWorkspaces", workspaceId);
-    if (!workspace || !("threadId" in workspace))
+    if (!workspace || workspace.kind !== "chat")
       throw new Error("Private chat workspace not found");
     await requireWorkspaceChat(ctx, workspace.threadId, userId);
     const segments = entry.path.split("/");
@@ -219,7 +219,7 @@ export const commit = internalMutation({
         "Another command changed this workspace. These changes were not saved; inspect the files before retrying.",
       );
     }
-    if ("threadId" in workspace) await requireWorkspaceChat(ctx, workspace.threadId, args.userId);
+    if (workspace.kind === "chat") await requireWorkspaceChat(ctx, workspace.threadId, args.userId);
     if (args.entries.length > MAX_WORKSPACE_ENTRIES)
       throw new Error("Workspace entry limit exceeded");
     const rows = await workspaceRows(ctx, workspace._id);
@@ -258,7 +258,7 @@ export const fileForViewer = internalQuery({
   returns: workspaceEntryValidator,
   handler: async (ctx, args) => {
     const viewer = await requirePermission(ctx, "access_lab");
-    if ("threadId" in args.target)
+    if (args.target.kind === "chat")
       await requireWorkspaceChat(ctx, args.target.threadId, viewer.userId);
     const workspace = await findWorkspace(ctx, args.target);
     if (!workspace) throw new Error("File not found");
