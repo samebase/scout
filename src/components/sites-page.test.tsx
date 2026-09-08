@@ -161,3 +161,40 @@ test.each(["missing.example", "invalid-host"])(
     expect(remote.manual).not.toHaveBeenCalled();
   },
 );
+
+test("switches sites from the sidebar and clears the previous file and terminal draft", async () => {
+  const router = await openPage("/sites/chessmerge.com?file=%2Fworkspace%2Fguide.md");
+  const user = userEvent.setup();
+  await screen.findByLabelText("File contents");
+  expect(screen.getByRole("link", { name: "chessmerge.com" }).getAttribute("aria-current")).toBe(
+    "page",
+  );
+  fireEvent.change(screen.getByRole("textbox", { name: "Bash command" }), {
+    target: { value: "old draft" },
+  });
+  await user.click(screen.getByRole("link", { name: "papergames.io" }));
+  await screen.findByRole("heading", { name: "papergames.io" });
+  expect(router.state.location.search.file).toBeUndefined();
+  expect(screen.queryByLabelText("File contents")).toBeNull();
+  expect(screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Bash command" }).value).toBe("");
+  expect(remote.query).toHaveBeenCalledWith({ target: { site: "papergames.io" } });
+  expect(screen.getByRole("link", { name: "papergames.io" }).getAttribute("aria-current")).toBe(
+    "page",
+  );
+  act(() => router.history.back());
+  expect(await screen.findByLabelText("File contents")).toBeTruthy();
+});
+
+test("opens the mobile site list and returns to the workspace after selecting a site", async () => {
+  vi.spyOn(window, "innerWidth", "get").mockReturnValue(390);
+  await openPage("/sites/chessmerge.com");
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "Show sites" }));
+  expect(await screen.findByRole("button", { name: "Back to workspace" })).toBeTruthy();
+  await user.click(screen.getByRole("link", { name: "papergames.io" }));
+  await screen.findByRole("heading", { name: "papergames.io" });
+  expect(await screen.findByRole("button", { name: "Show sites" })).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Show sites" }));
+  await user.click(screen.getByRole("button", { name: "Back to workspace" }));
+  expect(await screen.findByRole("button", { name: "Show sites" })).toBeTruthy();
+});

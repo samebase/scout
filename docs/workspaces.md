@@ -44,6 +44,8 @@ and terminal without requiring or creating a chat. The `file` and `terminal` URL
 the selected file and terminal visibility through Back, Forward, and reload. Terminal history
 stays local to the page. Commands edit shared files using the same shell and save logic as Bash.
 Opening an unknown site does not create it. These pages use the existing Lab permission.
+The left sidebar lists sites and can be resized or hidden. On mobile, selecting a site returns
+to its workspace. Switching sites clears the previous file selection and terminal draft.
 
 Site files use `deployments/<deployment>/sites/<hostname>/files/<path>/<upload-id>` in R2.
 The file-list and preview APIs take `target: { site }` or `target: { threadId }`; only the private
