@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { paginationOptsValidator, paginationResultValidator } from "convex/server";
 import type { Id } from "../_generated/dataModel";
 import {
   internalMutation,
@@ -15,6 +16,9 @@ import {
   WORKSPACE_ROOT,
   workspaceEntryValidator,
   workspaceFileValidator,
+  siteWorkspaceSchema,
+  workspaceTargetValidator,
+  type WorkspaceTarget,
 } from "../workspaceModel";
 import { workspaceStorage, workspaceStorageConfigured } from "../workspaceStorage";
 
@@ -41,22 +45,51 @@ async function workspaceRows(ctx: QueryCtx | MutationCtx, workspaceId: Id<"scout
   return rows;
 }
 
+function findWorkspace(ctx: QueryCtx | MutationCtx, target: WorkspaceTarget) {
+  const query = ctx.db.query("scoutWorkspaces");
+  return target.kind === "chat"
+    ? query.withIndex("by_thread_id", (q) => q.eq("threadId", target.threadId)).unique()
+    : query
+        .withIndex("by_site", (q) => q.eq("site", siteWorkspaceSchema.parse(target.site)))
+        .unique();
+}
+
+export const listSites = query({
+  access: "access_lab",
+  args: { paginationOpts: paginationOptsValidator },
+  returns: paginationResultValidator(v.string()),
+  handler: async (ctx, args) => {
+    const result = await ctx.db
+      .query("scoutWorkspaces")
+      .withIndex("by_site", (q) => q.gt("site", ""))
+      .order("asc")
+      .paginate(args.paginationOpts);
+    return {
+      ...result,
+      page: result.page.map((workspace) => {
+        if (workspace.kind !== "site") throw new Error("Expected a site workspace");
+        return workspace.site;
+      }),
+    };
+  },
+});
+
 export const list = query({
   access: "access_lab",
-  args: { threadId: v.string() },
+  args: { target: workspaceTargetValidator },
   returns: v.object({
+    exists: v.boolean(),
     configured: v.boolean(),
     cwd: v.string(),
     revision: v.number(),
     entries: v.array(workspaceEntryValidator),
   }),
   handler: async (ctx, args) => {
-    await requireWorkspaceChat(ctx, args.threadId, ctx.viewer.userId);
-    const workspace = await ctx.db
-      .query("scoutWorkspaces")
-      .withIndex("by_thread_id", (q) => q.eq("threadId", args.threadId))
-      .unique();
+    if (args.target.kind === "chat")
+      await requireWorkspaceChat(ctx, args.target.threadId, ctx.viewer.userId);
+    const workspace = await findWorkspace(ctx, args.target);
     return {
+      exists: workspace !== null,
       configured: workspaceStorageConfigured(),
       cwd: workspace?.cwd ?? WORKSPACE_ROOT,
       revision: workspace?.revision ?? 0,
@@ -66,33 +99,43 @@ export const list = query({
 });
 
 export const snapshot = internalMutation({
-  args: { threadId: v.string(), userId: v.id("users") },
+  args: { target: workspaceTargetValidator, userId: v.id("users") },
   returns: v.object({
     workspaceId: v.id("scoutWorkspaces"),
+    site: v.union(v.string(), v.null()),
     cwd: v.string(),
     revision: v.number(),
     entries: v.array(workspaceEntryValidator),
   }),
   handler: async (ctx, args) => {
     await requireUserPermission(ctx, args.userId, "access_lab");
-    await requireWorkspaceChat(ctx, args.threadId, args.userId);
-    const workspace = await ctx.db
-      .query("scoutWorkspaces")
-      .withIndex("by_thread_id", (q) => q.eq("threadId", args.threadId))
-      .unique();
+    if (args.target.kind === "chat")
+      await requireWorkspaceChat(ctx, args.target.threadId, args.userId);
+    const workspace = await findWorkspace(ctx, args.target);
     if (workspace)
       return {
         workspaceId: workspace._id,
+        site: workspace.kind === "site" ? workspace.site : null,
         cwd: workspace.cwd,
         revision: workspace.revision,
         entries: (await workspaceRows(ctx, workspace._id)).map((row) => row.entry),
       };
+    const owner: WorkspaceTarget =
+      args.target.kind === "chat"
+        ? args.target
+        : { kind: "site", site: siteWorkspaceSchema.parse(args.target.site) };
     const workspaceId = await ctx.db.insert("scoutWorkspaces", {
-      threadId: args.threadId,
+      ...owner,
       cwd: WORKSPACE_ROOT,
       revision: 0,
     });
-    return { workspaceId, cwd: WORKSPACE_ROOT, revision: 0, entries: [] };
+    return {
+      workspaceId,
+      site: owner.kind === "site" ? owner.site : null,
+      cwd: WORKSPACE_ROOT,
+      revision: 0,
+      entries: [],
+    };
   },
 });
 
@@ -106,7 +149,8 @@ export const addFile = internalMutation({
   handler: async (ctx, { workspaceId, userId, entry }) => {
     await requireUserPermission(ctx, userId, "access_lab");
     const workspace = await ctx.db.get("scoutWorkspaces", workspaceId);
-    if (!workspace) throw new Error("Workspace not found");
+    if (!workspace || workspace.kind !== "chat")
+      throw new Error("Private chat workspace not found");
     await requireWorkspaceChat(ctx, workspace.threadId, userId);
     const segments = entry.path.split("/");
     if (
@@ -175,7 +219,7 @@ export const commit = internalMutation({
         "Another command changed this workspace. These changes were not saved; inspect the files before retrying.",
       );
     }
-    await requireWorkspaceChat(ctx, workspace.threadId, args.userId);
+    if (workspace.kind === "chat") await requireWorkspaceChat(ctx, workspace.threadId, args.userId);
     if (args.entries.length > MAX_WORKSPACE_ENTRIES)
       throw new Error("Workspace entry limit exceeded");
     const rows = await workspaceRows(ctx, workspace._id);
@@ -210,18 +254,13 @@ export const commit = internalMutation({
 });
 
 export const fileForViewer = internalQuery({
-  args: { threadId: v.string(), path: v.string() },
+  args: { target: workspaceTargetValidator, path: v.string() },
   returns: workspaceEntryValidator,
   handler: async (ctx, args) => {
-    await requireWorkspaceChat(
-      ctx,
-      args.threadId,
-      (await requirePermission(ctx, "access_lab")).userId,
-    );
-    const workspace = await ctx.db
-      .query("scoutWorkspaces")
-      .withIndex("by_thread_id", (q) => q.eq("threadId", args.threadId))
-      .unique();
+    const viewer = await requirePermission(ctx, "access_lab");
+    if (args.target.kind === "chat")
+      await requireWorkspaceChat(ctx, args.target.threadId, viewer.userId);
+    const workspace = await findWorkspace(ctx, args.target);
     if (!workspace) throw new Error("File not found");
     const row = await ctx.db
       .query("scoutWorkspaceFiles")

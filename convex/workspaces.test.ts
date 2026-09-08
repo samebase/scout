@@ -91,25 +91,34 @@ async function setup() {
   const other = backend.withIdentity({ subject: `${otherId}|session` });
   const { threadId } = await owner.mutation(api.scout.chats.createThread, { scoutId });
   const otherThread = await other.mutation(api.scout.chats.createThread, { scoutId });
-  const run = async (command: string) =>
+  const run = async (command: string, workspace?: string) =>
     owner.action(api.scout.manual.executeTool, {
       threadId,
       toolName: "bash",
-      input: JSON.stringify({ command }),
+      input: JSON.stringify({ command, workspace }),
       operationId: crypto.randomUUID(),
     });
-  const read = (url = "https://example.com/docs/billing") =>
+  const read = (
+    url = "https://example.com/docs/billing",
+    format?: "markdown" | "html" | "rawHtml",
+  ) =>
     owner.action(api.scout.manual.executeTool, {
       threadId,
       toolName: "web_read",
-      input: JSON.stringify({ url }),
+      input: JSON.stringify({ url, format }),
       operationId: crypto.randomUUID(),
     });
-  const readAsAgent = (url = "https://example.com/docs/billing") =>
+  const readAsAgent = (
+    url = "https://example.com/docs/billing",
+    format?: "markdown" | "html" | "rawHtml",
+  ) =>
     owner.action(async (ctx) => {
       const tool = createWebTools(ctx, { threadId, userId }).web_read;
       if (!tool.execute) throw new Error("web_read has no executor");
-      return tool.execute({ url }, { toolCallId: crypto.randomUUID(), messages: [], context: {} });
+      return tool.execute(
+        { url, format },
+        { toolCallId: crypto.randomUUID(), messages: [], context: {} },
+      );
     });
   return {
     backend,
@@ -117,6 +126,7 @@ async function setup() {
     other,
     userId,
     otherId,
+    scoutId,
     threadId,
     otherThreadId: otherThread.threadId,
     run,
@@ -130,14 +140,16 @@ describe("workspace persistence and access", () => {
     const { owner, userId, threadId, run } = await setup();
     const first = await run("mkdir -p reports; cd reports; printf 'hello\\n' > hello.txt");
     expect(first.outcome.kind).toBe("success");
-    const workspace = await owner.query(api.scout.workspaces.list, { threadId });
+    const workspace = await owner.query(api.scout.workspaces.list, {
+      target: { kind: "chat", threadId },
+    });
     expect(workspace.cwd).toBe("/workspace/reports");
     expect(workspace.entries.find((entry) => entry.kind === "file")).toMatchObject({
       key: expect.stringContaining(`/users/${userId}/threads/${threadId}/files/`),
     });
     expect([...blobs.keys()][0]).toMatch(/\/files\/reports\/hello\.txt\/[a-f0-9-]{36}$/);
     const preview = await owner.action(api.scout.workspaceTools.readFile, {
-      threadId,
+      target: { kind: "chat", threadId },
       path: "/workspace/reports/hello.txt",
     });
     expect(preview.text).toBe("hello\n");
@@ -155,14 +167,17 @@ describe("workspace persistence and access", () => {
   it("refuses other users and anonymous callers, even when Scouts are shared", async () => {
     const { backend, owner, other, threadId, otherThreadId, run } = await setup();
     await run("printf private > secret.txt");
-    await expect(other.query(api.scout.workspaces.list, { threadId })).rejects.toThrow(
-      "Chat not found",
-    );
-    await expect(backend.query(api.scout.workspaces.list, { threadId })).rejects.toThrow(
-      "Not authorized",
-    );
     await expect(
-      other.action(api.scout.workspaceTools.readFile, { threadId, path: "/workspace/secret.txt" }),
+      other.query(api.scout.workspaces.list, { target: { kind: "chat", threadId } }),
+    ).rejects.toThrow("Chat not found");
+    await expect(
+      backend.query(api.scout.workspaces.list, { target: { kind: "chat", threadId } }),
+    ).rejects.toThrow("Not authorized");
+    await expect(
+      other.action(api.scout.workspaceTools.readFile, {
+        target: { kind: "chat", threadId },
+        path: "/workspace/secret.txt",
+      }),
     ).rejects.toThrow("Chat not found");
     await expect(
       other.action(api.scout.manual.executeTool, {
@@ -173,10 +188,14 @@ describe("workspace persistence and access", () => {
       }),
     ).rejects.toThrow("Thread not found");
     expect(
-      (await other.query(api.scout.workspaces.list, { threadId: otherThreadId })).entries,
+      (
+        await other.query(api.scout.workspaces.list, {
+          target: { kind: "chat", threadId: otherThreadId },
+        })
+      ).entries,
     ).toEqual([]);
     await expect(
-      owner.query(api.scout.workspaces.list, { threadId: otherThreadId }),
+      owner.query(api.scout.workspaces.list, { target: { kind: "chat", threadId: otherThreadId } }),
     ).rejects.toThrow("Chat not found");
   });
 
@@ -199,7 +218,7 @@ js-exec report.ts`);
     );
     expect(
       await owner.action(api.scout.workspaceTools.readFile, {
-        threadId,
+        target: { kind: "chat", threadId },
         path: "/workspace/report.json",
       }),
     ).toMatchObject({ text: '{"total":17}' });
@@ -213,7 +232,7 @@ js-exec report.ts`);
     });
     await expect(
       other.action(api.scout.workspaceTools.readFile, {
-        threadId,
+        target: { kind: "chat", threadId },
         path: "/workspace/report.json",
       }),
     ).rejects.toThrow("Chat not found");
@@ -232,17 +251,23 @@ js-exec report.ts`);
   it("keeps the prior files and revision when R2 refuses a write", async () => {
     const { owner, threadId, run } = await setup();
     await run("printf original > report.txt");
-    const before = await owner.query(api.scout.workspaces.list, { threadId });
+    const before = await owner.query(api.scout.workspaces.list, {
+      target: { kind: "chat", threadId },
+    });
     vi.spyOn(R2.prototype, "store").mockRejectedValueOnce(new Error("R2 write failed"));
     expect((await run("printf changed > report.txt")).outcome).toMatchObject({
       kind: "error",
       error: expect.stringContaining("R2 write failed"),
     });
-    expect(await owner.query(api.scout.workspaces.list, { threadId })).toEqual(before);
+    expect(
+      await owner.query(api.scout.workspaces.list, {
+        target: { kind: "chat", threadId },
+      }),
+    ).toEqual(before);
     expect(
       (
         await owner.action(api.scout.workspaceTools.readFile, {
-          threadId,
+          target: { kind: "chat", threadId },
           path: "/workspace/report.txt",
         })
       ).text,
@@ -253,7 +278,9 @@ js-exec report.ts`);
   it("preserves the workspace when lab access is revoked during a Bash upload", async () => {
     const { backend, owner, userId, threadId, run } = await setup();
     await run("printf original > report.txt; printf keep > keep.txt");
-    const before = await owner.query(api.scout.workspaces.list, { threadId });
+    const before = await owner.query(api.scout.workspaces.list, {
+      target: { kind: "chat", threadId },
+    });
     vi.spyOn(R2.prototype, "store").mockImplementationOnce(async (_ctx, file, options) => {
       const key = typeof options === "string" ? options : options?.key;
       if (!key) throw new Error("Expected an explicitly scoped key");
@@ -268,10 +295,14 @@ js-exec report.ts`);
         .outcome,
     ).toMatchObject({ kind: "error", error: expect.stringContaining("Not authorized") });
     await backend.run((ctx) => ctx.db.patch(userId, { email: ADMIN_EMAIL }));
-    expect(await owner.query(api.scout.workspaces.list, { threadId })).toEqual(before);
+    expect(
+      await owner.query(api.scout.workspaces.list, {
+        target: { kind: "chat", threadId },
+      }),
+    ).toEqual(before);
     expect(
       await owner.action(api.scout.workspaceTools.readFile, {
-        threadId,
+        target: { kind: "chat", threadId },
         path: "/workspace/report.txt",
       }),
     ).toMatchObject({ text: "original" });
@@ -281,7 +312,9 @@ js-exec report.ts`);
   it("preserves the workspace when chat ownership changes during a Bash upload", async () => {
     const { backend, owner, other, otherId, threadId, run } = await setup();
     await run("printf original > report.txt; printf keep > keep.txt");
-    const before = await owner.query(api.scout.workspaces.list, { threadId });
+    const before = await owner.query(api.scout.workspaces.list, {
+      target: { kind: "chat", threadId },
+    });
     vi.spyOn(R2.prototype, "store").mockImplementationOnce(async (_ctx, file, options) => {
       const key = typeof options === "string" ? options : options?.key;
       if (!key) throw new Error("Expected an explicitly scoped key");
@@ -300,10 +333,14 @@ js-exec report.ts`);
       (await run("printf replacement > report.txt; rm keep.txt; mkdir reports; cd reports"))
         .outcome,
     ).toMatchObject({ kind: "error", error: expect.stringContaining("Chat not found") });
-    expect(await other.query(api.scout.workspaces.list, { threadId })).toEqual(before);
+    expect(
+      await other.query(api.scout.workspaces.list, {
+        target: { kind: "chat", threadId },
+      }),
+    ).toEqual(before);
     expect(
       await other.action(api.scout.workspaceTools.readFile, {
-        threadId,
+        target: { kind: "chat", threadId },
         path: "/workspace/report.txt",
       }),
     ).toMatchObject({ text: "original" });
@@ -324,17 +361,20 @@ js-exec report.ts`);
           await ctx.db.replace(userId, { state: "deleted", deletedAt: Date.now() });
         }
       });
-      await expect(owner.query(api.scout.workspaces.list, { threadId })).rejects.toThrow(
-        "Not authorized",
-      );
+      await expect(
+        owner.query(api.scout.workspaces.list, { target: { kind: "chat", threadId } }),
+      ).rejects.toThrow("Not authorized");
       await expect(
         owner.action(api.scout.workspaceTools.readFile, {
-          threadId,
+          target: { kind: "chat", threadId },
           path: "/workspace/secret.txt",
         }),
       ).rejects.toThrow("Not authorized");
       await expect(
-        backend.mutation(internal.scout.workspaces.snapshot, { threadId, userId }),
+        backend.mutation(internal.scout.workspaces.snapshot, {
+          target: { kind: "chat", threadId },
+          userId,
+        }),
       ).rejects.toThrow("Not authorized");
       await expect(run("cat secret.txt")).rejects.toThrow("Not authorized");
     },
@@ -343,9 +383,14 @@ js-exec report.ts`);
   it("rejects a stale commit and schedules cleanup only after a successful replacement", async () => {
     const { backend, owner, threadId, userId, run } = await setup();
     await run("printf original > report.txt");
-    const stale = await backend.mutation(internal.scout.workspaces.snapshot, { threadId, userId });
+    const stale = await backend.mutation(internal.scout.workspaces.snapshot, {
+      target: { kind: "chat", threadId },
+      userId,
+    });
     await run("printf replacement > report.txt");
-    const current = await owner.query(api.scout.workspaces.list, { threadId });
+    const current = await owner.query(api.scout.workspaces.list, {
+      target: { kind: "chat", threadId },
+    });
     const originalFile = stale.entries.find((entry) => entry.kind === "file");
     const replacementFile = current.entries.find((entry) => entry.kind === "file");
     if (originalFile?.kind !== "file" || replacementFile?.kind !== "file")
@@ -362,7 +407,11 @@ js-exec report.ts`);
         cwd: stale.cwd,
       }),
     ).rejects.toThrow("Another command");
-    expect(await owner.query(api.scout.workspaces.list, { threadId })).toEqual(current);
+    expect(
+      await owner.query(api.scout.workspaces.list, {
+        target: { kind: "chat", threadId },
+      }),
+    ).toEqual(current);
     expect(deleted).toEqual([originalFile.key]);
     await run("rm report.txt");
     expect(deleted).toEqual([originalFile.key, replacementFile.key]);
@@ -372,7 +421,7 @@ js-exec report.ts`);
     const { owner, threadId, run } = await setup();
     await run("printf /wAB | base64 -d > bytes.bin");
     const file = await owner.action(api.scout.workspaceTools.readFile, {
-      threadId,
+      target: { kind: "chat", threadId },
       path: "/workspace/bytes.bin",
     });
     expect(file.text).toBeNull();
@@ -384,11 +433,13 @@ js-exec report.ts`);
     async (corrupted) => {
       const { owner, threadId, run } = await setup();
       await run("printf original > report.txt");
-      const before = await owner.query(api.scout.workspaces.list, { threadId });
+      const before = await owner.query(api.scout.workspaces.list, {
+        target: { kind: "chat", threadId },
+      });
       for (const key of blobs.keys()) blobs.set(key, new TextEncoder().encode(corrupted));
       await expect(
         owner.action(api.scout.workspaceTools.readFile, {
-          threadId,
+          target: { kind: "chat", threadId },
           path: "/workspace/report.txt",
         }),
       ).rejects.toThrow("integrity");
@@ -399,7 +450,7 @@ js-exec report.ts`);
       blobs.clear();
       await expect(
         owner.action(api.scout.workspaceTools.readFile, {
-          threadId,
+          target: { kind: "chat", threadId },
           path: "/workspace/report.txt",
         }),
       ).rejects.toThrow("404");
@@ -407,12 +458,403 @@ js-exec report.ts`);
         kind: "error",
         error: expect.stringContaining("404"),
       });
-      expect(await owner.query(api.scout.workspaces.list, { threadId })).toEqual(before);
+      expect(
+        await owner.query(api.scout.workspaces.list, {
+          target: { kind: "chat", threadId },
+        }),
+      ).toEqual(before);
     },
   );
 });
 
+describe("shared site workspaces", () => {
+  it("reuses files across users, Scouts, and chats while keeping private files separate", async () => {
+    const t = await setup();
+    const secondScoutId = await t.backend.run(async (ctx) => {
+      const scout = await ctx.db.get(t.scoutId);
+      if (!scout) throw new Error("Missing Scout");
+      const { _id, _creationTime, ...fields } = scout;
+      return ctx.db.insert("scouts", { ...fields, slug: "second-workspace-scout" });
+    });
+    const { threadId: secondThreadId } = await t.other.mutation(api.scout.chats.createThread, {
+      scoutId: secondScoutId,
+    });
+    const shared = await t.run(
+      "printf 'const size = 9; console.log(size);' > board.ts",
+      "PaperGames.io",
+    );
+    expect(shared.outcome.kind).toBe("success");
+    await t.run("printf private > secret.txt");
+    const output = await t.other.action(async (ctx) => {
+      const tools = createWorkspaceTools(
+        ctx,
+        { threadId: secondThreadId, userId: t.otherId },
+        async () => {},
+      );
+      return requireRuntimeTool(tools, "bash").execute(
+        {
+          workspace: "papergames.io",
+          command: "js-exec board.ts",
+        },
+        { toolCallId: "shared-read", messages: [], context: {} },
+      );
+    });
+    expect(bashResultSchema.parse(output).stderr).toBe("");
+    expect(output).toMatchObject({
+      stdout: "9\n",
+      exitCode: 0,
+      workspace: "papergames.io",
+      revision: 1,
+    });
+    const site = await t.other.query(api.scout.workspaces.list, {
+      target: { kind: "site", site: "papergames.io" },
+    });
+    expect(site.entries.filter((entry) => entry.kind === "file")).toHaveLength(1);
+    expect(site.entries.find((entry) => entry.kind === "file")).toMatchObject({
+      key: expect.stringMatching(/\/sites\/papergames\.io\/files\/board\.ts\//),
+    });
+    expect(
+      (
+        await t.other.action(api.scout.workspaceTools.readFile, {
+          target: { kind: "site", site: "papergames.io" },
+          path: "/workspace/board.ts",
+        })
+      ).text,
+    ).toContain("size = 9");
+    expect(
+      (
+        await t.owner.query(api.scout.workspaces.list, {
+          target: { kind: "chat", threadId: t.threadId },
+        })
+      ).entries.filter((entry) => entry.kind === "file"),
+    ).toEqual([expect.objectContaining({ path: "/workspace/secret.txt" })]);
+    expect(
+      (
+        await t.other.query(api.scout.workspaces.list, {
+          target: { kind: "chat", threadId: secondThreadId },
+        })
+      ).entries,
+    ).toEqual([]);
+    expect(
+      (
+        await t.owner.query(api.scout.workspaces.list, {
+          target: { kind: "site", site: "another.example" },
+        })
+      ).entries,
+    ).toEqual([]);
+    await expect(
+      t.other.action(api.scout.workspaceTools.readFile, {
+        target: { kind: "site", site: "papergames.io" },
+        path: "/workspace/secret.txt",
+      }),
+    ).rejects.toThrow("File not found");
+    await t.read();
+    expect(
+      (
+        await t.owner.query(api.scout.workspaces.list, {
+          target: { kind: "site", site: "papergames.io" },
+        })
+      ).entries.filter((entry) => entry.kind === "file"),
+    ).toHaveLength(1);
+    expect(
+      [...blobs.keys()].some((key) =>
+        key.includes(`/users/${t.userId}/threads/${t.threadId}/files/sources/`),
+      ),
+    ).toBe(true);
+  });
+
+  it("requires current access to read or commit shared files", async () => {
+    const t = await setup();
+    await t.run("echo shared > guide.md", "example.com");
+    await expect(
+      t.backend.query(api.scout.workspaces.list, { target: { kind: "site", site: "example.com" } }),
+    ).rejects.toThrow("Not authorized");
+    const snapshot = await t.backend.mutation(internal.scout.workspaces.snapshot, {
+      target: { kind: "site", site: "example.com" },
+      userId: t.userId,
+    });
+    await t.backend.run(async (ctx) =>
+      ctx.db.patch(t.userId, { email: "pending@example.test", isApproved: false }),
+    );
+    await expect(
+      t.backend.mutation(internal.scout.workspaces.commit, {
+        workspaceId: snapshot.workspaceId,
+        userId: t.userId,
+        expectedRevision: snapshot.revision,
+        cwd: snapshot.cwd,
+        entries: snapshot.entries,
+      }),
+    ).rejects.toThrow("Not authorized");
+  });
+
+  it("browses and edits shared files without creating a chat", async () => {
+    const t = await setup();
+    const userId = await t.backend.run((ctx) => insertTestAccount(ctx, { email: ADMIN_EMAIL }));
+    const viewer = t.backend.withIdentity({ subject: `${userId}|session` });
+    const result = await viewer.action(api.scout.workspaceTools.executeSiteCommand, {
+      site: "Example.COM",
+      command: "printf 'site notes' > guide.md",
+    });
+    expect(result).toMatchObject({ workspace: "example.com", exitCode: 0 });
+    const file = await viewer.action(api.scout.workspaceTools.readFile, {
+      target: { kind: "site", site: "example.com" },
+      path: "/workspace/guide.md",
+    });
+    expect(file.text).toBe("site notes");
+    expect(
+      await t.backend.run((ctx) =>
+        ctx.db
+          .query("scoutChats")
+          .withIndex("by_user_id_and_created_at", (q) => q.eq("userId", userId))
+          .first(),
+      ),
+    ).toBeNull();
+    await expect(
+      t.backend.action(api.scout.workspaceTools.executeSiteCommand, {
+        site: "example.com",
+        command: "rm guide.md",
+      }),
+    ).rejects.toThrow("Not authorized");
+    await expect(
+      viewer.action(api.scout.workspaceTools.executeSiteCommand, {
+        site: "../example.com",
+        command: "rm guide.md",
+      }),
+    ).rejects.toThrow("exact hostname");
+    await t.backend.run((ctx) =>
+      ctx.db.patch(userId, { email: "member@example.test", isApproved: true }),
+    );
+    await expect(
+      viewer.action(api.scout.workspaceTools.executeSiteCommand, {
+        site: "example.com",
+        command: "rm guide.md",
+      }),
+    ).rejects.toThrow("Not authorized");
+    await expect(
+      viewer.action(api.scout.workspaceTools.readFile, {
+        target: { kind: "site", site: "example.com" },
+        path: "/workspace/guide.md",
+      }),
+    ).rejects.toThrow("Not authorized");
+  });
+
+  it("paginates sites alphabetically, excluding private workspaces and read-only misses", async () => {
+    const t = await setup();
+    await t.run("echo private > private.txt");
+    await t.run("echo z > guide.md", "z.example");
+    await t.run("echo a > guide.md", "a.example");
+    expect(
+      await t.owner.query(api.scout.workspaces.list, {
+        target: { kind: "site", site: "missing.example" },
+      }),
+    ).toMatchObject({ exists: false, entries: [] });
+    const first = await t.owner.query(api.scout.workspaces.listSites, {
+      paginationOpts: { numItems: 1, cursor: null },
+    });
+    expect(first.page).toEqual(["a.example"]);
+    const second = await t.owner.query(api.scout.workspaces.listSites, {
+      paginationOpts: { numItems: 1, cursor: first.continueCursor },
+    });
+    expect(second.page).toEqual(["z.example"]);
+    expect(second.isDone).toBe(true);
+    await expect(
+      t.backend.query(api.scout.workspaces.listSites, {
+        paginationOpts: { numItems: 10, cursor: null },
+      }),
+    ).rejects.toThrow("Not authorized");
+  });
+
+  it("rejects stale site writes without deleting another chat's update", async () => {
+    const t = await setup();
+    await t.run("echo first > guide.md", "example.com");
+    const snapshot = await t.backend.mutation(internal.scout.workspaces.snapshot, {
+      target: { kind: "site", site: "example.com" },
+      userId: t.userId,
+    });
+    await t.other.action(api.scout.manual.executeTool, {
+      threadId: t.otherThreadId,
+      toolName: "bash",
+      input: JSON.stringify({ workspace: "example.com", command: "echo second > guide.md" }),
+      operationId: crypto.randomUUID(),
+    });
+    const deletedBefore = [...deleted];
+    await expect(
+      t.backend.mutation(internal.scout.workspaces.commit, {
+        workspaceId: snapshot.workspaceId,
+        userId: t.userId,
+        expectedRevision: snapshot.revision,
+        cwd: snapshot.cwd,
+        entries: [],
+      }),
+    ).rejects.toThrow("Another command changed this workspace");
+    expect(deleted).toEqual(deletedBefore);
+    expect(
+      (
+        await t.owner.action(api.scout.workspaceTools.readFile, {
+          target: { kind: "site", site: "example.com" },
+          path: "/workspace/guide.md",
+        })
+      ).text,
+    ).toBe("second\n");
+  });
+
+  it.each([
+    "",
+    "../example.com",
+    "https://example.com",
+    "example.com/path",
+    "example.com:443",
+    "user@example.com",
+    "a..example.com",
+  ])("rejects invalid workspace names: %s", async (workspace) => {
+    const t = await setup();
+    expect((await t.run("echo should-not-run > x", workspace)).outcome.kind).toBe("error");
+    expect(blobs.size).toBe(0);
+  });
+});
+
 describe("web reads saved to the workspace", () => {
+  it.each(["html", "rawHtml"] satisfies Array<"html" | "rawHtml">)(
+    "saves complete %s with safe provenance, HTML naming, and a bounded excerpt",
+    async (format) => {
+      const { owner, threadId, read, readAsAgent, run } = await setup();
+      const content = `<!doctype html><html><body>${"<p>A &amp; B 🚀</p>".repeat(300)}<a href="/next">Last link</a></body></html>`;
+      const title = "Before --><script>bad()</script><!-- After";
+      scrape.mockResolvedValue({
+        markdown: "Wrong format",
+        html: format === "html" ? content : "Wrong format",
+        rawHtml: format === "rawHtml" ? content : "Wrong format",
+        metadata: { title, sourceURL: "https://redirect.example/actual", creditsUsed: 1 },
+      });
+      const url = "https://example.com/docs/billing?plan=pro#price";
+      const store = vi.spyOn(R2.prototype, "store");
+      const manual = await read(url, format);
+      if (manual.outcome.kind !== "success") throw new Error(manual.outcome.error);
+      const result = await readAsAgent(url, format);
+      expect(JSON.parse(manual.outcome.output)).toMatchObject({ format });
+      expect(result).toMatchObject({
+        format,
+        requestedUrl: url,
+        sourceUrl: "https://redirect.example/actual",
+        title,
+        retrievedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+        statusCode: null,
+        creditsUsed: 1,
+        excerpt: Array.from(content).slice(0, 2_000).join(""),
+        excerptTruncated: true,
+      });
+      const suffix = format === "rawHtml" ? "\\.raw\\.html" : "\\.html";
+      expect(result).toMatchObject({
+        path: expect.stringMatching(
+          new RegExp(`^/workspace/sources/example\\.com/docs-billing-[a-f0-9]{8}${suffix}$`),
+        ),
+      });
+      const { entries } = await owner.query(api.scout.workspaces.list, {
+        target: { kind: "chat", threadId },
+      });
+      const file = entries.find((entry) => entry.kind === "file");
+      if (!file || file.kind !== "file") throw new Error("Source file not registered");
+      const preview = await owner.action(api.scout.workspaceTools.readFile, {
+        target: { kind: "chat", threadId },
+        path: file.path,
+      });
+      expect(preview.text?.startsWith("<!--\n")).toBe(true);
+      expect(preview.text?.endsWith(`-->\n${content}`)).toBe(true);
+      const header = preview.text?.split("-->\n")[0]?.slice(5);
+      if (!header) throw new Error("Missing HTML provenance");
+      expect(header).not.toContain("--");
+      expect(header).not.toContain("<");
+      expect(JSON.parse(header)).toMatchObject({ requestedUrl: url, title, format });
+      expect(result).toMatchObject({ byteCount: preview.bytes.byteLength });
+      expect(store).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.any(Uint8Array),
+        expect.objectContaining({ type: "text/html; charset=utf-8" }),
+      );
+      expect(scrape).toHaveBeenLastCalledWith(url, {
+        formats: [format],
+        onlyMainContent: format !== "rawHtml",
+        removeBase64Images: true,
+        timeout: 60_000,
+        autoResume: false,
+      });
+      const searched = await run(`rg -o 'Last link' '${file.path}'`);
+      if (searched.outcome.kind !== "success") throw new Error(searched.outcome.error);
+      expect(bashResultSchema.parse(JSON.parse(searched.outcome.output)).stdout).toBe(
+        "Last link\n",
+      );
+    },
+  );
+
+  it.each(["markdown", "html", "rawHtml"] satisfies Array<"markdown" | "html" | "rawHtml">)(
+    "rejects missing or empty %s instead of falling back to another format",
+    async (format) => {
+      const { owner, threadId, read } = await setup();
+      for (const content of [undefined, "", " \n\t"]) {
+        scrape.mockResolvedValue({
+          markdown: "Other",
+          html: "Other",
+          rawHtml: "Other",
+          [format]: content,
+        });
+        expect((await read("https://example.com", format)).outcome).toMatchObject({
+          kind: "error",
+          error: expect.stringContaining(`Firecrawl returned no ${format} content`),
+        });
+      }
+      expect(blobs.size).toBe(0);
+      expect(
+        (
+          await owner.query(api.scout.workspaces.list, {
+            target: { kind: "chat", threadId },
+          })
+        ).entries,
+      ).toEqual([]);
+    },
+  );
+
+  it("rejects unsupported formats before fetching", async () => {
+    const { owner, threadId } = await setup();
+    const result = await owner.action(api.scout.manual.executeTool, {
+      threadId,
+      toolName: "web_read",
+      input: JSON.stringify({ url: "https://example.com", format: "json" }),
+      operationId: crypto.randomUUID(),
+    });
+    expect(result.outcome.kind).toBe("error");
+    expect(scrape).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { statusCode: 403, error: "Blocked" },
+    { statusCode: 404 },
+    { statusCode: 200, error: "Renderer failed" },
+  ])("rejects provider page failures before uploading: %j", async (metadata) => {
+    const { read } = await setup();
+    scrape.mockResolvedValue({ html: "<p>Error page</p>", metadata });
+    expect((await read("https://example.com", "html")).outcome).toMatchObject({
+      kind: "error",
+      error: expect.stringContaining("Firecrawl page failed"),
+    });
+    expect(blobs.size).toBe(0);
+  });
+
+  it("preserves the provider failure when the selected content is missing", async () => {
+    const { read } = await setup();
+    scrape.mockResolvedValue({ metadata: { statusCode: 403, error: "Blocked by origin" } });
+    expect((await read("https://example.com", "rawHtml")).outcome).toMatchObject({
+      kind: "error",
+      error: expect.stringContaining("Firecrawl page failed (403): Blocked by origin"),
+    });
+    expect(blobs.size).toBe(0);
+  });
+
+  it.each([200, 304])("accepts a clean provider page status %s", async (statusCode) => {
+    const { read } = await setup();
+    scrape.mockResolvedValue({ html: "<p>Page</p>", metadata: { statusCode } });
+    expect((await read("https://example.com", "html")).outcome.kind).toBe("success");
+  });
+
   it("saves the complete page, returns only an excerpt, and lets Bash find an answer past 20,000 characters", async () => {
     const { owner, other, threadId, userId, read, run } = await setup();
     const markdown = `${"Introduction\n".repeat(2_000)}\nThe secret answer is 42.\n`;
@@ -433,7 +875,9 @@ describe("web reads saved to the workspace", () => {
     });
     expect(result.outcome.output).not.toContain("The secret answer");
     expect(result.outcome.output.length).toBeLessThan(3_000);
-    const { entries } = await owner.query(api.scout.workspaces.list, { threadId });
+    const { entries } = await owner.query(api.scout.workspaces.list, {
+      target: { kind: "chat", threadId },
+    });
     expect(
       entries.filter((entry) => entry.kind === "directory").map((entry) => entry.path),
     ).toEqual(["/workspace", "/workspace/sources", "/workspace/sources/example.com"]);
@@ -447,7 +891,7 @@ describe("web reads saved to the workspace", () => {
     );
     expect(file.path).not.toMatch(/plan|price|redirect/);
     const preview = await owner.action(api.scout.workspaceTools.readFile, {
-      threadId,
+      target: { kind: "chat", threadId },
       path: file.path,
     });
     expect(preview.text).toContain(`requestedUrl: ${JSON.stringify(requestedUrl)}`);
@@ -465,7 +909,10 @@ describe("web reads saved to the workspace", () => {
       "The secret answer is 42.",
     );
     await expect(
-      other.action(api.scout.workspaceTools.readFile, { threadId, path: file.path }),
+      other.action(api.scout.workspaceTools.readFile, {
+        target: { kind: "chat", threadId },
+        path: file.path,
+      }),
     ).rejects.toThrow("Chat not found");
     await expect(
       other.action(api.scout.manual.executeTool, {
@@ -489,7 +936,9 @@ describe("web reads saved to the workspace", () => {
     await run("mkdir reports; cd reports");
     const results = await Promise.all([readAsAgent(), readAsAgent()]);
     expect(results[0]).toMatchObject({ excerpt: "A small page.", excerptTruncated: false });
-    const current = await owner.query(api.scout.workspaces.list, { threadId });
+    const current = await owner.query(api.scout.workspaces.list, {
+      target: { kind: "chat", threadId },
+    });
     expect(current.cwd).toBe("/workspace/reports");
     expect(current.revision).toBe(3);
     const files = current.entries.filter((entry) => entry.kind === "file");
@@ -521,9 +970,14 @@ describe("web reads saved to the workspace", () => {
 
   it("prevents stale Bash snapshots from deleting a newer imported file", async () => {
     const { backend, owner, threadId, userId, readAsAgent } = await setup();
-    const stale = await backend.mutation(internal.scout.workspaces.snapshot, { threadId, userId });
+    const stale = await backend.mutation(internal.scout.workspaces.snapshot, {
+      target: { kind: "chat", threadId },
+      userId,
+    });
     await readAsAgent();
-    const current = await owner.query(api.scout.workspaces.list, { threadId });
+    const current = await owner.query(api.scout.workspaces.list, {
+      target: { kind: "chat", threadId },
+    });
     await expect(
       backend.mutation(internal.scout.workspaces.commit, {
         workspaceId: stale.workspaceId,
@@ -533,7 +987,11 @@ describe("web reads saved to the workspace", () => {
         cwd: stale.cwd,
       }),
     ).rejects.toThrow("Another command");
-    expect(await owner.query(api.scout.workspaces.list, { threadId })).toEqual(current);
+    expect(
+      await owner.query(api.scout.workspaces.list, {
+        target: { kind: "chat", threadId },
+      }),
+    ).toEqual(current);
   });
 
   it.each([
@@ -544,37 +1002,54 @@ describe("web reads saved to the workspace", () => {
   ])("refuses file or symlink ancestors without changing the workspace: %s", async (command) => {
     const { owner, threadId, run, read } = await setup();
     await run(command);
-    const before = await owner.query(api.scout.workspaces.list, { threadId });
+    const before = await owner.query(api.scout.workspaces.list, {
+      target: { kind: "chat", threadId },
+    });
     expect((await read()).outcome).toMatchObject({
       kind: "error",
       error: expect.stringContaining("parent is not a directory"),
     });
-    expect(await owner.query(api.scout.workspaces.list, { threadId })).toEqual(before);
+    expect(
+      await owner.query(api.scout.workspaces.list, {
+        target: { kind: "chat", threadId },
+      }),
+    ).toEqual(before);
   });
 
-  it("enforces UTF-8 bytes including provenance at the exact per-file boundary", async () => {
-    const { owner, threadId, read } = await setup();
-    scrape.mockResolvedValue({ markdown: "a" });
-    await read();
-    const initial = await owner.query(api.scout.workspaces.list, { threadId });
-    const file = initial.entries.find((entry) => entry.kind === "file");
-    if (!file || file.kind !== "file") throw new Error("Missing source");
-    const remaining = MAX_WORKSPACE_FILE_BYTES - (file.size - 1);
-    const markdown = "é".repeat(Math.floor(remaining / 2)) + "a".repeat(remaining % 2);
-    scrape.mockResolvedValue({ markdown });
-    expect((await read()).outcome.kind).toBe("success");
-    const before = await owner.query(api.scout.workspaces.list, { threadId });
-    expect(before.entries).toContainEqual(
-      expect.objectContaining({ size: MAX_WORKSPACE_FILE_BYTES }),
-    );
-    scrape.mockResolvedValue({ markdown: `${markdown}a` });
-    expect((await read()).outcome).toMatchObject({
-      kind: "error",
-      error: expect.stringContaining("Page is too large"),
-    });
-    expect(await owner.query(api.scout.workspaces.list, { threadId })).toEqual(before);
-    expect(blobs.size).toBe(2);
-  });
+  it.each(["markdown", "html", "rawHtml"] satisfies Array<"markdown" | "html" | "rawHtml">)(
+    "enforces UTF-8 bytes including provenance at the exact %s file boundary",
+    async (format) => {
+      const { owner, threadId, read } = await setup();
+      scrape.mockResolvedValue({ [format]: "a" });
+      await read("https://example.com", format);
+      const initial = await owner.query(api.scout.workspaces.list, {
+        target: { kind: "chat", threadId },
+      });
+      const file = initial.entries.find((entry) => entry.kind === "file");
+      if (!file || file.kind !== "file") throw new Error("Missing source");
+      const remaining = MAX_WORKSPACE_FILE_BYTES - (file.size - 1);
+      const content = "é".repeat(Math.floor(remaining / 2)) + "a".repeat(remaining % 2);
+      scrape.mockResolvedValue({ [format]: content });
+      expect((await read("https://example.com", format)).outcome.kind).toBe("success");
+      const before = await owner.query(api.scout.workspaces.list, {
+        target: { kind: "chat", threadId },
+      });
+      expect(before.entries).toContainEqual(
+        expect.objectContaining({ size: MAX_WORKSPACE_FILE_BYTES }),
+      );
+      scrape.mockResolvedValue({ [format]: `${content}a` });
+      expect((await read("https://example.com", format)).outcome).toMatchObject({
+        kind: "error",
+        error: expect.stringContaining("Page is too large"),
+      });
+      expect(
+        await owner.query(api.scout.workspaces.list, {
+          target: { kind: "chat", threadId },
+        }),
+      ).toEqual(before);
+      expect(blobs.size).toBe(2);
+    },
+  );
 
   it("fails before fetching if R2 configuration or chat ownership is missing", async () => {
     const { owner, userId, threadId, otherThreadId, readAsAgent } = await setup();
@@ -589,7 +1064,13 @@ describe("web reads saved to the workspace", () => {
     vi.stubEnv("R2_BUCKET", "");
     await expect(readAsAgent()).rejects.toThrow("Workspace storage is not configured");
     expect(scrape).not.toHaveBeenCalled();
-    expect((await owner.query(api.scout.workspaces.list, { threadId })).entries).toEqual([]);
+    expect(
+      (
+        await owner.query(api.scout.workspaces.list, {
+          target: { kind: "chat", threadId },
+        })
+      ).entries,
+    ).toEqual([]);
   });
 
   it("does not claim success for a provider, missing Markdown, or upload failure", async () => {
@@ -606,7 +1087,13 @@ describe("web reads saved to the workspace", () => {
       kind: "error",
       error: expect.stringContaining("R2 write failed"),
     });
-    expect((await owner.query(api.scout.workspaces.list, { threadId })).entries).toEqual([]);
+    expect(
+      (
+        await owner.query(api.scout.workspaces.list, {
+          target: { kind: "chat", threadId },
+        })
+      ).entries,
+    ).toEqual([]);
     expect(blobs.size).toBe(0);
   });
 
@@ -621,13 +1108,19 @@ describe("web reads saved to the workspace", () => {
       error: expect.stringContaining("Not authorized"),
     });
     await backend.run((ctx) => ctx.db.patch(userId, { emailVerificationTime: Date.now() }));
-    expect((await owner.query(api.scout.workspaces.list, { threadId })).entries).toEqual([]);
+    expect(
+      (
+        await owner.query(api.scout.workspaces.list, {
+          target: { kind: "chat", threadId },
+        })
+      ).entries,
+    ).toEqual([]);
   });
 
   it("rejects occupied destinations of every kind and paths outside the workspace", async () => {
     const { backend, owner, userId, threadId } = await setup();
     const snapshot = await backend.mutation(internal.scout.workspaces.snapshot, {
-      threadId,
+      target: { kind: "chat", threadId },
       userId,
     });
     const file = {
@@ -674,7 +1167,13 @@ describe("web reads saved to the workspace", () => {
         }),
       ).rejects.toThrow("absolute path inside /workspace");
     }
-    expect((await owner.query(api.scout.workspaces.list, { threadId })).revision).toBe(0);
+    expect(
+      (
+        await owner.query(api.scout.workspaces.list, {
+          target: { kind: "chat", threadId },
+        })
+      ).revision,
+    ).toBe(0);
   });
 
   it.each(["entries", "bytes"])(
@@ -682,7 +1181,7 @@ describe("web reads saved to the workspace", () => {
     async (limit) => {
       const { backend, owner, userId, threadId } = await setup();
       const snapshot = await backend.mutation(internal.scout.workspaces.snapshot, {
-        threadId,
+        target: { kind: "chat", threadId },
         userId,
       });
       const file = {
@@ -719,7 +1218,9 @@ describe("web reads saved to the workspace", () => {
         userId,
         entry: file,
       });
-      const before = await owner.query(api.scout.workspaces.list, { threadId });
+      const before = await owner.query(api.scout.workspaces.list, {
+        target: { kind: "chat", threadId },
+      });
       await expect(
         backend.mutation(internal.scout.workspaces.addFile, {
           workspaceId: snapshot.workspaceId,
@@ -727,7 +1228,11 @@ describe("web reads saved to the workspace", () => {
           entry: { ...file, path: "/workspace/sources/example.com/another.md", key: "another" },
         }),
       ).rejects.toThrow("limit exceeded");
-      expect(await owner.query(api.scout.workspaces.list, { threadId })).toEqual(before);
+      expect(
+        await owner.query(api.scout.workspaces.list, {
+          target: { kind: "chat", threadId },
+        }),
+      ).toEqual(before);
     },
   );
 });
@@ -817,7 +1322,7 @@ describe("Workspace tool results", () => {
       if (truncated) expect(result.value.excerpt.length).toBeLessThan(text.length);
       else expect(result.value.excerpt).toBe(text);
       const file = await owner.action(api.scout.workspaceTools.readFile, {
-        threadId,
+        target: { kind: "chat", threadId },
         path: result.value.path,
       });
       expect(file.text).toBe(text);
@@ -877,7 +1382,7 @@ describe("Workspace tool results", () => {
     expect(ref.excerpt).not.toContain("TAIL_EVIDENCE");
     expect(ref.byteCount).toBeLessThan(MAX_WORKSPACE_FILE_BYTES);
     const file = await owner.action(api.scout.workspaceTools.readFile, {
-      threadId,
+      target: { kind: "chat", threadId },
       path: ref.path,
     });
     expect(JSON.parse(file.text ?? "null")).toEqual(JSON.parse(payload.content[0]?.text ?? "null"));
@@ -891,7 +1396,10 @@ describe("Workspace tool results", () => {
       stdout: "true\n",
     });
     await expect(
-      other.action(api.scout.workspaceTools.readFile, { threadId, path: ref.path }),
+      other.action(api.scout.workspaceTools.readFile, {
+        target: { kind: "chat", threadId },
+        path: ref.path,
+      }),
     ).rejects.toThrow("Chat not found");
   });
 
@@ -958,7 +1466,7 @@ describe("Workspace tool results", () => {
         .parse(JSON.parse(result.outcome.output));
       expect(ref.excerpt).not.toContain("END_OF_PAGE");
       const file = await owner.action(api.scout.workspaceTools.readFile, {
-        threadId,
+        target: { kind: "chat", threadId },
         path: ref.path,
       });
       expect(JSON.parse(file.text ?? "null")).toMatchObject({
@@ -984,13 +1492,21 @@ describe("Workspace tool results", () => {
     expect(blobs.size).toBe(0);
     vi.spyOn(R2.prototype, "store").mockRejectedValueOnce(new Error("R2 unavailable"));
     await expect(save({ links: [] })).rejects.toThrow("R2 unavailable");
-    expect((await owner.query(api.scout.workspaces.list, { threadId })).entries).toEqual([]);
+    expect(
+      (
+        await owner.query(api.scout.workspaces.list, {
+          target: { kind: "chat", threadId },
+        })
+      ).entries,
+    ).toEqual([]);
   });
 
   it("does not revise an unchanged workspace when bash reads run in parallel", async () => {
     const { owner, threadId, userId, run } = await setup();
     await run("echo existing > saved.txt");
-    const before = await owner.query(api.scout.workspaces.list, { threadId });
+    const before = await owner.query(api.scout.workspaces.list, {
+      target: { kind: "chat", threadId },
+    });
     const outputs = await Promise.all(
       ["cat saved.txt", "wc -l saved.txt"].map((command) =>
         owner.action(async (ctx) => {
@@ -1002,6 +1518,10 @@ describe("Workspace tool results", () => {
       ),
     );
     expect(outputs.map((output) => bashResultSchema.parse(output).exitCode)).toEqual([0, 0]);
-    expect(await owner.query(api.scout.workspaces.list, { threadId })).toEqual(before);
+    expect(
+      await owner.query(api.scout.workspaces.list, {
+        target: { kind: "chat", threadId },
+      }),
+    ).toEqual(before);
   });
 });

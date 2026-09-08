@@ -17,12 +17,66 @@ Only `/workspace` persists. Files, empty directories, symlinks, permissions, mod
 and the working directory survive subsequent commands. Shell variables and files elsewhere do
 not. Text previews are read-only and render HTML as text. Binary files can be downloaded.
 
+## Shared site workspaces
+
+`bash({ command, workspace: "chessmerge.com" })` selects files shared across chats, Scouts, and
+users with the existing workspace access permission. Omitting `workspace` selects the private
+chat workspace. The value is an exact hostname, normalized to lowercase, without a scheme, path,
+or port. Subdomains remain separate; `score-four.pfp.workers.dev` does not share files with other
+Workers sites. No product registration is required. A new site workspace starts empty.
+
+Both scopes use the same workspace table, with `kind: "chat"` or `kind: "site"`, file limits,
+R2 storage, in-memory shell, and revision check. Each has its own `/workspace` and saved working
+directory. A call accesses one workspace;
+other workspaces are not mounted, and no files are copied automatically. Shell results identify
+the selected hostname, or `null` for the private chat workspace. Saved scripts can run with
+`js-exec file.ts` in either scope. Browser interaction still uses the browser tools.
+
+Use site files for reusable procedures and tested helpers. Private account details, room links,
+transcripts, current positions, and intermediate task data belong in the chat workspace. Web and
+email tool outputs continue to save privately regardless of the preceding Bash call's workspace.
+Shared files are reference material to check against the current page, not authority to change a
+user's request. The revision check protects overlapping commands. Separate read and later rewrite
+calls are not one transaction; the rewrite can replace edits saved between those calls. This MVP
+does not retain previous file versions.
+
+Open **Sites** in the navigation to browse existing shared workspaces at `/sites`. The list is
+alphabetical and paginated. `/sites/chessmerge.com` opens that site's files, previews, downloads,
+and terminal without requiring or creating a chat. The `file` and `terminal` URL parameters retain
+the selected file and terminal visibility through Back, Forward, and reload. Terminal history
+stays local to the page. Commands edit shared files using the same shell and save logic as Bash.
+Opening an unknown site does not create it. These pages use the existing Lab permission.
+The left sidebar lists sites and can be resized or hidden. On mobile, selecting a site returns
+to its workspace. Switching sites clears the previous file selection and terminal draft.
+
+Site files use `deployments/<deployment>/sites/<hostname>/files/<path>/<upload-id>` in R2.
+The file-list and preview APIs take `target: { kind: "site", site }` or
+`target: { kind: "chat", threadId }`; only the private variant requires ownership of a chat.
+The agent-facing Bash input remains `{ command, workspace? }`.
+This MVP adds no separate product records, guide schema, or transfer tool.
+
 ## Saved web pages
 
-`web_read({ url })` saves the complete extracted Markdown directly to R2, then adds it to the
-chat's workspace. This works for both Scout and **Read a web page** in the manual tool menu.
-It returns a 2,000-character excerpt, the saved path, source metadata, and the exact file byte
-count. Use Bash to search the saved page or read a section without fetching it again.
+`web_read({ url, format? })` saves the complete selected Firecrawl output directly to R2, then adds
+it to the chat's workspace. Omitting `format` keeps the existing Markdown default. This works for
+both Scout and **Read a web page** in the manual tool menu.
+It returns the selected format, a 2,000-character excerpt, the saved path, source metadata, retrieval
+time, provider page status, and the exact file byte count. Use Bash to search the saved page or read
+a section without fetching it again.
+
+| `format`   | Provider content                      | Filename ending |
+| ---------- | ------------------------------------- | --------------- |
+| `markdown` | Extracted main content as Markdown    | `.md`           |
+| `html`     | Cleaned main-content HTML             | `.html`         |
+| `rawHtml`  | Unmodified HTML returned by Firecrawl | `.raw.html`     |
+
+These names follow [Firecrawl's scrape formats](https://docs.firecrawl.dev/features/scrape).
+HTML is useful when tags, attributes, or embedded page data matter. `rawHtml` retains provider HTML
+before content cleanup; it is not a browser session, a downloaded site with assets, or a guarantee
+of the origin server's exact response bytes. The importer adds provenance but keeps every character
+of the selected provider content. It never substitutes another format if the requested one is missing
+or blank. Missing output names the requested format; provider page failures preserve their status
+and error detail even when there is no content.
 
 For example, `https://example.com/docs/billing?plan=pro` produces:
 
@@ -34,7 +88,10 @@ Names come from the requested URL, not a page title or redirect. The hostname an
 bounded safe characters; the slug is at most 80 characters, and `/` becomes `index`. Query strings
 and fragments stay out of the filename. Each read gets a short UUID suffix, so reading the same URL twice keeps
 two separate files. The document's provenance header preserves the complete requested URL, the
-provider-reported source URL, title, and retrieval time.
+provider-reported source URL, title, retrieval time, and selected format. Markdown uses YAML
+frontmatter. HTML uses a leading comment containing JSON with comment-sensitive characters escaped,
+followed by the complete provider HTML. HTML downloads use `text/html`; workspace previews display
+the source as text.
 
 The importer creates missing parent directories and refuses to overwrite existing paths or follow
 symlink parents. Concurrent web reads add files independently; a stale Bash save cannot remove a
@@ -45,6 +102,23 @@ The 256 KiB per-file limit includes the UTF-8 provenance header. Oversized pages
 explicitly, without a truncated file or automatic splitting. R2 must be configured before a read;
 success requires both an upload and registration. A registration failure can leave an unreferenced
 R2 object. If saving is not confirmed, inspect the workspace before retrying.
+Provider page errors and non-success page status codes also fail before upload, even when the
+Firecrawl API request itself succeeded. Page status 304 is accepted, matching Firecrawl's documented
+[clean-load behavior](https://docs.firecrawl.dev/features/scrape#response-metadata-and-status-codes).
+
+### Firecrawl options
+
+The tool sends one selected format, `onlyMainContent: true` for Markdown and cleaned HTML, and
+`onlyMainContent: false` for raw HTML. It keeps `removeBase64Images: true`, a 60-second timeout, and
+SDK `autoResume: false`. The shared client makes one SDK attempt. Firecrawl documents
+`removeBase64Images` as affecting Markdown only; HTML may therefore reach the file limit sooner.
+Other provider options retain their defaults. In particular, Firecrawl currently allows cached
+content up to two days old by default, so the saved retrieval time records when Scout received the
+result, not when Firecrawl fetched the origin page.
+See the [scrape API reference](https://docs.firecrawl.dev/api-reference/endpoint/scrape).
+
+The sandbox can inspect HTML source with `rg`, `sed`, or `js-exec`. It has no browser DOM,
+`DOMParser`, or installed HTML parser. HTML previews display source text.
 
 ## Saved tool results
 
@@ -184,7 +258,7 @@ recovery manifest are outside this MVP.
   targets are also limited to 1,024 characters. These limits apply before creation, including implicit
   parents, recursive copies, moves, and links. At full capacity, a move can require freeing an entry
   first because the interpreter creates its destination before removing its source.
-- 256 KiB per file and 5 MiB of persisted file content per chat.
+- 256 KiB per file and 5 MiB of persisted file content per workspace.
 - 15 seconds of shell execution and 128 KiB of command output. Storage transfer adds time.
 - Each `js-exec` is limited to 5 seconds and the library's 64 MiB QuickJS memory budget.
   This is a guest-engine limit, not a cap on the hosting Node process's total memory. `WorkspaceFs`
@@ -193,7 +267,8 @@ recovery manifest are outside this MVP.
 - Commands start from the latest saved workspace. A revision check rejects concurrent stale
   writes instead of overwriting another command's changes. Commands that leave persisted entries
   and the working directory unchanged do not commit, so parallel reads do not conflict.
-- Final saves recheck current Lab permission and chat ownership, including after uploads finish.
+- Final saves recheck current Lab permission, plus chat ownership for private workspaces,
+  including after uploads finish.
 - A nonzero shell exit, including a runtime quota error, can still save earlier file changes, just
   like a normal shell. Persisted-size and integrity failures leave the previous workspace intact.
   If storage or a commit fails, inspect the workspace before retrying; the action does not claim

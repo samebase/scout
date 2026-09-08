@@ -120,11 +120,24 @@ export default defineSchema({
   })
     .index("by_thread_id", ["threadId"])
     .index("by_user_id_and_created_at", ["userId", "createdAt"]),
-  scoutWorkspaces: defineTable({
-    threadId: v.string(),
-    cwd: v.string(),
-    revision: v.number(),
-  }).index("by_thread_id", ["threadId"]),
+  scoutWorkspaces: defineTable(
+    v.union(
+      v.object({
+        kind: v.literal("chat"),
+        threadId: v.string(),
+        cwd: v.string(),
+        revision: v.number(),
+      }),
+      v.object({
+        kind: v.literal("site"),
+        site: v.string(),
+        cwd: v.string(),
+        revision: v.number(),
+      }),
+    ),
+  )
+    .index("by_thread_id", ["threadId"])
+    .index("by_site", ["site"]),
   scoutWorkspaceFiles: defineTable({
     workspaceId: v.id("scoutWorkspaces"),
     entry: workspaceEntryValidator,
