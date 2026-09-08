@@ -10,10 +10,7 @@ export const bundledSkills = {
   games: {
     description:
       "Play a game, against an opponent or with the user, through the requested outcome.",
-    guidance: `Learn the rules from the visible game and the user's request before acting. Identify the objective, legal controls, current state, whose turn it is, and how the game reports completion. Ask only if a missing rule or choice prevents progress. Do not assume familiar rules apply to an unfamiliar game. Use the game's controls; do not edit page code, remove game UI, or change game data to force progress or manufacture a result.
-After each action, observe its result and update your understanding of the board, score, round, or turn. A successful click does not prove a valid move. Correct rejected actions from fresh evidence. Keep task state and the next intended action in the conversation so work can resume.
-When the game or the user must act, wait for an observable state change using bounded waits within the tool's execution limit, then inspect again. Do not make another move on an unchanged state, invent an opponent's move, or treat a brief delay as a blocker.
-Continue until the user's requested outcome is observed, the user stops you, or a real blocker prevents progress. One move, one round, or a progress update may not complete the request. Recognize terminal states such as a win, loss, draw, or game over, and report the observed result honestly. Do not restart or expand the objective without the user's request. Respect stop requests immediately and let the latest request determine whether to continue or switch tasks.`,
+    guidance: `Read the rules and current board from the game. Identify which player you control and whose turn it is. Make legal moves through the game's controls and inspect the result after each move. When waiting for the opponent, use bounded browser waits and check the game again. Play through the requested outcome and report the observed result. Do not alter game code or data to manufacture a result.`,
   },
   research: {
     description: "Research questions, compare credible sources, and check claims with citations.",
@@ -35,7 +32,7 @@ export function orderedSkills(names: readonly SkillName[]) {
 }
 
 export function skillInstructions(activeSkills: readonly SkillName[]) {
-  return `When a task matches an available skill, use load_skills to select its guide before task work. Active guides persist automatically across follow-ups and compaction; continue directly when they still apply. Call load_skills only to change the active set, with all relevant names or [] to clear it. After loading, continue the user's task. Guides provide procedure, summaries hold progress, and the user's request and essential account, credential, and handoff rules remain authoritative.
+  return `Use load_skills to select relevant guides before task work. Active guides persist across turns; only change the selection when needed, then continue the task.
 
 <available_skills>
 ${skillName.options.map((name) => `${name}: ${bundledSkills[name].description}`).join("\n")}
