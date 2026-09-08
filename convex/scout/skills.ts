@@ -2,7 +2,7 @@ import { tool } from "ai";
 import { v } from "convex/values";
 import { z } from "zod";
 
-const skillName = z.enum(["games", "papergames-tic-tac-toe", "research", "email"]);
+const skillName = z.enum(["games", "research", "email"]);
 type SkillName = z.infer<typeof skillName>;
 export const activeSkillsValidator = v.array(v.union(...skillName.options.map(v.literal)));
 
@@ -14,42 +14,6 @@ export const bundledSkills = {
 After each action, observe its result and update your understanding of the board, score, round, or turn. A successful click does not prove a valid move. Correct rejected actions from fresh evidence. Keep task state and the next intended action in the conversation so work can resume.
 When the game or the user must act, wait for an observable state change using bounded waits within the tool's execution limit, then inspect again. Do not make another move on an unchanged state, invent an opponent's move, or treat a brief delay as a blocker.
 Continue until the user's requested outcome is observed, the user stops you, or a real blocker prevents progress. One move, one round, or a progress update may not complete the request. Recognize terminal states such as a win, loss, draw, or game over, and report the observed result honestly. Do not restart or expand the objective without the user's request. Respect stop requests immediately and let the latest request determine whether to continue or switch tasks.`,
-  },
-  "papergames-tic-tac-toe": {
-    description:
-      "Join or play Tic Tac Toe at papergames.io, including invitation/room URLs. Load alongside games to read the live board and use its controls.",
-    guidance: `Applies to Tic Tac Toe pages and rooms on https://papergames.io/. DOM last verified: 2026-09-08. The visible board is #tic-tac-toe .grid.s-3x3 with nine .grid-item cells. Coordinates are zero-based from the top left: row increases downward, column rightward. Each cell has a cell-row-col class, such as cell-0-2 for the top right. Pieces are SVGs with aria-label="X" or "O"; empty cells are ordinary empty divs.
-Read the current rendered DOM in browser_execute using the provided Playwright page. This self-contained extraction returns cells in row-major order, with "." meaning empty, plus current page text for player identity, turn, lobby controls, and result:
-
-\`\`\`js
-return await page.evaluate(() => {
-  if (location.hostname !== "papergames.io") throw new Error("Wrong site for this guide");
-  const pageText = document.body.innerText.slice(0, 6000);
-  const boards = [...document.querySelectorAll("#tic-tac-toe .grid.s-3x3")]
-    .filter(board => board.getClientRects().length > 0);
-  if (boards.length === 0) return { kind: "no-board", pageText };
-  if (boards.length !== 1) throw new Error("Board fingerprint changed; inspect current DOM");
-  const board = boards[0];
-  if (board.querySelectorAll(".grid-item").length !== 9)
-    throw new Error("Expected nine cells; inspect current DOM");
-  const cells = Array.from({ length: 9 }, (_, index) => {
-    const row = Math.floor(index / 3), col = index % 3;
-    const matches = board.querySelectorAll(".grid-item.cell-" + row + "-" + col);
-    if (matches.length !== 1) throw new Error("Cell coordinates changed; inspect current DOM");
-    const cell = matches[0];
-    const pieces = cell.querySelectorAll("svg");
-    const label = pieces.length === 1 ? pieces[0].getAttribute("aria-label") : null;
-    if (label === "X" || label === "O") return { row, col, piece: label };
-    if (cell.children.length === 0 && cell.textContent.trim() === "")
-      return { row, col, piece: "." };
-    throw new Error("Unrecognized cell content; inspect current DOM");
-  });
-  return { kind: "board", cells, pageText };
-});
-\`\`\`
-
-Read player/piece assignment and whose turn it is from the current visible UI. Empty coordinates are candidate moves only when the UI confirms your turn. Click a freshly observed empty cell through Playwright, using page.locator("#tic-tac-toe .grid.s-3x3 .grid-item.cell-" + row + "-" + col).click({ timeout: 3000 }) with the chosen numeric row and col. Rerun the extraction after the click to confirm the piece and the new turn or result.
-If kind is "no-board", read the current lobby or result/rematch panel and its controls. The board can disappear when a round ends; discard the previous board as current state. Report a winner or draw only from visible result evidence. If pageText is truncated or lacks the needed status, inspect that current visible panel directly. A fingerprint mismatch requires fresh DOM inspection.`,
   },
   research: {
     description: "Research questions, compare credible sources, and check claims with citations.",

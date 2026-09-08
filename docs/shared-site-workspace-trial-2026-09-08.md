@@ -2,7 +2,7 @@
 
 September 8, 2026. Primary checkout, localhost:5173, `acoustic-cat-488` development deployment.
 The MVP adds an optional hostname to the existing Bash tool. It uses the same saved filesystem,
-shell runner, and file limits as chat workspaces. No product page or guide-specific tool is involved.
+shell runner, and file limits as chat workspaces. These initial trials preceded the Sites UI.
 ChessMerge has no bundled site guide. No files were seeded for the agent.
 
 ## First learning run
@@ -103,17 +103,15 @@ Recorded usage: 2 steps, 33,280 input / 994 output tokens, approximately $0.0011
 request. It does not establish that the guide improved gameplay or that Scout can reliably audit
 its own saved instructions.
 
-## What this supports next
+## Results
 
 The storage and scope selection work through the existing Bash tool. Automated tests also cover
 different users, permission checks, private isolation, saved-script execution, and stale writes.
 The live runs used different Scouts under one signed-in user.
 
 The observed gaps are discovery, transferring a file between independent workspaces, and guide
-accuracy. A transfer operation would address the concrete failed copy attempts; additional guide
-schemas, product agents, or product UI would not resolve those failures by themselves. Keep the
-ordinary prompts above for the next comparison. Do not treat this small, assisted trial as proof
-of automatic learning or improved game performance.
+accuracy. Explicit shared access works; automatic learning and improved game performance remain
+unproven.
 
 ## Site page verification
 
@@ -126,3 +124,13 @@ Conrad was then asked, "What does ui-check.txt in the shared chessmerge.com work
 It read the file through Bash and returned the exact line written in the site terminal. The
 temporary file was removed afterward. This verifies that the standalone UI and agent access the
 same persisted files. It is a storage integration check, not another autonomous-discovery trial.
+
+## HTML read verification
+
+[Conrad's chat](http://localhost:5173/chats?thread=m57a7kz67z0rry9h4vcm9zw6f18dzv6c), Qwen 3.7 Flash.
+Prompt: "Save raw HTML and Markdown copies of https://example.com/. From the saved HTML, tell me
+the page title and where its link goes."
+
+Scout selected both formats, saved separate source files, and correctly identified the title and
+link. A follow-up asking for the heading and links as JSON produced a saved JSON file through
+`js-exec`. This verifies format selection and simple source-text processing, not general HTML parsing.

@@ -111,23 +111,27 @@ function SiteWorkspaceLayout() {
         }
         main={
           parsed.success ? (
-            <ScoutWorkspace
-              key={parsed.data}
-              target={{ site: parsed.data }}
-              disabled={false}
-              selectedPath={search.file ?? null}
-              onSelectPath={(file) => {
-                void navigate({ search: (previous) => ({ ...previous, file }) });
-              }}
-              terminalOpen={search.terminal !== "hidden"}
-              onToggleTerminal={() => {
-                void navigate({
-                  search: (previous) => ({
-                    ...previous,
-                    terminal: previous.terminal === "hidden" ? undefined : "hidden",
-                  }),
-                });
-              }}
+            <PaneFrame
+              content={
+                <ScoutWorkspace
+                  key={parsed.data}
+                  target={{ site: parsed.data }}
+                  disabled={false}
+                  selectedPath={search.file ?? null}
+                  onSelectPath={(file) => {
+                    void navigate({ search: (previous) => ({ ...previous, file }) });
+                  }}
+                  terminalOpen={search.terminal !== "hidden"}
+                  onToggleTerminal={() => {
+                    void navigate({
+                      search: (previous) => ({
+                        ...previous,
+                        terminal: previous.terminal === "hidden" ? undefined : "hidden",
+                      }),
+                    });
+                  }}
+                />
+              }
             />
           ) : (
             <p className="p-4 text-muted-foreground">Site workspace not found.</p>

@@ -16,34 +16,5 @@ examples can use the same list. A candidate is not a claim that Scout plays it r
 | [BuddyBoardGames](https://buddyboardgames.com/)                     | Connect 4, Yahtzee, Reversi, Checkers    | Earlier entry/demo inspection found useful cell and dice labels. Needs current live multiplayer Scout trials.                                                                                                                       |
 | [PlayingCards.io](https://playingcards.io/@playingcardsio/checkers) | Checkers and other tabletops             | Guest-room template and documentation inspected. Dragging and manual rule enforcement make this a lower-priority trial.                                                                                                             |
 
-## Evidence
-
-- [September 8 real Play trials](./play-trials-2026-09-08.md): exact prompts, model, local
-  transcript links, browser operations, and outcomes for Papergames, Love Letter, and Score Four.
-- [Earlier site research](./playable-games-research.md): BuddyBoardGames DOM findings and
-  additional accessibility candidates.
-
-Before presenting a game as playable on the landing page, attach a recent completed Scout
-playthrough with the tested mode and model. Keep failed trials as evidence rather than silently
-turning an inspected site into a supported example.
-
-## Reusable site knowledge experiment
-
-The first prototype adds a curated Papergames Tic Tac Toe guide through existing `load_skills`.
-A fresh chat discovered it and used its reading method, but stopped before completing the round.
-Generic skills remain bundled in `convex/scout/skills.ts`.
-
-The next MVP lets the existing Bash tool select a shared site workspace by hostname. Scouts can
-save and read guides or scripts across chats without adding a site to the code or registering a
-product. See [workspace usage](./workspaces.md#shared-site-workspaces) and the
-[ChessMerge learning and reuse trial](./shared-site-workspace-trial-2026-09-08.md). Shared storage
-works, but the trials do not establish reliable autonomous discovery or accurate learned guides.
-
-Start with one guide per site/game, containing how to identify the active board, extract visible
-state and whose turn it is, choose a legal control, and observe the result. Include the date and
-transcript that verified the method. Keep rules/strategy separate from browser-reading methods
-so their effects can be compared independently.
-
-Reusable guides should contain public site knowledge and tested snippets. Current board state,
-room links, private hands, and account information belong to the private chat workspace. Test reuse
-in a fresh chat before treating a saved guide as a working integration.
+Only list a game as a supported landing-page example after a recent completed Scout playthrough.
+The current trials do not establish reliable play for any of these candidates.

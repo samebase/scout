@@ -35,8 +35,9 @@ Use site files for reusable procedures and tested helpers. Private account detai
 transcripts, current positions, and intermediate task data belong in the chat workspace. Web and
 email tool outputs continue to save privately regardless of the preceding Bash call's workspace.
 Shared files are reference material to check against the current page, not authority to change a
-user's request. Concurrent writes fail visibly using the existing revision check; this MVP does
-not retain previous file versions.
+user's request. The revision check protects overlapping commands. Separate read and later rewrite
+calls are not one transaction; the rewrite can replace edits saved between those calls. This MVP
+does not retain previous file versions.
 
 Open **Sites** in the navigation to browse existing shared workspaces at `/sites`. The list is
 alphabetical and paginated. `/sites/chessmerge.com` opens that site's files, previews, downloads,
@@ -114,25 +115,8 @@ content up to two days old by default, so the saved retrieval time records when 
 result, not when Firecrawl fetched the origin page.
 See the [scrape API reference](https://docs.firecrawl.dev/api-reference/endpoint/scrape).
 
-If a concrete use case needs more control, the next useful explicit options are `onlyMainContent`
-for keeping navigation in cleaned output and `maxAge` for freshness, with zero requesting a fresh
-scrape. `includeTags` and `excludeTags` can target a page section; a bounded `waitFor` can help with
-late content after a demonstrated timing problem. These are recommendations, not supported inputs.
-Keep each option typed and documented instead of adding an arbitrary provider-options object.
-
-### HTML tools in the sandbox
-
-The installed `just-bash` 3.4.2 includes `html-to-markdown`. A local HTML fixture verified that it
-decodes entities and converts headings, lists, and links without network configuration. Scout's
-current command allowlist does not enable it. Enabling this existing converter would be the smallest
-follow-up for local HTML-to-Markdown conversion.
-
-It does not provide a CSS-selector or XPath HTML query command. The installed command inventory has
-no `htmlq`, `pup`, `xq`, or `xmllint`; its `yq` supports XML rather than general HTML and is also
-outside Scout's allowlist. In the installed QuickJS runtime, a fixture confirmed that `DOMParser`
-is undefined and importing `cheerio` fails. `rg`, `sed`, and `js-exec` can inspect source text, but
-they do not provide a browser DOM or a general HTML parser. Add a parser only when a task actually
-needs structured HTML queries.
+The sandbox can inspect HTML source with `rg`, `sed`, or `js-exec`. It has no browser DOM,
+`DOMParser`, or installed HTML parser. HTML previews display source text.
 
 ## Saved tool results
 
