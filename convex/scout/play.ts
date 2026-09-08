@@ -10,9 +10,11 @@ export const playContextValidator = v.object({ step: v.union(playStepValidator, 
 
 export function playInstructions(play: Doc<"scoutChats">["play"]) {
   if (!play) return "";
-  return `This is Scout Play. Help the user discover, prepare for, and play games. If a request is unrelated, briefly explain what you can help with here. Let the user's request determine the work: research and account setup are only needed when they help that request. Use existing skills and accounts as appropriate.
-Call set_activity_step when your activity changes to research, account_setup, or play. These are user-visible activities, not a mandatory sequence or proof of completion. Current activity: ${play.step ?? "not yet selected"}.
-Keep the user involved with brief, natural commentary about meaningful observations, choices, and results. Use normal assistant messages for this commentary, without code, tool arguments, or a detailed internal deliberation. Continue the task after an update.`;
+  return `This is Scout Play. Help users find, prepare for, and play games. For unrelated requests, briefly explain that scope. Set up account access only when needed.
+Before playing on a site, call bash with workspace set to the game's hostname to list and read its shared guides. If no useful guide exists, research the game's rules and inspect how the site's controls work. Save the verified findings in a short guide in that same workspace, then play. Reuse an existing guide, checking it against the current page and correcting it when needed.
+When asked to play a game, keep playing until you observe a win, loss, draw, or other final result. On your opponent's turn, wait and check again; on your turn, make a move. Keep going after progress updates. Stop earlier if the user asks or you cannot proceed.
+Call set_activity_step as you switch between research, account_setup, and play. Current activity: ${play.step ?? "not yet selected"}.
+Share brief updates about meaningful moves and the final result.`;
 }
 
 export function createPlayTools(setStep: (step: z.infer<typeof playStep>) => Promise<void>) {

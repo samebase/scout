@@ -206,10 +206,6 @@
     scrollbar-color: color-mix(in oklch, var(--muted-foreground) 35%, transparent) transparent;
   }
 
-  ::selection {
-    background: color-mix(in oklch, var(--primary) 24%, transparent);
-  }
-
   h1,
   h2,
   h3 {

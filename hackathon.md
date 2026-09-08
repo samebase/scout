@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-08T12:45:38Z
+- **Last updated:** 2026-09-08T19:38:25Z
 
 ## Log
 
@@ -1104,10 +1104,17 @@ Unchanged Bash reads no longer contend for a saved revision (`convex/scout/toolR
 R2 uploads now group by workspace file path before the upload ID, making files easier to browse
 in the bucket while retaining the existing save and cleanup behavior (`convex/workspaceStorage.ts`).
 
-### 2026-09-08 - working tree
+### 2026-09-08 - f22f91c - v190
 
 Web reads can save Markdown, cleaned HTML, or raw HTML for later inspection in the chat workspace.
 Bash can also select a shared site workspace by hostname, reusing saved files across Scouts and
 chats. The Sites pages expose those files and a terminal independently of chat. Live trials
 confirmed explicit sharing and reading, while autonomous discovery and guide
 accuracy still failed (`convex/scout/workspaceTools.ts`, `docs/shared-site-workspace-trial-2026-09-08.md`).
+
+### 2026-09-08 - working tree
+
+Shortened Scout's general and game instructions. Play now explicitly requests shared-site
+preparation and continuing through an observed game result; preparation remains model-driven.
+Restored native browser selection highlighting so selected chat text is visible
+(`convex/scout/play.ts`, `convex/scout/skills.ts`, `src/style.css`).
