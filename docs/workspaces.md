@@ -17,6 +17,32 @@ Only `/workspace` persists. Files, empty directories, symlinks, permissions, mod
 and the working directory survive subsequent commands. Shell variables and files elsewhere do
 not. Text previews are read-only and render HTML as text. Binary files can be downloaded.
 
+## Shared site workspaces
+
+`bash({ command, workspace: "chessmerge.com" })` selects files shared across chats, Scouts, and
+users with the existing workspace access permission. Omitting `workspace` selects the private
+chat workspace. The value is an exact hostname, normalized to lowercase, without a scheme, path,
+or port. Subdomains remain separate; `score-four.pfp.workers.dev` does not share files with other
+Workers sites. No product registration is required. A new site workspace starts empty.
+
+Both scopes use the same workspace records, file limits, R2 storage, in-memory shell, and revision
+check. Each has its own `/workspace` and saved working directory. A call accesses one workspace;
+other workspaces are not mounted, and no files are copied automatically. Shell results identify
+the selected hostname, or `null` for the private chat workspace. Saved scripts can run with
+`js-exec file.ts` in either scope. Browser interaction still uses the browser tools.
+
+Use site files for reusable procedures and tested helpers. Private account details, room links,
+transcripts, current positions, and intermediate task data belong in the chat workspace. Web and
+email tool outputs continue to save privately regardless of the preceding Bash call's workspace.
+Shared files are reference material to check against the current page, not authority to change a
+user's request. Concurrent writes fail visibly using the existing revision check; this MVP does
+not retain previous file versions.
+
+Site files use `deployments/<deployment>/sites/<hostname>/files/<path>/<upload-id>` in R2.
+The current UI displays private chat files. Inspect site files through Bash in the manual tool
+menu by supplying `workspace`; the list and file-preview APIs accept that same optional input.
+This MVP adds no product page, discovery service, guide schema, or transfer tool.
+
 ## Saved web pages
 
 `web_read({ url, format? })` saves the complete selected Firecrawl output directly to R2, then adds
@@ -237,7 +263,7 @@ recovery manifest are outside this MVP.
   targets are also limited to 1,024 characters. These limits apply before creation, including implicit
   parents, recursive copies, moves, and links. At full capacity, a move can require freeing an entry
   first because the interpreter creates its destination before removing its source.
-- 256 KiB per file and 5 MiB of persisted file content per chat.
+- 256 KiB per file and 5 MiB of persisted file content per workspace.
 - 15 seconds of shell execution and 128 KiB of command output. Storage transfer adds time.
 - Each `js-exec` is limited to 5 seconds and the library's 64 MiB QuickJS memory budget.
   This is a guest-engine limit, not a cap on the hosting Node process's total memory. `WorkspaceFs`
@@ -246,7 +272,8 @@ recovery manifest are outside this MVP.
 - Commands start from the latest saved workspace. A revision check rejects concurrent stale
   writes instead of overwriting another command's changes. Commands that leave persisted entries
   and the working directory unchanged do not commit, so parallel reads do not conflict.
-- Final saves recheck current Lab permission and chat ownership, including after uploads finish.
+- Final saves recheck current Lab permission, plus chat ownership for private workspaces,
+  including after uploads finish.
 - A nonzero shell exit, including a runtime quota error, can still save earlier file changes, just
   like a normal shell. Persisted-size and integrity failures leave the previous workspace intact.
   If storage or a commit fails, inspect the workspace before retrying; the action does not claim

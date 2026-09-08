@@ -4,26 +4,25 @@ import type { Id } from "./_generated/dataModel";
 import { getRuntimeEnv } from "./runtimeEnv";
 import { WORKSPACE_ROOT } from "./workspaceModel";
 
-export function workspaceFileKey({
-  threadId,
-  userId,
-  uploadId,
-  path,
-}: {
-  threadId: string;
-  userId: Id<"users">;
-  uploadId: string;
-  path: string;
-}) {
+export function workspaceFileKey(
+  args: {
+    uploadId: string;
+    path: string;
+  } & ({ threadId: string; userId: Id<"users"> } | { site: string }),
+) {
   const deploymentUrl = getRuntimeEnv("CONVEX_CLOUD_URL");
   if (!deploymentUrl) throw new Error("Convex deployment URL is not configured");
-  const prefix = `deployments/${encodeURIComponent(new URL(deploymentUrl).host)}/users/${userId}/threads/${encodeURIComponent(threadId)}/files`;
-  const relativePath = path
+  const owner =
+    "site" in args
+      ? `sites/${encodeURIComponent(args.site)}`
+      : `users/${args.userId}/threads/${encodeURIComponent(args.threadId)}`;
+  const prefix = `deployments/${encodeURIComponent(new URL(deploymentUrl).host)}/${owner}/files`;
+  const relativePath = args.path
     .slice(WORKSPACE_ROOT.length + 1)
     .split("/")
     .map(encodeURIComponent)
     .join("/");
-  return `${prefix}/${relativePath}/${uploadId}`;
+  return `${prefix}/${relativePath}/${args.uploadId}`;
 }
 
 export function workspaceStorageConfigured() {

@@ -91,11 +91,11 @@ async function setup() {
   const other = backend.withIdentity({ subject: `${otherId}|session` });
   const { threadId } = await owner.mutation(api.scout.chats.createThread, { scoutId });
   const otherThread = await other.mutation(api.scout.chats.createThread, { scoutId });
-  const run = async (command: string) =>
+  const run = async (command: string, workspace?: string) =>
     owner.action(api.scout.manual.executeTool, {
       threadId,
       toolName: "bash",
-      input: JSON.stringify({ command }),
+      input: JSON.stringify({ command, workspace }),
       operationId: crypto.randomUUID(),
     });
   const read = (
@@ -126,6 +126,7 @@ async function setup() {
     other,
     userId,
     otherId,
+    scoutId,
     threadId,
     otherThreadId: otherThread.threadId,
     run,
@@ -419,6 +420,183 @@ js-exec report.ts`);
       expect(await owner.query(api.scout.workspaces.list, { threadId })).toEqual(before);
     },
   );
+});
+
+describe("shared site workspaces", () => {
+  it("reuses files across users, Scouts, and chats while keeping private files separate", async () => {
+    const t = await setup();
+    const secondScoutId = await t.backend.run(async (ctx) => {
+      const scout = await ctx.db.get(t.scoutId);
+      if (!scout) throw new Error("Missing Scout");
+      const { _id, _creationTime, ...fields } = scout;
+      return ctx.db.insert("scouts", { ...fields, slug: "second-workspace-scout" });
+    });
+    const { threadId: secondThreadId } = await t.other.mutation(api.scout.chats.createThread, {
+      scoutId: secondScoutId,
+    });
+    const shared = await t.run(
+      "printf 'const size = 9; console.log(size);' > board.ts",
+      "PaperGames.io",
+    );
+    expect(shared.outcome.kind).toBe("success");
+    await t.run("printf private > secret.txt");
+    const output = await t.other.action(async (ctx) => {
+      const tools = createWorkspaceTools(
+        ctx,
+        { threadId: secondThreadId, userId: t.otherId },
+        async () => {},
+      );
+      return requireRuntimeTool(tools, "bash").execute(
+        {
+          workspace: "papergames.io",
+          command: "js-exec board.ts",
+        },
+        { toolCallId: "shared-read", messages: [], context: {} },
+      );
+    });
+    expect(bashResultSchema.parse(output).stderr).toBe("");
+    expect(output).toMatchObject({
+      stdout: "9\n",
+      exitCode: 0,
+      workspace: "papergames.io",
+      revision: 1,
+    });
+    const site = await t.other.query(api.scout.workspaces.list, {
+      threadId: secondThreadId,
+      workspace: "papergames.io",
+    });
+    expect(site.entries.filter((entry) => entry.kind === "file")).toHaveLength(1);
+    expect(site.entries.find((entry) => entry.kind === "file")).toMatchObject({
+      key: expect.stringMatching(/\/sites\/papergames\.io\/files\/board\.ts\//),
+    });
+    expect(
+      (
+        await t.other.action(api.scout.workspaceTools.readFile, {
+          threadId: secondThreadId,
+          workspace: "papergames.io",
+          path: "/workspace/board.ts",
+        })
+      ).text,
+    ).toContain("size = 9");
+    expect(
+      (await t.owner.query(api.scout.workspaces.list, { threadId: t.threadId })).entries.filter(
+        (entry) => entry.kind === "file",
+      ),
+    ).toEqual([expect.objectContaining({ path: "/workspace/secret.txt" })]);
+    expect(
+      (await t.other.query(api.scout.workspaces.list, { threadId: secondThreadId })).entries,
+    ).toEqual([]);
+    expect(
+      (
+        await t.owner.query(api.scout.workspaces.list, {
+          threadId: t.threadId,
+          workspace: "another.example",
+        })
+      ).entries,
+    ).toEqual([]);
+    await expect(
+      t.other.action(api.scout.workspaceTools.readFile, {
+        threadId: secondThreadId,
+        workspace: "papergames.io",
+        path: "/workspace/secret.txt",
+      }),
+    ).rejects.toThrow("File not found");
+    await t.read();
+    expect(
+      (
+        await t.owner.query(api.scout.workspaces.list, {
+          threadId: t.threadId,
+          workspace: "papergames.io",
+        })
+      ).entries.filter((entry) => entry.kind === "file"),
+    ).toHaveLength(1);
+    expect(
+      [...blobs.keys()].some((key) =>
+        key.includes(`/users/${t.userId}/threads/${t.threadId}/files/sources/`),
+      ),
+    ).toBe(true);
+  });
+
+  it("requires current access and an owned originating chat even for shared files", async () => {
+    const t = await setup();
+    await t.run("echo shared > guide.md", "example.com");
+    await expect(
+      t.backend.query(api.scout.workspaces.list, {
+        threadId: t.threadId,
+        workspace: "example.com",
+      }),
+    ).rejects.toThrow("Not authorized");
+    await expect(
+      t.other.query(api.scout.workspaces.list, { threadId: t.threadId, workspace: "example.com" }),
+    ).rejects.toThrow("Chat not found");
+    const snapshot = await t.backend.mutation(internal.scout.workspaces.snapshot, {
+      threadId: t.threadId,
+      userId: t.userId,
+      workspace: "example.com",
+    });
+    await t.backend.run(async (ctx) =>
+      ctx.db.patch(t.userId, { email: "pending@example.test", isApproved: false }),
+    );
+    await expect(
+      t.backend.mutation(internal.scout.workspaces.commit, {
+        workspaceId: snapshot.workspaceId,
+        userId: t.userId,
+        expectedRevision: snapshot.revision,
+        cwd: snapshot.cwd,
+        entries: snapshot.entries,
+      }),
+    ).rejects.toThrow("Not authorized");
+  });
+
+  it("rejects stale site writes without deleting another chat's update", async () => {
+    const t = await setup();
+    await t.run("echo first > guide.md", "example.com");
+    const snapshot = await t.backend.mutation(internal.scout.workspaces.snapshot, {
+      threadId: t.threadId,
+      userId: t.userId,
+      workspace: "example.com",
+    });
+    await t.other.action(api.scout.manual.executeTool, {
+      threadId: t.otherThreadId,
+      toolName: "bash",
+      input: JSON.stringify({ workspace: "example.com", command: "echo second > guide.md" }),
+      operationId: crypto.randomUUID(),
+    });
+    const deletedBefore = [...deleted];
+    await expect(
+      t.backend.mutation(internal.scout.workspaces.commit, {
+        workspaceId: snapshot.workspaceId,
+        userId: t.userId,
+        expectedRevision: snapshot.revision,
+        cwd: snapshot.cwd,
+        entries: [],
+      }),
+    ).rejects.toThrow("Another command changed this workspace");
+    expect(deleted).toEqual(deletedBefore);
+    expect(
+      (
+        await t.owner.action(api.scout.workspaceTools.readFile, {
+          threadId: t.threadId,
+          workspace: "example.com",
+          path: "/workspace/guide.md",
+        })
+      ).text,
+    ).toBe("second\n");
+  });
+
+  it.each([
+    "",
+    "../example.com",
+    "https://example.com",
+    "example.com/path",
+    "example.com:443",
+    "user@example.com",
+    "a..example.com",
+  ])("rejects invalid workspace names: %s", async (workspace) => {
+    const t = await setup();
+    expect((await t.run("echo should-not-run > x", workspace)).outcome.kind).toBe("error");
+    expect(blobs.size).toBe(0);
+  });
 });
 
 describe("web reads saved to the workspace", () => {

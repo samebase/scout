@@ -1,5 +1,9 @@
 # Site-guide transfer experiment
 
+This document records the earlier bundled-guide prototype. The current shared-file MVP and its
+observed limitations are in the [ChessMerge trial](./shared-site-workspace-trial-2026-09-08.md).
+The architecture and proposed scope below describe that earlier experiment.
+
 2026-09-08. The prototype uses Papergames Tic Tac Toe because its baseline struggled to read the
 board. Score Four's existing accessibility snapshot already exposed the board well. See
 [the actual comparison](./play-trials-2026-09-08.md#papergames-guide-treatment).

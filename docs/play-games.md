@@ -29,10 +29,15 @@ turning an inspected site into a supported example.
 
 ## Reusable site knowledge experiment
 
-The guides are bundled in `convex/scout/skills.ts`; workspace files remain private to a chat.
 The first prototype adds a curated Papergames Tic Tac Toe guide through existing `load_skills`.
 A fresh chat discovered it and used its reading method, but stopped before completing the round.
-See the trial notes above. Automatic learning and shared writable storage are not implemented.
+Generic skills remain bundled in `convex/scout/skills.ts`.
+
+The next MVP lets the existing Bash tool select a shared site workspace by hostname. Scouts can
+save and read guides or scripts across chats without adding a site to the code or registering a
+product. See [workspace usage](./workspaces.md#shared-site-workspaces) and the
+[ChessMerge learning and reuse trial](./shared-site-workspace-trial-2026-09-08.md). Shared storage
+works, but the trials do not establish reliable autonomous discovery or accurate learned guides.
 
 Start with one guide per site/game, containing how to identify the active board, extract visible
 state and whose turn it is, choose a legal control, and observe the result. Include the date and
@@ -40,6 +45,5 @@ transcript that verified the method. Keep rules/strategy separate from browser-r
 so their effects can be compared independently.
 
 Reusable guides should contain public site knowledge and tested snippets. Current board state,
-room links, private hands, and account information belong to the individual run. Load the relevant
-guide into a fresh chat using the existing skill mechanism; test that it transfers before adding
-a shared writable filesystem or automatic learning workflow.
+room links, private hands, and account information belong to the private chat workspace. Test reuse
+in a fresh chat before treating a saved guide as a working integration.

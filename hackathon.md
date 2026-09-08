@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-07T23:51:46Z
+- **Last updated:** 2026-09-08T12:27:48Z
 
 ## Log
 
@@ -1104,9 +1104,9 @@ Unchanged Bash reads no longer contend for a saved revision (`convex/scout/toolR
 R2 uploads now group by workspace file path before the upload ID, making files easier to browse
 in the bucket while retaining the existing save and cleanup behavior (`convex/workspaceStorage.ts`).
 
-### 2026-09-07 - working tree
+### 2026-09-08 - working tree
 
 Web reads can save Markdown, cleaned HTML, or raw HTML for later inspection in the chat workspace.
-A bundled Papergames guide shares board-reading instructions through the existing skill loader.
-Live play reused those instructions, but Scout still ended its run before the game finished
-(`convex/scout/skills.ts`, `docs/play-trials-2026-09-08.md`).
+Bash can also select a shared site workspace by hostname, reusing saved files across Scouts and
+chats. Live trials confirmed explicit sharing and reading, while autonomous discovery and guide
+accuracy still failed (`convex/scout/workspaceTools.ts`, `docs/shared-site-workspace-trial-2026-09-08.md`).

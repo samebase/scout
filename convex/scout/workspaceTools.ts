@@ -16,6 +16,7 @@ import {
 } from "../workspaceModel";
 import { workspaceFileKey, workspaceStorage } from "../workspaceStorage";
 import { runWorkspaceShell } from "./workspaceShell";
+import { omitNullish } from "../../shared/omitNullish";
 
 async function readStoredFile(entry: Extract<WorkspaceEntry, { kind: "file" }>) {
   const response = await fetch(await workspaceStorage().getUrl(entry.key), {
@@ -42,10 +43,13 @@ export function createWorkspaceTools(
     bash: tool({
       description: BASH_DESCRIPTION,
       inputSchema: bashInputSchema,
-      execute: async ({ command }) => {
+      execute: async ({ command, workspace }) => {
         await beforeDispatch();
         const storage = workspaceStorage();
-        const snapshot = await ctx.runMutation(internal.scout.workspaces.snapshot, scope);
+        const snapshot = await ctx.runMutation(internal.scout.workspaces.snapshot, {
+          ...scope,
+          ...omitNullish({ workspace }),
+        });
         const result = await runWorkspaceShell({
           command,
           cwd: snapshot.cwd,
@@ -56,11 +60,16 @@ export function createWorkspaceTools(
           result.output.cwd === snapshot.cwd &&
           isDeepStrictEqual(result.entries, snapshot.entries)
         ) {
-          return { ...result.output, revision: snapshot.revision };
+          return {
+            ...result.output,
+            workspace: snapshot.site ?? null,
+            revision: snapshot.revision,
+          };
         }
         const keys = new Map<string, string>();
         for (const write of result.writes) {
-          const key = workspaceFileKey({ ...scope, uploadId: randomUUID(), path: write.path });
+          const owner = snapshot.site === null ? scope : { site: snapshot.site };
+          const key = workspaceFileKey({ ...owner, uploadId: randomUUID(), path: write.path });
           await storage.store(ctx, write.bytes, {
             key,
             type: "application/octet-stream",
@@ -81,7 +90,7 @@ export function createWorkspaceTools(
           cwd: result.output.cwd,
           entries,
         });
-        return { ...result.output, revision };
+        return { ...result.output, workspace: snapshot.site ?? null, revision };
       },
     }),
   };
@@ -95,7 +104,7 @@ const filePreviewValidator = v.object({
 
 export const readFile = action({
   access: "access_lab",
-  args: { threadId: v.string(), path: v.string() },
+  args: { threadId: v.string(), path: v.string(), workspace: v.optional(v.string()) },
   returns: filePreviewValidator,
   handler: async (ctx, args): Promise<typeof filePreviewValidator.type> => {
     const entry: WorkspaceEntry = await ctx.runQuery(internal.scout.workspaces.fileForViewer, args);
