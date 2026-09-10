@@ -11,10 +11,12 @@ export const BROWSER_STATE_HELPER_SOURCE = `const browserState = async (selected
   currentUrl: comparableUrl(selectedPage.url()),
   title: await selectedPage.title().catch(() => ""),
   tabs: await Promise.all(
-    selectedPage.context().pages().map(async (candidate) => ({
-      url: comparableUrl(candidate.url()),
-      title: await candidate.title().catch(() => ""),
-    })),
+    selectedPage.context().pages()
+      .filter((candidate) => candidate === selectedPage || candidate.url() !== "about:blank")
+      .map(async (candidate) => ({
+        url: comparableUrl(candidate.url()),
+        title: await candidate.title().catch(() => ""),
+      })),
   ),
 });`;
 

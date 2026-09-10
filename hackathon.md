@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-10T16:34:51Z
+- **Last updated:** 2026-09-10T18:38:16Z
 
 ## Log
 
@@ -1152,8 +1152,14 @@ with distinct styling and a shared navigation menu. Approved members run their o
 through the existing harness. A Review trial completed; a game trial still stopped early
 (`convex/scout/activity.ts`, `src/products/conversation/`).
 
-### 2026-09-10 - working tree
+### 2026-09-10 - cc66910 - v200
 
 Restored public web tools to the Firecrawl SDK and removed the Firecrawl and AgentMail component
 registrations and dependencies. Mail tools and handoff delivery continue through Scout's existing
 API client and workflow (`convex/scout/webTools.ts`, `convex/convex.config.ts`).
+
+### 2026-09-10 - working tree
+
+Ran product-review trials with Luna Max and recorded where the agent verified behavior,
+stopped too early, or mishandled a blocker. Background blank tabs no longer appear in
+the model's tab list (`convex/scout/browserToolContract.ts`, `docs/review-trials-2026-09-10.md`).
