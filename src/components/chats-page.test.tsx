@@ -9,6 +9,7 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
+  useRouterState,
 } from "@tanstack/react-router";
 import { getFunctionName, type FunctionArgs, type FunctionReference } from "convex/server";
 import { api } from "../../convex/_generated/api";
@@ -66,8 +67,11 @@ vi.mock("convex/react", () => ({
     }
     return remote.queries.get(name);
   },
-  usePaginatedQuery: (reference: FunctionReference<"query">) =>
-    remote.queries.get(getFunctionName(reference)),
+  usePaginatedQuery: (reference: FunctionReference<"query">, args: unknown) => {
+    const name = getFunctionName(reference);
+    remote.queryCalls(name, args);
+    return remote.queries.get(name);
+  },
   useAction: (reference: FunctionReference<"action">) => {
     const action = remote.actions.get(getFunctionName(reference));
     if (!action) throw new Error("Unexpected action: " + getFunctionName(reference));
@@ -204,12 +208,15 @@ afterEach(() => {
 async function openChats(path = "/chats?thread=thread-1") {
   const root = createRootRoute({
     staticData: { access: "access_public" },
-    component: () => (
-      <ScoutSidebarProvider>
-        {remote.authenticated ? <AppNavigation /> : null}
-        <Outlet />
-      </ScoutSidebarProvider>
-    ),
+    component: () => {
+      const pathname = useRouterState({ select: (state) => state.location.pathname });
+      return (
+        <ScoutSidebarProvider>
+          {pathname !== "/" && <AppNavigation />}
+          <Outlet />
+        </ScoutSidebarProvider>
+      );
+    },
   });
   const component = ChatsRoute.options.component;
   const validateSearch = ChatsRoute.options.validateSearch;
@@ -547,17 +554,26 @@ describe("Chat workspace", () => {
 
   test("shows the public landing at the root without redirecting to sign-in", async () => {
     remote.authenticated = false;
+    remote.queries.set("accounts:currentViewerAccess", { kind: "anonymous" });
+    remote.queries.set("scout/activity:list", { results: [], status: "Exhausted" });
     const router = await openChats("/");
 
     expect(await screen.findByRole("heading", { name: "What are we doing today?" })).toBeTruthy();
     expect(router.state.location.pathname).toBe("/");
-    expect(screen.getByRole("link", { name: "Explore Scout Play" }).getAttribute("href")).toBe(
-      "/play",
-    );
-    expect(screen.getByRole("link", { name: "Explore Scout Review" }).getAttribute("href")).toBe(
+    expect(screen.getByRole("link", { name: "Play a game" }).getAttribute("href")).toBe("/play");
+    expect(screen.getByRole("link", { name: "Review a product" }).getAttribute("href")).toBe(
       "/review",
     );
     expect(screen.queryByLabelText("Password")).toBeNull();
+    expect(remote.queryCalls).toHaveBeenCalledWith("scout/activity:list", {
+      kind: "all",
+      scope: "public",
+    });
+    await userEvent.setup().click(screen.getByRole("button", { name: "Review" }));
+    expect(remote.queryCalls).toHaveBeenLastCalledWith("scout/activity:list", {
+      kind: "review",
+      scope: "public",
+    });
   });
 
   test("retains the existing lab sign-in form at chats", async () => {
@@ -568,7 +584,8 @@ describe("Chat workspace", () => {
     expect(router.state.location.pathname).toBe("/chats");
     expect(screen.getByLabelText("Email")).toBeTruthy();
     expect(screen.getByLabelText("Password")).toBeTruthy();
-    expect(screen.queryByRole("navigation")).toBeNull();
+    expect(screen.getByRole("navigation", { name: "Primary navigation" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Lab" })).toBeNull();
   });
 
   test("shows a flat chat history and only the current primary navigation", async () => {
@@ -579,7 +596,7 @@ describe("Chat workspace", () => {
       within(navigation)
         .getAllByRole("link")
         .map((link) => link.textContent),
-    ).toEqual(["Play", "Chats", "Scouts", "Sites", "Review", "Members"]);
+    ).toEqual(["Activity", "Play", "Review", "Lab", "Scouts", "Sites", "Members"]);
     const history = screen.getByRole("navigation", { name: "Chats" });
     expect(within(history).getAllByRole("list")).toHaveLength(1);
     expect(within(history).getByRole("link").getAttribute("href")).toBe("/chats?thread=thread-1");

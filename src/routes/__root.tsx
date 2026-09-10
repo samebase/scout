@@ -1,5 +1,4 @@
 import { HeadContent, Scripts, createRootRoute, useRouterState } from "@tanstack/react-router";
-import { Authenticated } from "convex/react";
 import type { ReactNode } from "react";
 import { ConvexClientProvider } from "../lib/convex";
 import { ScoutSidebarProvider } from "../sidebars/ScoutSidebarProvider";
@@ -48,11 +47,7 @@ function RootComponent() {
     <RootDocument>
       <ScoutSidebarProvider>
         <ConvexClientProvider>
-          {!isProductPage && (
-            <Authenticated>
-              <AppNavigation />
-            </Authenticated>
-          )}
+          {!isProductPage && <AppNavigation />}
           <RouteAccessOutlet />
         </ConvexClientProvider>
       </ScoutSidebarProvider>

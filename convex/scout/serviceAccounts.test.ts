@@ -85,6 +85,8 @@ async function accountContext() {
   const browser = await backend.run(async (ctx) => {
     const threadId = crypto.randomUUID();
     const chatId = await ctx.db.insert("scoutChats", {
+      purpose: { kind: "general" },
+      visibility: "private",
       threadId,
       userId,
       scoutId,

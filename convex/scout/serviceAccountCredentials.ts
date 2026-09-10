@@ -1,4 +1,4 @@
-import { requireLabThread } from "./chatAccess";
+import { requireRunnableThread } from "./chatAccess";
 import { ConvexError, v } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 import { internalMutation, internalQuery, type QueryCtx } from "../_generated/server";
@@ -132,7 +132,7 @@ async function resolveRegistration(
       if (!chat || chat.scoutId !== session.scoutId) {
         throw new Error("Browser session does not match its Scout chat");
       }
-      await requireLabThread(ctx, chat.threadId);
+      await requireRunnableThread(ctx, chat.threadId);
       const latestOperation = await ctx.db
         .query("scoutBrowserOperations")
         .withIndex("by_session_id_and_sequence", (query) => query.eq("sessionId", session._id))

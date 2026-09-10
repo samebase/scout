@@ -1,16 +1,45 @@
 import type { ActionCtx, MutationCtx, QueryCtx } from "../_generated/server";
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import { MAX_BROWSER_OPERATIONS } from "../browserModel";
 import { scoutAgent } from "./agent";
-import { requireUserPermission } from "../access";
+import { requireUserPermission, type ViewerAccess } from "../access";
+import { canAccess } from "../../shared/accessModel";
 
-export async function requireLabThread(ctx: Pick<QueryCtx, "db">, threadId: string) {
+export function chatPermission(purpose: Doc<"scoutChats">["purpose"]) {
+  switch (purpose.kind) {
+    case "general":
+      return "access_lab";
+    case "play":
+      return "access_play";
+    case "review":
+      return "access_review";
+  }
+}
+
+export async function visibleChat(
+  ctx: Pick<QueryCtx, "db">,
+  threadId: string,
+  viewer: ViewerAccess,
+) {
+  const chat = await ctx.db
+    .query("scoutChats")
+    .withIndex("by_thread_id", (q) => q.eq("threadId", threadId))
+    .unique();
+  if (!chat) return null;
+  const owner = viewer.kind === "account" && viewer.userId === chat.userId;
+  if (chat.purpose.kind === "general") {
+    return owner && canAccess("access_lab", viewer.accessKeys) ? chat : null;
+  }
+  return chat.visibility === "public" || owner ? chat : null;
+}
+
+export async function requireRunnableThread(ctx: Pick<QueryCtx, "db">, threadId: string) {
   const chat = await ctx.db
     .query("scoutChats")
     .withIndex("by_thread_id", (q) => q.eq("threadId", threadId))
     .unique();
   if (!chat) throw new Error("Chat not found");
-  await requireUserPermission(ctx, chat.userId, "access_lab");
+  await requireUserPermission(ctx, chat.userId, chatPermission(chat.purpose));
   return chat;
 }
 

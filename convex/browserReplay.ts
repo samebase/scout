@@ -1,4 +1,4 @@
-import { action } from "./functions";
+import { publicAction } from "./functions";
 import { type Infer, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
@@ -40,8 +40,8 @@ type ReplayPlaylistResult =
   | { status: "processing" | "unavailable" }
   | { status: "ready"; playlist: string };
 
-export const listPages = action({
-  access: "access_lab",
+export const listPages = publicAction({
+  access: "access_public",
   args: { sessionId: v.id("scoutBrowserSessions") },
   returns: v.union(
     replayNotReadyValidator,
@@ -72,8 +72,8 @@ export const listPages = action({
   },
 });
 
-export const loadPlaylist = action({
-  access: "access_lab",
+export const loadPlaylist = publicAction({
+  access: "access_public",
   args: {
     sessionId: v.id("scoutBrowserSessions"),
     pageId: v.string(),

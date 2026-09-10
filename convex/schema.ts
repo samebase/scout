@@ -13,7 +13,7 @@ import { humanHandoffDeliveryRecordValidator } from "./humanHandoffDeliveryModel
 import { humanHandoffValidator } from "./humanHandoffsModel";
 import { scoutServiceAccountFieldsValidator, scoutWebsiteIdentityValidator } from "./scout/model";
 import { activeSkillsValidator } from "./scout/skills";
-import { playContextValidator } from "./scout/play";
+import { chatPurposeValidator, chatVisibilityValidator } from "./scout/chatModel";
 import {
   compactionFields,
   modelCallPurposeValidator,
@@ -128,11 +128,19 @@ export default defineSchema({
     scoutId: v.id("scouts"),
     createdAt: v.number(),
     activeSkills: v.optional(activeSkillsValidator),
-    play: v.optional(playContextValidator),
     modelSelection: v.optional(scoutModelSelectionValidator),
+    purpose: chatPurposeValidator,
+    visibility: chatVisibilityValidator,
   })
     .index("by_thread_id", ["threadId"])
-    .index("by_user_id_and_created_at", ["userId", "createdAt"]),
+    .index("by_user_id_and_created_at", ["userId", "createdAt"])
+    .index("by_visibility_and_created_at", ["visibility", "createdAt"])
+    .index("by_visibility_and_purpose_kind_and_created_at", [
+      "visibility",
+      "purpose.kind",
+      "createdAt",
+    ])
+    .index("by_user_id_and_purpose_kind_and_created_at", ["userId", "purpose.kind", "createdAt"]),
   scoutWorkspaces: defineTable(
     v.union(
       v.object({
@@ -212,7 +220,8 @@ export default defineSchema({
   }).index("by_session_id", ["sessionId"]),
   scoutHumanHandoffs: defineTable(humanHandoffValidator)
     .index("by_session_id", ["sessionId"])
-    .index("by_turn_id", ["turnId"]),
+    .index("by_turn_id", ["turnId"])
+    .index("by_continuation_turn_id", ["continuationTurnId"]),
   scoutHumanHandoffDeliveries: defineTable(humanHandoffDeliveryRecordValidator).index(
     "by_handoff_id",
     ["handoffId"],

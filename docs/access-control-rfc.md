@@ -55,11 +55,14 @@ or automatic public-signup approval setting. Self-service deletion is specified
 separately in the [account deletion contract](./account-deletion-rfc.md); deleting and
 deleted accounts have no protected app access.
 
-Approved members can enter Play and Review. Existing Play execution uses shared Scouts
-and Lab APIs, so it remains staff/admin-only pending a resource design. Members see an
-unavailable state without querying the Scout registry, chats, browsers, or model data.
-Review remains a preview; only staff can follow its Lab link. Signup and approval neither
-create nor assign a Scout, browser, inbox, or connected account.
+Approved members can start and control their own Play and Review chats using available shared Scouts.
+Execution rechecks the chat owner's current product permission; general Lab chats still require
+Lab access. Public viewers receive conversation text and read-only browser views or replay.
+Private chats remain owner-only, and publishing requires current product permission. Owners can
+make a chat private even after approval is revoked. Scout inboxes, profiles, credentials, workspace
+files, and raw model/tool data are not part of the public viewing API.
+Only staff owners can open a chat's detailed Lab inspector. Signup and approval neither create
+nor assign a Scout, browser, inbox, or connected account.
 
 ## Development and rollout
 

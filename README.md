@@ -23,11 +23,10 @@ inside the repository.
 - Vite+ for development, formatting, linting, tests, and builds
 - Node.js 24 for application and automation code
 
-The public home page offers two product entries. `/play` introduces the game player, and
-`/play/session` lets admins open a browser-and-chat session with an existing Scout.
-Member execution awaits a resource policy; signup does not create or assign Scouts.
-`/review` is a landing page with its own visual identity and a static illustration. Admins
-can follow its link to the existing Lab; the dedicated review flow is still to be designed.
+The public home page shows one activity feed with All, Play, and Review filters.
+`/play` and `/review` use the same conversation interface, opening existing chats with `?thread=...`.
+Approved members can start private or public chats with an available Scout; signup does not create
+or assign Scouts. Guests can watch public conversations and live browsers or replays.
 `/chats` is the lab for detailed transcripts, replays, and model controls. See
 [`docs/play-product-direction.md`](./docs/play-product-direction.md) for the product options and research.
 

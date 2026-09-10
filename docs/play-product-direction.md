@@ -1,8 +1,7 @@
 # Scout Play and Scout Review
 
-Scout Play and Scout Review have separate landing pages, linked by a neutral Scout overview.
-Play focuses on someone with a browser game open who wants another player. Review introduces
-the idea of findings backed by a recording; its dedicated workflow is still to be designed.
+Scout has one activity feed and one shared conversation interface. Play and Review are chat
+purposes with different starting copy and runtime instructions, using the same pool of Scouts.
 
 ## Play positioning
 
@@ -30,54 +29,64 @@ claim about playing any game. These references support positioning, not Scout co
 
 ## The implemented flow
 
-- `/` offers the two products with a preview of each visual identity.
-- `/play` pairs the invitation and two-player illustration with a short explanation of how to start.
-  The introduction sets expectations about Scout's imperfect play.
-- `/play/session` starts with one chat composer. A message can include a game link, ask for research,
+- One shared navigation menu links Activity, Play, and Review for everyone. Settings is available
+  to signed-in accounts; Lab, Scouts, Sites, and Members follow the existing access permissions.
+- `/` lists public activity, newest first, with live or recorded previews and pagination.
+  All / Play / Review filters select a purpose. Signed-in users can switch to My activity,
+  including their private chats. Play and Review entry points sit above the single feed.
+- `/play` starts with one chat composer. A message can include a game link, ask for research,
   or request preparation. Signing in keeps the draft and does not send it automatically.
-- An authenticated request chooses an existing active Scout and creates an Agent chat marked for Play.
+- An approved member chooses an available Scout and private or public visibility (private by default).
+  Creating the Agent chat and sending its first message happen in one mutation.
   The user's message is saved as written; Play guidance belongs in the system instructions.
-  Failed sends reuse the already-created chat on retry.
-- `/play/session?thread=...` puts the text conversation beside Scout's live browser or replay.
+  Failed starts retain the draft. A Scout remains limited to one active chat.
+- `/play?thread=...` and `/review?thread=...` put the text conversation beside Scout's live browser or replay.
   A resizable Samebase sidebar holds the browser and replays. Mobile opens it with a button or swipe
   without discarding the draft or browser; its selector appears when there are multiple sessions.
-  Stop and human handoff controls remain available in either view. The player keeps their own game open.
+  Owners retain Stop and human handoff controls. Public spectators can watch without signing in;
+  they cannot send messages or control the browser. Owners can change visibility after starting.
+  The player keeps their own game open.
 - Scout's `set_activity_step` tool saves `research`, `account_setup`, or `play` on the chat.
   These optional activities describe current work, not a mandatory checklist or proof of success.
   Run, stop, and handoff state still comes from the existing turn lifecycle.
 - Normal assistant messages carry brief observations and move commentary. Tool code and provider
   reasoning stay in Lab. The conversation uses Lab's message scroller and keeps native text selection.
   A draft can be written while Scout works; Scout must stop before it can be sent.
-- `/chats`, `/scouts`, and `/settings` remain the lab. The play screen links there for detailed
-  transcripts and setup. A new account with no configured Scout gets a setup link, not a pretend player.
-- `/review` introduces the review product with a static signup-flow illustration and a link to
-  the existing Lab. There are no dedicated review forms or report pages yet.
+- `/chats` and `/scouts` remain staff-only. Staff owners can open the detailed Lab inspector;
+  members use the simpler conversation. The public API excludes tools, provider reasoning,
+  handoff evidence, workspace files, browser control credentials, and Scout account details.
+- `/review` uses the same composer, conversation, visibility controls, and replay sidebar as Play.
+  It starts a Review chat through the same mutation and harness, checking Review permission.
+  Review guidance asks for concrete product findings with reproducible steps and page URLs.
+  There are no separate product feeds or `/play/session` route.
 
-Sessions remain ordinary Agent chats with optional Play context in `scoutChats`; there is no new
-agent, workflow engine, model, or provider integration. Research storage and Scout allocation remain
-separate decisions. Execution still requires Lab access: this UI does not grant members access to
-shared Scout accounts. No named game has been claimed as supported.
+Sessions remain ordinary Agent chats. `scoutChats.purpose` distinguishes general, Play (with its
+activity step), and Review chats; `visibility` independently controls public viewing. Existing chats
+are private. There is no new agent or workflow engine. Execution checks the owner's current
+permission for the chat purpose throughout the existing runtime.
+No named game has been claimed as reliably supported.
 
-## Two design languages
+## Schema rollout
 
-The signature is a pair of player tiles: you and a blue Scout piece. A compact three-step row explains
-the invitation flow beneath the hero. Warm yellow `#F5E597`, blue `#3558DA`,
-paper `#FAFAF6`, ink `#253044`, and pale blue `#EDF0F9` give it the feel of a tabletop game.
-Bricolage Grotesque gives the headlines and player pieces a rounded character; DM Sans handles forms.
+Populated deployments need a backfill before deploying the required `purpose` and `visibility`
+fields. The branch checkpoint named `Prepare existing chats for explicit purpose and visibility`
+accepts both schemas and contains `migrateChatPurpose:run`. Run it in batches with
+`paginationOpts`, passing each returned cursor until `isDone` is true, then deploy the final code.
+It converts the old `play` context into `purpose`, sets existing chats to private, and removes `play`.
+The primary development deployment has completed this step. Production has not been changed.
+Fresh deployments need no backfill. The final runtime has no legacy schema fallback.
 
-Review uses IBM Plex Sans and IBM Plex Mono, green-gray paper `#F1F4F2`, ink `#203C36`, and
-restrained green `#28584D`. The landing page pairs quiet typography with a document-style illustration.
-It has no game pieces or playful display type.
+## Shared presentation
 
-The neutral overview does not dictate either product's shell. Product pages use Tailwind utilities,
-with small class variants for repeated controls and panels in `src/products/ui.ts`. Font declarations
-and palette tokens live in the existing `src/style.css`; there are no product stylesheets.
-Each product can be linked to directly. A future split can give each its own root and deployment.
-Backend ownership, accounts, and any submission requirements would need a separate decision first.
+Both routes render the same components in `src/products/conversation/`, with colors, fonts, and
+corners set by the product shell. Play keeps its blue Scout piece, Bricolage Grotesque headings,
+DM Sans body text, and yellow accents. Review uses IBM Plex Sans, green-gray colors, and restrained
+corners, with no game mascot in the composer. Its guidance asks for measured findings that separate
+observed problems from interpretation and preferences. The homepage keeps yellow and green entry
+buttons and a single activity feed.
 
 ## What to learn next
 
-Try one real game invitation from start to finish. Record whether Scout joins, finishes the game,
-needs a reminder, and how long its turns take. Use that evidence to choose the first named game and
-replace the illustration with a short real gameplay clip. Automatic Scout provisioning and a dedicated
-game-session history would be useful follow-ups after the play flow is validated.
+Use real game and review tasks to check whether Scout completes the request, what needs human
+help, and which findings are backed by observed browser state. Gameplay completion is still an
+open reliability issue; a finished agent turn alone does not establish that a game ended.

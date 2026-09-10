@@ -85,7 +85,7 @@ describe("browser click persistence and access", () => {
     ).resolves.toBeNull();
     await expect(
       backend.query(internal.scout.browserSessions.replayData, { sessionId }),
-    ).rejects.toThrow("Not authorized");
+    ).resolves.toBeNull();
   });
 
   test("rejects unbounded or invalid coordinates without settling the operation", async () => {

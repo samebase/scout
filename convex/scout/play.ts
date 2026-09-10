@@ -1,15 +1,14 @@
 import { outdent } from "outdent";
 import { tool } from "ai";
-import { v } from "convex/values";
+import { v, type Infer } from "convex/values";
 import { z } from "zod";
-import type { Doc } from "../_generated/dataModel";
 
 const playStep = z.enum(["research", "account_setup", "play"]);
 
 export const playStepValidator = v.union(...playStep.options.map(v.literal));
 export const playContextValidator = v.object({ step: v.union(playStepValidator, v.null()) });
 
-export function playInstructions(play: Doc<"scoutChats">["play"]) {
+export function playInstructions(play: Infer<typeof playContextValidator> | undefined) {
   if (!play) return "";
   return outdent`
     This is Scout Play. Help users find, prepare for, and play games. For unrelated

@@ -7,7 +7,7 @@ import type { SidebarLayoutState } from "@samebase/sidebars/SidebarLayoutState";
 import { useState, type ReactNode } from "react";
 import { MonitorIcon, SquareIcon, XIcon } from "lucide-react";
 
-export function PlaySidebar({ children }: { children: ReactNode }) {
+export function ConversationSidebar({ children }: { children: ReactNode }) {
   const [state, setState] = useState<SidebarLayoutState>({
     leftDesktopOpen: false,
     leftDesktopWidthPx: 0,
@@ -26,7 +26,7 @@ export function PlaySidebar({ children }: { children: ReactNode }) {
   );
 }
 
-export function PlayBrowserToggle({ action }: { action: "open" | "close" }) {
+export function BrowserToggle({ action }: { action: "open" | "close" }) {
   const { isMobile, mobilePane, rightDesktopOpen } = useSidebarLayoutPresentation();
   const { setMobilePane, toggleRightPane } = useSidebarActions();
   const shown = isMobile ? mobilePane === "right" : rightDesktopOpen;
@@ -39,7 +39,7 @@ export function PlayBrowserToggle({ action }: { action: "open" | "close" }) {
       type="button"
       aria-label={label}
       title={label}
-      className="grid size-11 shrink-0 place-items-center rounded-lg hover:bg-play-cloud"
+      className="grid size-11 shrink-0 place-items-center rounded-lg hover:bg-secondary"
       onClick={() =>
         isMobile ? setMobilePane(action === "open" ? "right" : "main") : toggleRightPane()
       }
@@ -53,7 +53,7 @@ export function PlayBrowserToggle({ action }: { action: "open" | "close" }) {
   );
 }
 
-export function PlayBrowserStop({ onStop, disabled }: { onStop: () => void; disabled: boolean }) {
+export function BrowserStop({ onStop, disabled }: { onStop: () => void; disabled: boolean }) {
   const { isMobile, mobilePane } = useSidebarLayoutPresentation();
   if (!isMobile || mobilePane !== "right") return null;
 
@@ -63,7 +63,7 @@ export function PlayBrowserStop({ onStop, disabled }: { onStop: () => void; disa
       aria-label="Stop Scout"
       onClick={onStop}
       disabled={disabled}
-      className="inline-flex min-h-11 items-center gap-2 rounded-lg px-1 text-play-ink hover:text-play-blue"
+      className="inline-flex min-h-11 items-center gap-2 rounded-lg px-1 text-foreground hover:text-primary"
     >
       <SquareIcon size={14} aria-hidden="true" /> Stop
     </button>

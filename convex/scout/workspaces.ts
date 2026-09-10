@@ -21,6 +21,7 @@ import {
   type WorkspaceTarget,
 } from "../workspaceModel";
 import { workspaceStorage, workspaceStorageConfigured } from "../workspaceStorage";
+import { chatPermission } from "./chatAccess";
 
 async function requireWorkspaceChat(
   ctx: QueryCtx | MutationCtx,
@@ -32,6 +33,7 @@ async function requireWorkspaceChat(
     .withIndex("by_thread_id", (q) => q.eq("threadId", threadId))
     .unique();
   if (!chat || chat.userId !== userId) throw new Error("Chat not found");
+  await requireUserPermission(ctx, userId, chatPermission(chat.purpose));
   return chat;
 }
 
@@ -108,7 +110,7 @@ export const snapshot = internalMutation({
     entries: v.array(workspaceEntryValidator),
   }),
   handler: async (ctx, args) => {
-    await requireUserPermission(ctx, args.userId, "access_lab");
+    await requireUserPermission(ctx, args.userId, "access_play");
     if (args.target.kind === "chat")
       await requireWorkspaceChat(ctx, args.target.threadId, args.userId);
     const workspace = await findWorkspace(ctx, args.target);
@@ -147,7 +149,7 @@ export const addFile = internalMutation({
   },
   returns: v.number(),
   handler: async (ctx, { workspaceId, userId, entry }) => {
-    await requireUserPermission(ctx, userId, "access_lab");
+    await requireUserPermission(ctx, userId, "access_play");
     const workspace = await ctx.db.get("scoutWorkspaces", workspaceId);
     if (!workspace || workspace.kind !== "chat")
       throw new Error("Private chat workspace not found");
@@ -212,7 +214,7 @@ export const commit = internalMutation({
   },
   returns: v.number(),
   handler: async (ctx, args) => {
-    await requireUserPermission(ctx, args.userId, "access_lab");
+    await requireUserPermission(ctx, args.userId, "access_play");
     const workspace = await ctx.db.get("scoutWorkspaces", args.workspaceId);
     if (!workspace || workspace.revision !== args.expectedRevision) {
       throw new Error(
@@ -257,7 +259,7 @@ export const fileForViewer = internalQuery({
   args: { target: workspaceTargetValidator, path: v.string() },
   returns: workspaceEntryValidator,
   handler: async (ctx, args) => {
-    const viewer = await requirePermission(ctx, "access_lab");
+    const viewer = await requirePermission(ctx, "access_play");
     if (args.target.kind === "chat")
       await requireWorkspaceChat(ctx, args.target.threadId, viewer.userId);
     const workspace = await findWorkspace(ctx, args.target);

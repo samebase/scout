@@ -291,13 +291,13 @@ test("persists Play activity through slices and follow-ups without rewriting the
   await expect(turn.run()).resolves.toEqual({ kind: "continued" });
   const threads = () =>
     t.owner.query(api.scout.chats.listThreads, { paginationOpts: { cursor: null, numItems: 10 } });
-  expect((await threads()).page[0].play).toEqual({ step: "research" });
+  expect((await threads()).page[0].purpose).toEqual({ kind: "play", step: "research" });
   await expect(turn.run()).resolves.toEqual({ kind: "completed" });
   expect(JSON.stringify(t.model.doStreamCalls[1].prompt)).toContain("Current activity: research");
-  expect((await threads()).page[0].play).toEqual({ step: "research" });
+  expect((await threads()).page[0].purpose).toEqual({ kind: "play", step: "research" });
   const followup = await t.startTurn("Let's play now.");
   await expect(followup.run()).resolves.toEqual({ kind: "continued" });
-  expect((await threads()).page[0].play).toEqual({ step: "play" });
+  expect((await threads()).page[0].purpose).toEqual({ kind: "play", step: "play" });
   await expect(followup.run()).resolves.toEqual({ kind: "completed" });
   const messages = await t.owner.query(api.scout.chats.listMessages, {
     threadId: t.threadId,

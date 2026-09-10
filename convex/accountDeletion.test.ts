@@ -98,6 +98,8 @@ async function setup(email = "deletion@example.test", isApproved = false) {
     });
     const { threadId } = await scoutAgent.createThread(ctx, { userId });
     const chatId = await ctx.db.insert("scoutChats", {
+      purpose: { kind: "general" },
+      visibility: "private",
       threadId,
       userId,
       scoutId,

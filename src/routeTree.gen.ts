@@ -19,8 +19,6 @@ import { Route as ScoutsRouteImport } from './routes/scouts'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SitesRouteImport } from './routes/sites'
 import { Route as HandoffHandoffIdRouteImport } from './routes/handoff.$handoffId'
-import { Route as PlayIndexRouteImport } from './routes/play.index'
-import { Route as PlaySessionRouteImport } from './routes/play.session'
 import { Route as ScoutsIndexRouteImport } from './routes/scouts.index'
 import { Route as ScoutsSlugRouteImport } from './routes/scouts.$slug'
 import { Route as SitesIndexRouteImport } from './routes/sites.index'
@@ -76,16 +74,6 @@ const HandoffHandoffIdRoute = HandoffHandoffIdRouteImport.update({
   path: '/handoff/$handoffId',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PlayIndexRoute = PlayIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => PlayRoute,
-} as any)
-const PlaySessionRoute = PlaySessionRouteImport.update({
-  id: '/session',
-  path: '/session',
-  getParentRoute: () => PlayRoute,
-} as any)
 const ScoutsIndexRoute = ScoutsIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -112,16 +100,14 @@ export interface FileRoutesByFullPath {
   '/account-deletion': typeof AccountDeletionRoute
   '/chats': typeof ChatsRoute
   '/members': typeof MembersRoute
-  '/play': typeof PlayRouteWithChildren
+  '/play': typeof PlayRoute
   '/review': typeof ReviewRoute
   '/scouts': typeof ScoutsRouteWithChildren
   '/settings': typeof SettingsRoute
   '/sites': typeof SitesRouteWithChildren
   '/handoff/$handoffId': typeof HandoffHandoffIdRoute
-  '/play/session': typeof PlaySessionRoute
   '/scouts/$slug': typeof ScoutsSlugRoute
   '/sites/$site': typeof SitesSiteRoute
-  '/play/': typeof PlayIndexRoute
   '/scouts/': typeof ScoutsIndexRoute
   '/sites/': typeof SitesIndexRoute
 }
@@ -130,13 +116,12 @@ export interface FileRoutesByTo {
   '/account-deletion': typeof AccountDeletionRoute
   '/chats': typeof ChatsRoute
   '/members': typeof MembersRoute
+  '/play': typeof PlayRoute
   '/review': typeof ReviewRoute
   '/settings': typeof SettingsRoute
   '/handoff/$handoffId': typeof HandoffHandoffIdRoute
-  '/play/session': typeof PlaySessionRoute
   '/scouts/$slug': typeof ScoutsSlugRoute
   '/sites/$site': typeof SitesSiteRoute
-  '/play': typeof PlayIndexRoute
   '/scouts': typeof ScoutsIndexRoute
   '/sites': typeof SitesIndexRoute
 }
@@ -146,16 +131,14 @@ export interface FileRoutesById {
   '/account-deletion': typeof AccountDeletionRoute
   '/chats': typeof ChatsRoute
   '/members': typeof MembersRoute
-  '/play': typeof PlayRouteWithChildren
+  '/play': typeof PlayRoute
   '/review': typeof ReviewRoute
   '/scouts': typeof ScoutsRouteWithChildren
   '/settings': typeof SettingsRoute
   '/sites': typeof SitesRouteWithChildren
   '/handoff/$handoffId': typeof HandoffHandoffIdRoute
-  '/play/session': typeof PlaySessionRoute
   '/scouts/$slug': typeof ScoutsSlugRoute
   '/sites/$site': typeof SitesSiteRoute
-  '/play/': typeof PlayIndexRoute
   '/scouts/': typeof ScoutsIndexRoute
   '/sites/': typeof SitesIndexRoute
 }
@@ -172,10 +155,8 @@ export interface FileRouteTypes {
     | '/settings'
     | '/sites'
     | '/handoff/$handoffId'
-    | '/play/session'
     | '/scouts/$slug'
     | '/sites/$site'
-    | '/play/'
     | '/scouts/'
     | '/sites/'
   fileRoutesByTo: FileRoutesByTo
@@ -184,13 +165,12 @@ export interface FileRouteTypes {
     | '/account-deletion'
     | '/chats'
     | '/members'
+    | '/play'
     | '/review'
     | '/settings'
     | '/handoff/$handoffId'
-    | '/play/session'
     | '/scouts/$slug'
     | '/sites/$site'
-    | '/play'
     | '/scouts'
     | '/sites'
   id:
@@ -205,10 +185,8 @@ export interface FileRouteTypes {
     | '/settings'
     | '/sites'
     | '/handoff/$handoffId'
-    | '/play/session'
     | '/scouts/$slug'
     | '/sites/$site'
-    | '/play/'
     | '/scouts/'
     | '/sites/'
   fileRoutesById: FileRoutesById
@@ -218,7 +196,7 @@ export interface RootRouteChildren {
   AccountDeletionRoute: typeof AccountDeletionRoute
   ChatsRoute: typeof ChatsRoute
   MembersRoute: typeof MembersRoute
-  PlayRoute: typeof PlayRouteWithChildren
+  PlayRoute: typeof PlayRoute
   ReviewRoute: typeof ReviewRoute
   ScoutsRoute: typeof ScoutsRouteWithChildren
   SettingsRoute: typeof SettingsRoute
@@ -298,20 +276,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HandoffHandoffIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/play/': {
-      id: '/play/'
-      path: '/'
-      fullPath: '/play/'
-      preLoaderRoute: typeof PlayIndexRouteImport
-      parentRoute: typeof PlayRoute
-    }
-    '/play/session': {
-      id: '/play/session'
-      path: '/session'
-      fullPath: '/play/session'
-      preLoaderRoute: typeof PlaySessionRouteImport
-      parentRoute: typeof PlayRoute
-    }
     '/scouts/': {
       id: '/scouts/'
       path: '/'
@@ -343,18 +307,6 @@ declare module '@tanstack/react-router' {
   }
 }
 
-interface PlayRouteChildren {
-  PlaySessionRoute: typeof PlaySessionRoute
-  PlayIndexRoute: typeof PlayIndexRoute
-}
-
-const PlayRouteChildren: PlayRouteChildren = {
-  PlaySessionRoute: PlaySessionRoute,
-  PlayIndexRoute: PlayIndexRoute,
-}
-
-const PlayRouteWithChildren = PlayRoute._addFileChildren(PlayRouteChildren)
-
 interface ScoutsRouteChildren {
   ScoutsSlugRoute: typeof ScoutsSlugRoute
   ScoutsIndexRoute: typeof ScoutsIndexRoute
@@ -385,7 +337,7 @@ const rootRouteChildren: RootRouteChildren = {
   AccountDeletionRoute: AccountDeletionRoute,
   ChatsRoute: ChatsRoute,
   MembersRoute: MembersRoute,
-  PlayRoute: PlayRouteWithChildren,
+  PlayRoute: PlayRoute,
   ReviewRoute: ReviewRoute,
   ScoutsRoute: ScoutsRouteWithChildren,
   SettingsRoute: SettingsRoute,

@@ -23,7 +23,7 @@ import {
 import { humanHandoffDeliveryArgsValidator } from "./humanHandoffDeliveryModel";
 import { humanHandoffWorkflow } from "./humanHandoffWorkflow";
 import { humanHandoffInputSchema } from "./scout/humanHandoffInput";
-import { browserReadyForTransfer, requireLabThread } from "./scout/chatAccess";
+import { browserReadyForTransfer, requireRunnableThread, chatPermission } from "./scout/chatAccess";
 
 export const HUMAN_HANDOFF_CLAIM_MS = 45 * 60 * 1_000;
 export const HUMAN_HANDOFF_ACTIVE_MS = 5 * 60 * 1_000;
@@ -160,7 +160,10 @@ async function authorizedHandoff(ctx: DatabaseCtx, args: AccessArgs, now: number
   const context = await handoffContext(ctx, handoff);
   if (!context) return null;
   const ownerAccess = await readUserAccess(ctx, context.chat.userId);
-  if (ownerAccess.kind !== "account" || !canAccess("access_lab", ownerAccess.accessKeys))
+  if (
+    ownerAccess.kind !== "account" ||
+    !canAccess(chatPermission(context.chat.purpose), ownerAccess.accessKeys)
+  )
     return null;
   const viewer = await resolveViewer(ctx);
   const ownerAuthorized = viewer.kind === "account" && viewer.userId === context.chat.userId;
@@ -287,7 +290,7 @@ async function activePreparedAccess(
 }
 
 export const forSession = query({
-  access: "access_lab",
+  access: "access_account",
   args: { sessionId: v.id("scoutBrowserSessions") },
   returns: v.union(chatHumanHandoffValidator, v.null()),
   handler: async (ctx, args) => {
@@ -355,7 +358,7 @@ export const request = internalMutation({
     if (!chat || chat.scoutId !== turn.scoutId) {
       throw new Error("Scout chat not found");
     }
-    await requireLabThread(ctx, chat.threadId);
+    await requireRunnableThread(ctx, chat.threadId);
     const session = await ctx.db
       .query("scoutBrowserSessions")
       .withIndex("by_thread_id_and_sequence", (index) => index.eq("threadId", chat.threadId))
@@ -477,7 +480,7 @@ export const prepareDelivery = internalQuery({
       ctx.db.get("scoutTurns", handoff.turnId),
     ]);
     if (!delivery || !turn) return { kind: "definitive_failure" as const };
-    await requireLabThread(ctx, turn.threadId);
+    await requireRunnableThread(ctx, turn.threadId);
     return {
       kind: "ready" as const,
       claimExpiresAt: handoff.claimExpiresAt,

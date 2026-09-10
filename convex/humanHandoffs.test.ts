@@ -82,6 +82,8 @@ async function setupContext() {
   const ids = await backend.run(async (ctx) => {
     const threadId = thread._id;
     const chatId = await ctx.db.insert("scoutChats", {
+      purpose: { kind: "general" },
+      visibility: "private",
       userId: identity.userId,
       scoutId: identity.scoutId,
       threadId,
@@ -145,6 +147,54 @@ async function claim(
 }
 
 describe("human handoffs", () => {
+  test("members can use Play handoffs while spectators cannot see continuation evidence", async () => {
+    const { backend, owner, requested, userId, chatId, threadId, scoutId, sessionId } =
+      await setup();
+    await backend.run(async (ctx) => {
+      await ctx.db.patch(userId, { email: "player@example.test" });
+      await ctx.db.patch(chatId, { purpose: { kind: "play", step: null }, visibility: "public" });
+    });
+    expect(await owner.query(api.humanHandoffs.forSession, { sessionId })).toMatchObject({
+      status: "available",
+    });
+    expect(await backend.query(api.scout.activity.get, { threadId })).toMatchObject({
+      status: "running",
+      canControl: false,
+    });
+    const {
+      messages: [prompt],
+    } = await backend.mutation(components.agent.messages.addMessages, {
+      threadId,
+      messages: [{ message: { role: "user", content: "Private handoff browser evidence" } }],
+    });
+    await backend.run(async (ctx) => {
+      const continuationTurnId = await ctx.db.insert("scoutTurns", {
+        threadId,
+        scoutId,
+        promptMessageId: prompt._id,
+        order: prompt.order,
+        model: "qwen/qwen3.7-flash",
+        startedAt: Date.now(),
+        state: { kind: "completed", completedAt: Date.now(), usage: {} },
+      });
+      await ctx.db.patch(requested.handoffId, {
+        status: "resumed",
+        claimedAt: Date.now(),
+        expiresAt: Date.now() + 60_000,
+        continuedAt: Date.now(),
+        continuationTurnId,
+      });
+    });
+    const messages = await backend.query(api.scout.activity.messages, {
+      threadId,
+      paginationOpts: { cursor: null, numItems: 20 },
+    });
+    expect(messages.page.map((message) => message.text)).toEqual(["Test human handoff"]);
+    await expect(backend.query(api.humanHandoffs.forSession, { sessionId })).rejects.toThrow(
+      "Not authorized",
+    );
+  });
+
   test.each(["available", "active"])(
     "an unverified owner cannot use a %s bearer link or continue a run",
     async (status) => {
