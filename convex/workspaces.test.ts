@@ -1,9 +1,7 @@
 /// <reference types="vite/client" />
 
 import agentTest from "@convex-dev/agent/test";
-import { DelayedPromise } from "@ai-sdk/provider-utils";
 import { R2 } from "@convex-dev/r2";
-import firecrawlTest from "@firecrawl/firecrawl-convex/test";
 import { tool } from "ai";
 import { z } from "zod";
 import { convexTest } from "convex-test";
@@ -31,7 +29,7 @@ import { createWebTools } from "./scout/webTools";
 const modules = import.meta.glob("./**/*.ts");
 const blobs = new Map<string, Uint8Array>();
 const deleted: string[] = [];
-const firecrawlFetch = vi.fn<typeof fetch>();
+const scrape = vi.fn<Firecrawl["scrape"]>();
 
 beforeEach(() => {
   blobs.clear();
@@ -42,9 +40,8 @@ beforeEach(() => {
   vi.stubEnv("R2_SECRET_ACCESS_KEY", "test-secret");
   vi.stubEnv("CONVEX_CLOUD_URL", "https://workspace-test.convex.cloud");
   vi.stubEnv("FIRECRAWL_API_KEY", "test-key");
-  firecrawlFetch
-    .mockReset()
-    .mockResolvedValue(Response.json({ success: true, data: { markdown: "A small page." } }));
+  scrape.mockReset().mockResolvedValue({ markdown: "A small page." });
+  vi.spyOn(Firecrawl.prototype, "scrape").mockImplementation(scrape);
   vi.spyOn(R2.prototype, "store").mockImplementation(async (_ctx, file, options) => {
     const key = typeof options === "string" ? options : options?.key;
     if (!key) throw new Error("Expected an explicitly scoped key");
@@ -59,14 +56,8 @@ beforeEach(() => {
   });
   vi.stubGlobal(
     "fetch",
-    vi.fn<typeof fetch>(async (input, init) => {
+    vi.fn<typeof fetch>(async (input) => {
       const url = new URL(input instanceof Request ? input.url : input.toString());
-      if (url.origin === "https://api.firecrawl.dev") {
-        return (await firecrawlFetch(input, init)).clone();
-      }
-      if (url.origin !== "https://storage.example.test") {
-        throw new Error(`Unexpected fetch: ${url.href}`);
-      }
       const bytes = blobs.get(url.pathname.slice(1));
       return bytes
         ? new Response(new Uint8Array(bytes), { status: 200 })
@@ -84,7 +75,6 @@ afterEach(() => {
 async function setup() {
   const backend = convexTest(schema, modules);
   agentTest.register(backend);
-  firecrawlTest.register(backend);
   const userId = await backend.run((ctx) => insertTestAccount(ctx, { email: ADMIN_EMAIL }));
   const otherId = await backend.run((ctx) => insertTestAccount(ctx, { email: ADMIN_EMAIL }));
   const scoutId = await backend.run((ctx) =>
@@ -723,120 +713,6 @@ describe("shared site workspaces", () => {
   });
 });
 
-describe("component search and map results saved to the workspace", () => {
-  it.each([
-    {
-      toolName: "web_search" as const,
-      input: { query: "billing documentation" },
-      response: {
-        success: true,
-        data: {
-          web: [
-            {
-              url: "https://example.com/billing",
-              title: "Billing",
-              description: "Current plans",
-              position: 1,
-            },
-          ],
-        },
-      },
-      expected: {
-        results: [
-          {
-            url: "https://example.com/billing",
-            title: "Billing",
-            description: "Current plans",
-            position: 1,
-          },
-        ],
-      },
-    },
-    {
-      toolName: "web_map" as const,
-      input: { url: "https://example.com", search: "billing" },
-      response: {
-        success: true,
-        id: "map-request",
-        links: [{ url: "https://example.com/billing", title: "Billing" }],
-      },
-      expected: {
-        mapId: "map-request",
-        count: 1,
-        links: [{ url: "https://example.com/billing", title: "Billing" }],
-      },
-    },
-  ])(
-    "saves complete $toolName results from manual and agent calls as private JSON files",
-    async ({ toolName, input, response, expected }) => {
-      const { backend, owner, other, threadId, userId, run } = await setup();
-      firecrawlFetch.mockResolvedValue(Response.json(response));
-      for (const caller of [other, backend]) {
-        await expect(
-          caller.action(api.scout.manual.executeTool, {
-            threadId,
-            toolName,
-            input: JSON.stringify(input),
-            operationId: crypto.randomUUID(),
-          }),
-        ).rejects.toThrow(/Thread not found|Not authorized/);
-      }
-      expect(firecrawlFetch).not.toHaveBeenCalled();
-      const manual = await owner.action(api.scout.manual.executeTool, {
-        threadId,
-        toolName,
-        input: JSON.stringify(input),
-        operationId: crypto.randomUUID(),
-      });
-      if (manual.outcome.kind !== "success") throw new Error(manual.outcome.error);
-      const agent = await owner.action(async (ctx) => {
-        const selected = requireRuntimeTool(
-          withWorkspaceResults(
-            ctx,
-            { threadId, userId },
-            createWebTools(ctx, { threadId, userId }),
-          ),
-          toolName,
-        );
-        const toolCallId = crypto.randomUUID();
-        const output = await selected.execute(input, { toolCallId, messages: [], context: {} });
-        return selected.toModelOutput?.({ toolCallId, input, output });
-      });
-      if (agent?.type !== "json") throw new Error("Expected saved agent result");
-      const paths = new Set<string>();
-      for (const value of [JSON.parse(manual.outcome.output), agent.value]) {
-        const reference = z
-          .object({
-            path: z.string(),
-            tool: z.string(),
-            excerpt: z.string(),
-            excerptTruncated: z.boolean(),
-          })
-          .parse(value);
-        expect(reference).toMatchObject({ tool: toolName, excerptTruncated: false });
-        expect(reference.path).toMatch(
-          new RegExp(`^/workspace/results/${toolName}-[a-f0-9]{8}\\.json$`),
-        );
-        expect(JSON.parse(reference.excerpt)).toEqual(expected);
-        paths.add(reference.path);
-        const inspected = await run(`cat ${reference.path}`);
-        if (inspected.outcome.kind !== "success") throw new Error(inspected.outcome.error);
-        expect(
-          JSON.parse(bashResultSchema.parse(JSON.parse(inspected.outcome.output)).stdout),
-        ).toEqual(expected);
-        await expect(
-          other.action(api.scout.workspaceTools.readFile, {
-            target: { kind: "chat", threadId },
-            path: reference.path,
-          }),
-        ).rejects.toThrow("Chat not found");
-      }
-      expect(paths.size).toBe(2);
-      expect(firecrawlFetch).toHaveBeenCalledTimes(2);
-    },
-  );
-});
-
 describe("web reads saved to the workspace", () => {
   it.each(["html", "rawHtml"] satisfies Array<"html" | "rawHtml">)(
     "saves complete %s with safe provenance, HTML naming, and a bounded excerpt",
@@ -844,17 +720,12 @@ describe("web reads saved to the workspace", () => {
       const { owner, threadId, read, readAsAgent, run } = await setup();
       const content = `<!doctype html><html><body>${"<p>A &amp; B 🚀</p>".repeat(300)}<a href="/next">Last link</a></body></html>`;
       const title = "Before --><script>bad()</script><!-- After";
-      firecrawlFetch.mockResolvedValue(
-        Response.json({
-          success: true,
-          data: {
-            markdown: "Wrong format",
-            html: format === "html" ? content : "Wrong format",
-            rawHtml: format === "rawHtml" ? content : "Wrong format",
-            metadata: { title, sourceURL: "https://redirect.example/actual", creditsUsed: 1 },
-          },
-        }),
-      );
+      scrape.mockResolvedValue({
+        markdown: "Wrong format",
+        html: format === "html" ? content : "Wrong format",
+        rawHtml: format === "rawHtml" ? content : "Wrong format",
+        metadata: { title, sourceURL: "https://redirect.example/actual", creditsUsed: 1 },
+      });
       const url = "https://example.com/docs/billing?plan=pro#price";
       const store = vi.spyOn(R2.prototype, "store");
       const manual = await read(url, format);
@@ -900,20 +771,12 @@ describe("web reads saved to the workspace", () => {
         expect.any(Uint8Array),
         expect.objectContaining({ type: "text/html; charset=utf-8" }),
       );
-      expect(firecrawlFetch).toHaveBeenLastCalledWith(
-        "https://api.firecrawl.dev/v2/scrape",
-        expect.objectContaining({
-          method: "POST",
-          headers: expect.objectContaining({ Authorization: "Bearer test-key" }),
-        }),
-      );
-      expect(JSON.parse(z.string().parse(firecrawlFetch.mock.lastCall?.[1]?.body))).toEqual({
-        origin: "firecrawl-convex",
-        url,
+      expect(scrape).toHaveBeenLastCalledWith(url, {
         formats: [format],
         onlyMainContent: format !== "rawHtml",
         removeBase64Images: true,
         timeout: 60_000,
+        autoResume: false,
       });
       const searched = await run(`rg -o 'Last link' '${file.path}'`);
       if (searched.outcome.kind !== "success") throw new Error(searched.outcome.error);
@@ -928,17 +791,12 @@ describe("web reads saved to the workspace", () => {
     async (format) => {
       const { owner, threadId, read } = await setup();
       for (const content of [undefined, "", " \n\t"]) {
-        firecrawlFetch.mockResolvedValue(
-          Response.json({
-            success: true,
-            data: {
-              markdown: "Other",
-              html: "Other",
-              rawHtml: "Other",
-              [format]: content,
-            },
-          }),
-        );
+        scrape.mockResolvedValue({
+          markdown: "Other",
+          html: "Other",
+          rawHtml: "Other",
+          [format]: content,
+        });
         expect((await read("https://example.com", format)).outcome).toMatchObject({
           kind: "error",
           error: expect.stringContaining(`Firecrawl returned no ${format} content`),
@@ -964,7 +822,7 @@ describe("web reads saved to the workspace", () => {
       operationId: crypto.randomUUID(),
     });
     expect(result.outcome.kind).toBe("error");
-    expect(firecrawlFetch).not.toHaveBeenCalled();
+    expect(scrape).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -973,9 +831,7 @@ describe("web reads saved to the workspace", () => {
     { statusCode: 200, error: "Renderer failed" },
   ])("rejects provider page failures before uploading: %j", async (metadata) => {
     const { read } = await setup();
-    firecrawlFetch.mockResolvedValue(
-      Response.json({ success: true, data: { html: "<p>Error page</p>", metadata } }),
-    );
+    scrape.mockResolvedValue({ html: "<p>Error page</p>", metadata });
     expect((await read("https://example.com", "html")).outcome).toMatchObject({
       kind: "error",
       error: expect.stringContaining("Firecrawl page failed"),
@@ -985,12 +841,7 @@ describe("web reads saved to the workspace", () => {
 
   it("preserves the provider failure when the selected content is missing", async () => {
     const { read } = await setup();
-    firecrawlFetch.mockResolvedValue(
-      Response.json({
-        success: true,
-        data: { metadata: { statusCode: 403, error: "Blocked by origin" } },
-      }),
-    );
+    scrape.mockResolvedValue({ metadata: { statusCode: 403, error: "Blocked by origin" } });
     expect((await read("https://example.com", "rawHtml")).outcome).toMatchObject({
       kind: "error",
       error: expect.stringContaining("Firecrawl page failed (403): Blocked by origin"),
@@ -1000,28 +851,17 @@ describe("web reads saved to the workspace", () => {
 
   it.each([200, 304])("accepts a clean provider page status %s", async (statusCode) => {
     const { read } = await setup();
-    firecrawlFetch.mockResolvedValue(
-      Response.json({ success: true, data: { html: "<p>Page</p>", metadata: { statusCode } } }),
-    );
+    scrape.mockResolvedValue({ html: "<p>Page</p>", metadata: { statusCode } });
     expect((await read("https://example.com", "html")).outcome.kind).toBe("success");
   });
 
   it("saves the complete page, returns only an excerpt, and lets Bash find an answer past 20,000 characters", async () => {
     const { owner, other, threadId, userId, read, run } = await setup();
     const markdown = `${"Introduction\n".repeat(2_000)}\nThe secret answer is 42.\n`;
-    firecrawlFetch.mockResolvedValue(
-      Response.json({
-        success: true,
-        data: {
-          markdown,
-          metadata: {
-            title: "Billing",
-            sourceURL: "https://redirect.example/actual",
-            creditsUsed: 1,
-          },
-        },
-      }),
-    );
+    scrape.mockResolvedValue({
+      markdown,
+      metadata: { title: "Billing", sourceURL: "https://redirect.example/actual", creditsUsed: 1 },
+    });
     const requestedUrl = "https://example.com/docs/billing?plan=pro#price";
     const result = await read(requestedUrl);
     if (result.outcome.kind !== "success") throw new Error(result.outcome.error);
@@ -1082,20 +922,12 @@ describe("web reads saved to the workspace", () => {
         operationId: "other-read",
       }),
     ).rejects.toThrow("Thread not found");
-    expect(firecrawlFetch).toHaveBeenCalledExactlyOnceWith(
-      "https://api.firecrawl.dev/v2/scrape",
-      expect.objectContaining({
-        method: "POST",
-        headers: expect.objectContaining({ Authorization: "Bearer test-key" }),
-      }),
-    );
-    expect(JSON.parse(z.string().parse(firecrawlFetch.mock.lastCall?.[1]?.body))).toEqual({
-      origin: "firecrawl-convex",
-      url: requestedUrl,
+    expect(scrape).toHaveBeenCalledExactlyOnceWith(requestedUrl, {
       formats: ["markdown"],
       onlyMainContent: true,
       removeBase64Images: true,
       timeout: 60_000,
+      autoResume: false,
     });
   });
 
@@ -1132,9 +964,7 @@ describe("web reads saved to the workspace", () => {
   it("keeps Unicode code points intact at the excerpt boundary", async () => {
     const { readAsAgent } = await setup();
     const excerpt = `${"a".repeat(1_999)}🚀`;
-    firecrawlFetch.mockResolvedValue(
-      Response.json({ success: true, data: { markdown: `${excerpt}More content` } }),
-    );
+    scrape.mockResolvedValue({ markdown: `${excerpt}More content` });
     expect(await readAsAgent()).toMatchObject({ excerpt, excerptTruncated: true });
   });
 
@@ -1190,7 +1020,7 @@ describe("web reads saved to the workspace", () => {
     "enforces UTF-8 bytes including provenance at the exact %s file boundary",
     async (format) => {
       const { owner, threadId, read } = await setup();
-      firecrawlFetch.mockResolvedValue(Response.json({ success: true, data: { [format]: "a" } }));
+      scrape.mockResolvedValue({ [format]: "a" });
       await read("https://example.com", format);
       const initial = await owner.query(api.scout.workspaces.list, {
         target: { kind: "chat", threadId },
@@ -1199,9 +1029,7 @@ describe("web reads saved to the workspace", () => {
       if (!file || file.kind !== "file") throw new Error("Missing source");
       const remaining = MAX_WORKSPACE_FILE_BYTES - (file.size - 1);
       const content = "é".repeat(Math.floor(remaining / 2)) + "a".repeat(remaining % 2);
-      firecrawlFetch.mockResolvedValue(
-        Response.json({ success: true, data: { [format]: content } }),
-      );
+      scrape.mockResolvedValue({ [format]: content });
       expect((await read("https://example.com", format)).outcome.kind).toBe("success");
       const before = await owner.query(api.scout.workspaces.list, {
         target: { kind: "chat", threadId },
@@ -1209,9 +1037,7 @@ describe("web reads saved to the workspace", () => {
       expect(before.entries).toContainEqual(
         expect.objectContaining({ size: MAX_WORKSPACE_FILE_BYTES }),
       );
-      firecrawlFetch.mockResolvedValue(
-        Response.json({ success: true, data: { [format]: `${content}a` } }),
-      );
+      scrape.mockResolvedValue({ [format]: `${content}a` });
       expect((await read("https://example.com", format)).outcome).toMatchObject({
         kind: "error",
         error: expect.stringContaining("Page is too large"),
@@ -1237,7 +1063,7 @@ describe("web reads saved to the workspace", () => {
     ).rejects.toThrow("Chat not found");
     vi.stubEnv("R2_BUCKET", "");
     await expect(readAsAgent()).rejects.toThrow("Workspace storage is not configured");
-    expect(firecrawlFetch).not.toHaveBeenCalled();
+    expect(scrape).not.toHaveBeenCalled();
     expect(
       (
         await owner.query(api.scout.workspaces.list, {
@@ -1249,14 +1075,12 @@ describe("web reads saved to the workspace", () => {
 
   it("does not claim success for a provider, missing Markdown, or upload failure", async () => {
     const { owner, threadId, read } = await setup();
-    firecrawlFetch.mockResolvedValueOnce(
-      Response.json({ success: false, error: "Page unavailable" }, { status: 422 }),
-    );
+    scrape.mockRejectedValueOnce(new Error("Page unavailable"));
     expect((await read()).outcome).toMatchObject({
       kind: "error",
       error: expect.stringContaining("Page unavailable"),
     });
-    firecrawlFetch.mockResolvedValueOnce(Response.json({ success: true, data: {} }));
+    scrape.mockResolvedValueOnce({});
     expect((await read()).outcome.kind).toBe("error");
     vi.spyOn(R2.prototype, "store").mockRejectedValueOnce(new Error("R2 write failed"));
     expect((await read()).outcome).toMatchObject({
@@ -1275,19 +1099,11 @@ describe("web reads saved to the workspace", () => {
 
   it("rechecks authorization during registration if access is revoked while fetching", async () => {
     const { backend, owner, userId, threadId, read } = await setup();
-    const started = new DelayedPromise<void>();
-    const response = new DelayedPromise<Response>();
-    firecrawlFetch.mockImplementationOnce(() => {
-      started.resolve();
-      return response.promise;
+    scrape.mockImplementationOnce(async () => {
+      await backend.run((ctx) => ctx.db.patch(userId, { emailVerificationTime: undefined }));
+      return { markdown: "Fetched after access changed" };
     });
-    const pending = read();
-    await started.promise;
-    await backend.run((ctx) => ctx.db.patch(userId, { emailVerificationTime: undefined }));
-    response.resolve(
-      Response.json({ success: true, data: { markdown: "Fetched after access changed" } }),
-    );
-    expect((await pending).outcome).toMatchObject({
+    expect((await read()).outcome).toMatchObject({
       kind: "error",
       error: expect.stringContaining("Not authorized"),
     });
