@@ -43,7 +43,10 @@ export const accountObservationValidator = v.union(
   }),
 );
 
-const userProfile = authTables.users.validator.extend({ isApproved: v.optional(v.boolean()) });
+const userProfile = authTables.users.validator.extend({
+  isApproved: v.optional(v.boolean()),
+  defaultScoutModelSelection: v.optional(scoutModelSelectionValidator),
+});
 
 const scoutTurnFields = {
   threadId: v.string(),
@@ -126,6 +129,7 @@ export default defineSchema({
     createdAt: v.number(),
     activeSkills: v.optional(activeSkillsValidator),
     play: v.optional(playContextValidator),
+    modelSelection: v.optional(scoutModelSelectionValidator),
   })
     .index("by_thread_id", ["threadId"])
     .index("by_user_id_and_created_at", ["userId", "createdAt"]),

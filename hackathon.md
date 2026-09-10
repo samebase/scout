@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-10T10:56:12Z
+- **Last updated:** 2026-09-10T12:08:39Z
 
 ## Log
 
@@ -1130,9 +1130,16 @@ the same limits as execution (`convex/scout/runtimeInstructions.ts`, `convex/wor
 Required patched YAML parsing and Hono dependencies across the TanStack and Convex dependency
 trees to clear the production supply-chain gate (`pnpm-workspace.yaml`).
 
-### 2026-09-10 - working tree
+### 2026-09-10 - 2205c16 - v194
 
 Added a Luna reasoning-effort picker to Lab, from None through Max with a provider-default option.
 Convex retains the selection for each turn, subsequent model steps, replacements, and resumed handoffs.
 Run details show the chosen effort and reasoning-token usage for comparisons
 (`src/routes/chats.tsx`, `convex/scout/generation.ts`, `src/components/scout-run-message.tsx`).
+
+### 2026-09-10 - working tree
+
+Chat Lab defaults to Luna with Max effort and remembers each chat's choice across refreshes and sign-ins.
+Picker changes also set the account's default for new chats, while existing chats keep their own choice.
+Earlier chats recover their selection from the latest run, and Manual remains temporary
+(`convex/scout/chats.ts`, `convex/schema.ts`, `src/routes/chats.tsx`).

@@ -44,11 +44,7 @@ import {
 import { z } from "zod";
 import { api } from "../../convex/_generated/api";
 import { omitNullish } from "../../shared/omitNullish";
-import {
-  SCOUT_REASONING_EFFORTS,
-  SCOUT_REASONING_LABELS,
-  type ScoutReasoningEffort,
-} from "../../shared/scoutReasoning";
+import { SCOUT_REASONING_EFFORTS, SCOUT_REASONING_LABELS } from "../../shared/scoutReasoning";
 import {
   BROWSER_CLOSE_DESCRIPTION,
   BROWSER_EXECUTE_DESCRIPTION,
@@ -247,7 +243,6 @@ const MANUAL_TOOL_OPTIONS = [
   input: string;
 }[];
 
-const DEFAULT_DRIVER: ChatDriver = "qwen/qwen3.7-flash";
 const DEFAULT_CONTEXT_PANEL_HEIGHT = 288;
 const MIN_CONTEXT_PANEL_HEIGHT = 144;
 const CONTEXT_PANEL_RESIZE_STEP = 48;
@@ -369,7 +364,8 @@ function threadLabel(thread: ChatThread) {
   return thread.title?.trim() || "New chat";
 }
 
-function chatDriverLabel(driver: ChatDriver) {
+function chatDriverLabel(driver: ChatDriver | undefined) {
+  if (!driver) return "Loading…";
   return driver === "manual" ? "Manual" : scoutModelLabel(driver);
 }
 
@@ -427,21 +423,18 @@ function ChatsWorkspace() {
   );
   const stopScout = useMutation(api.scout.chats.stop);
   const executeManualTool = useAction(api.scout.manual.executeTool);
-  const [selectedDriver, setSelectedDriver] = useState<ChatDriver>(DEFAULT_DRIVER);
-  const [reasoningEffort, setReasoningEffort] = useState<ScoutReasoningEffort | "default">(
-    "default",
+  const saveModelSelection = useMutation(api.scout.chats.setModelSelection).withOptimisticUpdate(
+    (store, args) => {
+      store.setQuery(
+        api.scout.chats.getModelSelection,
+        { threadId: args.threadId },
+        args.selection,
+      );
+      store.setQuery(api.scout.chats.getModelSelection, { threadId: null }, args.selection);
+    },
   );
-  const modelSelection =
-    selectedDriver === "manual"
-      ? null
-      : selectedDriver === "openai/gpt-5.6-luna"
-        ? {
-            model: selectedDriver,
-            ...omitNullish({
-              reasoningEffort: reasoningEffort === "default" ? undefined : reasoningEffort,
-            }),
-          }
-        : { model: selectedDriver };
+  const [manualMode, setManualMode] = useState(false);
+  const [isSavingSelection, setIsSavingSelection] = useState(false);
   const [manualTool, setManualTool] = useState<(typeof MANUAL_TOOL_OPTIONS)[number]>(
     MANUAL_TOOL_OPTIONS[0],
   );
@@ -472,6 +465,18 @@ function ChatsWorkspace() {
     (search.thread === undefined ? availableThreads[0]?.threadId : undefined) ??
     null;
   const selectedThread = availableThreads.find((thread) => thread.threadId === threadId);
+  const savedModelSelection = useQuery(
+    api.scout.chats.getModelSelection,
+    threads.status === "LoadingFirstPage" || (search.thread !== undefined && threadId === null)
+      ? "skip"
+      : { threadId },
+  );
+  const modelSelection = manualMode ? null : savedModelSelection;
+  const selectedDriver = manualMode ? "manual" : savedModelSelection?.model;
+  const reasoningEffort =
+    savedModelSelection?.model === "openai/gpt-5.6-luna"
+      ? (savedModelSelection.reasoningEffort ?? "default")
+      : "default";
   const selectedScoutId = selectedThread?.scoutId ?? requestedPendingThread?.scoutId;
   const selectedScout = availableScouts.find((scout) => scout._id === selectedScoutId);
   const selectedActiveScout = selectedScout?.status === "active" ? selectedScout : undefined;
@@ -516,9 +521,17 @@ function ChatsWorkspace() {
   const scoutIsWorkingElsewhere =
     scoutActivity?.kind === "busy" || activeOwnedThreadId !== undefined;
   const composerIsBusy = composerState.kind === "sending" || composerState.kind === "stopping";
-  const isWorking = composerIsBusy || isActivityLoading || hasActiveActivity(scoutActivity);
+  const isSelectionLoading = savedModelSelection === undefined;
+  const isWorking =
+    composerIsBusy ||
+    isActivityLoading ||
+    hasActiveActivity(scoutActivity) ||
+    isSelectionLoading ||
+    isSavingSelection;
   const messageInputDisabled =
     !canCompose ||
+    isSelectionLoading ||
+    isSavingSelection ||
     isActivityLoading ||
     scoutIsWorkingElsewhere ||
     serverIsStopping ||
@@ -587,6 +600,7 @@ function ChatsWorkspace() {
 
   useEffect(() => {
     setDraft("");
+    setManualMode(false);
     setComposerState((current) => (current.kind === "failed" ? { kind: "idle" } : current));
     setPendingThread((current) => (current?.threadId === search.thread ? current : null));
   }, [search.thread]);
@@ -633,6 +647,8 @@ function ChatsWorkspace() {
     if (
       !selectedActiveScout ||
       !threadId ||
+      isSelectionLoading ||
+      isSavingSelection ||
       isActivityLoading ||
       scoutIsWorkingElsewhere ||
       (serverIsStopping && !canRetryStopping) ||
@@ -793,11 +809,34 @@ function ChatsWorkspace() {
     );
   };
 
+  const changeModelSelection = async (
+    selection: FunctionArgs<typeof api.scout.chats.setModelSelection>["selection"],
+  ) => {
+    if (isWorking) return;
+    setManualMode(false);
+    setIsSavingSelection(true);
+    setComposerState({ kind: "idle" });
+    try {
+      await saveModelSelection({ threadId, selection });
+    } catch {
+      if (currentThreadId.current === threadId) {
+        setComposerState({ kind: "failed", message: "Model selection could not be saved." });
+      }
+    } finally {
+      setIsSavingSelection(false);
+    }
+  };
+
   const onDriverChange = (value: string) => {
     const option = DRIVER_OPTIONS.find((candidate) => candidate.value === value);
-    if (option) {
-      setSelectedDriver(option.value);
+    if (!option || isWorking) return;
+    if (option.value === "manual") {
+      setManualMode(true);
       setComposerState({ kind: "idle" });
+    } else {
+      void changeModelSelection(
+        savedModelSelection?.model === option.value ? savedModelSelection : { model: option.value },
+      );
     }
   };
 
@@ -1031,11 +1070,12 @@ function ChatsWorkspace() {
                   </label>
                   <select
                     id="chat-driver"
-                    value={selectedDriver}
+                    value={selectedDriver ?? ""}
                     disabled={isWorking}
                     onChange={(event) => onDriverChange(event.currentTarget.value)}
                     className="border-input bg-background h-8 min-w-0 rounded-md border px-2 text-xs"
                   >
+                    {isSelectionLoading ? <option value="">Loading…</option> : null}
                     {DRIVER_OPTIONS.map((option) => (
                       <option key={option.value} value={option.value}>
                         {option.label}
@@ -1056,8 +1096,12 @@ function ChatsWorkspace() {
                           const effort = SCOUT_REASONING_EFFORTS.find(
                             (candidate) => candidate === value,
                           );
-                          if (value === "default") setReasoningEffort("default");
-                          else if (effort) setReasoningEffort(effort);
+                          if (value === "default" || effort) {
+                            void changeModelSelection({
+                              model: "openai/gpt-5.6-luna",
+                              ...omitNullish({ reasoningEffort: effort }),
+                            });
+                          }
                         }}
                         className="border-input bg-background h-8 min-w-0 rounded-md border px-2 text-xs"
                       >
@@ -1447,7 +1491,7 @@ function ChatChrome({
   inspectorKind: InspectorKind | null;
   canOpenWorkspace: boolean;
   onToggleWorkspace: () => void;
-  driver: ChatDriver;
+  driver: ChatDriver | undefined;
   thread: ChatThread | undefined;
   scout: Scout | undefined;
   onToggleCreate: () => void;

@@ -56,7 +56,8 @@ describe("Scout chats", () => {
       expect(turn).toEqual(
         expect.objectContaining({
           scoutId,
-          model: "qwen/qwen3.7-flash",
+          model: "openai/gpt-5.6-luna",
+          reasoningEffort: "max",
           state: expect.objectContaining({ kind: "pending" }),
         }),
       );
@@ -76,7 +77,7 @@ describe("Scout chats", () => {
           .withIndex("by_thread_id_and_order", (q) => q.eq("threadId", threadId))
           .take(10),
       );
-      expect(followups.map((entry) => entry.model)).toEqual(["qwen/qwen3.7-flash", model]);
+      expect(followups.map((entry) => entry.model)).toEqual(["openai/gpt-5.6-luna", model]);
       expect(followups.every((entry) => entry.scoutId === scoutId)).toBe(true);
       if (model === "openai/gpt-5.6-luna") {
         expect(followups[1]).toMatchObject({ reasoningEffort: "max" });
