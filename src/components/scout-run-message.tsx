@@ -7,6 +7,7 @@ import {
   WrenchIcon,
 } from "lucide-react";
 import { api } from "../../convex/_generated/api";
+import { SCOUT_REASONING_LABELS } from "../../shared/scoutReasoning";
 import { Bubble, BubbleContent } from "#components/ui/bubble";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "#components/ui/collapsible";
 import { Marker, MarkerContent, MarkerIcon } from "#components/ui/marker";
@@ -117,12 +118,20 @@ export function formatRunMetadata(metadata: ScoutRunMetadata, generationSteps: n
   const parts: string[] = [];
   if (metadata.scout?.displayName) parts.push(metadata.scout.displayName);
   if (metadata.model) parts.push(scoutModelLabel(metadata.model));
+  if (metadata.model === "openai/gpt-5.6-luna") {
+    parts.push(
+      `${metadata.reasoningEffort ? SCOUT_REASONING_LABELS[metadata.reasoningEffort] : "Default"} effort`,
+    );
+  }
   parts.push(`${tokenNumber.format(generationSteps)} ${generationSteps === 1 ? "step" : "steps"}`);
   if (metadata.usage?.promptTokens !== undefined) {
     parts.push(`${tokenNumber.format(metadata.usage.promptTokens)} input`);
   }
   if (metadata.usage?.completionTokens !== undefined) {
     parts.push(`${tokenNumber.format(metadata.usage.completionTokens)} output`);
+  }
+  if (metadata.usage?.reasoningTokens !== undefined) {
+    parts.push(`${tokenNumber.format(metadata.usage.reasoningTokens)} reasoning`);
   }
   if (metadata.usage?.costUsd !== undefined) {
     parts.push(formatEstimatedModelCostUsd(metadata.usage.costUsd));

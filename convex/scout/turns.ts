@@ -12,8 +12,8 @@ import { omitNullish } from "../../shared/omitNullish";
 import { scoutAgent } from "./agent";
 import { browserReadyForTransfer } from "./chatAccess";
 import { failPendingModelCall } from "./modelCalls";
-import { scoutTokenUsageValidator } from "./models";
-import type { ScoutModel, ScoutTokenUsage } from "./models";
+import { scoutModelSelection, scoutTokenUsageValidator } from "./models";
+import type { ScoutModelSelection, ScoutTokenUsage } from "./models";
 import { scoutTurnWorkflow } from "./turnWorkflow";
 
 export const TURN_START_TIMEOUT_MS = 5 * 60 * 1_000;
@@ -134,19 +134,15 @@ async function failPendingTurn(
   }
 }
 
-type TurnReplacement = {
-  prompt: string;
-  model: ScoutModel;
-};
+type TurnReplacement = ScoutModelSelection & { prompt: string };
 
 export async function enqueueTurn(
   ctx: MutationCtx,
-  args: {
+  args: ScoutModelSelection & {
     threadId: string;
     userId: Id<"users">;
     scoutId: Id<"scouts">;
     prompt: string;
-    model: ScoutModel;
   },
 ) {
   const chat = await requireLabThread(ctx, args.threadId);
@@ -164,7 +160,7 @@ export async function enqueueTurn(
     order: message.order,
     promptMessageId: messageId,
     scoutId: args.scoutId,
-    model: args.model,
+    ...scoutModelSelection(args),
     startedAt: Date.now(),
     state: { kind: "pending", leaseExpiresAt, completedSteps: 0, usage: {} },
   });

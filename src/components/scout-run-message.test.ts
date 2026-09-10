@@ -4,6 +4,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { describe, expect, test } from "vite-plus/test";
 import { afterEach } from "vite-plus/test";
 import type { Id } from "../../convex/_generated/dataModel";
+import { omitNullish } from "../../shared/omitNullish";
 import { ScoutRunMessageView, formatRunMetadata } from "./scout-run-message";
 import {
   countGenerationSteps,
@@ -76,6 +77,24 @@ describe("Scout transcript metadata", () => {
         23,
       ),
     ).toBe("Conrad Scout, Qwen 3.7 Flash, 23 steps, 100,000 input, 2,000 output, ~$0.00326 model");
+  });
+
+  test.each([undefined, "max"] as const)("shows Luna effort %s and reasoning usage", (effort) => {
+    expect(
+      formatRunMetadata(
+        {
+          turnId,
+          model: "openai/gpt-5.6-luna",
+          ...omitNullish({ reasoningEffort: effort }),
+          scout: { id: scoutId, displayName: "Conrad Scout" },
+          outcome: { kind: "completed" },
+          usage: { promptTokens: 100, completionTokens: 50, reasoningTokens: 40 },
+        },
+        1,
+      ),
+    ).toBe(
+      `Conrad Scout, Luna, ${effort ? "Max" : "Default"} effort, 1 step, 100 input, 50 output, 40 reasoning`,
+    );
   });
 
   test("shows a stopped run without presenting it as a failure", () => {

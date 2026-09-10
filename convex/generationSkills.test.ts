@@ -77,7 +77,10 @@ async function setup(responses: LanguageModelV4StreamPart[][], purpose?: "play")
     scoutId,
     ...omitNullish({ purpose }),
   });
-  const startTurn = async (content: string) => {
+  const startTurn = async (
+    content: string,
+    selection: models.ScoutModelSelection = { model: "qwen/qwen3.7-flash" },
+  ) => {
     const {
       messages: [prompt],
     } = await backend.mutation(components.agent.messages.addMessages, {
@@ -90,7 +93,7 @@ async function setup(responses: LanguageModelV4StreamPart[][], purpose?: "play")
         promptMessageId: prompt._id,
         order: prompt.order,
         scoutId,
-        model: "qwen/qwen3.7-flash",
+        ...selection,
         startedAt: Date.now(),
         state: {
           kind: "pending",
@@ -107,7 +110,7 @@ async function setup(responses: LanguageModelV4StreamPart[][], purpose?: "play")
           threadId,
           userId,
           promptMessageId: prompt._id,
-          model: "qwen/qwen3.7-flash",
+          model: selection.model,
         }),
       state: () => backend.run(async (ctx) => (await ctx.db.get(turnId))?.state),
     };
@@ -122,6 +125,54 @@ function reply(text: string): LanguageModelV4StreamPart[] {
     { type: "text-end", id: "reply" },
   ];
 }
+
+test.each(["none", "max"] as const)(
+  "keeps Luna %s effort across generation slices",
+  async (effort) => {
+    const t = await setup([
+      [
+        {
+          type: "tool-call",
+          toolCallId: "skills-1",
+          toolName: "load_skills",
+          input: '{"names":["research"]}',
+        },
+      ],
+      reply("Done."),
+    ]);
+    const turn = await t.startTurn("Compare the findings.", {
+      model: "openai/gpt-5.6-luna",
+      reasoningEffort: effort,
+    });
+    await expect(turn.run()).resolves.toEqual({ kind: "continued" });
+    await expect(turn.run()).resolves.toEqual({ kind: "completed" });
+    expect(t.model.doStreamCalls).toHaveLength(2);
+    for (const call of t.model.doStreamCalls) {
+      expect(call.providerOptions).toEqual({ convexGateway: { reasoningEffort: effort } });
+    }
+    const calls = await t.backend.run(async (ctx) =>
+      ctx.db
+        .query("scoutModelCalls")
+        .withIndex("by_turn_id_and_sequence", (q) => q.eq("turnId", turn.turnId))
+        .take(10),
+    );
+    for (const call of calls) {
+      const snapshot = await t.backend.run(async (ctx) => {
+        const blob = await ctx.storage.get(call.snapshotStorageId);
+        if (!blob) throw new Error("Model input snapshot was not saved");
+        return await blob.text();
+      });
+      expect(JSON.parse(snapshot).settings.reasoningEffort).toBe(effort);
+    }
+  },
+);
+
+test("leaves Luna reasoning unset for Default", async () => {
+  const t = await setup([reply("Done.")]);
+  const turn = await t.startTurn("Compare the findings.", { model: "openai/gpt-5.6-luna" });
+  await turn.run();
+  expect(t.model.doStreamCalls[0].providerOptions?.["convexGateway"]).toBeUndefined();
+});
 
 test("continues task execution after a successful skill call with stop finish reason", async () => {
   const t = await setup([

@@ -68,7 +68,7 @@ describe("Scout chats", () => {
       await admin.mutation(api.scout.chats.sendMessage, {
         threadId,
         prompt: "Continue in Cloudflare using the same Scout.",
-        model,
+        selection: model === "openai/gpt-5.6-luna" ? { model, reasoningEffort: "max" } : { model },
       });
       const followups = await backend.run(async (ctx) =>
         ctx.db
@@ -78,6 +78,14 @@ describe("Scout chats", () => {
       );
       expect(followups.map((entry) => entry.model)).toEqual(["qwen/qwen3.7-flash", model]);
       expect(followups.every((entry) => entry.scoutId === scoutId)).toBe(true);
+      if (model === "openai/gpt-5.6-luna") {
+        expect(followups[1]).toMatchObject({ reasoningEffort: "max" });
+        expect(
+          await admin.query(internal.scout.chats.runtimeContext, {
+            promptMessageId: followups[1].promptMessageId,
+          }),
+        ).toMatchObject({ reasoningEffort: "max" });
+      }
     },
   );
 
@@ -269,7 +277,8 @@ describe("Scout chats", () => {
       }
       const replacement = {
         prompt: "Hand it over to me.",
-        model: "qwen/qwen3.7-flash" as const,
+        model: "openai/gpt-5.6-luna" as const,
+        reasoningEffort: "max" as const,
       };
       await admin.mutation(
         api.scout.chats.stop,
@@ -333,6 +342,7 @@ describe("Scout chats", () => {
           .take(10),
       );
       expect(turns).toHaveLength(2);
+      expect(turns[1]).toMatchObject({ model: replacement.model, reasoningEffort: "max" });
       const next = turns[1];
       if (!next) throw new Error("Replacement turn was not created");
       expect(next.state.kind).toBe("pending");

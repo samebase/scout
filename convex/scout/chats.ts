@@ -25,9 +25,12 @@ import {
 import { omitNullish } from "../../shared/omitNullish";
 import {
   DEFAULT_SCOUT_MODEL,
+  scoutModelSelection,
+  scoutModelSelectionValidator,
   scoutModelValidator,
+  scoutPromptValidator,
+  scoutReasoningEffortValidator,
   scoutTokenUsageValidator,
-  selectableScoutModelValidator,
 } from "./models";
 import { continueStoppingTurn, enqueueTurn, stopTurn } from "./turns";
 import { scoutRuntimeInstructions } from "./runtimeInstructions";
@@ -48,6 +51,7 @@ const recentThreadValidator = v.object({
 const chatMessageMetadataValidator = v.object({
   turnId: v.id("scoutTurns"),
   model: scoutModelValidator,
+  reasoningEffort: v.optional(scoutReasoningEffortValidator),
   scout: v.object({
     id: v.id("scouts"),
     displayName: v.string(),
@@ -333,12 +337,7 @@ export const stop = mutation({
   access: "access_lab",
   args: {
     threadId: v.string(),
-    replacement: v.optional(
-      v.object({
-        prompt: v.string(),
-        model: selectableScoutModelValidator,
-      }),
-    ),
+    replacement: v.optional(scoutPromptValidator),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -346,7 +345,7 @@ export const stop = mutation({
     await requireOwnedAgentThread(ctx, args.threadId, userId);
     const binding = await requireThreadBinding(ctx, { threadId: args.threadId, userId });
     const replacement = args.replacement
-      ? { prompt: promptText(args.replacement.prompt), model: args.replacement.model }
+      ? { ...args.replacement, prompt: promptText(args.replacement.prompt) }
       : undefined;
     const activity = await scoutActivity(ctx, binding.scoutId);
     if (activity.kind === "idle") {
@@ -386,7 +385,7 @@ export const sendMessage = mutation({
   args: {
     threadId: v.string(),
     prompt: v.string(),
-    model: v.optional(selectableScoutModelValidator),
+    selection: v.optional(scoutModelSelectionValidator),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -395,7 +394,7 @@ export const sendMessage = mutation({
     const { scoutId } = await requireThreadBinding(ctx, { threadId: args.threadId, userId });
     await requireActiveScout(ctx, scoutId);
     const prompt = promptText(args.prompt);
-    const model = args.model ?? DEFAULT_SCOUT_MODEL;
+    const selection = args.selection ?? { model: DEFAULT_SCOUT_MODEL };
     if (await scoutIsWorking(ctx, scoutId))
       throw new Error("Scout is already working or waiting for human help");
     await activeBrowserForChat(ctx, scoutId, args.threadId);
@@ -405,7 +404,7 @@ export const sendMessage = mutation({
         patch: { title: titleFromPrompt(prompt) },
       });
     }
-    await enqueueTurn(ctx, { threadId: args.threadId, userId, scoutId, prompt, model });
+    await enqueueTurn(ctx, { threadId: args.threadId, userId, scoutId, prompt, ...selection });
     return null;
   },
 });
@@ -469,7 +468,7 @@ export const listMessages = query({
       }
       metadataByOrder.set(turn.order, {
         turnId: turn._id,
-        model: turn.model,
+        ...scoutModelSelection(turn),
         scout,
         outcome: chatTurnOutcome(turn.state),
         ...omitNullish({
@@ -512,6 +511,7 @@ export const runtimeContext = internalQuery({
   returns: v.object({
     turnId: v.id("scoutTurns"),
     startedAt: v.number(),
+    reasoningEffort: v.optional(scoutReasoningEffortValidator),
     userId: v.id("users"),
     scoutId: v.id("scouts"),
     activeSkills: activeSkillsValidator,
@@ -533,6 +533,9 @@ export const runtimeContext = internalQuery({
     return {
       turnId: turn._id,
       startedAt: turn.startedAt,
+      ...omitNullish({
+        reasoningEffort: turn.model === "openai/gpt-5.6-luna" ? turn.reasoningEffort : undefined,
+      }),
       userId: chat.userId,
       scoutId: chat.scoutId,
       activeSkills: chat.activeSkills ?? [],
@@ -624,7 +627,7 @@ export const resumeHumanHandoff = internalMutation({
       threadId: chat.threadId,
       userId: chat.userId,
       scoutId: chat.scoutId,
-      model: previousTurn.model,
+      ...scoutModelSelection(previousTurn),
       prompt: outdent`
         The operator returned browser control. Continue the user's request and verify
         the current state. The previous browser session was closed after capturing the

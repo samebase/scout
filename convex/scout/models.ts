@@ -1,6 +1,7 @@
 import { convexGateway } from "@convex-dev/ai-sdk-provider";
 import { type Infer, v } from "convex/values";
 import { omitNullish } from "../../shared/omitNullish";
+import { SCOUT_REASONING_EFFORTS } from "../../shared/scoutReasoning";
 
 const lunaModelValidator = v.literal("openai/gpt-5.6-luna");
 const qwen37FlashModelValidator = v.literal("qwen/qwen3.7-flash");
@@ -21,6 +22,38 @@ export const scoutModelValidator = v.union(
 );
 
 export type ScoutModel = Infer<typeof scoutModelValidator>;
+
+export const scoutReasoningEffortValidator = v.union(
+  ...SCOUT_REASONING_EFFORTS.map((effort) => v.literal(effort)),
+);
+
+export const scoutModelSelectionValidator = v.union(
+  v.object({
+    model: lunaModelValidator,
+    reasoningEffort: v.optional(scoutReasoningEffortValidator),
+  }),
+  v.object({ model: v.union(qwen37FlashModelValidator, deepSeekV4FlashModelValidator) }),
+);
+
+export type ScoutModelSelection = Infer<typeof scoutModelSelectionValidator>;
+
+export const scoutPromptValidator = v.union(
+  scoutModelSelectionValidator.members[0].extend({ prompt: v.string() }),
+  scoutModelSelectionValidator.members[1].extend({ prompt: v.string() }),
+);
+
+export function scoutModelSelection(selection: ScoutModelSelection): ScoutModelSelection {
+  switch (selection.model) {
+    case "openai/gpt-5.6-luna":
+      return {
+        model: selection.model,
+        ...omitNullish({ reasoningEffort: selection.reasoningEffort }),
+      };
+    case "qwen/qwen3.7-flash":
+    case "deepseek/deepseek-v4-flash-0731":
+      return { model: selection.model };
+  }
+}
 
 export const scoutTokenUsageValidator = v.object({
   promptTokens: v.optional(v.number()),
@@ -120,22 +153,14 @@ export const scoutTurnStateValidator = v.union(
     stopRequestedAt: v.number(),
     generationFinished: v.boolean(),
     cleanupFailure: v.optional(v.string()),
-    replacement: v.optional(
-      v.object({
-        prompt: v.string(),
-        model: scoutModelValidator,
-      }),
-    ),
+    replacement: v.optional(scoutPromptValidator),
     usage: scoutTokenUsageValidator,
     ...terminalTurnUsageFields,
   }),
   v.object({
     kind: v.literal("replacing"),
     stoppedAt: v.number(),
-    replacement: v.object({
-      prompt: v.string(),
-      model: scoutModelValidator,
-    }),
+    replacement: scoutPromptValidator,
     usage: scoutTokenUsageValidator,
     ...terminalTurnUsageFields,
   }),
@@ -154,7 +179,7 @@ export const scoutTurnStateValidator = v.union(
   }),
 );
 
-export const DEFAULT_SCOUT_MODEL: SelectableScoutModel = "qwen/qwen3.7-flash";
+export const DEFAULT_SCOUT_MODEL = "qwen/qwen3.7-flash" satisfies SelectableScoutModel;
 
 export function scoutLanguageModel(model: ScoutModel) {
   return convexGateway(model);

@@ -214,15 +214,18 @@ describe("Scout generation slices", () => {
   });
 
   it("serializes the exact standardized model request without transport secrets", () => {
-    const context = modelCallContext({
-      callId: "call-1",
-      provider: "gateway",
-      modelId: "model",
-      instructions: "Use the browser.",
-      messages: [{ role: "user", content: [{ type: "text", text: "Open Samebase" }] }],
-      tools: [{ type: "function", name: "browser_execute" }],
-      temperature: 0.2,
-    });
+    const context = modelCallContext(
+      {
+        callId: "call-1",
+        provider: "gateway",
+        modelId: "model",
+        instructions: "Use the browser.",
+        messages: [{ role: "user", content: [{ type: "text", text: "Open Samebase" }] }],
+        tools: [{ type: "function", name: "browser_execute" }],
+        temperature: 0.2,
+      },
+      "max",
+    );
 
     const parsed = JSON.parse(context);
     expect(parsed.instructions).toBe("Use the browser.");
@@ -230,7 +233,7 @@ describe("Scout generation slices", () => {
       { role: "user", content: [{ type: "text", text: "Open Samebase" }] },
     ]);
     expect(parsed.tools).toEqual([{ type: "function", name: "browser_execute" }]);
-    expect(parsed.settings).toEqual({ temperature: 0.2 });
+    expect(parsed.settings).toEqual({ temperature: 0.2, reasoningEffort: "max" });
   });
 
   it("restores the original objective only after it falls out of recent context", () => {

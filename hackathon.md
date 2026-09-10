@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-10T09:53:54Z
+- **Last updated:** 2026-09-10T10:56:12Z
 
 ## Log
 
@@ -1125,7 +1125,14 @@ Made runtime prompts and tool guidance easier to inspect and edit as indented se
 while preserving inserted identities, guides, and summaries. Workspace guidance now uses
 the same limits as execution (`convex/scout/runtimeInstructions.ts`, `convex/workspaceModel.ts`).
 
-### 2026-09-10 - working tree
+### 2026-09-10 - 9d8cf9c - v193
 
 Required patched YAML parsing and Hono dependencies across the TanStack and Convex dependency
 trees to clear the production supply-chain gate (`pnpm-workspace.yaml`).
+
+### 2026-09-10 - working tree
+
+Added a Luna reasoning-effort picker to Lab, from None through Max with a provider-default option.
+Convex retains the selection for each turn, subsequent model steps, replacements, and resumed handoffs.
+Run details show the chosen effort and reasoning-token usage for comparisons
+(`src/routes/chats.tsx`, `convex/scout/generation.ts`, `src/components/scout-run-message.tsx`).
