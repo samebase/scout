@@ -39,6 +39,10 @@ The dev script also creates Convex Auth JWT keys in that development deployment
 if they are missing. Scout uses Convex AI Gateway, which requires a cloud backend;
 anonymous and local backends cannot run its model calls.
 
+The Firecrawl component requires `FIRECRAWL_API_KEY` before Convex can deploy the app, including
+the first development start. Set it through the project defaults or deployment environment using
+the [integration setup](#configure-scout-integrations) below.
+
 For a linked Git worktree, create and select a separate cloud dev deployment once.
 Replace the team, project, and feature below with your own values:
 
@@ -70,7 +74,9 @@ Development and production have separate Scout registries and environment variab
 deployment does not copy development Scouts or credentials into production.
 
 Set `AGENTMAIL_API_KEY` before registering a Scout. Registration verifies an existing AgentMail
-inbox; it does not create one. Browser tasks also require `FIRECRAWL_API_KEY`.
+inbox; it does not create one. `FIRECRAWL_API_KEY` is required for every Convex deployment by the
+Firecrawl component and also supplies browser tasks and SDK crawling. Search, reads, and maps need
+no Firecrawl webhook or webhook secret.
 
 Configure `AGENTMAIL_API_KEY`, `FIRECRAWL_API_KEY`, and `SCOUT_CREDENTIAL_MASTER_KEY_V1`
 as project defaults for both **dev** and **preview** deployments. For example, omit the

@@ -41,7 +41,8 @@ The official Firecrawl Node SDK creates, executes, lists, and deletes Browser Sa
 does not expose replay methods. Firecrawl's current API implementation records Browser sessions by
 default and registers two replay routes: one returns recorded-page metadata and one returns that
 page's HLS playlist. Scout keeps those two GET requests in
-`convex/scout/lib/firecrawlReplay.ts`. Every other Firecrawl request goes through the official SDK.
+`convex/scout/lib/firecrawlReplay.ts`. Other browser requests and `web_crawl` use the official SDK.
+`web_search`, `web_read`, and `web_map` use the official `@firecrawl/firecrawl-convex` component.
 
 The relevant Firecrawl source is the
 [v2 route registration](https://github.com/firecrawl/firecrawl/blob/main/apps/api/src/routes/v2.ts)

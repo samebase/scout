@@ -103,7 +103,10 @@ stored ID and address against AgentMail; runtime tools fix every mail call to th
 and supply a deterministic idempotency key for every write. Incoming email is read only when Scout
 invokes a mail tool; no webhook or ambient email turn runs in the background.
 
-`web_search` and `web_read` use Firecrawl's SDK for public research. Browser work uses
+`web_search`, `web_read`, and `web_map` use the official `@firecrawl/firecrawl-convex` component
+for public research. These calls need no Firecrawl webhook. Scout limits its wait for each component
+response to 90 seconds, including retries; a timeout does not guarantee cancellation of the provider
+request. `web_crawl` and browser sessions still use the Firecrawl SDK. Browser work uses
 `create_new_firecrawl_session`, `browser_execute`, and `browser_close`. The execution tool accepts
 JavaScript with the active `page` and a `browserState()` helper, including normal tab operations.
 Snapshots retain iframe content and accessibility states while omitting internal reference labels.
