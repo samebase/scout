@@ -1,5 +1,4 @@
 allowBuilds:
-  "@agentmail/convex": true
   "@mongodb-js/zstd": false
   esbuild: true
   msw: true
