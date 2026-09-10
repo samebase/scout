@@ -4,7 +4,7 @@ import { outdent } from "outdent";
 
 import { tool } from "ai";
 import { createHash, randomUUID } from "node:crypto";
-import type { CrawlOptions, ScrapeOptions } from "firecrawl";
+import { setTimeout as sleep } from "node:timers/promises";
 import { FirecrawlClient, type MapOptions } from "@firecrawl/firecrawl-convex";
 import { z } from "zod";
 import { omitNullish } from "../../shared/omitNullish";
@@ -18,7 +18,6 @@ import {
   WORKSPACE_ROOT,
 } from "../workspaceModel";
 import { workspaceFileKey, workspaceStorage } from "../workspaceStorage";
-import { createFirecrawlClient } from "./lib/firecrawl";
 import { withFirecrawlDeadline } from "./lib/firecrawlDeadline";
 
 const firecrawl = new FirecrawlClient(components.firecrawl);
@@ -28,6 +27,8 @@ const DEFAULT_MAP_LIMIT = 25;
 const MAX_MAP_LIMIT = 50;
 const DEFAULT_CRAWL_LIMIT = 5;
 const MAX_CRAWL_LIMIT = 10;
+const CRAWL_WAIT_MS = 120_000;
+const CRAWL_STATUS_INTERVAL_MS = 2_000;
 
 const publicHttpsUrlSchema = z.url().refine((value) => {
   const url = new URL(value);
@@ -258,38 +259,88 @@ export function createWebTools(
         limit: z.number().int().min(1).max(MAX_CRAWL_LIMIT).default(DEFAULT_CRAWL_LIMIT),
         maxDiscoveryDepth: z.number().int().min(0).max(5).optional(),
       }),
-      execute: async ({ url, limit, maxDiscoveryDepth }) => {
+      execute: async ({ url, limit, maxDiscoveryDepth }, { abortSignal, toolCallId }) => {
         await beforeDispatch?.();
-        const scrapeOptions: ScrapeOptions = {
-          formats: ["markdown"],
-          onlyMainContent: true,
-          removeBase64Images: true,
-        };
-        const crawlOptions: CrawlOptions & { pollInterval: number; timeout: number } = {
-          limit,
-          scrapeOptions,
-          pollInterval: 2,
-          timeout: 120,
-          ...omitNullish({ maxDiscoveryDepth }),
-        };
-        const response = await createFirecrawlClient().crawl(url, crawlOptions);
-        if (response.status !== "completed") {
-          throw new Error(`Firecrawl crawl ${response.id} ended with status ${response.status}`);
-        }
-        return {
-          crawlId: response.id,
-          status: response.status,
-          total: response.total,
-          completed: response.completed,
-          creditsUsed: response.creditsUsed ?? null,
-          pages: response.data.map((document) => {
-            const text = document.markdown ?? "";
-            return {
-              url: document.metadata?.sourceURL ?? document.metadata?.url ?? url,
-              title: document.metadata?.title ?? null,
-              text,
-            };
+        abortSignal?.throwIfAborted();
+        const { crawlId, jobId } = await withFirecrawlDeadline(() =>
+          firecrawl.startCrawl(ctx, {
+            url,
+            mode: "poll",
+            context: { ...scope, toolCallId },
+            options: {
+              limit,
+              scrapeOptions: {
+                formats: ["markdown"],
+                onlyMainContent: true,
+                removeBase64Images: true,
+              },
+              ...omitNullish({ maxDiscoveryDepth }),
+            },
           }),
+        );
+        // TODO: Return a crawl job immediately so the agent can continue independent work.
+        // Use onComplete to save the full result to the owning workspace and deliver its path.
+        // Reuse turn/workflow continuation to avoid overlapping turns or restarting stopped work.
+        const deadline = Date.now() + CRAWL_WAIT_MS;
+        let crawl = await ctx.runQuery(components.firecrawl.crawl.get, { crawlId });
+        while (!crawl?.finalized) {
+          if (!crawl) throw new Error(`Firecrawl crawl ${jobId} is missing from the component.`);
+          const remaining = deadline - Date.now();
+          if (remaining <= 0) {
+            throw new Error(
+              `Firecrawl crawl ${jobId} timed out after 120 seconds. The component continues tracking it; no completed result was returned.`,
+            );
+          }
+          await sleep(Math.min(CRAWL_STATUS_INTERVAL_MS, remaining), undefined, {
+            signal: abortSignal,
+          });
+          crawl = await ctx.runQuery(components.firecrawl.crawl.get, { crawlId });
+        }
+        abortSignal?.throwIfAborted();
+        if (crawl.status !== "completed") {
+          throw new Error(
+            `Firecrawl crawl ${jobId} ended with status ${crawl.status}${crawl.error ? `: ${crawl.error}` : ""}`,
+          );
+        }
+        if (crawl.unstored) {
+          throw new Error(`Firecrawl crawl ${jobId} could not store ${crawl.unstored} page(s).`);
+        }
+        if (
+          crawl.total === undefined ||
+          crawl.completed === undefined ||
+          crawl.pageCount !== crawl.completed
+        ) {
+          throw new Error(`Firecrawl crawl ${jobId} has incomplete stored results.`);
+        }
+        if (crawl.pageCount > limit) {
+          throw new Error(`Firecrawl crawl ${jobId} exceeded the requested ${limit}-page limit.`);
+        }
+        const batch = await ctx.runQuery(components.firecrawl.crawl.listPages, {
+          crawlId,
+          paginationOpts: { numItems: limit + 1, cursor: null },
+        });
+        abortSignal?.throwIfAborted();
+        if (!batch.isDone || batch.page.length !== crawl.completed) {
+          throw new Error(`Firecrawl crawl ${jobId} has incomplete stored results.`);
+        }
+        const pages = batch.page.map((page) => {
+          if (page.truncated) {
+            throw new Error(`Firecrawl crawl ${jobId} has truncated content for ${page.url}.`);
+          }
+          const document = pageSchema.parse({ content: page.markdown, metadata: page.metadata });
+          return {
+            url: document.metadata?.sourceURL ?? page.url,
+            title: document.metadata?.title ?? null,
+            text: document.content ?? "",
+          };
+        });
+        return {
+          crawlId: jobId,
+          status: crawl.status,
+          total: crawl.total,
+          completed: crawl.completed,
+          creditsUsed: crawl.creditsUsed ?? null,
+          pages,
         };
       },
     }),

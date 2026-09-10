@@ -129,6 +129,22 @@ See the [scrape API reference](https://docs.firecrawl.dev/api-reference/endpoint
 The sandbox can inspect HTML source with `rg`, `sed`, or `js-exec`. It has no browser DOM,
 `DOMParser`, or installed HTML parser. HTML previews display source text.
 
+### Crawled pages
+
+`web_crawl` uses the same component in explicit `poll` mode, without a webhook. The component stores
+crawl metadata and pages. Scout waits for the component to finalize the crawl, reads all stored
+pages, and returns the completed result through the normal workspace result saver below.
+Starting the crawl has a 90-second deadline; after it starts, Scout waits up to 120 seconds for
+completion. A timeout does not guarantee cancellation of the provider job.
+
+Failed or cancelled crawls fail the tool. Scout also rejects omitted pages reported by `unstored`,
+pages marked `truncated`, and a stored-page count that differs from `completed`. It does not require
+the provider's `total` and `completed` counters to match. Workspace file limits still apply, and no
+partial or truncated result is saved as successful output.
+
+The tool currently waits for pages in both agent and manual calls. Returning a job immediately so
+the agent can continue other work, then delivering the saved result when ready, is deferred.
+
 ## Saved tool results
 
 `web_search`, `web_map`, `web_crawl`, `list_messages`, `search_messages`, and `get_thread` always

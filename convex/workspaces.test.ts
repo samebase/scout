@@ -7,9 +7,8 @@ import firecrawlTest from "@firecrawl/firecrawl-convex/test";
 import { tool } from "ai";
 import { z } from "zod";
 import { convexTest } from "convex-test";
-import { Firecrawl } from "firecrawl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { api, internal } from "./_generated/api";
+import { api, components, internal } from "./_generated/api";
 import { ADMIN_EMAIL, insertTestAccount } from "./testing/accounts";
 import schema from "./schema";
 import {
@@ -76,6 +75,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
@@ -143,6 +143,20 @@ async function setup() {
     read,
     readAsAgent,
   };
+}
+
+async function finishScheduledCrawl<T>(
+  backend: Awaited<ReturnType<typeof setup>>["backend"],
+  pending: Promise<T>,
+) {
+  await vi.waitFor(async () => {
+    expect(await backend.query(components.firecrawl.crawl.listCrawls, {})).toContainEqual(
+      expect.objectContaining({ jobId: "crawl-id" }),
+    );
+  });
+  await backend.finishAllScheduledFunctions(() => vi.advanceTimersByTime(2_000));
+  await vi.advanceTimersByTimeAsync(2_000);
+  return await pending;
 }
 
 describe("workspace persistence and access", () => {
@@ -1629,21 +1643,40 @@ describe("Workspace tool results", () => {
   it.each(["Short page.", "page content ".repeat(1000) + "END_OF_PAGE"])(
     "saves complete crawl results for manual calls and their persisted transcripts",
     async (text) => {
-      const { owner, threadId } = await setup();
-      vi.spyOn(Firecrawl.prototype, "crawl").mockResolvedValue({
-        id: "crawl-id",
-        status: "completed",
-        total: 1,
-        completed: 1,
-        creditsUsed: 1,
-        data: [{ markdown: text, metadata: { sourceURL: "https://example.com/deep" } }],
-      });
-      const result = await owner.action(api.scout.manual.executeTool, {
-        threadId,
-        toolName: "web_crawl",
-        input: JSON.stringify({ url: "https://example.com", limit: 1 }),
-        operationId: crypto.randomUUID(),
-      });
+      const { backend, owner, other, threadId } = await setup();
+      vi.useFakeTimers();
+      firecrawlFetch
+        .mockResolvedValueOnce(Response.json({ success: true, id: "crawl-id" }))
+        .mockResolvedValueOnce(
+          Response.json({
+            success: true,
+            status: "completed",
+            total: 1,
+            completed: 1,
+            creditsUsed: 1,
+            data: [{ markdown: text, metadata: { sourceURL: "https://example.com/deep" } }],
+          }),
+        );
+      for (const caller of [other, backend]) {
+        await expect(
+          caller.action(api.scout.manual.executeTool, {
+            threadId,
+            toolName: "web_crawl",
+            input: JSON.stringify({ url: "https://example.com", limit: 1 }),
+            operationId: crypto.randomUUID(),
+          }),
+        ).rejects.toThrow(/Thread not found|Not authorized/);
+      }
+      expect(firecrawlFetch).not.toHaveBeenCalled();
+      const result = await finishScheduledCrawl(
+        backend,
+        owner.action(api.scout.manual.executeTool, {
+          threadId,
+          toolName: "web_crawl",
+          input: JSON.stringify({ url: "https://example.com", limit: 1 }),
+          operationId: crypto.randomUUID(),
+        }),
+      );
       if (result.outcome.kind !== "success") throw new Error(result.outcome.error);
       const ref = z
         .object({ path: z.string(), excerpt: z.string() })
@@ -1658,11 +1691,145 @@ describe("Workspace tool results", () => {
         creditsUsed: 1,
         pages: [{ text, url: "https://example.com/deep" }],
       });
+      await expect(
+        other.action(api.scout.workspaceTools.readFile, {
+          target: { kind: "chat", threadId },
+          path: ref.path,
+        }),
+      ).rejects.toThrow("Chat not found");
       const messages = await owner.query(api.scout.chats.listMessages, {
         threadId,
         paginationOpts: { numItems: 20, cursor: null },
       });
       expect(JSON.stringify(messages)).toContain(ref.path);
+    },
+  );
+
+  it("saves the agent's complete component crawl and lets Bash inspect content beyond its excerpt", async () => {
+    const { backend, owner, other, threadId, userId, run } = await setup();
+    vi.useFakeTimers();
+    const text = "page content ".repeat(1000) + "END_OF_PAGE";
+    firecrawlFetch
+      .mockResolvedValueOnce(Response.json({ success: true, id: "crawl-id" }))
+      .mockResolvedValueOnce(
+        Response.json({
+          success: true,
+          status: "completed",
+          total: 1,
+          completed: 1,
+          creditsUsed: 1,
+          data: [{ markdown: text, metadata: { sourceURL: "https://example.com/deep" } }],
+        }),
+      );
+    const result = await finishScheduledCrawl(
+      backend,
+      owner.action(async (ctx) => {
+        const selected = requireRuntimeTool(
+          withWorkspaceResults(
+            ctx,
+            { threadId, userId },
+            createWebTools(ctx, { threadId, userId }),
+          ),
+          "web_crawl",
+        );
+        const input = { url: "https://example.com", limit: 1 };
+        const toolCallId = crypto.randomUUID();
+        const output = await selected.execute(input, { toolCallId, messages: [], context: {} });
+        return selected.toModelOutput?.({ toolCallId, input, output });
+      }),
+    );
+    if (result?.type !== "json") throw new Error("Expected saved crawl result");
+    const ref = z
+      .object({ path: z.string(), excerpt: z.string(), excerptTruncated: z.boolean() })
+      .parse(result.value);
+    expect(ref.excerptTruncated).toBe(true);
+    expect(ref.excerpt).not.toContain("END_OF_PAGE");
+    const inspected = await run(`cat ${ref.path}`);
+    if (inspected.outcome.kind !== "success") throw new Error(inspected.outcome.error);
+    expect(JSON.parse(bashResultSchema.parse(JSON.parse(inspected.outcome.output)).stdout)).toEqual(
+      {
+        crawlId: "crawl-id",
+        status: "completed",
+        total: 1,
+        completed: 1,
+        creditsUsed: 1,
+        pages: [{ text, url: "https://example.com/deep", title: null }],
+      },
+    );
+    await expect(
+      other.action(api.scout.workspaceTools.readFile, {
+        target: { kind: "chat", threadId },
+        path: ref.path,
+      }),
+    ).rejects.toThrow("Chat not found");
+  });
+
+  it.each([
+    {
+      kind: "truncated",
+      document: {
+        markdown: "x".repeat(400_001),
+        metadata: { sourceURL: "https://example.com/deep" },
+      },
+    },
+    {
+      kind: "unstored",
+      document: {
+        markdown: "Provider content",
+        metadata: { sourceURL: "https://example.com/deep", $invalid: "provider field" },
+      },
+    },
+  ])(
+    "rejects $kind component crawl content before saving a successful workspace result",
+    async ({ kind, document }) => {
+      const { backend, owner, threadId } = await setup();
+      vi.useFakeTimers();
+      const ingestError = vi.spyOn(console, "error").mockImplementation(() => {});
+      firecrawlFetch
+        .mockResolvedValueOnce(Response.json({ success: true, id: "crawl-id" }))
+        .mockResolvedValueOnce(
+          Response.json({
+            success: true,
+            status: "completed",
+            total: 1,
+            completed: 1,
+            creditsUsed: 1,
+            data: [document],
+          }),
+        );
+      const result = await finishScheduledCrawl(
+        backend,
+        owner.action(api.scout.manual.executeTool, {
+          threadId,
+          toolName: "web_crawl",
+          input: JSON.stringify({ url: "https://example.com", limit: 1 }),
+          operationId: crypto.randomUUID(),
+        }),
+      );
+      expect(result.outcome).toMatchObject({
+        kind: "error",
+        error: expect.stringMatching(/truncat|could not store|unstored|incomplete/i),
+      });
+      const [crawl] = await backend.query(components.firecrawl.crawl.listCrawls, {});
+      if (!crawl) throw new Error("Missing component crawl");
+      expect(crawl).toMatchObject({ status: "completed", finalized: true });
+      if (kind === "truncated") {
+        const pages = await backend.query(components.firecrawl.crawl.listPages, {
+          crawlId: crawl._id,
+          paginationOpts: { cursor: null, numItems: 10 },
+        });
+        expect(pages.page).toEqual([expect.objectContaining({ truncated: true })]);
+      } else {
+        expect(crawl).toMatchObject({ unstored: 1, pageCount: 0 });
+        expect(ingestError).toHaveBeenCalledWith(
+          expect.stringContaining("could not store 1 page(s)"),
+        );
+      }
+      expect(blobs.size).toBe(0);
+      expect(
+        (await owner.query(api.scout.workspaces.list, { target: { kind: "chat", threadId } }))
+          .entries,
+      ).toEqual([]);
     },
   );
 

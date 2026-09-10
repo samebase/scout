@@ -75,8 +75,8 @@ deployment does not copy development Scouts or credentials into production.
 
 Set `AGENTMAIL_API_KEY` before registering a Scout. Registration verifies an existing AgentMail
 inbox; it does not create one. `FIRECRAWL_API_KEY` is required for every Convex deployment by the
-Firecrawl component and also supplies browser tasks and SDK crawling. Search, reads, and maps need
-no Firecrawl webhook or webhook secret.
+Firecrawl component and also supplies browser tasks. The web tools need no Firecrawl webhook or
+webhook secret; crawling uses polling.
 
 Configure `AGENTMAIL_API_KEY`, `FIRECRAWL_API_KEY`, and `SCOUT_CREDENTIAL_MASTER_KEY_V1`
 as project defaults for both **dev** and **preview** deployments. For example, omit the

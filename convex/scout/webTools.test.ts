@@ -1,20 +1,21 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
+import { getFunctionAddress } from "convex/server";
+import { DelayedPromise } from "@ai-sdk/provider-utils";
 import firecrawlTest from "@firecrawl/firecrawl-convex/test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { components } from "../_generated/api";
 import schema from "../schema";
 import { ADMIN_EMAIL, insertTestAccount } from "../testing/accounts";
 import { createWebTools } from "./webTools";
 
-const firecrawl = vi.hoisted(() => ({
-  crawl: vi.fn(),
-}));
-vi.mock("./lib/firecrawl", () => ({ createFirecrawlClient: () => firecrawl }));
 const options = { toolCallId: "web-test", messages: [], context: {} };
 const modules = import.meta.glob("../**/*.ts");
 
 beforeEach(() => vi.stubEnv("FIRECRAWL_API_KEY", "fc-test-key"));
 afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
 });
@@ -145,62 +146,239 @@ describe("Public web tools", () => {
     ).rejects.toThrow("Dispatch denied");
     expect(request).not.toHaveBeenCalled();
   });
+});
 
-  it("retains complete crawl pages with provider usage", async () => {
-    firecrawl.crawl.mockResolvedValue({
-      id: "crawl-1",
-      status: "completed",
-      total: 2,
-      completed: 2,
-      creditsUsed: 2,
-      data: [
-        {
-          markdown: "a".repeat(4_001),
-          metadata: { sourceURL: "https://example.com/docs", title: "Docs" },
-        },
-      ],
-    });
-    const result = await runTool(async (tools) =>
-      tools.web_crawl.execute?.({ url: "https://example.com", limit: 5 }, options),
+function crawlPage(url: string, markdown = "# page") {
+  return { markdown, metadata: { sourceURL: url, title: url } };
+}
+
+async function setupCrawl() {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  const backend = convexTest(schema, modules);
+  firecrawlTest.register(backend);
+  const userId = await backend.run((ctx) => insertTestAccount(ctx, { email: ADMIN_EMAIL }));
+  const requests: Request[] = [];
+  const status = vi.fn(async () =>
+    Response.json({ success: true, status: "completed", total: 0, completed: 0, data: [] }),
+  );
+  vi.stubGlobal(
+    "fetch",
+    vi.fn<typeof fetch>(async (input, init) => {
+      const request = new Request(input, init);
+      requests.push(request);
+      if (request.method === "POST" && request.url === "https://api.firecrawl.dev/v2/crawl") {
+        return Response.json({ success: true, id: "crawl-1" });
+      }
+      if (request.method === "GET" && new URL(request.url).pathname === "/v2/crawl/crawl-1") {
+        return (await status()).clone();
+      }
+      throw new Error(`Unexpected Firecrawl request: ${request.method} ${request.url}`);
+    }),
+  );
+  return {
+    backend,
+    userId,
+    requests,
+    status,
+    start: (
+      executeOptions: Parameters<
+        NonNullable<ReturnType<typeof createWebTools>["web_crawl"]["execute"]>
+      >[1] = options,
+    ) =>
+      backend.action(async (ctx) =>
+        createWebTools(ctx, { userId, threadId: "web-test" }).web_crawl.execute?.(
+          { url: "https://example.com", limit: 5, maxDiscoveryDepth: 2 },
+          executeOptions,
+        ),
+      ),
+  };
+}
+
+describe("Component crawls", { timeout: 10_000 }, () => {
+  it("returns every page at the requested limit with provider usage and crawl options", async () => {
+    const { start, status, requests } = await setupCrawl();
+    const pages = Array.from({ length: 5 }, (_, index) =>
+      crawlPage(`https://example.com/${index}`, "a".repeat(4_001)),
     );
-    expect(firecrawl.crawl).toHaveBeenCalledWith("https://example.com", {
+    status.mockResolvedValue(
+      Response.json({
+        success: true,
+        status: "completed",
+        total: 6,
+        completed: 5,
+        creditsUsed: 5,
+        data: [...pages].reverse(),
+      }),
+    );
+
+    expect(await start()).toEqual({
+      crawlId: "crawl-1",
+      status: "completed",
+      total: 6,
+      completed: 5,
+      creditsUsed: 5,
+      pages: pages.map((page) => ({
+        url: page.metadata.sourceURL,
+        title: page.metadata.title,
+        text: page.markdown,
+      })),
+    });
+    expect(await requests[0]?.json()).toEqual({
+      origin: "firecrawl-convex",
+      url: "https://example.com",
       limit: 5,
+      maxDiscoveryDepth: 2,
       scrapeOptions: {
         formats: ["markdown"],
         onlyMainContent: true,
         removeBase64Images: true,
       },
-      pollInterval: 2,
-      timeout: 120,
     });
-    expect(result).toEqual({
-      crawlId: "crawl-1",
-      status: "completed",
-      total: 2,
-      completed: 2,
-      creditsUsed: 2,
-      pages: [
-        {
-          url: "https://example.com/docs",
-          title: "Docs",
-          text: "a".repeat(4_001),
-        },
-      ],
-    });
+    expect(requests[0]?.headers.get("authorization")).toBe("Bearer fc-test-key");
   });
 
-  it("reports a non-completed crawl as a failure", async () => {
-    firecrawl.crawl.mockResolvedValue({
-      id: "crawl-1",
-      status: "failed",
-      total: 0,
-      completed: 0,
-      data: [],
+  it("waits for the final result cursor after the provider reports completed", async () => {
+    const { start, status, requests, backend } = await setupCrawl();
+    const secondPage = new DelayedPromise<Response>();
+    status
+      .mockResolvedValueOnce(
+        Response.json({
+          success: true,
+          status: "completed",
+          total: 2,
+          completed: 2,
+          next: "https://api.firecrawl.dev/v2/crawl/crawl-1?skip=1",
+          data: [crawlPage("https://example.com/a")],
+        }),
+      )
+      .mockImplementationOnce(() => secondPage.promise);
+    const pending = start();
+    const settled = vi.fn();
+    void pending.then(settled, settled);
+    await vi.waitFor(() => expect(status).toHaveBeenCalledTimes(2), { timeout: 5_000 });
+    expect(
+      await backend.query(components.firecrawl.crawl.getByJobId, { jobId: "crawl-1" }),
+    ).toMatchObject({ status: "completed", finalized: false, pageCount: 1 });
+    expect(settled).not.toHaveBeenCalled();
+
+    secondPage.resolve(
+      Response.json({
+        success: true,
+        status: "completed",
+        total: 2,
+        completed: 2,
+        data: [crawlPage("https://example.com/b")],
+      }),
+    );
+    expect(await pending).toMatchObject({
+      pages: [
+        { url: "https://example.com/a", text: "# page" },
+        { url: "https://example.com/b", text: "# page" },
+      ],
     });
-    await expect(
-      runTool(async (tools) =>
-        tools.web_crawl.execute?.({ url: "https://example.com", limit: 5 }, options),
-      ),
-    ).rejects.toThrow("Firecrawl crawl crawl-1 ended with status failed");
+    expect(requests[2]?.url).toBe("https://api.firecrawl.dev/v2/crawl/crawl-1?skip=1");
+  });
+
+  it.each(["failed", "cancelled"])("reports a finalized %s crawl", async (outcome) => {
+    const { start, status } = await setupCrawl();
+    status.mockResolvedValue(
+      Response.json({ success: true, status: outcome, total: 0, completed: 0, data: [] }),
+    );
+    await expect(start()).rejects.toThrow(`Firecrawl crawl crawl-1 ended with status ${outcome}`);
+  });
+
+  it.each([
+    {
+      name: "truncated text",
+      document: crawlPage("https://example.com/large", "a".repeat(500_000)),
+      error: "truncated content",
+    },
+    {
+      name: "a skipped page without a URL",
+      document: { markdown: "A page with no source URL", metadata: { title: "Missing URL" } },
+      error: "incomplete stored results",
+    },
+    {
+      name: "a page the component cannot store",
+      document: {
+        markdown: "Unstorable metadata",
+        metadata: { sourceURL: "https://example.com/invalid", $invalid: true },
+      },
+      error: "could not store 1 page(s)",
+    },
+  ])("rejects $name", async ({ document, error }) => {
+    const { start, status } = await setupCrawl();
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    status.mockResolvedValue(
+      Response.json({
+        success: true,
+        status: "completed",
+        total: 1,
+        completed: 1,
+        data: [document],
+      }),
+    );
+    await expect(start()).rejects.toThrow(error);
+  });
+
+  it.each(["abort", "timeout"])(
+    "ends the local wait on %s and never returns a later completed result",
+    async (end) => {
+      const { start, status, backend } = await setupCrawl();
+      status.mockResolvedValue(
+        Response.json({ success: true, status: "scraping", total: 1, completed: 0, data: [] }),
+      );
+      const controller = new AbortController();
+      const pending = start({ ...options, abortSignal: controller.signal });
+      const onSuccess = vi.fn();
+      void pending.then(onSuccess, () => undefined);
+      await vi.waitFor(() => expect(status).toHaveBeenCalledOnce(), { timeout: 5_000 });
+      if (end === "abort") controller.abort();
+      else vi.advanceTimersByTime(120_000);
+
+      await expect(pending).rejects.toThrow(
+        end === "timeout" ? "timed out after 120 seconds" : /abort/i,
+      );
+      status.mockResolvedValue(
+        Response.json({
+          success: true,
+          status: "completed",
+          total: 1,
+          completed: 1,
+          data: [crawlPage("https://example.com/late")],
+        }),
+      );
+      await vi.waitFor(
+        async () => {
+          expect(
+            await backend.query(components.firecrawl.crawl.getByJobId, { jobId: "crawl-1" }),
+          ).toMatchObject({ status: "completed", finalized: true });
+        },
+        { timeout: 5_000 },
+      );
+      await backend.finishInProgressScheduledFunctions();
+      expect(onSuccess).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects an abort received while the completed pages query returns", async () => {
+    const { backend, userId } = await setupCrawl();
+    const controller = new AbortController();
+    const pagesReference = getFunctionAddress(components.firecrawl.crawl.listPages).reference;
+    const pending = backend.action(async (ctx) => {
+      const runQuery = ctx.runQuery.bind(ctx);
+      vi.spyOn(ctx, "runQuery").mockImplementation(async (...args: Parameters<typeof runQuery>) => {
+        const result = await runQuery(args[0], args[1]);
+        if (getFunctionAddress(args[0]).reference === pagesReference) controller.abort();
+        return result;
+      });
+      return createWebTools(ctx, { userId, threadId: "web-test" }).web_crawl.execute?.(
+        { url: "https://example.com", limit: 5 },
+        { ...options, abortSignal: controller.signal },
+      );
+    });
+
+    await expect(pending).rejects.toThrow(/abort/i);
+    expect(controller.signal.aborted).toBe(true);
   });
 });
