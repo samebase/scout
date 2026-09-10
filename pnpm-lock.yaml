@@ -58,8 +58,8 @@ importers:
         specifier: ^0.4.10
         version: 0.4.10(convex-helpers@0.1.123(@standard-schema/spec@1.1.0)(convex@1.45.0(react@19.2.6))(hono@4.13.7)(react@19.2.6)(typescript@6.0.3)(zod@4.4.3))(convex@1.45.0(react@19.2.6))(react@19.2.6)
       '@samebase/sidebars':
-        specifier: ^0.1.0
-        version: 0.1.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+        specifier: ^0.1.2
+        version: 0.1.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@shadcn/react':
         specifier: ^0.3.0
         version: 0.3.0(@types/react@19.2.14)(react@19.2.6)
@@ -2247,8 +2247,8 @@ packages:
   '@rolldown/pluginutils@1.0.0-rc.7':
     resolution: {integrity: sha512-qujRfC8sFVInYSPPMLQByRh7zhwkGFS4+tyMQ83srV1qrxL4g8E2tyxVVyxd0+8QeBM1mIk9KbWxkegRr76XzA==}
 
-  '@samebase/sidebars@0.1.0':
-    resolution: {integrity: sha512-QJttdIflJ2/CwIcNYmvN5ee50U/SPw29+DYA0Aq4PNEmTxnP69scLe8Ac0d6eN/zrVMKXvyvpH/fw7RSsAGi6A==}
+  '@samebase/sidebars@0.1.2':
+    resolution: {integrity: sha512-xTD7xz7WljYCWTTqdYK1EN5x1Lx1yCIQ23KrZ+zM39k4aPBWtEMRDMalslUrylhzs3WDx62QTyQ8xvMbu3svEA==}
     peerDependencies:
       react: '>=19.2.0 <20'
       react-dom: '>=19.2.0 <20'
@@ -4757,6 +4757,11 @@ packages:
     peerDependencies:
       react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
+  use-sync-external-store@1.7.0:
+    resolution: {integrity: sha512-6L+EeigHMQhdaIPNIFUKwfWJSwWFQ8gJbJ2DLOs5sDIegTwR9fRxvnM3uciHKjIZhFz+KAv2emhWMRvDmMcY8A==}
+    peerDependencies:
+      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+
   util-deprecate@1.0.2:
     resolution: {integrity: sha512-EPD5q1uXyFxJpCrLnCc1nHnq3gOa6DZBocAIiI2TaSCA7VCJ1UJDMagCzIkXNsUYfD1daK//LTEQ8xiIbrHtcw==}
 
@@ -6873,7 +6878,7 @@ snapshots:
 
   '@rolldown/pluginutils@1.0.0-rc.7': {}
 
-  '@samebase/sidebars@0.1.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+  '@samebase/sidebars@0.1.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
       '@tanstack/react-store': 0.11.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       react: 19.2.6
@@ -7073,7 +7078,7 @@ snapshots:
       '@tanstack/store': 0.11.0
       react: 19.2.6
       react-dom: 19.2.6(react@19.2.6)
-      use-sync-external-store: 1.6.0(react@19.2.6)
+      use-sync-external-store: 1.7.0(react@19.2.6)
 
   '@tanstack/react-store@0.9.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
@@ -9334,6 +9339,10 @@ snapshots:
       '@types/react': 19.2.14
 
   use-sync-external-store@1.6.0(react@19.2.6):
+    dependencies:
+      react: 19.2.6
+
+  use-sync-external-store@1.7.0(react@19.2.6):
     dependencies:
       react: 19.2.6
 
