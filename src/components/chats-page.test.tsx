@@ -10,7 +10,8 @@ import {
   createRoute,
   createRouter,
 } from "@tanstack/react-router";
-import { getFunctionName, type FunctionReference } from "convex/server";
+import { getFunctionName, type FunctionArgs, type FunctionReference } from "convex/server";
+import { api } from "../../convex/_generated/api";
 import { useSyncExternalStore, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi, type Mock } from "vite-plus/test";
 import {
@@ -33,6 +34,7 @@ const remote = vi.hoisted(() => ({
   queryCalls: vi.fn(),
   createThread: vi.fn(),
   sendMessage: vi.fn(),
+  saveModelSelection: vi.fn(),
   stopScout: vi.fn(),
   executeTool: vi.fn(),
   getModelCallContext: vi.fn(),
@@ -56,6 +58,10 @@ vi.mock("convex/react", () => ({
     if (args === "skip") return undefined;
     if (args && typeof args === "object" && "sessionId" in args) {
       const scopedKey = name + ":" + String(args.sessionId);
+      if (remote.queries.has(scopedKey)) return remote.queries.get(scopedKey);
+    }
+    if (args && typeof args === "object" && "threadId" in args) {
+      const scopedKey = name + ":" + String(args.threadId);
       if (remote.queries.has(scopedKey)) return remote.queries.get(scopedKey);
     }
     return remote.queries.get(name);
@@ -158,11 +164,20 @@ beforeEach(() => {
     loadMore: remote.loadMoreMessages,
   });
   remote.queries.set("scout/chats:getScoutActivity", { kind: "idle" });
+  remote.queries.set("scout/chats:getModelSelection", { model: "qwen/qwen3.7-flash" });
   remote.queries.set("scout/chats:getThreadAgentContext", { instructions: "Chat instructions" });
   remote.queries.set("scout/browserSessions:list", []);
   remote.queries.set("humanHandoffs:forSession", null);
   remote.createThread.mockResolvedValue({ threadId: "thread-created" });
   remote.sendMessage.mockResolvedValue(null);
+  remote.saveModelSelection.mockImplementation(
+    async (args: FunctionArgs<typeof api.scout.chats.setModelSelection>) => {
+      remote.queries.set("scout/chats:getModelSelection:" + args.threadId, args.selection);
+      remote.queries.set("scout/chats:getModelSelection:null", args.selection);
+      refreshQueries();
+      return null;
+    },
+  );
   remote.stopScout.mockResolvedValue(null);
   remote.executeTool.mockResolvedValue({
     toolCallId: "tool-call-1",
@@ -172,6 +187,7 @@ beforeEach(() => {
   remote.listReplayPages.mockResolvedValue({ status: "unavailable" });
   remote.mutations.set("scout/chats:createThread", remote.createThread);
   remote.mutations.set("scout/chats:sendMessage", remote.sendMessage);
+  remote.mutations.set("scout/chats:setModelSelection", remote.saveModelSelection);
   remote.mutations.set("scout/chats:stop", remote.stopScout);
   remote.actions.set("scout/manual:executeTool", remote.executeTool);
   remote.actions.set("scout/workspaceTools:executeSiteCommand", vi.fn());
@@ -612,32 +628,29 @@ describe("Chat workspace", () => {
     },
   );
 
-  test.each(["none", "max"])(
-    "sends the selected Luna effort %s and preserves it when switching drivers",
-    async (effort) => {
-      const user = userEvent.setup();
-      await openChats();
-      const driver = await screen.findByRole("combobox", { name: "Driver" });
-      expect(screen.queryByRole("combobox", { name: "Effort" })).toBeNull();
-      await user.selectOptions(driver, "openai/gpt-5.6-luna");
-      const picker = screen.getByRole<HTMLSelectElement>("combobox", { name: "Effort" });
-      expect(picker.value).toBe("default");
-      await user.selectOptions(picker, effort);
-      await user.selectOptions(driver, "qwen/qwen3.7-flash");
-      expect(screen.queryByRole("combobox", { name: "Effort" })).toBeNull();
-      await user.selectOptions(driver, "openai/gpt-5.6-luna");
-      expect(screen.getByRole<HTMLSelectElement>("combobox", { name: "Effort" }).value).toBe(
-        effort,
-      );
-      await user.type(screen.getByRole("textbox", { name: "Message Scout" }), "Inspect the form");
-      await user.click(screen.getByRole("button", { name: "Send message" }));
-      expect(remote.sendMessage).toHaveBeenCalledExactlyOnceWith({
-        threadId: "thread-1",
-        selection: { model: "openai/gpt-5.6-luna", reasoningEffort: effort },
-        prompt: "Inspect the form",
-      });
-    },
-  );
+  test.each(["none", "max"])("saves the selected Luna effort %s before sending", async (effort) => {
+    const user = userEvent.setup();
+    await openChats();
+    const driver = await screen.findByRole("combobox", { name: "Driver" });
+    expect(screen.queryByRole("combobox", { name: "Effort" })).toBeNull();
+    await user.selectOptions(driver, "openai/gpt-5.6-luna");
+    const picker = screen.getByRole<HTMLSelectElement>("combobox", { name: "Effort" });
+    expect(picker.value).toBe("default");
+    await user.selectOptions(picker, effort);
+    expect(remote.saveModelSelection).toHaveBeenLastCalledWith({
+      threadId: "thread-1",
+      selection: { model: "openai/gpt-5.6-luna", reasoningEffort: effort },
+    });
+    expect(remote.sendMessage).not.toHaveBeenCalled();
+    expect(screen.getByRole<HTMLSelectElement>("combobox", { name: "Effort" }).value).toBe(effort);
+    await user.type(screen.getByRole("textbox", { name: "Message Scout" }), "Inspect the form");
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+    expect(remote.sendMessage).toHaveBeenCalledExactlyOnceWith({
+      threadId: "thread-1",
+      selection: { model: "openai/gpt-5.6-luna", reasoningEffort: effort },
+      prompt: "Inspect the form",
+    });
+  });
 
   test("includes the selected effort when replacing a running Luna turn", async () => {
     const user = userEvent.setup();
@@ -663,6 +676,85 @@ describe("Chat workspace", () => {
         prompt: "Try another approach",
       },
     });
+  });
+
+  test("restores saved model and effort after remounting and switches between chat choices", async () => {
+    remote.queries.set(
+      "scout/chats:listThreads",
+      threadPage([
+        { threadId: "thread-1", title: "Luna chat", scoutId: "scout-1", creationTime: 1 },
+        { threadId: "thread-2", title: "DeepSeek chat", scoutId: "scout-2", creationTime: 2 },
+      ]),
+    );
+    remote.queries.set("scout/chats:getModelSelection:thread-1", {
+      model: "openai/gpt-5.6-luna",
+      reasoningEffort: "max",
+    });
+    remote.queries.set("scout/chats:getModelSelection:thread-2", {
+      model: "deepseek/deepseek-v4-flash-0731",
+    });
+    const router = await openChats();
+    expect((await screen.findByRole<HTMLSelectElement>("combobox", { name: "Driver" })).value).toBe(
+      "openai/gpt-5.6-luna",
+    );
+    expect(screen.getByRole<HTMLSelectElement>("combobox", { name: "Effort" }).value).toBe("max");
+    await act(() => router.navigate({ to: "/chats", search: { thread: "thread-2" } }));
+    expect(screen.getByRole<HTMLSelectElement>("combobox", { name: "Driver" }).value).toBe(
+      "deepseek/deepseek-v4-flash-0731",
+    );
+    expect(screen.queryByRole("combobox", { name: "Effort" })).toBeNull();
+    cleanup();
+    await openChats();
+    expect((await screen.findByRole<HTMLSelectElement>("combobox", { name: "Driver" })).value).toBe(
+      "openai/gpt-5.6-luna",
+    );
+    expect(screen.getByRole<HTMLSelectElement>("combobox", { name: "Effort" }).value).toBe("max");
+    expect(remote.saveModelSelection).not.toHaveBeenCalled();
+  });
+
+  test("waits for the requested chat and saved settings before selecting a model", async () => {
+    remote.queries.set("scout/chats:listThreads", {
+      ...threadPage([]),
+      status: "LoadingFirstPage",
+    });
+    await openChats();
+    const driver = await screen.findByRole<HTMLSelectElement>("combobox", { name: "Driver" });
+    expect(driver.value).toBe("");
+    expect(driver.disabled).toBe(true);
+    expect(
+      screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Message Scout" }).disabled,
+    ).toBe(true);
+    remote.queries.delete("scout/chats:getModelSelection");
+    remote.queries.set("scout/chats:listThreads", threadPage());
+    refreshQueries();
+    expect(driver.value).toBe("");
+    expect(driver.disabled).toBe(true);
+    remote.queries.set("scout/chats:getModelSelection:thread-1", {
+      model: "openai/gpt-5.6-luna",
+      reasoningEffort: "high",
+    });
+    refreshQueries();
+    expect(driver.value).toBe("openai/gpt-5.6-luna");
+    expect(screen.getByRole<HTMLSelectElement>("combobox", { name: "Effort" }).value).toBe("high");
+    expect(remote.sendMessage).not.toHaveBeenCalled();
+  });
+
+  test("keeps Manual temporary and reports a failed preference save", async () => {
+    const user = userEvent.setup();
+    await openChats();
+    const driver = await screen.findByRole<HTMLSelectElement>("combobox", { name: "Driver" });
+    await user.selectOptions(driver, "manual");
+    expect(driver.value).toBe("manual");
+    expect(remote.saveModelSelection).not.toHaveBeenCalled();
+    cleanup();
+    await openChats();
+    const restored = await screen.findByRole<HTMLSelectElement>("combobox", { name: "Driver" });
+    expect(restored.value).toBe("qwen/qwen3.7-flash");
+    remote.saveModelSelection.mockRejectedValueOnce(new Error("Network unavailable"));
+    await user.selectOptions(restored, "openai/gpt-5.6-luna");
+    expect(await screen.findByText("Model selection could not be saved.")).toBeTruthy();
+    expect(restored.value).toBe("qwen/qwen3.7-flash");
+    expect(restored.disabled).toBe(false);
   });
 
   test("stops the selected chat when the running composer is empty", async () => {

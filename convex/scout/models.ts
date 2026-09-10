@@ -179,7 +179,10 @@ export const scoutTurnStateValidator = v.union(
   }),
 );
 
-export const DEFAULT_SCOUT_MODEL = "qwen/qwen3.7-flash" satisfies SelectableScoutModel;
+export const DEFAULT_SCOUT_MODEL_SELECTION = {
+  model: "openai/gpt-5.6-luna",
+  reasoningEffort: "max",
+} satisfies ScoutModelSelection;
 
 export function scoutLanguageModel(model: ScoutModel) {
   return convexGateway(model);

@@ -24,13 +24,14 @@ import {
 } from "./chatAccess";
 import { omitNullish } from "../../shared/omitNullish";
 import {
-  DEFAULT_SCOUT_MODEL,
+  DEFAULT_SCOUT_MODEL_SELECTION,
   scoutModelSelection,
   scoutModelSelectionValidator,
   scoutModelValidator,
   scoutPromptValidator,
   scoutReasoningEffortValidator,
   scoutTokenUsageValidator,
+  type ScoutModelSelection,
 } from "./models";
 import { continueStoppingTurn, enqueueTurn, stopTurn } from "./turns";
 import { scoutRuntimeInstructions } from "./runtimeInstructions";
@@ -208,6 +209,62 @@ async function requireThreadBinding(
   return binding;
 }
 
+async function defaultModelSelection(
+  ctx: QueryCtx,
+  userId: Id<"users">,
+): Promise<ScoutModelSelection> {
+  const user = await ctx.db.get(userId);
+  if (!user || user.state === "deleted") throw new Error("Account not found");
+  return user.defaultScoutModelSelection ?? DEFAULT_SCOUT_MODEL_SELECTION;
+}
+
+async function chatModelSelection(
+  ctx: QueryCtx,
+  chat: Doc<"scoutChats">,
+): Promise<ScoutModelSelection> {
+  if (chat.modelSelection) return chat.modelSelection;
+  const latestTurn = await ctx.db
+    .query("scoutTurns")
+    .withIndex("by_thread_id_and_order", (q) => q.eq("threadId", chat.threadId))
+    .order("desc")
+    .first();
+  return latestTurn
+    ? scoutModelSelection(latestTurn)
+    : await defaultModelSelection(ctx, chat.userId);
+}
+
+export const getModelSelection = query({
+  access: "access_lab",
+  args: { threadId: v.union(v.string(), v.null()) },
+  returns: scoutModelSelectionValidator,
+  handler: async (ctx, args) => {
+    const userId = ctx.viewer.userId;
+    if (args.threadId === null) return await defaultModelSelection(ctx, userId);
+    await requireOwnedAgentThread(ctx, args.threadId, userId);
+    const chat = await requireThreadBinding(ctx, { threadId: args.threadId, userId });
+    return await chatModelSelection(ctx, chat);
+  },
+});
+
+export const setModelSelection = mutation({
+  access: "access_lab",
+  args: {
+    threadId: v.union(v.string(), v.null()),
+    selection: scoutModelSelectionValidator,
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const userId = ctx.viewer.userId;
+    if (args.threadId !== null) {
+      await requireOwnedAgentThread(ctx, args.threadId, userId);
+      const chat = await requireThreadBinding(ctx, { threadId: args.threadId, userId });
+      await ctx.db.patch(chat._id, { modelSelection: args.selection });
+    }
+    await ctx.db.patch(userId, { defaultScoutModelSelection: args.selection });
+    return null;
+  },
+});
+
 export const listThreads = query({
   access: "access_lab",
   args: { paginationOpts: paginationOptsValidator },
@@ -252,6 +309,7 @@ export const createThread = mutation({
       scoutId: args.scoutId,
       createdAt: Date.now(),
       activeSkills: [],
+      modelSelection: await defaultModelSelection(ctx, userId),
       ...omitNullish({ play: args.purpose === "play" ? { step: null } : undefined }),
     });
     return created;
@@ -358,6 +416,7 @@ export const stop = mutation({
         scoutId: binding.scoutId,
         ...replacement,
       });
+      await ctx.db.patch(binding._id, { modelSelection: scoutModelSelection(replacement) });
       return null;
     }
     if (activity.threadId !== args.threadId) {
@@ -375,7 +434,9 @@ export const stop = mutation({
       return null;
     }
     const turn = await ctx.db.get("scoutTurns", activity.turnId);
-    if (turn) await stopTurn(ctx, turn, replacement);
+    if (turn && (await stopTurn(ctx, turn, replacement)) && replacement) {
+      await ctx.db.patch(binding._id, { modelSelection: scoutModelSelection(replacement) });
+    }
     return null;
   },
 });
@@ -391,10 +452,11 @@ export const sendMessage = mutation({
   handler: async (ctx, args) => {
     const userId = ctx.viewer.userId;
     const thread = await requireOwnedAgentThread(ctx, args.threadId, userId);
-    const { scoutId } = await requireThreadBinding(ctx, { threadId: args.threadId, userId });
+    const chat = await requireThreadBinding(ctx, { threadId: args.threadId, userId });
+    const { scoutId } = chat;
     await requireActiveScout(ctx, scoutId);
     const prompt = promptText(args.prompt);
-    const selection = args.selection ?? { model: DEFAULT_SCOUT_MODEL };
+    const selection = args.selection ?? (await chatModelSelection(ctx, chat));
     if (await scoutIsWorking(ctx, scoutId))
       throw new Error("Scout is already working or waiting for human help");
     await activeBrowserForChat(ctx, scoutId, args.threadId);
@@ -405,6 +467,7 @@ export const sendMessage = mutation({
       });
     }
     await enqueueTurn(ctx, { threadId: args.threadId, userId, scoutId, prompt, ...selection });
+    await ctx.db.patch(chat._id, { modelSelection: selection });
     return null;
   },
 });

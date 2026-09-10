@@ -3,14 +3,14 @@ import { Agent } from "@convex-dev/agent";
 import { v } from "convex/values";
 import { components } from "../_generated/api";
 import { internalAction } from "../_generated/server";
-import { DEFAULT_SCOUT_MODEL, scoutLanguageModel } from "./models";
+import { DEFAULT_SCOUT_MODEL_SELECTION, scoutLanguageModel } from "./models";
 import { SCOUT_AGENT_INSTRUCTIONS } from "./runtimeInstructions";
 
 const smokeReply = "SCOUT_AGENT_SMOKE_OK";
 
 export const scoutAgent = new Agent(components.agent, {
   name: "Scout",
-  languageModel: scoutLanguageModel(DEFAULT_SCOUT_MODEL),
+  languageModel: scoutLanguageModel(DEFAULT_SCOUT_MODEL_SELECTION.model),
   instructions: SCOUT_AGENT_INSTRUCTIONS,
 });
 
@@ -30,7 +30,9 @@ export const smoke = internalAction({
       prompt: outdent`
         Reply with exactly ${smokeReply} and no other text.
       `,
-      temperature: 0,
+      providerOptions: {
+        convexGateway: { reasoningEffort: DEFAULT_SCOUT_MODEL_SELECTION.reasoningEffort },
+      },
     });
     const reply = result.text.trim();
 
