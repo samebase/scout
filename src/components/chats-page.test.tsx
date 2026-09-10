@@ -606,11 +606,64 @@ describe("Chat workspace", () => {
 
       expect(remote.sendMessage).toHaveBeenCalledExactlyOnceWith({
         threadId: "thread-1",
-        model,
+        selection: { model },
         prompt: "Inspect the submit button",
       });
     },
   );
+
+  test.each(["none", "max"])(
+    "sends the selected Luna effort %s and preserves it when switching drivers",
+    async (effort) => {
+      const user = userEvent.setup();
+      await openChats();
+      const driver = await screen.findByRole("combobox", { name: "Driver" });
+      expect(screen.queryByRole("combobox", { name: "Effort" })).toBeNull();
+      await user.selectOptions(driver, "openai/gpt-5.6-luna");
+      const picker = screen.getByRole<HTMLSelectElement>("combobox", { name: "Effort" });
+      expect(picker.value).toBe("default");
+      await user.selectOptions(picker, effort);
+      await user.selectOptions(driver, "qwen/qwen3.7-flash");
+      expect(screen.queryByRole("combobox", { name: "Effort" })).toBeNull();
+      await user.selectOptions(driver, "openai/gpt-5.6-luna");
+      expect(screen.getByRole<HTMLSelectElement>("combobox", { name: "Effort" }).value).toBe(
+        effort,
+      );
+      await user.type(screen.getByRole("textbox", { name: "Message Scout" }), "Inspect the form");
+      await user.click(screen.getByRole("button", { name: "Send message" }));
+      expect(remote.sendMessage).toHaveBeenCalledExactlyOnceWith({
+        threadId: "thread-1",
+        selection: { model: "openai/gpt-5.6-luna", reasoningEffort: effort },
+        prompt: "Inspect the form",
+      });
+    },
+  );
+
+  test("includes the selected effort when replacing a running Luna turn", async () => {
+    const user = userEvent.setup();
+    await openChats();
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: "Driver" }),
+      "openai/gpt-5.6-luna",
+    );
+    await user.selectOptions(screen.getByRole("combobox", { name: "Effort" }), "max");
+    remote.queries.set("scout/chats:getScoutActivity", {
+      kind: "running",
+      threadId: "thread-1",
+      turnId: "turn-1",
+    });
+    refreshQueries();
+    await user.type(screen.getByRole("textbox", { name: "Message Scout" }), "Try another approach");
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+    expect(remote.stopScout).toHaveBeenCalledExactlyOnceWith({
+      threadId: "thread-1",
+      replacement: {
+        model: "openai/gpt-5.6-luna",
+        reasoningEffort: "max",
+        prompt: "Try another approach",
+      },
+    });
+  });
 
   test("stops the selected chat when the running composer is empty", async () => {
     remote.queries.set("scout/chats:getScoutActivity", {
@@ -1274,7 +1327,7 @@ describe("Chat workspace", () => {
     expect(remote.sendMessage).toHaveBeenCalledExactlyOnceWith({
       threadId: "thread-1",
       prompt: "Try a different approach",
-      model: "qwen/qwen3.7-flash",
+      selection: { model: "qwen/qwen3.7-flash" },
     });
   });
 

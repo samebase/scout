@@ -29,6 +29,7 @@ import {
   hashHumanHandoffAccessToken,
 } from "./lib/humanHandoffAccess";
 import { omitNullish } from "../../shared/omitNullish";
+import type { ScoutReasoningEffort } from "../../shared/scoutReasoning";
 import {
   addScoutTokenUsage,
   scoutLanguageModel,
@@ -166,7 +167,10 @@ export function tokenUsage(usage: LanguageModelUsage): ScoutTokenUsage {
   });
 }
 
-export function modelCallContext(event: LanguageModelCallStartEvent) {
+export function modelCallContext(
+  event: LanguageModelCallStartEvent,
+  reasoningEffort: ScoutReasoningEffort | undefined,
+) {
   return JSON.stringify(
     {
       version: 1,
@@ -183,6 +187,7 @@ export function modelCallContext(event: LanguageModelCallStartEvent) {
         stopSequences: event.stopSequences,
         seed: event.seed,
         reasoning: event.reasoning,
+        reasoningEffort,
       }),
     },
     null,
@@ -624,7 +629,10 @@ export const runSlice = internalAction({
               activeModelCallId = null;
             }
 
-            const snapshot = modelCallContext(event);
+            const snapshot = modelCallContext(
+              event,
+              callPurpose.kind === "generation" ? runtimeContext.reasoningEffort : undefined,
+            );
             const blob = new Blob([snapshot], { type: "application/json" });
             const snapshotStorageId = await ctx.storage.store(blob);
 
@@ -745,6 +753,11 @@ export const runSlice = internalAction({
         {
           promptMessageId: args.promptMessageId,
           model: scoutLanguageModel(args.model),
+          ...omitNullish({
+            providerOptions: runtimeContext.reasoningEffort
+              ? { convexGateway: { reasoningEffort: runtimeContext.reasoningEffort } }
+              : undefined,
+          }),
           instructions,
           tools,
           repairToolCall: repairStringifiedToolInput,

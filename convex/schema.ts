@@ -18,7 +18,7 @@ import {
   compactionFields,
   modelCallPurposeValidator,
   scoutModelCallStateValidator,
-  scoutModelValidator,
+  scoutModelSelectionValidator,
   scoutTurnStateValidator,
 } from "./scout/models";
 import { workspaceEntryValidator } from "./workspaceModel";
@@ -44,6 +44,15 @@ export const accountObservationValidator = v.union(
 );
 
 const userProfile = authTables.users.validator.extend({ isApproved: v.optional(v.boolean()) });
+
+const scoutTurnFields = {
+  threadId: v.string(),
+  order: v.number(),
+  promptMessageId: v.string(),
+  scoutId: v.id("scouts"),
+  startedAt: v.number(),
+  state: scoutTurnStateValidator,
+};
 
 export default defineSchema({
   ...authTables,
@@ -142,15 +151,12 @@ export default defineSchema({
     workspaceId: v.id("scoutWorkspaces"),
     entry: workspaceEntryValidator,
   }).index("by_workspace_id_and_entry_path", ["workspaceId", "entry.path"]),
-  scoutTurns: defineTable({
-    threadId: v.string(),
-    order: v.number(),
-    promptMessageId: v.string(),
-    scoutId: v.id("scouts"),
-    model: scoutModelValidator,
-    startedAt: v.number(),
-    state: scoutTurnStateValidator,
-  })
+  scoutTurns: defineTable(
+    v.union(
+      scoutModelSelectionValidator.members[0].extend(scoutTurnFields),
+      scoutModelSelectionValidator.members[1].extend(scoutTurnFields),
+    ),
+  )
     .index("by_prompt_message_id", ["promptMessageId"])
     .index("by_thread_id_and_order", ["threadId", "order"])
     .index("by_scout_id_and_state_kind", ["scoutId", "state.kind"]),
