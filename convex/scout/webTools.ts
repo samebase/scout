@@ -4,10 +4,11 @@ import { outdent } from "outdent";
 
 import { tool } from "ai";
 import { createHash, randomUUID } from "node:crypto";
-import type { CrawlOptions, MapOptions, ScrapeOptions } from "firecrawl";
+import type { CrawlOptions, ScrapeOptions } from "firecrawl";
+import { FirecrawlClient, type MapOptions } from "@firecrawl/firecrawl-convex";
 import { z } from "zod";
 import { omitNullish } from "../../shared/omitNullish";
-import { internal } from "../_generated/api";
+import { components, internal } from "../_generated/api";
 import type { ActionCtx } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
 import {
@@ -18,6 +19,9 @@ import {
 } from "../workspaceModel";
 import { workspaceFileKey, workspaceStorage } from "../workspaceStorage";
 import { createFirecrawlClient } from "./lib/firecrawl";
+import { withFirecrawlDeadline } from "./lib/firecrawlDeadline";
+
+const firecrawl = new FirecrawlClient(components.firecrawl);
 
 const MAX_EXCERPT_CHARACTERS = 2_000;
 const DEFAULT_MAP_LIMIT = 25;
@@ -43,6 +47,21 @@ const pageSchema = z.object({
     .optional(),
 });
 
+const searchResponseSchema = z.object({
+  web: z.array(z.looseObject({ url: z.string() })).optional(),
+});
+
+const mapResponseSchema = z.object({
+  id: z.string().optional(),
+  links: z.array(
+    z.object({
+      url: z.string(),
+      title: z.string().optional(),
+      description: z.string().optional(),
+    }),
+  ),
+});
+
 export function createWebTools(
   ctx: ActionCtx,
   scope: { threadId: string; userId: Id<"users"> },
@@ -56,10 +75,11 @@ export function createWebTools(
       inputSchema: z.object({ query: z.string().trim().min(1).max(1_000) }),
       execute: async ({ query }) => {
         await beforeDispatch?.();
-        const response = await createFirecrawlClient().search(query, {
-          sources: ["web"],
-          limit: 5,
-        });
+        const response = searchResponseSchema.parse(
+          await withFirecrawlDeadline(() =>
+            firecrawl.search(ctx, query, { sources: ["web"], limit: 5 }),
+          ),
+        );
         return { results: response.web ?? [] };
       },
     }),
@@ -118,13 +138,14 @@ export function createWebTools(
           target: { kind: "chat", threadId: scope.threadId },
           userId: scope.userId,
         });
-        const page = await createFirecrawlClient().scrape(url, {
-          formats: [format],
-          onlyMainContent: format !== "rawHtml",
-          removeBase64Images: true,
-          timeout: 60_000,
-          autoResume: false,
-        });
+        const page = await withFirecrawlDeadline(() =>
+          firecrawl.scrape(ctx, url, {
+            formats: [format],
+            onlyMainContent: format !== "rawHtml",
+            removeBase64Images: true,
+            timeout: 60_000,
+          }),
+        );
         const response = pageSchema.parse({ content: page[format], metadata: page.metadata });
         const statusCode = response.metadata?.statusCode;
         if (
@@ -211,7 +232,9 @@ export function createWebTools(
           timeout: 60_000,
           ...omitNullish({ search }),
         };
-        const response = await createFirecrawlClient().map(url, mapOptions);
+        const response = mapResponseSchema.parse(
+          await withFirecrawlDeadline(() => firecrawl.map(ctx, url, mapOptions)),
+        );
         return {
           mapId: response.id ?? null,
           count: response.links.length,

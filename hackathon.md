@@ -1144,10 +1144,16 @@ Picker changes also set the account's default for new chats, while existing chat
 Earlier chats recover their selection from the latest run, and Manual remains temporary
 (`convex/scout/chats.ts`, `convex/schema.ts`, `src/routes/chats.tsx`).
 
-### 2026-09-10 - working tree
+### 2026-09-10 - f3ffc49 - v196
 
 Added public and private chats with one paginated homepage feed for Play and Review.
 Both products share a conversation interface, guest viewing, and live browser or replay,
 with distinct styling and a shared navigation menu. Approved members run their own chats
 through the existing harness. A Review trial completed; a game trial still stopped early
 (`convex/scout/activity.ts`, `src/products/conversation/`).
+
+### 2026-09-10 - working tree
+
+Moved public web search, page reads, and URL discovery to the official Firecrawl Convex component.
+Scout keeps source files and search results in each chat's workspace and limits its wait for
+Firecrawl to 90 seconds (`convex/scout/webTools.ts`, `convex/convex.config.ts`).

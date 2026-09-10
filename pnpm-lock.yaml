@@ -57,6 +57,9 @@ importers:
       '@convex-dev/workpool':
         specifier: ^0.4.10
         version: 0.4.10(convex-helpers@0.1.123(@standard-schema/spec@1.1.0)(convex@1.45.0(react@19.2.6))(hono@4.13.7)(react@19.2.6)(typescript@6.0.3)(zod@4.4.3))(convex@1.45.0(react@19.2.6))(react@19.2.6)
+      '@firecrawl/firecrawl-convex':
+        specifier: 0.1.1
+        version: 0.1.1(@standard-schema/spec@1.1.0)(convex@1.45.0(react@19.2.6))(hono@4.13.7)(react@19.2.6)(typescript@6.0.3)(zod@4.4.3)
       '@samebase/sidebars':
         specifier: ^0.1.0
         version: 0.1.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -961,6 +964,11 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@firecrawl/firecrawl-convex@0.1.1':
+    resolution: {integrity: sha512-fecepodOAcKLUKFD+4dyqRfU8ATn3y15nYtayyAmmQAV0FT/6sVwKNY0+rpq8/NKTLrEpuHr+cE0htNQ+ssU+g==}
+    peerDependencies:
+      convex: ^1.43.0
 
   '@floating-ui/core@1.7.5':
     resolution: {integrity: sha512-1Ih4WTWyw0+lKyFMcBHGbb5U5FtuHJuujoyyr5zTaWS5EYMeT6Jb2AuDeftsCsEuchO+mM2ij5+q9crhydzLhQ==}
@@ -5718,6 +5726,17 @@ snapshots:
 
   '@esbuild/win32-x64@0.28.1':
     optional: true
+
+  '@firecrawl/firecrawl-convex@0.1.1(@standard-schema/spec@1.1.0)(convex@1.45.0(react@19.2.6))(hono@4.13.7)(react@19.2.6)(typescript@6.0.3)(zod@4.4.3)':
+    dependencies:
+      convex: 1.45.0(react@19.2.6)
+      convex-helpers: 0.1.123(@standard-schema/spec@1.1.0)(convex@1.45.0(react@19.2.6))(hono@4.13.7)(react@19.2.6)(typescript@6.0.3)(zod@4.4.3)
+    transitivePeerDependencies:
+      - '@standard-schema/spec'
+      - hono
+      - react
+      - typescript
+      - zod
 
   '@floating-ui/core@1.7.5':
     dependencies:
