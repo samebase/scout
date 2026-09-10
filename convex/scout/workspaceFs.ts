@@ -1,10 +1,11 @@
 "use node";
 
 import { InMemoryFs } from "just-bash";
-
-export const MAX_RUNTIME_ENTRIES = 1_000;
-export const MAX_RUNTIME_PATH_LENGTH = 1_024;
-export const MAX_RUNTIME_PATH_DEPTH = 32;
+import {
+  MAX_RUNTIME_ENTRIES,
+  MAX_RUNTIME_PATH_LENGTH,
+  MAX_RUNTIME_PATH_DEPTH,
+} from "../workspaceModel";
 
 // just-bash 3.4.2 caps file bodies, not directory or symlink metadata. Its public
 // creation methods also cover implicit parents and recursive copy/move calls.

@@ -111,7 +111,22 @@ describe("conversation compaction boundaries", () => {
       expect(() => compactionThreshold(value)).toThrow();
     expect(summaryMessage("A prior fact")).toMatchObject({
       role: "user",
-      content: expect.stringContaining("historical context, not a new request"),
+      content: expect.stringMatching(/historical context, not a new\s+request/),
     });
+  });
+
+  test("preserves code indentation and escapes in an inserted summary", () => {
+    const summary = [
+      "  Saved code:",
+      "```js",
+      "if (ready) {",
+      String.raw`    console.log("\n", "C:\temp");`,
+      "}",
+      "```",
+      "",
+    ].join("\n");
+    const message = summaryMessage(summary);
+    expect(message.content).toEqual(expect.stringContaining(`\n\n${summary}`));
+    expect(message.content).toEqual(expect.stringMatching(/^Conversation summary/));
   });
 });

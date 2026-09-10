@@ -1,3 +1,4 @@
+import { outdent } from "outdent";
 import { tool } from "ai";
 import { z } from "zod";
 
@@ -20,8 +21,10 @@ function jsonType(value: unknown) {
 
 export function createToolArgumentProbe() {
   return tool({
-    description:
-      "Developer-only provider probe. Call with the exact JSON values described by each field. It reports the argument types received by Scout without normalizing them.",
+    description: outdent`
+      Developer-only provider probe. Call with the exact JSON values described by each
+      field. It reports the argument types received by Scout without normalizing them.
+    `,
     inputSchema: toolArgumentProbeSchema,
     execute: async (input) => ({
       received: Object.fromEntries(

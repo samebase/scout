@@ -1,3 +1,4 @@
+import { outdent } from "outdent";
 import { Agent } from "@convex-dev/agent";
 import { v } from "convex/values";
 import { components } from "../_generated/api";
@@ -26,7 +27,9 @@ export const smoke = internalAction({
       title: "Scout Agent smoke test",
     });
     const result = await thread.generateText({
-      prompt: `Reply with exactly ${smokeReply} and no other text.`,
+      prompt: outdent`
+        Reply with exactly ${smokeReply} and no other text.
+      `,
       temperature: 0,
     });
     const reply = result.text.trim();

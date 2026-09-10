@@ -3,8 +3,8 @@ import {
   MAX_RUNTIME_ENTRIES,
   MAX_RUNTIME_PATH_DEPTH,
   MAX_RUNTIME_PATH_LENGTH,
-  WorkspaceFs,
-} from "./workspaceFs";
+} from "../workspaceModel";
+import { WorkspaceFs } from "./workspaceFs";
 
 function fill(fs: WorkspaceFs, remaining = 0) {
   for (let i = fs.getAllPaths().length; i < MAX_RUNTIME_ENTRIES - remaining; i++)

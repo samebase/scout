@@ -266,6 +266,7 @@ export const runSlice = internalAction({
     v.object({ kind: v.literal("continued") }),
   ),
   handler: async (ctx, args): Promise<GenerationSliceResult> => {
+    // Claim the turn. A stopped or already completed turn has nothing to run.
     const actionStartedAt = Date.now();
     const progress = await ctx.runMutation(internal.scout.turns.start, {
       promptMessageId: args.promptMessageId,
@@ -273,31 +274,39 @@ export const runSlice = internalAction({
     if (!progress) {
       return { kind: "completed" };
     }
+
+    // Keep resources and usage available for cleanup if setup or generation fails.
     let agentMailClient: MCPClient | undefined;
     let browser: Browser | undefined;
     let browserSessionId: Id<"scoutBrowserSessions"> | null = null;
     let interactiveLiveViewUrl: string | null = null;
+
     let humanHandoffWaiting = false;
     let humanHandoffAccessToken: string | undefined;
+
     let generationResult: GenerationResult;
     let accumulatedUsage: ScoutTokenUsage | undefined;
     const previousUsage = progress.usage;
     let turnId: Id<"scoutTurns"> | undefined;
 
     try {
+      // Load the authorized turn and bound this slice's time and step count.
       await requireOwnedAgentThread(ctx, args.threadId, args.userId);
       const runtimeContext = await ctx.runQuery(internal.scout.chats.runtimeContext, {
         promptMessageId: args.promptMessageId,
       });
       const activeTurnId = runtimeContext.turnId;
       turnId = activeTurnId;
+
       const beforeModelToolDispatch = async () => {
         await ctx.runQuery(internal.scout.turns.assertPending, { turnId: activeTurnId });
       };
+
       if (runtimeContext.userId !== args.userId) throw new Error("Scout turn owner is invalid");
       if (Date.now() - runtimeContext.startedAt >= MAX_TURN_DURATION_MS) {
         throw new Error("Scout reached the 45-minute turn safety limit");
       }
+
       const initialSliceTimeoutMs = generationSliceTimeoutMs(
         actionStartedAt,
         runtimeContext.startedAt,
@@ -306,11 +315,13 @@ export const runSlice = internalAction({
       if (initialSliceTimeoutMs <= 0) {
         throw new Error("Scout ran out of time before the next model step could start");
       }
+
       const modelCallCaptureController = new AbortController();
       const sliceAbortSignal = AbortSignal.any([
         AbortSignal.timeout(initialSliceTimeoutMs),
         modelCallCaptureController.signal,
       ]);
+
       const sliceStepLimit = Math.min(
         GENERATION_SLICE_STEPS,
         MAX_TURN_STEPS - progress.completedSteps,
@@ -318,16 +329,20 @@ export const runSlice = internalAction({
       if (sliceStepLimit <= 0) {
         throw new Error(`Scout reached the ${MAX_TURN_STEPS}-step safety limit`);
       }
+
+      // Restore the user's objective and the Scout's identity and accounts.
       const [promptMessage] = await ctx.runQuery(components.agent.messages.getMessagesByIds, {
         messageIds: [args.promptMessageId],
       });
       const objective = promptMessage?.text?.trim();
       if (!objective) throw new Error("Scout turn objective not found");
+
       const scoutId = runtimeContext.scoutId;
       const scout = await ctx.runQuery(internal.scout.scouts.getRuntimeIdentity, { scoutId });
       if (!scout || scout.status !== "active") {
         throw new Error("Active Scout not found");
       }
+
       const runtimeCredentials = await ctx.runQuery(
         internal.scout.serviceAccountCredentials.listRuntimeCredentialsForScout,
         { scoutId },
@@ -336,6 +351,8 @@ export const runSlice = internalAction({
         internal.scout.serviceAccounts.listRuntimeForScout,
         { scoutId },
       );
+
+      // Persist browser sessions, operations, and live-view changes as they happen.
       browser = createBrowserHarness({
         profileName: scout.firecrawl.profileName,
         beforeDispatch: beforeModelToolDispatch,
@@ -348,19 +365,24 @@ export const runSlice = internalAction({
             profileName: scout.firecrawl.profileName,
           });
           browserSessionId = registered.sessionId;
+
           return { captureOperations: registered.captureOperations };
         },
+
         onOperationPrepared: async ({ action, toolCallId }) => {
           await beforeModelToolDispatch();
           if (!browserSessionId) throw new Error("Browser session was not registered");
+
           return await ctx.runMutation(internal.scout.browserSessions.prepareOperation, {
             sessionId: browserSessionId,
             toolCallId,
             action,
           });
         },
+
         onOperationSettled: async ({ toolCallId, outcome, clickCapture }) => {
           if (!browserSessionId) throw new Error("Browser session was not registered");
+
           await ctx.runMutation(internal.scout.browserSessions.settleOperation, {
             sessionId: browserSessionId,
             toolCallId,
@@ -368,8 +390,10 @@ export const runSlice = internalAction({
             clickCapture,
           });
         },
+
         onSessionClosed: async ({ creditsBilled, sessionDurationMs }) => {
           if (!browserSessionId) return;
+
           await ctx.runMutation(internal.scout.browserSessions.close, {
             sessionId: browserSessionId,
             providerDurationMs: sessionDurationMs,
@@ -378,29 +402,37 @@ export const runSlice = internalAction({
           });
           browserSessionId = null;
         },
+
         onLiveViewAvailable: async (liveViewUrl) => {
           if (!browserSessionId) return;
+
           await ctx.runMutation(internal.scout.browserSessions.setLiveView, {
             sessionId: browserSessionId,
             liveViewUrl,
           });
         },
+
         onInteractiveLiveViewAvailable: async (url) => {
           interactiveLiveViewUrl = url;
         },
+
         onLiveViewClosed: async () => {
           interactiveLiveViewUrl = null;
           if (!browserSessionId) return;
+
           await ctx.runMutation(internal.scout.browserSessions.clearLiveView, {
             sessionId: browserSessionId,
           });
         },
       });
+
+      // Reattach the browser retained by an earlier slice or human handoff.
       if (runtimeContext.browserSession) {
         const persisted = runtimeContext.browserSession;
         if (persisted.lifecycle.kind !== "active") {
           throw new Error("Active browser session not found");
         }
+
         const connection = await attachPersistedBrowserSession(
           browser,
           {
@@ -410,6 +442,7 @@ export const runSlice = internalAction({
           },
           sliceAbortSignal,
         );
+
         if (!connection) {
           await ctx.runMutation(internal.scout.browserSessions.close, {
             sessionId: persisted._id,
@@ -427,17 +460,21 @@ export const runSlice = internalAction({
             interactiveLiveViewUrl: connection.interactiveLiveViewUrl,
           });
         }
+
         if (connection) {
           browserSessionId = persisted._id;
           restoreManagedPasswordRedaction({ browser, credentials: runtimeCredentials, scoutId });
         }
       }
+
+      // Connect the Scout's inbox and scope its email tools.
       requireSecret(getRuntimeEnv("FIRECRAWL_API_KEY"), "FIRECRAWL_API_KEY");
       const agentMailApiKey = requiredAgentMailApiKey(getRuntimeEnv("AGENTMAIL_API_KEY"));
       const agentMailInbox = createAgentMailInboxClient({
         apiKey: agentMailApiKey,
         inboxId: scout.agentMail.inboxId,
       });
+
       agentMailClient = await createMCPClient({
         transport: {
           type: "http",
@@ -451,6 +488,7 @@ export const runSlice = internalAction({
           timeout: AGENT_MAIL_REQUEST_TIMEOUT_MS,
         },
       });
+
       const agentMailTools = {
         ...selectAgentMailTools(
           await loadAgentMailTools(agentMailClient, sliceAbortSignal),
@@ -463,8 +501,11 @@ export const runSlice = internalAction({
           beforeDispatch: beforeModelToolDispatch,
         }),
       };
+
+      // A handoff transfers browser control and pauses the turn after generation.
       const activeBrowser = browser;
       if (!activeBrowser) throw new Error("Browser harness was not initialized");
+
       const humanHandoffCallbacks: HumanHandoffCallbacks = {
         request: async (input) =>
           activeBrowser.transferControl(async () => {
@@ -474,11 +515,13 @@ export const runSlice = internalAction({
                 "No browser session is open. Open the user's requested page with create_new_firecrawl_session, then retry request_human_help. No handoff or email was created.",
               );
             }
+
             if (!interactiveLiveViewUrl) {
               throw new Error(
                 "The current browser has no interactive takeover link. No handoff or email was created. Report this failure to the user; do not replace the handoff with a regular email.",
               );
             }
+
             humanHandoffAccessToken ??= deriveHumanHandoffAccessToken(
               args.promptMessageId,
               agentMailApiKey,
@@ -494,11 +537,14 @@ export const runSlice = internalAction({
           humanHandoffWaiting = true;
         },
       };
+
+      // Assemble the model's tools and runtime instructions.
       const accountTools = createAccountTools(ctx, {
         browser: activeBrowser,
         scoutId,
         sessionId: () => browserSessionId,
       });
+
       const tools = withWorkspaceResults(
         ctx,
         { threadId: args.threadId, userId: args.userId },
@@ -534,6 +580,7 @@ export const runSlice = internalAction({
           ),
         },
       );
+
       const instructions = scoutRuntimeInstructions({
         scout,
         credentials: runtimeCredentials,
@@ -542,14 +589,18 @@ export const runSlice = internalAction({
         activeSkills: runtimeContext.activeSkills,
         play: runtimeContext.play ?? undefined,
       });
+
+      // Record both summarization and generation calls in the Model calls inspector.
       const streamErrors = createStreamErrorCapture();
       let activeModelCallId: Id<"scoutModelCalls"> | null = null;
       let modelCallCaptureFailure: Error | undefined;
+
       const failModelCallCapture = (error: unknown) => {
         if (modelCallCaptureFailure) return;
         modelCallCaptureFailure = new Error("Scout model-input capture failed", { cause: error });
         modelCallCaptureController.abort(modelCallCaptureFailure);
       };
+
       const timeoutMs = generationSliceTimeoutMs(
         actionStartedAt,
         runtimeContext.startedAt,
@@ -558,8 +609,10 @@ export const runSlice = internalAction({
       if (timeoutMs <= 0) {
         throw new Error("Scout ran out of time before the next model step could start");
       }
+
       let callPurpose: NonNullable<Doc<"scoutModelCalls">["purpose"]> = { kind: "compaction" };
       let lastCompletedModelCallId: Id<"scoutModelCalls"> | null = null;
+
       const modelCallCallbacks = {
         onLanguageModelCallStart: async (event: LanguageModelCallStartEvent) => {
           try {
@@ -570,9 +623,11 @@ export const runSlice = internalAction({
               });
               activeModelCallId = null;
             }
+
             const snapshot = modelCallContext(event);
             const blob = new Blob([snapshot], { type: "application/json" });
             const snapshotStorageId = await ctx.storage.store(blob);
+
             try {
               const modelCallId = await ctx.runMutation(internal.scout.modelCalls.recordStart, {
                 turnId: activeTurnId,
@@ -595,12 +650,15 @@ export const runSlice = internalAction({
             failModelCallCapture(error);
           }
         },
+
         onLanguageModelCallEnd: async (
           event: Pick<LanguageModelCallEndEvent, "usage" | "finishReason">,
         ) => {
           const modelCallId = activeModelCallId;
           if (!modelCallId) return;
+
           accumulatedUsage = addScoutTokenUsage(accumulatedUsage, tokenUsage(event.usage));
+
           try {
             await ctx.runMutation(internal.scout.modelCalls.recordEnd, {
               modelCallId,
@@ -610,6 +668,7 @@ export const runSlice = internalAction({
             lastCompletedModelCallId = modelCallId;
           } catch (error) {
             console.error("Failed to finish Scout model input capture", error);
+
             try {
               await ctx.runMutation(internal.scout.modelCalls.failOne, {
                 modelCallId,
@@ -625,12 +684,15 @@ export const runSlice = internalAction({
               );
               return;
             }
+
             failModelCallCapture(error);
           } finally {
             activeModelCallId = null;
           }
         },
       };
+
+      // Compact older history when needed, preserving the objective and recent exchanges.
       const fixedTokens = estimateContextTokens({
         instructions,
         tools: await Promise.all(
@@ -641,6 +703,7 @@ export const runSlice = internalAction({
           })),
         ),
       });
+
       const prepared = await prepareConversationContext(ctx, {
         threadId: args.threadId,
         promptMessageId: args.promptMessageId,
@@ -651,6 +714,7 @@ export const runSlice = internalAction({
           await beforeModelToolDispatch();
           callPurpose = { kind: "compaction" };
           lastCompletedModelCallId = null;
+
           const result = await generateText({
             model: scoutLanguageModel(args.model),
             instructions: SUMMARY_INSTRUCTIONS,
@@ -661,15 +725,19 @@ export const runSlice = internalAction({
             maxRetries: 2,
             ...modelCallCallbacks,
           });
+
           if (modelCallCaptureFailure) throw modelCallCaptureFailure;
           if (result.finishReason !== "stop" || !lastCompletedModelCallId) {
             throw new Error(
               `Conversation summarization ended with ${result.finishReason}; original history is unchanged`,
             );
           }
+
           return { summary: result.text.trim(), modelCallId: lastCompletedModelCallId };
         },
       });
+
+      // Stream this slice using the prepared context and the remaining time budget.
       callPurpose = { kind: "generation", compactionId: prepared.compactionId };
       const streamResult = await scoutAgent.streamText(
         ctx,
@@ -701,9 +769,12 @@ export const runSlice = internalAction({
           contextHandler: async () => prepared.messages,
         },
       );
+
       await streamResult.consumeStream();
       if (modelCallCaptureFailure) throw modelCallCaptureFailure;
       streamErrors.throwIfCaptured();
+
+      // Decide whether the turn finished, needs another slice, or hit a limit.
       const steps = await streamResult.steps;
       const finishReason = await streamResult.finishReason;
       const completedSteps = progress.completedSteps + steps.length;
@@ -712,6 +783,7 @@ export const runSlice = internalAction({
         previousUsage,
         accumulatedUsage ?? tokenUsage(await streamResult.totalUsage),
       );
+
       if (humanHandoffWaiting || (finishReason === "stop" && !finalStep?.toolCalls.length)) {
         generationResult = { kind: "completed", usage };
       } else if (completedSteps >= MAX_TURN_STEPS) {
@@ -743,6 +815,7 @@ export const runSlice = internalAction({
           usage,
         };
       }
+
       if (generationResult.kind === "continued") {
         await ctx.runMutation(internal.scout.turns.continueAfterSlice, {
           promptMessageId: args.promptMessageId,
@@ -762,6 +835,7 @@ export const runSlice = internalAction({
           console.error("Failed to mark Scout model input capture as failed", captureError);
         }
       }
+
       generationResult = {
         kind: "failed",
         error,
@@ -774,10 +848,12 @@ export const runSlice = internalAction({
       };
     }
 
+    // Drain browser operations; keep the session open for a continuation or handoff.
     await browser?.drain();
     const preserveBrowserForHandoff = generationResult.kind === "completed" && humanHandoffWaiting;
     const preserveBrowserForContinuation = generationResult.kind === "continued";
     let cleanupFailure: unknown;
+
     if (!preserveBrowserForHandoff && !preserveBrowserForContinuation) {
       try {
         const cleanup =
@@ -792,6 +868,8 @@ export const runSlice = internalAction({
         cleanupFailure = error;
       }
     }
+
+    // Persist completion or the handoff pause, then release the email client.
     let completionFailure: unknown;
     if (generationResult.kind !== "failed" && !cleanupFailure && !completionFailure) {
       try {
@@ -808,6 +886,7 @@ export const runSlice = internalAction({
             });
           }
         }
+
         await closeAgentMailBestEffort(agentMailClient);
         return { kind: preserveBrowserForContinuation ? "continued" : "completed" };
       } catch (error) {
@@ -815,12 +894,14 @@ export const runSlice = internalAction({
       }
     }
 
+    // Persist terminal failures, including errors from cleanup or completion.
     const failureDetails = generationFailureDetails(
       generationResult,
       cleanupFailure,
       completionFailure,
     );
     let terminalError = failureDetails.terminalError;
+
     try {
       await ctx.runMutation(internal.scout.turns.fail, {
         promptMessageId: args.promptMessageId,
@@ -833,6 +914,7 @@ export const runSlice = internalAction({
         "Generation failed and its failure state could not be recorded",
       );
     }
+
     await closeAgentMailBestEffort(agentMailClient);
     throw terminalError;
   },

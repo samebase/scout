@@ -17,10 +17,12 @@ import {
 } from "./generation";
 import { addScoutTokenUsage } from "./models";
 import { assertCredentialBrowserUrl } from "./accountTools";
+import { bundledSkills } from "./skills";
 import {
   SCOUT_AGENT_INSTRUCTIONS,
   managedCredentialInstructions,
   serviceAccountLoginInstructions,
+  scoutRuntimeInstructions,
   scoutWebsiteIdentityInstructions,
 } from "./runtimeInstructions";
 
@@ -254,10 +256,9 @@ describe("Scout runtime instructions", () => {
   });
 
   it("treats Scout-owned OAuth as autonomous work", () => {
-    expect(SCOUT_AGENT_INSTRUCTIONS).toContain(
-      "Complete OAuth for the Scout's own accounts yourself",
-    );
-    expect(SCOUT_AGENT_INSTRUCTIONS).toContain(
+    const instructions = SCOUT_AGENT_INSTRUCTIONS.replaceAll(/\s+/g, " ");
+    expect(instructions).toContain("Complete OAuth for the Scout's own accounts yourself");
+    expect(instructions).toContain(
       "Call request_human_help when the user asks to take over the browser or the task requires an action only they can perform",
     );
   });
@@ -309,6 +310,32 @@ describe("Scout runtime instructions", () => {
       },
     ]);
 
-    expect(instructions).toContain('OAuth through GitHub at github.com as "conrad-scout"');
+    expect(instructions.replaceAll(/\s+/g, " ")).toContain(
+      'OAuth through GitHub at github.com as "conrad-scout"',
+    );
+  });
+
+  it.each([false, true])("preserves quoted identity and nested guides (Play: %s)", (play) => {
+    const instructions = scoutRuntimeInstructions({
+      scout: {
+        displayName: "Magda Scout",
+        websiteIdentity: { firstName: "Magda\nScout", lastName: String.raw`A\B` },
+        agentMail: { inboxId: "inbox", address: "magda@example.test" },
+      },
+      credentials: [],
+      serviceAccounts: [],
+      browserSessionOpen: play,
+      activeSkills: ["games", "research"],
+      play: play ? { step: "research" } : undefined,
+    });
+
+    expect(instructions).toContain(String.raw`First name: "Magda\nScout"`);
+    expect(instructions).toContain(String.raw`Last name: "A\\B"`);
+    expect(instructions).toContain(`<skill name="games">\n${bundledSkills.games.guidance}`);
+    expect(instructions).toContain(`<skill name="research">\n${bundledSkills.research.guidance}`);
+    expect(instructions.startsWith(SCOUT_AGENT_INSTRUCTIONS)).toBe(true);
+    expect(instructions).toContain("\nScout identity:\n\n- First name:");
+    expect(instructions.includes("This is Scout Play.")).toBe(play);
+    expect(instructions.includes("This chat already has an open browser session.")).toBe(play);
   });
 });

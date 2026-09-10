@@ -1,3 +1,4 @@
+import { outdent } from "outdent";
 import { tool } from "ai";
 import { humanHandoffInputSchema, type HumanHandoffInput } from "./humanHandoffInput";
 import type { AgentMailSendMessage } from "./lib/agentMail";
@@ -62,8 +63,16 @@ Sent by ${scoutName} from its Scout inbox.`,
 
 export function createHumanHandoffTool(callbacks: HumanHandoffCallbacks) {
   return tool({
-    description:
-      "Hand the open browser to the user when they ask to take over or the task requires an action only they can perform. If no browser is open, open the relevant page first. Call this as the only tool in the response. Success pauses Scout, creates a private handoff, and queues its email to the chat owner's saved address. Do not send a separate handoff email or report a handoff before the tool succeeds.",
+    description: outdent`
+      Hand the open browser to the user when they ask to take over or the task requires an
+      action only they can perform.
+
+      - If no browser is open, open the relevant page first.
+      - Call this as the only tool in the response.
+      - Success pauses Scout, creates a private handoff, and queues its email to the chat
+        owner's saved address.
+      - Do not send a separate handoff email or report a handoff before the tool succeeds.
+    `,
     inputSchema: humanHandoffInputSchema,
     execute: async (input) => await beginHumanHandoff(callbacks, input),
   });

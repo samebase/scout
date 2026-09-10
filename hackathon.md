@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-08T19:38:25Z
+- **Last updated:** 2026-09-10T09:46:41Z
 
 ## Log
 
@@ -1112,9 +1112,15 @@ chats. The Sites pages expose those files and a terminal independently of chat. 
 confirmed explicit sharing and reading, while autonomous discovery and guide
 accuracy still failed (`convex/scout/workspaceTools.ts`, `docs/shared-site-workspace-trial-2026-09-08.md`).
 
-### 2026-09-08 - working tree
+### 2026-09-08 - d9288f3 - v191
 
 Shortened Scout's general and game instructions. Play now explicitly requests shared-site
 preparation and continuing through an observed game result; preparation remains model-driven.
 Restored native browser selection highlighting so selected chat text is visible
 (`convex/scout/play.ts`, `convex/scout/skills.ts`, `src/style.css`).
+
+### 2026-09-10 - working tree
+
+Made runtime prompts and tool guidance easier to inspect and edit as indented sections,
+while preserving inserted identities, guides, and summaries. Workspace guidance now uses
+the same limits as execution (`convex/scout/runtimeInstructions.ts`, `convex/workspaceModel.ts`).
