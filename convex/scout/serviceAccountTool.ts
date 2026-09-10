@@ -1,3 +1,4 @@
+import { outdent } from "outdent";
 import { tool } from "ai";
 import { z } from "zod";
 
@@ -55,8 +56,15 @@ export function createServiceAccountRecordingTool(
   ) => Promise<{ serviceAccountId: string; created: boolean }>,
 ) {
   return tool({
-    description:
-      "Record an observed successful signup or sign-in for future tasks. Use when an account is new or its successful authentication has not been recorded. The current browser session determines the service. Managed-password accounts must already be prepared or registered; OAuth requires a provider account in this Scout's inventory. Repeated calls update the existing account.",
+    description: outdent`
+      Record an observed successful signup or sign-in for future tasks.
+
+      - Use when an account is new or its successful authentication has not been recorded.
+      - The current browser session determines the service.
+      - Managed-password accounts must already be prepared or registered; OAuth requires
+        a provider account in this Scout's inventory.
+      - Repeated calls update the existing account.
+    `,
     inputSchema: serviceAccountEvidenceInputSchema,
     execute: async (evidence, options) => await record(evidence, options.abortSignal),
   });

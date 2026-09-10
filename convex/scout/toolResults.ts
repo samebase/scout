@@ -2,6 +2,7 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import { tool, type ToolSet } from "ai";
+import { outdent } from "outdent";
 import { z } from "zod";
 import { omitNullish } from "../../shared/omitNullish";
 import { internal } from "../_generated/api";
@@ -119,8 +120,18 @@ export function withWorkspaceResults(
         tool<unknown, Awaited<ReturnType<typeof saveToolResult>>, Record<string, unknown>>({
           inputSchema: source.inputSchema,
           ...omitNullish({ strict: source.strict }),
-          description: (options) =>
-            `${(typeof source.description === "function" ? source.description(options) : source.description) ?? ""} Successful results are always saved in /workspace/results as JSON (or plain text). Returns the path and full text for small results or an excerpt for large ones; use bash to inspect the file.`,
+          description: (options) => {
+            const description =
+              typeof source.description === "function"
+                ? source.description(options)
+                : source.description;
+            return outdent`
+              ${description ?? ""}
+              Successful results are always saved in /workspace/results as JSON
+              (or plain text). Returns the path and full text for small results or
+              an excerpt for large ones; use bash to inspect the file.
+            `;
+          },
           execute: async (input, options) =>
             saveToolResult(ctx, scope, name, await execute(input, options)),
           toModelOutput: ({ output, ...options }) => {

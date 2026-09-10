@@ -98,6 +98,9 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
 
 ## Code guardrails
 
+- Write agent prompts and tool guidance as indented `outdent` multiline templates, with readable
+  source lines. Separate topics with blank lines; use short sections and lists for longer prompts.
+  Keep inserted data intact; do not dedent or normalize the completed prompt.
 - Keep type gaps explicit and searchable. Do not hide them with casts, reflection, handwritten type
   predicates, false overloads, or runtime checks added only to satisfy TypeScript.
 - Fix type errors by modeling the value honestly. When a verified dependency or test-double boundary

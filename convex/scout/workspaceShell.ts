@@ -8,6 +8,8 @@ import {
   MAX_WORKSPACE_ENTRIES,
   MAX_WORKSPACE_FILE_BYTES,
   WORKSPACE_ROOT,
+  WORKSPACE_SHELL_TIMEOUT_MS,
+  WORKSPACE_JS_TIMEOUT_MS,
   type WorkspaceEntry,
 } from "../workspaceModel";
 
@@ -100,8 +102,8 @@ export async function runWorkspaceShell(args: {
     executionLimitProfile: "hardened",
     executionLimits: {
       maxSourceBytes: 64 * 1024,
-      maxExecutionTimeMs: 15_000,
-      maxJsTimeoutMs: 5_000,
+      maxExecutionTimeMs: WORKSPACE_SHELL_TIMEOUT_MS,
+      maxJsTimeoutMs: WORKSPACE_JS_TIMEOUT_MS,
       maxOutputSize: 128 * 1024,
       maxFileSystemBytes: MAX_WORKSPACE_BYTES,
       maxLiveBytes: 16 * 1024 * 1024,

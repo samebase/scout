@@ -1,5 +1,7 @@
 "use node";
 
+import { outdent } from "outdent";
+
 import { action } from "../functions";
 
 import { createMCPClient, type MCPClient } from "@ai-sdk/mcp";
@@ -111,7 +113,9 @@ export const executeTool = action({
     const { messageId: promptMessageId } = await scoutAgent.saveMessage(ctx, {
       threadId: args.threadId,
       userId: runtime.userId,
-      prompt: `Manual tool call: ${args.toolName}`,
+      prompt: outdent`
+        Manual tool call: ${args.toolName}
+      `,
       skipEmbeddings: true,
     });
     const toolCallMessage = {

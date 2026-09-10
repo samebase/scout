@@ -1,3 +1,4 @@
+import { outdent } from "outdent";
 import { tool } from "ai";
 import { z } from "zod";
 import { browserTargetSchema } from "./browserTarget";
@@ -44,8 +45,18 @@ export function createAccountPasswordPreparationTool(
   ) => Promise<{ serviceAccountId: string; credentialHost: string }>,
 ) {
   return tool({
-    description:
-      "Prepare a managed password for a new account on the current HTTPS signup page. Trusted code generates and encrypts the password for this Scout and the page's exact host; the password is never returned. Repeating the same preparation reuses the saved password and never resets it. Use fill_account_password to enter it. Preparation does not create the account on the service: finish signup and immediately call record_authenticated_service_account after authentication succeeds. Use an existing account's saved login method when one is available.",
+    description: outdent`
+      Prepare a managed password for a new account on the current HTTPS signup page.
+
+      - Trusted code generates and encrypts the password for this Scout and the page's
+        exact host; the password is never returned.
+      - Repeating the same preparation reuses the saved password and never resets it.
+      - Use fill_account_password to enter it.
+      - Use an existing account's saved login method when one is available.
+
+      Preparation does not create the account on the service: finish signup and
+      immediately call record_authenticated_service_account after authentication succeeds.
+    `,
     inputSchema: accountPasswordPreparationSchema,
     execute: async (account, options) => ({
       status: "prepared" as const,
@@ -62,8 +73,15 @@ export function createAccountPasswordFillTool(
   ) => Promise<{ filledFields: number }>,
 ) {
   return tool({
-    description:
-      "Fill the configured Scout account password without revealing it. Identify the visible password field and, when present, its confirmation field by role, label, or text, or use a CSS selector from the inspected page DOM. Each CSS target must identify one visible field. The tool verifies the saved login host and password input type. Never enter a password through browser_execute.",
+    description: outdent`
+      Fill the configured Scout account password without revealing it.
+
+      - Identify the visible password field and, when present, its confirmation field by
+        role, label, or text, or use a CSS selector from the inspected page DOM.
+      - Each CSS target must identify one visible field.
+      - The tool verifies the saved login host and password input type.
+      - Never enter a password through browser_execute.
+    `,
     inputSchema: accountPasswordTargetsSchema,
     execute: async (targets, options) =>
       await fill(targets, options.toolCallId, options.abortSignal),
