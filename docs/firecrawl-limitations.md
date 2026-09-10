@@ -63,7 +63,7 @@ Scout can request.
 ## 3. Component fork
 
 Scout installs `@firecrawl/firecrawl-convex` from the
-[`codex-fix-crawl-polling` branch of our fork](https://github.com/samebase/firecrawl-convex/tree/codex-fix-crawl-polling).
+[`fix-crawl-polling` branch of our fork](https://github.com/samebase/firecrawl-convex/tree/fix-crawl-polling).
 The dependency names the branch; `pnpm-lock.yaml` pins the resolved commit and package integrity.
 The named `allowBuilds` entry permits the component's existing `prepare` script to compile its
 TypeScript exports when installed from Git.
