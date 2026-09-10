@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-10T09:46:41Z
+- **Last updated:** 2026-09-10T09:53:54Z
 
 ## Log
 
@@ -1119,8 +1119,13 @@ preparation and continuing through an observed game result; preparation remains 
 Restored native browser selection highlighting so selected chat text is visible
 (`convex/scout/play.ts`, `convex/scout/skills.ts`, `src/style.css`).
 
-### 2026-09-10 - working tree
+### 2026-09-10 - 07f0442 - v192
 
 Made runtime prompts and tool guidance easier to inspect and edit as indented sections,
 while preserving inserted identities, guides, and summaries. Workspace guidance now uses
 the same limits as execution (`convex/scout/runtimeInstructions.ts`, `convex/workspaceModel.ts`).
+
+### 2026-09-10 - working tree
+
+Required patched YAML parsing and Hono dependencies across the TanStack and Convex dependency
+trees to clear the production supply-chain gate (`pnpm-workspace.yaml`).
