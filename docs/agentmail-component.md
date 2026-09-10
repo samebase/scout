@@ -7,8 +7,9 @@ The lockfile resolves it to commit
 There is no pnpm patch.
 
 The component is mounted in `convex/convex.config.ts`, which binds Scout's
-`AGENTMAIL_API_KEY` and optional `AGENTMAIL_BASE_URL` into the component.
-The component reads these through its generated, typed `env` export.
+required `AGENTMAIL_API_KEY` into the component.
+The component reads it through its generated, typed `env` export and uses its
+default API URL.
 Existing Scout email tools have not been migrated yet.
 
 ## Install
@@ -39,21 +40,7 @@ Select a separate development deployment for this worktree, then run:
 ```text
 pnpm run check
 pnpm exec convex dev --once --typecheck enable
-pnpm exec convex run agentMailComponent:verifyConnection '{}'
 ```
-
-The internal check verifies that Scout has its API key and calls the component's
-`listInboxes` with `limit: 1`. Success returns `null`. It does not return
-credentials or inbox contents, send email, or create an inbox.
-
-On September 10, 2026, fork commit `41fe87b` built automatically during Scout's
-dependency installation. Scout's checks and full build passed, with 657 tests
-passing and three skipped. It deployed to the dedicated dev
-`nicu:scout:dev/agentmail-component` (`earnest-fox-412`), and the connection
-check succeeded against the real AgentMail API.
-
-Sending, inbound webhooks, historical imports, and migration of Scout's email
-tools remain untested by this connection check.
 
 ## Pending tool migration
 

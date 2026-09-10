@@ -11,7 +11,6 @@ import firecrawl from "@firecrawl/firecrawl-convex/convex.config";
 const app = defineApp({
   env: {
     AGENTMAIL_API_KEY: v.string(),
-    AGENTMAIL_BASE_URL: v.optional(v.string()),
     CLOUDFLARE_EMAIL_ACCOUNT_ID: v.optional(v.string()),
     CLOUDFLARE_EMAIL_API_TOKEN: v.optional(v.string()),
     DEV_SEED_AUTH_EMAIL: v.optional(v.string()),
@@ -31,7 +30,6 @@ app.use(agent);
 app.use(agentmail, {
   env: {
     AGENTMAIL_API_KEY: app.env.AGENTMAIL_API_KEY,
-    AGENTMAIL_BASE_URL: app.env.AGENTMAIL_BASE_URL,
   },
 });
 app.use(r2);
