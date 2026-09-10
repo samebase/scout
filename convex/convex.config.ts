@@ -1,5 +1,6 @@
 import { defineApp } from "convex/server";
 import { v } from "convex/values";
+import agentmail from "@agentmail/convex/convex.config";
 import agent from "@convex-dev/agent/convex.config";
 import r2 from "@convex-dev/r2/convex.config";
 import staticHosting from "@convex-dev/static-hosting/convex.config";
@@ -9,7 +10,7 @@ import firecrawl from "@firecrawl/firecrawl-convex/convex.config";
 // Keep existing app HTTP routes at their current root URLs.
 const app = defineApp({
   env: {
-    AGENTMAIL_API_KEY: v.optional(v.string()),
+    AGENTMAIL_API_KEY: v.string(),
     CLOUDFLARE_EMAIL_ACCOUNT_ID: v.optional(v.string()),
     CLOUDFLARE_EMAIL_API_TOKEN: v.optional(v.string()),
     DEV_SEED_AUTH_EMAIL: v.optional(v.string()),
@@ -26,6 +27,11 @@ const app = defineApp({
   },
 });
 app.use(agent);
+app.use(agentmail, {
+  env: {
+    AGENTMAIL_API_KEY: app.env.AGENTMAIL_API_KEY,
+  },
+});
 app.use(r2);
 app.use(workflow);
 app.use(staticHosting);
