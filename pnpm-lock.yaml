@@ -62,7 +62,7 @@ importers:
         version: 0.4.10(convex-helpers@0.1.123(@standard-schema/spec@1.1.0)(convex@1.45.0(react@19.2.6))(hono@4.13.7)(react@19.2.6)(typescript@6.0.3)(zod@4.4.3))(convex@1.45.0(react@19.2.6))(react@19.2.6)
       '@firecrawl/firecrawl-convex':
         specifier: github:samebase/firecrawl-convex#codex-fix-crawl-polling
-        version: https://codeload.github.com/samebase/firecrawl-convex/tar.gz/250b75719d4b4af0cedf00eb591415245e444750(@standard-schema/spec@1.1.0)(convex@1.45.0(react@19.2.6))(hono@4.13.7)(react@19.2.6)(typescript@6.0.3)(zod@4.4.3)
+        version: https://codeload.github.com/samebase/firecrawl-convex/tar.gz/47c10aedf7b013f26efee22ba5c79e9cb5265093(@standard-schema/spec@1.1.0)(convex@1.45.0(react@19.2.6))(hono@4.13.7)(react@19.2.6)(typescript@6.0.3)(zod@4.4.3)
       '@samebase/sidebars':
         specifier: ^0.1.0
         version: 0.1.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -981,8 +981,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@firecrawl/firecrawl-convex@https://codeload.github.com/samebase/firecrawl-convex/tar.gz/250b75719d4b4af0cedf00eb591415245e444750':
-    resolution: {gitHosted: true, integrity: sha512-kdTeBnio10PlbRYmmoCqGxcnlSk7ZyIz/vd87k36Wb6ZD7bB5/mqQFB5oOZkmvs87gQL5QH1QC+gTWxmhvayqA==, tarball: https://codeload.github.com/samebase/firecrawl-convex/tar.gz/250b75719d4b4af0cedf00eb591415245e444750}
+  '@firecrawl/firecrawl-convex@https://codeload.github.com/samebase/firecrawl-convex/tar.gz/47c10aedf7b013f26efee22ba5c79e9cb5265093':
+    resolution: {gitHosted: true, integrity: sha512-EmVscO5ReL6dIwqMLbRzjxgRf3K/hA6tjCcATwK2utewP5KLcBNnqG3ZGJ45xJVDJUBneygbXzqvFf23GXxooA==, tarball: https://codeload.github.com/samebase/firecrawl-convex/tar.gz/47c10aedf7b013f26efee22ba5c79e9cb5265093}
     version: 0.1.1
     peerDependencies:
       convex: ^1.43.0
@@ -5768,7 +5768,7 @@ snapshots:
   '@esbuild/win32-x64@0.28.1':
     optional: true
 
-  '@firecrawl/firecrawl-convex@https://codeload.github.com/samebase/firecrawl-convex/tar.gz/250b75719d4b4af0cedf00eb591415245e444750(@standard-schema/spec@1.1.0)(convex@1.45.0(react@19.2.6))(hono@4.13.7)(react@19.2.6)(typescript@6.0.3)(zod@4.4.3)':
+  '@firecrawl/firecrawl-convex@https://codeload.github.com/samebase/firecrawl-convex/tar.gz/47c10aedf7b013f26efee22ba5c79e9cb5265093(@standard-schema/spec@1.1.0)(convex@1.45.0(react@19.2.6))(hono@4.13.7)(react@19.2.6)(typescript@6.0.3)(zod@4.4.3)':
     dependencies:
       convex: 1.45.0(react@19.2.6)
       convex-helpers: 0.1.123(@standard-schema/spec@1.1.0)(convex@1.45.0(react@19.2.6))(hono@4.13.7)(react@19.2.6)(typescript@6.0.3)(zod@4.4.3)
