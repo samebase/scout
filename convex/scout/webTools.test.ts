@@ -279,13 +279,23 @@ describe("Component crawls", { timeout: 10_000 }, () => {
     expect(requests[2]?.url).toBe("https://api.firecrawl.dev/v2/crawl/crawl-1?skip=1");
   });
 
-  it.each(["failed", "cancelled"])("reports a finalized %s crawl", async (outcome) => {
-    const { start, status } = await setupCrawl();
-    status.mockResolvedValue(
-      Response.json({ success: true, status: outcome, total: 0, completed: 0, data: [] }),
-    );
-    await expect(start()).rejects.toThrow(`Firecrawl crawl crawl-1 ended with status ${outcome}`);
-  });
+  it.each(["failed", "cancelled"])(
+    "reports a %s crawl even with a result cursor",
+    async (outcome) => {
+      const { start, status } = await setupCrawl();
+      status.mockResolvedValue(
+        Response.json({
+          success: true,
+          status: outcome,
+          total: 0,
+          completed: 0,
+          next: "https://api.firecrawl.dev/v2/crawl/crawl-1?skip=0",
+          data: [],
+        }),
+      );
+      await expect(start()).rejects.toThrow(`Firecrawl crawl crawl-1 ended with status ${outcome}`);
+    },
+  );
 
   it.each([
     {

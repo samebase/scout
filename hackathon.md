@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-10T13:35:54Z
+- **Last updated:** 2026-09-10T15:06:58Z
 
 ## Log
 
@@ -1164,3 +1164,4 @@ Moved multi-page research crawls to the official Firecrawl component's stored jo
 Agents still receive the finished result in their workspace; missing or shortened pages fail
 explicitly. Documented the follow-up for letting agents continue while a crawl runs
 (`convex/scout/webTools.ts`, `docs/workspaces.md`).
+A narrow component fork bounds cursor polling and handles terminal failures (`package.json`).

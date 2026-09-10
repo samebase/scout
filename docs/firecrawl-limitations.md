@@ -1,7 +1,7 @@
 # Firecrawl limitations observed during Scout development
 
-These are useful implementation notes and concise answers for hackathon review. They are provider
-boundaries, not defects Scout can fully repair in application code.
+These are implementation notes and concise answers for hackathon review, covering provider
+boundaries and the component fixes Scout maintains.
 
 ## 1. Managed-password delivery
 
@@ -59,6 +59,24 @@ timestamps and Scout's browser-operation telemetry, then plays Firecrawl's HLS p
 provides playback in browsers without native HLS support; browsers with native HLS use their built-in
 player. Firecrawl exposes no replay resolution, bitrate, frame-rate, codec, or quality setting that
 Scout can request.
+
+## 3. Component fork
+
+Scout installs `@firecrawl/firecrawl-convex` from the
+[`codex-fix-crawl-polling` branch of our fork](https://github.com/samebase/firecrawl-convex/tree/codex-fix-crawl-polling).
+The dependency names the branch; `pnpm-lock.yaml` pins the resolved commit and package integrity.
+The named `allowBuilds` entry permits the component's existing `prepare` script to compile its
+TypeScript exports when installed from Git.
+
+Firecrawl can return `next` while a crawl is unfinished, including cancelled jobs. The original
+component followed that cursor before terminal handling, backoff, and its 250-check ceiling.
+The fork finalizes failed or cancelled responses, enforces that ceiling on cursor continuations,
+and backs off when the cursor repeats. Advancing result cursors still drain immediately, and a
+completed crawl finalizes only after all result pages have been read.
+
+Scout's 120-second wait ends independently of component tracking. Tracking stops when the job
+finishes or the component reaches its limit. To adopt a newer fork commit, update the dependency
+and commit the refreshed lockfile; frozen installs keep using the recorded commit.
 
 ## Short reviewer answer
 

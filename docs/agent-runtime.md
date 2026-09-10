@@ -104,7 +104,8 @@ and supply a deterministic idempotency key for every write. Incoming email is re
 invokes a mail tool; no webhook or ambient email turn runs in the background.
 
 `web_search`, `web_read`, `web_map`, and `web_crawl` use the official `@firecrawl/firecrawl-convex`
-component for public research. Crawls use explicit polling, so these tools need no Firecrawl webhook.
+component for public research, with [a fork for crawl polling fixes](./firecrawl-limitations.md#3-component-fork).
+Crawls use explicit polling, so these tools need no Firecrawl webhook.
 The crawl tool waits for completed pages before returning. Sibling tools in the same model response
 can finish meanwhile, but the next model step waits for the crawl result. Returning a job immediately
 and delivering its completion to the agent is deferred. See [chat workspaces](./workspaces.md) for

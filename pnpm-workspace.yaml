@@ -1,5 +1,6 @@
 allowBuilds:
   "@agentmail/convex": true
+  "@firecrawl/firecrawl-convex": true
   "@mongodb-js/zstd": false
   esbuild: true
   msw: true
