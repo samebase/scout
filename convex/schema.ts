@@ -14,6 +14,7 @@ import { humanHandoffValidator } from "./humanHandoffsModel";
 import { scoutServiceAccountFieldsValidator, scoutWebsiteIdentityValidator } from "./scout/model";
 import { activeSkillsValidator } from "./scout/skills";
 import { playContextValidator } from "./scout/play";
+import { chatPurposeValidator, chatVisibilityValidator } from "./scout/chatModel";
 import {
   compactionFields,
   modelCallPurposeValidator,
@@ -130,6 +131,8 @@ export default defineSchema({
     activeSkills: v.optional(activeSkillsValidator),
     play: v.optional(playContextValidator),
     modelSelection: v.optional(scoutModelSelectionValidator),
+    purpose: v.optional(chatPurposeValidator),
+    visibility: v.optional(chatVisibilityValidator),
   })
     .index("by_thread_id", ["threadId"])
     .index("by_user_id_and_created_at", ["userId", "createdAt"]),

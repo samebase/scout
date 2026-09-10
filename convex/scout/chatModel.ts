@@ -1,0 +1,10 @@
+import { v } from "convex/values";
+import { playContextValidator } from "./play";
+
+export const chatPurposeValidator = v.union(
+  v.object({ kind: v.literal("general") }),
+  playContextValidator.extend({ kind: v.literal("play") }),
+  v.object({ kind: v.literal("review") }),
+);
+
+export const chatVisibilityValidator = v.union(v.literal("private"), v.literal("public"));
