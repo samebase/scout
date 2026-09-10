@@ -140,6 +140,8 @@ test("paginates public games separately from reviews and private chats", async (
 
 test("Review uses the same execution path with its own permission and runtime purpose", async () => {
   const t = await setup();
+  const selection = { model: "openai/gpt-5.6-luna", reasoningEffort: "high" } as const;
+  await t.backend.run((ctx) => ctx.db.patch(t.memberId, { defaultScoutModelSelection: selection }));
   const { threadId } = await t.member.mutation(api.scout.chats.startProductChat, {
     kind: "review",
     scoutId: t.scoutId,
@@ -148,6 +150,14 @@ test("Review uses the same execution path with its own permission and runtime pu
   });
   const turn = await t.backend.run((ctx) => ctx.db.query("scoutTurns").first());
   if (!turn) throw new Error("Expected the first review turn");
+  expect(turn).toMatchObject(selection);
+  const chat = await t.backend.run((ctx) =>
+    ctx.db
+      .query("scoutChats")
+      .withIndex("by_thread_id", (q) => q.eq("threadId", threadId))
+      .unique(),
+  );
+  expect(chat?.modelSelection).toEqual(selection);
   expect(
     await t.backend.query(internal.scout.chats.runtimeContext, {
       promptMessageId: turn.promptMessageId,
@@ -189,6 +199,7 @@ test("members can start and continue Play, but cannot run Lab chats or another p
   const turn = await t.backend.run((ctx) => ctx.db.query("scoutTurns").first());
   if (!turn) throw new Error("Expected the first turn");
   expect(turn.state.kind).toBe("pending");
+  expect(turn).toMatchObject({ model: "openai/gpt-5.6-luna", reasoningEffort: "max" });
   expect(await t.backend.query(api.scout.activity.get, { threadId })).toMatchObject({
     status: "running",
     purpose: { kind: "play", step: null },
