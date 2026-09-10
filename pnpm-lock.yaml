@@ -26,7 +26,7 @@ importers:
     dependencies:
       '@agentmail/convex':
         specifier: github:samebase/agentmail-convex#fix-component-configuration
-        version: https://codeload.github.com/samebase/agentmail-convex/tar.gz/41fe87b107c03007e5df9291ac49b2c4222c3bed(convex-helpers@0.1.123(@standard-schema/spec@1.1.0)(convex@1.45.0(react@19.2.6))(hono@4.13.7)(react@19.2.6)(typescript@6.0.3)(zod@4.4.3))(convex@1.45.0(react@19.2.6))
+        version: https://codeload.github.com/samebase/agentmail-convex/tar.gz/cad8891566e05b8ffcc06747992898fdd3c2cad1(convex-helpers@0.1.123(@standard-schema/spec@1.1.0)(convex@1.45.0(react@19.2.6))(hono@4.13.7)(react@19.2.6)(typescript@6.0.3)(zod@4.4.3))(convex@1.45.0(react@19.2.6))
       '@ai-sdk/mcp':
         specifier: ^2.0.39
         version: 2.0.39(zod@4.4.3)
@@ -187,8 +187,8 @@ importers:
 
 packages:
 
-  '@agentmail/convex@https://codeload.github.com/samebase/agentmail-convex/tar.gz/41fe87b107c03007e5df9291ac49b2c4222c3bed':
-    resolution: {gitHosted: true, integrity: sha512-LFP69Y/+Y2oVgnmX8huARLrJsiHgU+97oHHlCZQDu0J0x+jfF3DSN6whCYgXrGhTThdhGoYOU7EdC7p/f46fkA==, tarball: https://codeload.github.com/samebase/agentmail-convex/tar.gz/41fe87b107c03007e5df9291ac49b2c4222c3bed}
+  '@agentmail/convex@https://codeload.github.com/samebase/agentmail-convex/tar.gz/cad8891566e05b8ffcc06747992898fdd3c2cad1':
+    resolution: {gitHosted: true, integrity: sha512-4absuw1Z50s6MiA9g5MNr1i0/qPjmpa94+hMutX3QdS9qsBNQtmZ/i/fno6pohKGEgLsRpyZ7R73Tj5W0Yj7/w==, tarball: https://codeload.github.com/samebase/agentmail-convex/tar.gz/cad8891566e05b8ffcc06747992898fdd3c2cad1}
     version: 0.1.0
     peerDependencies:
       convex: ^1.39.1
@@ -4975,7 +4975,7 @@ packages:
 
 snapshots:
 
-  '@agentmail/convex@https://codeload.github.com/samebase/agentmail-convex/tar.gz/41fe87b107c03007e5df9291ac49b2c4222c3bed(convex-helpers@0.1.123(@standard-schema/spec@1.1.0)(convex@1.45.0(react@19.2.6))(hono@4.13.7)(react@19.2.6)(typescript@6.0.3)(zod@4.4.3))(convex@1.45.0(react@19.2.6))':
+  '@agentmail/convex@https://codeload.github.com/samebase/agentmail-convex/tar.gz/cad8891566e05b8ffcc06747992898fdd3c2cad1(convex-helpers@0.1.123(@standard-schema/spec@1.1.0)(convex@1.45.0(react@19.2.6))(hono@4.13.7)(react@19.2.6)(typescript@6.0.3)(zod@4.4.3))(convex@1.45.0(react@19.2.6))':
     dependencies:
       '@convex-dev/workpool': 0.3.2(convex-helpers@0.1.123(@standard-schema/spec@1.1.0)(convex@1.45.0(react@19.2.6))(hono@4.13.7)(react@19.2.6)(typescript@6.0.3)(zod@4.4.3))(convex@1.45.0(react@19.2.6))
       convex: 1.45.0(react@19.2.6)

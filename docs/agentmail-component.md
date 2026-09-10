@@ -3,7 +3,7 @@
 Scout references the fork branch
 [`samebase/agentmail-convex#fix-component-configuration`](https://github.com/samebase/agentmail-convex/tree/fix-component-configuration).
 The lockfile resolves it to commit
-[`41fe87b`](https://github.com/samebase/agentmail-convex/commit/41fe87b107c03007e5df9291ac49b2c4222c3bed).
+[`cad8891`](https://github.com/samebase/agentmail-convex/commit/cad8891566e05b8ffcc06747992898fdd3c2cad1).
 There is no pnpm patch.
 
 The component is mounted in `convex/convex.config.ts`, which binds Scout's
