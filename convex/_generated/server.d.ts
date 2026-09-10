@@ -36,7 +36,7 @@ type Env = {
   readonly DEV_SEED_AUTH_EMAIL: string | undefined;
   readonly DEV_SEED_AUTH_ENABLED: string | undefined;
   readonly DEV_SEED_AUTH_PASSWORD: string | undefined;
-  readonly FIRECRAWL_API_KEY: string;
+  readonly FIRECRAWL_API_KEY: string | undefined;
   readonly R2_ACCESS_KEY_ID: string | undefined;
   readonly R2_BUCKET: string | undefined;
   readonly R2_ENDPOINT: string | undefined;

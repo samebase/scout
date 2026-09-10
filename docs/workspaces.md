@@ -108,19 +108,10 @@ Firecrawl API request itself succeeded. Page status 304 is accepted, matching Fi
 
 ### Firecrawl options
 
-`web_search`, `web_read`, and `web_map` call the official `@firecrawl/firecrawl-convex` component.
-These methods return results directly without using the component's stored crawl pages, so its
-crawl-page truncation does not apply. Scout's workspace file limits still apply.
-
-The read tool sends one selected format, `onlyMainContent: true` for Markdown and cleaned HTML,
-and `onlyMainContent: false` for raw HTML. It keeps `removeBase64Images: true` and asks Firecrawl
-to finish within 60 seconds. Map also sends a 60-second provider timeout. The component can retry
-transient failures up to three times after the initial request. Scout stops waiting for a component
-response after 90 seconds, including retries, and reports a tool error. This does not guarantee
-cancellation of the underlying Firecrawl request. Scraping does not use the SDK's auto-resume polling.
-
-Firecrawl documents `removeBase64Images` as affecting Markdown only; HTML may therefore reach the
-file limit sooner.
+The tool sends one selected format, `onlyMainContent: true` for Markdown and cleaned HTML, and
+`onlyMainContent: false` for raw HTML. It keeps `removeBase64Images: true`, a 60-second timeout, and
+SDK `autoResume: false`. The shared client makes one SDK attempt. Firecrawl documents
+`removeBase64Images` as affecting Markdown only; HTML may therefore reach the file limit sooner.
 Other provider options retain their defaults. In particular, Firecrawl currently allows cached
 content up to two days old by default, so the saved retrieval time records when Scout received the
 result, not when Firecrawl fetched the origin page.

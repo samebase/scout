@@ -59,7 +59,6 @@ import type * as scout_humanHandoffTool from "../scout/humanHandoffTool.js";
 import type * as scout_lib_agentMail from "../scout/lib/agentMail.js";
 import type * as scout_lib_firecrawl from "../scout/lib/firecrawl.js";
 import type * as scout_lib_firecrawlCdpUrl from "../scout/lib/firecrawlCdpUrl.js";
-import type * as scout_lib_firecrawlDeadline from "../scout/lib/firecrawlDeadline.js";
 import type * as scout_lib_firecrawlLiveView from "../scout/lib/firecrawlLiveView.js";
 import type * as scout_lib_firecrawlReplay from "../scout/lib/firecrawlReplay.js";
 import type * as scout_lib_humanHandoffAccess from "../scout/lib/humanHandoffAccess.js";
@@ -156,7 +155,6 @@ declare const fullApi: ApiFromModules<{
   "scout/lib/agentMail": typeof scout_lib_agentMail;
   "scout/lib/firecrawl": typeof scout_lib_firecrawl;
   "scout/lib/firecrawlCdpUrl": typeof scout_lib_firecrawlCdpUrl;
-  "scout/lib/firecrawlDeadline": typeof scout_lib_firecrawlDeadline;
   "scout/lib/firecrawlLiveView": typeof scout_lib_firecrawlLiveView;
   "scout/lib/firecrawlReplay": typeof scout_lib_firecrawlReplay;
   "scout/lib/humanHandoffAccess": typeof scout_lib_humanHandoffAccess;
@@ -227,5 +225,4 @@ export declare const components: {
   r2: import("@convex-dev/r2/_generated/component.js").ComponentApi<"r2">;
   workflow: import("@convex-dev/workflow/_generated/component.js").ComponentApi<"workflow">;
   staticHosting: import("@convex-dev/static-hosting/_generated/component.js").ComponentApi<"staticHosting">;
-  firecrawl: import("@firecrawl/firecrawl-convex/_generated/component.js").ComponentApi<"firecrawl">;
 };

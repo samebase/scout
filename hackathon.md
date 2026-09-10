@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-10T13:05:31Z
+- **Last updated:** 2026-09-10T16:34:51Z
 
 ## Log
 
@@ -1154,6 +1154,6 @@ through the existing harness. A Review trial completed; a game trial still stopp
 
 ### 2026-09-10 - working tree
 
-Moved public web search, page reads, and URL discovery to the official Firecrawl Convex component.
-Scout keeps source files and search results in each chat's workspace and limits its wait for
-Firecrawl to 90 seconds (`convex/scout/webTools.ts`, `convex/convex.config.ts`).
+Restored public web tools to the Firecrawl SDK and removed the Firecrawl and AgentMail component
+registrations and dependencies. Mail tools and handoff delivery continue through Scout's existing
+API client and workflow (`convex/scout/webTools.ts`, `convex/convex.config.ts`).
