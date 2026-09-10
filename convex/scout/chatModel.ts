@@ -1,6 +1,8 @@
 import { v } from "convex/values";
 import { playContextValidator } from "./play";
 
+export const productKindValidator = v.union(v.literal("play"), v.literal("review"));
+
 export const chatPurposeValidator = v.union(
   v.object({ kind: v.literal("general") }),
   playContextValidator.extend({ kind: v.literal("play") }),

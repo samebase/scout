@@ -82,7 +82,7 @@ export function BrowserReplay(
     <section
       className={
         mode === "playback"
-          ? "flex min-h-0 flex-1 flex-col overflow-hidden rounded-[22px]"
+          ? "flex min-h-0 flex-1 flex-col overflow-hidden rounded-[inherit]"
           : "browser-replay"
       }
       aria-label={mode === "playback" ? "Replay" : undefined}
@@ -168,7 +168,7 @@ function BrowserReplayPlayer({
   sessionId,
   mode,
   onRetry,
-  selectedPageId,
+  selectedPageId: requestedPageId,
   onSelectPage,
 }: {
   replay: ReplayReady;
@@ -190,6 +190,11 @@ function BrowserReplayPlayer({
     () => buildReplayTimeline(replay.pages, replay.operations),
     [replay.operations, replay.pages],
   );
+  const selectedPageId =
+    requestedPageId ??
+    (mode === "playback" && replay.operations.length === 0
+      ? (timeline.pages[0]?.pageId ?? null)
+      : null);
   const clickData = useMemo(
     () => replayClicks(replay.operations, timeline, clickOffsetMs),
     [replay.operations, timeline, clickOffsetMs],
@@ -486,23 +491,25 @@ function BrowserReplayPlayer({
           )}
         </div>
 
-        {mode === "playback" && (timeline.pages.length > 1 || automaticPageId === null) && (
-          <select
-            aria-label="Recorded tab"
-            value={selectedPageId ?? ""}
-            onChange={(event) => selectPage(event.currentTarget.value || null)}
-            className="mt-2 min-h-11 w-full min-w-0 rounded-lg border bg-background px-2 text-sm"
-          >
-            <option value="">Automatic</option>
-            {timeline.pages.map((page, index) => (
-              <option key={page.pageId} value={page.pageId}>
-                {page.pageUrl
-                  ? `${index + 1}. ${new URL(page.pageUrl).hostname}`
-                  : `Recording ${index + 1}`}
-              </option>
-            ))}
-          </select>
-        )}
+        {mode === "playback" &&
+          (timeline.pages.length > 1 ||
+            (automaticPageId === null && replay.operations.length > 0)) && (
+            <select
+              aria-label="Recorded tab"
+              value={selectedPageId ?? ""}
+              onChange={(event) => selectPage(event.currentTarget.value || null)}
+              className="mt-2 min-h-11 w-full min-w-0 rounded-lg border bg-background px-2 text-sm"
+            >
+              {replay.operations.length > 0 && <option value="">Automatic</option>}
+              {timeline.pages.map((page, index) => (
+                <option key={page.pageId} value={page.pageId}>
+                  {page.pageUrl
+                    ? `${index + 1}. ${new URL(page.pageUrl).hostname}`
+                    : `Recording ${index + 1}`}
+                </option>
+              ))}
+            </select>
+          )}
 
         {mode === "inspector" && (
           <>
@@ -616,7 +623,7 @@ function BrowserReplayPlayer({
   );
 }
 
-function BrowserReplayTrack({
+export function BrowserReplayTrack({
   active,
   localTimeSeconds,
   onFailure,

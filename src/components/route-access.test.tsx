@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { act, cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import {
   createMemoryHistory,
   createRootRoute,
@@ -14,7 +15,6 @@ import { RouteAccessOutlet } from "./route-access";
 import { AppNavigation } from "./app-navigation";
 import { Route as SettingsRoute } from "../routes/settings";
 import { omitNullish } from "../../shared/omitNullish";
-import { ReviewLanding } from "../products/review/landing";
 
 const remote = vi.hoisted(() => ({
   authenticated: true,
@@ -93,13 +93,25 @@ async function open(path: string) {
     getParentRoute: () => root,
     path: "/review",
     staticData: { access: "access_public" },
-    component: ReviewLanding,
+    component: () => <h1>Review contents</h1>,
   });
   const router = createRouter({
     routeTree: root.addChildren([
       lab,
       settings,
       review,
+      createRoute({
+        getParentRoute: () => root,
+        path: "/",
+        staticData: { access: "access_public" },
+        component: () => <h1>Activity contents</h1>,
+      }),
+      createRoute({
+        getParentRoute: () => root,
+        path: "/play",
+        staticData: { access: "access_public" },
+        component: () => <h1>Play contents</h1>,
+      }),
       createRoute({
         getParentRoute: () => root,
         path: "/account-deletion",
@@ -124,7 +136,7 @@ test("protected children wait for access and unmount on revocation", async () =>
   expect(await screen.findByRole("heading", { name: "Access unavailable" })).toBeTruthy();
   expect(screen.queryByRole("heading", { name: "Lab contents" })).toBeNull();
   expect(screen.queryByRole("link", { name: "Members" })).toBeNull();
-  expect(screen.queryByRole("link", { name: "Chats" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "Lab" })).toBeNull();
   expect(screen.queryByRole("link", { name: "Scouts" })).toBeNull();
   expect(screen.getByRole("link", { name: "Play" })).toBeTruthy();
   expect(screen.getByRole("link", { name: "Review" })).toBeTruthy();
@@ -143,7 +155,8 @@ test("pending accounts retain account controls", async () => {
   expect(await screen.findByRole("heading", { name: "Waiting for approval" })).toBeTruthy();
   expect(await screen.findByRole("heading", { name: "Your session" })).toBeTruthy();
   expect(screen.queryByRole("link", { name: "Members" })).toBeNull();
-  expect(screen.queryByRole("link", { name: "Play" })).toBeNull();
+  expect(screen.getByRole("link", { name: "Play" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Review" })).toBeTruthy();
 });
 
 test("staff keep Lab and settings admin access without approval", async () => {
@@ -154,31 +167,42 @@ test("staff keep Lab and settings admin access without approval", async () => {
   expect(screen.getByRole("link", { name: "Members" })).toBeTruthy();
 });
 
-test("Review is a public preview and only permitted accounts see its Lab link", async () => {
-  remote.authenticated = false;
-  await open("/review");
-  expect(await screen.findByText("Scout Review is in preview.")).toBeTruthy();
-  expect(screen.queryByRole("link", { name: "Open the Lab" })).toBeNull();
-  remote.authenticated = true;
-  setViewer("role_member");
-  expect(screen.queryByRole("link", { name: "Open the Lab" })).toBeNull();
-  setViewer("role_staff");
-  expect(await screen.findByRole("link", { name: "Open the Lab" })).toBeTruthy();
-});
-
 test("pending members keep account controls and receive approval without signing in again", async () => {
   setViewer("role_pending_access");
   await open("/settings");
   expect(await screen.findByRole("heading", { name: "Waiting for approval" })).toBeTruthy();
   expect(screen.getByRole("heading", { name: "Your session" })).toBeTruthy();
-  expect(screen.queryByRole("link", { name: "Play" })).toBeNull();
+  expect(screen.getByRole("link", { name: "Play" })).toBeTruthy();
   setViewer("role_member");
   expect(await screen.findByRole("heading", { name: "Account approved" })).toBeTruthy();
   expect(screen.getByRole("link", { name: "Play" })).toBeTruthy();
   expect(screen.queryByRole("link", { name: "Members" })).toBeNull();
   setViewer("role_pending_access");
   expect(await screen.findByRole("heading", { name: "Waiting for approval" })).toBeTruthy();
-  expect(screen.queryByRole("link", { name: "Play" })).toBeNull();
+  expect(screen.getByRole("link", { name: "Play" })).toBeTruthy();
+});
+
+test("guests can navigate public pages and sign in without seeing admin links", async () => {
+  remote.authenticated = false;
+  await open("/");
+  const user = userEvent.setup();
+  expect(screen.getByRole("link", { name: "Activity" }).getAttribute("aria-current")).toBe("page");
+  expect(screen.queryByRole("link", { name: "Settings" })).toBeNull();
+  for (const name of ["Lab", "Scouts", "Sites", "Members"]) {
+    expect(screen.queryByRole("link", { name })).toBeNull();
+  }
+
+  await user.click(screen.getByRole("link", { name: "Play" }));
+  expect(await screen.findByRole("heading", { name: "Play contents" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Activity" }).getAttribute("aria-current")).toBeNull();
+  expect(screen.getByRole("link", { name: "Play" }).getAttribute("aria-current")).toBe("page");
+
+  await user.click(screen.getByRole("link", { name: "Review" }));
+  expect(await screen.findByRole("heading", { name: "Review contents" })).toBeTruthy();
+  await user.click(screen.getByRole("link", { name: "Sign in" }));
+  expect(await screen.findByRole("heading", { name: "Sign in to Scout" })).toBeTruthy();
+  expect(screen.getByLabelText("Email")).toBeTruthy();
+  expect(remote.lab).not.toHaveBeenCalled();
 });
 
 test("staff can mount Lab content before member approval", async () => {

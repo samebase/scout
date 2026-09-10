@@ -1,17 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { ReviewLanding } from "../products/review/landing";
+import { ConversationPage, ConversationError } from "../products/conversation/page";
+import { conversationSearch } from "../products/conversation/model";
 
 export const Route = createFileRoute("/review")({
   staticData: { access: "access_public" },
-  head: () => ({
-    meta: [
-      { title: "Scout Review | A review you can watch" },
-      {
-        name: "description",
-        content:
-          "Scout Review explores product reviews with findings and a recording. Preview the direction.",
-      },
-    ],
-  }),
-  component: ReviewLanding,
+  validateSearch: conversationSearch,
+  head: () => ({ meta: [{ title: "Review with Scout" }] }),
+  component: () => <ConversationPage kind="review" search={Route.useSearch()} />,
+  errorComponent: ConversationError,
 });

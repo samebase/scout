@@ -2,7 +2,7 @@
 
 - **Project:** Scout
 - **Event:** Convex All Gas Hackathon
-- **What it does:** Offers browser play with persistent Scouts, a product-review landing page, and a lab for chats, connected accounts, and replay.
+- **What it does:** Offers browser play and product reviews with persistent Scouts, public activity, and a lab for chats, connected accounts, and replay.
 - **Live app:** https://usable-spider-599.eu-west-1.convex.site
 - **Repo:** private
 - **Frontend:** Convex static hosting
@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-10T12:08:39Z
+- **Last updated:** 2026-09-10T13:05:31Z
 
 ## Log
 
@@ -1137,9 +1137,17 @@ Convex retains the selection for each turn, subsequent model steps, replacements
 Run details show the chosen effort and reasoning-token usage for comparisons
 (`src/routes/chats.tsx`, `convex/scout/generation.ts`, `src/components/scout-run-message.tsx`).
 
-### 2026-09-10 - working tree
+### 2026-09-10 - edd94ce - v195
 
 Chat Lab defaults to Luna with Max effort and remembers each chat's choice across refreshes and sign-ins.
 Picker changes also set the account's default for new chats, while existing chats keep their own choice.
 Earlier chats recover their selection from the latest run, and Manual remains temporary
 (`convex/scout/chats.ts`, `convex/schema.ts`, `src/routes/chats.tsx`).
+
+### 2026-09-10 - working tree
+
+Added public and private chats with one paginated homepage feed for Play and Review.
+Both products share a conversation interface, guest viewing, and live browser or replay,
+with distinct styling and a shared navigation menu. Approved members run their own chats
+through the existing harness. A Review trial completed; a game trial still stopped early
+(`convex/scout/activity.ts`, `src/products/conversation/`).

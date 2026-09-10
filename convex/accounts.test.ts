@@ -102,10 +102,7 @@ test("member queries, mutations, and actions enforce admin permissions", async (
     member.mutation(api.accounts.setApproval, { userId: memberId, isApproved: true }),
   ).rejects.toThrow("Not authorized");
   await expect(
-    member.mutation(api.scout.chats.sendMessage, {
-      threadId: "known-thread",
-      prompt: "Run",
-    }),
+    member.query(api.scout.chats.listThreads, { paginationOpts: { numItems: 10, cursor: null } }),
   ).rejects.toThrow("Not authorized");
   await expect(
     member.action(api.scout.manual.executeTool, {

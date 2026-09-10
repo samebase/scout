@@ -60,7 +60,14 @@ async function browserAccountContext() {
     const [conradId, scoutId] = scoutIds;
     if (!conradId || !scoutId) throw new Error("Missing test scouts");
     const threadId = "magda-thread";
-    const chatId = await ctx.db.insert("scoutChats", { threadId, userId, scoutId, createdAt: 1 });
+    const chatId = await ctx.db.insert("scoutChats", {
+      purpose: { kind: "general" },
+      visibility: "private",
+      threadId,
+      userId,
+      scoutId,
+      createdAt: 1,
+    });
     const sessionId = await ctx.db.insert("scoutBrowserSessions", {
       scoutId,
       threadId,

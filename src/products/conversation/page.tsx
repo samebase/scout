@@ -1,6 +1,5 @@
 import { accountAccessMessage, canAccess, useViewerAccess } from "../../lib/access";
 import { SidebarLayout } from "@samebase/sidebars/SidebarLayout";
-import { useUIMessages } from "@convex-dev/agent/react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useConvexAuth, useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
@@ -11,12 +10,12 @@ import {
   LoaderCircleIcon,
   MonitorIcon,
 } from "lucide-react";
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
-import { Route } from "../../routes/play.session";
-import { gameInviteDisplayText } from "./invite";
-import { PlayComposer } from "./composer";
-import { PlaySidebar, PlayBrowserToggle, PlayBrowserStop } from "./sidebar";
+import { productRoutes, type ProductKind, type ConversationSearch } from "./model";
+import { gameInviteDisplayText } from "../play/invite";
+import { ConversationComposer } from "./composer";
+import { ConversationSidebar, BrowserToggle, BrowserStop } from "./sidebar";
 import {
   MessageScrollerProvider,
   MessageScroller,
@@ -28,67 +27,68 @@ import {
 import { AuthPanel } from "../../components/auth-panel";
 import { BrowserReplay } from "../../components/browser-replay";
 import { ChatHandoffNotice } from "../../components/chat-handoff-notice";
-import { PlayShell } from "./shell";
-import { ScoutPiece } from "./scout-piece";
+import { ProductShell } from "../shell";
+import { ScoutPiece } from "../play/scout-piece";
 import { cn } from "#lib/utils";
 import { productButtonVariants } from "../ui";
 import { playError, playLoading, playNotice, playRouteMessage, playTextLink } from "./ui";
 
-type Scout = FunctionReturnType<typeof api.scout.scouts.list>[number];
-type ChatThread = FunctionReturnType<typeof api.scout.chats.listThreads>["page"][number];
+type ChatThread = NonNullable<FunctionReturnType<typeof api.scout.activity.get>>;
 type Activity = FunctionReturnType<typeof api.scout.chats.getScoutActivity>;
 type ThreadActivity = Extract<Activity, { threadId: string }>;
 type RequestState = { kind: "idle" } | { kind: "pending" } | { kind: "failed"; message: string };
 
-export function PlayPage() {
-  const { thread } = Route.useSearch();
-  const viewer = useViewerAccess();
-  const canRun = viewer?.kind === "account" && canAccess("access_lab", viewer.accessKeys);
-  const { isAuthenticated, isLoading } = useConvexAuth();
+export function ConversationError() {
   return (
-    <PlayShell>
+    <ProductShell product={null}>
+      <main id="main-content" className={playRouteMessage}>
+        <h1 className="text-[30px]">Couldn't open this session</h1>
+        <p className="text-muted-foreground">
+          The link may be unavailable, or the connection was interrupted.
+        </p>
+        <Link to="/" className={productButtonVariants({ variant: "play" })}>
+          Back to activity
+        </Link>
+      </main>
+    </ProductShell>
+  );
+}
+
+export function ConversationPage({
+  kind,
+  search,
+}: {
+  kind: ProductKind;
+  search: ConversationSearch;
+}) {
+  const { thread } = search;
+  return (
+    <ProductShell product={kind}>
       <main
         id="main-content"
         className={
           thread
-            ? "mx-auto flex h-[calc(100dvh-112px)] min-h-[540px] max-w-[1456px] flex-col px-12 pt-4 pb-6 max-[1100px]:px-7 max-[760px]:h-[calc(100dvh-85px)] max-[760px]:min-h-[460px] max-[760px]:px-4 max-[760px]:pt-0 max-[760px]:pb-3"
-            : "grid min-h-[calc(100dvh-112px)] place-items-center px-5 pt-8 pb-[16vh] max-[760px]:min-h-[calc(100dvh-85px)] max-[760px]:pb-[12vh]"
+            ? "mx-auto flex h-[calc(100dvh-4rem)] min-h-[540px] max-w-[1456px] flex-col px-12 pt-4 pb-6 max-[1100px]:px-7 max-[760px]:min-h-[460px] max-[760px]:px-4 max-[760px]:pt-4 max-[760px]:pb-3"
+            : "grid min-h-[calc(100dvh-4rem)] place-items-center px-5 pt-8 pb-[16vh] max-[760px]:pb-[12vh]"
         }
       >
         {thread ? (
-          isLoading || (isAuthenticated && !viewer) ? (
-            <p className={playLoading} role="status">
-              Loading your session...
-            </p>
-          ) : isAuthenticated ? (
-            canRun ? (
-              <SessionLoader threadId={thread} />
-            ) : (
-              <PlayUnavailable />
-            )
-          ) : (
-            <div className="mx-auto mt-[50px] mb-[100px] max-w-[400px] max-[760px]:px-[15px]">
-              <h1 className="text-[34px] tracking-[-1px]">Back for another round?</h1>
-              <p className="mt-[15px] mb-[25px] text-play-muted">Sign in to open your session.</p>
-              <AuthPanel />
-            </div>
-          )
+          <SessionLoader threadId={thread} kind={kind} search={search} />
         ) : (
-          <PlayLobby />
+          <ConversationLobby key={kind} kind={kind} />
         )}
       </main>
-    </PlayShell>
+    </ProductShell>
   );
 }
 
-function PlayUnavailable() {
+function ConversationUnavailable({ kind }: { kind: ProductKind }) {
   const message = accountAccessMessage(useViewerAccess());
   return (
     <div className="mx-auto max-w-[420px]">
-      <h1 className="text-3xl font-semibold">{message?.title ?? "Play access is coming"}</h1>
-      <p className="mt-4 text-play-muted">
-        {message?.description ??
-          "Your account is approved. Scout Play isn’t available for members yet."}
+      <h1 className="text-3xl font-semibold">{message?.title ?? "Access unavailable"}</h1>
+      <p className="mt-4 text-muted-foreground">
+        {message?.description ?? `Sign in with an approved account to ${kind}.`}
       </p>
       <Link to="/settings" className={cn(playTextLink, "mt-6 inline-flex")}>
         Account settings
@@ -97,24 +97,28 @@ function PlayUnavailable() {
   );
 }
 
-function PlayLobby() {
+function ConversationLobby({ kind }: { kind: ProductKind }) {
+  const isPlay = kind === "play";
   const viewer = useViewerAccess();
-  const canRun = viewer?.kind === "account" && canAccess("access_lab", viewer.accessKeys);
+  const canRun =
+    viewer?.kind === "account" &&
+    canAccess(isPlay ? "access_play" : "access_review", viewer.accessKeys);
   const { isAuthenticated, isLoading } = useConvexAuth();
-  const scouts = useQuery(api.scout.scouts.list, canRun ? {} : "skip");
-  const createThread = useMutation(api.scout.chats.createThread);
-  const sendMessage = useMutation(api.scout.chats.sendMessage);
+  const scouts = useQuery(api.scout.activity.players);
+  const startChat = useMutation(api.scout.chats.startProductChat);
   const navigate = useNavigate();
   const [draft, setDraft] = useState("");
   const [selectedScoutId, setSelectedScoutId] = useState("");
   const [signingIn, setSigningIn] = useState(false);
   const [request, setRequest] = useState<RequestState>({ kind: "idle" });
-  const pendingThread = useRef<{ threadId: string; scoutId: Scout["_id"] } | null>(null);
+  const [visibility, setVisibility] = useState<ChatThread["visibility"]>("private");
   const submitting = useRef(false);
   const activeScouts = scouts?.filter((scout) => scout.status === "active") ?? [];
   const selectedScout =
-    activeScouts.find((scout) => scout._id === selectedScoutId) ?? activeScouts[0];
-  const loadingScouts = isLoading || (isAuthenticated && scouts === undefined);
+    activeScouts.find((scout) => scout._id === selectedScoutId) ??
+    activeScouts.find((scout) => !scout.busy) ??
+    activeScouts[0];
+  const loadingScouts = isLoading || scouts === undefined;
   const noScouts = isAuthenticated && scouts !== undefined && activeScouts.length === 0;
 
   async function inviteScout(event: FormEvent<HTMLFormElement>) {
@@ -131,44 +135,57 @@ function PlayLobby() {
     submitting.current = true;
     setRequest({ kind: "pending" });
     try {
-      if (pendingThread.current?.scoutId !== selectedScout._id) {
-        const created = await createThread({ scoutId: selectedScout._id, purpose: "play" });
-        pendingThread.current = { ...created, scoutId: selectedScout._id };
-      }
-      const { threadId } = pendingThread.current;
-      await sendMessage({ threadId, prompt });
-      await navigate({ to: "/play/session", search: { thread: threadId } });
+      const { threadId } = await startChat({
+        kind,
+        scoutId: selectedScout._id,
+        prompt,
+        visibility,
+      });
+      await navigate({ to: productRoutes[kind], search: { thread: threadId } });
     } catch {
       setRequest({
         kind: "failed",
-        message:
-          "Couldn't invite Scout. It may be busy in another session. Try again, choose another Scout, or check the lab.",
+        message: "Couldn't start the chat. Choose an available Scout and try again.",
       });
     } finally {
       submitting.current = false;
     }
   }
 
-  if (isAuthenticated && viewer && !canRun) return <PlayUnavailable />;
+  if (isAuthenticated && viewer && !canRun) return <ConversationUnavailable kind={kind} />;
 
   return (
     <div className="w-full max-w-[660px]">
-      <div className="mb-10 flex flex-col items-center text-center max-[760px]:mb-8">
-        <div className="relative mb-8 flex h-[110px] w-[152px] items-center justify-center">
-          <span className="absolute inset-x-0 bottom-0 h-14 -rotate-6 rounded-[50%] bg-play-sand" />
-          <ScoutPiece className="-rotate-6" />
-        </div>
-        <h1 className="text-[52px] leading-[1.08] font-semibold tracking-[-2px] max-[760px]:text-[40px]">
-          What are we playing?
+      <div
+        className={cn("mb-10 flex flex-col max-[760px]:mb-8", isPlay && "items-center text-center")}
+      >
+        {isPlay && (
+          <div className="relative mb-8 flex h-[110px] w-[152px] items-center justify-center">
+            <span className="absolute inset-x-0 bottom-0 h-14 -rotate-6 rounded-[50%] bg-play-sand" />
+            <ScoutPiece className="-rotate-6" />
+          </div>
+        )}
+        <h1
+          className={
+            isPlay
+              ? "text-[52px] leading-[1.08] font-semibold tracking-[-2px] max-[760px]:text-[40px]"
+              : "text-[40px] leading-[1.2] font-medium tracking-[-1px] max-[760px]:text-[32px]"
+          }
+        >
+          {isPlay ? "What are we playing?" : "What should Scout review?"}
         </h1>
-        <p className="mt-4 text-base text-play-muted">Bring a game, or find one together.</p>
+        {isPlay && (
+          <p className="mt-4 text-base text-muted-foreground">
+            Bring a game, or find one together.
+          </p>
+        )}
       </div>
-      <section aria-label="Start playing">
+      <section aria-label={isPlay ? "Start playing" : "Start a review"}>
         {signingIn && !isAuthenticated ? (
           <div className="mx-auto max-w-[400px]">
             <button
               type="button"
-              className={cn(playTextLink, "mb-6 text-play-muted")}
+              className={cn(playTextLink, "mb-6 text-muted-foreground")}
               onClick={() => setSigningIn(false)}
             >
               <ArrowLeftIcon size={15} aria-hidden="true" /> Back to your message
@@ -185,60 +202,88 @@ function PlayLobby() {
             {noScouts && (
               <div className={playNotice} role="status">
                 <strong className="block">No Scout is available yet.</strong>
-                <Link
-                  to="/scouts"
-                  className="mt-2 inline-flex items-center gap-1 underline underline-offset-4"
-                >
-                  Set up a Scout <ArrowUpRightIcon size={14} aria-hidden="true" />
-                </Link>
+                {viewer?.kind === "account" &&
+                  canAccess("access_scout_manage", viewer.accessKeys) && (
+                    <Link
+                      to="/scouts"
+                      className="mt-2 inline-flex items-center gap-1 underline underline-offset-4"
+                    >
+                      Set up a Scout <ArrowUpRightIcon size={14} aria-hidden="true" />
+                    </Link>
+                  )}
               </div>
             )}
-            <PlayComposer
+            <ConversationComposer
               value={draft}
               onChange={setDraft}
               onSubmit={(event) => {
                 void inviteScout(event);
               }}
               disabled={request.kind === "pending"}
-              canSend={!loadingScouts && !noScouts}
+              canSend={!loadingScouts && !noScouts && !selectedScout?.busy}
               onStop={null}
-              placeholder="Let's play… Paste a game link or tell me what you have in mind."
+              placeholder={
+                isPlay
+                  ? "Let's play… Paste a game link or tell me what you have in mind."
+                  : "Paste a product link and describe what to review."
+              }
             >
               {loadingScouts ? (
-                "Loading players…"
+                "Loading Scouts…"
               ) : request.kind === "pending" ? (
                 "Starting…"
               ) : activeScouts.length > 0 ? (
                 <div className="flex items-center gap-2.5">
-                  <ScoutPiece size="brand" className="scale-75" />
-                  <label htmlFor="game-scout" className="sr-only">
-                    Your player
+                  {isPlay && <ScoutPiece size="brand" className="scale-75" />}
+                  <label htmlFor="conversation-scout" className="sr-only">
+                    Your Scout
                   </label>
                   <select
-                    id="game-scout"
+                    id="conversation-scout"
                     value={selectedScout?._id ?? ""}
                     onChange={(event) => setSelectedScoutId(event.target.value)}
-                    className="min-h-11 max-w-[220px] rounded-lg bg-transparent pr-2 text-sm font-medium text-play-ink"
+                    className="min-h-11 max-w-[220px] rounded-lg bg-transparent pr-2 text-sm font-medium text-foreground"
                   >
                     {activeScouts.map((scout) => (
-                      <option key={scout._id} value={scout._id}>
-                        With {scout.displayName}
+                      <option key={scout._id} value={scout._id} disabled={scout.busy}>
+                        {scout.displayName}
+                        {scout.busy ? " · Busy" : ""}
                       </option>
                     ))}
                   </select>
                 </div>
-              ) : (
+              ) : isPlay ? (
                 "Scout Play"
+              ) : (
+                "Scout Review"
               )}
-            </PlayComposer>
-            <div className="mt-5 flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm text-play-muted">
-              {["Find a game for us", "Help me learn a game"].map((suggestion) => (
+            </ConversationComposer>
+            <div className="mt-3 flex flex-wrap items-center justify-center gap-x-3 text-sm text-muted-foreground">
+              <label htmlFor="conversation-visibility" className="sr-only">
+                Visibility
+              </label>
+              <select
+                id="conversation-visibility"
+                value={visibility}
+                disabled={request.kind === "pending"}
+                onChange={(event) =>
+                  setVisibility(event.target.value === "public" ? "public" : "private")
+                }
+                className="min-h-11 rounded-lg bg-transparent px-2"
+              >
+                <option value="private">Private</option>
+                <option value="public">Public</option>
+              </select>
+              {visibility === "public" && <span>Anyone can watch the chat and browser.</span>}
+            </div>
+            <div className="mt-5 flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm text-muted-foreground">
+              {(isPlay ? ["Find a game for us", "Help me learn a game"] : []).map((suggestion) => (
                 <button
                   key={suggestion}
                   type="button"
                   disabled={request.kind === "pending"}
                   onClick={() => setDraft(suggestion)}
-                  className="inline-flex min-h-11 items-center gap-2 rounded-lg hover:text-play-blue"
+                  className="inline-flex min-h-11 items-center gap-2 rounded-lg hover:text-primary"
                 >
                   {suggestion} <ArrowRightIcon size={14} aria-hidden="true" />
                 </button>
@@ -251,38 +296,38 @@ function PlayLobby() {
   );
 }
 
-function SessionLoader({ threadId }: { threadId: string }) {
-  const threads = usePaginatedQuery(api.scout.chats.listThreads, {}, { initialNumItems: 50 });
-  const scouts = useQuery(api.scout.scouts.list);
-  const thread = threads.results.find((entry) => entry.threadId === threadId);
-  useEffect(() => {
-    if (!thread && threads.status === "CanLoadMore") threads.loadMore(50);
-  }, [thread, threads]);
-  if (!thread) {
-    return threads.status === "Exhausted" ? (
-      <div className={playRouteMessage}>
-        <h1 className="text-[30px]">Session not found</h1>
-        <p className="text-play-muted">This session isn't available for your account.</p>
-        <Link to="/play/session" search={{}} className={productButtonVariants({ variant: "play" })}>
-          Start a new game
-        </Link>
-      </div>
-    ) : (
-      <p className={playLoading} role="status">
-        Opening your session...
-      </p>
-    );
-  }
-  if (!scouts)
+function SessionLoader({
+  threadId,
+  kind,
+  search,
+}: {
+  threadId: string;
+  kind: ProductKind;
+  search: ConversationSearch;
+}) {
+  const viewer = useViewerAccess();
+  const thread = useQuery(api.scout.activity.get, { threadId });
+  if (thread === undefined)
     return (
       <p className={playLoading} role="status">
-        Loading your player...
+        Opening session…
       </p>
     );
+  if (thread === null || thread.purpose.kind !== kind)
+    return (
+      <div className={playRouteMessage}>
+        <h1 className="text-[30px]">Session unavailable</h1>
+        <p className="text-muted-foreground">This link is private or no longer available.</p>
+        <Link to="/" className={productButtonVariants({ variant: "play" })}>
+          Browse activity
+        </Link>
+        {viewer?.kind !== "account" && <AuthPanel />}
+      </div>
+    );
   return (
-    <PlaySidebar key={threadId}>
-      <PlaySession thread={thread} scout={scouts.find((scout) => scout._id === thread.scoutId)} />
-    </PlaySidebar>
+    <ConversationSidebar key={threadId}>
+      <ConversationSession thread={thread} kind={kind} search={search} />
+    </ConversationSidebar>
   );
 }
 
@@ -316,30 +361,45 @@ function activityNotice(activity: Activity | undefined, threadId: string) {
   }
 }
 
-function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | undefined }) {
-  const search = Route.useSearch();
-  const navigate = useNavigate({ from: "/play/session" });
+function ConversationSession({
+  thread,
+  kind,
+  search,
+}: {
+  thread: ChatThread;
+  kind: ProductKind;
+  search: ConversationSearch;
+}) {
+  const scout = thread.scout;
+  const viewer = useViewerAccess();
+  const canInspect =
+    thread.isOwner && viewer?.kind === "account" && canAccess("access_lab", viewer.accessKeys);
+  const navigate = useNavigate();
   const { threadId } = thread;
-  const activity = useQuery(api.scout.chats.getScoutActivity, { threadId });
-  const sessions = useQuery(api.scout.browserSessions.list, { threadId });
+  const activity = useQuery(
+    api.scout.chats.getScoutActivity,
+    thread.canControl ? { threadId } : "skip",
+  );
+  const sessions = thread.sessions;
   const latestSession = sessions?.at(-1);
   const session =
     sessions?.find((session) => session.sessionId === search.session) ?? latestSession;
   const liveView = useQuery(
-    api.scout.browserSessions.liveView,
-    session && session.lifecycle.kind !== "closed" ? { sessionId: session.sessionId } : "skip",
+    api.scout.activity.liveView,
+    session && session.kind !== "closed" ? { sessionId: session.sessionId } : "skip",
   );
   const handoff = useQuery(
     api.humanHandoffs.forSession,
-    latestSession ? { sessionId: latestSession.sessionId } : "skip",
+    thread.canControl && latestSession ? { sessionId: latestSession.sessionId } : "skip",
   );
-  const messages = useUIMessages(
-    api.scout.chats.listMessages,
+  const messages = usePaginatedQuery(
+    api.scout.activity.messages,
     { threadId },
-    { initialNumItems: 50, stream: true },
+    { initialNumItems: 50 },
   );
   const sendMessage = useMutation(api.scout.chats.sendMessage);
   const stopScout = useMutation(api.scout.chats.stop);
+  const setVisibility = useMutation(api.scout.chats.setVisibility);
   const [draft, setDraft] = useState("");
   const [request, setRequest] = useState<RequestState>({ kind: "idle" });
   const pending = useRef(false);
@@ -347,19 +407,31 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
   const canStop =
     ownActivity !== undefined && (ownActivity.kind !== "stopping" || ownActivity.retryable);
   const canSend =
-    scout?.status === "active" && activity?.kind === "idle" && request.kind !== "pending";
-  const visibleMessages = messages.results.filter(
-    (message) =>
-      message.role !== "system" &&
-      (message.text.trim() || message.metadata?.outcome.kind === "failed"),
-  );
-  const phase = thread.play?.step;
+    thread.canControl &&
+    scout.status === "active" &&
+    activity?.kind === "idle" &&
+    request.kind !== "pending";
+  const visibleMessages = messages.results.toReversed();
+  const phase = thread.purpose.kind === "play" ? thread.purpose.step : null;
   const phaseLabel = phase
     ? { research: "Researching the game", account_setup: "Setting up an account", play: "Playing" }[
         phase
       ]
     : null;
-  const lastTurn = messages.results.findLast((message) => message.metadata)?.metadata;
+
+  async function changeVisibility(visibility: ChatThread["visibility"]) {
+    if (pending.current) return;
+    pending.current = true;
+    setRequest({ kind: "pending" });
+    try {
+      await setVisibility({ threadId, visibility });
+      setRequest({ kind: "idle" });
+    } catch {
+      setRequest({ kind: "failed", message: "Couldn't change visibility. Try again." });
+    } finally {
+      pending.current = false;
+    }
+  }
 
   async function stop() {
     if (pending.current) return;
@@ -396,7 +468,7 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
   }
 
   const browserHeader = (
-    <div className="flex min-h-14 shrink-0 items-center gap-2 border-b border-play-line px-3 text-[13px]">
+    <div className="flex min-h-14 shrink-0 items-center gap-2 border-b border-border px-3 text-[13px]">
       <MonitorIcon size={16} className="shrink-0" aria-hidden="true" />
       {sessions && sessions.length > 1 && session ? (
         <select
@@ -408,6 +480,7 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
             );
             if (selected)
               void navigate({
+                to: productRoutes[kind],
                 search: (previous) => ({
                   ...previous,
                   session: selected.sessionId,
@@ -426,9 +499,9 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
                 minute: "2-digit",
                 second: "2-digit",
               })}
-              {session.lifecycle.kind === "active"
+              {session.kind === "active"
                 ? " · Live"
-                : session.lifecycle.kind === "closing"
+                : session.kind === "closing"
                   ? " · Closing"
                   : ""}
             </option>
@@ -436,10 +509,10 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
         </select>
       ) : (
         <span className="min-w-0 flex-1 font-medium">
-          {session?.lifecycle.kind === "closed" ? "Replay" : "Scout’s view"}
+          {session?.kind === "closed" ? "Replay" : "Scout’s view"}
         </span>
       )}
-      <PlayBrowserToggle action="close" />
+      <BrowserToggle action="close" />
     </div>
   );
 
@@ -451,28 +524,51 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
         <>
           <div className="mb-5 flex items-center justify-between gap-4 max-[760px]:mb-3">
             <Link
-              to="/play/session"
+              to={productRoutes[kind]}
               search={{}}
-              className={cn(playTextLink, "min-h-11 text-play-muted")}
+              className={cn(playTextLink, "min-h-11 text-muted-foreground")}
             >
               <ArrowLeftIcon size={16} aria-hidden="true" />{" "}
               <span className="whitespace-nowrap">New chat</span>
             </Link>
             <div className="flex items-center gap-5 max-[760px]:gap-4">
-              <Link
-                to="/chats"
-                search={{ thread: threadId }}
-                aria-label="Open in lab"
-                className={cn(playTextLink, "min-h-11 text-play-muted")}
-              >
-                <span className="whitespace-nowrap">
-                  <span className="max-[760px]:hidden">Open in </span>Lab
-                </span>{" "}
-                <ArrowUpRightIcon size={15} aria-hidden="true" />
-              </Link>
-              <PlayBrowserToggle action="open" />
+              {thread.isOwner && thread.purpose.kind !== "general" ? (
+                <select
+                  aria-label="Chat visibility"
+                  title="Public shares the chat and browser with anyone."
+                  className="min-h-11 rounded-lg bg-transparent text-xs text-muted-foreground"
+                  value={thread.visibility}
+                  disabled={request.kind === "pending"}
+                  onChange={(event) => {
+                    void changeVisibility(event.target.value === "public" ? "public" : "private");
+                  }}
+                >
+                  <option value="private">Private</option>
+                  <option value="public" disabled={!thread.canControl}>
+                    Public
+                  </option>
+                </select>
+              ) : (
+                <span className="text-xs text-muted-foreground">
+                  {thread.visibility === "public" ? "Public" : "Private"}
+                </span>
+              )}
+              {canInspect && (
+                <Link
+                  to="/chats"
+                  search={{ thread: threadId }}
+                  aria-label="Open in lab"
+                  className={cn(playTextLink, "min-h-11 text-muted-foreground")}
+                >
+                  <span className="whitespace-nowrap">
+                    <span className="max-[760px]:hidden">Open in </span>Lab
+                  </span>{" "}
+                  <ArrowUpRightIcon size={15} aria-hidden="true" />
+                </Link>
+              )}
+              <BrowserToggle action="open" />
               {canStop && (
-                <PlayBrowserStop
+                <BrowserStop
                   onStop={() => {
                     void stop();
                   }}
@@ -482,12 +578,12 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
             </div>
           </div>
           <div className="mb-5 flex min-w-0 items-center gap-4 max-[760px]:mb-4">
-            <ScoutPiece size="brand" className="max-[760px]:hidden" />
+            {kind === "play" && <ScoutPiece size="brand" className="max-[760px]:hidden" />}
             <h1
               className="truncate text-[28px] font-semibold tracking-[-0.8px] max-[760px]:text-[24px]"
               title={thread.title ?? undefined}
             >
-              {thread.title ?? `Play with ${scout?.displayName ?? "Scout"}`}
+              {thread.title ?? `Chat with ${scout.displayName}`}
             </h1>
           </div>
           {request.kind === "failed" && (
@@ -495,16 +591,16 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
               {request.message}
             </p>
           )}
-          {lastTurn?.outcome.kind === "failed" && (
+          {thread.status === "failed" && (
             <p className={playNotice} role="alert">
-              Scout couldn't finish this turn. Send a message to try again, or open the lab for
-              details.
+              Scout couldn't finish this turn.
+              {thread.canControl ? " Send a message to try again." : ""}
             </p>
           )}
           {handoff && (
             <ChatHandoffNotice
               handoff={handoff}
-              browserClosed={latestSession?.lifecycle.kind === "closed"}
+              browserClosed={latestSession?.kind === "closed"}
               canCancel={Boolean(canStop) && request.kind !== "pending"}
               onCancel={() => {
                 void stop();
@@ -521,11 +617,14 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
           <div className="min-h-0 flex-1">
             <MessageScrollerProvider autoScroll defaultScrollPosition="end">
               <MessageScroller>
-                <MessageScrollerViewport aria-label="Game messages" className="[mask-image:none]">
+                <MessageScrollerViewport
+                  aria-label="Session messages"
+                  className="[mask-image:none]"
+                >
                   <MessageScrollerContent
                     className="gap-7 px-1 pt-5 pb-7"
                     role="log"
-                    aria-label="Game messages"
+                    aria-label="Session messages"
                     aria-live="polite"
                   >
                     {messages.status === "CanLoadMore" && (
@@ -540,13 +639,13 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
                       </button>
                     )}
                     {messages.status === "LoadingFirstPage" && (
-                      <p role="status" className="text-sm text-play-muted">
+                      <p role="status" className="text-sm text-muted-foreground">
                         Loading messages…
                       </p>
                     )}
                     {visibleMessages.map((message) => (
                       <MessageScrollerItem
-                        key={message.key}
+                        key={message.id}
                         messageId={message.id}
                         className={cn(
                           "min-w-0 max-w-[95%] text-[15px] [overflow-wrap:anywhere]",
@@ -554,7 +653,7 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
                         )}
                       >
                         {message.role !== "user" && (
-                          <span className="mb-2 block text-xs font-medium text-play-muted">
+                          <span className="mb-2 block text-xs font-medium text-muted-foreground">
                             {scout?.displayName ?? "Scout"}
                           </span>
                         )}
@@ -562,7 +661,7 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
                           className={cn(
                             "whitespace-pre-wrap",
                             message.role === "user" &&
-                              "rounded-[20px_20px_4px_20px] bg-play-cloud px-5 py-3.5",
+                              "rounded-[var(--product-message-radius)] bg-secondary px-5 py-3.5",
                           )}
                         >
                           {message.role === "user"
@@ -571,10 +670,10 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
                         </p>
                       </MessageScrollerItem>
                     ))}
-                    {ownActivity?.kind === "running" && (
+                    {thread.status === "running" && (
                       <p
                         role="status"
-                        className="flex items-center gap-2.5 text-sm text-play-muted"
+                        className="flex items-center gap-2.5 text-sm text-muted-foreground"
                       >
                         <LoaderCircleIcon size={15} className="animate-spin" aria-hidden="true" />
                         {phaseLabel ?? <span className="sr-only">Scout is working</span>}
@@ -586,37 +685,48 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
               </MessageScroller>
             </MessageScrollerProvider>
           </div>
-          <PlayComposer
-            value={draft}
-            onChange={setDraft}
-            onSubmit={(event) => {
-              void send(event);
-            }}
-            disabled={request.kind === "pending"}
-            canSend={canSend}
-            onStop={
-              canStop
-                ? () => {
-                    void stop();
-                  }
-                : null
-            }
-            placeholder="Message Scout…"
-          >
-            <span role="status">
-              {scout?.status !== "active"
-                ? "This Scout is unavailable."
-                : activityNotice(activity, threadId)}
-            </span>
-          </PlayComposer>
+          {thread.canControl ? (
+            <ConversationComposer
+              value={draft}
+              onChange={setDraft}
+              onSubmit={(event) => {
+                void send(event);
+              }}
+              disabled={request.kind === "pending"}
+              canSend={canSend}
+              onStop={
+                canStop
+                  ? () => {
+                      void stop();
+                    }
+                  : null
+              }
+              placeholder="Message Scout…"
+            >
+              <span role="status">
+                {scout?.status !== "active"
+                  ? "This Scout is unavailable."
+                  : activityNotice(activity, threadId)}
+              </span>
+            </ConversationComposer>
+          ) : (
+            <Link
+              to={productRoutes[kind]}
+              search={{}}
+              className={cn(productButtonVariants({ variant: "play" }), "self-center my-3")}
+            >
+              {kind === "play" ? "Play with Scout" : "Review with Scout"}{" "}
+              <ArrowRightIcon size={16} />
+            </Link>
+          )}
         </section>
       }
       right={
         <section
-          aria-label="Scout's game browser"
-          className="flex h-full min-h-0 flex-col overflow-hidden rounded-[22px] border border-play-line bg-play-cloud/50"
+          aria-label="Scout's browser"
+          className="flex h-full min-h-0 flex-col overflow-hidden rounded-[var(--product-panel-radius)] border border-border bg-secondary/50"
         >
-          {session?.lifecycle.kind === "closed" ? (
+          {session?.kind === "closed" ? (
             <BrowserReplay
               key={session.sessionId}
               sessionId={session.sessionId}
@@ -627,6 +737,7 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
               }
               onSelectPage={(pageId) => {
                 void navigate({
+                  to: productRoutes[kind],
                   search: (previous) => ({
                     ...previous,
                     session: session.sessionId,
@@ -644,12 +755,12 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
                     key={session?.sessionId}
                     src={liveView.url}
                     className="min-h-0 w-full flex-1 border-0 bg-white"
-                    title="Scout's live game browser"
+                    title="Scout's live browser"
                     sandbox="allow-same-origin allow-scripts"
                     referrerPolicy="no-referrer"
                   />
                   <a
-                    className="flex min-h-11 items-center justify-center gap-1.5 p-2.5 text-xs text-play-muted hover:text-play-blue"
+                    className="flex min-h-11 items-center justify-center gap-1.5 p-2.5 text-xs text-muted-foreground hover:text-primary"
                     href={liveView.url}
                     target="_blank"
                     rel="noreferrer"
@@ -659,11 +770,20 @@ function PlaySession({ thread, scout }: { thread: ChatThread; scout: Scout | und
                 </>
               ) : (
                 <div className="flex flex-1 flex-col items-center justify-center gap-6 p-7 text-center">
-                  <div className="grid size-32 place-items-center rounded-full bg-play-sand/80">
-                    <ScoutPiece className="-rotate-6" />
-                  </div>
-                  <p className="max-w-[270px] text-sm text-play-muted">
-                    {session?.lifecycle.kind === "closing"
+                  {kind === "play" ? (
+                    <div className="grid size-32 place-items-center rounded-full bg-play-sand/80">
+                      <ScoutPiece className="-rotate-6" />
+                    </div>
+                  ) : (
+                    <MonitorIcon
+                      size={32}
+                      strokeWidth={1.25}
+                      className="text-muted-foreground"
+                      aria-hidden="true"
+                    />
+                  )}
+                  <p className="max-w-[270px] text-sm text-muted-foreground">
+                    {session?.kind === "closing"
                       ? "Closing the browser…"
                       : "Scout hasn’t opened a browser yet."}
                   </p>

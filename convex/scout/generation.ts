@@ -554,7 +554,7 @@ export const runSlice = internalAction({
         ctx,
         { threadId: args.threadId, userId: args.userId },
         {
-          ...(runtimeContext.play
+          ...(runtimeContext.purpose.kind === "play"
             ? createPlayTools(async (step) => {
                 await ctx.runMutation(internal.scout.chats.setActivityStep, {
                   turnId: activeTurnId,
@@ -592,7 +592,7 @@ export const runSlice = internalAction({
         serviceAccounts: runtimeServiceAccounts,
         browserSessionOpen: browserSessionId !== null,
         activeSkills: runtimeContext.activeSkills,
-        play: runtimeContext.play ?? undefined,
+        purpose: runtimeContext.purpose,
       });
 
       // Record both summarization and generation calls in the Model calls inspector.

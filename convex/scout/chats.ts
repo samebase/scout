@@ -4,6 +4,8 @@ import { vStreamDelta, vStreamMessage } from "@convex-dev/agent/validators";
 import { paginationOptsValidator, paginationResultValidator } from "convex/server";
 import { type Infer, v } from "convex/values";
 import { outdent } from "outdent";
+import { ConvexError } from "convex/values";
+import { requireViewerPermission } from "../access";
 import { components, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import {
@@ -17,8 +19,9 @@ import schema from "../schema";
 import { scoutAgent } from "./agent";
 import {
   activeBrowserForChat,
+  chatPermission,
   requireOwnedAgentThread,
-  requireLabThread,
+  requireRunnableThread,
   scoutActivity,
   scoutIsWorking,
 } from "./chatAccess";
@@ -36,7 +39,8 @@ import {
 import { continueStoppingTurn, enqueueTurn, stopTurn } from "./turns";
 import { scoutRuntimeInstructions } from "./runtimeInstructions";
 import { activeSkillsValidator, orderedSkills } from "./skills";
-import { playContextValidator, playStepValidator } from "./play";
+import { playStepValidator } from "./play";
+import { chatPurposeValidator, chatVisibilityValidator, productKindValidator } from "./chatModel";
 
 const MAX_PROMPT_LENGTH = 16_000;
 const MAX_THREAD_TITLE_LENGTH = 80;
@@ -46,7 +50,8 @@ const recentThreadValidator = v.object({
   creationTime: v.number(),
   title: v.union(v.string(), v.null()),
   scoutId: v.id("scouts"),
-  play: v.optional(playContextValidator),
+  purpose: chatPurposeValidator,
+  visibility: chatVisibilityValidator,
 });
 
 const chatMessageMetadataValidator = v.object({
@@ -206,6 +211,7 @@ async function requireThreadBinding(
   if (!binding || binding.userId !== args.userId) {
     throw new Error("Thread is missing its Scout binding");
   }
+  await requireRunnableThread(ctx, args.threadId);
   return binding;
 }
 
@@ -284,7 +290,8 @@ export const listThreads = query({
           creationTime: thread._creationTime,
           title: thread.title ?? null,
           scoutId: binding.scoutId,
-          ...omitNullish({ play: binding.play }),
+          purpose: binding.purpose,
+          visibility: binding.visibility,
         };
       }),
     );
@@ -310,9 +317,72 @@ export const createThread = mutation({
       createdAt: Date.now(),
       activeSkills: [],
       modelSelection: await defaultModelSelection(ctx, userId),
-      ...omitNullish({ play: args.purpose === "play" ? { step: null } : undefined }),
+      purpose: args.purpose === "play" ? { kind: "play", step: null } : { kind: "general" },
+      visibility: "private",
     });
     return created;
+  },
+});
+
+export const startProductChat = mutation({
+  access: "access_account",
+  args: {
+    kind: productKindValidator,
+    scoutId: v.id("scouts"),
+    prompt: v.string(),
+    visibility: chatVisibilityValidator,
+  },
+  returns: v.object({ threadId: v.string() }),
+  handler: async (ctx, args) => {
+    const purpose: Doc<"scoutChats">["purpose"] =
+      args.kind === "play" ? { kind: "play", step: null } : { kind: "review" };
+    requireViewerPermission(ctx.viewer, chatPermission(purpose));
+    const prompt = promptText(args.prompt);
+    await requireActiveScout(ctx, args.scoutId);
+    if (await scoutIsWorking(ctx, args.scoutId))
+      throw new ConvexError("This Scout is busy. Choose another Scout.");
+    const userId = ctx.viewer.userId;
+    const { threadId } = await scoutAgent.createThread(ctx, {
+      userId,
+      title: titleFromPrompt(prompt),
+    });
+    await activeBrowserForChat(ctx, args.scoutId, threadId);
+    const selection = await defaultModelSelection(ctx, userId);
+    await ctx.db.insert("scoutChats", {
+      threadId,
+      userId,
+      scoutId: args.scoutId,
+      createdAt: Date.now(),
+      activeSkills: [],
+      modelSelection: selection,
+      purpose,
+      visibility: args.visibility,
+    });
+    await enqueueTurn(ctx, {
+      threadId,
+      userId,
+      scoutId: args.scoutId,
+      prompt,
+      ...selection,
+    });
+    return { threadId };
+  },
+});
+
+export const setVisibility = mutation({
+  access: "access_account",
+  args: { threadId: v.string(), visibility: chatVisibilityValidator },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const chat = await ctx.db
+      .query("scoutChats")
+      .withIndex("by_thread_id", (q) => q.eq("threadId", args.threadId))
+      .unique();
+    if (!chat || chat.userId !== ctx.viewer.userId || chat.purpose.kind === "general")
+      throw new Error("Chat not found");
+    if (args.visibility === "public") await requireRunnableThread(ctx, args.threadId);
+    await ctx.db.patch(chat._id, { visibility: args.visibility });
+    return null;
   },
 });
 
@@ -363,7 +433,7 @@ export const getThreadAgentContext = query({
         credentials,
         serviceAccounts,
         activeSkills: binding.activeSkills ?? [],
-        play: binding.play,
+        purpose: binding.purpose,
         browserSessionOpen:
           (
             await ctx.db
@@ -378,7 +448,7 @@ export const getThreadAgentContext = query({
 });
 
 export const getScoutActivity = query({
-  access: "access_lab",
+  access: "access_account",
   args: {
     threadId: v.string(),
   },
@@ -392,7 +462,7 @@ export const getScoutActivity = query({
 });
 
 export const stop = mutation({
-  access: "access_lab",
+  access: "access_account",
   args: {
     threadId: v.string(),
     replacement: v.optional(scoutPromptValidator),
@@ -442,7 +512,7 @@ export const stop = mutation({
 });
 
 export const sendMessage = mutation({
-  access: "access_lab",
+  access: "access_account",
   args: {
     threadId: v.string(),
     prompt: v.string(),
@@ -578,7 +648,7 @@ export const runtimeContext = internalQuery({
     userId: v.id("users"),
     scoutId: v.id("scouts"),
     activeSkills: activeSkillsValidator,
-    play: v.union(playContextValidator, v.null()),
+    purpose: chatPurposeValidator,
     browserSession: v.union(
       schema.doc("scoutBrowserSessions").pick("_id", "providerSessionId", "lifecycle"),
       v.null(),
@@ -590,7 +660,7 @@ export const runtimeContext = internalQuery({
       .withIndex("by_prompt_message_id", (q) => q.eq("promptMessageId", args.promptMessageId))
       .unique();
     if (!turn || turn.state.kind !== "pending") throw new Error("Active Scout turn not found");
-    const chat = await requireLabThread(ctx, turn.threadId);
+    const chat = await requireRunnableThread(ctx, turn.threadId);
     if (chat.scoutId !== turn.scoutId) throw new Error("Chat not found");
     const session = await activeBrowserForChat(ctx, chat.scoutId, chat.threadId);
     return {
@@ -602,7 +672,7 @@ export const runtimeContext = internalQuery({
       userId: chat.userId,
       scoutId: chat.scoutId,
       activeSkills: chat.activeSkills ?? [],
-      play: chat.play ?? null,
+      purpose: chat.purpose,
       browserSession: session
         ? {
             _id: session._id,
@@ -622,7 +692,7 @@ export const loadSkills = internalMutation({
     if (!turn || turn.state.kind !== "pending" || turn.state.leaseExpiresAt <= Date.now()) {
       throw new Error("Active Scout turn not found");
     }
-    const chat = await requireLabThread(ctx, turn.threadId);
+    const chat = await requireRunnableThread(ctx, turn.threadId);
     if (chat.scoutId !== turn.scoutId) throw new Error("Chat not found");
     const names = orderedSkills(args.names);
     if (JSON.stringify(chat.activeSkills ?? []) !== JSON.stringify(names)) {
@@ -640,10 +710,11 @@ export const setActivityStep = internalMutation({
     if (!turn || turn.state.kind !== "pending" || turn.state.leaseExpiresAt <= Date.now()) {
       throw new Error("Active Scout turn not found");
     }
-    const chat = await requireLabThread(ctx, turn.threadId);
-    if (chat.scoutId !== turn.scoutId || !chat.play) throw new Error("Play chat not found");
-    if (chat.play.step !== args.step) {
-      await ctx.db.patch(chat._id, { play: { step: args.step } });
+    const chat = await requireRunnableThread(ctx, turn.threadId);
+    if (chat.scoutId !== turn.scoutId || chat.purpose.kind !== "play")
+      throw new Error("Play chat not found");
+    if (chat.purpose.step !== args.step) {
+      await ctx.db.patch(chat._id, { purpose: { kind: "play", step: args.step } });
     }
     return null;
   },

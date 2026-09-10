@@ -329,7 +329,7 @@ describe("Scout runtime instructions", () => {
       serviceAccounts: [],
       browserSessionOpen: play,
       activeSkills: ["games", "research"],
-      play: play ? { step: "research" } : undefined,
+      purpose: play ? { kind: "play", step: "research" } : { kind: "general" },
     });
 
     expect(instructions).toContain(String.raw`First name: "Magda\nScout"`);
