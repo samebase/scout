@@ -30,6 +30,8 @@ export type PlaywrightBrowser = {
   ) => Promise<string>;
   fill: (target: BrowserTarget, text: string, abortSignal?: AbortSignal) => Promise<void>;
   observe: (abortSignal?: AbortSignal) => Promise<BrowserObservation>;
+  selectTab: (tabId: string, abortSignal?: AbortSignal) => Promise<boolean>;
+  selectedTabId: () => Promise<string | null>;
 };
 
 function runBoundedControlOperation<T>(operation: () => Promise<T>, abortSignal?: AbortSignal) {
@@ -107,29 +109,24 @@ class ConnectedPlaywrightBrowser implements PlaywrightBrowser {
   }
 
   async initialize(abortSignal?: AbortSignal) {
-    await this.refreshActivePage(this.context.pages(), abortSignal);
     await runBoundedControlOperation(
       async () => await this.activePage.setViewportSize(VIEWPORT),
       abortSignal,
     );
   }
 
-  private async refreshActivePage(pages: Page[], abortSignal?: AbortSignal) {
-    abortSignal?.throwIfAborted();
-    const focus = await Promise.all(
-      pages.map(
-        async (page) =>
-          await runBoundedControlOperation(
-            async () => await page.evaluate(() => document.hasFocus()),
-            abortSignal,
-          ).catch(() => false),
-      ),
-    );
-    abortSignal?.throwIfAborted();
-    const focusedIndex = focus.findLastIndex(Boolean);
-    if (focusedIndex >= 0) {
-      this.activePage = pages[focusedIndex] ?? this.activePage;
+  async selectTab(tabId: string, abortSignal?: AbortSignal) {
+    for (const page of this.context.pages()) {
+      if (!page.isClosed() && (await this.tabId(page, abortSignal)) === tabId) {
+        this.activePage = page;
+        return true;
+      }
     }
+    return false;
+  }
+
+  async selectedTabId() {
+    return this.activePage.isClosed() ? null : await this.tabId(this.activePage);
   }
 
   private tabId(page: Page, abortSignal?: AbortSignal) {
@@ -234,7 +231,6 @@ class ConnectedPlaywrightBrowser implements PlaywrightBrowser {
   async observe(abortSignal?: AbortSignal) {
     const pages = this.context.pages().filter((page) => !page.isClosed());
     if (pages.length === 0) throw new Error("The browser has no open tab");
-    await this.refreshActivePage(pages, abortSignal);
     if (this.activePage.isClosed()) this.activePage = pages.at(-1) ?? pages[0];
     const tabs = await Promise.all(
       pages.map(async (page) => ({

@@ -119,6 +119,8 @@ async function browserAccountContext() {
     finishClickCapture: vi.fn<PlaywrightBrowser["finishClickCapture"]>(async () => ({
       kind: "unavailable",
     })),
+    selectTab: vi.fn(async () => true),
+    selectedTabId: vi.fn(async () => "tab-1"),
     snapshot: vi.fn(async () => '- textbox "Password"'),
     navigate: vi.fn(async () => undefined),
     getPage: vi.fn(async () => "https://accounts.example.com/signup?source=home#form"),

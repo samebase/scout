@@ -385,14 +385,12 @@ export const runSlice = internalAction({
           });
         },
 
-        onOperationSettled: async ({ toolCallId, outcome, clickCapture }) => {
+        onOperationSettled: async (operation) => {
           if (!browserSessionId) throw new Error("Browser session was not registered");
 
           await ctx.runMutation(internal.scout.browserSessions.settleOperation, {
             sessionId: browserSessionId,
-            toolCallId,
-            outcome,
-            clickCapture,
+            ...operation,
           });
         },
 
@@ -444,6 +442,7 @@ export const runSlice = internalAction({
             providerSessionId: persisted.providerSessionId,
             cdpUrl: persisted.lifecycle.cdpUrl,
             interactiveLiveViewUrl: persisted.lifecycle.interactiveLiveViewUrl,
+            ...omitNullish({ selectedTabId: persisted.selectedTabId }),
           },
           sliceAbortSignal,
         );

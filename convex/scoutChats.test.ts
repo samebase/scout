@@ -237,6 +237,7 @@ describe("Scout chats", () => {
         });
         if (scenario !== "prepared") {
           await backend.mutation(internal.scout.browserSessions.settleOperation, {
+            selectedTabId: null,
             sessionId,
             toolCallId: "in-flight-operation",
             outcome:
@@ -260,6 +261,7 @@ describe("Scout chats", () => {
             action: { kind: "execute", code: "await page.title()" },
           });
           await backend.mutation(internal.scout.browserSessions.settleOperation, {
+            selectedTabId: null,
             sessionId,
             toolCallId: "later-operation",
             outcome: { kind: "failed_before_dispatch", failure: "Interrupted before dispatch" },

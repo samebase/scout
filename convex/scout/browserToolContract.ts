@@ -6,19 +6,28 @@ export const CREATE_FIRECRAWL_SESSION_DESCRIPTION = outdent`
 `;
 
 export const BROWSER_EXECUTION_TIMEOUT_SECONDS = 60;
+export const PLAYWRIGHT_ACTION_TIMEOUT_MS = 10_000;
+export const PLAYWRIGHT_NAVIGATION_TIMEOUT_MS = 30_000;
 
-export const BROWSER_STATE_HELPER_SOURCE = `const browserState = async (selectedPage = activePage) => ({
-  currentUrl: comparableUrl(selectedPage.url()),
-  title: await selectedPage.title().catch(() => ""),
-  tabs: await Promise.all(
-    selectedPage.context().pages()
-      .filter((candidate) => candidate === selectedPage || candidate.url() !== "about:blank")
-      .map(async (candidate) => ({
-        url: comparableUrl(candidate.url()),
-        title: await candidate.title().catch(() => ""),
-      })),
-  ),
-});`;
+export const BROWSER_STATE_HELPER_SOURCE = `const browserState = async (selectedPage = activePage) => {
+  await selectedPage.bringToFront();
+  selectedPage.setDefaultTimeout(${PLAYWRIGHT_ACTION_TIMEOUT_MS});
+  selectedPage.setDefaultNavigationTimeout(${PLAYWRIGHT_NAVIGATION_TIMEOUT_MS});
+  activePage = selectedPage;
+  activeTabId = await tabId(selectedPage);
+  return {
+    currentUrl: comparableUrl(selectedPage.url()),
+    title: await selectedPage.title().catch(() => ""),
+    tabs: await Promise.all(
+      selectedPage.context().pages()
+        .filter((candidate) => candidate === selectedPage || candidate.url() !== "about:blank")
+        .map(async (candidate) => ({
+          url: comparableUrl(candidate.url()),
+          title: await candidate.title().catch(() => ""),
+        })),
+    ),
+  };
+};`;
 
 export const BROWSER_EXECUTE_DESCRIPTION = outdent`
   Run JavaScript with page, the active Playwright Page, and browserState(selectedPage = page),
@@ -34,8 +43,8 @@ export const BROWSER_EXECUTE_DESCRIPTION = outdent`
   - Prefer semantic locators from the latest snapshot. Quoted text after a role is its
     accessible name for getByRole; text after a colon is visible DOM text.
   - If the snapshot does not identify a control, inspect the page DOM to choose a locator.
-  - Use page.context() for tabs. After navigation or tab work, return await browserState(page),
-    or pass another Page to report it as current.
+  - Use page.context() for tabs. After navigation or tab work, call browserState(target)
+    with the Page you selected. This selects it for the snapshot and subsequent calls.
   - Select tabs by visible URL or title instead of remembered positions.
 
   Execution and waits:

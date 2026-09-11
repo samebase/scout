@@ -46,6 +46,23 @@ describe("persisted browser session connections", () => {
     expect(attach).toHaveBeenCalledTimes(2);
   });
 
+  it("retains the selected tab when refreshing the provider connection", async () => {
+    const session = { ...persisted, selectedTabId: "selected-target" };
+    const recovered = { ...persisted, cdpUrl: "wss://browser.firecrawl.dev/cdp?token=new" };
+    const attach = vi
+      .fn(async () => undefined)
+      .mockRejectedValueOnce(new Error("stale connection"));
+    const result = await attachPersistedBrowserSession({ attach }, session, undefined, {
+      recoverActiveBrowserSession: async () => recovered,
+    });
+    expect(result?.selectedTabId).toBe("selected-target");
+    expect(attach).toHaveBeenLastCalledWith(
+      { ...recovered, selectedTabId: "selected-target" },
+      { captureOperations: true },
+      undefined,
+    );
+  });
+
   it("reports that the provider session ended after failed recovery", async () => {
     const attach = vi.fn(async () => {
       throw new Error("stored connection failed");

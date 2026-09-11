@@ -16,6 +16,8 @@ import {
   BROWSER_EXECUTION_TIMEOUT_SECONDS,
   BROWSER_STATE_HELPER_SOURCE,
   CREATE_FIRECRAWL_SESSION_DESCRIPTION,
+  PLAYWRIGHT_ACTION_TIMEOUT_MS,
+  PLAYWRIGHT_NAVIGATION_TIMEOUT_MS,
 } from "./browserToolContract";
 import {
   closeFirecrawlBrowserSession,
@@ -34,15 +36,22 @@ import {
 const MAX_TOOL_TEXT_LENGTH = 20_000;
 const MAX_TOOL_OUTPUT_LENGTH = 20_000;
 const PLAYWRIGHT_RESULT_PREFIX = "__SCOUT_PLAYWRIGHT_RESULT__";
-const PLAYWRIGHT_ACTION_TIMEOUT_MS = 10_000;
-const PLAYWRIGHT_NAVIGATION_TIMEOUT_MS = 30_000;
 const PROFILE_WRITE_RETRY_DELAYS_MS = [10_000, 10_000, 10_000] as const;
 const FIRECRAWL_BROWSER_TTL_SECONDS = 3_600;
 
 const agentMailToolNames = ["list_messages", "search_messages", "get_thread"] as const;
 const playwrightExecutionResultSchema = z.discriminatedUnion("ok", [
-  z.object({ ok: z.literal(true), output: z.string() }).strict(),
-  z.object({ ok: z.literal(false), output: z.string(), error: z.string() }).strict(),
+  z
+    .object({ ok: z.literal(true), output: z.string(), activeTabId: z.string().nullable() })
+    .strict(),
+  z
+    .object({
+      ok: z.literal(false),
+      output: z.string(),
+      error: z.string(),
+      activeTabId: z.string().nullable(),
+    })
+    .strict(),
 ]);
 
 type BrowserAction = Infer<typeof browserActionValidator>;
@@ -70,6 +79,7 @@ export type BrowserSessionHandle = {
   providerSessionId: string;
   cdpUrl: string;
   interactiveLiveViewUrl: string | null;
+  selectedTabId?: string;
 };
 
 type CreatedBrowserSessionHandle = BrowserSessionHandle & { providerExpiresAtMs: number };
@@ -94,6 +104,7 @@ type BrowserHarnessOptions = {
     toolCallId: string;
     outcome: BrowserOperationOutcome;
     clickCapture: Awaited<ReturnType<PlaywrightBrowser["finishClickCapture"]>>;
+    selectedTabId: string | null;
   }) => Promise<void>;
   onSessionClosed?: (result: BrowserStopResult) => Promise<void>;
 };
@@ -318,16 +329,13 @@ function executionFailure(response: BrowserExecuteResponse, sensitiveValues: Rea
     : summary;
 }
 
-function scopedPlaywrightExecution(
-  code: string,
-  toolCallId: string,
-  selectedTab: { index: number; title: string; url: string | null },
-) {
+function scopedPlaywrightExecution(code: string, toolCallId: string, selectedTabId: string) {
   const marker = `${PLAYWRIGHT_RESULT_PREFIX}${toolCallId}:`;
   return {
     marker,
     code: `await (async () => {
   const logs = [];
+  let activeTabId = null;
   const originalLog = console.log;
   const display = (value) => {
     if (typeof value === "string") return value;
@@ -342,7 +350,15 @@ function scopedPlaywrightExecution(
   };
   try {
     const pages = page.context().pages();
-    const selectedTab = ${JSON.stringify(selectedTab)};
+    const selectedTabId = ${JSON.stringify(selectedTabId)};
+    const tabId = async (candidate) => {
+      const session = await candidate.context().newCDPSession(candidate);
+      try {
+        return (await session.send("Target.getTargetInfo")).targetInfo.targetId;
+      } finally {
+        await session.detach();
+      }
+    };
     const comparableUrl = (value) => {
       try {
         const url = new URL(value);
@@ -354,18 +370,15 @@ function scopedPlaywrightExecution(
         return null;
       }
     };
-    const matchesSelectedTab = async (candidate) =>
-      (selectedTab.url === null || comparableUrl(candidate.url()) === selectedTab.url) &&
-      (selectedTab.title === "" || (await candidate.title().catch(() => "")) === selectedTab.title);
-    let activePage = pages[selectedTab.index] ?? page;
-    if (!(await matchesSelectedTab(activePage))) {
-      for (const candidate of pages) {
-        if (await matchesSelectedTab(candidate)) {
-          activePage = candidate;
-          break;
-        }
+    let activePage;
+    for (const candidate of pages) {
+      if (await tabId(candidate) === selectedTabId) {
+        activePage = candidate;
+        break;
       }
     }
+    if (!activePage) throw new Error("Selected browser tab is closed");
+    activeTabId = selectedTabId;
     await activePage.bringToFront();
     activePage.setDefaultTimeout(${PLAYWRIGHT_ACTION_TIMEOUT_MS});
     activePage.setDefaultNavigationTimeout(${PLAYWRIGHT_NAVIGATION_TIMEOUT_MS});
@@ -380,13 +393,14 @@ function scopedPlaywrightExecution(
     }
     const value = await executeUserCode(activePage, browserState);
     if (value !== undefined) logs.push(display(value));
-    return ${JSON.stringify(marker)} + JSON.stringify({ ok: true, output: logs.join("\\n") });
+    return ${JSON.stringify(marker)} + JSON.stringify({ ok: true, output: logs.join("\\n"), activeTabId });
   } catch (error) {
     const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
     return ${JSON.stringify(marker)} + JSON.stringify({
       ok: false,
       output: logs.join("\\n"),
       error: message,
+      activeTabId,
     });
   } finally {
     console.log = originalLog;
@@ -407,6 +421,7 @@ function parsedPlaywrightExecution(
       success,
       output: executionOutput(response, sensitiveValues),
       error: success ? null : executionFailure(response, sensitiveValues),
+      activeTabId: null,
     };
   }
 
@@ -424,6 +439,7 @@ function parsedPlaywrightExecution(
   const result = parsed.data;
   return {
     success: result.ok,
+    activeTabId: result.activeTabId,
     output: redactSensitiveValues(result.output, sensitiveValues).slice(0, MAX_TOOL_OUTPUT_LENGTH),
     error: result.ok
       ? null
@@ -612,7 +628,8 @@ export function createBrowserHarness(
   async function settle(toolCallId: string, outcome: BrowserOperationOutcome) {
     try {
       const clickCapture = await activeBrowser().finishClickCapture();
-      await options.onOperationSettled?.({ toolCallId, outcome, clickCapture });
+      const selectedTabId = await activeBrowser().selectedTabId();
+      await options.onOperationSettled?.({ toolCallId, outcome, clickCapture, selectedTabId });
     } catch (error) {
       terminalTelemetryFailure = { error };
       throw error;
@@ -796,8 +813,7 @@ export function createBrowserHarness(
         throw new Error(failure);
       }
 
-      const selectedTabIndex = before.tabs.findIndex((tab) => tab.active);
-      const selectedTab = before.tabs[selectedTabIndex];
+      const selectedTab = before.tabs.find((tab) => tab.active);
       if (!selectedTab) {
         const failure = "The browser observation has no active tab";
         if (captureOperations) {
@@ -805,11 +821,7 @@ export function createBrowserHarness(
         }
         throw new Error(failure);
       }
-      const scopedExecution = scopedPlaywrightExecution(source, toolCallId, {
-        index: selectedTabIndex,
-        title: selectedTab.title,
-        url: selectedTab.url,
-      });
+      const scopedExecution = scopedPlaywrightExecution(source, toolCallId, selectedTab.tabId);
 
       if (abortSignal?.aborted) {
         const failure = "Browser execution was canceled before dispatch";
@@ -890,7 +902,15 @@ export function createBrowserHarness(
         abortSignal.throwIfAborted();
       }
       let after: BrowserTelemetry["after"];
+      const execution = parsedPlaywrightExecution(response, scopedExecution, sensitiveValues);
       try {
+        if (execution.activeTabId !== null) {
+          if (!(await browser.selectTab(execution.activeTabId, abortSignal))) {
+            throw new Error(
+              "Selected browser tab is closed. Inspect the remaining tabs before continuing.",
+            );
+          }
+        }
         after = await browser.observe(abortSignal);
       } catch (error) {
         const failure = `Playwright code returned, but browser observation failed: ${browserFailure(error, sensitiveValues)}`;
@@ -916,7 +936,6 @@ export function createBrowserHarness(
         returnedAtMs,
         after,
       };
-      const execution = parsedPlaywrightExecution(response, scopedExecution, sensitiveValues);
       const succeeded = execution.success;
       let snapshot: string;
       try {
@@ -1106,6 +1125,7 @@ export function createBrowserHarness(
       let connected: PlaywrightBrowser;
       try {
         connected = await dependencies.connect(handle.cdpUrl, abortSignal);
+        if (handle.selectedTabId) await connected.selectTab(handle.selectedTabId, abortSignal);
       } catch (error) {
         abortSignal?.throwIfAborted();
         throw new Error(`Playwright could not reconnect to Firecrawl: ${diagnosticMessage(error)}`);
