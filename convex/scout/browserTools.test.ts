@@ -40,6 +40,8 @@ function runtime() {
     getElementAttribute: vi.fn(async () => "password"),
     fill: vi.fn(async () => undefined),
     observe: vi.fn(async () => ({ capturedAtMs: 1_020, tabs: [firstTab] })),
+    selectTab: vi.fn<PlaywrightBrowser["selectTab"]>(async () => true),
+    selectedTabId: vi.fn(async () => firstTab.tabId),
   } satisfies PlaywrightBrowser;
 }
 
@@ -181,9 +183,7 @@ describe("Lab browser harness", () => {
       "__SCOUT_PLAYWRIGHT_RESULT__tool-execute:",
     );
     const executionRequest = deps.browserExecute.mock.calls.at(-1);
-    expect(executionRequest?.[1].code).toContain(
-      'const selectedTab = {"index":0,"title":"Example","url":"https://example.com/"}',
-    );
+    expect(executionRequest?.[1].code).toContain('const selectedTabId = "t1"');
     expect(executionRequest?.[1].code).toContain("const browserState = async");
     expect(executionRequest?.[1].code).toContain(
       'new AsyncFunction("page", "browserState", "return (" + source + ");")',
@@ -196,6 +196,7 @@ describe("Lab browser harness", () => {
       action: { kind: "execute", code },
     });
     expect(onOperationSettled).toHaveBeenCalledWith({
+      selectedTabId: "t1",
       toolCallId: "tool-execute",
       clickCapture: { kind: "unavailable" },
       outcome: {
@@ -232,6 +233,7 @@ describe("Lab browser harness", () => {
         providerSessionId: "session-existing",
         cdpUrl: "wss://browser.firecrawl.dev/cdp?token=secret",
         interactiveLiveViewUrl: null,
+        selectedTabId: "t1",
       },
       { captureOperations: true },
     );
@@ -250,6 +252,56 @@ describe("Lab browser harness", () => {
       "session-existing",
       expect.objectContaining({ language: "node", timeout: 60 }),
     );
+  });
+
+  test("uses the reported tab for the error snapshot, persistence, and next execution", async () => {
+    const playwright = runtime();
+    let selected = "t1";
+    playwright.selectTab.mockImplementation(async (tabId: string) => {
+      selected = tabId;
+      return true;
+    });
+    playwright.selectedTabId.mockImplementation(async () => selected);
+    playwright.snapshot.mockImplementation(async () => `Snapshot of ${selected}`);
+    playwright.observe.mockImplementation(async () => ({
+      capturedAtMs: 1_020,
+      tabs: [
+        { ...firstTab, active: selected === "t1" },
+        { ...firstTab, tabId: "t2", active: selected === "t2" },
+      ],
+    }));
+    const deps = dependencies(playwright);
+    deps.browserExecute.mockResolvedValueOnce({
+      success: true,
+      exitCode: 0,
+      result:
+        '__SCOUT_PLAYWRIGHT_RESULT__switch:{"ok":false,"output":"","error":"Missing button","activeTabId":"t2"}',
+    });
+    const onOperationSettled = vi.fn(async () => undefined);
+    const browser = createBrowserHarness(
+      {
+        onSessionCreated: async () => ({ captureOperations: true }),
+        onOperationPrepared: async () => true,
+        onOperationSettled,
+      },
+      deps,
+    );
+    await browser.open("https://example.com");
+
+    const result = await browser.actions.executeCode(
+      "await browserState(target); throw new Error('Missing button')",
+      "switch",
+    );
+    expect(result).toMatchObject({
+      success: false,
+      error: "Missing button",
+      currentPage: "Snapshot of t2",
+    });
+    expect(onOperationSettled).toHaveBeenLastCalledWith(
+      expect.objectContaining({ selectedTabId: "t2" }),
+    );
+    await browser.actions.executeCode("return await browserState(page)", "next");
+    expect(deps.browserExecute.mock.calls.at(-1)?.[1].code).toContain('const selectedTabId = "t2"');
   });
 
   test("exposes session lifecycle and ordinary Playwright execution", () => {
@@ -305,6 +357,7 @@ describe("Lab browser harness", () => {
       browser.actions.executeCode("await page.locator('missing').click()"),
     ).resolves.toMatchObject({ success: false, error: expect.stringContaining("not found") });
     expect(onOperationSettled).toHaveBeenLastCalledWith({
+      selectedTabId: "t1",
       toolCallId: "local-2",
       clickCapture: { kind: "unavailable" },
       outcome: {
@@ -326,7 +379,8 @@ describe("Lab browser harness", () => {
       success: true,
       exitCode: 1,
       stderr: "an earlier execution failed",
-      result: '__SCOUT_PLAYWRIGHT_RESULT__tool-current:{"ok":true,"output":"clicked"}',
+      result:
+        '__SCOUT_PLAYWRIGHT_RESULT__tool-current:{"ok":true,"output":"clicked","activeTabId":"t1"}',
     });
     const browser = createBrowserHarness({}, deps);
     await browser.open("https://example.com");
@@ -342,7 +396,7 @@ describe("Lab browser harness", () => {
       success: true,
       exitCode: 0,
       result:
-        '__SCOUT_PLAYWRIGHT_RESULT__tool-current:{"ok":false,"output":"before click","error":"locator was ambiguous"}',
+        '__SCOUT_PLAYWRIGHT_RESULT__tool-current:{"ok":false,"output":"before click","error":"locator was ambiguous","activeTabId":"t1"}',
     });
     const browser = createBrowserHarness({}, deps);
     await browser.open("https://example.com");
@@ -628,6 +682,7 @@ describe("Lab browser harness", () => {
     ).rejects.toThrow("Scout slice expired");
     expect(playwright.navigate).not.toHaveBeenCalled();
     expect(onOperationSettled).toHaveBeenCalledExactlyOnceWith({
+      selectedTabId: "t1",
       toolCallId: "tool-canceled-before-navigation",
       clickCapture: { kind: "unavailable" },
       outcome: {

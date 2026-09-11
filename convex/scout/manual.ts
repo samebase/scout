@@ -9,6 +9,7 @@ import type { Message } from "@convex-dev/agent";
 import { randomUUID } from "node:crypto";
 import { type JSONValue, type ModelMessage, type ToolSet } from "ai";
 import { v } from "convex/values";
+import { omitNullish } from "../../shared/omitNullish";
 import { z } from "zod";
 import { internal } from "../_generated/api";
 
@@ -222,15 +223,13 @@ export const executeTool = action({
               action,
             });
           },
-          onOperationSettled: async ({ toolCallId, outcome, clickCapture }) => {
+          onOperationSettled: async (operation) => {
             if (currentBrowserSessionId === null) {
               throw new Error("Browser session was not registered");
             }
             await ctx.runMutation(internal.scout.browserSessions.settleOperation, {
               sessionId: currentBrowserSessionId,
-              toolCallId,
-              outcome,
-              clickCapture,
+              ...operation,
             });
           },
           onSessionClosed: async ({ creditsBilled, sessionDurationMs }) => {
@@ -268,6 +267,7 @@ export const executeTool = action({
             providerSessionId: persisted.providerSessionId,
             cdpUrl: persisted.lifecycle.cdpUrl,
             interactiveLiveViewUrl: persisted.lifecycle.interactiveLiveViewUrl,
+            ...omitNullish({ selectedTabId: persisted.selectedTabId }),
           });
           if (!connection) {
             await ctx.runMutation(internal.scout.browserSessions.close, {

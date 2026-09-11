@@ -2,6 +2,7 @@
 
 import { type BrowserSessionHandle, createBrowserHarness } from "./browserTools";
 import { recoverActiveFirecrawlBrowserSession } from "./lib/firecrawl";
+import { omitNullish } from "../../shared/omitNullish";
 
 type Browser = Pick<ReturnType<typeof createBrowserHarness>, "attach">;
 type Dependencies = {
@@ -56,7 +57,8 @@ export async function attachPersistedBrowserSession(
     }
     if (!recovered) return null;
     abortSignal?.throwIfAborted();
-    await browser.attach(recovered, { captureOperations: true }, abortSignal);
-    return recovered;
+    const connection = { ...recovered, ...omitNullish({ selectedTabId: session.selectedTabId }) };
+    await browser.attach(connection, { captureOperations: true }, abortSignal);
+    return connection;
   }
 }

@@ -60,18 +60,23 @@ describe("browser click persistence and access", () => {
     } as const;
     const capture = { ...clickCapture, clicks: [...clickCapture.clicks] };
     await owner.mutation(internal.scout.browserSessions.settleOperation, {
+      selectedTabId: "tab-a",
       sessionId,
       toolCallId: "click-1",
       outcome: { kind: "indeterminate_after_dispatch", failure: "Navigation timed out" },
       clickCapture: capture,
     });
     await owner.mutation(internal.scout.browserSessions.settleOperation, {
+      selectedTabId: null,
       sessionId,
       toolCallId: "click-1",
       outcome: { kind: "failed_before_dispatch", failure: "duplicate" },
       clickCapture: { kind: "unavailable" },
     });
     const replay = await owner.query(internal.scout.browserSessions.replayData, { sessionId });
+    expect(await backend.run(async (ctx) => (await ctx.db.get(sessionId))?.selectedTabId)).toBe(
+      "tab-a",
+    );
     expect(replay?.operations).toEqual([
       {
         sequence: 1,
@@ -96,6 +101,7 @@ describe("browser click persistence and access", () => {
     ]) {
       await expect(
         owner.mutation(internal.scout.browserSessions.settleOperation, {
+          selectedTabId: null,
           sessionId,
           toolCallId: "click-1",
           outcome: { kind: "failed_before_dispatch", failure: "test" },

@@ -662,6 +662,7 @@ describe("human handoffs", () => {
         action: { kind: "execute", code: "await page.title()" },
       });
       await backend.mutation(internal.scout.browserSessions.settleOperation, {
+        selectedTabId: null,
         sessionId,
         toolCallId,
         outcome:

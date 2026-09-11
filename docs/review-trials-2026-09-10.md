@@ -1,11 +1,84 @@
 # Review baseline — 2026-09-10
 
-Primary checkout `cc66910`, dev deployment `acoustic-cat-488`, private Review chats.
+Primary checkout `cc66910` unless noted, dev deployment `acoustic-cat-488`, private Review chats.
 All Scouts used `openai/gpt-5.6-luna` with `reasoningEffort: max`, verified in
-persisted turns. Prompts and tools were unchanged. Sites came from [Outbid](https://outbid.lol/).
+persisted turns. Prompts and tools were unchanged unless noted. The initial sites
+came from [Outbid](https://outbid.lol/); the user suggested Samebase.
 These are individual observations, not a reliability score or a comparison with Qwen.
 
-## Prompts and evidence
+## Samebase tab-selection investigation
+
+Conrad used Luna Max on the primary development deployment. These are individual
+trials, not a reliability score. The browser fix below was not deployed to production.
+
+### Baseline
+
+> Try Samebase by creating a disposable app. Check that the deployed app actually works
+
+[Review](http://localhost:5173/review?thread=m572bv2cqq19dffg3cvh6b16x18e5qst),
+browser session `qh71q6k6jvyzk82w3qx1jmay7h8e5yqg`. Existing provider accounts.
+No follow-up coaching. Scout created and deployed an app, added a todo as a guest,
+and confirmed it survived reload. The run completed in 600.5 seconds, using about
+$0.08173 in model calls and 19 Firecrawl credits.
+
+Tool output from the deployed app repeatedly arrived beside the Samebase dashboard's
+snapshot. In `#IZh7onKp`, the dashboard remained active after code brought the app
+tab forward. Two direct Firecrawl probes reproduced this: both tabs reported
+`document.hasFocus() === true`, so the observer selected by page order.
+`browserState(target)` reported the target without updating that observer.
+
+Scout also mistook the Todo list heading for navigation, invented `/todos`, and
+reported its 404 as a bug. Its own control list showed only Home and About links.
+The wrong-page snapshot does not establish why it made that unsupported assumption.
+
+### Fix and verification
+
+`browserState(target)` now selects the Page for snapshots and subsequent execution
+using its browser target ID. Convex retains that selection across reconnects.
+
+- Direct Firecrawl checks passed switching in both directions, reload, reconnect,
+  selection followed by a script error, and selection between identical-URL tabs.
+  Closing the old tab after selecting the remaining one also worked.
+- The project check passed with 669 tests and 3 skips. Regression coverage includes
+  ambiguous focus, reordered and identical-URL tabs, error snapshots, and persistence.
+- A fresh [Review](http://localhost:5173/review?thread=m575hfns5yv5enr0fcdh2zbp5d8e4j4n)
+  opened the app and example.com, returned to the app with `browserState(page)`,
+  added a todo, and verified persistence after reload. Subsequent calls stayed on
+  the app. It completed without coaching in 108.9 seconds, using about $0.007388
+  in model calls and 3 Firecrawl credits.
+
+### Fresh Samebase signup, September 11
+
+The user authorized deleting Conrad's Samebase account. The operator removed its
+repository registration, sole-member organization, and account. External GitHub,
+Cloudflare, and Convex accounts and resources were retained. Scout's historical
+account registry was also retained.
+
+> Create your own account at https://samebase.com/ and try it by creating a disposable
+> app. Check that the deployed app actually works.
+
+[Review](http://localhost:5173/review?thread=m572w6h1q6pm0r0d69sj7rd29x8e4drd),
+browser session `qh7ekzme8khcmjpej22k3t72zs8e5htd`.
+
+- Completed GitHub sign-in, new-account terms, organization creation, GitHub app
+  authorization, Convex team OAuth, and Cloudflare OAuth. The selected GitHub popup
+  and subsequent return to Samebase had matching snapshots and persisted target IDs.
+- Created [a disposable app](https://samebase-disposable-test.conrad-db9.workers.dev/),
+  but Convex killed `scout/generation:runSlice` before verification with its
+  likely 512 MB memory-limit error. The cause remains unproven. The failed turn
+  used about $0.07295 in model calls and 19 Firecrawl credits.
+- After the operator sent "Continue checking the app you created," Scout added a
+  todo, marked it complete, visited About, and confirmed persistence after reload.
+  An independent local browser saw the same completed item. This recovery used
+  about $0.04331 in model calls and 6 Firecrawl credits. Both sessions closed.
+
+Unresolved observations: Automatic replay showed the GitHub popup at 2:10 and
+Samebase at 3:03, but could not choose between two identical-URL app recordings at
+7:40. Scout also spent unnecessary calls on Cloudflare's password form despite its
+SSO requirement, and did not refresh its saved account observations. This tab fix
+does not resolve replay matching, account memory, or the memory-limit failure.
+
+## Earlier trials
 
 ### Understand a product
 

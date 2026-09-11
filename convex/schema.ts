@@ -198,6 +198,7 @@ export default defineSchema({
     profileName: v.string(),
     viewport: browserViewportValidator,
     nextOperationSequence: v.number(),
+    selectedTabId: v.optional(v.string()),
     lifecycle: persistedBrowserSessionLifecycleValidator,
   })
     .index("by_thread_id_and_sequence", ["threadId", "sequence"])

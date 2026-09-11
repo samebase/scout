@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { internalQuery, type MutationCtx, type QueryCtx } from "../_generated/server";
 import { requirePermission } from "../access";
 import schema from "../schema";
+import { omitNullish } from "../../shared/omitNullish";
 import { activeBrowserForChat, requireOwnedAgentThread, scoutIsWorking } from "./chatAccess";
 
 async function requireManualThread(ctx: QueryCtx | MutationCtx, threadId: string) {
@@ -38,7 +39,9 @@ export const runtimeContext = internalQuery({
     profileName: v.string(),
     inboxId: v.string(),
     browserSession: v.union(
-      schema.doc("scoutBrowserSessions").pick("_id", "providerSessionId", "lifecycle"),
+      schema
+        .doc("scoutBrowserSessions")
+        .pick("_id", "providerSessionId", "lifecycle", "selectedTabId"),
       v.null(),
     ),
   }),
@@ -59,6 +62,7 @@ export const runtimeContext = internalQuery({
             _id: activeSession._id,
             providerSessionId: activeSession.providerSessionId,
             lifecycle: activeSession.lifecycle,
+            ...omitNullish({ selectedTabId: activeSession.selectedTabId }),
           }
         : null,
     };

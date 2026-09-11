@@ -293,7 +293,7 @@ describe("trusted Playwright observer", () => {
     const { context } = fakeContext(pages);
     connectFakeContext(context);
     const browser = await connectPlaywrightBrowser("wss://browser.firecrawl.dev/cdp");
-    initial.page.evaluate.mockImplementation(async () => await new Promise<never>(() => {}));
+    initial.page.title.mockImplementation(async () => await new Promise<never>(() => {}));
     const controller = new AbortController();
 
     const observation = browser.observe(controller.signal);
@@ -328,22 +328,24 @@ describe("trusted Playwright observer", () => {
     expect(context.newCDPSession).toHaveBeenCalledOnce();
   });
 
-  test("follows the focused page when existing tabs change places", async () => {
+  test("uses the selected target when both tabs report focus and their order changes", async () => {
     const initial = fakePage("https://samebase.com/", "initial", true);
-    const dashboard = fakePage("https://dashboard.convex.dev/", "dashboard");
+    const dashboard = fakePage("https://dashboard.convex.dev/", "dashboard", true);
     const pages = [initial.page, dashboard.page];
     const { context } = fakeContext(pages);
     connectFakeContext(context);
     const browser = await connectPlaywrightBrowser("wss://browser.firecrawl.dev/cdp");
 
-    initial.focus.current = false;
-    dashboard.focus.current = true;
+    await browser.selectTab("target:https://samebase.com/");
+    pages.reverse();
+    await expect(browser.snapshot()).resolves.toBe("initial");
+    await browser.selectTab("target:https://dashboard.convex.dev/");
 
     await expect(browser.observe()).resolves.toEqual({
       capturedAtMs: expect.any(Number),
       tabs: [
-        expect.objectContaining({ active: false, title: "https://samebase.com/" }),
         expect.objectContaining({ active: true, title: "https://dashboard.convex.dev/" }),
+        expect.objectContaining({ active: false, title: "https://samebase.com/" }),
       ],
     });
     await expect(browser.snapshot()).resolves.toBe("dashboard");
@@ -361,6 +363,18 @@ describe("trusted Playwright observer", () => {
       capturedAtMs: expect.any(Number),
       tabs: [{ active: true, tabId: "target:about:blank", title: "", url: "about:blank" }],
     });
+  });
+
+  test("distinguishes tabs with identical URLs and titles and rejects a missing target", async () => {
+    const first = fakePage("https://example.com/", "first tab", true, "first");
+    const second = fakePage("https://example.com/", "second tab", true, "second");
+    const { context } = fakeContext([first.page, second.page]);
+    connectFakeContext(context);
+    const browser = await connectPlaywrightBrowser("wss://browser.firecrawl.dev/cdp");
+    await expect(browser.selectTab("first")).resolves.toBe(true);
+    await expect(browser.snapshot()).resolves.toBe("first tab");
+    await expect(browser.selectTab("closed-target")).resolves.toBe(false);
+    await expect(browser.selectedTabId()).resolves.toBe("first");
   });
 
   test("keeps CDP target IDs stable when reconnecting with pages in a different order", async () => {

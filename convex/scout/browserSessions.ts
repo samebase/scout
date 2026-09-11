@@ -384,6 +384,7 @@ export const settleOperation = internalMutation({
     toolCallId: v.string(),
     outcome: browserOutcomeValidator,
     clickCapture: browserClickCaptureValidator,
+    selectedTabId: v.union(v.string(), v.null()),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -395,6 +396,9 @@ export const settleOperation = internalMutation({
       .unique();
     if (!operation) throw new Error("browser operation not found");
     if (operation.state.kind !== "prepared") return null;
+    await ctx.db.patch("scoutBrowserSessions", args.sessionId, {
+      selectedTabId: args.selectedTabId ?? undefined,
+    });
     const capture = args.clickCapture;
     if (capture.kind === "captured") {
       if (

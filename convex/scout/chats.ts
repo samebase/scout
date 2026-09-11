@@ -650,7 +650,9 @@ export const runtimeContext = internalQuery({
     activeSkills: activeSkillsValidator,
     purpose: chatPurposeValidator,
     browserSession: v.union(
-      schema.doc("scoutBrowserSessions").pick("_id", "providerSessionId", "lifecycle"),
+      schema
+        .doc("scoutBrowserSessions")
+        .pick("_id", "providerSessionId", "lifecycle", "selectedTabId"),
       v.null(),
     ),
   }),
@@ -678,6 +680,7 @@ export const runtimeContext = internalQuery({
             _id: session._id,
             providerSessionId: session.providerSessionId,
             lifecycle: session.lifecycle,
+            ...omitNullish({ selectedTabId: session.selectedTabId }),
           }
         : null,
     };
