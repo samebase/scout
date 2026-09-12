@@ -17,6 +17,7 @@ import type * as agentsApi_accounts from "../agentsApi/accounts.js";
 import type * as agentsApi_accountsState from "../agentsApi/accountsState.js";
 import type * as agentsApi_browsers from "../agentsApi/browsers.js";
 import type * as agentsApi_cost from "../agentsApi/cost.js";
+import type * as agentsApi_events from "../agentsApi/events.js";
 import type * as agentsApi_lifecycle from "../agentsApi/lifecycle.js";
 import type * as agentsApi_model from "../agentsApi/model.js";
 import type * as agentsApi_output from "../agentsApi/output.js";
@@ -123,6 +124,7 @@ declare const fullApi: ApiFromModules<{
   "agentsApi/accountsState": typeof agentsApi_accountsState;
   "agentsApi/browsers": typeof agentsApi_browsers;
   "agentsApi/cost": typeof agentsApi_cost;
+  "agentsApi/events": typeof agentsApi_events;
   "agentsApi/lifecycle": typeof agentsApi_lifecycle;
   "agentsApi/model": typeof agentsApi_model;
   "agentsApi/output": typeof agentsApi_output;

@@ -1,5 +1,11 @@
 import type { AgentSessionItem } from "openai/resources/beta/agents/agents";
 
+export function itemIsComplete(item: AgentSessionItem) {
+  return (
+    item.type === "agent_message" || item.status === "completed" || item.status === "incomplete"
+  );
+}
+
 export function presentItem(item: AgentSessionItem) {
   if (item.id === null) throw new Error("OpenAI returned a session item without an ID");
   let kind: string = item.type;
@@ -48,5 +54,11 @@ export function presentItem(item: AgentSessionItem) {
   const details = JSON.stringify(item, null, 2);
   if (new TextEncoder().encode(details).length > 500_000)
     throw new Error("OpenAI session item exceeds the experiment's 500 KB display limit");
-  return { providerItemId: item.id, kind, text, details };
+  return {
+    providerItemId: item.id,
+    kind,
+    text,
+    details,
+    complete: itemIsComplete(item),
+  };
 }

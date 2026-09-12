@@ -1,6 +1,9 @@
 "use node";
 
 import OpenAI from "openai";
+import type { Stream } from "openai/core/streaming";
+import type { AgentSessionEvent } from "openai/resources/beta/agents/agents";
+import { setTimeout as delay } from "node:timers/promises";
 import { v } from "convex/values";
 import { outdent } from "outdent";
 import type { ActionCtx } from "../_generated/server";
@@ -20,8 +23,9 @@ import {
 } from "../scout/runtimeInstructions";
 import { command } from "./model";
 import { functionDefinitions, handoffInput, runtimeTools } from "./tools";
-import { presentItem } from "./output";
+import { itemIsComplete, presentItem } from "./output";
 import { readAgentsApiUsage } from "./cost";
+import { SessionOutput } from "./events";
 
 function client() {
   const apiKey = getRuntimeEnv("OPENAI_API_KEY");
@@ -43,18 +47,18 @@ async function closeBrowser(ctx: ActionCtx, session: Doc<"agentsApiSessions">) {
   });
 }
 
-async function cancelProvider(api: OpenAI, providerId: string) {
-  const session = await api.beta.agents.sessions.retrieve(providerId);
-  if (session.status === "in_progress" || session.status === "requires_action") {
-    await api.beta.agents.sessions.events.create(providerId, {
-      events: [{ type: "agent.session.input.cancel" }],
-    });
-  }
-}
-
 async function cleanupSession(ctx: ActionCtx, session: Doc<"agentsApiSessions">) {
   try {
-    if (session.providerId) await cancelProvider(client(), session.providerId);
+    if (session.providerId) {
+      const api = client();
+      const providerId = session.providerId;
+      const remote = await api.beta.agents.sessions.retrieve(providerId);
+      if (remote.status === "in_progress" || remote.status === "requires_action") {
+        await api.beta.agents.sessions.events.create(providerId, {
+          events: [{ type: "agent.session.input.cancel" }],
+        });
+      }
+    }
   } finally {
     await closeBrowser(ctx, session);
   }
@@ -62,6 +66,22 @@ async function cleanupSession(ctx: ActionCtx, session: Doc<"agentsApiSessions">)
     sessionId: session._id,
     active: false,
   });
+  if (session.providerId) {
+    const api = client();
+    await syncItems(
+      ctx,
+      api,
+      { ...session, providerId: session.providerId },
+      { refreshWorkflowId: session.workflowId ?? null },
+    );
+    const remote = await api.beta.agents.sessions.retrieve(session.providerId);
+    if (remote.usage)
+      await ctx.runMutation(internal.agentsApi.sessions.update, {
+        sessionId: session._id,
+        refreshWorkflowId: session.workflowId ?? null,
+        usage: readAgentsApiUsage(remote.usage),
+      });
+  }
 }
 
 export const begin = internalAction({
@@ -112,13 +132,10 @@ export const begin = internalAction({
             },
             environment: { type: "none" },
             input: args.command.prompt,
+            stream: true,
             metadata: { scoutSessionId: session._id },
           });
-          await ctx.runMutation(internal.agentsApi.sessions.update, {
-            sessionId: session._id,
-            providerId: created.id,
-            state: { kind: "running" },
-          });
+          await consumeOutput(ctx, created, session, new SessionOutput());
         } finally {
           await resource.dispose();
         }
@@ -136,33 +153,39 @@ export const begin = internalAction({
             sessionId: session._id,
             previousTurnId: previousTurn.id,
           });
-        await api.beta.agents.sessions.events.create(session.providerId, {
-          "Idempotency-Key": `${session._id}:${session.workflowId}`,
-          events: [
-            {
-              type: "agent.session.input.message",
-              input: [
-                { role: "user", content: [{ type: "input_text", text: args.command.message }] },
-              ],
-            },
-          ],
-        });
+        const providerId = session.providerId;
+        const message = args.command.message;
+        await streamOutput(ctx, api, { ...session, providerId }, () =>
+          api.beta.agents.sessions.events.create(providerId, {
+            "Idempotency-Key": `${session._id}:${session.workflowId}`,
+            events: [
+              {
+                type: "agent.session.input.message",
+                input: [{ role: "user", content: [{ type: "input_text", text: message }] }],
+              },
+            ],
+          }),
+        );
         break;
       }
       case "resume": {
         if (!session.providerId) throw new Error("OpenAI session is not available");
-        await api.beta.agents.sessions.events.create(session.providerId, {
-          events: [
-            {
-              type: "agent.session.input.tool_result",
-              turn_id: args.command.turnId,
-              call_id: args.command.callId,
-              success: true,
-              output:
-                "The user returned browser control. Inspect the page to verify the outcome before continuing.",
-            },
-          ],
-        });
+        const providerId = session.providerId;
+        const { turnId, callId } = args.command;
+        await streamOutput(ctx, api, { ...session, providerId }, () =>
+          api.beta.agents.sessions.events.create(providerId, {
+            events: [
+              {
+                type: "agent.session.input.tool_result",
+                turn_id: turnId,
+                call_id: callId,
+                success: true,
+                output:
+                  "The user returned browser control. Inspect the page to verify the outcome before continuing.",
+              },
+            ],
+          }),
+        );
         break;
       }
       case "observe":
@@ -176,24 +199,39 @@ async function syncItems(
   ctx: ActionCtx,
   api: OpenAI,
   session: Doc<"agentsApiSessions"> & { providerId: string },
-  refreshWorkflowId?: Doc<"agentsApiSessions">["workflowId"] | null,
+  options: {
+    refreshWorkflowId?: Doc<"agentsApiSessions">["workflowId"] | null;
+    output?: SessionOutput;
+    fromStart?: boolean;
+  } = {},
 ) {
+  const { refreshWorkflowId, output } = options;
+  const fromStart = options.fromStart || refreshWorkflowId !== undefined;
   const refreshGuard = refreshWorkflowId === undefined ? {} : { refreshWorkflowId };
   const items = api.beta.agents.sessions.items.list(session.providerId, {
     order: "asc",
     limit: 50,
-    ...omitNullish({ after: session.itemCursor }),
+    ...omitNullish({ after: fromStart ? undefined : session.itemCursor }),
   });
+  let sequence =
+    !fromStart && session.itemCursor
+      ? (await ctx.runQuery(internal.agentsApi.sessions.itemSequence, {
+          sessionId: session._id,
+          providerItemId: session.itemCursor,
+        })) + 1
+      : 0;
   let cursor = session.itemCursor;
   let complete = true;
   // Traverse every page, but retain unfinished items for the next poll.
   for await (const item of items) {
-    if (item.type !== "agent_message" && item.status === "in_progress") complete = false;
+    output?.restore(item);
+    if (!itemIsComplete(item)) complete = false;
     if (complete && item.id !== null) cursor = item.id;
     await ctx.runMutation(internal.agentsApi.sessions.saveItems, {
       sessionId: session._id,
       ...refreshGuard,
       items: [presentItem(item)],
+      sequence: sequence++,
     });
   }
   await ctx.runMutation(internal.agentsApi.sessions.saveItems, {
@@ -202,6 +240,103 @@ async function syncItems(
     items: [],
     ...omitNullish({ cursor }),
   });
+}
+
+// Keep the connection open throughout model generation. Reconnect between bounded
+// action slices; saved items recover completed output if a connection was lost.
+async function streamOutput(
+  ctx: ActionCtx,
+  api: OpenAI,
+  session: Doc<"agentsApiSessions"> & { providerId: string },
+  submit: (() => Promise<void>) | null,
+) {
+  const stream = await api.beta.agents.sessions.events.stream(session.providerId);
+  const output = new SessionOutput();
+  try {
+    await syncItems(ctx, api, session, { output });
+    const current = await ctx.runQuery(internal.agentsApi.sessions.cleanupResources, {
+      sessionId: session._id,
+    });
+    if (current.state.kind === "stopped") return;
+    await submit?.();
+    await consumeOutput(ctx, stream, session, output);
+  } finally {
+    stream.controller.abort();
+  }
+}
+
+async function consumeOutput(
+  ctx: ActionCtx,
+  stream: Stream<AgentSessionEvent>,
+  session: Doc<"agentsApiSessions">,
+  output: SessionOutput,
+) {
+  const finished = new AbortController();
+  const deadline = setTimeout(() => stream.controller.abort(), 45_000);
+  const flush = async () => {
+    const items = output.drain();
+    if (items.length)
+      await ctx.runMutation(internal.agentsApi.sessions.saveItems, {
+        sessionId: session._id,
+        items,
+      });
+  };
+  try {
+    const consume = async () => {
+      try {
+        for await (const event of stream) {
+          if (event.type === "agent.session.created") {
+            await ctx.runMutation(internal.agentsApi.sessions.update, {
+              sessionId: session._id,
+              providerId: event.session.id,
+              state: { kind: "running" },
+            });
+          }
+          output.apply(event);
+          if (event.type === "error") throw new Error(event.error.message);
+          if (event.type === "agent.session.failed")
+            throw new Error(event.session.error ?? "OpenAI session failed");
+          if (event.type === "agent.session.requires_action") return;
+          if (
+            (event.type === "agent.session.turn.completed" ||
+              event.type === "agent.session.turn.cancelled" ||
+              event.type === "agent.session.turn.failed") &&
+            event.turn.subagent_id === null
+          )
+            return;
+        }
+      } finally {
+        finished.abort();
+      }
+    };
+    const watch = async () => {
+      try {
+        while (!finished.signal.aborted) {
+          await delay(1_000, undefined, { signal: finished.signal });
+          await flush();
+          const current = await ctx.runQuery(internal.agentsApi.sessions.cleanupResources, {
+            sessionId: session._id,
+          });
+          if (current.state.kind === "stopped") {
+            stream.controller.abort();
+            return;
+          }
+        }
+      } catch (error) {
+        if (!(finished.signal.aborted && error instanceof Error && error.name === "AbortError"))
+          throw error;
+      } finally {
+        stream.controller.abort();
+      }
+    };
+    const results = await Promise.allSettled([consume(), watch()]);
+    for (const result of results) if (result.status === "rejected") throw result.reason;
+  } finally {
+    clearTimeout(deadline);
+    finished.abort();
+    stream.controller.abort();
+    await flush();
+  }
 }
 
 export const refresh = action({
@@ -216,7 +351,12 @@ export const refresh = action({
     if (!providerId) return null;
     const api = client();
     const remote = await api.beta.agents.sessions.retrieve(providerId);
-    await syncItems(ctx, api, { ...session, providerId }, session.workflowId ?? null);
+    await syncItems(
+      ctx,
+      api,
+      { ...session, providerId },
+      { refreshWorkflowId: session.workflowId ?? null },
+    );
     if (remote.usage)
       await ctx.runMutation(internal.agentsApi.sessions.update, {
         sessionId: session._id,
@@ -264,6 +404,7 @@ export const advance = internalAction({
         return true;
       if (turn.status === "failed") throw new Error(JSON.stringify(turn.error));
       await closeBrowser(ctx, session);
+      await syncItems(ctx, api, { ...session, providerId }, { fromStart: true });
       await ctx.runMutation(internal.agentsApi.sessions.update, {
         sessionId: session._id,
         active: false,
@@ -273,7 +414,10 @@ export const advance = internalAction({
     }
 
     const call = remote.required_actions[0];
-    if (!call) return true;
+    if (!call) {
+      await streamOutput(ctx, api, { ...session, providerId }, null);
+      return true;
+    }
     if (call.type !== "function_call")
       throw new Error("OpenAI hosted environment needs reconnection");
     if (call.turn_id === session.previousTurnId) return true;
@@ -325,18 +469,21 @@ export const advance = internalAction({
     const current = await ctx.runQuery(internal.agentsApi.sessions.runtime, args);
     if (current.session.state.kind === "stopped") return true;
     if (result.kind === "running") throw new Error("Tool result is not available");
-    await api.beta.agents.sessions.events.create(providerId, {
-      events: [
-        {
-          type: "agent.session.input.tool_result",
-          turn_id: call.turn_id,
-          call_id: call.call_id,
-          ...(result.kind === "success"
-            ? { success: true, output: result.output }
-            : { success: false, error: result.error }),
-        },
-      ],
-    });
+    const finishedResult = result;
+    await streamOutput(ctx, api, { ...session, providerId }, () =>
+      api.beta.agents.sessions.events.create(providerId, {
+        events: [
+          {
+            type: "agent.session.input.tool_result",
+            turn_id: call.turn_id,
+            call_id: call.call_id,
+            ...(finishedResult.kind === "success"
+              ? { success: true, output: finishedResult.output }
+              : { success: false, error: finishedResult.error }),
+          },
+        ],
+      }),
+    );
     return true;
   },
 });

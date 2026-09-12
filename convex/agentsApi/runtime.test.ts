@@ -2,7 +2,12 @@
 import workflowTest from "@convex-dev/workflow/test";
 import { tool } from "ai";
 import { convexTest } from "convex-test";
-import type { AgentSessionItem, TokenUsage } from "openai/resources/beta/agents/agents";
+import type {
+  AgentReasoningItem,
+  AgentSessionItem,
+  TokenUsage,
+} from "openai/resources/beta/agents/agents";
+import type { AgentSessionEvent } from "openai/resources/beta/agents/agents";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { z } from "zod";
 import { api, internal } from "../_generated/api";
@@ -95,6 +100,15 @@ async function setup() {
     after,
     beforeRetrieve: vi.fn<() => Promise<void>>(async () => {}),
     beforeItems: vi.fn<() => Promise<void>>(async () => {}),
+    onInput: vi.fn<() => void>(),
+    stream: vi.fn(
+      () =>
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.close();
+          },
+        }),
+    ),
     usage: vi.fn<() => TokenUsage | null>(() => null),
     status: vi.fn<() => "idle" | "requires_action">(() => "requires_action"),
     turn: vi.fn(() => ({ id: "previous-turn", status: "cancelled" })),
@@ -129,9 +143,15 @@ async function setup() {
       const data = provider.items.slice(start, start + 50);
       return Response.json({ data, has_more: start + data.length < provider.items.length });
     }
+    if (request.method === "GET" && url.pathname.endsWith("/sessions/session-test/events")) {
+      return new Response(provider.stream(), {
+        headers: { "Content-Type": "text/event-stream" },
+      });
+    }
     if (request.method === "POST" && url.pathname.endsWith("/sessions/session-test/events")) {
       const body: unknown = await request.json();
       provider.events.push(body);
+      provider.onInput();
       return new Response(null, { status: 204 });
     }
     throw new Error(`Unexpected provider request: ${request.method} ${url.pathname}`);
@@ -179,9 +199,180 @@ async function setup() {
   };
 }
 
-function reasoning(id: string, status: "in_progress" | "completed"): AgentSessionItem {
+function reasoning(id: string, status: "in_progress" | "completed"): AgentReasoningItem {
   return { id, type: "reasoning", status, summary: [], turn_id: "turn-test" };
 }
+
+it("subscribes before submitting a tool result and persists live output before history or completion", async () => {
+  const { provider, advance, history, session } = await setup();
+  vi.useRealTimers();
+  let signalInput: () => void = () => {};
+  const inputSent = new Promise<void>((resolve) => {
+    signalInput = resolve;
+  });
+  const live = new TransformStream<Uint8Array, Uint8Array>();
+  const writer = live.writable.getWriter();
+  const emit = (event: AgentSessionEvent) =>
+    writer.write(new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`));
+  provider.stream.mockReturnValue(live.readable);
+  provider.onInput.mockImplementation(() => {
+    expect(provider.stream).toHaveBeenCalledOnce();
+    signalInput();
+  });
+  const running = advance();
+  await inputSent;
+  const eventBase = {
+    event_id: "event",
+    session_id: "session-test",
+    turn_id: "turn-test",
+    output_index: 0,
+  };
+  await emit({
+    ...eventBase,
+    item_id: "assistant",
+    content_index: 0,
+    type: "agent.session.turn.output_text.delta",
+    delta: "I am checking the page.",
+  });
+  await emit({
+    ...eventBase,
+    item_id: "reasoning",
+    summary_index: 0,
+    type: "agent.session.turn.reasoning_summary_text.delta",
+    delta: "Checking what the controls do.",
+  });
+  await vi.waitFor(
+    async () => {
+      expect((await history()).map(({ kind, text }) => ({ kind, text }))).toEqual([
+        { kind: "assistant", text: "I am checking the page." },
+        { kind: "reasoning", text: "Checking what the controls do." },
+      ]);
+    },
+    { timeout: 3_000 },
+  );
+  expect((await session()).active).toBe(true);
+  expect(provider.items).toEqual([]);
+  await emit({
+    ...eventBase,
+    item_id: "assistant",
+    content_index: 0,
+    type: "agent.session.turn.output_text.done",
+    text: "I checked the page.",
+  });
+  await writer.close();
+  await expect(running).resolves.toBe(true);
+  expect((await history())[0].text).toBe("I checked the page.");
+});
+
+it("syncs history and usage produced by cancellation while preserving the stopped state", async () => {
+  const { backend, provider, owner, sessionId, history, session } = await setup();
+  await owner.mutation(api.agentsApi.sessions.stop, { sessionId });
+  provider.onInput.mockImplementation(() => {
+    provider.items.push({
+      ...reasoning("cancelled-reason", "completed"),
+      summary: [{ type: "summary_text", text: "Checked the page before cancellation." }],
+    });
+    provider.usage.mockReturnValue({
+      input_tokens: 100,
+      output_tokens: 20,
+      total_tokens: 120,
+      input_tokens_details: { cached_tokens: 0 },
+      output_tokens_details: { reasoning_tokens: 10 },
+    });
+  });
+  await backend.action(internal.agentsApi.runtime.cleanup, { sessionId });
+  expect(await session()).toMatchObject({
+    active: false,
+    state: { kind: "stopped" },
+    usage: { inputTokens: 100, outputTokens: 20 },
+  });
+  expect((await history())[0].text).toBe("Checked the page before cancellation.");
+});
+
+it("cancels and releases the browser even when recovering history fails", async () => {
+  const { backend, provider, owner, sessionId, session } = await setup();
+  await owner.mutation(api.agentsApi.sessions.stop, { sessionId });
+  provider.beforeItems.mockRejectedValue(new Error("History unavailable"));
+  await expect(backend.action(internal.agentsApi.runtime.cleanup, { sessionId })).rejects.toThrow();
+  expect(provider.events).toContainEqual({ events: [{ type: "agent.session.input.cancel" }] });
+  expect(await session()).toMatchObject({
+    active: false,
+    browser: null,
+    state: { kind: "stopped" },
+  });
+});
+
+it("restores chronological order when earlier history arrives after a later streamed item", async () => {
+  const { backend, provider, owner, sessionId, history } = await setup();
+  await backend.mutation(internal.agentsApi.sessions.saveItems, {
+    sessionId,
+    items: [
+      {
+        providerItemId: "later",
+        kind: "reasoning",
+        text: "streamed",
+        details: "{}",
+        complete: false,
+      },
+    ],
+  });
+  provider.items.push(reasoning("earlier", "completed"), reasoning("later", "completed"));
+  await backend.mutation(internal.agentsApi.sessions.update, {
+    sessionId,
+    active: false,
+    state: { kind: "stopped" },
+  });
+  await owner.action(api.agentsApi.runtime.refresh, { sessionId });
+  await backend.mutation(internal.agentsApi.sessions.saveItems, {
+    sessionId,
+    items: [
+      {
+        providerItemId: "later",
+        kind: "reasoning",
+        text: "stale delta",
+        details: "{}",
+        complete: false,
+      },
+    ],
+  });
+  expect(
+    (await history()).map((item) => ({
+      id: item.providerItemId,
+      sequence: item.sequence,
+      text: item.text,
+    })),
+  ).toEqual([
+    { id: "earlier", sequence: 0, text: "" },
+    { id: "later", sequence: 1, text: "" },
+  ]);
+});
+
+it("places delayed items after the saved cursor during a running turn", async () => {
+  const { backend, provider, sessionId, history, advance } = await setup();
+  const saved = (providerItemId: string) => ({
+    providerItemId,
+    kind: "reasoning",
+    text: "",
+    details: "{}",
+    complete: false,
+  });
+  await backend.mutation(internal.agentsApi.sessions.saveItems, {
+    sessionId,
+    cursor: "head",
+    items: [saved("head"), saved("later")],
+  });
+  provider.items.push(
+    reasoning("head", "completed"),
+    reasoning("earlier", "completed"),
+    reasoning("later", "completed"),
+  );
+  await advance();
+  expect((await history()).map((item) => item.providerItemId)).toEqual([
+    "head",
+    "earlier",
+    "later",
+  ]);
+});
 
 it("replaces cumulative usage snapshots and prices cached input without counting reasoning twice", async () => {
   const { provider, advance, session, owner, sessionId } = await setup();
@@ -387,7 +578,7 @@ it("traverses pages past unfinished items, dispatches the tool, and later advanc
     ),
   );
   await expect(advance()).resolves.toBe(true);
-  expect(provider.after).toEqual([null, "item-49"]);
+  expect(provider.after).toEqual([null, "item-49", null, "item-49"]);
   expect((await session()).itemCursor).toBeUndefined();
   expect((await history()).map((item) => item.providerItemId)).toEqual(
     provider.items.map((item) => item.id),
@@ -481,7 +672,7 @@ it("retries failed cleanup only on Stop, deduplicates pending/running jobs, and 
   expect((await backend.run((ctx) => ctx.db.system.get(retryJobId)))?.state.kind).toBe("success");
   await owner.mutation(api.agentsApi.sessions.send, { sessionId, message: "Next task" });
   expect((await session()).cleanupJobId).toBeUndefined();
-  expect(provider.beforeRetrieve).toHaveBeenCalledTimes(2);
+  expect(provider.beforeRetrieve).toHaveBeenCalledTimes(3);
   expect(closeFirecrawlBrowserSession).toHaveBeenCalledOnce();
 });
 

@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-12T05:02:15Z
+- **Last updated:** 2026-09-12T10:37:57Z
 
 ## Log
 
@@ -1173,8 +1173,34 @@ verified tab switching and todo persistence (`convex/scout/browserTools.ts`,
 
 ### 2026-09-12 - working tree
 
-Added an isolated Agents API page with managed OpenAI sessions and Scout identity,
-email, account, and browser tools. A development trial created a Samebase app and
-verified todo persistence. Shared sidebars now expose live browsers, retained replays,
-and estimated usage cost; a live handoff resumed and a follow-up opened a second browser
-while the first recording remained available (`convex/agentsApi/`, `src/agents-api/`).
+Added `/agents`, a Lab experiment using OpenAI's managed Agents API with Luna at
+maximum reasoning effort. It runs alongside the existing Play, Review, and Chat Lab
+so we can compare the two approaches using the same Scouts. OpenAI manages the model
+loop and conversation context; Convex Workflow coordinates requests and executes
+Scout's browser, email, and account tools.
+
+The experiment reuses Scout identities, inboxes, encrypted credentials, connected
+accounts, and Firecrawl browser profiles. Convex persists sessions, transcripts, and
+function results, and reserves each Scout across both runtimes. Conversations support
+follow-ups, Stop, and human browser handoff with Resume. Browser connections are
+released after tool execution, while completed sessions retain their recordings.
+
+The new interface reuses Samebase sidebars and the Lab's message and replay components.
+It shows streamed assistant messages, reasoning summaries, and tool activity, plus
+live browser access and recorded sessions. Replay includes tab selection, seeking,
+click overlays, and MP4 export. Usage shows estimated model and search cost, cached
+input tokens, and Firecrawl credits. Stopping a run preserves its transcript and
+recordings; refreshing retrieves provider history without restarting the agent.
+
+Development trials used the ordinary request to create a disposable Samebase app and
+check its deployment. Scout created the app, then verified that an added and completed
+todo survived a reload. Other trials read a real Scout inbox, resumed a browser handoff,
+and opened a second browser while keeping the first recording available. A Score Four
+review exercised live messages and tools, Stop, and a completed follow-up covering
+local play and the online waiting room.
+
+This remains an experiment: it does not yet include the existing harness's shared site
+workspaces or Scout credit billing, and these trials do not establish which runtime
+performs better. The live browser embed worked in Chrome; the Codex in-app browser
+still showed a blank cross-origin embed even though the standalone viewer worked
+(`convex/agentsApi/`, `src/agents-api/`).

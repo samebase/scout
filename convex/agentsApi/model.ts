@@ -31,6 +31,7 @@ export const sessionItem = v.object({
   kind: v.string(),
   text: v.string(),
   details: v.string(),
+  complete: v.optional(v.boolean()),
 });
 
 export const command = v.union(

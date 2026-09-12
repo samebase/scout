@@ -27,8 +27,10 @@ not apply to this experiment.
   another LLM loop through `@convex-dev/agent`.
 - `sessions.ts` owns access checks, session state, and durable function-call claims.
   A completed tool result is reused if OpenAI requests the same call again.
-- `runtime.ts` polls provider state and saves history by provider item ID. Saved
-  items can lag live execution; the browser view shows the current remote page.
+- `runtime.ts` streams assistant text, reasoning summaries, and tool items into
+  Convex by provider item ID. It subscribes before submitting input or tool results.
+  Bounded stream slices restore saved items on reconnect. Stop retains streamed
+  output, cancels the run, and releases the browser before refreshing history and usage.
 - Each browser operation reconnects to the saved Firecrawl browser, then disconnects
   its local Playwright transport. Completing or stopping a turn closes the remote
   browser and saves its profile.
@@ -96,5 +98,14 @@ The follow-up exposed a provider timing edge: input can be acknowledged while th
 previous completed turn or tool request is still returned. Polling now waits for the
 new turn instead of treating that previous turn as the follow-up's result.
 
-The final check passed formatting, lint, all TypeScript projects, and 768 tests,
-with three existing tests skipped. The frontend build also passed.
+Live-output verification used an ordinary Score Four review. Assistant messages,
+reasoning summaries, and tool activity appeared while the browser was active.
+Stopping retained the transcript, cost, and replay without pressing Refresh.
+The follow-up reopened the browser, checked local play and the multiplayer waiting
+room, exercised turn-taking and wins, and closed the browser with its progress
+messages visible throughout.
+
+The live iframe displayed correctly in Chrome. Codex's in-app browser showed a
+blank cross-origin iframe for both Firecrawl and an example.com control, while
+same-origin frames and the standalone viewer worked. No speculative embed changes
+were retained; Open remains available for that browser.

@@ -372,6 +372,7 @@ export const saveItems = internalMutation({
     refreshWorkflowId: v.optional(v.union(vWorkflowId, v.null())),
     items: v.array(sessionItem),
     cursor: v.optional(v.string()),
+    sequence: v.optional(v.number()),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -382,7 +383,7 @@ export const saveItems = internalMutation({
       (session.active || (session.workflowId ?? null) !== args.refreshWorkflowId)
     )
       return null;
-    let sequence = session.nextSequence;
+    let sequence = args.sequence ?? session.nextSequence;
     for (const item of args.items) {
       const existing = await ctx.db
         .query("agentsApiItems")
@@ -390,22 +391,49 @@ export const saveItems = internalMutation({
           q.eq("sessionId", session._id).eq("providerItemId", item.providerItemId),
         )
         .unique();
+      const position =
+        args.sequence === undefined ? (existing?.sequence ?? sequence++) : sequence++;
       if (existing) {
-        if (existing.text !== item.text || existing.details !== item.details)
-          await ctx.db.patch(existing._id, item);
+        if (existing.complete && item.complete === false) {
+          if (existing.sequence !== position)
+            await ctx.db.patch(existing._id, { sequence: position });
+          continue;
+        }
+        if (
+          existing.text !== item.text ||
+          existing.details !== item.details ||
+          existing.complete !== item.complete ||
+          existing.sequence !== position
+        )
+          await ctx.db.patch(existing._id, { ...item, sequence: position });
       } else {
         await ctx.db.insert("agentsApiItems", {
           ...item,
           sessionId: session._id,
-          sequence: sequence++,
+          sequence: position,
         });
       }
     }
     await ctx.db.patch(session._id, {
-      nextSequence: sequence,
+      nextSequence: Math.max(session.nextSequence, sequence),
       ...omitNullish({ itemCursor: args.cursor }),
     });
     return null;
+  },
+});
+
+export const itemSequence = internalQuery({
+  args: { sessionId: v.id("agentsApiSessions"), providerItemId: v.string() },
+  returns: v.number(),
+  handler: async (ctx, args) => {
+    const item = await ctx.db
+      .query("agentsApiItems")
+      .withIndex("by_session_id_and_provider_item_id", (q) =>
+        q.eq("sessionId", args.sessionId).eq("providerItemId", args.providerItemId),
+      )
+      .unique();
+    if (!item) throw new Error("Saved history cursor is missing its item");
+    return item.sequence;
   },
 });
 
