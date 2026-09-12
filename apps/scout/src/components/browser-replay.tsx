@@ -8,6 +8,7 @@ import { Button } from "#components/ui/button";
 import { activePageIdAt, buildReplayTimeline } from "#lib/browserReplayTimeline";
 import { CLICK_COLOR, replayClicks, visibleReplayClicks } from "#lib/browserReplayClicks";
 import { BrowserReplayExport } from "./browser-replay-export";
+import { BrowserReplayHeader } from "./browser-replay-header";
 
 type ReplayPagesResult = FunctionReturnType<typeof api.browserReplay.listPages>;
 type ReplayReady = Extract<ReplayPagesResult, { status: "ready" }>;
@@ -354,6 +355,13 @@ function BrowserReplayPlayer({
     <div
       className={mode === "playback" ? "flex min-h-0 flex-1 flex-col" : "browser-replay__player"}
     >
+      <BrowserReplayHeader
+        pages={timeline.pages}
+        currentTimeMs={currentTimeMs}
+        activePageId={activePageId}
+        following={selectedPageId === null}
+        onSelectPage={selectPage}
+      />
       <div
         className={
           mode === "playback"
@@ -417,7 +425,7 @@ function BrowserReplayPlayer({
         ) : activePage === null ? (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-neutral-950/90 px-8 text-center text-sm text-neutral-300">
             {mode === "playback"
-              ? "Choose a recording below."
+              ? "Choose a recorded tab above."
               : "The active browser tab could not be matched to a recorded video track."}
           </div>
         ) : null}
@@ -491,64 +499,9 @@ function BrowserReplayPlayer({
           )}
         </div>
 
-        {mode === "playback" &&
-          (timeline.pages.length > 1 ||
-            (automaticPageId === null && replay.operations.length > 0)) && (
-            <select
-              aria-label="Recorded tab"
-              value={selectedPageId ?? ""}
-              onChange={(event) => selectPage(event.currentTarget.value || null)}
-              className="mt-2 min-h-11 w-full min-w-0 rounded-lg border bg-background px-2 text-sm"
-            >
-              {replay.operations.length > 0 && <option value="">Automatic</option>}
-              {timeline.pages.map((page, index) => (
-                <option key={page.pageId} value={page.pageId}>
-                  {page.pageUrl
-                    ? `${index + 1}. ${new URL(page.pageUrl).hostname}`
-                    : `Recording ${index + 1}`}
-                </option>
-              ))}
-            </select>
-          )}
-
         {mode === "inspector" && (
           <>
-            <div className="mt-2 flex min-w-0 items-center gap-1 overflow-x-auto pb-1">
-              <button
-                type="button"
-                onClick={() => selectPage(null)}
-                className={`shrink-0 rounded-md border px-2 py-1 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 ${
-                  selectedPageId === null
-                    ? "border-foreground/30 bg-foreground text-background"
-                    : "bg-background text-muted-foreground hover:text-foreground"
-                }`}
-                aria-pressed={selectedPageId === null}
-              >
-                Follow activity
-              </button>
-              {timeline.pages.map((page, index) => (
-                <button
-                  key={page.pageId}
-                  type="button"
-                  onClick={() => selectPage(page.pageId)}
-                  className={`shrink-0 rounded-md border px-2 py-1 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 ${
-                    page.pageId === activePageId
-                      ? "border-foreground/30 bg-foreground text-background"
-                      : "bg-background text-muted-foreground hover:text-foreground"
-                  }`}
-                  aria-pressed={page.pageId === activePageId}
-                >
-                  {replayPageLabel(page, index)}
-                </button>
-              ))}
-            </div>
-
             <div className="text-muted-foreground mt-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px]">
-              <span className="truncate">
-                {activePage
-                  ? replayPageLabel(activePage, timeline.pages.indexOf(activePage))
-                  : "Unmatched tab"}
-              </span>
               <span>
                 {timeline.actionCount} {timeline.actionCount === 1 ? "action" : "actions"},{" "}
                 {timeline.pages.length} recorded {timeline.pages.length === 1 ? "tab" : "tabs"}
@@ -737,19 +690,6 @@ export function BrowserReplayTrack({
       }`}
     />
   );
-}
-
-function replayPageLabel(
-  page: { pageUrl: string | null; binding?: { kind: string } },
-  index: number,
-) {
-  if (!page.pageUrl) {
-    return page.binding?.kind === "unmatched"
-      ? `Unmatched recording ${index + 1}`
-      : `Tab ${index + 1}`;
-  }
-  const url = new URL(page.pageUrl);
-  return `${url.hostname}${url.pathname === "/" ? "" : url.pathname}`;
 }
 
 function formatReplayTime(milliseconds: number) {
