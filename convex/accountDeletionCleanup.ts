@@ -29,6 +29,7 @@ export const stopChat = internalMutation({
   returns: v.union(
     v.object({ kind: v.literal("ready") }),
     v.object({ kind: v.literal("waiting") }),
+    v.object({ kind: v.literal("close_managed"), sessionId: v.id("agentsApiSessions") }),
     v.object({
       kind: v.literal("close_browser"),
       sessionId: v.id("scoutBrowserSessions"),
@@ -43,6 +44,14 @@ export const stopChat = internalMutation({
       .unique();
     if (user?.state !== "deleting" || chat?.userId !== userId)
       throw new Error("Invalid account cleanup target");
+    const managedId = chat.runtime?.kind === "agents_api" ? chat.runtime.sessionId : null;
+    if (managedId) {
+      const managed = await ctx.db.get(managedId);
+      if (!managed || managed.userId !== userId) throw new Error("Invalid managed cleanup target");
+      if (!managed.active) return { kind: "ready" as const };
+      await ctx.db.patch(managedId, { state: { kind: "stopped" } });
+      return { kind: "close_managed" as const, sessionId: managedId };
+    }
     let turn = await ctx.db
       .query("scoutTurns")
       .withIndex("by_thread_id_and_order", (q) => q.eq("threadId", threadId))

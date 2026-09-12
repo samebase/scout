@@ -108,6 +108,12 @@ export const run = deletionWorkflow
           if (chat.kind === "ready") break;
           if (chat.kind === "waiting") {
             await step.sleep(2_000);
+          } else if (chat.kind === "close_managed") {
+            await step.runAction(
+              internal.agentsApi.runtime.cleanup,
+              { sessionId: chat.sessionId },
+              { retry: false },
+            );
           } else {
             await step.runAction(internal.humanHandoffBrowser.finishBrowserSession, {
               sessionId: chat.sessionId,
