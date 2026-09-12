@@ -78,7 +78,7 @@ Fresh deployments need no backfill. The final runtime has no legacy schema fallb
 
 ## Shared presentation
 
-Both routes render the same components in `src/products/conversation/`, with colors, fonts, and
+Both routes render the same components in `apps/scout/src/products/conversation/`, with colors, fonts, and
 corners set by the product shell. Play keeps its blue Scout piece, Bricolage Grotesque headings,
 DM Sans body text, and yellow accents. Review uses IBM Plex Sans, green-gray colors, and restrained
 corners, with no game mascot in the composer. Its guidance asks for measured findings that separate

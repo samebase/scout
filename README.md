@@ -1,13 +1,13 @@
 # Scout
 
-Explore Scout Play for browser games, Scout Review's product-review design preview, and the lab
+Explore Scout Play for browser games, Scout Review for testing products, and the lab
 for connected accounts and detailed agent work.
 
 Live app: [usable-spider-599.eu-west-1.convex.site](https://usable-spider-599.eu-west-1.convex.site)
 
-This repository starts from the Samebase app template.
-
-It is a small app base with working authentication, a real-time backend, and deployment paths.
+This pnpm workspace follows the Samebase monorepo layout. `apps/scout/` contains the current
+frontend, Convex backend, and app scripts. New services go under `apps/`; shared libraries
+go under `packages/` when needed. Vite+ provides the workspace task runner, checks, and tests.
 
 For the complete provider setup, use the
 [Samebase do-it-yourself guide](https://samebase.com/docs/do-it-yourself). This README covers work
@@ -37,9 +37,10 @@ The account model, permission boundaries, and rollout procedure are in
 [`docs/access-control-rfc.md`](./docs/access-control-rfc.md), with the Samebase source findings in
 [`docs/account-approval-research.md`](./docs/account-approval-research.md).
 
-Product pages and local behavior live in `src/products/play/` and `src/products/review/`.
-Tailwind utilities style the UI, with shared class variants in `src/products/ui.ts`.
-Font declarations and Tailwind theme tokens live in `src/style.css`. Each product keeps its own
+Product pages and local behavior live in `apps/scout/src/products/`; Review uses the managed
+agent interface in `apps/scout/src/agents-api/`.
+Tailwind utilities style the UI, with shared class variants in `apps/scout/src/products/ui.ts`.
+Font declarations and Tailwind theme tokens live in `apps/scout/src/style.css`. Each product keeps its own
 identity; separate frontends would still need their own routing and deployment setup.
 
 Scout provides private chats with persistent Scout identities. A chat can use the Scout's
@@ -68,12 +69,13 @@ pnpm install
 pnpm run dev
 ```
 
-The development command starts Convex and TanStack Start together. It also creates missing Convex
-Auth JWT keys in the development deployment. In a linked Git worktree, the same command
-automatically uses an isolated local backend and provides one-click access to its seeded development
-account. Convex writes `VITE_CONVEX_URL` to `.env.local`; do not set it manually.
+Run these commands from the repository root. Development starts Convex and TanStack Start
+together, using port 5173 for the primary checkout and ports starting at 5174 for linked worktrees.
+Worktrees must select their own cloud dev deployment. Convex writes its selected deployment and
+`VITE_CONVEX_URL` to `apps/scout/.env.local`. Move an existing root `.env.local` there when
+updating an older checkout.
 
-To force the isolated backend outside a linked worktree, use:
+To run the worktree deployment checks explicitly, use:
 
 ```sh
 pnpm run dev:worktree
@@ -81,6 +83,11 @@ pnpm run dev:worktree
 
 The core workflow runs on macOS, Linux, and Windows. See
 [`docs/local-setup.md`](./docs/local-setup.md) for the local Convex setup and troubleshooting steps.
+
+For app-specific CLIs, use `pnpm --filter samebase-scout exec <command>`, for example
+`pnpm --filter samebase-scout exec convex dashboard`. New workspace packages should define a
+`typecheck` script and a Vite+ test configuration when they have tests. Root checks include
+workspace typechecks and tests; root build/deploy commands target Scout.
 
 ## Checks and builds
 
@@ -108,23 +115,24 @@ $env:CLOUDFLARE_WORKER_NAME = "my-worker"
 
 ## Deployment contract
 
-Cloudflare Workers Builds runs `pnpm run build` for all branches. It then uses:
+Cloudflare Workers Builds keeps its root directory at the repository root and runs
+`pnpm run build` for all branches. Root commands select `samebase-scout` through Vite+; app
+commands run with `apps/scout/` as their working directory. It then uses:
 
 | Branch type             | Deploy command            | Convex key                  |
 | ----------------------- | ------------------------- | --------------------------- |
 | `main`                  | `pnpm run deploy`         | `CONVEX_DEPLOY_KEY`         |
 | Non-production branches | `pnpm run deploy:preview` | `PREVIEW_CONVEX_DEPLOY_KEY` |
 
-`scripts/build-cloudflare.ts` selects the Convex key from `WORKERS_CI_BRANCH` and fails closed when
-the branch identity is missing. `scripts/verify-current-branch-head.ts` prevents an older concurrent
+`apps/scout/scripts/build-cloudflare.ts` selects the Convex key from `WORKERS_CI_BRANCH` and fails closed when
+the branch identity is missing. `apps/scout/scripts/verify-current-branch-head.ts` prevents an older concurrent
 build from deploying backend code after a newer commit reaches the same branch. `convex deploy
 --cmd` supplies `VITE_CONVEX_URL` to the frontend build, so it is not a Cloudflare build variable.
-After each preview upload, the deploy script configures that Convex preview's `SITE_URL` from
-the branch URL returned by Wrangler, enabling signup email verification and handoff links.
+Set each Convex preview's `SITE_URL` to its frontend origin for signup verification and handoff links.
 
 `pnpm run deploy:convex` provides a separate manual production deployment to Convex Static Hosting.
 For an automatic `main` deployment, the Cloudflare deploy command publishes the Worker first, then
-uploads the same `dist/client` files to Convex Static Hosting. Preview and dry-run deployments do
+uploads the same `apps/scout/dist/client` files to Convex Static Hosting. Preview and dry-run deployments do
 not change the production `convex.site` app.
 
 See [`docs/cloudflare-workers-builds.md`](./docs/cloudflare-workers-builds.md) for the detailed build
@@ -134,19 +142,20 @@ and deploy behavior. Use the
 ## Important files
 
 - `package.json` defines the supported development, check, build, and deploy commands.
-- `vite.config.ts` defines the TanStack Start SPA shell served by both hosts.
-- `wrangler.jsonc` defines Cloudflare static assets, SPA fallback, and preview URLs.
-- `scripts/build-cloudflare.ts` owns the Cloudflare build and Convex deployment selection.
-- `scripts/deploy-cloudflare.ts` owns production, preview, and dry-run uploads.
+- `vite.config.ts` defines workspace formatting, lint rules, staged checks, and test projects.
+- `apps/scout/vite.config.ts` defines the TanStack Start SPA shell served by both hosts.
+- `apps/scout/wrangler.jsonc` defines Cloudflare static assets, SPA fallback, and preview URLs.
+- `apps/scout/scripts/build-cloudflare.ts` owns the Cloudflare build and Convex deployment selection.
+- `apps/scout/scripts/deploy-cloudflare.ts` owns production, preview, and dry-run uploads.
 - `docs/agent-runtime.md` describes Scout ownership, chats, tools, and handoffs.
-- `convex/` contains the backend, schema, authentication, and generated Convex bindings.
-- `src/` contains the React application and routes.
+- `apps/scout/convex/` contains the backend, schema, authentication, and generated Convex bindings.
+- `apps/scout/src/` contains the React application and routes.
 
 ## Generated and managed files
 
-- `src/routeTree.gen.ts` is generated by TanStack Router.
-- `convex/_generated/api.*`, `dataModel.d.ts`, and `server.*` are generated by Convex.
-- `convex/_generated/ai/`, `.agents/skills/`, `skills-lock.json`, and the marked Convex sections in
+- `apps/scout/src/routeTree.gen.ts` is generated by TanStack Router.
+- `apps/scout/convex/_generated/api.*`, `dataModel.d.ts`, and `server.*` are generated by Convex.
+- `apps/scout/convex/_generated/ai/`, `.agents/skills/`, `skills-lock.json`, and the marked Convex sections in
   `AGENTS.md` and `CLAUDE.md` are managed by `npx convex ai-files install`.
 - The marked Vite+ section in `AGENTS.md` is managed by `vp config`.
 

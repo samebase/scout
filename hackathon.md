@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-12T11:50:03Z
+- **Last updated:** 2026-09-12T12:28:15Z
 
 ## Log
 
@@ -1205,10 +1205,17 @@ performs better. The live browser embed worked in Chrome; the Codex in-app brows
 still showed a blank cross-origin embed even though the standalone viewer worked
 (`convex/agentsApi/`, `src/agents-api/`).
 
-### 2026-09-12 - working tree
+### 2026-09-12 - d9b6acc
 
 Review now uses the OpenAI Agents API from its existing member-facing page, with shared
 public activity, private conversations, handoff controls and email, and live browser/replay.
 Play and earlier conversations keep their original runtime. A member’s Score Four review
 verified local gameplay, undo, win detection, and room creation; signed-out viewers could
 watch the live browser and play the completed recording.
+
+### 2026-09-12 - working tree
+
+Moved Scout's frontend, Convex backend, and app scripts into `apps/scout/` in a pnpm
+workspace. Vite+ runs the existing root development, check, and deployment commands.
+Other apps and shared packages can now be developed alongside Scout; video processing
+will be a separate change. The primary checkout still uses its existing Convex dev deployment.

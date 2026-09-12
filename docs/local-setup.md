@@ -27,6 +27,9 @@ pnpm install
 
 ## Run the app
 
+The app lives in `apps/scout/`. Its `.env.local` and other app environment files belong there.
+When updating a checkout from the previous layout, move its root `.env.local` into `apps/scout/`.
+
 From the repository root:
 
 ```sh
@@ -43,7 +46,7 @@ For a linked Git worktree, create and select a separate cloud dev deployment onc
 Replace the team, project, and feature below with your own values:
 
 ```sh
-pnpm exec convex deployment create <team>:<project>:dev/<feature> --type dev --select
+pnpm --filter samebase-scout exec convex deployment create <team>:<project>:dev/<feature> --type dev --select
 pnpm run dev
 ```
 
@@ -77,16 +80,16 @@ as project defaults for both **dev** and **preview** deployments. For example, o
 value to enter it privately:
 
 ```sh
-pnpm exec convex env default set FIRECRAWL_API_KEY --type dev
-pnpm exec convex env default set FIRECRAWL_API_KEY --type preview
+pnpm --filter samebase-scout exec convex env default set FIRECRAWL_API_KEY --type dev
+pnpm --filter samebase-scout exec convex env default set FIRECRAWL_API_KEY --type preview
 ```
 
 Convex applies defaults when creating a deployment; changing defaults does not update
 existing deployments. Use deployment-specific commands for those:
 
 ```sh
-pnpm exec convex env set AGENTMAIL_API_KEY
-pnpm exec convex env set FIRECRAWL_API_KEY
+pnpm --filter samebase-scout exec convex env set AGENTMAIL_API_KEY
+pnpm --filter samebase-scout exec convex env set FIRECRAWL_API_KEY
 ```
 
 These commands target development. Add `--prod` to configure production after confirming the
@@ -107,7 +110,7 @@ Set the printed value as the Convex environment variable
 prompt so it does not enter shell history:
 
 ```sh
-pnpm exec convex env set SCOUT_CREDENTIAL_MASTER_KEY_V1
+pnpm --filter samebase-scout exec convex env set SCOUT_CREDENTIAL_MASTER_KEY_V1
 ```
 
 Store the same value in a separate secured backup. Convex data backups do not include an

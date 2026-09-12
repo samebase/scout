@@ -2,6 +2,7 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { createServer } from "vite-plus";
 import { expect, test } from "vite-plus/test";
@@ -17,7 +18,7 @@ test.skipIf(process.env["SCOUT_RUN_REPLAY_PROOF"] !== "true")(
       (await mkdtemp(join(tmpdir(), "scout-replay-proof-")));
     const server = await createServer({
       configFile: false,
-      root: process.cwd(),
+      root: fileURLToPath(new URL("../../", import.meta.url)),
       cacheDir: join(artifacts, ".vite"),
       logLevel: "error",
       server: { host: "127.0.0.1", port: 5189, strictPort: true },

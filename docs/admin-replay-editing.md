@@ -44,9 +44,9 @@ checks its decoded pixels for the rings. FFmpeg is used only to prepare and insp
 the verification recording, not by the application or its export path.
 
 Run the standard gate with `pnpm run check` and the opt-in proof with
-`node scripts/verify-replay-export.ts`. The proof requires FFmpeg and a matching
+`pnpm --filter samebase-scout exec node scripts/verify-replay-export.ts`. The proof requires FFmpeg and a matching
 Playwright Chromium installation. An existing executable can be supplied as the
-first argument, `node scripts/verify-replay-export.ts "/path/to/chromium"`.
+first argument, `pnpm --filter samebase-scout exec node scripts/verify-replay-export.ts "/path/to/chromium"`.
 It uses strict localhost port 5189, a separate dependency cache, and writes its
 MP4, still frames, and capture report to a printed temporary directory.
 
