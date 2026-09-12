@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AccountDeletionRouteImport } from './routes/account-deletion'
+import { Route as AgentsRouteImport } from './routes/agents'
 import { Route as ChatsRouteImport } from './routes/chats'
 import { Route as MembersRouteImport } from './routes/members'
 import { Route as PlayRouteImport } from './routes/play'
@@ -32,6 +33,11 @@ const IndexRoute = IndexRouteImport.update({
 const AccountDeletionRoute = AccountDeletionRouteImport.update({
   id: '/account-deletion',
   path: '/account-deletion',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AgentsRoute = AgentsRouteImport.update({
+  id: '/agents',
+  path: '/agents',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ChatsRoute = ChatsRouteImport.update({
@@ -98,6 +104,7 @@ const SitesSiteRoute = SitesSiteRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/account-deletion': typeof AccountDeletionRoute
+  '/agents': typeof AgentsRoute
   '/chats': typeof ChatsRoute
   '/members': typeof MembersRoute
   '/play': typeof PlayRoute
@@ -114,6 +121,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/account-deletion': typeof AccountDeletionRoute
+  '/agents': typeof AgentsRoute
   '/chats': typeof ChatsRoute
   '/members': typeof MembersRoute
   '/play': typeof PlayRoute
@@ -129,6 +137,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/account-deletion': typeof AccountDeletionRoute
+  '/agents': typeof AgentsRoute
   '/chats': typeof ChatsRoute
   '/members': typeof MembersRoute
   '/play': typeof PlayRoute
@@ -147,6 +156,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/account-deletion'
+    | '/agents'
     | '/chats'
     | '/members'
     | '/play'
@@ -163,6 +173,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/account-deletion'
+    | '/agents'
     | '/chats'
     | '/members'
     | '/play'
@@ -177,6 +188,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/account-deletion'
+    | '/agents'
     | '/chats'
     | '/members'
     | '/play'
@@ -194,6 +206,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AccountDeletionRoute: typeof AccountDeletionRoute
+  AgentsRoute: typeof AgentsRoute
   ChatsRoute: typeof ChatsRoute
   MembersRoute: typeof MembersRoute
   PlayRoute: typeof PlayRoute
@@ -218,6 +231,13 @@ declare module '@tanstack/react-router' {
       path: '/account-deletion'
       fullPath: '/account-deletion'
       preLoaderRoute: typeof AccountDeletionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/agents': {
+      id: '/agents'
+      path: '/agents'
+      fullPath: '/agents'
+      preLoaderRoute: typeof AgentsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/chats': {
@@ -335,6 +355,7 @@ const SitesRouteWithChildren = SitesRoute._addFileChildren(SitesRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AccountDeletionRoute: AccountDeletionRoute,
+  AgentsRoute: AgentsRoute,
   ChatsRoute: ChatsRoute,
   MembersRoute: MembersRoute,
   PlayRoute: PlayRoute,

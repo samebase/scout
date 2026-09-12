@@ -10,9 +10,9 @@
 - **Components:** @convex-dev/agent, @convex-dev/r2, @convex-dev/static-hosting, @convex-dev/workflow
 - **Convex features:** schema, tables, indexes, queries, paginated queries, realtime queries, mutations, actions, scheduled functions, HTTP actions, AI Gateway
 - **Auth:** Convex Auth
-- **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway)
+- **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-11T22:44:51Z
+- **Last updated:** 2026-09-12T05:02:15Z
 
 ## Log
 
@@ -1164,9 +1164,17 @@ Ran product-review trials with Luna Max and recorded where the agent verified be
 stopped too early, or mishandled a blocker. Background blank tabs no longer appear in
 the model's tab list (`convex/scout/browserToolContract.ts`, `docs/review-trials-2026-09-10.md`).
 
-### 2026-09-11 - working tree
+### 2026-09-11 - 1e91237 - v203
 
 Browser snapshots and later actions follow the explicitly selected tab, including after
 reconnecting. Convex retains the browser target ID on each session. A live Review
 verified tab switching and todo persistence (`convex/scout/browserTools.ts`,
 `convex/scout/browserSessions.ts`).
+
+### 2026-09-12 - working tree
+
+Added an isolated Agents API page with managed OpenAI sessions and Scout identity,
+email, account, and browser tools. A development trial created a Samebase app and
+verified todo persistence. Shared sidebars now expose live browsers, retained replays,
+and estimated usage cost; a live handoff resumed and a follow-up opened a second browser
+while the first recording remained available (`convex/agentsApi/`, `src/agents-api/`).

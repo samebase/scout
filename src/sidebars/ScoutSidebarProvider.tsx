@@ -8,7 +8,8 @@ import { defaultChatPane } from "#lib/chat-search";
 export function ScoutSidebarProvider({ children }: { children: ReactNode }) {
   const controller = useScoutSidebarController();
   const search = useSearch({ from: "/chats", shouldThrow: false });
-  const navigate = useNavigate({ from: "/chats" });
+  const agentsSearch = useSearch({ from: "/agents", shouldThrow: false });
+  const navigate = useNavigate();
   const state = search
     ? {
         ...controller.state,
@@ -16,7 +17,14 @@ export function ScoutSidebarProvider({ children }: { children: ReactNode }) {
         rightDesktopOpen: search.inspector !== "hidden",
         mobilePane: search.pane ?? defaultChatPane(search),
       }
-    : controller.state;
+    : agentsSearch
+      ? {
+          ...controller.state,
+          leftDesktopOpen: agentsSearch.sessions !== "hidden",
+          rightDesktopOpen: agentsSearch.inspector !== "hidden",
+          mobilePane: agentsSearch.pane ?? "main",
+        }
+      : controller.state;
   const latestState = useRef(state);
   latestState.current = state;
   const routeController: SidebarLayoutStateController = {
@@ -28,12 +36,32 @@ export function ScoutSidebarProvider({ children }: { children: ReactNode }) {
       latestState.current = next;
       controller.setState(() => next, persistenceMode);
       if (
+        agentsSearch &&
+        (next.leftDesktopOpen !== current.leftDesktopOpen ||
+          next.rightDesktopOpen !== current.rightDesktopOpen ||
+          next.mobilePane !== current.mobilePane)
+      ) {
+        void navigate({
+          from: "/agents",
+          to: "/agents",
+          search: (previous) => ({
+            ...previous,
+            sessions: next.leftDesktopOpen ? undefined : "hidden",
+            inspector: next.rightDesktopOpen ? undefined : "hidden",
+            pane: next.mobilePane === "main" ? undefined : next.mobilePane,
+          }),
+          replace: persistenceMode === "width_deferred",
+          resetScroll: false,
+        });
+      }
+      if (
         search &&
         (next.leftDesktopOpen !== current.leftDesktopOpen ||
           next.rightDesktopOpen !== current.rightDesktopOpen ||
           next.mobilePane !== current.mobilePane)
       ) {
         void navigate({
+          from: "/chats",
           to: "/chats",
           search: (previous) => ({
             ...previous,
@@ -42,6 +70,7 @@ export function ScoutSidebarProvider({ children }: { children: ReactNode }) {
             pane: next.mobilePane === defaultChatPane(previous) ? undefined : next.mobilePane,
           }),
           replace: persistenceMode === "width_deferred",
+          resetScroll: false,
         });
       }
     },
