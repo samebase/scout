@@ -589,6 +589,12 @@ export function createBrowserHarness(
     await operationFinished;
   }
 
+  async function disconnect() {
+    await drain();
+    await playwright?.disconnect();
+    playwright = undefined;
+  }
+
   function transferControl(request: () => Promise<void>) {
     return exclusiveOperation(async () => {
       await request();
@@ -1122,15 +1128,16 @@ export function createBrowserHarness(
         "Firecrawl browser session ID",
         500,
       );
-      let connected: PlaywrightBrowser;
+      let connected: PlaywrightBrowser | undefined;
       try {
         connected = await dependencies.connect(handle.cdpUrl, abortSignal);
         if (handle.selectedTabId) await connected.selectTab(handle.selectedTabId, abortSignal);
+        abortSignal?.throwIfAborted();
       } catch (error) {
+        await connected?.disconnect();
         abortSignal?.throwIfAborted();
         throw new Error(`Playwright could not reconnect to Firecrawl: ${diagnosticMessage(error)}`);
       }
-      abortSignal?.throwIfAborted();
       sessionId = providerSessionId;
       playwright = connected;
       captureOperations = policy.captureOperations;
@@ -1281,5 +1288,5 @@ export function createBrowserHarness(
     }),
   } satisfies ToolSet;
 
-  return { tools, actions, open, attach, close, drain, transferControl };
+  return { tools, actions, open, attach, close, drain, disconnect, transferControl };
 }

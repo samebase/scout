@@ -83,6 +83,7 @@ it.each([undefined, Buffer.alloc(32, 8).toString("base64")])(
       getElementAttribute: vi.fn(async () => "password"),
       fill: vi.fn(async () => undefined),
       observe: vi.fn(async () => ({ capturedAtMs: 1, tabs: [] })),
+      disconnect: vi.fn(async () => undefined),
       startClickCapture: vi.fn(async () => undefined),
       finishClickCapture: vi.fn<PlaywrightBrowser["finishClickCapture"]>(async () => ({
         kind: "unavailable",

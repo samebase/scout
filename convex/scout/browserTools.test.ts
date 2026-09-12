@@ -27,6 +27,7 @@ const passwordTarget = {
 
 function runtime() {
   return {
+    disconnect: vi.fn(async () => undefined),
     startClickCapture: vi.fn(async () => undefined),
     finishClickCapture: vi.fn<PlaywrightBrowser["finishClickCapture"]>(async () => ({
       kind: "unavailable",
@@ -81,6 +82,19 @@ function dependencies(browserRuntime = runtime()) {
 }
 
 describe("Lab browser harness", () => {
+  test("disconnect releases the local connection without closing the remote session", async () => {
+    const playwright = runtime();
+    const deps = dependencies(playwright);
+    const browser = createBrowserHarness({ profileName: "scout-conrad" }, deps);
+    await browser.open("https://example.com");
+
+    await browser.disconnect();
+
+    expect(playwright.disconnect).toHaveBeenCalledOnce();
+    expect(deps.deleteBrowser).not.toHaveBeenCalled();
+    await expect(browser.actions.getPage("url")).rejects.toThrow("finished accepting operations");
+  });
+
   test("opens Firecrawl once and keeps its CDP and live-view URLs outside model output", async () => {
     const playwright = runtime();
     const deps = dependencies(playwright);

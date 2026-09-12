@@ -1,4 +1,6 @@
-import { chromium } from "playwright-core";
+import { EventEmitter } from "node:events";
+import { setImmediate } from "node:timers/promises";
+import { chromium, type Dialog } from "playwright-core";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { omitNullish } from "../../shared/omitNullish";
 import { browserTargetSchema } from "./browserTarget";
@@ -45,9 +47,10 @@ function fakePage(
 }
 
 type FakePage = ReturnType<typeof fakePage>["page"];
+type FakeDialog = Pick<Dialog, "type" | "accept" | "dismiss">;
 
 function fakeContext(pages: FakePage[]) {
-  let pageListener: ((page: FakePage) => void) | undefined;
+  const events = new EventEmitter<{ page: [FakePage]; dialog: [FakeDialog] }>();
   const cdpMethods: string[] = [];
   const detach = vi.fn(async () => undefined);
   const context = {
@@ -58,9 +61,7 @@ function fakeContext(pages: FakePage[]) {
         return { targetInfo: { targetId: page.targetId } };
       }),
     })),
-    on: vi.fn((event: string, listener: (page: FakePage) => void) => {
-      if (event === "page") pageListener = listener;
-    }),
+    on: events.on.bind(events),
     pages: () => pages,
     setDefaultNavigationTimeout: vi.fn(),
     setDefaultTimeout: vi.fn(),
@@ -69,16 +70,19 @@ function fakeContext(pages: FakePage[]) {
     cdpMethods,
     context,
     detach,
+    events,
     openPage: (page: FakePage) => {
       pages.push(page);
-      pageListener?.(page);
+      events.emit("page", page);
     },
   };
 }
 
 function connectFakeContext(context: ReturnType<typeof fakeContext>["context"]) {
+  const close = vi.fn(async () => undefined);
   // @ts-expect-error This behavior test supplies only the Playwright methods the adapter exercises.
-  vi.spyOn(chromium, "connectOverCDP").mockResolvedValue({ contexts: () => [context] });
+  vi.spyOn(chromium, "connectOverCDP").mockResolvedValue({ contexts: () => [context], close });
+  return close;
 }
 
 afterEach(() => {
@@ -86,6 +90,153 @@ afterEach(() => {
 });
 
 describe("trusted Playwright observer", () => {
+  test("disconnect releases the CDP connection", async () => {
+    const { context } = fakeContext([fakePage("https://example.com", "Example").page]);
+    const close = connectFakeContext(context);
+    const browser = await connectPlaywrightBrowser("wss://browser.firecrawl.dev/cdp");
+
+    await browser.disconnect();
+
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  test.each(["alert", "confirm", "prompt", "beforeunload"])(
+    "preserves default dialog handling for %s, including new tabs",
+    async (type) => {
+      const { context, events, openPage } = fakeContext([
+        fakePage("https://example.com", "Example").page,
+      ]);
+      connectFakeContext(context);
+      const browser = await connectPlaywrightBrowser("wss://browser.firecrawl.dev/cdp");
+      openPage(fakePage("https://example.com/popup", "Popup").page);
+      const dialog = {
+        type: () => type,
+        accept: vi.fn(async () => undefined),
+        dismiss: vi.fn(async () => undefined),
+      } satisfies FakeDialog;
+
+      events.emit("dialog", dialog);
+      await expect(browser.snapshot()).resolves.toBe("Popup");
+
+      expect(dialog.accept).toHaveBeenCalledTimes(type === "beforeunload" ? 1 : 0);
+      expect(dialog.dismiss).toHaveBeenCalledTimes(type === "beforeunload" ? 0 : 1);
+      expect(events.listenerCount("dialog")).toBe(1);
+    },
+  );
+
+  test.each([
+    { type: "beforeunload", prefix: "" },
+    { type: "beforeunload", prefix: "dialog.accept: " },
+    { type: "alert", prefix: "" },
+    { type: "alert", prefix: "dialog.dismiss: " },
+  ])("handles the exact already-closed dialog race: $type / $prefix", async ({ type, prefix }) => {
+    const { context, events } = fakeContext([fakePage("https://example.com", "Example").page]);
+    connectFakeContext(context);
+    const browser = await connectPlaywrightBrowser("wss://browser.firecrawl.dev/cdp");
+    const failure = new Error(
+      `${prefix}Protocol error (Page.handleJavaScriptDialog): No dialog is showing`,
+    );
+    const handle = vi.fn(async () => {
+      throw failure;
+    });
+
+    events.emit("dialog", { type: () => type, accept: handle, dismiss: handle });
+    // Let Node check for unhandled rejections before an operation joins the handler.
+    await setImmediate();
+
+    await expect(browser.observe()).resolves.toMatchObject({ tabs: [expect.any(Object)] });
+    await expect(browser.disconnect()).resolves.toBeUndefined();
+    expect(handle).toHaveBeenCalledOnce();
+  });
+
+  test.each([
+    new Error("Protocol error (Page.handleJavaScriptDialog): Permission denied"),
+    new Error("Protocol error (Page.handleJavaScriptDialog): No dialog is showing (other error)"),
+    new Error("dialog.dismiss: Target page, context or browser has been closed"),
+    "Protocol error (Page.handleJavaScriptDialog): No dialog is showing",
+    undefined,
+  ])("surfaces unexpected dialog rejection unchanged: %s", async (failure) => {
+    const { context, events } = fakeContext([fakePage("https://example.com", "Example").page]);
+    const close = connectFakeContext(context);
+    const browser = await connectPlaywrightBrowser("wss://browser.firecrawl.dev/cdp");
+    events.emit("dialog", {
+      type: () => "alert",
+      accept: vi.fn(async () => undefined),
+      dismiss: vi.fn(async () => {
+        throw failure;
+      }),
+    });
+    await setImmediate();
+
+    await expect(browser.observe()).rejects.toBe(failure);
+    await expect(browser.snapshot()).rejects.toBe(failure);
+    await expect(browser.disconnect()).rejects.toBe(failure);
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  test("joins a pending dialog failure raised during navigation", async () => {
+    const initial = fakePage("https://example.com", "Example");
+    const { context, events } = fakeContext([initial.page]);
+    connectFakeContext(context);
+    const browser = await connectPlaywrightBrowser("wss://browser.firecrawl.dev/cdp");
+    const failure = new Error("Dialog response failed");
+    initial.page.goto.mockImplementation(async () => {
+      events.emit("dialog", {
+        type: () => "beforeunload",
+        accept: async () => {
+          await setImmediate();
+          throw failure;
+        },
+        dismiss: vi.fn(async () => undefined),
+      });
+      return null;
+    });
+
+    await expect(browser.navigate("https://example.com/next")).rejects.toBe(failure);
+  });
+
+  test("keeps concurrent dialog failures even when the latest handler succeeds", async () => {
+    const { context, events } = fakeContext([fakePage("https://example.com", "Example").page]);
+    connectFakeContext(context);
+    const browser = await connectPlaywrightBrowser("wss://browser.firecrawl.dev/cdp");
+    const failure = new Error("First dialog failed");
+    events.emit("dialog", {
+      type: () => "alert",
+      accept: vi.fn(async () => undefined),
+      dismiss: async () => {
+        await setImmediate();
+        throw failure;
+      },
+    });
+    events.emit("dialog", {
+      type: () => "alert",
+      accept: vi.fn(async () => undefined),
+      dismiss: vi.fn(async () => undefined),
+    });
+
+    await expect(browser.observe()).rejects.toBe(failure);
+  });
+
+  test("retains the handler through disconnect and reports late failures after closing", async () => {
+    const { context, events } = fakeContext([fakePage("https://example.com", "Example").page]);
+    const close = connectFakeContext(context);
+    const browser = await connectPlaywrightBrowser("wss://browser.firecrawl.dev/cdp");
+    const failure = new Error("Dialog failed during disconnect");
+    close.mockImplementation(async () => {
+      expect(events.listenerCount("dialog")).toBe(1);
+      events.emit("dialog", {
+        type: () => "alert",
+        accept: vi.fn(async () => undefined),
+        dismiss: vi.fn(async () => {
+          throw failure;
+        }),
+      });
+    });
+
+    await expect(browser.disconnect()).rejects.toBe(failure);
+    expect(close).toHaveBeenCalledOnce();
+  });
+
   test.skipIf(process.env["SCOUT_RUN_BROWSER_PROOF"] !== "true")(
     "fills unlabeled password inputs without selecting hidden or ambiguous fields",
     async () => {
