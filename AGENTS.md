@@ -19,6 +19,16 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
 
 <!--VITE PLUS END-->
 
+## Workspace
+
+- `apps/scout/` contains the frontend, Convex backend, shared app code, and app scripts.
+- Root `vite.config.ts` owns formatting, lint rules, staged checks, and workspace test discovery.
+  Each app or package owns its own build and runtime configuration.
+- Run the supported `pnpm run` commands from the repository root. To run a Convex command,
+  use `pnpm --filter samebase-scout exec convex <command>`.
+- App environment files, including `.env.local`, belong in `apps/scout/`.
+- Add deployable services under `apps/` and shared libraries under `packages/`.
+
 ## Startup
 
 - Install Vite+ once to supply Node.js, then run `corepack enable` to make pnpm available.
@@ -118,7 +128,7 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
 - Default properties and function arguments to required. Optionality must represent current
   persisted data, external input, migration, or patch semantics.
 - When constructing an object with optional fields, use `omitNullish` from
-  `shared/omitNullish.ts` instead of repeated conditional spreads. It removes only `null` and
+  `apps/scout/shared/omitNullish.ts` instead of repeated conditional spreads. It removes only `null` and
   `undefined`; do not use it when either value is meaningful.
 - Prefer delete-first internal refactors. Remove pass-through adapters, mirror types, compatibility
   shims, and one-call helpers unless they protect a current invariant or a real boundary.
@@ -137,7 +147,7 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
 This project uses [Convex](https://convex.dev) as its backend.
 
 When working on Convex code, **always read
-`convex/_generated/ai/guidelines.md` first** for important guidelines on
+`apps/scout/convex/_generated/ai/guidelines.md` first** for important guidelines on
 how to correctly use Convex APIs and patterns. The file contains rules that
 override what you may have learned about Convex from training data.
 

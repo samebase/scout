@@ -5,6 +5,10 @@ This app deploys through Cloudflare Workers Builds. The Cloudflare dashboard run
 `pnpm run deploy:preview` for other branches. A successful production deploy also uploads the same
 frontend build to Convex Static Hosting.
 
+Keep the Workers Builds root directory at the repository root. These commands use Vite+
+to run the `samebase-scout` app in `apps/scout/`, where its Convex and Wrangler configuration
+live. The frontend output is `apps/scout/dist/client`.
+
 ## Build Variables
 
 Set these build secrets in the Cloudflare Workers Builds settings:
@@ -22,7 +26,7 @@ both triggers. This also keeps the production and preview keys visible in the
 dashboard. Keep this shared layout until Cloudflare exposes separate production
 and preview build-variable views.
 
-This template handles that dashboard limitation in `scripts/build-cloudflare.ts`:
+This template handles that dashboard limitation in `apps/scout/scripts/build-cloudflare.ts`:
 
 1. It reads `WORKERS_CI_BRANCH`.
 2. It selects `CONVEX_DEPLOY_KEY` when the branch is `main`.
@@ -80,11 +84,13 @@ upload.
 
 ## Local Checks
 
-Local dry-runs can validate the Worker package without build secrets:
+Local dry-runs can validate the Worker package without build secrets. Set
+`CLOUDFLARE_WORKER_NAME` using the [platform-specific commands in the README](../README.md#checks-and-builds),
+then run:
 
 ```sh
-CLOUDFLARE_WORKER_NAME=my-worker vp run deploy:dry-run
-CLOUDFLARE_WORKER_NAME=my-worker vp run deploy:preview:dry-run
+pnpm run deploy:dry-run
+pnpm run deploy:preview:dry-run
 ```
 
 If you set either deploy key locally, also set `WORKERS_CI_BRANCH` so the

@@ -15,7 +15,7 @@ dist-ssr
 .dev.vars*
 .env*
 .convex
-convex/.tmp
+**/convex/.tmp
 
 # Editor directories and files
 .vscode/*

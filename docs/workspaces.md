@@ -279,9 +279,9 @@ There is no file-upload UI, rich editor, live process output, or automatic comma
 
 ## Verify
 
-Run `pnpm run check`. `convex/scout/workspaceShell.test.ts` exercises shell and JS/TS behavior,
+Run `pnpm run check`. `apps/scout/convex/scout/workspaceShell.test.ts` exercises shell and JS/TS behavior,
 local imports, isolation, denied host/network access, and storage/time/memory limits;
-`convex/workspaces.test.ts` exercises persistence, failed writes, stale commits, owner-only access,
+`apps/scout/convex/workspaces.test.ts` exercises persistence, failed writes, stale commits, owner-only access,
 complete web-page saving, concurrent imports, naming, and capacity limits with stubbed R2 and
 Firecrawl boundaries. Chat component tests cover the terminal, safe preview,
 missing-configuration state, and URL navigation through Back, Forward, and fresh page loads.

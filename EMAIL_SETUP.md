@@ -15,15 +15,15 @@ Worker only hosts the built SPA and has no email binding.
 Set both values on every Convex deployment that should send authentication email:
 
 ```text
-pnpm exec convex env set CLOUDFLARE_EMAIL_ACCOUNT_ID "replace-with-account-id"
-pnpm exec convex env set CLOUDFLARE_EMAIL_API_TOKEN "replace-with-email-token"
+pnpm --filter samebase-scout exec convex env set CLOUDFLARE_EMAIL_ACCOUNT_ID "replace-with-account-id"
+pnpm --filter samebase-scout exec convex env set CLOUDFLARE_EMAIL_API_TOKEN "replace-with-email-token"
 ```
 
 Set the production values separately:
 
 ```text
-pnpm exec convex env set --prod CLOUDFLARE_EMAIL_ACCOUNT_ID "replace-with-account-id"
-pnpm exec convex env set --prod CLOUDFLARE_EMAIL_API_TOKEN "replace-with-email-token"
+pnpm --filter samebase-scout exec convex env set --prod CLOUDFLARE_EMAIL_ACCOUNT_ID "replace-with-account-id"
+pnpm --filter samebase-scout exec convex env set --prod CLOUDFLARE_EMAIL_API_TOKEN "replace-with-email-token"
 ```
 
 The token is a Convex deployment secret. Do not add it to browser variables, Wrangler variables, or
@@ -36,8 +36,8 @@ deployment. Scout registration looks up the entered inbox ID and rejects it when
 different email address. Model and Manual sends are then server-bound to that verified inbox.
 
 ```text
-pnpm exec convex env set AGENTMAIL_API_KEY "replace-with-agentmail-key"
-pnpm exec convex env set --prod AGENTMAIL_API_KEY "replace-with-agentmail-key"
+pnpm --filter samebase-scout exec convex env set AGENTMAIL_API_KEY "replace-with-agentmail-key"
+pnpm --filter samebase-scout exec convex env set --prod AGENTMAIL_API_KEY "replace-with-agentmail-key"
 ```
 
 Every send and reply uses AgentMail's REST API with an idempotency key. Inbox listing, search, and

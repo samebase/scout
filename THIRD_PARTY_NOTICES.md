@@ -4,7 +4,7 @@
 
 The play interface self-hosts Latin subsets of Bricolage Grotesque and DM Sans from Google Fonts.
 Both use the SIL Open Font License 1.1. Their unmodified license and copyright notices are included
-with the font files in `public/fonts/`.
+with the font files in `apps/scout/public/fonts/`.
 
 - [Bricolage Grotesque source](https://github.com/google/fonts/tree/main/ofl/bricolagegrotesque)
 - [DM Sans source](https://github.com/google/fonts/tree/main/ofl/dmsans)
@@ -13,7 +13,7 @@ with the font files in `public/fonts/`.
 
 The review interface self-hosts Latin subsets of IBM Plex Sans and IBM Plex Mono from Google Fonts.
 Both use the SIL Open Font License 1.1. Their unmodified license and copyright notices are included
-with the font files in `public/fonts/`.
+with the font files in `apps/scout/public/fonts/`.
 
 - [IBM Plex Sans source](https://github.com/google/fonts/tree/main/ofl/ibmplexsans)
 - [IBM Plex Mono source](https://github.com/google/fonts/tree/main/ofl/ibmplexmono)

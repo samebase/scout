@@ -25,7 +25,7 @@ export function requireWorktreeDeployment(
   if (args.length) {
     throw new Error(
       "Worktree dev uses the selected deployment and accepts no CLI arguments. " +
-        "Run pnpm exec convex separately to configure a deployment.",
+        "Run pnpm --filter samebase-scout exec convex separately to configure a deployment.",
     );
   }
   const deployment = selected["CONVEX_DEPLOYMENT"];
@@ -37,7 +37,7 @@ export function requireWorktreeDeployment(
     throw new Error(
       "Scout uses Convex AI Gateway, which requires a cloud deployment. " +
         "Create a dev deployment for this worktree with: " +
-        "pnpm exec convex deployment create <team>:<project>:dev/<feature> --type dev --select. " +
+        "pnpm --filter samebase-scout exec convex deployment create <team>:<project>:dev/<feature> --type dev --select. " +
         "Remove any CONVEX_DEPLOY_KEY or CONVEX_DEPLOYMENT_TOKEN override before running dev.",
     );
   }
@@ -57,7 +57,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   ).trim();
   const deployment = requireWorktreeDeployment(
     { ...readDeploymentEnv(process.cwd()), ...process.env },
-    readDeploymentEnv(path.dirname(commonGitDirectory)),
+    readDeploymentEnv(path.join(path.dirname(commonGitDirectory), "apps", "scout")),
     process.argv.slice(2),
   );
   process.env["CONVEX_DEPLOYMENT"] = deployment;
