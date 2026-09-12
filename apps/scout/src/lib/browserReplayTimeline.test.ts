@@ -3,6 +3,7 @@ import {
   activePageIdAt,
   activeTabAt,
   buildReplayTimeline,
+  replayPageUrlAt,
   type ReplayOperation,
 } from "./browserReplayTimeline";
 
@@ -41,6 +42,81 @@ function operation(args: {
 }
 
 describe("task replay timeline", () => {
+  test("shows the last observed URL of the selected tab, including when seeking backwards", () => {
+    const timeline = buildReplayTimeline(
+      [{ pageId: "1", pageUrl: "https://app.test/dashboard", startTimeMs: 0, endTimeMs: 8_000 }],
+      [
+        operation({
+          sequence: 1,
+          beforeMs: 1_000,
+          afterMs: 2_000,
+          beforeTarget: "t1",
+          afterTarget: "t1",
+          beforeUrl: "about:blank",
+          url: "https://app.test/login",
+        }),
+        operation({
+          sequence: 2,
+          beforeMs: 3_000,
+          afterMs: 4_000,
+          beforeTarget: "t1",
+          afterTarget: "t1",
+          beforeUrl: "https://app.test/login",
+          url: "https://app.test/dashboard",
+        }),
+      ],
+    );
+    const page = timeline.pages[0];
+    expect(replayPageUrlAt(page, 0)).toBe("about:blank");
+    expect(replayPageUrlAt(page, 999)).toBe("about:blank");
+    expect(replayPageUrlAt(page, 1_000)).toBe("https://app.test/login");
+    expect(replayPageUrlAt(page, 3_000)).toBe("https://app.test/dashboard");
+    expect(replayPageUrlAt(page, 2_999)).toBe("https://app.test/login");
+  });
+
+  test("does not borrow a future URL before the first observation of a popup", () => {
+    const timeline = buildReplayTimeline(
+      [
+        { pageId: "1", pageUrl: "https://app.test/", startTimeMs: 0, endTimeMs: 8_000 },
+        { pageId: "2", pageUrl: "https://login.test/", startTimeMs: 2_000, endTimeMs: 8_000 },
+      ],
+      [
+        operation({
+          sequence: 1,
+          beforeMs: 1_000,
+          afterMs: 4_000,
+          beforeTarget: "t1",
+          afterTarget: "t2",
+          beforeUrl: "https://app.test/",
+          url: "https://login.test/",
+        }),
+      ],
+    );
+    const page = timeline.pages[1];
+    expect(replayPageUrlAt(page, 1_000)).toBeNull();
+    expect(replayPageUrlAt(page, 2_999)).toBeNull();
+    expect(replayPageUrlAt(page, 3_000)).toBe("https://login.test/");
+  });
+
+  test("uses the recording URL when there is no navigation history, without borrowing another tab's URL", () => {
+    const timeline = buildReplayTimeline(
+      [{ pageId: "1", pageUrl: "https://recorded.test/", startTimeMs: 0, endTimeMs: 8_000 }],
+      [
+        operation({
+          sequence: 1,
+          beforeMs: 1_000,
+          afterMs: 2_000,
+          beforeTarget: "t1",
+          afterTarget: "t1",
+          url: "https://other.test/",
+        }),
+      ],
+    );
+    const page = timeline.pages[0];
+    expect(page.urlHistory).toEqual([]);
+    expect(replayPageUrlAt(page, 3_000)).toBe("https://recorded.test/");
+  });
+
   test("reconstructs an explicit tab activation on one session clock", () => {
     const timeline = buildReplayTimeline(
       [

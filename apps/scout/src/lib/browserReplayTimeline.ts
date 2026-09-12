@@ -51,6 +51,7 @@ export type ReplayTimeline = {
       relativeStartMs: number;
       relativeEndMs: number;
       binding: ReplayTrackBinding;
+      urlHistory: Array<{ timeMs: number; url: string | null }>;
     }
   >;
   points: ReplayTimelinePoint[];
@@ -221,16 +222,27 @@ export function buildReplayTimeline(
   }
   points.sort((left, right) => left.timeMs - right.timeMs);
   transitions.sort((left, right) => left.latestTimeMs - right.latestTimeMs);
+  const observations = settled
+    .flatMap(({ state }) => [state.telemetry.before, state.telemetry.after])
+    .sort((left, right) => left.capturedAtMs - right.capturedAtMs);
 
   return {
     telemetryOriginMs: telemetryOrigin,
     durationMs: Math.max(0, lastPageTime - firstPageTime),
-    pages: orderedPages.map((page) => ({
-      ...page,
-      relativeStartMs: page.startTimeMs - firstPageTime,
-      relativeEndMs: page.endTimeMs - firstPageTime,
-      binding: bindingByPageId.get(page.pageId) ?? { kind: "unmatched" },
-    })),
+    pages: orderedPages.map((page) => {
+      const binding: ReplayTrackBinding = bindingByPageId.get(page.pageId) ?? { kind: "unmatched" };
+      return {
+        ...page,
+        relativeStartMs: page.startTimeMs - firstPageTime,
+        relativeEndMs: page.endTimeMs - firstPageTime,
+        binding,
+        urlHistory: observations.flatMap((observation) => {
+          if (binding.kind !== "correlated") return [];
+          const tab = observation.tabs.find((tab) => tab.tabId === binding.tabId);
+          return tab ? [{ timeMs: remoteToTimeline(observation.capturedAtMs), url: tab.url }] : [];
+        }),
+      };
+    }),
     points,
     transitions,
     actionCount: settled.length,
@@ -241,6 +253,18 @@ export function buildReplayTimeline(
         operation.state.kind === "indeterminate_after_dispatch",
     ),
   };
+}
+
+export function replayPageUrlAt(page: ReplayTimeline["pages"][number], timeMs: number) {
+  if (timeMs < page.relativeStartMs) return null;
+  // A provider URL describes the whole recording, not when a navigation happened.
+  if (page.urlHistory.length === 0) return page.pageUrl;
+  let url: string | null = null;
+  for (const observation of page.urlHistory) {
+    if (observation.timeMs > timeMs) break;
+    url = observation.url;
+  }
+  return url;
 }
 
 export function activeTabAt(points: readonly ReplayTimelinePoint[], timeMs: number) {
