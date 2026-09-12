@@ -38,12 +38,14 @@ export const onComplete = internalMutation({
   handler: async (ctx, args) => {
     const session = await ctx.db.get(args.context.sessionId);
     if (session?.workflowId === args.workflowId && args.result.kind !== "success") {
-      await ctx.db.patch(session._id, {
-        state: {
-          kind: "failed",
-          error: args.result.kind === "failed" ? args.result.error : "Execution was cancelled",
-        },
-      });
+      if (session.state.kind !== "stopped") {
+        await ctx.db.patch(session._id, {
+          state: {
+            kind: "failed",
+            error: args.result.kind === "failed" ? args.result.error : "Execution was cancelled",
+          },
+        });
+      }
       await ctx.runMutation(internal.agentsApi.sessions.scheduleCleanup, {
         sessionId: session._id,
       });
