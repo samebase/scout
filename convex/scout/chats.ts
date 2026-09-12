@@ -41,6 +41,7 @@ import { scoutRuntimeInstructions } from "./runtimeInstructions";
 import { activeSkillsValidator, orderedSkills } from "./skills";
 import { playStepValidator } from "./play";
 import { chatPurposeValidator, chatVisibilityValidator, productKindValidator } from "./chatModel";
+import { startSession } from "../agentsApi/sessions";
 
 const MAX_PROMPT_LENGTH = 16_000;
 const MAX_THREAD_TITLE_LENGTH = 80;
@@ -280,6 +281,7 @@ export const listThreads = query({
     const bindings = await ctx.db
       .query("scoutChats")
       .withIndex("by_user_id_and_created_at", (q) => q.eq("userId", userId))
+      .filter((q) => q.neq(q.field("runtime.kind"), "agents_api"))
       .order("desc")
       .paginate(args.paginationOpts);
     const page = await Promise.all(
@@ -311,6 +313,7 @@ export const createThread = mutation({
     await requireActiveScout(ctx, args.scoutId);
     const created = await scoutAgent.createThread(ctx, { userId });
     await ctx.db.insert("scoutChats", {
+      runtime: { kind: "convex_agent" },
       threadId: created.threadId,
       userId,
       scoutId: args.scoutId,
@@ -342,6 +345,19 @@ export const startProductChat = mutation({
     if (await scoutIsWorking(ctx, args.scoutId))
       throw new ConvexError("This Scout is busy. Choose another Scout.");
     const userId = ctx.viewer.userId;
+    if (args.kind === "review") {
+      const threadId = await startSession(ctx, { userId, scoutId: args.scoutId, prompt });
+      await ctx.db.insert("scoutChats", {
+        runtime: { kind: "agents_api", sessionId: threadId },
+        threadId,
+        userId,
+        scoutId: args.scoutId,
+        createdAt: Date.now(),
+        purpose,
+        visibility: args.visibility,
+      });
+      return { threadId };
+    }
     const { threadId } = await scoutAgent.createThread(ctx, {
       userId,
       title: titleFromPrompt(prompt),
@@ -355,6 +371,7 @@ export const startProductChat = mutation({
       createdAt: Date.now(),
       activeSkills: [],
       modelSelection: selection,
+      runtime: { kind: "convex_agent" },
       purpose,
       visibility: args.visibility,
     });

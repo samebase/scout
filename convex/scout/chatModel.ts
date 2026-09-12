@@ -10,3 +10,8 @@ export const chatPurposeValidator = v.union(
 );
 
 export const chatVisibilityValidator = v.union(v.literal("private"), v.literal("public"));
+
+export const chatRuntimeValidator = v.union(
+  v.object({ kind: v.literal("convex_agent") }),
+  v.object({ kind: v.literal("agents_api"), sessionId: v.id("agentsApiSessions") }),
+);

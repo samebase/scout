@@ -27,6 +27,7 @@ import { itemIsComplete, presentItem } from "./output";
 import { readAgentsApiUsage } from "./cost";
 import { SessionOutput } from "./events";
 import { AGENTS_API_INSTRUCTIONS } from "./instructions";
+import { REVIEW_INSTRUCTIONS } from "../scout/review";
 
 function client() {
   const apiKey = getRuntimeEnv("OPENAI_API_KEY");
@@ -89,7 +90,7 @@ export const begin = internalAction({
   args: { sessionId: v.id("agentsApiSessions"), command },
   returns: v.null(),
   handler: async (ctx, args): Promise<null> => {
-    const { session, scout } = await ctx.runQuery(internal.agentsApi.sessions.runtime, {
+    const { session, scout, purpose } = await ctx.runQuery(internal.agentsApi.sessions.runtime, {
       sessionId: args.sessionId,
     });
     if (session.state.kind === "stopped") return null;
@@ -119,6 +120,8 @@ export const begin = internalAction({
                 ${serviceAccountLoginInstructions(accounts)}
 
                 ${AGENTS_API_INSTRUCTIONS}
+
+                ${purpose.kind === "review" ? REVIEW_INSTRUCTIONS : ""}
               `,
               tools: [{ type: "web_search" }, ...(await functionDefinitions(resource.tools))],
             },

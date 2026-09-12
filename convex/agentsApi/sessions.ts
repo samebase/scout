@@ -6,7 +6,7 @@ import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { internalMutation, internalQuery } from "../_generated/server";
 import { mutation, query } from "../functions";
-import { requireUserPermission } from "../access";
+import { requireSessionPermission } from "./access";
 import { scoutIsWorking } from "../scout/chatAccess";
 import { workflow } from "./lifecycle";
 import {
@@ -210,40 +210,71 @@ export const listBrowsers = query({
   },
 });
 
+export async function startSession(
+  ctx: MutationCtx,
+  args: { userId: Id<"users">; scoutId: Id<"scouts">; prompt: string },
+): Promise<Id<"agentsApiSessions">> {
+  const prompt = args.prompt.trim();
+  if (!prompt || prompt.length > 20_000)
+    throw new Error("Enter a prompt of at most 20,000 characters");
+  const scout = await ctx.db.get(args.scoutId);
+  if (!scout || scout.status !== "active") throw new Error("Active Scout not found");
+  await requireAvailableScout(ctx, scout._id);
+  const sessionId = await ctx.db.insert("agentsApiSessions", {
+    userId: args.userId,
+    scoutId: scout._id,
+    scoutName: scout.displayName,
+    title: prompt.slice(0, 120),
+    model: "gpt-5.6-luna",
+    state: { kind: "starting" },
+    active: true,
+    nextSequence: 0,
+    browser: null,
+    usage: null,
+  });
+  await startWorkflow(ctx, sessionId, { kind: "start", prompt });
+  return sessionId;
+}
+
 export const start = mutation({
   access: "access_lab",
   args: { scoutId: v.id("scouts"), prompt: v.string() },
   returns: v.id("agentsApiSessions"),
-  handler: async (ctx, args): Promise<Id<"agentsApiSessions">> => {
-    const prompt = args.prompt.trim();
-    if (!prompt || prompt.length > 20_000)
-      throw new Error("Enter a prompt of at most 20,000 characters");
-    const scout = await ctx.db.get(args.scoutId);
-    if (!scout || scout.status !== "active") throw new Error("Active Scout not found");
-    await requireAvailableScout(ctx, scout._id);
-    const sessionId = await ctx.db.insert("agentsApiSessions", {
-      userId: ctx.viewer.userId,
-      scoutId: scout._id,
-      scoutName: scout.displayName,
-      title: prompt.slice(0, 120),
-      model: "gpt-5.6-luna",
-      state: { kind: "starting" },
-      active: true,
-      nextSequence: 0,
-      browser: null,
-      usage: null,
-    });
-    await startWorkflow(ctx, sessionId, { kind: "start", prompt });
-    return sessionId;
+  handler: async (ctx, args): Promise<Id<"agentsApiSessions">> =>
+    await startSession(ctx, { ...args, userId: ctx.viewer.userId }),
+});
+
+export const controls = query({
+  access: "access_account",
+  args: { sessionId: v.id("agentsApiSessions") },
+  handler: async (ctx, args) => {
+    const session = await owned(ctx, args.sessionId, ctx.viewer.userId);
+    await requireSessionPermission(ctx, session);
+    const cleanup = session.cleanupJobId ? await ctx.db.system.get(session.cleanupJobId) : null;
+    const notification = session.handoffEmailJobId
+      ? await ctx.db.system.get(session.handoffEmailJobId)
+      : null;
+    const busy = !session.active && (await scoutIsWorking(ctx, session.scoutId));
+    return {
+      state: session.state,
+      canSend: !session.active && Boolean(session.providerId) && !busy,
+      canStop:
+        session.active && (session.state.kind !== "stopped" || cleanup?.state.kind === "failed"),
+      busy,
+      handoffEmailFailed: notification?.state.kind === "failed",
+      interactiveLiveViewUrl:
+        session.state.kind === "waiting" ? (session.browser?.interactiveLiveViewUrl ?? null) : null,
+    };
   },
 });
 
 export const send = mutation({
-  access: "access_lab",
+  access: "access_account",
   args: { sessionId: v.id("agentsApiSessions"), message: v.string() },
   returns: v.null(),
   handler: async (ctx, args): Promise<null> => {
     const session = await owned(ctx, args.sessionId, ctx.viewer.userId);
+    await requireSessionPermission(ctx, session);
     if (session.active || !session.providerId)
       throw new Error("Stop the current run before sending another message");
     const message = args.message.trim();
@@ -261,11 +292,12 @@ export const send = mutation({
 });
 
 export const resume = mutation({
-  access: "access_lab",
+  access: "access_account",
   args: { sessionId: v.id("agentsApiSessions") },
   returns: v.null(),
   handler: async (ctx, args): Promise<null> => {
     const session = await owned(ctx, args.sessionId, ctx.viewer.userId);
+    await requireSessionPermission(ctx, session);
     if (session.state.kind !== "waiting")
       throw new Error("Session is not waiting for browser handoff");
     await ctx.db.patch(session._id, { state: { kind: "running" } });
@@ -279,11 +311,12 @@ export const resume = mutation({
 });
 
 export const stop = mutation({
-  access: "access_lab",
+  access: "access_account",
   args: { sessionId: v.id("agentsApiSessions") },
   returns: v.null(),
   handler: async (ctx, args): Promise<null> => {
     const session = await owned(ctx, args.sessionId, ctx.viewer.userId);
+    await requireSessionPermission(ctx, session);
     await ctx.db.patch(session._id, { state: { kind: "stopped" } });
     if (
       session.active &&
@@ -324,7 +357,40 @@ export const enterHandoff = internalMutation({
     if (!session.browser?.interactiveLiveViewUrl)
       throw new Error("No interactive browser is available for handoff");
     await ctx.db.patch(sessionId, { state: { kind: "waiting", ...handoff } });
+    const chat = await ctx.db
+      .query("scoutChats")
+      .withIndex("by_thread_id", (q) => q.eq("threadId", sessionId))
+      .unique();
+    if (chat?.purpose.kind === "review") {
+      const handoffEmailJobId = await ctx.scheduler.runAfter(0, internal.agentsApi.handoff.notify, {
+        sessionId,
+        callId: handoff.callId,
+      });
+      await ctx.db.patch(sessionId, { handoffEmailJobId });
+    }
     return true;
+  },
+});
+
+export const handoffNotification = internalQuery({
+  args: { sessionId: v.id("agentsApiSessions"), callId: v.string() },
+  handler: async (ctx, args) => {
+    const session = await ctx.db.get(args.sessionId);
+    if (!session || session.state.kind !== "waiting" || session.state.callId !== args.callId)
+      return null;
+    const chat = await requireSessionPermission(ctx, session);
+    if (chat?.purpose.kind !== "review") return null;
+    const [owner, scout] = await Promise.all([
+      ctx.db.get(session.userId),
+      ctx.db.get(session.scoutId),
+    ]);
+    if (!owner || owner.state === "deleted" || !owner.email || !scout)
+      throw new Error("Handoff email recipient or Scout is missing");
+    return {
+      recipient: owner.email,
+      inboxId: scout.agentMail.inboxId,
+      scoutName: scout.displayName,
+    };
   },
 });
 
@@ -333,10 +399,10 @@ export const runtime = internalQuery({
   handler: async (ctx, args) => {
     const session = await ctx.db.get(args.sessionId);
     if (!session) throw new Error("Session not found");
-    await requireUserPermission(ctx, session.userId, "access_lab");
+    const chat = await requireSessionPermission(ctx, session);
     const scout = await ctx.db.get(session.scoutId);
     if (!scout || scout.status !== "active") throw new Error("Active Scout not found");
-    return { session, scout };
+    return { session, scout, purpose: chat?.purpose ?? { kind: "general" as const } };
   },
 });
 

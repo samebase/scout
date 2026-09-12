@@ -68,6 +68,43 @@ it("does not revive a stopped session or dispatch tools after stopping", async (
   ).rejects.toThrow("stopped");
 });
 
+it("keeps an explicit stop when an in-flight workflow fails and still schedules cleanup", async () => {
+  const { backend, owner, sessionId, scoutId } = await setup();
+  const session = await backend.query(internal.agentsApi.sessions.cleanupResources, { sessionId });
+  if (!session.workflowId) throw new Error("Expected a started workflow");
+  await owner.mutation(api.agentsApi.sessions.stop, { sessionId });
+  await expect(
+    backend.mutation(internal.agentsApi.sessions.claimCall, { sessionId, callId: "late-call" }),
+  ).rejects.toThrow("Session stopped before tool dispatch");
+
+  await backend.mutation(internal.agentsApi.lifecycle.onComplete, {
+    workflowId: session.workflowId,
+    context: { sessionId },
+    result: { kind: "failed", error: "Session stopped before tool dispatch" },
+  });
+
+  const stopped = await backend.query(internal.agentsApi.sessions.cleanupResources, { sessionId });
+  expect(stopped.state).toEqual({ kind: "stopped" });
+  expect(stopped.cleanupJobId).toBeDefined();
+  expect(await backend.run((ctx) => scoutIsWorking(ctx, scoutId))).toBe(true);
+});
+
+it("reports workflow errors when the owner has not stopped the session", async () => {
+  const { backend, sessionId } = await setup();
+  const session = await backend.query(internal.agentsApi.sessions.cleanupResources, { sessionId });
+  if (!session.workflowId) throw new Error("Expected a started workflow");
+
+  await backend.mutation(internal.agentsApi.lifecycle.onComplete, {
+    workflowId: session.workflowId,
+    context: { sessionId },
+    result: { kind: "failed", error: "Provider unavailable" },
+  });
+
+  const failed = await backend.query(internal.agentsApi.sessions.cleanupResources, { sessionId });
+  expect(failed.state).toEqual({ kind: "failed", error: "Provider unavailable" });
+  expect(failed.cleanupJobId).toBeDefined();
+});
+
 it("updates a streamed item without duplicating history and remembers tool results", async () => {
   const { backend, owner, sessionId } = await setup();
   await backend.mutation(internal.agentsApi.sessions.update, {

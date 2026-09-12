@@ -376,9 +376,14 @@ function ConversationSession({
     thread.isOwner && viewer?.kind === "account" && canAccess("access_lab", viewer.accessKeys);
   const navigate = useNavigate();
   const { threadId } = thread;
+  const managedId = thread.runtime.kind === "agents_api" ? thread.runtime.sessionId : null;
+  const managed = useQuery(
+    api.agentsApi.sessions.controls,
+    thread.canControl && managedId ? { sessionId: managedId } : "skip",
+  );
   const activity = useQuery(
     api.scout.chats.getScoutActivity,
-    thread.canControl ? { threadId } : "skip",
+    thread.canControl && !managedId ? { threadId } : "skip",
   );
   const sessions = thread.sessions;
   const latestSession = sessions?.at(-1);
@@ -390,7 +395,9 @@ function ConversationSession({
   );
   const handoff = useQuery(
     api.humanHandoffs.forSession,
-    thread.canControl && latestSession ? { sessionId: latestSession.sessionId } : "skip",
+    thread.canControl && latestSession?.engine === "convex_agent"
+      ? { sessionId: latestSession.sessionId }
+      : "skip",
   );
   const messages = usePaginatedQuery(
     api.scout.activity.messages,
@@ -399,17 +406,21 @@ function ConversationSession({
   );
   const sendMessage = useMutation(api.scout.chats.sendMessage);
   const stopScout = useMutation(api.scout.chats.stop);
+  const sendManaged = useMutation(api.agentsApi.sessions.send);
+  const stopManaged = useMutation(api.agentsApi.sessions.stop);
+  const resumeManaged = useMutation(api.agentsApi.sessions.resume);
   const setVisibility = useMutation(api.scout.chats.setVisibility);
   const [draft, setDraft] = useState("");
   const [request, setRequest] = useState<RequestState>({ kind: "idle" });
   const pending = useRef(false);
   const ownActivity = activityForThread(activity, threadId);
-  const canStop =
-    ownActivity !== undefined && (ownActivity.kind !== "stopping" || ownActivity.retryable);
+  const canStop = managedId
+    ? managed?.canStop === true
+    : ownActivity !== undefined && (ownActivity.kind !== "stopping" || ownActivity.retryable);
   const canSend =
     thread.canControl &&
     scout.status === "active" &&
-    activity?.kind === "idle" &&
+    (managedId ? managed?.canSend === true : activity?.kind === "idle") &&
     request.kind !== "pending";
   const visibleMessages = messages.results.toReversed();
   const phase = thread.purpose.kind === "play" ? thread.purpose.step : null;
@@ -438,7 +449,8 @@ function ConversationSession({
     pending.current = true;
     setRequest({ kind: "pending" });
     try {
-      await stopScout({ threadId });
+      if (managedId) await stopManaged({ sessionId: managedId });
+      else await stopScout({ threadId });
       setRequest({ kind: "idle" });
     } catch {
       setRequest({ kind: "failed", message: "Couldn't stop Scout. Try again." });
@@ -454,7 +466,8 @@ function ConversationSession({
     pending.current = true;
     setRequest({ kind: "pending" });
     try {
-      await sendMessage({ threadId, prompt });
+      if (managedId) await sendManaged({ sessionId: managedId, message: prompt });
+      else await sendMessage({ threadId, prompt });
       setDraft("");
       setRequest({ kind: "idle" });
     } catch {
@@ -462,6 +475,20 @@ function ConversationSession({
         kind: "failed",
         message: "Your message wasn't sent. Try again when Scout is ready.",
       });
+    } finally {
+      pending.current = false;
+    }
+  }
+
+  async function resume() {
+    if (!managedId || pending.current) return;
+    pending.current = true;
+    setRequest({ kind: "pending" });
+    try {
+      await resumeManaged({ sessionId: managedId });
+      setRequest({ kind: "idle" });
+    } catch {
+      setRequest({ kind: "failed", message: "Couldn't resume Scout. Try again." });
     } finally {
       pending.current = false;
     }
@@ -555,8 +582,8 @@ function ConversationSession({
               )}
               {canInspect && (
                 <Link
-                  to="/chats"
-                  search={{ thread: threadId }}
+                  to={managedId ? "/agents" : "/chats"}
+                  search={managedId ? { session: managedId } : { thread: threadId }}
                   aria-label="Open in lab"
                   className={cn(playTextLink, "min-h-11 text-muted-foreground")}
                 >
@@ -606,6 +633,36 @@ function ConversationSession({
                 void stop();
               }}
             />
+          )}
+          {managed?.state.kind === "waiting" && (
+            <div className={cn(playNotice, "space-y-3")}>
+              <p className="whitespace-pre-wrap">{managed.state.message}</p>
+              {managed.handoffEmailFailed && (
+                <p role="alert">
+                  The handoff email couldn’t be sent. You can open the browser here.
+                </p>
+              )}
+              <div className="flex items-center gap-4">
+                {managed.interactiveLiveViewUrl && (
+                  <a
+                    href={managed.interactiveLiveViewUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={playTextLink}
+                  >
+                    Open browser <ArrowUpRightIcon size={15} aria-hidden="true" />
+                  </a>
+                )}
+                <button
+                  type="button"
+                  disabled={request.kind === "pending"}
+                  className={productButtonVariants({ variant: "play" })}
+                  onClick={() => void resume()}
+                >
+                  Resume Scout
+                </button>
+              </div>
+            </div>
           )}
         </>
       }
@@ -706,7 +763,13 @@ function ConversationSession({
               <span role="status">
                 {scout?.status !== "active"
                   ? "This Scout is unavailable."
-                  : activityNotice(activity, threadId)}
+                  : managedId
+                    ? managed?.busy
+                      ? "This Scout is busy in another chat."
+                      : thread.status === "stopping"
+                        ? "Stopping Scout…"
+                        : null
+                    : activityNotice(activity, threadId)}
               </span>
             </ConversationComposer>
           ) : (

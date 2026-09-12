@@ -155,6 +155,34 @@ async function setup(email = "deletion@example.test", isApproved = false) {
   return { backend, viewer, ...ids };
 }
 
+test("account deletion stops a managed Review before deleting the owner", async () => {
+  const { backend, viewer, userId, scoutId } = await setup("review-deletion@example.test", true);
+  const { threadId } = await viewer.mutation(api.scout.chats.startProductChat, {
+    kind: "review",
+    scoutId,
+    prompt: "Try a product",
+    visibility: "public",
+  });
+  await viewer.mutation(api.accountDeletion.request, {
+    confirmation: ACCOUNT_DELETION_CONFIRMATION,
+  });
+  const next = await backend.mutation(internal.accountDeletionCleanup.stopChat, {
+    userId,
+    threadId,
+  });
+  if (next.kind !== "close_managed") throw new Error("Expected managed cleanup");
+  expect(await backend.run((ctx) => ctx.db.get(next.sessionId))).toMatchObject({
+    active: true,
+    state: { kind: "stopped" },
+  });
+  // No provider or browser has been created yet; cleanup can release the reservation directly.
+  await backend.action(internal.agentsApi.runtime.cleanup, { sessionId: next.sessionId });
+  expect(
+    await backend.mutation(internal.accountDeletionCleanup.stopChat, { userId, threadId }),
+  ).toEqual({ kind: "ready" });
+  expect(await backend.run((ctx) => ctx.db.get(scoutId))).not.toBeNull();
+});
+
 test.each([
   ["pending@example.test", false],
   ["approved@example.test", true],

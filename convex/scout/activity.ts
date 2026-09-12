@@ -8,7 +8,12 @@ import { publicQuery } from "../functions";
 import { requireViewerPermission } from "../access";
 import { canAccess } from "../../shared/accessModel";
 import { chatPermission, scoutIsWorking, visibleChat } from "./chatAccess";
-import { chatPurposeValidator, chatVisibilityValidator, productKindValidator } from "./chatModel";
+import {
+  chatPurposeValidator,
+  chatVisibilityValidator,
+  productKindValidator,
+  chatRuntimeValidator,
+} from "./chatModel";
 import { scoutAgent } from "./agent";
 import { MAX_BROWSER_SESSIONS_PER_THREAD } from "./browserSessions";
 import { requireFirecrawlLiveViewUrl } from "./lib/firecrawlLiveView";
@@ -18,11 +23,22 @@ const scoutValidator = v.object({
   displayName: v.string(),
   status: v.union(v.literal("active"), v.literal("disabled")),
 });
-const sessionValidator = v.object({
-  sessionId: v.id("scoutBrowserSessions"),
+const sessionFields = {
   createdAt: v.number(),
   kind: v.union(v.literal("active"), v.literal("closing"), v.literal("closed")),
-});
+};
+const sessionValidator = v.union(
+  v.object({
+    ...sessionFields,
+    engine: v.literal("convex_agent"),
+    sessionId: v.id("scoutBrowserSessions"),
+  }),
+  v.object({
+    ...sessionFields,
+    engine: v.literal("agents_api"),
+    sessionId: v.id("agentsApiBrowserSessions"),
+  }),
+);
 const statusValidator = v.union(
   v.literal("ready"),
   v.literal("running"),
@@ -44,7 +60,28 @@ const activityValidator = v.object({
 });
 
 function sessionSummary(session: Doc<"scoutBrowserSessions">) {
-  return { sessionId: session._id, createdAt: session._creationTime, kind: session.lifecycle.kind };
+  return {
+    engine: "convex_agent" as const,
+    sessionId: session._id,
+    createdAt: session._creationTime,
+    kind: session.lifecycle.kind,
+  };
+}
+
+function managedStatus(session: Doc<"agentsApiSessions">): typeof statusValidator.type {
+  switch (session.state.kind) {
+    case "starting":
+    case "running":
+      return "running";
+    case "waiting":
+      return "waiting";
+    case "idle":
+      return "finished";
+    case "stopped":
+      return session.active ? "stopping" : "stopped";
+    case "failed":
+      return "failed";
+  }
 }
 
 async function activityStatus(ctx: QueryCtx, threadId: string) {
@@ -77,6 +114,36 @@ async function activityStatus(ctx: QueryCtx, threadId: string) {
 }
 
 async function summary(ctx: QueryCtx, chat: Doc<"scoutChats">) {
+  const managedId = chat.runtime?.kind === "agents_api" ? chat.runtime.sessionId : null;
+  if (managedId) {
+    const [managed, scout, browser] = await Promise.all([
+      ctx.db.get(managedId),
+      ctx.db.get(chat.scoutId),
+      ctx.db
+        .query("agentsApiBrowserSessions")
+        .withIndex("by_agents_session_id_and_sequence", (q) => q.eq("agentsSessionId", managedId))
+        .order("desc")
+        .first(),
+    ]);
+    if (!managed || !scout) throw new Error("Review session not found");
+    return {
+      threadId: chat.threadId,
+      title: managed.title,
+      createdAt: chat.createdAt,
+      purpose: chat.purpose,
+      visibility: chat.visibility,
+      status: managedStatus(managed),
+      scout: { _id: scout._id, displayName: scout.displayName, status: scout.status },
+      latestSession: browser
+        ? {
+            engine: "agents_api" as const,
+            sessionId: browser._id,
+            createdAt: browser._creationTime,
+            kind: browser.lifecycle.kind,
+          }
+        : null,
+    };
+  }
   const [thread, scout, status, session] = await Promise.all([
     scoutAgent.getThreadMetadata(ctx, { threadId: chat.threadId }),
     ctx.db.get(chat.scoutId),
@@ -149,6 +216,7 @@ export const get = publicQuery({
       isOwner: v.boolean(),
       canControl: v.boolean(),
       sessions: v.array(sessionValidator),
+      runtime: chatRuntimeValidator,
     }),
     v.null(),
   ),
@@ -156,11 +224,29 @@ export const get = publicQuery({
     const chat = await visibleChat(ctx, args.threadId, ctx.viewer);
     if (!chat) return null;
     const isOwner = ctx.viewer.kind === "account" && ctx.viewer.userId === chat.userId;
-    const sessions = await ctx.db
-      .query("scoutBrowserSessions")
-      .withIndex("by_thread_id_and_sequence", (q) => q.eq("threadId", chat.threadId))
-      .order("asc")
-      .take(MAX_BROWSER_SESSIONS_PER_THREAD);
+    const managedId = chat.runtime?.kind === "agents_api" ? chat.runtime.sessionId : null;
+    const sessions = managedId
+      ? (
+          await ctx.db
+            .query("agentsApiBrowserSessions")
+            .withIndex("by_agents_session_id_and_sequence", (q) =>
+              q.eq("agentsSessionId", managedId),
+            )
+            .order("asc")
+            .take(MAX_BROWSER_SESSIONS_PER_THREAD)
+        ).map((browser) => ({
+          engine: "agents_api" as const,
+          sessionId: browser._id,
+          createdAt: browser._creationTime,
+          kind: browser.lifecycle.kind,
+        }))
+      : (
+          await ctx.db
+            .query("scoutBrowserSessions")
+            .withIndex("by_thread_id_and_sequence", (q) => q.eq("threadId", chat.threadId))
+            .order("asc")
+            .take(MAX_BROWSER_SESSIONS_PER_THREAD)
+        ).map(sessionSummary);
     return {
       ...(await summary(ctx, chat)),
       isOwner,
@@ -168,7 +254,10 @@ export const get = publicQuery({
         ctx.viewer.kind === "account" &&
         isOwner &&
         canAccess(chatPermission(chat.purpose), ctx.viewer.accessKeys),
-      sessions: sessions.map(sessionSummary),
+      sessions,
+      runtime: managedId
+        ? { kind: "agents_api" as const, sessionId: managedId }
+        : { kind: "convex_agent" as const },
     };
   },
 });
@@ -186,6 +275,23 @@ export const messages = publicQuery({
   handler: async (ctx, args) => {
     const chat = await visibleChat(ctx, args.threadId, ctx.viewer);
     if (!chat) return { page: [], isDone: true, continueCursor: "" };
+    const managedId = chat.runtime?.kind === "agents_api" ? chat.runtime.sessionId : null;
+    if (managedId) {
+      const result = await ctx.db
+        .query("agentsApiItems")
+        .withIndex("by_session_id_and_sequence", (q) => q.eq("sessionId", managedId))
+        .filter((q) => q.or(q.eq(q.field("kind"), "user"), q.eq(q.field("kind"), "assistant")))
+        .order("desc")
+        .paginate(args.paginationOpts);
+      return {
+        ...result,
+        page: result.page.flatMap((item) =>
+          (item.kind === "user" || item.kind === "assistant") && item.text.trim()
+            ? [{ id: item._id, role: item.kind, text: item.text } as const]
+            : [],
+        ),
+      };
+    }
     const result = await listMessages(ctx, components.agent, args);
     const page = [];
     for (const message of result.page) {
@@ -260,10 +366,26 @@ export const players = publicQuery({
 
 export const liveView = publicQuery({
   access: "access_public",
-  args: { sessionId: v.id("scoutBrowserSessions") },
+  args: { sessionId: v.union(v.id("scoutBrowserSessions"), v.id("agentsApiBrowserSessions")) },
   returns: v.union(v.object({ url: v.string() }), v.null()),
   handler: async (ctx, args) => {
-    const session = await ctx.db.get(args.sessionId);
+    const managedId = ctx.db.normalizeId("agentsApiBrowserSessions", args.sessionId);
+    if (managedId) {
+      const browser = await ctx.db.get(managedId);
+      if (
+        !browser ||
+        browser.lifecycle.kind !== "active" ||
+        !(await visibleChat(ctx, browser.agentsSessionId, ctx.viewer))
+      )
+        return null;
+      const session = await ctx.db.get(browser.agentsSessionId);
+      const handle = session?.browser;
+      return handle?.providerSessionId === browser.providerSessionId && handle.liveViewUrl
+        ? { url: requireFirecrawlLiveViewUrl(handle.liveViewUrl) }
+        : null;
+    }
+    const oldId = ctx.db.normalizeId("scoutBrowserSessions", args.sessionId);
+    const session = oldId ? await ctx.db.get(oldId) : null;
     if (
       !session ||
       session.lifecycle.kind !== "active" ||

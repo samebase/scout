@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-12T10:37:57Z
+- **Last updated:** 2026-09-12T11:50:03Z
 
 ## Log
 
@@ -1171,7 +1171,7 @@ reconnecting. Convex retains the browser target ID on each session. A live Revie
 verified tab switching and todo persistence (`convex/scout/browserTools.ts`,
 `convex/scout/browserSessions.ts`).
 
-### 2026-09-12 - working tree
+### 2026-09-12 - fe13de6
 
 Added `/agents`, a Lab experiment using OpenAI's managed Agents API with Luna at
 maximum reasoning effort. It runs alongside the existing Play, Review, and Chat Lab
@@ -1204,3 +1204,11 @@ workspaces or Scout credit billing, and these trials do not establish which runt
 performs better. The live browser embed worked in Chrome; the Codex in-app browser
 still showed a blank cross-origin embed even though the standalone viewer worked
 (`convex/agentsApi/`, `src/agents-api/`).
+
+### 2026-09-12 - working tree
+
+Review now uses the OpenAI Agents API from its existing member-facing page, with shared
+public activity, private conversations, handoff controls and email, and live browser/replay.
+Play and earlier conversations keep their original runtime. A member’s Score Four review
+verified local gameplay, undo, win detection, and room creation; signed-out viewers could
+watch the live browser and play the completed recording.

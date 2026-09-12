@@ -14,7 +14,11 @@ import { humanHandoffDeliveryRecordValidator } from "./humanHandoffDeliveryModel
 import { humanHandoffValidator } from "./humanHandoffsModel";
 import { scoutServiceAccountFieldsValidator, scoutWebsiteIdentityValidator } from "./scout/model";
 import { activeSkillsValidator } from "./scout/skills";
-import { chatPurposeValidator, chatVisibilityValidator } from "./scout/chatModel";
+import {
+  chatPurposeValidator,
+  chatVisibilityValidator,
+  chatRuntimeValidator,
+} from "./scout/chatModel";
 import {
   compactionFields,
   modelCallPurposeValidator,
@@ -79,6 +83,7 @@ export default defineSchema({
     previousTurnId: v.optional(v.string()),
     workflowId: v.optional(vWorkflowId),
     cleanupJobId: v.optional(v.id("_scheduled_functions")),
+    handoffEmailJobId: v.optional(v.id("_scheduled_functions")),
     itemCursor: v.optional(v.string()),
     nextSequence: v.number(),
     browser: v.union(browserHandle, v.null()),
@@ -184,6 +189,8 @@ export default defineSchema({
     createdAt: v.number(),
   }).index("by_key_version", ["keyVersion"]),
   scoutChats: defineTable({
+    // Existing chats without a runtime belong to the Convex agent.
+    runtime: v.optional(chatRuntimeValidator),
     threadId: v.string(),
     userId: v.id("users"),
     scoutId: v.id("scouts"),

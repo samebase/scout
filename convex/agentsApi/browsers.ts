@@ -15,6 +15,7 @@ import {
   replayOperationValidator,
 } from "../scout/browserSessions";
 import { browserHandle } from "./model";
+import { visibleChat } from "../scout/chatAccess";
 
 async function byProvider(ctx: Pick<QueryCtx, "db">, providerSessionId: string) {
   const browser = await ctx.db
@@ -156,11 +157,15 @@ export const replayData = internalQuery({
   ),
   handler: async (ctx, args) => {
     const viewer = await resolveViewer(ctx);
-    if (viewer.kind !== "account" || !canAccess("access_lab", viewer.accessKeys)) return null;
     const browser = await ctx.db.get(args.sessionId);
     if (!browser) return null;
     const session = await ctx.db.get(browser.agentsSessionId);
-    if (!session || session.userId !== viewer.userId) return null;
+    if (!session) return null;
+    const inspectable =
+      viewer.kind === "account" &&
+      session.userId === viewer.userId &&
+      canAccess("access_lab", viewer.accessKeys);
+    if (!inspectable && !(await visibleChat(ctx, session._id, viewer))) return null;
     const operations = await ctx.db
       .query("agentsApiBrowserOperations")
       .withIndex("by_session_id_and_sequence", (q) => q.eq("sessionId", browser._id))

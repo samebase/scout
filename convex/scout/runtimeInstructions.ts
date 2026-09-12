@@ -2,6 +2,7 @@ import { outdent } from "outdent";
 import type { Doc } from "../_generated/dataModel";
 import { skillInstructions } from "./skills";
 import { playInstructions } from "./play";
+import { REVIEW_INSTRUCTIONS } from "./review";
 
 export const SCOUT_AGENT_INSTRUCTIONS = outdent`
   You are an autonomous Scout. Follow the user's instructions and decide what to do from
@@ -186,16 +187,7 @@ export function scoutRuntimeInstructions(args: {
       return outdent`
         ${instructions}
 
-        This is Scout Review. Explore the product from a user's perspective and carry
-        out the requested task.
-
-        Review findings:
-
-        - Lead with observed problems and their effect on the user. Include reproduction
-          steps and page URLs.
-        - Separate observed behavior from interpretation and personal preferences.
-        - Use plain, measured language without emoji or promotional claims.
-        - Keep progress updates brief and relevant to the review.
+        ${REVIEW_INSTRUCTIONS}
       `;
   }
 }
