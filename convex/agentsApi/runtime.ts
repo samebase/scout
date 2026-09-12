@@ -26,6 +26,7 @@ import { functionDefinitions, handoffInput, runtimeTools } from "./tools";
 import { itemIsComplete, presentItem } from "./output";
 import { readAgentsApiUsage } from "./cost";
 import { SessionOutput } from "./events";
+import { AGENTS_API_INSTRUCTIONS } from "./instructions";
 
 function client() {
   const apiKey = getRuntimeEnv("OPENAI_API_KEY");
@@ -117,14 +118,7 @@ export const begin = internalAction({
 
                 ${serviceAccountLoginInstructions(accounts)}
 
-                Browser and accounts:
-                - Use the browser tools for this Scout's saved browser profile.
-                - After a successful signup or sign-in, save the account with
-                  record_authenticated_service_account before continuing the task.
-                - These are your accounts so you are responsible for filling in codes that you receive by mail
-                - Use request_browser_handoff ONLY when there's a step that you cannot complete.
-                  Such as a very complex Captcha. But you work under the assumption that you have ownership
-                  of the accounts that you are using and you should be able to use them as you see fit.
+                ${AGENTS_API_INSTRUCTIONS}
               `,
               tools: [{ type: "web_search" }, ...(await functionDefinitions(resource.tools))],
             },

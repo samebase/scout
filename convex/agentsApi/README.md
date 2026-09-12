@@ -21,6 +21,10 @@ not apply to this experiment.
 ## Execution
 
 - OpenAI owns the agent loop, model context, and provider history.
+- `instructions.ts` contains the experiment's guidance for accounts, email, browser
+  handoffs, research, reviews, and task completion. `runtime.ts` combines it with the
+  Scout's identity and account inventory when creating the OpenAI session. Prompt edits
+  apply to new sessions; follow-ups keep their session's original instructions.
 - Sessions use `environment.type: "none"`. Browser and email tools run through
   Convex, so this experiment does not provision an additional shell sandbox.
 - Convex Workflow submits work and services requested functions. It does not run
@@ -109,3 +113,10 @@ The live iframe displayed correctly in Chrome. Codex's in-app browser showed a
 blank cross-origin iframe for both Firecrawl and an example.com control, while
 same-origin frames and the standalone viewer worked. No speculative embed changes
 were retained; Open remains available for that browser.
+
+After bringing over the relevant account, email, research, and completion guidance,
+a fresh session's instructions retrieved from OpenAI matched the local prompt.
+Conrad signed out of GitHub, signed back in with the managed password, recorded the
+account, and searched and read security email threads without requesting a handoff.
+GitHub did not require an email verification code in this trial, so it does not yet
+verify the new code-entry guidance against a live challenge.
