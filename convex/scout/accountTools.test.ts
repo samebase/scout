@@ -115,6 +115,7 @@ async function browserAccountContext() {
     return { scoutId, conradId, sessionId, chatId, operationId };
   });
   const runtime = {
+    disconnect: vi.fn(async () => undefined),
     startClickCapture: vi.fn(async () => undefined),
     finishClickCapture: vi.fn<PlaywrightBrowser["finishClickCapture"]>(async () => ({
       kind: "unavailable",

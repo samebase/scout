@@ -1,7 +1,13 @@
 "use node";
 
 import { type Infer } from "convex/values";
-import { chromium, type BrowserContext, type Locator, type Page } from "playwright-core";
+import {
+  chromium,
+  type Browser,
+  type BrowserContext,
+  type Locator,
+  type Page,
+} from "playwright-core";
 import { omitNullish } from "../../shared/omitNullish";
 import { browserTelemetryValidator } from "../browserModel";
 import { type BrowserTarget } from "./browserTarget";
@@ -17,6 +23,7 @@ export type BrowserTelemetry = Infer<typeof browserTelemetryValidator>;
 export type BrowserObservation = BrowserTelemetry["before"];
 
 export type PlaywrightBrowser = {
+  disconnect: () => Promise<void>;
   startClickCapture: () => Promise<void>;
   finishClickCapture: () => Promise<BrowserClickCapture>;
   snapshot: (abortSignal?: AbortSignal) => Promise<string>;
@@ -73,24 +80,65 @@ function displayUrl(value: string) {
 }
 
 class ConnectedPlaywrightBrowser implements PlaywrightBrowser {
+  private readonly browser: Browser;
   private readonly context: BrowserContext;
   private activePage: Page;
   private readonly tabIds = new Map<Page, Promise<string>>();
   private clickRecorder: BrowserClickRecorder | null = null;
+  private dialogsHandled: Promise<void> = Promise.resolve();
+  private dialogFailure: { error: unknown } | null = null;
+
+  private async checkDialogs(abortSignal?: AbortSignal) {
+    await runBoundedControlOperation(async () => await this.dialogsHandled, abortSignal);
+    if (this.dialogFailure) throw this.dialogFailure.error;
+  }
+
+  private async withDialogs<T>(operation: () => Promise<T>, abortSignal?: AbortSignal) {
+    await this.checkDialogs(abortSignal);
+    try {
+      return await operation();
+    } finally {
+      await this.checkDialogs(abortSignal);
+    }
+  }
 
   async startClickCapture() {
-    this.clickRecorder = new BrowserClickRecorder(this.context);
-    await this.clickRecorder.start();
+    await this.withDialogs(async () => {
+      this.clickRecorder = new BrowserClickRecorder(this.context);
+      await this.clickRecorder.start();
+    });
   }
 
   async finishClickCapture(): Promise<BrowserClickCapture> {
     const recorder = this.clickRecorder;
     this.clickRecorder = null;
-    return recorder ? await recorder.finish() : { kind: "unavailable" };
+    try {
+      return recorder ? await recorder.finish() : { kind: "unavailable" };
+    } finally {
+      await this.checkDialogs();
+    }
   }
 
-  constructor(context: BrowserContext) {
+  constructor(browser: Browser, context: BrowserContext) {
+    this.browser = browser;
     this.context = context;
+    context.on("dialog", (dialog) => {
+      const method = dialog.type() === "beforeunload" ? "accept" : "dismiss";
+      // Playwright's server auto-handler leaves this rejection unhandled when
+      // another CDP client has already closed the dialog. Keep its default policy.
+      const handled = dialog[method]().catch((error: unknown) => {
+        const alreadyHandled = "Protocol error (Page.handleJavaScriptDialog): No dialog is showing";
+        if (
+          error instanceof Error &&
+          (error.message === alreadyHandled ||
+            error.message === `dialog.${method}: ${alreadyHandled}`)
+        ) {
+          return;
+        }
+        this.dialogFailure ??= { error };
+      });
+      this.dialogsHandled = Promise.all([this.dialogsHandled, handled]).then(() => undefined);
+    });
     context.setDefaultTimeout(BROWSER_ACTION_TIMEOUT_MS);
     context.setDefaultNavigationTimeout(BROWSER_ACTION_TIMEOUT_MS);
     const pages = context.pages();
@@ -108,25 +156,42 @@ class ConnectedPlaywrightBrowser implements PlaywrightBrowser {
     });
   }
 
+  async disconnect() {
+    // For connectOverCDP, close disconnects the transport and leaves remote Chrome running.
+    try {
+      await this.browser.close();
+    } finally {
+      await this.checkDialogs();
+    }
+  }
+
   async initialize(abortSignal?: AbortSignal) {
-    await runBoundedControlOperation(
-      async () => await this.activePage.setViewportSize(VIEWPORT),
+    await this.withDialogs(
+      async () =>
+        await runBoundedControlOperation(
+          async () => await this.activePage.setViewportSize(VIEWPORT),
+          abortSignal,
+        ),
       abortSignal,
     );
   }
 
   async selectTab(tabId: string, abortSignal?: AbortSignal) {
-    for (const page of this.context.pages()) {
-      if (!page.isClosed() && (await this.tabId(page, abortSignal)) === tabId) {
-        this.activePage = page;
-        return true;
+    return await this.withDialogs(async () => {
+      for (const page of this.context.pages()) {
+        if (!page.isClosed() && (await this.tabId(page, abortSignal)) === tabId) {
+          this.activePage = page;
+          return true;
+        }
       }
-    }
-    return false;
+      return false;
+    }, abortSignal);
   }
 
   async selectedTabId() {
-    return this.activePage.isClosed() ? null : await this.tabId(this.activePage);
+    return await this.withDialogs(async () =>
+      this.activePage.isClosed() ? null : await this.tabId(this.activePage),
+    );
   }
 
   private tabId(page: Page, abortSignal?: AbortSignal) {
@@ -183,15 +248,19 @@ class ConnectedPlaywrightBrowser implements PlaywrightBrowser {
   }
 
   async snapshot(abortSignal?: AbortSignal) {
-    const snapshot = await this.page()
-      .locator("body")
-      .ariaSnapshot(
-        omitNullish({
-          mode: "ai",
-          timeout: SNAPSHOT_TIMEOUT_MS,
-          signal: abortSignal,
-        }),
-      );
+    const snapshot = await this.withDialogs(
+      async () =>
+        await this.page()
+          .locator("body")
+          .ariaSnapshot(
+            omitNullish({
+              mode: "ai",
+              timeout: SNAPSHOT_TIMEOUT_MS,
+              signal: abortSignal,
+            }),
+          ),
+      abortSignal,
+    );
     // AI mode includes iframe contents. Match each YAML key (plain or single-quoted)
     // before removing its reference metadata, leaving names and text values intact.
     return snapshot.replace(
@@ -201,52 +270,72 @@ class ConnectedPlaywrightBrowser implements PlaywrightBrowser {
   }
 
   async navigate(url: string, abortSignal?: AbortSignal) {
-    await this.page().goto(
-      url,
-      omitNullish({ waitUntil: "domcontentloaded", signal: abortSignal }),
+    await this.withDialogs(
+      async () =>
+        await this.page().goto(
+          url,
+          omitNullish({ waitUntil: "domcontentloaded", signal: abortSignal }),
+        ),
+      abortSignal,
     );
   }
 
   async getPage(kind: "url" | "title", abortSignal?: AbortSignal) {
-    return kind === "url"
-      ? this.page().url()
-      : await runBoundedControlOperation(async () => await this.page().title(), abortSignal);
+    return await this.withDialogs(
+      async () =>
+        kind === "url"
+          ? this.page().url()
+          : await runBoundedControlOperation(async () => await this.page().title(), abortSignal),
+      abortSignal,
+    );
   }
 
   async getElement(target: BrowserTarget, abortSignal?: AbortSignal) {
-    return await this.locator(target).innerText(omitNullish({ signal: abortSignal }));
+    return await this.withDialogs(
+      async () => await this.locator(target).innerText(omitNullish({ signal: abortSignal })),
+      abortSignal,
+    );
   }
 
   async getElementAttribute(target: BrowserTarget, attribute: "type", abortSignal?: AbortSignal) {
     return (
-      (await this.locator(target).getAttribute(attribute, omitNullish({ signal: abortSignal }))) ??
-      ""
+      (await this.withDialogs(
+        async () =>
+          await this.locator(target).getAttribute(attribute, omitNullish({ signal: abortSignal })),
+        abortSignal,
+      )) ?? ""
     );
   }
 
   async fill(target: BrowserTarget, text: string, abortSignal?: AbortSignal) {
-    await this.locator(target).fill(text, omitNullish({ signal: abortSignal }));
+    await this.withDialogs(
+      async () => await this.locator(target).fill(text, omitNullish({ signal: abortSignal })),
+      abortSignal,
+    );
   }
 
   async observe(abortSignal?: AbortSignal) {
-    const pages = this.context.pages().filter((page) => !page.isClosed());
-    if (pages.length === 0) throw new Error("The browser has no open tab");
-    if (this.activePage.isClosed()) this.activePage = pages.at(-1) ?? pages[0];
-    const tabs = await Promise.all(
-      pages.map(async (page) => ({
-        tabId: await this.tabId(page, abortSignal),
-        title: await runBoundedControlOperation(async () => await page.title(), abortSignal).catch(
-          () => "",
-        ),
-        url: displayUrl(page.url()),
-        active: page === this.activePage,
-      })),
-    );
-    abortSignal?.throwIfAborted();
-    return {
-      capturedAtMs: Date.now(),
-      tabs,
-    };
+    return await this.withDialogs(async () => {
+      const pages = this.context.pages().filter((page) => !page.isClosed());
+      if (pages.length === 0) throw new Error("The browser has no open tab");
+      if (this.activePage.isClosed()) this.activePage = pages.at(-1) ?? pages[0];
+      const tabs = await Promise.all(
+        pages.map(async (page) => ({
+          tabId: await this.tabId(page, abortSignal),
+          title: await runBoundedControlOperation(
+            async () => await page.title(),
+            abortSignal,
+          ).catch(() => ""),
+          url: displayUrl(page.url()),
+          active: page === this.activePage,
+        })),
+      );
+      abortSignal?.throwIfAborted();
+      return {
+        capturedAtMs: Date.now(),
+        tabs,
+      };
+    }, abortSignal);
   }
 }
 
@@ -262,10 +351,15 @@ export async function connectPlaywrightBrowser(
       }),
     abortSignal,
   );
-  abortSignal?.throwIfAborted();
-  const context = browser.contexts()[0];
-  if (!context) throw new Error("Firecrawl browser session has no browser context");
-  const connected = new ConnectedPlaywrightBrowser(context);
-  await connected.initialize(abortSignal);
-  return connected;
+  try {
+    abortSignal?.throwIfAborted();
+    const context = browser.contexts()[0];
+    if (!context) throw new Error("Firecrawl browser session has no browser context");
+    const connected = new ConnectedPlaywrightBrowser(browser, context);
+    await connected.initialize(abortSignal);
+    return connected;
+  } catch (error) {
+    await browser.close();
+    throw error;
+  }
 }

@@ -73,6 +73,11 @@ export async function requireOwnedAgentThread(
 }
 
 export async function scoutIsWorking(ctx: QueryCtx, scoutId: Id<"scouts">) {
+  const experiment = await ctx.db
+    .query("agentsApiSessions")
+    .withIndex("by_scout_id_and_active", (q) => q.eq("scoutId", scoutId).eq("active", true))
+    .first();
+  if (experiment) return true;
   return (await scoutActivity(ctx, scoutId)).kind !== "idle";
 }
 

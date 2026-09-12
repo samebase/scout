@@ -188,7 +188,7 @@ test("guests can navigate public pages and sign in without seeing admin links", 
   const user = userEvent.setup();
   expect(screen.getByRole("link", { name: "Activity" }).getAttribute("aria-current")).toBe("page");
   expect(screen.queryByRole("link", { name: "Settings" })).toBeNull();
-  for (const name of ["Lab", "Scouts", "Sites", "Members"]) {
+  for (const name of ["Agents", "Lab", "Scouts", "Sites", "Members"]) {
     expect(screen.queryByRole("link", { name })).toBeNull();
   }
 

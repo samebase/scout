@@ -2,6 +2,7 @@ import { canAccess, useViewerAccess } from "../lib/access";
 import { Link } from "@tanstack/react-router";
 import {
   ActivityIcon,
+  BotIcon,
   FocusIcon,
   Gamepad2Icon,
   GlobeIcon,
@@ -45,6 +46,12 @@ export function AppNavigation() {
             <FocusIcon aria-hidden="true" />
             <span>Review</span>
           </Link>
+          {canAccess("access_lab", permissions) && (
+            <Link to="/agents" search={{}} className={navigationLinkClass}>
+              <BotIcon aria-hidden="true" />
+              <span>Agents</span>
+            </Link>
+          )}
           {canAccess("access_lab", permissions) && (
             <Link to="/chats" className={navigationLinkClass}>
               <MessageSquareIcon aria-hidden="true" />

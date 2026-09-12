@@ -1,8 +1,7 @@
 import { publicAction } from "./functions";
 import { type Infer, v } from "convex/values";
 import { internal } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
-import { type ActionCtx } from "./_generated/server";
+import { internalQuery } from "./_generated/server";
 import { browserViewportValidator } from "./browserModel";
 import { replayOperationValidator } from "./scout/browserSessions";
 import {
@@ -23,6 +22,8 @@ const replayNotReadyValidator = v.union(
   v.object({ status: v.literal("unavailable") }),
 );
 
+const replaySessionId = v.union(v.id("scoutBrowserSessions"), v.id("agentsApiBrowserSessions"));
+
 type ReplayData = {
   providerSessionId: string;
   viewport: Infer<typeof browserViewportValidator>;
@@ -42,7 +43,7 @@ type ReplayPlaylistResult =
 
 export const listPages = publicAction({
   access: "access_public",
-  args: { sessionId: v.id("scoutBrowserSessions") },
+  args: { sessionId: replaySessionId },
   returns: v.union(
     replayNotReadyValidator,
     v.object({
@@ -53,7 +54,7 @@ export const listPages = publicAction({
     }),
   ),
   handler: async (ctx, args): Promise<ReplayPagesResult> => {
-    const replayData = await loadReplayData(ctx, args);
+    const replayData = await ctx.runQuery(internal.browserReplay.data, args);
     if (!replayData) return { status: "unavailable" };
 
     try {
@@ -75,7 +76,7 @@ export const listPages = publicAction({
 export const loadPlaylist = publicAction({
   access: "access_public",
   args: {
-    sessionId: v.id("scoutBrowserSessions"),
+    sessionId: replaySessionId,
     pageId: v.string(),
   },
   returns: v.union(
@@ -86,7 +87,9 @@ export const loadPlaylist = publicAction({
     }),
   ),
   handler: async (ctx, args): Promise<ReplayPlaylistResult> => {
-    const replayData = await loadReplayData(ctx, args);
+    const replayData = await ctx.runQuery(internal.browserReplay.data, {
+      sessionId: args.sessionId,
+    });
     if (!replayData) return { status: "unavailable" };
 
     try {
@@ -101,17 +104,35 @@ export const loadPlaylist = publicAction({
   },
 });
 
-async function loadReplayData(
-  ctx: ActionCtx,
-  source: { sessionId: Id<"scoutBrowserSessions"> },
-): Promise<ReplayData> {
-  const replayData = await ctx.runQuery(internal.scout.browserSessions.replayData, {
-    sessionId: source.sessionId,
-  });
-  if (!replayData) return null;
-  return {
-    providerSessionId: replayData.providerSessionId,
-    viewport: replayData.viewport,
-    operations: replayData.operations,
-  };
-}
+export const data = internalQuery({
+  args: { sessionId: replaySessionId },
+  returns: v.union(
+    v.object({
+      providerSessionId: v.string(),
+      viewport: browserViewportValidator,
+      operations: v.array(replayOperationValidator),
+    }),
+    v.null(),
+  ),
+  handler: async (ctx, args): Promise<ReplayData> => {
+    const agentsId = ctx.db.normalizeId("agentsApiBrowserSessions", args.sessionId);
+    let replayData;
+    if (agentsId) {
+      replayData = await ctx.runQuery(internal.agentsApi.browsers.replayData, {
+        sessionId: agentsId,
+      });
+    } else {
+      const scoutId = ctx.db.normalizeId("scoutBrowserSessions", args.sessionId);
+      if (!scoutId) return null;
+      replayData = await ctx.runQuery(internal.scout.browserSessions.replayData, {
+        sessionId: scoutId,
+      });
+    }
+    if (!replayData) return null;
+    return {
+      providerSessionId: replayData.providerSessionId,
+      viewport: replayData.viewport,
+      operations: replayData.operations,
+    };
+  },
+});

@@ -596,7 +596,7 @@ describe("Chat workspace", () => {
       within(navigation)
         .getAllByRole("link")
         .map((link) => link.textContent),
-    ).toEqual(["Activity", "Play", "Review", "Lab", "Scouts", "Sites", "Members"]);
+    ).toEqual(["Activity", "Play", "Review", "Agents", "Lab", "Scouts", "Sites", "Members"]);
     const history = screen.getByRole("navigation", { name: "Chats" });
     expect(within(history).getAllByRole("list")).toHaveLength(1);
     expect(within(history).getByRole("link").getAttribute("href")).toBe("/chats?thread=thread-1");

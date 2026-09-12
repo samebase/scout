@@ -15,6 +15,7 @@ const app = defineApp({
     DEV_SEED_AUTH_ENABLED: v.optional(v.string()),
     DEV_SEED_AUTH_PASSWORD: v.optional(v.string()),
     FIRECRAWL_API_KEY: v.optional(v.string()),
+    OPENAI_API_KEY: v.optional(v.string()),
     R2_BUCKET: v.optional(v.string()),
     R2_ENDPOINT: v.optional(v.string()),
     R2_ACCESS_KEY_ID: v.optional(v.string()),

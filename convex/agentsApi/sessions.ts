@@ -1,0 +1,474 @@
+import { paginationOptsValidator } from "convex/server";
+import { vWorkflowId } from "@convex-dev/workflow";
+import { v } from "convex/values";
+import type { Doc, Id } from "../_generated/dataModel";
+import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { internal } from "../_generated/api";
+import { internalMutation, internalQuery } from "../_generated/server";
+import { mutation, query } from "../functions";
+import { requireUserPermission } from "../access";
+import { scoutIsWorking } from "../scout/chatAccess";
+import { workflow } from "./lifecycle";
+import {
+  browserHandle,
+  callResult,
+  command,
+  sessionItem,
+  sessionState,
+  sessionUsage,
+} from "./model";
+import type { Infer } from "convex/values";
+import { omitNullish } from "../../shared/omitNullish";
+import { MAX_BROWSER_SESSIONS_PER_THREAD } from "../scout/browserSessions";
+import { browserSessionLifecycleValidator } from "../browserModel";
+import { estimateAgentsApiCost } from "./cost";
+
+async function owned(ctx: QueryCtx, sessionId: Id<"agentsApiSessions">, userId: Id<"users">) {
+  const session = await ctx.db.get(sessionId);
+  if (!session || session.userId !== userId) throw new Error("Session not found");
+  return session;
+}
+
+async function requireAvailableScout(ctx: QueryCtx, scoutId: Id<"scouts">) {
+  if (await scoutIsWorking(ctx, scoutId)) throw new Error("This Scout is already working");
+  for (const kind of ["active", "closing"] as const) {
+    const browser = await ctx.db
+      .query("scoutBrowserSessions")
+      .withIndex("by_scout_id_and_lifecycle_kind", (q) =>
+        q.eq("scoutId", scoutId).eq("lifecycle.kind", kind),
+      )
+      .first();
+    if (browser)
+      throw new Error("Close this Scout's existing browser before starting another session");
+  }
+}
+
+async function scheduleSessionCleanup(ctx: MutationCtx, session: Doc<"agentsApiSessions">) {
+  if (!session.active) return;
+  if (
+    session.state.kind !== "stopped" &&
+    session.state.kind !== "failed" &&
+    session.state.kind !== "waiting"
+  ) {
+    throw new Error("Stop the session before scheduling cleanup");
+  }
+  const job = session.cleanupJobId ? await ctx.db.system.get(session.cleanupJobId) : null;
+  if (job?.state.kind === "pending" || job?.state.kind === "inProgress") return;
+  const cleanupJobId = await ctx.scheduler.runAfter(0, internal.agentsApi.runtime.cleanup, {
+    sessionId: session._id,
+  });
+  await ctx.db.patch(session._id, { cleanupJobId });
+}
+
+async function startWorkflow(
+  ctx: MutationCtx,
+  sessionId: Id<"agentsApiSessions">,
+  input: Infer<typeof command>,
+) {
+  const workflowId = await workflow.start(
+    ctx,
+    internal.agentsApi.lifecycle.run,
+    {
+      sessionId,
+      command: input,
+    },
+    {
+      startAsync: true,
+      onComplete: internal.agentsApi.lifecycle.onComplete,
+      context: { sessionId },
+    },
+  );
+  await ctx.db.patch(sessionId, { workflowId });
+}
+
+export const list = query({
+  access: "access_lab",
+  args: {},
+  handler: async (ctx) => {
+    const sessions = await ctx.db
+      .query("agentsApiSessions")
+      .withIndex("by_user_id", (q) => q.eq("userId", ctx.viewer.userId))
+      .order("desc")
+      .take(50);
+    return sessions.map(({ _id, _creationTime, title, scoutName, state }) => ({
+      _id,
+      _creationTime,
+      title,
+      scoutName,
+      state,
+    }));
+  },
+});
+
+export const get = query({
+  access: "access_lab",
+  args: { sessionId: v.id("agentsApiSessions") },
+  handler: async (ctx, args) => {
+    const session = await owned(ctx, args.sessionId, ctx.viewer.userId);
+    const { _id, title, scoutId, scoutName, state, active, model, providerId, usage, browser } =
+      session;
+    const cleanup = session.cleanupJobId ? await ctx.db.system.get(session.cleanupJobId) : null;
+    const [browsers, searches] = await Promise.all([
+      ctx.db
+        .query("agentsApiBrowserSessions")
+        .withIndex("by_agents_session_id_and_sequence", (q) => q.eq("agentsSessionId", session._id))
+        .order("asc")
+        .take(MAX_BROWSER_SESSIONS_PER_THREAD),
+      ctx.db
+        .query("agentsApiItems")
+        .withIndex("by_session_id_and_kind", (q) =>
+          q.eq("sessionId", session._id).eq("kind", "web_search_call"),
+        )
+        .take(1_000),
+    ]);
+    const cost = estimateAgentsApiCost({
+      model,
+      usage,
+      webSearchCalls: searches.length < 1_000 ? searches.length : null,
+      browsers: browsers.map(({ lifecycle }) => ({
+        startedAt: lifecycle.openedAtMs,
+        endedAt:
+          lifecycle.kind === "closed"
+            ? lifecycle.openedAtMs +
+              (lifecycle.providerDurationMs ?? lifecycle.closedAtMs - lifecycle.openedAtMs)
+            : null,
+        creditsUsed: lifecycle.kind === "closed" ? lifecycle.creditsBilled : null,
+      })),
+      firecrawlUsdPerCredit: null,
+      now: Date.now(),
+    });
+    return {
+      _id,
+      title,
+      scoutId,
+      scoutName,
+      state,
+      active,
+      cleanupError: cleanup?.state.kind === "failed" ? cleanup.state.error : null,
+      model,
+      providerId,
+      usage,
+      cost,
+      browser: browser
+        ? {
+            liveViewUrl: browser.liveViewUrl,
+            interactiveLiveViewUrl: browser.interactiveLiveViewUrl,
+          }
+        : null,
+    };
+  },
+});
+
+export const listItems = query({
+  access: "access_lab",
+  args: { sessionId: v.id("agentsApiSessions"), paginationOpts: paginationOptsValidator },
+  handler: async (ctx, args) => {
+    await owned(ctx, args.sessionId, ctx.viewer.userId);
+    return await ctx.db
+      .query("agentsApiItems")
+      .withIndex("by_session_id_and_sequence", (q) => q.eq("sessionId", args.sessionId))
+      .order("desc")
+      .paginate(args.paginationOpts);
+  },
+});
+
+export const listBrowsers = query({
+  access: "access_lab",
+  args: { sessionId: v.id("agentsApiSessions") },
+  returns: v.array(
+    v.object({
+      _id: v.id("agentsApiBrowserSessions"),
+      sequence: v.number(),
+      lifecycle: browserSessionLifecycleValidator,
+      liveViewUrl: v.union(v.string(), v.null()),
+      interactiveLiveViewUrl: v.union(v.string(), v.null()),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    const session = await owned(ctx, args.sessionId, ctx.viewer.userId);
+    const browsers = await ctx.db
+      .query("agentsApiBrowserSessions")
+      .withIndex("by_agents_session_id_and_sequence", (q) =>
+        q.eq("agentsSessionId", args.sessionId),
+      )
+      .order("asc")
+      .take(MAX_BROWSER_SESSIONS_PER_THREAD);
+    return browsers.map((browser) => {
+      const handle =
+        browser.lifecycle.kind === "active" &&
+        session.browser?.providerSessionId === browser.providerSessionId
+          ? session.browser
+          : null;
+      return {
+        _id: browser._id,
+        sequence: browser.sequence,
+        lifecycle: browser.lifecycle,
+        liveViewUrl: handle?.liveViewUrl ?? null,
+        interactiveLiveViewUrl: handle?.interactiveLiveViewUrl ?? null,
+      };
+    });
+  },
+});
+
+export const start = mutation({
+  access: "access_lab",
+  args: { scoutId: v.id("scouts"), prompt: v.string() },
+  returns: v.id("agentsApiSessions"),
+  handler: async (ctx, args): Promise<Id<"agentsApiSessions">> => {
+    const prompt = args.prompt.trim();
+    if (!prompt || prompt.length > 20_000)
+      throw new Error("Enter a prompt of at most 20,000 characters");
+    const scout = await ctx.db.get(args.scoutId);
+    if (!scout || scout.status !== "active") throw new Error("Active Scout not found");
+    await requireAvailableScout(ctx, scout._id);
+    const sessionId = await ctx.db.insert("agentsApiSessions", {
+      userId: ctx.viewer.userId,
+      scoutId: scout._id,
+      scoutName: scout.displayName,
+      title: prompt.slice(0, 120),
+      model: "gpt-5.6-luna",
+      state: { kind: "starting" },
+      active: true,
+      nextSequence: 0,
+      browser: null,
+      usage: null,
+    });
+    await startWorkflow(ctx, sessionId, { kind: "start", prompt });
+    return sessionId;
+  },
+});
+
+export const send = mutation({
+  access: "access_lab",
+  args: { sessionId: v.id("agentsApiSessions"), message: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args): Promise<null> => {
+    const session = await owned(ctx, args.sessionId, ctx.viewer.userId);
+    if (session.active || !session.providerId)
+      throw new Error("Stop the current run before sending another message");
+    const message = args.message.trim();
+    if (!message || message.length > 20_000)
+      throw new Error("Enter a message of at most 20,000 characters");
+    await requireAvailableScout(ctx, session.scoutId);
+    await ctx.db.patch(session._id, {
+      active: true,
+      state: { kind: "running" },
+      cleanupJobId: undefined,
+    });
+    await startWorkflow(ctx, session._id, { kind: "send", message });
+    return null;
+  },
+});
+
+export const resume = mutation({
+  access: "access_lab",
+  args: { sessionId: v.id("agentsApiSessions") },
+  returns: v.null(),
+  handler: async (ctx, args): Promise<null> => {
+    const session = await owned(ctx, args.sessionId, ctx.viewer.userId);
+    if (session.state.kind !== "waiting")
+      throw new Error("Session is not waiting for browser handoff");
+    await ctx.db.patch(session._id, { state: { kind: "running" } });
+    await startWorkflow(ctx, session._id, {
+      kind: "resume",
+      callId: session.state.callId,
+      turnId: session.state.turnId,
+    });
+    return null;
+  },
+});
+
+export const stop = mutation({
+  access: "access_lab",
+  args: { sessionId: v.id("agentsApiSessions") },
+  returns: v.null(),
+  handler: async (ctx, args): Promise<null> => {
+    const session = await owned(ctx, args.sessionId, ctx.viewer.userId);
+    await ctx.db.patch(session._id, { state: { kind: "stopped" } });
+    if (
+      session.active &&
+      (session.state.kind === "waiting" ||
+        session.state.kind === "failed" ||
+        session.cleanupJobId !== undefined)
+    ) {
+      await scheduleSessionCleanup(ctx, session);
+    }
+    return null;
+  },
+});
+
+export const scheduleCleanup = internalMutation({
+  args: { sessionId: v.id("agentsApiSessions") },
+  returns: v.null(),
+  handler: async (ctx, args): Promise<null> => {
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) throw new Error("Session not found");
+    await scheduleSessionCleanup(ctx, session);
+    return null;
+  },
+});
+
+export const enterHandoff = internalMutation({
+  args: {
+    sessionId: v.id("agentsApiSessions"),
+    message: v.string(),
+    callId: v.string(),
+    turnId: v.string(),
+  },
+  returns: v.boolean(),
+  handler: async (ctx, { sessionId, ...handoff }) => {
+    const session = await ctx.db.get(sessionId);
+    if (!session) throw new Error("Session not found");
+    if (session.state.kind === "stopped") return false;
+    if (session.state.kind !== "running") throw new Error("Session is no longer running");
+    if (!session.browser?.interactiveLiveViewUrl)
+      throw new Error("No interactive browser is available for handoff");
+    await ctx.db.patch(sessionId, { state: { kind: "waiting", ...handoff } });
+    return true;
+  },
+});
+
+export const runtime = internalQuery({
+  args: { sessionId: v.id("agentsApiSessions") },
+  handler: async (ctx, args) => {
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) throw new Error("Session not found");
+    await requireUserPermission(ctx, session.userId, "access_lab");
+    const scout = await ctx.db.get(session.scoutId);
+    if (!scout || scout.status !== "active") throw new Error("Active Scout not found");
+    return { session, scout };
+  },
+});
+
+export const update = internalMutation({
+  args: {
+    sessionId: v.id("agentsApiSessions"),
+    refreshWorkflowId: v.optional(v.union(vWorkflowId, v.null())),
+    providerId: v.optional(v.string()),
+    previousTurnId: v.optional(v.string()),
+    state: v.optional(sessionState),
+    active: v.optional(v.boolean()),
+    usage: v.optional(v.union(sessionUsage, v.null())),
+    browser: v.optional(v.union(browserHandle, v.null())),
+  },
+  returns: v.null(),
+  handler: async (ctx, { sessionId, refreshWorkflowId, ...patch }) => {
+    const session = await ctx.db.get(sessionId);
+    if (!session) throw new Error("Session not found");
+    if (
+      refreshWorkflowId !== undefined &&
+      (session.active || (session.workflowId ?? null) !== refreshWorkflowId)
+    )
+      return null;
+    if (session.state.kind === "stopped") delete patch.state;
+    await ctx.db.patch(sessionId, patch);
+    return null;
+  },
+});
+
+export const saveItems = internalMutation({
+  args: {
+    sessionId: v.id("agentsApiSessions"),
+    refreshWorkflowId: v.optional(v.union(vWorkflowId, v.null())),
+    items: v.array(sessionItem),
+    cursor: v.optional(v.string()),
+    sequence: v.optional(v.number()),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) throw new Error("Session not found");
+    if (
+      args.refreshWorkflowId !== undefined &&
+      (session.active || (session.workflowId ?? null) !== args.refreshWorkflowId)
+    )
+      return null;
+    let sequence = args.sequence ?? session.nextSequence;
+    for (const item of args.items) {
+      const existing = await ctx.db
+        .query("agentsApiItems")
+        .withIndex("by_session_id_and_provider_item_id", (q) =>
+          q.eq("sessionId", session._id).eq("providerItemId", item.providerItemId),
+        )
+        .unique();
+      const position =
+        args.sequence === undefined ? (existing?.sequence ?? sequence++) : sequence++;
+      if (existing) {
+        if (existing.complete && item.complete === false) {
+          if (existing.sequence !== position)
+            await ctx.db.patch(existing._id, { sequence: position });
+          continue;
+        }
+        if (
+          existing.text !== item.text ||
+          existing.details !== item.details ||
+          existing.complete !== item.complete ||
+          existing.sequence !== position
+        )
+          await ctx.db.patch(existing._id, { ...item, sequence: position });
+      } else {
+        await ctx.db.insert("agentsApiItems", {
+          ...item,
+          sessionId: session._id,
+          sequence: position,
+        });
+      }
+    }
+    await ctx.db.patch(session._id, {
+      nextSequence: Math.max(session.nextSequence, sequence),
+      ...omitNullish({ itemCursor: args.cursor }),
+    });
+    return null;
+  },
+});
+
+export const itemSequence = internalQuery({
+  args: { sessionId: v.id("agentsApiSessions"), providerItemId: v.string() },
+  returns: v.number(),
+  handler: async (ctx, args) => {
+    const item = await ctx.db
+      .query("agentsApiItems")
+      .withIndex("by_session_id_and_provider_item_id", (q) =>
+        q.eq("sessionId", args.sessionId).eq("providerItemId", args.providerItemId),
+      )
+      .unique();
+    if (!item) throw new Error("Saved history cursor is missing its item");
+    return item.sequence;
+  },
+});
+
+export const claimCall = internalMutation({
+  args: { sessionId: v.id("agentsApiSessions"), callId: v.string() },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("agentsApiCalls")
+      .withIndex("by_session_id_and_call_id", (q) =>
+        q.eq("sessionId", args.sessionId).eq("callId", args.callId),
+      )
+      .unique();
+    if (existing) return { fresh: false, call: existing };
+    const session = await ctx.db.get(args.sessionId);
+    if (!session || session.state.kind !== "running")
+      throw new Error("Session stopped before tool dispatch");
+    const id = await ctx.db.insert("agentsApiCalls", { ...args, result: { kind: "running" } });
+    return { fresh: true, call: (await ctx.db.get(id))! };
+  },
+});
+
+export const finishCall = internalMutation({
+  args: { callId: v.id("agentsApiCalls"), result: callResult },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.callId, { result: args.result });
+    return null;
+  },
+});
+
+export const cleanupResources = internalQuery({
+  args: { sessionId: v.id("agentsApiSessions") },
+  handler: async (ctx, args) => {
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) throw new Error("Session not found");
+    return session;
+  },
+});
