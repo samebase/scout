@@ -6,6 +6,7 @@ import {
   browserActionValidator,
   browserClickCaptureValidator,
   browserOperationStateValidator,
+  browserSessionLifecycleValidator,
   browserViewportValidator,
   persistedBrowserSessionLifecycleValidator,
 } from "./browserModel";
@@ -22,6 +23,13 @@ import {
   scoutTurnStateValidator,
 } from "./scout/models";
 import { workspaceEntryValidator } from "./workspaceModel";
+import {
+  browserHandle,
+  callResult,
+  sessionItem,
+  sessionState,
+  sessionUsage,
+} from "./agentsApi/model";
 
 const accountObservationFieldsValidator = v.object({
   threadId: v.string(),
@@ -59,6 +67,59 @@ const scoutTurnFields = {
 
 export default defineSchema({
   ...authTables,
+  agentsApiSessions: defineTable({
+    userId: v.id("users"),
+    scoutId: v.id("scouts"),
+    scoutName: v.string(),
+    title: v.string(),
+    model: v.string(),
+    state: sessionState,
+    active: v.boolean(),
+    providerId: v.optional(v.string()),
+    previousTurnId: v.optional(v.string()),
+    workflowId: v.optional(vWorkflowId),
+    cleanupJobId: v.optional(v.id("_scheduled_functions")),
+    itemCursor: v.optional(v.string()),
+    nextSequence: v.number(),
+    browser: v.union(browserHandle, v.null()),
+    usage: v.union(sessionUsage, v.null()),
+  })
+    .index("by_user_id", ["userId"])
+    .index("by_scout_id_and_active", ["scoutId", "active"]),
+  agentsApiItems: defineTable(
+    sessionItem.extend({
+      sessionId: v.id("agentsApiSessions"),
+      sequence: v.number(),
+    }),
+  )
+    .index("by_session_id_and_sequence", ["sessionId", "sequence"])
+    .index("by_session_id_and_kind", ["sessionId", "kind"])
+    .index("by_session_id_and_provider_item_id", ["sessionId", "providerItemId"]),
+  agentsApiCalls: defineTable({
+    sessionId: v.id("agentsApiSessions"),
+    callId: v.string(),
+    result: callResult,
+  }).index("by_session_id_and_call_id", ["sessionId", "callId"]),
+  agentsApiBrowserSessions: defineTable({
+    agentsSessionId: v.id("agentsApiSessions"),
+    sequence: v.number(),
+    providerSessionId: v.string(),
+    viewport: browserViewportValidator,
+    lifecycle: browserSessionLifecycleValidator,
+    nextOperationSequence: v.number(),
+  })
+    .index("by_agents_session_id_and_sequence", ["agentsSessionId", "sequence"])
+    .index("by_provider_session_id", ["providerSessionId"]),
+  agentsApiBrowserOperations: defineTable({
+    sessionId: v.id("agentsApiBrowserSessions"),
+    sequence: v.number(),
+    toolCallId: v.string(),
+    action: browserActionValidator,
+    state: browserOperationStateValidator,
+    clickCapture: v.union(browserClickCaptureValidator, v.null()),
+  })
+    .index("by_session_id_and_sequence", ["sessionId", "sequence"])
+    .index("by_session_id_and_tool_call_id", ["sessionId", "toolCallId"]),
   users: defineTable(
     v.union(
       userProfile.extend({ state: v.optional(v.literal("active")) }),

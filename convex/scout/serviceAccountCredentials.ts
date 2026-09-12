@@ -1,5 +1,6 @@
 import { requireRunnableThread } from "./chatAccess";
 import { ConvexError, v } from "convex/values";
+import { internal } from "../_generated/api";
 import type { Doc } from "../_generated/dataModel";
 import { internalMutation, internalQuery, type QueryCtx } from "../_generated/server";
 import { requirePermission } from "../access";
@@ -23,6 +24,12 @@ export const managedRegistrationArgsValidator = v.object({
   identifier: v.string(),
 });
 
+export const agentsApiAccountScopeValidator = v.object({
+  sessionId: v.id("agentsApiSessions"),
+  scoutId: v.id("scouts"),
+  observedUrl: v.string(),
+});
+
 export const managedRegistrationRequestValidator = v.union(
   managedRegistrationArgsValidator.extend({ kind: v.literal("profile") }),
   profileAccountUpdateValidator.omit("kind").extend({
@@ -33,6 +40,12 @@ export const managedRegistrationRequestValidator = v.union(
     kind: v.literal("browser"),
     sessionId: v.id("scoutBrowserSessions"),
     observedUrl: v.string(),
+    serviceName: v.string(),
+    serviceDomain: v.string(),
+    identifier: v.string(),
+  }),
+  agentsApiAccountScopeValidator.extend({
+    kind: v.literal("agents_api"),
     serviceName: v.string(),
     serviceDomain: v.string(),
     identifier: v.string(),
@@ -63,7 +76,7 @@ export const managedRegistrationResultValidator = v.object({
   loginMethod: scoutManagedPasswordLoginMethodValidator,
 });
 
-const runtimeCredentialValidator = v.object({
+export const runtimeCredentialValidator = v.object({
   serviceAccountId: v.id("scoutServiceAccounts"),
   identifier: v.string(),
   serviceDomain: v.string(),
@@ -104,10 +117,30 @@ function normalizeRegistration(args: typeof managedRegistrationArgsValidator.typ
   }
 }
 
+export async function requireAgentsApiAccountScope(
+  ctx: Pick<QueryCtx, "runQuery">,
+  args: typeof agentsApiAccountScopeValidator.type,
+): Promise<{ scout: Doc<"scouts">; url: URL }> {
+  const { session, scout }: { session: Doc<"agentsApiSessions">; scout: Doc<"scouts"> } =
+    await ctx.runQuery(internal.agentsApi.sessions.runtime, { sessionId: args.sessionId });
+  if (session.state.kind !== "running" || !session.browser) {
+    throw new Error("Running Agents API browser session not found");
+  }
+  if (session.scoutId !== args.scoutId) {
+    throw new Error("Agents API session does not belong to this Scout");
+  }
+  const url = new URL(requiredText(args.observedUrl, "Current browser URL", 2_048));
+  if (url.protocol !== "https:" || url.username || url.password || url.port) {
+    throw new Error("Account tools require an HTTPS page without credentials or a port");
+  }
+  canonicalCredentialHost(url.hostname);
+  return { scout, url };
+}
+
 async function resolveRegistration(
-  ctx: Pick<QueryCtx, "auth" | "db">,
+  ctx: Pick<QueryCtx, "auth" | "db" | "runQuery">,
   request: typeof managedRegistrationRequestValidator.type,
-) {
+): Promise<typeof normalizedRegistrationValidator.type> {
   switch (request.kind) {
     case "profile":
       await requirePermission(ctx, "access_scout_manage");
@@ -119,6 +152,50 @@ async function resolveRegistration(
         identifier: request.identifier,
       });
       return normalizeRegistration({ ...registration, credentialHost: request.credentialHost });
+    }
+    case "agents_api": {
+      const { scout, url } = await requireAgentsApiAccountScope(ctx, request);
+      const serviceDomain = canonicalServiceDomain(request.serviceDomain);
+      if (url.hostname !== serviceDomain && !url.hostname.endsWith(`.${serviceDomain}`)) {
+        throw new Error("The signup host must belong to the requested service domain");
+      }
+      const identifier = requiredText(
+        request.identifier,
+        "Account identifier",
+        MAX_IDENTIFIER_LENGTH,
+      );
+      if (
+        identifier.includes("@") &&
+        identifier.toLowerCase() !== scout.agentMail.address.toLowerCase()
+      ) {
+        throw new Error("Use this Scout's own email address for account signup");
+      }
+      const accounts = await ctx.db
+        .query("scoutServiceAccounts")
+        .withIndex("by_scout_id", (query) => query.eq("scoutId", scout._id))
+        .take(MAX_ACCOUNTS_PER_SCOUT);
+      const hostAccounts = accounts.filter(
+        (account) =>
+          account.loginMethod.kind === "managed_password" &&
+          account.loginMethod.credentialHost === url.hostname,
+      );
+      if (hostAccounts.length > 1) throw new Error("Multiple managed accounts use this login host");
+      const existing = hostAccounts[0];
+      if (
+        existing &&
+        (existing.identifier !== identifier || existing.serviceDomain !== serviceDomain)
+      ) {
+        throw new Error(
+          "A password is already prepared for a different account on this login host",
+        );
+      }
+      return normalizeRegistration({
+        scoutId: scout._id,
+        serviceName: existing?.serviceName ?? request.serviceName,
+        serviceDomain,
+        credentialHost: url.hostname,
+        identifier,
+      });
     }
     case "browser": {
       const session = await ctx.db.get("scoutBrowserSessions", request.sessionId);
@@ -288,7 +365,7 @@ export const prepareManagedRegistration = internalQuery({
     const existing = await requireRegistrationAvailable(
       ctx,
       registration,
-      request.kind === "browser",
+      request.kind === "browser" || request.kind === "agents_api",
       request.kind === "profile_update" ? request.serviceAccountId : null,
     );
     return { registration, existing };
@@ -306,7 +383,7 @@ export const commitManagedRegistration = internalMutation({
     const existing = await requireRegistrationAvailable(
       ctx,
       registration,
-      args.request.kind === "browser",
+      args.request.kind === "browser" || args.request.kind === "agents_api",
       args.request.kind === "profile_update" ? args.request.serviceAccountId : null,
     );
     if (existing) return existing;

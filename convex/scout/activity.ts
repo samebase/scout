@@ -7,7 +7,7 @@ import type { QueryCtx } from "../_generated/server";
 import { publicQuery } from "../functions";
 import { requireViewerPermission } from "../access";
 import { canAccess } from "../../shared/accessModel";
-import { chatPermission, scoutActivity, visibleChat } from "./chatAccess";
+import { chatPermission, scoutIsWorking, visibleChat } from "./chatAccess";
 import { chatPurposeValidator, chatVisibilityValidator, productKindValidator } from "./chatModel";
 import { scoutAgent } from "./agent";
 import { MAX_BROWSER_SESSIONS_PER_THREAD } from "./browserSessions";
@@ -236,7 +236,7 @@ export const players = publicQuery({
         displayName: scout.displayName,
         status: scout.status,
         busy:
-          (await scoutActivity(ctx, scout._id)).kind !== "idle" ||
+          (await scoutIsWorking(ctx, scout._id)) ||
           Boolean(
             await ctx.db
               .query("scoutBrowserSessions")
