@@ -26,6 +26,9 @@ const remote = vi.hoisted(() => ({
   createThread: vi.fn(),
   sendMessage: vi.fn(),
   stop: vi.fn(),
+  sendManaged: vi.fn(),
+  stopManaged: vi.fn(),
+  resumeManaged: vi.fn(),
   setVisibility: vi.fn(),
   signIn: vi.fn(),
   queryCalls: vi.fn(),
@@ -80,6 +83,12 @@ vi.mock("convex/react", () => ({
         return remote.stop;
       case "scout/chats:setVisibility":
         return remote.setVisibility;
+      case "agentsApi/sessions:send":
+        return remote.sendManaged;
+      case "agentsApi/sessions:stop":
+        return remote.stopManaged;
+      case "agentsApi/sessions:resume":
+        return remote.resumeManaged;
       default:
         throw new Error("Unexpected mutation");
     }
@@ -102,6 +111,7 @@ function session(overrides = {}) {
     isOwner: true,
     canControl: true,
     sessions: [],
+    runtime: { kind: "convex_agent" },
     latestSession: null,
     ...overrides,
   };
@@ -130,6 +140,9 @@ beforeEach(() => {
   remote.createThread.mockReset().mockResolvedValue({ threadId: "game-thread" });
   remote.sendMessage.mockReset().mockResolvedValue(null);
   remote.stop.mockReset().mockResolvedValue(null);
+  remote.sendManaged.mockReset().mockResolvedValue(null);
+  remote.stopManaged.mockReset().mockResolvedValue(null);
+  remote.resumeManaged.mockReset().mockResolvedValue(null);
   remote.setVisibility.mockReset().mockResolvedValue(null);
   remote.signIn.mockReset();
   remote.listReplayPages.mockReset().mockResolvedValue({ status: "unavailable" });
@@ -170,6 +183,94 @@ async function openPlay(path = "/play") {
   await router.load();
   return router;
 }
+
+test("Review uses managed controls and keeps live view, handoff and follow-up messages on the same page", async () => {
+  const review = session({
+    purpose: { kind: "review" },
+    runtime: { kind: "agents_api", sessionId: "managed-1" },
+    status: "waiting",
+    sessions: [{ engine: "agents_api", sessionId: "browser-1", kind: "active", createdAt: 1000 }],
+  });
+  remote.queries.set("scout/activity:get", review);
+  remote.queries.set("scout/activity:liveView", { url: "about:blank#watch-only" });
+  remote.queries.set("agentsApi/sessions:controls", {
+    state: { kind: "waiting", message: "Complete verification" },
+    canSend: false,
+    canStop: true,
+    busy: false,
+    interactiveLiveViewUrl: "https://liveview.firecrawl.dev/control",
+    handoffEmailFailed: false,
+  });
+  remote.messages = [{ id: "message-1", role: "assistant", text: "I opened the site." }];
+  await openPlay("/review?thread=game-thread");
+  expect(await screen.findByText("I opened the site.")).toBeTruthy();
+  expect(screen.getByTitle("Scout's live browser").getAttribute("src")).toBe(
+    "about:blank#watch-only",
+  );
+  expect(screen.getByRole("link", { name: "Open in lab" }).getAttribute("href")).toBe(
+    "/agents?session=managed-1",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Resume Scout" }));
+  await waitFor(() =>
+    expect(remote.resumeManaged).toHaveBeenCalledExactlyOnceWith({ sessionId: "managed-1" }),
+  );
+  await waitFor(() =>
+    expect(
+      screen.getAllByRole<HTMLButtonElement>("button", { name: "Stop Scout" })[0]?.disabled,
+    ).toBe(false),
+  );
+  fireEvent.click(screen.getAllByRole("button", { name: "Stop Scout" })[0]);
+  await waitFor(() =>
+    expect(remote.stopManaged).toHaveBeenCalledExactlyOnceWith({ sessionId: "managed-1" }),
+  );
+  act(() => {
+    remote.queries.set("scout/activity:get", { ...review, status: "finished" });
+    remote.queries.set("agentsApi/sessions:controls", {
+      state: { kind: "idle" },
+      canSend: true,
+      canStop: false,
+      busy: false,
+      interactiveLiveViewUrl: null,
+      handoffEmailFailed: false,
+    });
+    remote.revision++;
+    remote.subscribers.forEach((listener) => listener());
+  });
+  fireEvent.change(screen.getByLabelText("Message Scout"), {
+    target: { value: "Check another page" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+  await waitFor(() =>
+    expect(remote.sendManaged).toHaveBeenCalledExactlyOnceWith({
+      sessionId: "managed-1",
+      message: "Check another page",
+    }),
+  );
+  expect(remote.stop).not.toHaveBeenCalled();
+  expect(remote.sendMessage).not.toHaveBeenCalled();
+  expect(remote.queryCalls).toHaveBeenCalledWith("scout/chats:getScoutActivity", "skip");
+  expect(remote.queryCalls).toHaveBeenCalledWith("humanHandoffs:forSession", "skip");
+});
+
+test("public managed Reviews do not request owner controls or expose the handoff", async () => {
+  remote.authenticated = false;
+  remote.queries.set(
+    "scout/activity:get",
+    session({
+      purpose: { kind: "review" },
+      runtime: { kind: "agents_api", sessionId: "managed-1" },
+      visibility: "public",
+      isOwner: false,
+      canControl: false,
+      status: "waiting",
+    }),
+  );
+  await openPlay("/review?thread=game-thread");
+  expect(screen.queryByLabelText("Message Scout")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Resume Scout" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Stop Scout" })).toBeNull();
+  expect(remote.queryCalls).toHaveBeenCalledWith("agentsApi/sessions:controls", "skip");
+});
 
 const invitation = "Play with me at https://example.com/room/blue. Wait for me to start.";
 function fillInvite() {
@@ -494,7 +595,7 @@ test("Enter sends a message but composition and Shift+Enter do not", async () =>
 test("keeps the live browser and handoff controls when switching views", async () => {
   remote.queries.set(
     "scout/activity:get",
-    session({ sessions: [{ sessionId: "session-1", kind: "active" }] }),
+    session({ sessions: [{ engine: "convex_agent", sessionId: "session-1", kind: "active" }] }),
   );
   remote.queries.set("scout/activity:liveView", {
     url: "about:blank",
@@ -529,8 +630,8 @@ test("keeps the live browser and handoff controls when switching views", async (
 
 test("selects older replays without changing the conversation or current handoff", async () => {
   const sessions = [
-    { sessionId: "older", createdAt: 1_000, kind: "closed" },
-    { sessionId: "current", createdAt: 2_000, kind: "active" },
+    { engine: "convex_agent", sessionId: "older", createdAt: 1_000, kind: "closed" },
+    { engine: "convex_agent", sessionId: "current", createdAt: 2_000, kind: "active" },
   ];
   remote.queries.set("scout/activity:get", session({ sessions }));
   remote.queries.set("scout/activity:liveView:current", { url: "about:blank" });
@@ -580,7 +681,10 @@ test("selects older replays without changing the conversation or current handoff
     remote.queries.set(
       "scout/activity:get",
       session({
-        sessions: [...sessions, { sessionId: "newest", createdAt: 3_000, kind: "active" }],
+        sessions: [
+          ...sessions,
+          { engine: "convex_agent", sessionId: "newest", createdAt: 3_000, kind: "active" },
+        ],
       }),
     );
     remote.revision += 1;
@@ -599,7 +703,9 @@ test("selects older replays without changing the conversation or current handoff
 test("follows new browser sessions until the user chooses a session", async () => {
   remote.queries.set(
     "scout/activity:get",
-    session({ sessions: [{ sessionId: "first", createdAt: 1_000, kind: "active" }] }),
+    session({
+      sessions: [{ engine: "convex_agent", sessionId: "first", createdAt: 1_000, kind: "active" }],
+    }),
   );
   remote.queries.set("scout/activity:liveView:first", { url: "about:blank#first" });
   await openPlay("/play?thread=game-thread");
@@ -610,8 +716,8 @@ test("follows new browser sessions until the user chooses a session", async () =
       "scout/activity:get",
       session({
         sessions: [
-          { sessionId: "first", createdAt: 1_000, kind: "closed" },
-          { sessionId: "second", createdAt: 2_000, kind: "active" },
+          { engine: "convex_agent", sessionId: "first", createdAt: 1_000, kind: "closed" },
+          { engine: "convex_agent", sessionId: "second", createdAt: 2_000, kind: "active" },
         ],
       }),
     );
