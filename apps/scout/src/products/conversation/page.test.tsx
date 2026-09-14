@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 
+import userEvent from "@testing-library/user-event";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
   createMemoryHistory,
@@ -30,6 +31,7 @@ const remote = vi.hoisted(() => ({
   stopManaged: vi.fn(),
   resumeManaged: vi.fn(),
   setVisibility: vi.fn(),
+  setReviewSite: vi.fn(),
   signIn: vi.fn(),
   queryCalls: vi.fn(),
   listReplayPages: vi.fn(),
@@ -81,6 +83,8 @@ vi.mock("convex/react", () => ({
         return remote.sendMessage;
       case "scout/chats:stop":
         return remote.stop;
+      case "scout/reviewSites:set":
+        return remote.setReviewSite;
       case "scout/chats:setVisibility":
         return remote.setVisibility;
       case "agentsApi/sessions:send":
@@ -103,6 +107,7 @@ function session(overrides = {}) {
   return {
     threadId: "game-thread",
     title: null,
+    primarySite: null,
     createdAt: 1000,
     purpose: { kind: "play", step: null },
     visibility: "private",
@@ -143,6 +148,7 @@ beforeEach(() => {
   remote.sendManaged.mockReset().mockResolvedValue(null);
   remote.stopManaged.mockReset().mockResolvedValue(null);
   remote.resumeManaged.mockReset().mockResolvedValue(null);
+  remote.setReviewSite.mockReset().mockResolvedValue(null);
   remote.setVisibility.mockReset().mockResolvedValue(null);
   remote.signIn.mockReset();
   remote.listReplayPages.mockReset().mockResolvedValue({ status: "unavailable" });
@@ -296,10 +302,56 @@ function fillInvite() {
 }
 
 describe("Play invitation", () => {
+  test("a Review owner can correct its site and sees save errors", async () => {
+    remote.queries.set(
+      "scout/activity:get",
+      session({ purpose: { kind: "review" }, primarySite: "samebase.com" }),
+    );
+    await openPlay("/review?thread=game-thread");
+    const user = userEvent.setup();
+    expect((await screen.findByRole("link", { name: "samebase.com" })).getAttribute("href")).toBe(
+      "/?site=samebase.com&scope=mine",
+    );
+    await user.click(screen.getByRole("button", { name: "Edit review site" }));
+    const field = screen.getByRole("textbox", { name: "Review site" });
+    await user.clear(field);
+    await user.type(field, "www.samebase.com");
+    remote.setReviewSite.mockRejectedValueOnce(new Error("Offline"));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByRole("alert")).toHaveProperty(
+      "textContent",
+      "Couldn't save the site. Try again.",
+    );
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.queryByRole("textbox", { name: "Review site" })).toBeNull());
+    expect(remote.setReviewSite).toHaveBeenLastCalledWith({
+      threadId: "game-thread",
+      site: "www.samebase.com",
+    });
+  });
+
+  test("a public Review viewer can follow its site but cannot edit it", async () => {
+    remote.queries.set(
+      "scout/activity:get",
+      session({
+        purpose: { kind: "review" },
+        primarySite: "samebase.com",
+        visibility: "public",
+        isOwner: false,
+        canControl: false,
+      }),
+    );
+    await openPlay("/review?thread=game-thread");
+    expect((await screen.findByRole("link", { name: "samebase.com" })).getAttribute("href")).toBe(
+      "/?site=samebase.com&scope=public",
+    );
+    expect(screen.queryByRole("button", { name: "Edit review site" })).toBeNull();
+  });
+
   test("Review starts on its own route using the shared chat interface", async () => {
     remote.queries.set("scout/activity:get", session({ purpose: { kind: "review" } }));
     const router = await openPlay("/review");
-    expect(await screen.findByRole("heading", { name: "What should Scout review?" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Send a Scout instead." })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Find a game for us" })).toBeNull();
     fireEvent.change(screen.getByLabelText("Message Scout"), {
       target: { value: "Review example.com" },
@@ -336,7 +388,9 @@ describe("Play invitation", () => {
     });
     await openPlay();
     fillInvite();
-    fireEvent.change(screen.getByLabelText("Visibility"), { target: { value: "public" } });
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("combobox", { name: "Visibility" }));
+    await user.click(screen.getByRole("option", { name: "Public" }));
     expect(screen.getByText("Anyone can watch the chat and browser.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
     await waitFor(() =>
@@ -440,7 +494,9 @@ describe("Play invitation", () => {
   test("sends a game request with the selected Scout and opens its session", async () => {
     const router = await openPlay();
     fillInvite();
-    fireEvent.change(screen.getByLabelText("Your Scout"), { target: { value: "scout-2" } });
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("combobox", { name: "Your Scout" }));
+    await user.click(screen.getByRole("option", { name: "Moss" }));
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
     await waitFor(() => expect(router.state.location.search).toEqual({ thread: "game-thread" }));
     expect(remote.createThread).toHaveBeenCalledExactlyOnceWith({

@@ -1,3 +1,4 @@
+import { siteHostnameSchema } from "../../shared/site";
 import { v } from "convex/values";
 import { paginationOptsValidator, paginationResultValidator } from "convex/server";
 import type { Id } from "../_generated/dataModel";
@@ -16,7 +17,6 @@ import {
   WORKSPACE_ROOT,
   workspaceEntryValidator,
   workspaceFileValidator,
-  siteWorkspaceSchema,
   workspaceTargetValidator,
   type WorkspaceTarget,
 } from "../workspaceModel";
@@ -52,7 +52,7 @@ function findWorkspace(ctx: QueryCtx | MutationCtx, target: WorkspaceTarget) {
   return target.kind === "chat"
     ? query.withIndex("by_thread_id", (q) => q.eq("threadId", target.threadId)).unique()
     : query
-        .withIndex("by_site", (q) => q.eq("site", siteWorkspaceSchema.parse(target.site)))
+        .withIndex("by_site", (q) => q.eq("site", siteHostnameSchema.parse(target.site)))
         .unique();
 }
 
@@ -125,7 +125,7 @@ export const snapshot = internalMutation({
     const owner: WorkspaceTarget =
       args.target.kind === "chat"
         ? args.target
-        : { kind: "site", site: siteWorkspaceSchema.parse(args.target.site) };
+        : { kind: "site", site: siteHostnameSchema.parse(args.target.site) };
     const workspaceId = await ctx.db.insert("scoutWorkspaces", {
       ...owner,
       cwd: WORKSPACE_ROOT,

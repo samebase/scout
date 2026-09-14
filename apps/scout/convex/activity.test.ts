@@ -70,6 +70,60 @@ async function setup() {
   return { backend, member, other, memberId, otherId, adminId, scoutId, chat, review };
 }
 
+test("review site assignment preserves the subject across navigation and owner corrections", async () => {
+  const t = await setup();
+  const sessionId = await t.review();
+  const identify = (site: string) =>
+    t.backend.mutation(internal.scout.reviewSites.identify, { sessionId, site });
+  expect(await identify(" SAMEBASE.COM ")).toEqual({ primarySite: "samebase.com" });
+  expect(await identify("github.com")).toEqual({ primarySite: "samebase.com" });
+  await t.backend.mutation(internal.agentsApi.sessions.update, {
+    sessionId,
+    browser: {
+      providerSessionId: "browser",
+      cdpUrl: "wss://browser",
+      interactiveLiveViewUrl: "https://liveview.firecrawl.dev/control",
+      liveViewUrl: null,
+      currentUrl: "https://dash.cloudflare.com",
+    },
+  });
+  expect(await t.backend.query(api.scout.activity.get, { threadId: sessionId })).toMatchObject({
+    primarySite: "samebase.com",
+  });
+  await t.member.mutation(api.scout.reviewSites.set, {
+    threadId: sessionId,
+    site: " WWW.SAMEBASE.COM ",
+  });
+  expect(await identify("samebase.com")).toEqual({ primarySite: "www.samebase.com" });
+  await expect(
+    t.other.mutation(api.scout.reviewSites.set, { threadId: sessionId, site: "evil.test" }),
+  ).rejects.toThrow("Review not found");
+  await expect(
+    t.backend.mutation(api.scout.reviewSites.set, { threadId: sessionId, site: "evil.test" }),
+  ).rejects.toThrow("Not authorized");
+  for (const site of [
+    "",
+    "https://samebase.com/apps",
+    "samebase.com:443",
+    "samebase.com/a",
+    "a..com",
+  ]) {
+    await expect(
+      t.member.mutation(api.scout.reviewSites.set, { threadId: sessionId, site }),
+    ).rejects.toThrow();
+    await expect(identify(site)).rejects.toThrow();
+  }
+  const game = await t.chat({ kind: "play", step: null }, "public");
+  await expect(
+    t.member.mutation(api.scout.reviewSites.set, { threadId: game.threadId, site: "game.test" }),
+  ).rejects.toThrow("Review not found");
+  await t.backend.mutation(internal.agentsApi.sessions.update, {
+    sessionId,
+    state: { kind: "stopped" },
+  });
+  await expect(identify("other.test")).rejects.toThrow("no longer running");
+});
+
 test("managed Reviews share the feed and expose only conversation text and watch-only browser access", async () => {
   const t = await setup();
   const oldReview = await t.chat({ kind: "review" }, "public");
@@ -112,13 +166,13 @@ test("managed Reviews share the feed and expose only conversation text and watch
   });
   expect(earlier.page).toEqual([{ id: expect.any(String), role: "user", text: "Try the site" }]);
   const feed = await t.backend.query(api.scout.activity.list, {
-    kind: "review",
+    site: null,
     scope: "public",
     paginationOpts: { numItems: 1, cursor: null },
   });
   expect(feed.page.map((item) => item.threadId)).toEqual([sessionId]);
   const next = await t.backend.query(api.scout.activity.list, {
-    kind: "review",
+    site: null,
     scope: "public",
     paginationOpts: { numItems: 1, cursor: feed.continueCursor },
   });
@@ -268,43 +322,34 @@ test("Review owners can resume handoffs, stop, and send follow-ups while Lab rem
   ).rejects.toThrow("Not authorized");
 });
 
-test("paginates public games separately from reviews and private chats", async () => {
+test("paginates reviews by site without leaking private conversations or including games", async () => {
   const t = await setup();
-  const first = await t.chat({ kind: "play", step: null }, "public");
+  const first = await t.chat({ kind: "review" }, "public");
   vi.advanceTimersByTime(1);
-  const second = await t.chat({ kind: "play", step: null }, "public", t.otherId);
-  const ownPrivate = await t.chat({ kind: "play", step: null }, "private");
-  const otherPrivate = await t.chat({ kind: "play", step: null }, "private", t.otherId);
-  const review = await t.chat({ kind: "review" }, "public");
+  const second = await t.chat({ kind: "review" }, "public", t.otherId);
+  const ownPrivate = await t.chat({ kind: "review" }, "private");
+  const otherPrivate = await t.chat({ kind: "review" }, "private", t.otherId);
+  const different = await t.chat({ kind: "review" }, "public");
   await t.chat({ kind: "general" }, "public", t.adminId);
-  const all = await t.backend.query(api.scout.activity.list, {
-    kind: "all",
-    scope: "public",
-    paginationOpts: { cursor: null, numItems: 2 },
+  await t.chat({ kind: "play", step: null }, "public");
+  await t.backend.run(async (ctx) => {
+    for (const chat of [first, second, ownPrivate, otherPrivate])
+      await ctx.db.patch(chat.chatId, { primarySite: "samebase.com" });
+    await ctx.db.patch(different.chatId, { primarySite: "chessmerge.com" });
   });
-  expect(all.page.map((row) => row.threadId)).toEqual([review.threadId, second.threadId]);
-  expect(
-    (
-      await t.backend.query(api.scout.activity.list, {
-        kind: "all",
-        scope: "public",
-        paginationOpts: { cursor: all.continueCursor, numItems: 2 },
-      })
-    ).page.map((row) => row.threadId),
-  ).toEqual([first.threadId]);
-  await t.chat({ kind: "general" }, "private");
-  expect(
-    (
-      await t.member.query(api.scout.activity.list, {
-        kind: "all",
-        scope: "mine",
-        paginationOpts: { cursor: null, numItems: 20 },
-      })
-    ).page.map((row) => row.threadId),
-  ).toEqual([review.threadId, ownPrivate.threadId, first.threadId]);
+  const all = await t.backend.query(api.scout.activity.list, {
+    site: null,
+    scope: "public",
+    paginationOpts: { cursor: null, numItems: 20 },
+  });
+  expect(all.page.map((row) => row.threadId)).toEqual([
+    different.threadId,
+    second.threadId,
+    first.threadId,
+  ]);
   const list = (cursor: string | null) =>
     t.backend.query(api.scout.activity.list, {
-      kind: "play",
+      site: " SAMEBASE.COM ",
       scope: "public",
       paginationOpts: { cursor, numItems: 1 },
     });
@@ -313,24 +358,16 @@ test("paginates public games separately from reviews and private chats", async (
   expect((await list(page.continueCursor)).page.map((row) => row.threadId)).toEqual([
     first.threadId,
   ]);
+  expect(page.page[0]?.primarySite).toBe("samebase.com");
   const mine = await t.member.query(api.scout.activity.list, {
-    kind: "play",
+    site: "samebase.com",
     scope: "mine",
     paginationOpts: { cursor: null, numItems: 20 },
   });
   expect(mine.page.map((row) => row.threadId)).toEqual([ownPrivate.threadId, first.threadId]);
-  expect(
-    (
-      await t.backend.query(api.scout.activity.list, {
-        kind: "review",
-        scope: "public",
-        paginationOpts: { cursor: null, numItems: 20 },
-      })
-    ).page.map((row) => row.threadId),
-  ).toEqual([review.threadId]);
   await expect(
     t.backend.query(api.scout.activity.list, {
-      kind: "play",
+      site: "samebase.com",
       scope: "mine",
       paginationOpts: { cursor: null, numItems: 20 },
     }),

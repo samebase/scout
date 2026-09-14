@@ -32,6 +32,7 @@ export async function runtimeTools(
   session: Doc<"agentsApiSessions">,
   scout: Doc<"scouts">,
   requestedTool: string | null,
+  purpose: Doc<"scoutChats">["purpose"],
 ) {
   const sessionId = session._id;
   let handle = session.browser;
@@ -124,8 +125,29 @@ export async function runtimeTools(
     }),
   };
 
+  if (purpose.kind === "review") {
+    tools["set_review_site"] = tool({
+      description: outdent`
+        Identify the main site this review is about. Supply its exact hostname,
+        such as samebase.com. Returns the saved primarySite. Once identified,
+        only the review owner can change it.
+      `,
+      inputSchema: z.object({ site: z.string() }),
+      execute: async ({ site }) =>
+        ctx.runMutation(internal.scout.reviewSites.identify, {
+          sessionId,
+          site,
+        }),
+    });
+  }
+
   try {
-    if (handle && requestedTool !== null && !mailNames.has(requestedTool)) {
+    if (
+      handle &&
+      requestedTool !== null &&
+      requestedTool !== "set_review_site" &&
+      !mailNames.has(requestedTool)
+    ) {
       const connection = await attachPersistedBrowserSession(browser, handle);
       if (!connection)
         await ctx.runMutation(internal.agentsApi.browsers.close, {

@@ -1,3 +1,11 @@
+import { z } from "zod";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "#components/ui/select";
 import { accountAccessMessage, canAccess, useViewerAccess } from "../../lib/access";
 import { SidebarLayout } from "@samebase/sidebars/SidebarLayout";
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -14,6 +22,7 @@ import { type FormEvent, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import { productRoutes, type ProductKind, type ConversationSearch } from "./model";
 import { gameInviteDisplayText } from "../play/invite";
+import { ReviewSite } from "./review-site";
 import { ConversationComposer } from "./composer";
 import { ConversationSidebar, BrowserToggle, BrowserStop } from "./sidebar";
 import {
@@ -36,6 +45,7 @@ import { playError, playLoading, playNotice, playRouteMessage, playTextLink } fr
 type ChatThread = NonNullable<FunctionReturnType<typeof api.scout.activity.get>>;
 type Activity = FunctionReturnType<typeof api.scout.chats.getScoutActivity>;
 type ThreadActivity = Extract<Activity, { threadId: string }>;
+const visibilitySchema = z.enum(["public", "private"]);
 type RequestState = { kind: "idle" } | { kind: "pending" } | { kind: "failed"; message: string };
 
 export function ConversationError() {
@@ -97,7 +107,7 @@ function ConversationUnavailable({ kind }: { kind: ProductKind }) {
   );
 }
 
-function ConversationLobby({ kind }: { kind: ProductKind }) {
+export function ConversationLobby({ kind }: { kind: ProductKind }) {
   const isPlay = kind === "play";
   const viewer = useViewerAccess();
   const canRun =
@@ -156,14 +166,17 @@ function ConversationLobby({ kind }: { kind: ProductKind }) {
 
   return (
     <div className="w-full max-w-[660px]">
-      <div
-        className={cn("mb-10 flex flex-col max-[760px]:mb-8", isPlay && "items-center text-center")}
-      >
+      <div className={cn("mb-7 flex flex-col", isPlay && "items-center text-center")}>
         {isPlay && (
           <div className="relative mb-8 flex h-[110px] w-[152px] items-center justify-center">
             <span className="absolute inset-x-0 bottom-0 h-14 -rotate-6 rounded-[50%] bg-play-sand" />
             <ScoutPiece className="-rotate-6" />
           </div>
+        )}
+        {!isPlay && (
+          <p className="mb-3 text-base text-muted-foreground">
+            Tired of reviewing hackathon submissions?
+          </p>
         )}
         <h1
           className={
@@ -172,11 +185,23 @@ function ConversationLobby({ kind }: { kind: ProductKind }) {
               : "text-[40px] leading-[1.2] font-medium tracking-[-1px] max-[760px]:text-[32px]"
           }
         >
-          {isPlay ? "What are we playing?" : "What should Scout review?"}
+          {isPlay ? (
+            "What are we playing?"
+          ) : (
+            <>
+              Send a Scout instead. <span aria-hidden="true">😉</span>
+            </>
+          )}
         </h1>
         {isPlay && (
           <p className="mt-4 text-base text-muted-foreground">
             Bring a game, or find one together.
+          </p>
+        )}
+        {!isPlay && (
+          <p className="mt-4 max-w-[580px] text-base text-muted-foreground">
+            Scout creates its own accounts, logs in, and tests the site. You get its findings and a
+            video replay.
           </p>
         )}
       </div>
@@ -228,67 +253,74 @@ function ConversationLobby({ kind }: { kind: ProductKind }) {
                   : "Paste a product link and describe what to review."
               }
             >
-              {loadingScouts ? (
-                "Loading Scouts…"
-              ) : request.kind === "pending" ? (
-                "Starting…"
-              ) : activeScouts.length > 0 ? (
-                <div className="flex items-center gap-2.5">
-                  {isPlay && <ScoutPiece size="brand" className="scale-75" />}
-                  <label htmlFor="conversation-scout" className="sr-only">
-                    Your Scout
-                  </label>
-                  <select
-                    id="conversation-scout"
-                    value={selectedScout?._id ?? ""}
-                    onChange={(event) => setSelectedScoutId(event.target.value)}
-                    className="min-h-11 max-w-[220px] rounded-lg bg-transparent pr-2 text-sm font-medium text-foreground"
-                  >
-                    {activeScouts.map((scout) => (
-                      <option key={scout._id} value={scout._id} disabled={scout.busy}>
-                        {scout.displayName}
-                        {scout.busy ? " · Busy" : ""}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ) : isPlay ? (
-                "Scout Play"
-              ) : (
-                "Scout Review"
-              )}
-            </ConversationComposer>
-            <div className="mt-3 flex flex-wrap items-center justify-center gap-x-3 text-sm text-muted-foreground">
-              <label htmlFor="conversation-visibility" className="sr-only">
-                Visibility
-              </label>
-              <select
-                id="conversation-visibility"
-                value={visibility}
-                disabled={request.kind === "pending"}
-                onChange={(event) =>
-                  setVisibility(event.target.value === "public" ? "public" : "private")
-                }
-                className="min-h-11 rounded-lg bg-transparent px-2"
-              >
-                <option value="private">Private</option>
-                <option value="public">Public</option>
-              </select>
-              {visibility === "public" && <span>Anyone can watch the chat and browser.</span>}
-            </div>
-            <div className="mt-5 flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm text-muted-foreground">
-              {(isPlay ? ["Find a game for us", "Help me learn a game"] : []).map((suggestion) => (
-                <button
-                  key={suggestion}
-                  type="button"
+              <div className="flex min-w-0 flex-wrap items-center gap-x-1">
+                {loadingScouts ? (
+                  "Loading Scouts…"
+                ) : request.kind === "pending" ? (
+                  "Starting…"
+                ) : activeScouts.length > 0 ? (
+                  <div className="flex min-w-0 items-center gap-1">
+                    {isPlay && <ScoutPiece size="brand" className="scale-75" />}
+                    <Select value={selectedScout?._id ?? ""} onValueChange={setSelectedScoutId}>
+                      <SelectTrigger
+                        aria-label="Your Scout"
+                        className="min-h-11 max-w-[190px] border-0 shadow-none max-[400px]:max-w-[145px]"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent position="popper" align="start">
+                        {activeScouts.map((scout) => (
+                          <SelectItem key={scout._id} value={scout._id} disabled={scout.busy}>
+                            {scout.displayName}
+                            {scout.busy ? " · Busy" : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : isPlay ? (
+                  "Scout Play"
+                ) : (
+                  "Scout Review"
+                )}
+                <Select
+                  value={visibility}
                   disabled={request.kind === "pending"}
-                  onClick={() => setDraft(suggestion)}
-                  className="inline-flex min-h-11 items-center gap-2 rounded-lg hover:text-primary"
+                  onValueChange={(value) => setVisibility(visibilitySchema.parse(value))}
                 >
-                  {suggestion} <ArrowRightIcon size={14} aria-hidden="true" />
-                </button>
-              ))}
-            </div>
+                  <SelectTrigger
+                    aria-label="Visibility"
+                    className="min-h-11 shrink-0 border-0 shadow-none"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent position="popper">
+                    <SelectItem value="private">Private</SelectItem>
+                    <SelectItem value="public">Public</SelectItem>
+                  </SelectContent>
+                </Select>
+                {visibility === "public" && (
+                  <span className="w-full px-2 pb-1 text-xs">
+                    Anyone can watch the chat and browser.
+                  </span>
+                )}
+              </div>
+            </ConversationComposer>
+            {isPlay && (
+              <div className="mt-5 flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm text-muted-foreground">
+                {["Find a game for us", "Help me learn a game"].map((suggestion) => (
+                  <button
+                    key={suggestion}
+                    type="button"
+                    disabled={request.kind === "pending"}
+                    onClick={() => setDraft(suggestion)}
+                    className="inline-flex min-h-11 items-center gap-2 rounded-lg hover:text-primary"
+                  >
+                    {suggestion} <ArrowRightIcon size={14} aria-hidden="true" />
+                  </button>
+                ))}
+              </div>
+            )}
           </>
         )}
       </section>
@@ -553,7 +585,7 @@ function ConversationSession({
         <>
           <div className="mb-5 flex items-center justify-between gap-4 max-[760px]:mb-3">
             <Link
-              to={productRoutes[kind]}
+              to={kind === "review" ? "/" : productRoutes[kind]}
               search={{}}
               className={cn(playTextLink, "min-h-11 text-muted-foreground")}
             >
@@ -615,6 +647,16 @@ function ConversationSession({
               {thread.title ?? `Chat with ${scout.displayName}`}
             </h1>
           </div>
+          {kind === "review" && (thread.primarySite || thread.canControl) && (
+            <div className="mb-4">
+              <ReviewSite
+                threadId={thread.threadId}
+                site={thread.primarySite}
+                canEdit={thread.canControl}
+                visibility={thread.visibility}
+              />
+            </div>
+          )}
           {request.kind === "failed" && (
             <p role="alert" className={playError}>
               {request.message}

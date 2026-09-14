@@ -190,6 +190,7 @@ beforeEach(() => {
   remote.getModelCallContext.mockResolvedValue(null);
   remote.listReplayPages.mockResolvedValue({ status: "unavailable" });
   remote.mutations.set("scout/chats:createThread", remote.createThread);
+  remote.mutations.set("scout/chats:startProductChat", remote.createThread);
   remote.mutations.set("scout/chats:sendMessage", remote.sendMessage);
   remote.mutations.set("scout/chats:setModelSelection", remote.saveModelSelection);
   remote.mutations.set("scout/chats:stop", remote.stopScout);
@@ -236,6 +237,7 @@ async function openChats(path = "/chats?thread=thread-1") {
     staticData: { access: "access_public" },
     getParentRoute: () => root,
     component: indexComponent,
+    validateSearch: IndexRoute.options.validateSearch,
   });
   const router = createRouter({
     routeTree: root.addChildren([chats, index]),
@@ -558,24 +560,35 @@ describe("Chat workspace", () => {
     remote.queries.set("scout/activity:list", { results: [], status: "Exhausted" });
     const router = await openChats("/");
 
-    expect(await screen.findByRole("heading", { name: "What are we doing today?" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Send a Scout instead." })).toBeTruthy();
     expect(router.state.location.pathname).toBe("/");
-    expect(screen.getByRole("link", { name: "Play a game" }).getAttribute("href")).toBe("/play");
-    expect(screen.getByRole("link", { name: "Review a product" }).getAttribute("href")).toBe(
-      "/review",
-    );
+    expect(screen.queryByRole("link", { name: "Play a game" })).toBeNull();
     expect(screen.queryByLabelText("Password")).toBeNull();
     expect(remote.queryCalls).toHaveBeenCalledWith("scout/activity:list", {
-      kind: "all",
+      site: null,
       scope: "public",
     });
     const user = userEvent.setup();
-    await user.click(screen.getByRole("combobox", { name: "Activity type" }));
-    await user.click(screen.getByRole("option", { name: "Review" }));
-    expect(remote.queryCalls).toHaveBeenLastCalledWith("scout/activity:list", {
-      kind: "review",
+    await user.type(screen.getByRole("textbox", { name: "Filter by site" }), "samebase.com");
+    await user.click(screen.getByRole("button", { name: "Apply site filter" }));
+    await waitFor(() =>
+      expect(router.state.location.search).toMatchObject({ site: "samebase.com" }),
+    );
+    expect(remote.queryCalls).toHaveBeenCalledWith("scout/activity:list", {
+      site: "samebase.com",
       scope: "public",
     });
+    await user.click(screen.getByRole("button", { name: "Clear site filter" }));
+    await waitFor(() => expect(router.state.location.search.site).toBeUndefined());
+    await act(async () => {
+      router.history.back();
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "Filter by site" })).toHaveProperty(
+        "value",
+        "samebase.com",
+      ),
+    );
   });
 
   test("retains the existing lab sign-in form at chats", async () => {
@@ -598,7 +611,7 @@ describe("Chat workspace", () => {
       within(navigation)
         .getAllByRole("link")
         .map((link) => link.textContent),
-    ).toEqual(["Activity", "Play", "Review", "Scouts", "Agents", "Lab", "Sites", "Members"]);
+    ).toEqual(["Reviews", "Scouts", "Agents", "Lab", "Sites", "Members"]);
     const history = screen.getByRole("navigation", { name: "Chats" });
     expect(within(history).getAllByRole("list")).toHaveLength(1);
     expect(within(history).getByRole("link").getAttribute("href")).toBe("/chats?thread=thread-1");

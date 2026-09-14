@@ -98,7 +98,7 @@ export const begin = internalAction({
     switch (args.command.kind) {
       case "start": {
         if (session.providerId) throw new Error("OpenAI session was already created");
-        const resource = await runtimeTools(ctx, session, scout, null);
+        const resource = await runtimeTools(ctx, session, scout, null, purpose);
         try {
           const [credentials, accounts] = await Promise.all([
             ctx.runQuery(internal.scout.serviceAccountCredentials.listRuntimeCredentialsForScout, {
@@ -121,7 +121,17 @@ export const begin = internalAction({
 
                 ${AGENTS_API_INSTRUCTIONS}
 
-                ${purpose.kind === "review" ? REVIEW_INSTRUCTIONS : ""}
+                ${
+                  purpose.kind === "review"
+                    ? outdent`
+                  ${REVIEW_INSTRUCTIONS}
+
+                  Call set_review_site once you know the hostname of the product
+                  being reviewed. This identifies the review's subject, not the
+                  other sites you may visit along the way.
+                `
+                    : ""
+                }
               `,
               tools: [{ type: "web_search" }, ...(await functionDefinitions(resource.tools))],
             },
@@ -365,7 +375,10 @@ export const advance = internalAction({
   args: { sessionId: v.id("agentsApiSessions") },
   returns: v.boolean(),
   handler: async (ctx, args): Promise<boolean> => {
-    const { session, scout } = await ctx.runQuery(internal.agentsApi.sessions.runtime, args);
+    const { session, scout, purpose } = await ctx.runQuery(
+      internal.agentsApi.sessions.runtime,
+      args,
+    );
     if (session.state.kind === "stopped") {
       await ctx.runMutation(internal.agentsApi.sessions.scheduleCleanup, args);
       return false;
@@ -436,7 +449,7 @@ export const advance = internalAction({
     if (claimed.fresh) {
       let resource: Awaited<ReturnType<typeof runtimeTools>> | null = null;
       try {
-        resource = await runtimeTools(ctx, session, scout, call.name);
+        resource = await runtimeTools(ctx, session, scout, call.name, purpose);
         const tool = requireRuntimeTool(resource.tools, call.name);
         const output = await tool.execute(call.arguments, {
           toolCallId: call.call_id,
