@@ -158,6 +158,46 @@ test("review site assignment preserves the subject across navigation and owner c
   await expect(identify("other.test")).rejects.toThrow("no longer running");
 });
 
+test.each([
+  { kind: "running" },
+  { kind: "failed", error: "Provider returned 404" },
+  { kind: "stopped" },
+] satisfies Doc<"agentsApiSessions">["state"][])(
+  "keeps the original request visible in a $kind session until provider messages arrive",
+  async (state) => {
+    const t = await setup();
+    const sessionId = await t.review();
+    await t.backend.mutation(internal.agentsApi.sessions.update, { sessionId, state });
+    const args = {
+      threadId: sessionId,
+      paginationOpts: { numItems: 10, cursor: null },
+    };
+    expect((await t.backend.query(api.scout.activity.messages, args)).page).toEqual([
+      { id: expect.any(String), role: "user", text: "Try this product's onboarding." },
+    ]);
+
+    await t.backend.mutation(internal.agentsApi.sessions.saveItems, {
+      sessionId,
+      items: [
+        {
+          providerItemId: "original-request",
+          kind: "user",
+          text: "Try this product's onboarding.",
+          details: "",
+        },
+      ],
+    });
+    const synced = await t.backend.query(api.scout.activity.messages, args);
+    expect(synced.page).toHaveLength(1);
+    expect(synced.page[0]?.text).toBe("Try this product's onboarding.");
+    const older = await t.backend.query(api.scout.activity.messages, {
+      ...args,
+      paginationOpts: { numItems: 10, cursor: synced.continueCursor },
+    });
+    expect(older.page).toEqual([]);
+  },
+);
+
 test("managed Reviews share the feed and expose only conversation text and watch-only browser access", async () => {
   const t = await setup();
   const oldReview = await t.chat({ kind: "review" }, "public");

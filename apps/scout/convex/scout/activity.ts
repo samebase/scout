@@ -361,21 +361,19 @@ export const messages = publicQuery({
     if (!chat) return { page: [], isDone: true, continueCursor: "" };
     const managedId = chat.runtime?.kind === "agents_api" ? chat.runtime.sessionId : null;
     if (managedId) {
-      const managed = await ctx.db.get(managedId);
-      if (!managed?.providerId) {
-        const check = await getInitialCheck(ctx, managedId);
-        return {
-          page: check ? [{ id: check._id, role: "user" as const, text: check.prompt }] : [],
-          isDone: true,
-          continueCursor: "",
-        };
-      }
       const result = await ctx.db
         .query("agentsApiItems")
         .withIndex("by_session_id_and_sequence", (q) => q.eq("sessionId", managedId))
         .filter((q) => q.or(q.eq(q.field("kind"), "user"), q.eq(q.field("kind"), "assistant")))
         .order("desc")
         .paginate(args.paginationOpts);
+      if (args.paginationOpts.cursor === null && result.isDone && result.page.length === 0) {
+        const check = await getInitialCheck(ctx, managedId);
+        return {
+          ...result,
+          page: check ? [{ id: check._id, role: "user" as const, text: check.prompt }] : [],
+        };
+      }
       return {
         ...result,
         page: result.page.flatMap((item) =>

@@ -144,6 +144,18 @@ remained in progress with no turns or tool requests for about 20 minutes, so it 
 stopped and the Scout released. Continuation through a real agent handoff still
 needs a successful trial; backend tests cover approval, rejection, retries, and Stop.
 
+Account-free reviews, September 15: Excalidraw export/reopen and Score Four local
+play both passed admission and reserved different Scouts, but neither reached a
+browser tool. Excalidraw failed on an empty 404 from OpenAI's session-items endpoint;
+Score Four was stopped. Both Scouts were released. Minimal Agents API requests
+with Luna and Astra also produced no turns or items, while Luna answered through
+Responses in 1.5 seconds. This does not establish a general provider outage.
+The trial exposed a product bug: creating the provider session hid the original
+request before any messages arrived. The request now remains visible while the
+conversation is empty, including after failure; pagination tests cover replacement
+by the provider's message without duplicating it. End-to-end reviews need a rerun
+when Agents API sessions can start.
+
 - Use a real approved member account, not an admin account with hidden navigation.
 - Start an ordinary review without coaching each tool call. Check that its short
   title and site describe the task and that the original prompt is preserved.
