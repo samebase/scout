@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { type FormEvent, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
+import { scoutAvailabilityLabels } from "#components/scout-current-activity";
 import { productRoutes, type ProductKind, type ConversationSearch } from "./model";
 import { gameInviteDisplayText } from "../play/invite";
 import { ReviewSite } from "./review-site";
@@ -274,7 +275,7 @@ export function ConversationLobby({ kind }: { kind: ProductKind }) {
                         {activeScouts.map((scout) => (
                           <SelectItem key={scout._id} value={scout._id} disabled={scout.busy}>
                             {scout.displayName}
-                            {scout.busy ? " · Busy" : ""}
+                            {scout.busy ? ` · ${scoutAvailabilityLabels[scout.availability]}` : ""}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -512,11 +513,15 @@ function ConversationSession({
   }
 
   async function resume() {
-    if (!managedId || pending.current) return;
+    if (!managedId || managed?.state.kind !== "waiting" || pending.current) return;
     pending.current = true;
     setRequest({ kind: "pending" });
     try {
-      await resumeManaged({ sessionId: managedId });
+      await resumeManaged({
+        sessionId: managedId,
+        callId: managed.state.callId,
+        turnId: managed.state.turnId,
+      });
       setRequest({ kind: "idle" });
     } catch {
       setRequest({ kind: "failed", message: "Couldn't resume Scout. Try again." });
@@ -659,14 +664,16 @@ function ConversationSession({
               {request.message}
             </p>
           )}
-          {thread.status === "failed" && (
-            <p className={playNotice} role="alert">
-              {managed?.requestCheckMessage ?? "Scout couldn't finish this turn."}
-              {!managed?.requestCheckMessage && (managed ? managed.canSend : thread.canControl)
-                ? " Send a message to try again."
-                : ""}
-            </p>
-          )}
+          {thread.status === "failed" &&
+            managed?.state.kind !== "waiting" &&
+            managed?.state.kind !== "checking" && (
+              <p className={playNotice} role="alert">
+                {managed?.requestCheckMessage ?? "Scout couldn't finish this turn."}
+                {!managed?.requestCheckMessage && (managed ? managed.canSend : thread.canControl)
+                  ? " Send a message to try again."
+                  : ""}
+              </p>
+            )}
           {handoff && (
             <ChatHandoffNotice
               handoff={handoff}
@@ -680,6 +687,11 @@ function ConversationSession({
           {managed?.state.kind === "waiting" && (
             <div className={cn(playNotice, "space-y-3")}>
               <p className="whitespace-pre-wrap">{managed.state.message}</p>
+              {managed.requestCheckMessage && (
+                <p role="alert" className="whitespace-pre-wrap">
+                  {managed.requestCheckMessage}
+                </p>
+              )}
               {managed.handoffEmailFailed && (
                 <p role="alert">
                   The handoff email couldn’t be sent. You can open the browser here.
@@ -770,13 +782,15 @@ function ConversationSession({
                         </p>
                       </MessageScrollerItem>
                     ))}
-                    {thread.status === "running" && (
+                    {(thread.status === "running" || managed?.state.kind === "checking") && (
                       <p
                         role="status"
                         className="flex items-center gap-2.5 text-sm text-muted-foreground"
                       >
                         <LoaderCircleIcon size={15} className="animate-spin" aria-hidden="true" />
-                        {phaseLabel ?? <span className="sr-only">Scout is working</span>}
+                        {managed?.state.kind === "checking"
+                          ? "Checking…"
+                          : (phaseLabel ?? <span className="sr-only">Scout is working</span>)}
                       </p>
                     )}
                   </MessageScrollerContent>

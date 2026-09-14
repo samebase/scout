@@ -72,7 +72,9 @@ const scoutTurnFields = {
 
 export default defineSchema({
   ...authTables,
-  agentsApiRequestChecks: defineTable(requestCheckRecord).index("by_session_id", ["sessionId"]),
+  agentsApiRequestChecks: defineTable(requestCheckRecord)
+    .index("by_session_id", ["sessionId"])
+    .index("by_session_id_and_kind", ["sessionId", "kind"]),
   agentsApiSessions: defineTable({
     userId: v.id("users"),
     scoutId: v.id("scouts"),

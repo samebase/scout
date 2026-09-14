@@ -127,6 +127,8 @@ describe("Scout registry", () => {
       },
       slug: "conrad",
       status: "active",
+      availability: "available",
+      currentActivity: null,
       agentMail: {
         address: "test-scout@example.test",
       },
@@ -163,6 +165,8 @@ describe("Scout registry", () => {
       websiteIdentity: { firstName: "Conrad", lastName: "Scout" },
       slug: "conrad",
       status: "active",
+      availability: "available",
+      currentActivity: null,
       agentMail: { address: "test-scout@example.test" },
     };
     await expect(member.query(api.scout.scouts.list, {})).resolves.toEqual([expected]);

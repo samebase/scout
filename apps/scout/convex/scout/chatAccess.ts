@@ -4,12 +4,12 @@ import { MAX_BROWSER_OPERATIONS } from "../browserModel";
 import { scoutAgent } from "./agent";
 import { requireUserPermission, type ViewerAccess } from "../access";
 import { canAccess } from "../../shared/accessModel";
-import { getRequestCheck } from "../agentsApi/requestChecks";
+import { getInitialCheck } from "../agentsApi/requestChecks";
 
 export async function isPublicChat(ctx: Pick<QueryCtx, "db">, chat: Doc<"scoutChats">) {
   if (chat.visibility !== "public") return false;
   if (chat.runtime?.kind !== "agents_api") return true;
-  const check = await getRequestCheck(ctx, chat.runtime.sessionId);
+  const check = await getInitialCheck(ctx, chat.runtime.sessionId);
   return (
     !check || (check.state.kind === "completed" && check.state.result.decision.kind === "approved")
   );

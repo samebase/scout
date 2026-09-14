@@ -8,6 +8,7 @@ import { z } from "zod";
 import { api } from "../../convex/_generated/api";
 import { ServiceIcon } from "#components/service-icon";
 import { Button } from "#components/ui/button";
+import { ScoutAvailability, ScoutCurrentActivity } from "#components/scout-current-activity";
 import { Input } from "#components/ui/input";
 import { canAccess, useViewerAccess } from "#lib/access";
 
@@ -22,7 +23,6 @@ export const Route = createFileRoute("/scouts/")({
 type Scout = FunctionReturnType<typeof api.scout.scouts.list>[number];
 type ServiceAccount = FunctionReturnType<typeof api.scout.serviceAccounts.list>[number];
 type ServiceSummary = Pick<ServiceAccount, "serviceName" | "serviceDomain">;
-type ScoutStatus = Scout["status"];
 
 type RegistrationFields = {
   firstName: string;
@@ -119,7 +119,7 @@ function ScoutsIndexPage() {
           )}
         </div>
       ) : (
-        <ul className="grid gap-4 md:grid-cols-2" aria-label="Scouts">
+        <ul className="grid gap-4" aria-label="Scouts">
           {scouts.map((scout) => {
             const services = servicesByScout?.get(scout._id) ?? [];
 
@@ -128,7 +128,7 @@ function ScoutsIndexPage() {
                 <Link
                   to="/scouts/$slug"
                   params={{ slug: scout.slug }}
-                  className="group block h-full p-5 outline-none transition-colors hover:bg-muted/40 focus-visible:ring-3 focus-visible:ring-ring/40 sm:p-6"
+                  className="group block p-5 outline-none transition-colors hover:bg-muted/40 focus-visible:ring-3 focus-visible:ring-ring/40 sm:p-5"
                 >
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
                     <div className="min-w-0">
@@ -137,7 +137,7 @@ function ScoutsIndexPage() {
                       </h2>
                       <p className="text-muted-foreground mt-1 font-mono text-xs">/{scout.slug}</p>
                     </div>
-                    <ScoutStatus status={scout.status} />
+                    <ScoutAvailability scout={scout} />
                   </div>
 
                   <dl className="mt-5 grid gap-4 text-sm sm:grid-cols-2">
@@ -173,6 +173,7 @@ function ScoutsIndexPage() {
                     ) : null}
                   </dl>
                 </Link>
+                <ScoutCurrentActivity activity={scout.currentActivity} className="border-t" />
               </li>
             );
           })}
@@ -484,16 +485,4 @@ function registrationError(error: unknown) {
     }
   }
   return "Could not register the scout. Check the values and try again.";
-}
-
-function ScoutStatus({ status }: { status: ScoutStatus }) {
-  const label = status === "active" ? "Active" : "Disabled";
-  const dotClass = status === "active" ? "bg-emerald-500" : "bg-muted-foreground";
-
-  return (
-    <span className="inline-flex shrink-0 items-center gap-2 rounded-full bg-muted px-2.5 py-1 text-xs font-medium">
-      <span className={`size-2 rounded-full ${dotClass}`} aria-hidden="true" />
-      {label}
-    </span>
-  );
 }

@@ -21,6 +21,8 @@ const scout: NonNullable<FunctionReturnType<typeof api.scout.scouts.get>> = {
   displayName: "Magda",
   slug: "magda",
   status: "active",
+  availability: "available",
+  currentActivity: null,
   websiteIdentity: { firstName: "Magda", lastName: "Scout" },
   agentMail: { address: "magda@example.test" },
 };

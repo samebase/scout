@@ -18,10 +18,18 @@ import {
 } from "lucide-react";
 import { useMemo, useRef, useState, type FormEvent } from "react";
 import { api } from "../../convex/_generated/api";
+import { scoutAvailabilityLabels } from "#components/scout-current-activity";
 import { omitNullish } from "../../shared/omitNullish";
 import { Button } from "#components/ui/button";
 import { Textarea } from "#components/ui/textarea";
-import { selectedStep, sessionControls, type AgentsSearch, type Session } from "./model";
+import {
+  selectedCheckId,
+  selectedStep,
+  sessionControls,
+  type AgentsSearch,
+  type RequestCheck,
+  type Session,
+} from "./model";
 import { RequestCheckView, RequestCheckInspector } from "./request-check";
 import { Transcript } from "./transcript";
 import { BrowserPanel } from "./browser";
@@ -50,6 +58,12 @@ function AgentsWorkspace({ search }: { search: AgentsSearch }) {
         },
   );
   const checking = Boolean(session && selectedStep(session, search) === "request_check");
+  const checkId = session && checking ? selectedCheckId(session, search) : undefined;
+  const check = useQuery(
+    api.agentsApi.requestChecks.inspect,
+    // @ts-expect-error The server validates the URL check ID and its session membership; the inspected document supplies typed IDs.
+    session && checkId !== undefined ? { sessionId: session._id, checkId } : "skip",
+  );
   const {
     results: sessions,
     status,
@@ -95,38 +109,41 @@ function AgentsWorkspace({ search }: { search: AgentsSearch }) {
                         </span>
                       </Link>
                       <ul className="ml-5 space-y-0.5 border-l pl-2 text-sm">
-                        {item.requestCheck !== null && (
-                          <li>
+                        {item.checks.map((itemCheck) => (
+                          <li key={itemCheck._id}>
                             <Link
                               to="/agents"
                               resetScroll={false}
                               search={{
                                 session: item._id,
                                 step: "request_check",
+                                check: itemCheck._id,
                                 sessions: search.sessions,
                                 inspector: search.inspector,
                               }}
                               aria-current={
-                                search.session === item._id && checking ? "page" : undefined
+                                search.session === item._id && checking && checkId === itemCheck._id
+                                  ? "page"
+                                  : undefined
                               }
                               className="flex items-center gap-2 rounded-md px-2 py-1.5 text-muted-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:bg-muted aria-[current=page]:text-foreground"
                             >
-                              {item.requestCheck === "pending" ||
-                              item.requestCheck === "running" ? (
+                              {itemCheck.status === "pending" || itemCheck.status === "running" ? (
                                 <LoaderCircleIcon
                                   className="size-3.5 animate-spin"
                                   aria-hidden="true"
                                 />
-                              ) : item.requestCheck === "approved" ? (
+                              ) : itemCheck.status === "approved" ? (
                                 <CheckIcon className="size-3.5" aria-hidden="true" />
                               ) : (
                                 <XIcon className="size-3.5" aria-hidden="true" />
                               )}
-                              Request check<span className="sr-only"> · {item.requestCheck}</span>
+                              {itemCheck.kind === "initial" ? "Request check" : "Resume check"}
+                              <span className="sr-only"> · {itemCheck.status}</span>
                             </Link>
                           </li>
-                        )}
-                        {(item.hasChat || item.requestCheck === null) && (
+                        ))}
+                        {(item.hasChat || item.checks.length === 0) && (
                           <li>
                             <Link
                               to="/agents"
@@ -181,14 +198,19 @@ function AgentsWorkspace({ search }: { search: AgentsSearch }) {
             content={<p className="p-6 text-sm text-muted-foreground">Session not found.</p>}
           />
         ) : (
-          <SessionContent key={session._id} session={session} search={search} />
+          <SessionContent
+            key={session._id}
+            session={session}
+            search={search}
+            check={checkId === undefined ? null : check}
+          />
         )
       }
       {...omitNullish({
         right:
           search.session === undefined ? undefined : session ? (
             checking ? (
-              <RequestCheckInspector session={session} />
+              <RequestCheckInspector key={checkId} check={check} />
             ) : (
               <BrowserPanel key={session._id} sessionId={session._id} search={search} />
             )
@@ -296,11 +318,19 @@ function NewSession() {
     );
   const selectedScout =
     activeScouts?.find((scout) => scout._id === scoutId) ??
-    (scoutId === "" ? activeScouts?.[0] : undefined);
+    (scoutId === ""
+      ? activeScouts?.find((scout) => scout.availability === "available")
+      : undefined);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selectedScout || !prompt.trim() || submitting.current) return;
+    if (
+      !selectedScout ||
+      selectedScout.availability !== "available" ||
+      !prompt.trim() ||
+      submitting.current
+    )
+      return;
     submitting.current = true;
     setRequest({ kind: "pending" });
     try {
@@ -337,8 +367,15 @@ function NewSession() {
               </option>
             )}
             {activeScouts?.map((scout) => (
-              <option key={scout._id} value={scout._id}>
+              <option
+                key={scout._id}
+                value={scout._id}
+                disabled={scout.availability !== "available"}
+              >
                 {scout.displayName}
+                {scout.availability !== "available"
+                  ? ` · ${scoutAvailabilityLabels[scout.availability]}`
+                  : ""}
               </option>
             ))}
           </select>
@@ -371,7 +408,12 @@ function NewSession() {
         <div className="flex justify-end">
           <Button
             type="submit"
-            disabled={!selectedScout || !prompt.trim() || request.kind === "pending"}
+            disabled={
+              !selectedScout ||
+              selectedScout.availability !== "available" ||
+              !prompt.trim() ||
+              request.kind === "pending"
+            }
           >
             {request.kind === "pending" ? "Starting…" : "Start"}
           </Button>
@@ -381,7 +423,15 @@ function NewSession() {
   );
 }
 
-function SessionContent({ session, search }: { session: Session; search: AgentsSearch }) {
+function SessionContent({
+  session,
+  search,
+  check,
+}: {
+  session: Session;
+  search: AgentsSearch;
+  check: RequestCheck | null | undefined;
+}) {
   const checking = selectedStep(session, search) === "request_check";
   const navigate = useNavigate({ from: "/agents" });
   const target = useMemo<WorkspaceTarget>(
@@ -391,9 +441,11 @@ function SessionContent({ session, search }: { session: Session; search: AgentsS
   return (
     <div className="h-full min-h-0">
       <div className={checking || search.view === "workspace" ? "hidden" : "h-full min-h-0"}>
-        {(session.providerId || !session.requestCheck) && <SessionView session={session} />}
+        {(session.providerId || session.checks.length === 0) && <SessionView session={session} />}
       </div>
-      {checking && <RequestCheckView session={session} />}
+      {checking && (
+        <RequestCheckView key={selectedCheckId(session, search)} session={session} check={check} />
+      )}
       {!checking && search.view === "workspace" && (
         <ScoutWorkspace
           target={target}
@@ -444,7 +496,12 @@ function SessionView({ session }: { session: Session }) {
           await stop({ sessionId: session._id });
           break;
         case "resume":
-          await resume({ sessionId: session._id });
+          if (session.state.kind !== "waiting") break;
+          await resume({
+            sessionId: session._id,
+            callId: session.state.callId,
+            turnId: session.state.turnId,
+          });
           break;
         case "refresh":
           await refresh({ sessionId: session._id });
@@ -487,12 +544,25 @@ function SessionView({ session }: { session: Session }) {
         {session.state.kind === "waiting" && (
           <div className="space-y-3">
             <p className="text-sm whitespace-pre-wrap wrap-anywhere">{session.state.message}</p>
+            {session.checkMessage && (
+              <p
+                role="alert"
+                className="text-sm whitespace-pre-wrap wrap-anywhere text-destructive"
+              >
+                {session.checkMessage}
+              </p>
+            )}
             {session.canControl && (
               <Button disabled={pending} onClick={() => void run("resume")}>
                 Resume
               </Button>
             )}
           </div>
+        )}
+        {session.state.kind === "checking" && (
+          <p role="status" className="text-sm text-muted-foreground">
+            Checking browser…
+          </p>
         )}
         {error && (
           <div className="space-y-2">

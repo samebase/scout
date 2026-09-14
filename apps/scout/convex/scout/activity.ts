@@ -8,8 +8,10 @@ import { publicQuery } from "../functions";
 import { requireViewerPermission } from "../access";
 import { siteHostnameSchema } from "../../shared/site";
 import { canAccess } from "../../shared/accessModel";
-import { chatPermission, scoutIsWorking, visibleChat, isPublicChat } from "./chatAccess";
-import { getRequestCheck } from "../agentsApi/requestChecks";
+import { chatPermission, visibleChat, isPublicChat } from "./chatAccess";
+import { availabilityValidator, scoutReservation } from "./availability";
+import type { ViewerAccess } from "../access";
+import { getInitialCheck } from "../agentsApi/requestChecks";
 import { chatPurposeValidator, chatVisibilityValidator, chatRuntimeValidator } from "./chatModel";
 import { scoutAgent } from "./agent";
 import { MAX_BROWSER_SESSIONS_PER_THREAD } from "./browserSessions";
@@ -57,6 +59,82 @@ const activityValidator = v.object({
   latestSession: v.union(sessionValidator, v.null()),
 });
 
+export const currentActivityValidator = v.union(
+  v.object({ kind: v.literal("private") }),
+  v.object({
+    kind: v.literal("visible"),
+    activity: activityValidator,
+    destination: v.union(
+      v.object({
+        to: v.literal("/agents"),
+        search: v.object({ session: v.id("agentsApiSessions") }),
+      }),
+      v.object({ to: v.literal("/chats"), search: v.object({ thread: v.string() }) }),
+      v.object({ to: v.literal("/review"), search: v.object({ thread: v.string() }) }),
+      v.object({ to: v.literal("/play"), search: v.object({ thread: v.string() }) }),
+    ),
+  }),
+  v.null(),
+);
+
+export async function currentScoutActivity(
+  ctx: QueryCtx,
+  scout: Doc<"scouts">,
+  reservation: Awaited<ReturnType<typeof scoutReservation>>,
+  viewer: ViewerAccess,
+): Promise<typeof currentActivityValidator.type> {
+  if (!reservation) return null;
+  const threadId =
+    reservation.kind === "agents_api" ? reservation.session._id : reservation.threadId;
+  const chat = await ctx.db
+    .query("scoutChats")
+    .withIndex("by_thread_id", (q) => q.eq("threadId", threadId))
+    .unique();
+  const canInspect = viewer.kind === "account" && canAccess("access_lab", viewer.accessKeys);
+  const visible = await visibleChat(ctx, threadId, viewer);
+
+  if (reservation.kind === "agents_api") {
+    if (!canInspect && !visible) return { kind: "private" };
+    const session = reservation.session;
+    const activity = chat
+      ? await summary(ctx, chat)
+      : {
+          threadId,
+          title: session.title,
+          primarySite: null,
+          createdAt: session._creationTime,
+          purpose: { kind: "general" as const },
+          visibility: "private" as const,
+          status: managedStatus(session),
+          scout: { _id: scout._id, displayName: scout.displayName, status: scout.status },
+          latestSession: null,
+        };
+    return {
+      kind: "visible",
+      activity: { ...activity, latestSession: visible ? activity.latestSession : null },
+      destination: canInspect
+        ? { to: "/agents", search: { session: session._id } }
+        : { to: chat?.purpose.kind === "play" ? "/play" : "/review", search: { thread: threadId } },
+    };
+  }
+
+  // Lab conversations only allow their owner to read the transcript.
+  if (!visible || !chat) return { kind: "private" };
+  return {
+    kind: "visible",
+    activity: await summary(ctx, chat),
+    destination: {
+      to:
+        chat.purpose.kind === "general"
+          ? "/chats"
+          : chat.purpose.kind === "play"
+            ? "/play"
+            : "/review",
+      search: { thread: threadId },
+    },
+  };
+}
+
 function sessionSummary(session: Doc<"scoutBrowserSessions">) {
   return {
     engine: "convex_agent" as const,
@@ -69,6 +147,7 @@ function sessionSummary(session: Doc<"scoutBrowserSessions">) {
 function managedStatus(session: Doc<"agentsApiSessions">): typeof statusValidator.type {
   switch (session.state.kind) {
     case "starting":
+    case "checking":
     case "running":
       return "running";
     case "waiting":
@@ -282,21 +361,19 @@ export const messages = publicQuery({
     if (!chat) return { page: [], isDone: true, continueCursor: "" };
     const managedId = chat.runtime?.kind === "agents_api" ? chat.runtime.sessionId : null;
     if (managedId) {
-      const managed = await ctx.db.get(managedId);
-      if (!managed?.providerId) {
-        const check = await getRequestCheck(ctx, managedId);
-        return {
-          page: check ? [{ id: check._id, role: "user" as const, text: check.prompt }] : [],
-          isDone: true,
-          continueCursor: "",
-        };
-      }
       const result = await ctx.db
         .query("agentsApiItems")
         .withIndex("by_session_id_and_sequence", (q) => q.eq("sessionId", managedId))
         .filter((q) => q.or(q.eq(q.field("kind"), "user"), q.eq(q.field("kind"), "assistant")))
         .order("desc")
         .paginate(args.paginationOpts);
+      if (args.paginationOpts.cursor === null && result.isDone && result.page.length === 0) {
+        const check = await getInitialCheck(ctx, managedId);
+        return {
+          ...result,
+          page: check ? [{ id: check._id, role: "user" as const, text: check.prompt }] : [],
+        };
+      }
       return {
         ...result,
         page: result.page.flatMap((item) =>
@@ -343,7 +420,9 @@ export const messages = publicQuery({
 export const players = publicQuery({
   access: "access_public",
   args: {},
-  returns: v.array(scoutValidator.extend({ busy: v.boolean() })),
+  returns: v.array(
+    scoutValidator.extend({ busy: v.boolean(), availability: availabilityValidator }),
+  ),
   handler: async (ctx) => {
     const scouts = await ctx.db
       .query("scouts")
@@ -351,29 +430,16 @@ export const players = publicQuery({
       .order("asc")
       .take(50);
     return await Promise.all(
-      scouts.map(async (scout) => ({
-        _id: scout._id,
-        displayName: scout.displayName,
-        status: scout.status,
-        busy:
-          (await scoutIsWorking(ctx, scout._id)) ||
-          Boolean(
-            await ctx.db
-              .query("scoutBrowserSessions")
-              .withIndex("by_scout_id_and_lifecycle_kind", (q) =>
-                q.eq("scoutId", scout._id).eq("lifecycle.kind", "active"),
-              )
-              .first(),
-          ) ||
-          Boolean(
-            await ctx.db
-              .query("scoutBrowserSessions")
-              .withIndex("by_scout_id_and_lifecycle_kind", (q) =>
-                q.eq("scoutId", scout._id).eq("lifecycle.kind", "closing"),
-              )
-              .first(),
-          ),
-      })),
+      scouts.map(async (scout) => {
+        const reservation = await scoutReservation(ctx, scout._id);
+        return {
+          _id: scout._id,
+          displayName: scout.displayName,
+          status: scout.status,
+          busy: reservation !== null,
+          availability: reservation?.status ?? ("available" as const),
+        };
+      }),
     );
   },
 });

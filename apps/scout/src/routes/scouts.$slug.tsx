@@ -6,6 +6,7 @@ import { z } from "zod";
 import { api } from "../../convex/_generated/api";
 import { ServiceAccountsSection, type AccountEditor } from "#components/scout-service-accounts";
 import { Button } from "#components/ui/button";
+import { ScoutAvailability, ScoutCurrentActivity } from "#components/scout-current-activity";
 import { canAccess, useViewerAccess } from "#lib/access";
 
 const searchSchema = z.object({
@@ -81,10 +82,13 @@ function ScoutDetailPage() {
       : selectedAccount
         ? { kind: "update", account: selectedAccount }
         : { kind: "closed" };
-  const statusLabel = scout.status === "active" ? "Active" : "Disabled";
-  const statusDotClass = scout.status === "active" ? "bg-emerald-500" : "bg-muted-foreground";
   const startChat = async () => {
-    if (scout.status !== "active" || chatState.kind === "submitting") return;
+    if (
+      scout.status !== "active" ||
+      scout.availability !== "available" ||
+      chatState.kind === "submitting"
+    )
+      return;
     setChatState({ kind: "submitting" });
     try {
       const created = await createThread({ scoutId: scout._id });
@@ -110,15 +114,16 @@ function ScoutDetailPage() {
             <p className="text-muted-foreground mt-1 font-mono text-xs">/{scout.slug}</p>
           </div>
           <div className="flex shrink-0 items-center gap-3 self-start">
-            <span className="inline-flex items-center gap-2 rounded-full bg-muted px-2.5 py-1 text-xs font-medium">
-              <span className={`size-2 rounded-full ${statusDotClass}`} aria-hidden="true" />
-              {statusLabel}
-            </span>
+            <ScoutAvailability scout={scout} />
             {canUseLab && (
               <Button
                 type="button"
                 size="sm"
-                disabled={scout.status !== "active" || chatState.kind === "submitting"}
+                disabled={
+                  scout.status !== "active" ||
+                  scout.availability !== "available" ||
+                  chatState.kind === "submitting"
+                }
                 onClick={() => void startChat()}
               >
                 {chatState.kind === "submitting" ? (
@@ -137,6 +142,12 @@ function ScoutDetailPage() {
           </p>
         ) : null}
       </header>
+
+      {scout.currentActivity && (
+        <section className="surface-panel overflow-hidden" aria-label="Current activity">
+          <ScoutCurrentActivity activity={scout.currentActivity} className="" />
+        </section>
+      )}
 
       <section aria-labelledby="scout-identity-heading">
         <h2 id="scout-identity-heading" className="text-lg font-semibold tracking-[-0.02em]">

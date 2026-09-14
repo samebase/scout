@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import agentTest from "@convex-dev/agent/test";
 import workflowTest from "@convex-dev/workflow/test";
 import { convexTest } from "convex-test";
@@ -65,21 +66,32 @@ async function setup() {
       ctx.db.normalizeId("agentsApiSessions", threadId),
     );
     if (!sessionId) throw new Error("Expected a managed Review");
+    const check = await backend.run((ctx) =>
+      ctx.db
+        .query("agentsApiRequestChecks")
+        .withIndex("by_session_id_and_kind", (q) =>
+          q.eq("sessionId", sessionId).eq("kind", "initial"),
+        )
+        .unique(),
+    );
+    if (!check) throw new Error("Expected an initial check");
     await backend.mutation(internal.agentsApi.requestChecks.start, {
-      sessionId,
+      checkId: check._id,
       startedAt: Date.now(),
       request: "{}",
+      evidence: null,
     });
     await backend.mutation(internal.agentsApi.requestChecks.finish, {
-      sessionId,
+      checkId: check._id,
       state: {
         kind: "completed",
-        startedAt: Date.now(),
         finishedAt: Date.now(),
-        request: "{}",
-        response: "{}",
-        usage: null,
-        result: { title: "Test product onboarding", decision: { kind: "approved" } },
+        call: { startedAt: Date.now(), request: "{}", response: "{}", usage: null },
+        result: {
+          kind: "initial",
+          title: "Test product onboarding",
+          decision: { kind: "approved" },
+        },
       },
     });
     await backend.mutation(internal.agentsApi.sessions.update, {
@@ -145,6 +157,46 @@ test("review site assignment preserves the subject across navigation and owner c
   });
   await expect(identify("other.test")).rejects.toThrow("no longer running");
 });
+
+test.each([
+  { kind: "running" },
+  { kind: "failed", error: "Provider returned 404" },
+  { kind: "stopped" },
+] satisfies Doc<"agentsApiSessions">["state"][])(
+  "keeps the original request visible in a $kind session until provider messages arrive",
+  async (state) => {
+    const t = await setup();
+    const sessionId = await t.review();
+    await t.backend.mutation(internal.agentsApi.sessions.update, { sessionId, state });
+    const args = {
+      threadId: sessionId,
+      paginationOpts: { numItems: 10, cursor: null },
+    };
+    expect((await t.backend.query(api.scout.activity.messages, args)).page).toEqual([
+      { id: expect.any(String), role: "user", text: "Try this product's onboarding." },
+    ]);
+
+    await t.backend.mutation(internal.agentsApi.sessions.saveItems, {
+      sessionId,
+      items: [
+        {
+          providerItemId: "original-request",
+          kind: "user",
+          text: "Try this product's onboarding.",
+          details: "",
+        },
+      ],
+    });
+    const synced = await t.backend.query(api.scout.activity.messages, args);
+    expect(synced.page).toHaveLength(1);
+    expect(synced.page[0]?.text).toBe("Try this product's onboarding.");
+    const older = await t.backend.query(api.scout.activity.messages, {
+      ...args,
+      paginationOpts: { numItems: 10, cursor: synced.continueCursor },
+    });
+    expect(older.page).toEqual([]);
+  },
+);
 
 test("managed Reviews share the feed and expose only conversation text and watch-only browser access", async () => {
   const t = await setup();
@@ -230,9 +282,9 @@ test("managed Reviews share the feed and expose only conversation text and watch
   await expect(
     t.other.mutation(api.agentsApi.sessions.send, { sessionId, message: "Take over" }),
   ).rejects.toThrow("Session not found");
-  await expect(t.other.mutation(api.agentsApi.sessions.resume, { sessionId })).rejects.toThrow(
-    "Session not found",
-  );
+  await expect(
+    t.other.mutation(api.agentsApi.sessions.resume, { sessionId, callId: "call", turnId: "turn" }),
+  ).rejects.toThrow("Session not found");
   await expect(t.other.mutation(api.agentsApi.sessions.stop, { sessionId })).rejects.toThrow(
     "Session not found",
   );
@@ -310,7 +362,17 @@ test("Review owners can resume handoffs, stop, and send follow-ups while Lab rem
       body: expect.stringContaining('"to":["player@example.test"]'),
     }),
   );
-  await t.member.mutation(api.agentsApi.sessions.resume, { sessionId });
+  await t.member.mutation(api.agentsApi.sessions.resume, {
+    sessionId,
+    callId: "handoff",
+    turnId: "turn",
+  });
+  expect(await t.member.query(api.agentsApi.sessions.controls, { sessionId })).toMatchObject({
+    state: { kind: "checking" },
+    canSend: false,
+    canStop: true,
+    interactiveLiveViewUrl: null,
+  });
   expect(
     await t.backend.query(internal.agentsApi.sessions.handoffNotification, {
       sessionId,
@@ -486,6 +548,100 @@ test("managed Reviews stay in the Agents inspector without breaking the Convex L
   ).toHaveLength(1);
 });
 
+test.each(["approved", "rejected"] as const)(
+  "uses only the %s initial decision for public admission, even when Resume disagrees",
+  async (initialDecision) => {
+    const t = await setup();
+    const sessionId = await t.review();
+    await t.backend.mutation(internal.agentsApi.sessions.saveItems, {
+      sessionId,
+      items: [
+        {
+          providerItemId: "reply",
+          kind: "assistant",
+          text: "Testing signup",
+          details: "private metadata",
+        },
+      ],
+    });
+    await t.backend.run(async (ctx) => {
+      const initial = await ctx.db
+        .query("agentsApiRequestChecks")
+        .withIndex("by_session_id_and_kind", (q) =>
+          q.eq("sessionId", sessionId).eq("kind", "initial"),
+        )
+        .unique();
+      if (!initial || initial.state.kind !== "completed")
+        throw new Error("Expected an initial decision");
+      if (initialDecision === "rejected")
+        await ctx.db.patch(initial._id, {
+          state: {
+            ...initial.state,
+            result: {
+              kind: "initial",
+              title: "Test product onboarding",
+              decision: { kind: "rejected", reason: "Unauthorized task" },
+            },
+          },
+        });
+      await ctx.db.insert("agentsApiRequestChecks", {
+        kind: "resume",
+        sessionId,
+        prompt: initial.prompt,
+        model: initial.model,
+        handoff: { callId: "call", turnId: "turn", message: "Private verification reason" },
+        providerSessionId: "browser",
+        evidence: { capturedAt: Date.now(), pages: [] },
+        state: {
+          kind: "completed",
+          finishedAt: Date.now(),
+          call: {
+            startedAt: Date.now(),
+            request: "private request",
+            response: "private response",
+            usage: null,
+          },
+          result: {
+            kind: "resume",
+            decision:
+              initialDecision === "approved"
+                ? { kind: "rejected", reason: "Private Resume rejection" }
+                : { kind: "approved" },
+          },
+        },
+      });
+      await ctx.db.patch(sessionId, {
+        state: {
+          kind: "waiting",
+          callId: "call",
+          turnId: "turn",
+          message: "Private verification reason",
+        },
+      });
+    });
+    const feed = await t.backend.query(api.scout.activity.list, {
+      scope: "public",
+      site: null,
+      paginationOpts: { numItems: 20, cursor: null },
+    });
+    const activity = await t.backend.query(api.scout.activity.get, { threadId: sessionId });
+    const messages = await t.backend.query(api.scout.activity.messages, {
+      threadId: sessionId,
+      paginationOpts: { numItems: 20, cursor: null },
+    });
+    if (initialDecision === "approved") {
+      expect(feed.page).toMatchObject([{ threadId: sessionId, title: "Test product onboarding" }]);
+      expect(activity).toMatchObject({ title: "Test product onboarding", status: "waiting" });
+      expect(messages.page).toMatchObject([{ text: "Testing signup" }]);
+      expect(JSON.stringify({ feed, activity, messages })).not.toMatch(/Private|private/);
+    } else {
+      expect(feed.page).toEqual([]);
+      expect(activity).toBeNull();
+      expect(messages.page).toEqual([]);
+    }
+  },
+);
+
 test("members can start and continue Play, but cannot run Lab chats or another player's chat", async () => {
   const t = await setup();
   const { threadId } = await t.member.mutation(api.scout.chats.startProductChat, {
@@ -509,6 +665,7 @@ test("members can start and continue Play, but cannot run Lab chats or another p
       displayName: "Play Scout",
       status: "active",
       busy: true,
+      availability: "working",
     },
   ]);
   await expect(

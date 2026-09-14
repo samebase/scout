@@ -139,9 +139,9 @@ it("lists and inspects a member's private Review without granting session contro
   await expect(
     admin.mutation(api.agentsApi.sessions.send, { sessionId, message: "Continue" }),
   ).rejects.toThrow("Session not found");
-  await expect(admin.mutation(api.agentsApi.sessions.resume, { sessionId })).rejects.toThrow(
-    "Session not found",
-  );
+  await expect(
+    admin.mutation(api.agentsApi.sessions.resume, { sessionId, callId: "call", turnId: "turn" }),
+  ).rejects.toThrow("Session not found");
   await expect(admin.mutation(api.agentsApi.sessions.stop, { sessionId })).rejects.toThrow(
     "Session not found",
   );
@@ -320,6 +320,14 @@ it.each(["active", "closing"] as const)(
       }),
     );
     expect(await backend.run((ctx) => scoutIsWorking(ctx, scoutId))).toBe(false);
+    const availability = kind === "closing" ? "stopping" : "browser_open";
+    expect(await owner.query(api.scout.scouts.get, { slug: "scout" })).toMatchObject({
+      availability,
+      currentActivity: { kind: "private" },
+    });
+    expect(await backend.query(api.scout.activity.players, {})).toMatchObject([
+      { availability, busy: true },
+    ]);
     await expect(
       owner.mutation(api.agentsApi.sessions.start, { scoutId, prompt: "New session" }),
     ).rejects.toThrow("existing browser");
