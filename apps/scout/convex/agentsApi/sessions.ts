@@ -1,4 +1,4 @@
-import { paginationOptsValidator } from "convex/server";
+import { paginationOptsValidator, paginationResultValidator } from "convex/server";
 import { vWorkflowId } from "@convex-dev/workflow";
 import { v } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
@@ -23,9 +23,15 @@ import { MAX_BROWSER_SESSIONS_PER_THREAD } from "../scout/browserSessions";
 import { browserSessionLifecycleValidator } from "../browserModel";
 import { estimateAgentsApiCost } from "./cost";
 
-async function owned(ctx: QueryCtx, sessionId: Id<"agentsApiSessions">, userId: Id<"users">) {
+async function requireSession(ctx: QueryCtx, sessionId: Id<"agentsApiSessions">) {
   const session = await ctx.db.get(sessionId);
-  if (!session || session.userId !== userId) throw new Error("Session not found");
+  if (!session) throw new Error("Session not found");
+  return session;
+}
+
+async function owned(ctx: QueryCtx, sessionId: Id<"agentsApiSessions">, userId: Id<"users">) {
+  const session = await requireSession(ctx, sessionId);
+  if (session.userId !== userId) throw new Error("Session not found");
   return session;
 }
 
@@ -83,20 +89,32 @@ async function startWorkflow(
 
 export const list = query({
   access: "access_lab",
-  args: {},
-  handler: async (ctx) => {
+  args: { paginationOpts: paginationOptsValidator },
+  returns: paginationResultValidator(
+    v.object({
+      _id: v.id("agentsApiSessions"),
+      _creationTime: v.number(),
+      title: v.string(),
+      scoutName: v.string(),
+      state: sessionState,
+    }),
+  ),
+  handler: async (ctx, args) => {
     const sessions = await ctx.db
       .query("agentsApiSessions")
-      .withIndex("by_user_id", (q) => q.eq("userId", ctx.viewer.userId))
+      .withIndex("by_creation_time")
       .order("desc")
-      .take(50);
-    return sessions.map(({ _id, _creationTime, title, scoutName, state }) => ({
-      _id,
-      _creationTime,
-      title,
-      scoutName,
-      state,
-    }));
+      .paginate(args.paginationOpts);
+    return {
+      ...sessions,
+      page: sessions.page.map(({ _id, _creationTime, title, scoutName, state }) => ({
+        _id,
+        _creationTime,
+        title,
+        scoutName,
+        state,
+      })),
+    };
   },
 });
 
@@ -104,7 +122,8 @@ export const get = query({
   access: "access_lab",
   args: { sessionId: v.id("agentsApiSessions") },
   handler: async (ctx, args) => {
-    const session = await owned(ctx, args.sessionId, ctx.viewer.userId);
+    const session = await requireSession(ctx, args.sessionId);
+    const canControl = session.userId === ctx.viewer.userId;
     const { _id, title, scoutId, scoutName, state, active, model, providerId, usage, browser } =
       session;
     const cleanup = session.cleanupJobId ? await ctx.db.system.get(session.cleanupJobId) : null;
@@ -144,6 +163,7 @@ export const get = query({
       scoutName,
       state,
       active,
+      canControl,
       cleanupError: cleanup?.state.kind === "failed" ? cleanup.state.error : null,
       model,
       providerId,
@@ -152,7 +172,7 @@ export const get = query({
       browser: browser
         ? {
             liveViewUrl: browser.liveViewUrl,
-            interactiveLiveViewUrl: browser.interactiveLiveViewUrl,
+            interactiveLiveViewUrl: canControl ? browser.interactiveLiveViewUrl : null,
           }
         : null,
     };
@@ -163,7 +183,7 @@ export const listItems = query({
   access: "access_lab",
   args: { sessionId: v.id("agentsApiSessions"), paginationOpts: paginationOptsValidator },
   handler: async (ctx, args) => {
-    await owned(ctx, args.sessionId, ctx.viewer.userId);
+    await requireSession(ctx, args.sessionId);
     return await ctx.db
       .query("agentsApiItems")
       .withIndex("by_session_id_and_sequence", (q) => q.eq("sessionId", args.sessionId))
@@ -185,7 +205,7 @@ export const listBrowsers = query({
     }),
   ),
   handler: async (ctx, args) => {
-    const session = await owned(ctx, args.sessionId, ctx.viewer.userId);
+    const session = await requireSession(ctx, args.sessionId);
     const browsers = await ctx.db
       .query("agentsApiBrowserSessions")
       .withIndex("by_agents_session_id_and_sequence", (q) =>
@@ -204,7 +224,8 @@ export const listBrowsers = query({
         sequence: browser.sequence,
         lifecycle: browser.lifecycle,
         liveViewUrl: handle?.liveViewUrl ?? null,
-        interactiveLiveViewUrl: handle?.interactiveLiveViewUrl ?? null,
+        interactiveLiveViewUrl:
+          session.userId === ctx.viewer.userId ? (handle?.interactiveLiveViewUrl ?? null) : null,
       };
     });
   },

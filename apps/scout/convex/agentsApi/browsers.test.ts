@@ -24,7 +24,7 @@ async function setup() {
   const backend = convexTest(schema, modules);
   const { userId, otherUserId, sessionId } = await backend.run(async (ctx) => {
     const userId = await insertTestAccount(ctx, { email: ADMIN_EMAIL });
-    const otherUserId = await insertTestAccount(ctx, { email: ADMIN_EMAIL });
+    const otherUserId = await insertTestAccount(ctx, { email: "member@example.com" });
     const scoutId = await ctx.db.insert("scouts", {
       displayName: "Scout",
       slug: "scout",
@@ -165,7 +165,7 @@ it("authorizes both replay endpoints before fetching a provider recording", asyn
   const [browser] = await list();
   if (!browser) throw new Error("Missing browser");
   vi.stubEnv("FIRECRAWL_API_KEY", "test-key");
-  const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+  const fetchMock = vi.fn<typeof fetch>().mockImplementation(async () =>
     Response.json({
       success: true,
       pages: [{ pageId: "1", pageUrl: "https://example.com", startTimeMs: 100, endTimeMs: 200 }],
@@ -185,8 +185,19 @@ it("authorizes both replay endpoints before fetching a provider recording", asyn
   }
   expect(fetchMock).not.toHaveBeenCalled();
   await expect(other.query(api.agentsApi.sessions.listBrowsers, { sessionId })).rejects.toThrow(
-    "Session not found",
+    "Not authorized",
   );
+  const adminId = await backend.run((ctx) =>
+    insertTestAccount(ctx, { email: "nicu@samebase.com" }),
+  );
+  const admin = backend.withIdentity({ subject: adminId });
+  expect(await admin.action(api.browserReplay.listPages, { sessionId: browser._id })).toMatchObject(
+    { status: "ready", pages: [{ pageId: "1" }] },
+  );
+  fetchMock.mockResolvedValueOnce(new Response("#EXTM3U\n#EXT-X-ENDLIST"));
+  expect(
+    await admin.action(api.browserReplay.loadPlaylist, { sessionId: browser._id, pageId: "1" }),
+  ).toEqual({ status: "ready", playlist: "#EXTM3U\n#EXT-X-ENDLIST" });
   expect(await owner.action(api.browserReplay.listPages, { sessionId: browser._id })).toMatchObject(
     { status: "ready", pages: [{ pageId: "1" }] },
   );

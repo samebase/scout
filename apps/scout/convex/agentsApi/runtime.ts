@@ -340,7 +340,6 @@ export const refresh = action({
   returns: v.null(),
   handler: async (ctx, args): Promise<null> => {
     const session = await ctx.runQuery(internal.agentsApi.sessions.cleanupResources, args);
-    if (session.userId !== ctx.viewer.userId) throw new Error("Session not found");
     if (session.active) throw new Error("The running session is already being refreshed");
     const providerId = session.providerId;
     if (!providerId) return null;

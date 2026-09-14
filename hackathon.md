@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-12T15:38:47Z
+- **Last updated:** 2026-09-14T12:18:21Z
 
 ## Log
 
@@ -1220,10 +1220,17 @@ workspace. Vite+ runs the existing root development, check, and deployment comma
 Other apps and shared packages can now be developed alongside Scout; video processing
 will be a separate change. The primary checkout still uses its existing Convex dev deployment.
 
-### 2026-09-12 - working tree
+### 2026-09-12 - 0973d9f
 
 Replays now show browser-style tabs and a selectable address bar above the video.
 The address follows saved URL observations when seeking forward or backward;
 tab selection and automatic following use the existing replay controls.
 The shared header works in the Agents, Lab, Play, and Review interfaces
 (`apps/scout/src/components/browser-replay-header.tsx`).
+
+### 2026-09-14 - working tree
+
+Admins can inspect member-created Reviews in Agents, including their transcripts,
+cost, live view, and replay. The session list now loads older conversations, and
+Review links to its inspector for admins. Sending messages and controlling a run
+remain with its owner (`apps/scout/convex/agentsApi/`, `apps/scout/src/agents-api/`).

@@ -476,10 +476,16 @@ it("refreshes ended-session history and cost without restarting the agent or cha
   });
   expect(provider.events).toEqual([]);
   expect(execute).not.toHaveBeenCalled();
-  const strangerId = await backend.run((ctx) => insertTestAccount(ctx, { email: ADMIN_EMAIL }));
+  const adminId = await backend.run((ctx) => insertTestAccount(ctx, { email: ADMIN_EMAIL }));
+  await backend
+    .withIdentity({ subject: adminId })
+    .action(api.agentsApi.runtime.refresh, { sessionId });
+  const strangerId = await backend.run((ctx) =>
+    insertTestAccount(ctx, { email: "member@example.com" }),
+  );
   const stranger = backend.withIdentity({ subject: strangerId });
   await expect(stranger.action(api.agentsApi.runtime.refresh, { sessionId })).rejects.toThrow(
-    "Session not found",
+    "Not authorized",
   );
 });
 

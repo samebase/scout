@@ -2,7 +2,7 @@ import { PaneFrame } from "@samebase/sidebars/PaneFrame";
 import { SidebarLayout } from "@samebase/sidebars/SidebarLayout";
 import { useSidebarActions, useSidebarLayoutPresentation } from "@samebase/sidebars/SidebarRuntime";
 import { Link, useNavigate, type ErrorComponentProps } from "@tanstack/react-router";
-import { useAction, useMutation, useQuery } from "convex/react";
+import { useAction, useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import {
   PanelLeftIcon,
   PanelRightIcon,
@@ -36,10 +36,11 @@ export function AgentsPage({ search }: { search: AgentsSearch }) {
 }
 
 function AgentsWorkspace({ search, session }: { search: AgentsSearch; session: Session | null }) {
-  const sessions = useQuery(api.agentsApi.sessions.list, {});
-  const orderedSessions = sessions?.toSorted(
-    (left, right) => right._creationTime - left._creationTime || left._id.localeCompare(right._id),
-  );
+  const {
+    results: sessions,
+    status,
+    loadMore,
+  } = usePaginatedQuery(api.agentsApi.sessions.list, {}, { initialNumItems: 50 });
 
   return (
     <SidebarLayout
@@ -51,7 +52,7 @@ function AgentsWorkspace({ search, session }: { search: AgentsSearch; session: S
           scrollRestorationId="agents-sessions"
           content={
             <aside aria-label="Sessions">
-              {sessions === undefined ? (
+              {status === "LoadingFirstPage" ? (
                 <p role="status" className="p-4 text-sm text-muted-foreground">
                   Loading sessions…
                 </p>
@@ -59,7 +60,7 @@ function AgentsWorkspace({ search, session }: { search: AgentsSearch; session: S
                 <p className="p-4 text-sm text-muted-foreground">No sessions yet.</p>
               ) : (
                 <nav className="flex flex-col gap-1 p-2" aria-label="Agent sessions">
-                  {orderedSessions?.map((session) => (
+                  {sessions.map((session) => (
                     <Link
                       key={session._id}
                       to="/agents"
@@ -77,6 +78,15 @@ function AgentsWorkspace({ search, session }: { search: AgentsSearch; session: S
                       </span>
                     </Link>
                   ))}
+                  {(status === "CanLoadMore" || status === "LoadingMore") && (
+                    <Button
+                      variant="ghost"
+                      disabled={status === "LoadingMore"}
+                      onClick={() => loadMore(50)}
+                    >
+                      {status === "LoadingMore" ? "Loading…" : "Load more sessions"}
+                    </Button>
+                  )}
                 </nav>
               )}
             </aside>
@@ -269,14 +279,18 @@ function SessionView({ session }: { session: Session }) {
   const submitting = useRef(false);
   const controls = sessionControls(session.state);
   const canSend =
-    controls.canSend && !session.active && Boolean(session.providerId) && Boolean(draft.trim());
-  const canStop = controls.canStop || session.active;
+    session.canControl &&
+    controls.canSend &&
+    !session.active &&
+    Boolean(session.providerId) &&
+    Boolean(draft.trim());
+  const canStop = session.canControl && (controls.canStop || session.active);
   const error =
     session.cleanupError ?? (session.state.kind === "failed" ? session.state.error : null);
   const pending = request.kind === "pending";
 
   async function run(operation: "send" | "stop" | "resume" | "refresh") {
-    if (submitting.current) return;
+    if (submitting.current || (operation !== "refresh" && !session.canControl)) return;
     if (operation === "send" && !canSend) return;
     if (operation === "refresh" && session.active) return;
     submitting.current = true;
@@ -334,9 +348,11 @@ function SessionView({ session }: { session: Session }) {
         {session.state.kind === "waiting" && (
           <div className="space-y-3">
             <p className="text-sm whitespace-pre-wrap wrap-anywhere">{session.state.message}</p>
-            <Button disabled={pending} onClick={() => void run("resume")}>
-              Resume
-            </Button>
+            {session.canControl && (
+              <Button disabled={pending} onClick={() => void run("resume")}>
+                Resume
+              </Button>
+            )}
           </div>
         )}
         {error && (
@@ -366,37 +382,39 @@ function SessionView({ session }: { session: Session }) {
             {request.message}
           </p>
         )}
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            void run("send");
-          }}
-          className="flex items-end gap-2"
-        >
-          <Textarea
-            aria-label="Message"
-            placeholder="Message Scout…"
-            maxLength={20_000}
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            disabled={pending}
-            className="max-h-48 min-h-20 resize-none"
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-                event.preventDefault();
-                void run("send");
-              }
+        {session.canControl && (
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void run("send");
             }}
-          />
-          <Button
-            type="submit"
-            size="icon"
-            aria-label="Send message"
-            disabled={!canSend || pending}
+            className="flex items-end gap-2"
           >
-            <SendIcon aria-hidden="true" />
-          </Button>
-        </form>
+            <Textarea
+              aria-label="Message"
+              placeholder="Message Scout…"
+              maxLength={20_000}
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              disabled={pending}
+              className="max-h-48 min-h-20 resize-none"
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                  event.preventDefault();
+                  void run("send");
+                }
+              }}
+            />
+            <Button
+              type="submit"
+              size="icon"
+              aria-label="Send message"
+              disabled={!canSend || pending}
+            >
+              <SendIcon aria-hidden="true" />
+            </Button>
+          </form>
+        )}
       </div>
     </section>
   );

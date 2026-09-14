@@ -95,6 +95,7 @@ function session(state: Session["state"] = { kind: "idle" }) {
     scoutName: "Pip",
     state,
     active: state.kind === "starting" || state.kind === "running" || state.kind === "waiting",
+    canControl: true,
     model: "gpt-5.6-luna",
     providerId: "provider-1",
     browser: null,
@@ -235,6 +236,33 @@ test("a saved link opens a session outside the recent list through the validated
     sessionId: "session-1",
   });
   expect(remote.start).not.toHaveBeenCalled();
+});
+
+test("loads older sessions from the sidebar", async () => {
+  remote.paginationStatus = "CanLoadMore";
+  await open();
+  fireEvent.click(await screen.findByRole("button", { name: "Load more sessions" }));
+  expect(remote.loadMore).toHaveBeenCalledExactlyOnceWith(50);
+});
+
+test("admins can inspect another user's transcript without owner controls", async () => {
+  remote.queries.set("agentsApi/sessions:get", {
+    ...session({
+      kind: "waiting",
+      message: "Complete verification",
+      callId: "call",
+      turnId: "turn",
+    }),
+    canControl: false,
+  });
+  remote.queries.set("agentsApi/sessions:listItems", [
+    { _id: "reply", sequence: 1, kind: "assistant", text: "I opened the site.", details: "" },
+  ]);
+  await open("/agents?session=session-1");
+  expect(await screen.findByText("I opened the site.")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
+  expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
 });
 
 test("invalid session IDs surface the query error without mounting the transcript", async () => {
