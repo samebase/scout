@@ -22,8 +22,7 @@ const scout: NonNullable<FunctionReturnType<typeof api.scout.scouts.get>> = {
   slug: "magda",
   status: "active",
   websiteIdentity: { firstName: "Magda", lastName: "Scout" },
-  agentMail: { inboxId: "magda", address: "magda@example.test" },
-  firecrawl: { profileName: "magda" },
+  agentMail: { address: "magda@example.test" },
 };
 const github: FunctionReturnType<typeof api.scout.serviceAccounts.list>[number] = {
   // @ts-expect-error This rendering fixture uses an opaque string in place of a database-issued account ID.

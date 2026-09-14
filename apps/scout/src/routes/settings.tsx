@@ -71,6 +71,7 @@ function AccountStatus() {
 
 function SessionSettings() {
   const { signOut } = useAuthActions();
+  const viewer = useViewerAccess();
   const navigate = useNavigate();
   const [state, setState] = useState<SignOutState>({ kind: "idle" });
   const isPending = state.kind === "pending";
@@ -100,7 +101,9 @@ function SessionSettings() {
             <h2 id="session-settings-heading" className="text-base font-semibold">
               Your session
             </h2>
-            <p className="mt-1 text-sm text-muted-foreground">You are signed in on this browser.</p>
+            {viewer?.kind === "account" && viewer.email ? (
+              <p className="mt-1 break-all text-sm text-muted-foreground">{viewer.email}</p>
+            ) : null}
           </div>
         </div>
         <Button

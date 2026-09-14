@@ -46,6 +46,12 @@ export function AppNavigation() {
             <FocusIcon aria-hidden="true" />
             <span>Review</span>
           </Link>
+          {canAccess("access_scout_view", permissions) && (
+            <Link to="/scouts" className={navigationLinkClass}>
+              <UsersIcon aria-hidden="true" />
+              <span>Scouts</span>
+            </Link>
+          )}
           {canAccess("access_lab", permissions) && (
             <Link to="/agents" search={{}} className={navigationLinkClass}>
               <BotIcon aria-hidden="true" />
@@ -56,12 +62,6 @@ export function AppNavigation() {
             <Link to="/chats" className={navigationLinkClass}>
               <MessageSquareIcon aria-hidden="true" />
               <span>Lab</span>
-            </Link>
-          )}
-          {canAccess("access_scout_manage", permissions) && (
-            <Link to="/scouts" className={navigationLinkClass}>
-              <UsersIcon aria-hidden="true" />
-              <span>Scouts</span>
             </Link>
           )}
           {canAccess("access_lab", permissions) && (

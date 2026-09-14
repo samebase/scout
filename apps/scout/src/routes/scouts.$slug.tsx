@@ -6,6 +6,7 @@ import { z } from "zod";
 import { api } from "../../convex/_generated/api";
 import { ServiceAccountsSection, type AccountEditor } from "#components/scout-service-accounts";
 import { Button } from "#components/ui/button";
+import { canAccess, useViewerAccess } from "#lib/access";
 
 const searchSchema = z.object({
   view: z.literal("add-account").optional().catch(undefined),
@@ -13,7 +14,7 @@ const searchSchema = z.object({
 });
 
 export const Route = createFileRoute("/scouts/$slug")({
-  staticData: { access: "access_scout_manage" },
+  staticData: { access: "access_scout_view" },
   validateSearch: (search) => searchSchema.parse(search),
   component: ScoutDetailPage,
 });
@@ -24,15 +25,23 @@ type RegistrationState =
   | { kind: "failed"; message: string };
 
 function ScoutDetailPage() {
+  const viewer = useViewerAccess();
+  const canManage =
+    viewer?.kind === "account" && canAccess("access_scout_manage", viewer.accessKeys);
+  const canUseLab = viewer?.kind === "account" && canAccess("access_lab", viewer.accessKeys);
   const { slug } = Route.useParams();
   const search = Route.useSearch();
   const navigate = useNavigate({ from: "/scouts/$slug" });
   const createThread = useMutation(api.scout.chats.createThread);
   const [chatState, setChatState] = useState<RegistrationState>({ kind: "idle" });
   const scout = useQuery(api.scout.scouts.get, { slug });
+  const resources = useQuery(
+    api.scout.scouts.resources,
+    canManage && scout ? { scoutId: scout._id } : "skip",
+  );
   const serviceAccounts = useQuery(
     api.scout.serviceAccounts.list,
-    scout === undefined || scout === null ? "skip" : { scoutId: scout._id },
+    canManage && scout ? { scoutId: scout._id } : "skip",
   );
 
   if (scout === undefined) {
@@ -99,28 +108,27 @@ function ScoutDetailPage() {
           <div>
             <h1 className="route-heading wrap-break-word">{scout.displayName}</h1>
             <p className="text-muted-foreground mt-1 font-mono text-xs">/{scout.slug}</p>
-            <p className="text-muted-foreground mt-3 max-w-xl text-sm leading-6">
-              Worker models act as {scout.displayName} using this identity and the resources below.
-            </p>
           </div>
           <div className="flex shrink-0 items-center gap-3 self-start">
             <span className="inline-flex items-center gap-2 rounded-full bg-muted px-2.5 py-1 text-xs font-medium">
               <span className={`size-2 rounded-full ${statusDotClass}`} aria-hidden="true" />
               {statusLabel}
             </span>
-            <Button
-              type="button"
-              size="sm"
-              disabled={scout.status !== "active" || chatState.kind === "submitting"}
-              onClick={() => void startChat()}
-            >
-              {chatState.kind === "submitting" ? (
-                <LoaderCircleIcon className="animate-spin" />
-              ) : (
-                <PlusIcon />
-              )}
-              {chatState.kind === "submitting" ? "Starting" : "New chat"}
-            </Button>
+            {canUseLab && (
+              <Button
+                type="button"
+                size="sm"
+                disabled={scout.status !== "active" || chatState.kind === "submitting"}
+                onClick={() => void startChat()}
+              >
+                {chatState.kind === "submitting" ? (
+                  <LoaderCircleIcon className="animate-spin" />
+                ) : (
+                  <PlusIcon />
+                )}
+                {chatState.kind === "submitting" ? "Starting" : "New chat"}
+              </Button>
+            )}
           </div>
         </div>
         {chatState.kind === "failed" ? (
@@ -137,63 +145,65 @@ function ScoutDetailPage() {
         <dl className="surface-panel mt-3 grid gap-5 p-5 text-sm sm:grid-cols-2 sm:p-6">
           <div className="min-w-0">
             <dt className="text-muted-foreground text-xs">First name</dt>
-            <dd className="mt-1 wrap-break-word">
-              {scout.websiteIdentity?.firstName ?? "Not configured"}
-            </dd>
+            <dd className="mt-1 wrap-break-word">{scout.websiteIdentity.firstName}</dd>
           </div>
           <div className="min-w-0">
             <dt className="text-muted-foreground text-xs">Last name</dt>
-            <dd className="mt-1 wrap-break-word">
-              {scout.websiteIdentity?.lastName ?? "Not configured"}
-            </dd>
-          </div>
-        </dl>
-      </section>
-
-      <section aria-labelledby="scout-provider-connections-heading">
-        <h2
-          id="scout-provider-connections-heading"
-          className="text-lg font-semibold tracking-[-0.02em]"
-        >
-          Runtime resources
-        </h2>
-        <dl className="surface-panel mt-3 grid gap-5 p-5 text-sm sm:grid-cols-2 sm:p-6">
-          <div className="min-w-0">
-            <dt className="text-muted-foreground text-xs">AgentMail inbox</dt>
-            <dd className="mt-1 wrap-break-word font-mono text-xs">{scout.agentMail.inboxId}</dd>
-          </div>
-          <div className="min-w-0">
-            <dt className="text-muted-foreground text-xs">AgentMail address</dt>
-            <dd className="mt-1 wrap-break-word">{scout.agentMail.address}</dd>
+            <dd className="mt-1 wrap-break-word">{scout.websiteIdentity.lastName}</dd>
           </div>
           <div className="min-w-0 sm:col-span-2">
-            <dt className="text-muted-foreground text-xs">Firecrawl profile</dt>
-            <dd className="mt-1 wrap-break-word">{scout.firecrawl.profileName}</dd>
+            <dt className="text-muted-foreground text-xs">Email</dt>
+            <dd className="mt-1 wrap-break-word">{scout.agentMail.address}</dd>
           </div>
         </dl>
       </section>
 
-      {search.account && serviceAccounts !== undefined && !selectedAccount ? (
+      {resources && (
+        <section aria-labelledby="scout-provider-connections-heading">
+          <h2
+            id="scout-provider-connections-heading"
+            className="text-lg font-semibold tracking-[-0.02em]"
+          >
+            Runtime resources
+          </h2>
+          <dl className="surface-panel mt-3 grid gap-5 p-5 text-sm sm:grid-cols-2 sm:p-6">
+            <div className="min-w-0">
+              <dt className="text-muted-foreground text-xs">AgentMail inbox</dt>
+              <dd className="mt-1 wrap-break-word font-mono text-xs">
+                {resources.agentMail.inboxId}
+              </dd>
+            </div>
+            <div className="min-w-0">
+              <dt className="text-muted-foreground text-xs">Firecrawl profile</dt>
+              <dd className="mt-1 wrap-break-word">{resources.firecrawl.profileName}</dd>
+            </div>
+          </dl>
+        </section>
+      )}
+
+      {canManage && search.account && serviceAccounts !== undefined && !selectedAccount ? (
         <p role="alert">Account not found.</p>
       ) : null}
-      <ServiceAccountsSection
-        scout={scout}
-        accounts={serviceAccounts}
-        editor={editor}
-        onEdit={(next) => {
-          switch (next.kind) {
-            case "closed":
-              void navigate({ search: {} });
-              break;
-            case "create":
-              void navigate({ search: { view: "add-account" } });
-              break;
-            case "update":
-              void navigate({ search: { account: next.account._id } });
-              break;
-          }
-        }}
-      />
+      {canManage && (
+        <ServiceAccountsSection
+          scout={scout}
+          accounts={serviceAccounts}
+          editor={editor}
+          onEdit={(next) => {
+            switch (next.kind) {
+              case "closed":
+                void navigate({ search: {} });
+                break;
+              case "create":
+                void navigate({ search: { view: "add-account" } });
+                break;
+              case "update":
+                void navigate({ search: { account: next.account._id } });
+                break;
+            }
+          }}
+        />
+      )}
     </>
   );
 }

@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-14T12:18:21Z
+- **Last updated:** 2026-09-14T14:03:57Z
 
 ## Log
 
@@ -1228,9 +1228,16 @@ tab selection and automatic following use the existing replay controls.
 The shared header works in the Agents, Lab, Play, and Review interfaces
 (`apps/scout/src/components/browser-replay-header.tsx`).
 
-### 2026-09-14 - working tree
+### 2026-09-14 - be98e37
 
 Admins can inspect member-created Reviews in Agents, including their transcripts,
 cost, live view, and replay. The session list now loads older conversations, and
 Review links to its inspector for admins. Sending messages and controlling a run
 remain with its owner (`apps/scout/convex/agentsApi/`, `apps/scout/src/agents-api/`).
+
+### 2026-09-14 - working tree
+
+Members can browse Scout profiles and email addresses while account management stays admin-only.
+Settings identifies the signed-in account. Activity filters use shadcn dropdowns, with yellow Play
+and emerald Review badges. The shared navigation keeps stable typography across product themes
+(`apps/scout/convex/scout/scouts.ts`, `apps/scout/src/components/`, `apps/scout/src/style.css`).

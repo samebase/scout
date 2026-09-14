@@ -36,6 +36,7 @@ test.each(["nicu.dev@gmail.com", "nicu@samebase.com", "NICU.DEV@GMAIL.COM"])(
     );
     const admin = backend.withIdentity({ subject: `${userId}|session` });
     expect(await admin.query(api.accounts.currentViewerAccess, {})).toMatchObject({
+      email,
       role: "role_staff",
       isApproved: false,
       accessKeys: expect.arrayContaining(["access_lab", "access_members_manage"]),
@@ -57,6 +58,7 @@ test.each(["member@example.test", "nicuchiciuc@gmail.com", "NICUCHICIUC@GMAIL.CO
     );
     const member = backend.withIdentity({ subject: `${userId}|session` });
     const pending = {
+      email,
       role: "role_pending_access",
       isApproved: false,
       accessKeys: ["access_public", "access_account"],
@@ -67,15 +69,22 @@ test.each(["member@example.test", "nicuchiciuc@gmail.com", "NICUCHICIUC@GMAIL.CO
     ).rejects.toThrow("Not authorized");
     await backend.run((ctx) => ctx.db.patch(userId, { isApproved: true }));
     expect(await member.query(api.accounts.currentViewerAccess, {})).toMatchObject({
+      email,
       role: "role_member",
       isApproved: true,
-      accessKeys: ["access_public", "access_account", "access_play", "access_review"],
+      accessKeys: [
+        "access_public",
+        "access_account",
+        "access_play",
+        "access_review",
+        "access_scout_view",
+      ],
     });
     await admin.mutation(api.accounts.setApproval, { userId, isApproved: false });
     expect(await member.query(api.accounts.currentViewerAccess, {})).toMatchObject(pending);
     await admin.mutation(api.accounts.setApproval, { userId, isApproved: true });
     await admin.mutation(api.accounts.setApproval, { userId, isApproved: true });
-    await expect(member.query(api.scout.scouts.list, {})).rejects.toThrow("Not authorized");
+    await expect(member.query(api.scout.scouts.list, {})).resolves.toEqual([]);
     expect(await backend.run((ctx) => ctx.db.query("scouts").collect())).toEqual([]);
     const accounts = await admin.query(api.accounts.list, {
       paginationOpts: { numItems: 10, cursor: null },
@@ -92,7 +101,7 @@ test.each(["member@example.test", "nicuchiciuc@gmail.com", "NICUCHICIUC@GMAIL.CO
 test("member queries, mutations, and actions enforce admin permissions", async () => {
   const { admin, member, memberId } = await setup();
   await expect(admin.query(api.scout.scouts.list, {})).resolves.toEqual([]);
-  await expect(member.query(api.scout.scouts.list, {})).rejects.toThrow("Not authorized");
+  await expect(member.query(api.scout.scouts.list, {})).resolves.toEqual([]);
   await expect(
     member.query(api.accounts.list, {
       paginationOpts: { numItems: 10, cursor: null },

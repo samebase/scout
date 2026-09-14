@@ -1,8 +1,24 @@
 import { Link } from "@tanstack/react-router";
 import { useAction, usePaginatedQuery, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
-import { ArrowUpRightIcon, PlayIcon } from "lucide-react";
+import {
+  ArrowUpRightIcon,
+  FocusIcon,
+  Gamepad2Icon,
+  MessageSquareIcon,
+  PlayIcon,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { z } from "zod";
+import { Badge } from "#components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "#components/ui/select";
 import { api } from "../../convex/_generated/api";
 import { useViewerAccess } from "../lib/access";
 import { BrowserReplayTrack } from "./browser-replay";
@@ -11,6 +27,13 @@ import { productRoutes } from "../products/conversation/model";
 import { buildReplayTimeline } from "../lib/browserReplayTimeline";
 
 type Activity = FunctionReturnType<typeof api.scout.activity.list>["page"][number];
+const activityKind = z.enum(["all", "play", "review"]);
+const activityScope = z.enum(["public", "mine"]);
+const activityProducts = {
+  play: { label: "Play", icon: Gamepad2Icon, className: "bg-play-sand text-play-ink" },
+  review: { label: "Review", icon: FocusIcon, className: "bg-review-accent text-white" },
+  general: { label: "Chat", icon: MessageSquareIcon, className: "bg-play-cloud text-play-ink" },
+};
 const activityLabels: Record<Activity["status"], string> = {
   ready: "Ready",
   running: "Running",
@@ -22,9 +45,9 @@ const activityLabels: Record<Activity["status"], string> = {
 };
 
 export function ActivityFeed() {
-  const [kind, setKind] = useState<"all" | "play" | "review">("all");
+  const [kind, setKind] = useState<z.infer<typeof activityKind>>("all");
   const viewer = useViewerAccess();
-  const [scope, setScope] = useState<"public" | "mine">("public");
+  const [scope, setScope] = useState<z.infer<typeof activityScope>>("public");
   const signedIn = viewer?.kind === "account";
   const selectedScope = signedIn ? scope : "public";
   const activities = usePaginatedQuery(
@@ -34,35 +57,40 @@ export function ActivityFeed() {
   );
   return (
     <section aria-label="Activity">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-x-6 border-b border-play-line">
-        <div role="group" aria-label="Activity type" className="flex gap-6">
-          {(["all", "play", "review"] as const).map((option) => (
-            <button
-              key={option}
-              type="button"
-              onClick={() => setKind(option)}
-              aria-pressed={kind === option}
-              className={
-                "min-h-12 border-b-2 px-1 text-sm " +
-                (kind === option
-                  ? "border-play-blue font-semibold text-play-ink"
-                  : "border-transparent text-play-muted")
-              }
-            >
-              {{ all: "All", play: "Play", review: "Review" }[option]}
-            </button>
-          ))}
-        </div>
+      <div className="mb-2 flex flex-wrap items-center gap-3 border-b border-play-line pb-4">
+        <Select value={kind} onValueChange={(value) => setKind(activityKind.parse(value))}>
+          <SelectTrigger aria-label="Activity type" className="min-h-11 min-w-32 bg-card">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent position="popper" align="start" className="font-play-body">
+            <SelectGroup>
+              <SelectItem value="all">All types</SelectItem>
+              <SelectItem value="play">
+                <Gamepad2Icon aria-hidden="true" />
+                Play
+              </SelectItem>
+              <SelectItem value="review">
+                <FocusIcon aria-hidden="true" />
+                Review
+              </SelectItem>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
         {signedIn && (
-          <select
-            aria-label="Activity visibility"
-            className="min-h-12 min-w-0 rounded-lg bg-transparent text-sm text-play-muted"
+          <Select
             value={selectedScope}
-            onChange={(event) => setScope(event.target.value === "mine" ? "mine" : "public")}
+            onValueChange={(value) => setScope(activityScope.parse(value))}
           >
-            <option value="public">Public activity</option>
-            <option value="mine">My activity</option>
-          </select>
+            <SelectTrigger aria-label="Activity visibility" className="min-h-11 min-w-40 bg-card">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent position="popper" align="start" className="font-play-body">
+              <SelectGroup>
+                <SelectItem value="public">Public activity</SelectItem>
+                <SelectItem value="mine">My activity</SelectItem>
+              </SelectGroup>
+            </SelectContent>
+          </Select>
         )}
       </div>
       {activities.results.map((activity) => (
@@ -93,6 +121,7 @@ export function ActivityFeed() {
 
 function ActivityRow({ activity }: { activity: Activity }) {
   const product = activity.purpose.kind;
+  const { label, icon: ProductIcon, className: badgeClassName } = activityProducts[product];
   const route = product === "general" ? "/chats" : productRoutes[product];
   const [hovered, setHovered] = useState(false);
   const [visible, setVisible] = useState(false);
@@ -131,10 +160,12 @@ function ActivityRow({ activity }: { activity: Activity }) {
         </span>
       </Link>
       <div className="min-w-0">
-        <div className="mb-3 flex items-center gap-2 text-xs text-play-muted">
+        <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-play-muted">
+          <Badge variant="secondary" className={badgeClassName}>
+            <ProductIcon aria-hidden="true" />
+            {label}
+          </Badge>
           {activity.status === "running" && <span className="size-1.5 rounded-full bg-play-blue" />}
-          <span>{product === "play" ? "Play" : "Review"}</span>
-          <span aria-hidden="true">·</span>
           <span>{activityLabels[activity.status]}</span>
           <span aria-hidden="true">·</span>
           <time dateTime={new Date(activity.createdAt).toISOString()}>

@@ -38,11 +38,7 @@ const scoutPublicValidator = v.object({
   slug: v.string(),
   status: v.union(v.literal("active"), v.literal("disabled")),
   agentMail: v.object({
-    inboxId: v.string(),
     address: v.string(),
-  }),
-  firecrawl: v.object({
-    profileName: v.string(),
   }),
 });
 
@@ -131,8 +127,7 @@ function projectScout(scout: Doc<"scouts">) {
     websiteIdentity: scout.websiteIdentity,
     slug: scout.slug,
     status: scout.status,
-    agentMail: scout.agentMail,
-    firecrawl: scout.firecrawl,
+    agentMail: { address: scout.agentMail.address },
   };
 }
 
@@ -174,7 +169,7 @@ async function requireScoutAvailable(
 }
 
 export const list = query({
-  access: "access_scout_manage",
+  access: "access_scout_view",
   args: {},
   returns: v.array(scoutPublicValidator),
   handler: async (ctx) => {
@@ -184,7 +179,7 @@ export const list = query({
 });
 
 export const get = query({
-  access: "access_scout_manage",
+  access: "access_scout_view",
   args: {
     slug: v.string(),
   },
@@ -195,6 +190,16 @@ export const get = query({
       .withIndex("by_slug", (q) => q.eq("slug", canonicalSlug(args.slug)))
       .unique();
     return scout ? projectScout(scout) : null;
+  },
+});
+
+export const resources = query({
+  access: "access_scout_manage",
+  args: { scoutId: v.id("scouts") },
+  returns: v.union(scoutFieldsValidator.pick("agentMail", "firecrawl"), v.null()),
+  handler: async (ctx, args) => {
+    const scout = await ctx.db.get(args.scoutId);
+    return scout ? { agentMail: scout.agentMail, firecrawl: scout.firecrawl } : null;
   },
 });
 
