@@ -78,7 +78,7 @@ export function ConversationPage({
         id="main-content"
         className={
           thread
-            ? "mx-auto flex h-[calc(100dvh-4rem)] min-h-[540px] max-w-[1456px] flex-col px-2 pt-4 pb-6 max-[760px]:min-h-[460px] max-[760px]:pt-4 max-[760px]:pb-3"
+            ? "mx-auto flex h-[calc(100dvh-4rem)] min-h-[540px] max-w-[1456px] flex-col px-1 pt-4 pb-6 max-[760px]:min-h-[460px] max-[760px]:pt-4 max-[760px]:pb-3"
             : "grid min-h-[calc(100dvh-4rem)] place-items-center px-5 pt-8 pb-[16vh] max-[760px]:pb-[12vh]"
         }
       >
