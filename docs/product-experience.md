@@ -104,9 +104,10 @@ presentation where useful, but do not simply remove the guard from management qu
 ## Implementation order to try
 
 Member Scout browsing, site association, and request checks with concise titles
-are implemented. Next, use ordinary requests to find concrete failures. Defer
-additional research phases until they demonstrate a benefit over the main agent
-using the existing site workspaces.
+are implemented. A [site-research prototype](site-research-prototype.md) now tests
+public source gathering before browser work. Three real trials produced briefings
+in 13–17 seconds, but improved browser behavior still needs a comparison. Keep the
+existing site workspaces and one chat; the proposed research step is not enabled.
 
 Use recorded browser navigation for an optional “Other sites visited” view; it is
 evidence of a visit, not a permanent dependency relationship. A site can have
