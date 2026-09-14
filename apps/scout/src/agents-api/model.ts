@@ -5,6 +5,7 @@ import type { api } from "../../convex/_generated/api";
 export const agentsSearch = z.object({
   session: z.string().min(1).optional(),
   step: z.enum(["request_check", "chat"]).optional(),
+  check: z.string().min(1).optional(),
   browser: z.string().min(1).optional(),
   replayPage: z.string().min(1).optional(),
   view: z.enum(["conversation", "workspace"]).optional(),
@@ -16,20 +17,28 @@ export const agentsSearch = z.object({
 
 export type AgentsSearch = z.infer<typeof agentsSearch>;
 export type Session = NonNullable<FunctionReturnType<typeof api.agentsApi.sessions.get>>;
+export type RequestCheck = NonNullable<
+  FunctionReturnType<typeof api.agentsApi.requestChecks.inspect>
+>;
 export type BrowserSession = FunctionReturnType<typeof api.agentsApi.sessions.listBrowsers>[number];
 export type SessionItem = FunctionReturnType<
   typeof api.agentsApi.sessions.listItems
 >["page"][number];
 
 export function selectedStep(session: Session, search: AgentsSearch) {
-  if (!session.requestCheck) return "chat";
-  if (!session.providerId) return "request_check";
-  return search.step ?? "chat";
+  return (
+    search.step ?? (!session.providerId && session.checks.length > 0 ? "request_check" : "chat")
+  );
+}
+
+export function selectedCheckId(session: Session, search: AgentsSearch) {
+  return search.check ?? session.checks.find((check) => check.kind === "initial")?._id;
 }
 
 export function sessionControls(state: Session["state"]) {
   switch (state.kind) {
     case "starting":
+    case "checking":
     case "running":
       return { canSend: false, canStop: true, canResume: false };
     case "waiting":

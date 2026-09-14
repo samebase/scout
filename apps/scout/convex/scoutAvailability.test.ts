@@ -93,6 +93,7 @@ test("shows a public review to members but hides an unapproved public request", 
   });
   await t.backend.run((ctx) =>
     ctx.db.insert("agentsApiRequestChecks", {
+      kind: "initial",
       sessionId: t.sessionId,
       model: "test",
       prompt: "unsafe request",
@@ -118,6 +119,36 @@ test("keeps a stopping Scout reserved until cleanup releases it", async () => {
   expect(await t.backend.query(api.scout.activity.players, {})).toMatchObject([
     { availability: "available", busy: false },
   ]);
+});
+
+test("reserves a checking Scout as working while preserving private activity access", async () => {
+  const t = await setup();
+  const checkId = await t.backend.run(async (ctx) => {
+    const checkId = await ctx.db.insert("agentsApiRequestChecks", {
+      kind: "resume",
+      sessionId: t.sessionId,
+      model: "test",
+      prompt: "Test signup",
+      handoff: { callId: "call", turnId: "turn", message: "Private handoff reason" },
+      providerSessionId: "browser",
+      evidence: null,
+      state: { kind: "pending" },
+    });
+    await ctx.db.patch(t.sessionId, { state: { kind: "checking", checkId } });
+    return checkId;
+  });
+  expect(await t.backend.query(api.scout.activity.players, {})).toMatchObject([
+    { busy: true, availability: "working" },
+  ]);
+  expect(await t.member.query(api.scout.scouts.get, { slug: "conrad" })).toMatchObject({
+    availability: "working",
+    currentActivity: { kind: "private" },
+  });
+  expect(await t.owner.query(api.scout.scouts.get, { slug: "conrad" })).toMatchObject({
+    availability: "working",
+    currentActivity: { kind: "visible" },
+  });
+  expect(JSON.stringify(await t.member.query(api.scout.scouts.list, {}))).not.toContain(checkId);
 });
 
 test("links a standalone Agents session for an admin without exposing it to members", async () => {

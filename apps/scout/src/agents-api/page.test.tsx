@@ -19,7 +19,7 @@ import { chatSearchSchema } from "../lib/chat-search";
 import { RouteAccessOutlet } from "../components/route-access";
 import { Route as AgentsRoute } from "../routes/agents";
 import { ScoutSidebarProvider } from "../sidebars/ScoutSidebarProvider";
-import { agentsSearch, type BrowserSession, type Session } from "./model";
+import { agentsSearch, type BrowserSession, type RequestCheck, type Session } from "./model";
 
 const remote = vi.hoisted(() => ({
   queries: new Map<string, unknown>(),
@@ -111,8 +111,9 @@ function session(state: Session["state"] = { kind: "idle" }) {
     providerId: "provider-1",
     browser: null,
     usage: null,
-    requestCheck: null,
-    requestCheckCost: null,
+    checks: [],
+    checkMessage: null,
+    hasChat: true,
     cost: {
       modelPricingBasis: "standard_short_context_excluding_cache_writes",
       modelEstimateUsd: null,
@@ -320,66 +321,328 @@ test("opens session files through a shareable URL and preserves the conversation
   expect(remote.executeWorkspaceCommand).not.toHaveBeenCalled();
 });
 
-test("keeps both steps visible and selects their own inspector without losing a chat draft", async () => {
-  const requestCheck = {
+function initialCheck() {
+  return {
+    _id: "check-initial",
+    _creationTime: 1_000,
+    sessionId: "session-1",
+    kind: "initial",
     model: "gpt-5.6-luna",
     prompt: "Original review request",
+    cost: 0.000096,
     state: {
       kind: "completed",
-      startedAt: 1_000,
       finishedAt: 3_500,
-      request: '{"input":"Original review request"}',
-      response: '{"id":"response-test"}',
-      usage: { inputTokens: 300, outputTokens: 30, cachedInputTokens: 0 },
-      result: { title: "Inspect the example site", decision: { kind: "approved" } },
+      call: {
+        startedAt: 1_000,
+        request: '{"input":"Original review request"}',
+        response: '{"id":"response-initial"}',
+        usage: { inputTokens: 300, outputTokens: 30, cachedInputTokens: 0 },
+      },
+      result: {
+        kind: "initial",
+        title: "Inspect the example site",
+        decision: { kind: "approved" },
+      },
+    } satisfies RequestCheck["state"],
+  };
+}
+
+function resumeCheck() {
+  return {
+    _id: "check-resume-1",
+    _creationTime: 5_000,
+    sessionId: "session-1",
+    kind: "resume",
+    model: "resume-model",
+    prompt: "Stored resume instructions",
+    cost: 0.00024,
+    handoff: { callId: "call-1", turnId: "turn-1", message: "Complete verification" },
+    providerSessionId: "provider-browser-1",
+    evidence: {
+      capturedAt: 5_500,
+      pages: [
+        {
+          tabId: "tab-1",
+          url: "https://example.test/login",
+          title: "Sign in",
+          content: "Verification is still required.",
+        },
+      ],
     },
-  } satisfies NonNullable<Session["requestCheck"]>;
+    state: {
+      kind: "completed",
+      finishedAt: 8_000,
+      call: {
+        startedAt: 6_000,
+        request: '{"input":"Fresh browser content"}',
+        response: '{"id":"response-resume-1"}',
+        usage: { inputTokens: 600, outputTokens: 50, cachedInputTokens: 0 },
+      },
+      result: {
+        kind: "resume",
+        decision: { kind: "rejected", reason: "Finish verification before resuming." },
+      },
+    } satisfies RequestCheck["state"],
+  };
+}
+
+function inspectKey(checkId: string) {
+  return `agentsApi/requestChecks:inspect:${JSON.stringify({ sessionId: "session-1", checkId })}`;
+}
+
+test("keeps one full Chat and chronological sibling checks with independent selection and inspectors", async () => {
+  const initial = initialCheck();
+  const firstResume = resumeCheck();
+  const secondResume = {
+    ...resumeCheck(),
+    _id: "check-resume-2",
+    _creationTime: 9_000,
+    cost: 0.00036,
+    evidence: {
+      capturedAt: 9_500,
+      pages: [
+        {
+          tabId: "tab-1",
+          url: "https://example.test/dashboard",
+          title: "Dashboard",
+          content: "Signed in as Pip.",
+        },
+      ],
+    },
+    state: {
+      kind: "completed",
+      finishedAt: 13_000,
+      call: {
+        ...firstResume.state.call,
+        request: '{"input":"Signed in as Pip"}',
+        response: '{"id":"response-resume-2"}',
+      },
+      result: { kind: "resume", decision: { kind: "approved" } },
+    } satisfies RequestCheck["state"],
+  };
+  const checks = [
+    { _id: initial._id, kind: "initial", status: "approved", cost: initial.cost },
+    { _id: firstResume._id, kind: "resume", status: "rejected", cost: firstResume.cost },
+    { _id: secondResume._id, kind: "resume", status: "approved", cost: secondResume.cost },
+  ];
   remote.queries.set("agentsApi/sessions:get", {
     ...session(),
-    requestCheck,
-    requestCheckCost: 0.000096,
+    checks,
   });
-  remote.queries.set("agentsApi/sessions:list", [
-    { ...session(), requestCheck: "approved", hasChat: true },
+  remote.queries.set("agentsApi/sessions:list", [{ ...session(), checks }]);
+  remote.queries.set(inspectKey(initial._id), initial);
+  remote.queries.set(inspectKey(firstResume._id), firstResume);
+  remote.queries.set(inspectKey(secondResume._id), secondResume);
+  remote.queries.set("agentsApi/sessions:listItems", [
+    { _id: "message-1", kind: "user", sequence: 1, text: "Before the handoff", details: null },
+    { _id: "message-2", kind: "assistant", sequence: 2, text: "After the handoff", details: null },
   ]);
   const router = await open("/agents?session=session-1");
   fireEvent.change(await screen.findByRole("textbox", { name: "Message" }), {
     target: { value: "Keep my draft" },
   });
   const navigation = within(screen.getByRole("navigation", { name: "Agent sessions" }));
-  expect(navigation.getByRole("link", { name: "Chat" })).toBeTruthy();
+  const chatLinks = navigation.getAllByRole("link", { name: "Chat" });
+  expect(chatLinks).toHaveLength(1);
+  const checkLinks = navigation.getAllByRole<HTMLAnchorElement>("link", { name: /check ·/ });
+  expect(checkLinks.map((link) => new URL(link.href).searchParams.get("check"))).toEqual([
+    initial._id,
+    firstResume._id,
+    secondResume._id,
+  ]);
+  const siblings = chatLinks[0].closest("li")?.parentElement;
+  expect(siblings?.children).toHaveLength(4);
+  for (const link of checkLinks) expect(link.closest("li")?.parentElement).toBe(siblings);
+  expect(siblings?.querySelector("ul")).toBeNull();
+  expect(screen.getByText("Before the handoff")).toBeTruthy();
+  expect(screen.getByText("After the handoff")).toBeTruthy();
   fireEvent.click(navigation.getByRole("link", { name: "Request check · approved" }));
   expect(await screen.findByRole("heading", { name: "Request check" })).toBeTruthy();
   expect(screen.getByRole("heading", { name: "Call details" })).toBeTruthy();
   expect(screen.getByText("2.5s")).toBeTruthy();
   expect(screen.getByText("$0.000096 estimated")).toBeTruthy();
-  expect(router.state.location.search).toMatchObject({ step: "request_check" });
+  expect(router.state.location.search).toMatchObject({ step: "request_check", check: initial._id });
   expect(screen.queryByRole("button", { name: "Workspace" })).toBeNull();
   fireEvent.click(screen.getByText("Request", { exact: true }));
   expect(screen.getByText(/"input": "Original review request"/)).toBeTruthy();
+  fireEvent.click(navigation.getByRole("link", { name: "Resume check · rejected" }));
+  expect(await screen.findByRole("heading", { name: "Resume check" })).toBeTruthy();
+  expect(screen.getByText("Finish verification before resuming.")).toBeTruthy();
+  expect(screen.getByText("resume-model")).toBeTruthy();
+  expect(screen.getByText("3.0s")).toBeTruthy();
+  expect(screen.getByText("$0.000240 estimated")).toBeTruthy();
+  expect(screen.queryByText("Title", { exact: true })).toBeNull();
+  expect(screen.queryByText("Original review request")).toBeNull();
+  await userEvent.setup().click(screen.getByText("Sign in", { exact: true }));
+  expect(screen.getByText("Verification is still required.")).toBeTruthy();
+  fireEvent.click(navigation.getByRole("link", { name: "Resume check · approved" }));
+  expect(await screen.findByText("$0.000360 estimated")).toBeTruthy();
+  expect(screen.getByText("4.0s")).toBeTruthy();
+  expect(screen.queryByText("Finish verification before resuming.")).toBeNull();
+  expect(screen.queryByText("Sign in", { exact: true })).toBeNull();
+  expect(
+    navigation.getByRole("link", { name: "Resume check · approved" }).getAttribute("aria-current"),
+  ).toBe("page");
+  expect(
+    navigation.getByRole("link", { name: "Request check · approved" }).hasAttribute("aria-current"),
+  ).toBe(false);
+  fireEvent.click(screen.getByText("Response", { exact: true }));
+  expect(screen.getByText(/"id": "response-resume-2"/)).toBeTruthy();
+  act(() => router.history.back());
+  expect(await screen.findByText("Finish verification before resuming.")).toBeTruthy();
+  expect(remote.queryCalls).toHaveBeenCalledWith("agentsApi/requestChecks:inspect", {
+    sessionId: "session-1",
+    checkId: firstResume._id,
+  });
   fireEvent.click(navigation.getByRole("link", { name: "Chat" }));
   expect(await screen.findByRole("textbox", { name: "Message" })).toHaveProperty(
     "value",
     "Keep my draft",
   );
   expect(screen.queryByRole("heading", { name: "Call details" })).toBeNull();
+  expect(router.state.location.search.check).toBeUndefined();
+  expect(screen.getByText("Before the handoff")).toBeTruthy();
+  expect(screen.getByText("After the handoff")).toBeTruthy();
 });
 
-test("opens a pending check from its parent and only shows steps that have actually started", async () => {
+test.each(["", "&step=request_check"])(
+  "opens the initial check without an ID at %s",
+  async (search) => {
+    const check = { ...initialCheck(), cost: null, state: { kind: "pending" } };
+    const checks = [{ _id: check._id, kind: "initial", status: "pending", cost: null }];
+    remote.queries.set("agentsApi/sessions:get", {
+      ...session({ kind: "starting" }),
+      providerId: undefined,
+      checks,
+    });
+    remote.queries.set("agentsApi/sessions:list", [{ ...session(), checks, hasChat: false }]);
+    remote.queries.set(inspectKey(check._id), check);
+    await open(`/agents?session=session-1${search}`);
+    expect(await screen.findByRole("heading", { name: "Request check" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Chat" })).toBeNull();
+    expect(screen.getByText("Original review request")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    await waitFor(() => expect(remote.stop).toHaveBeenCalledWith({ sessionId: "session-1" }));
+  },
+);
+
+test.each([null, new Error("Check does not belong to this session")])(
+  "does not replace an invalid explicit check with the initial check: %s",
+  async (result) => {
+    const initial = initialCheck();
+    remote.queries.set("agentsApi/sessions:get", {
+      ...session(),
+      checks: [{ _id: initial._id, kind: "initial", status: "approved", cost: initial.cost }],
+    });
+    remote.queries.set(inspectKey(initial._id), initial);
+    remote.queries.set(inspectKey("foreign-check"), result);
+    await open("/agents?session=session-1&step=request_check&check=foreign-check");
+    expect(
+      await screen.findByText(result instanceof Error ? result.message : "Check not found."),
+    ).toBeTruthy();
+    expect(screen.queryByText("Original review request")).toBeNull();
+    expect(remote.queryCalls).toHaveBeenCalledWith("agentsApi/requestChecks:inspect", {
+      sessionId: "session-1",
+      checkId: "foreign-check",
+    });
+    expect(remote.queryCalls).not.toHaveBeenCalledWith("agentsApi/requestChecks:inspect", {
+      sessionId: "session-1",
+      checkId: initial._id,
+    });
+  },
+);
+
+test("a bookmarked resume check loads its own evidence capture failure without a model call", async () => {
+  const check = {
+    ...resumeCheck(),
+    evidence: null,
+    cost: null,
+    state: {
+      kind: "failed",
+      error: "Could not capture browser evidence.",
+      finishedAt: 7_000,
+      call: null,
+    } satisfies RequestCheck["state"],
+  };
   remote.queries.set("agentsApi/sessions:get", {
-    ...session({ kind: "starting" }),
-    providerId: undefined,
-    requestCheck: { model: "gpt-5.6-luna", prompt: "Original request", state: { kind: "pending" } },
+    ...session(),
+    checks: [{ _id: check._id, kind: "resume", status: "failed", cost: null }],
   });
-  remote.queries.set("agentsApi/sessions:list", [
-    { ...session(), requestCheck: "pending", hasChat: false },
-  ]);
+  await open(`/agents?session=session-1&step=request_check&check=${check._id}`);
+  expect(await screen.findByText("Opening check…")).toBeTruthy();
+  updateQuery(inspectKey(check._id), check);
+  expect(await screen.findByRole("heading", { name: "Resume check" })).toBeTruthy();
+  expect(screen.getByRole("alert").textContent).toBe("Could not capture browser evidence.");
+  expect(screen.getByText("Not captured")).toBeTruthy();
+  expect(screen.getByText("Stored resume instructions")).toBeTruthy();
+  expect(screen.getByText("Complete verification")).toBeTruthy();
+  expect(screen.getByText("2.0s")).toBeTruthy();
+  expect(screen.getByText("Not reported")).toBeTruthy();
+  expect(screen.queryByText("Request", { exact: true })).toBeNull();
+  expect(screen.queryByText("Response", { exact: true })).toBeNull();
+  expect(screen.queryByText("Input tokens")).toBeNull();
+});
+
+test("failed model calls retain their stored request and plain-text response", async () => {
+  const resume = resumeCheck();
+  const check = {
+    ...resume,
+    state: {
+      kind: "failed",
+      error: "The model request failed.",
+      finishedAt: 8_000,
+      call: { ...resume.state.call, response: "Provider unavailable" },
+    } satisfies RequestCheck["state"],
+  };
+  remote.queries.set(inspectKey(check._id), check);
+  await open(`/agents?session=session-1&step=request_check&check=${check._id}`);
+  expect(await screen.findByRole("heading", { name: "Resume check" })).toBeTruthy();
+  fireEvent.click(screen.getByText("Request", { exact: true }));
+  fireEvent.click(screen.getByText("Response", { exact: true }));
+  expect(screen.getByText(/"input": "Fresh browser content"/)).toBeTruthy();
+  expect(screen.getByText("Provider unavailable")).toBeTruthy();
+});
+
+test("waiting keeps the blocked check reason and checking prevents resume and sends while allowing Stop", async () => {
+  remote.queries.set("agentsApi/sessions:get", {
+    ...session({
+      kind: "waiting",
+      message: "Sign in to continue.",
+      callId: "call-current",
+      turnId: "turn-current",
+    }),
+    checkMessage: "Finish verification before resuming.",
+  });
   await open("/agents?session=session-1");
-  expect(await screen.findByRole("heading", { name: "Request check" })).toBeTruthy();
-  expect(screen.queryByRole("link", { name: "Chat" })).toBeNull();
-  expect(screen.getByText("Original request")).toBeTruthy();
+  expect((await screen.findByRole("alert")).textContent).toBe(
+    "Finish verification before resuming.",
+  );
+  fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Keep this draft" } });
+  fireEvent.click(screen.getByRole("button", { name: "Resume" }));
+  await waitFor(() =>
+    expect(remote.resume).toHaveBeenCalledExactlyOnceWith({
+      sessionId: "session-1",
+      callId: "call-current",
+      turnId: "turn-current",
+    }),
+  );
+  updateQuery("agentsApi/sessions:get", {
+    ...session(),
+    state: { kind: "checking", checkId: "check-resume-2" },
+    active: true,
+  });
+  expect(await screen.findByText("Checking browser…")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
+  expect(screen.queryByText("Finish verification before resuming.")).toBeNull();
+  const draft = screen.getByLabelText<HTMLTextAreaElement>("Message");
+  expect(draft.value).toBe("Keep this draft");
+  expect(screen.getByRole("button", { name: "Send message" })).toHaveProperty("disabled", true);
+  fireEvent.keyDown(draft, { key: "Enter" });
+  expect(remote.send).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Stop" }));
   await waitFor(() => expect(remote.stop).toHaveBeenCalledWith({ sessionId: "session-1" }));
+  expect(remote.resume).toHaveBeenCalledTimes(1);
 });
 
 test("admins can open member session files directly without gaining session controls", async () => {
@@ -569,7 +832,13 @@ test("waiting sessions expose the human browser and resume, while running sessio
   expect(browserFrame.getAttribute("src")).toBe("about:blank#preview");
   expect(browserFrame.getAttribute("allow")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Resume" }));
-  await waitFor(() => expect(remote.resume).toHaveBeenCalledWith({ sessionId: "session-1" }));
+  await waitFor(() =>
+    expect(remote.resume).toHaveBeenCalledWith({
+      sessionId: "session-1",
+      callId: "call-1",
+      turnId: "turn-1",
+    }),
+  );
   updateQuery("agentsApi/sessions:get", session({ kind: "running" }));
   await waitFor(() => expect(screen.queryByRole("button", { name: "Resume" })).toBeNull());
   fireEvent.change(screen.getByLabelText("Message"), { target: { value: "A follow-up" } });
@@ -921,6 +1190,39 @@ test("distinguishes a known zero estimate from missing provider usage", async ()
   await userEvent.setup().click(screen.getByText("Cost pending"));
   expect(screen.getByText("Unpriced")).toBeTruthy();
   expect(screen.getByText("Not reported")).toBeTruthy();
+});
+
+test("sums all checks once and marks incomplete check pricing as a subtotal", async () => {
+  const cost = {
+    ...session().cost,
+    modelEstimateUsd: 0.1,
+    knownSubtotalUsd: 0.1,
+    totalEstimateUsd: 0.1,
+    missing: [],
+  } satisfies Session["cost"];
+  const checks = [
+    { _id: "initial", kind: "initial", status: "approved", cost: 0.01 },
+    { _id: "resume-1", kind: "resume", status: "rejected", cost: 0.02 },
+    { _id: "resume-2", kind: "resume", status: "approved", cost: 0.03 },
+  ];
+  remote.queries.set("agentsApi/sessions:get", { ...session(), cost, checks });
+  await open("/agents?session=session-1");
+  const summary = await screen.findByText("Cost · $0.16 estimated");
+  await userEvent.setup().click(summary);
+  expect(screen.getByText("Checks", { exact: true })).toBeTruthy();
+  expect(screen.getByText("$0.06", { exact: true })).toBeTruthy();
+  updateQuery("agentsApi/sessions:get", {
+    ...session(),
+    cost,
+    checks: [...checks, { _id: "resume-3", kind: "resume", status: "failed", cost: null }],
+  });
+  expect(await screen.findByText("Cost · $0.16 subtotal")).toBeTruthy();
+  expect(screen.getByText("$0.06 + unpriced")).toBeTruthy();
+  updateQuery("agentsApi/sessions:get", {
+    ...session(),
+    checks: [{ _id: "initial", kind: "initial", status: "approved", cost: 0 }],
+  });
+  expect(await screen.findByText("Cost · $0.00 subtotal")).toBeTruthy();
 });
 
 test("refreshes an ended session without sending, preserves drafts on failure, and hides refresh while active", async () => {

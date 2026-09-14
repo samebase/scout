@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-14T19:45:43Z
+- **Last updated:** 2026-09-14T21:32:02Z
 
 ## Log
 
@@ -1267,7 +1267,9 @@ panels and a separate replay with a compact resize grip
 
 ### 2026-09-14 - working tree
 
-Scout profiles now show availability and link to the session reserving them, including paused
-browser handoffs. The picker uses the same Convex lookup for running tasks and open browsers.
-Members can see public activity and their own sessions; other private tasks stay hidden
-(`apps/scout/convex/scout/availability.ts`, `apps/scout/src/components/scout-current-activity.tsx`).
+Scout profiles and the picker now share availability and identify the task reserving each Scout,
+with activity previews below its details and private work visible only to its owner and admins.
+Returning browser control runs a fresh page check before continuing the same agent conversation.
+Convex retains each attempt for inspection; rejection keeps the handoff paused, and Stop blocks
+late approvals. The admin tree keeps one Chat beside the request and resume checks
+(`apps/scout/convex/agentsApi/requestChecks.ts`, `apps/scout/src/agents-api/page.tsx`).

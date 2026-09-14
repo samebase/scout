@@ -10,11 +10,12 @@ const number = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
 
 export function SessionCost({ session }: { session: Session }) {
   const { cost, usage } = session;
-  const complete =
-    cost.totalEstimateUsd !== null && (!session.requestCheck || session.requestCheckCost !== null);
-  const amount = (cost.totalEstimateUsd ?? cost.knownSubtotalUsd) + (session.requestCheckCost ?? 0);
-  const showAmount =
-    cost.modelEstimateUsd !== null || session.requestCheckCost !== null || amount > 0;
+  const checksCost = session.checks.reduce((sum, check) => sum + (check.cost ?? 0), 0);
+  const checksComplete = session.checks.every((check) => check.cost !== null);
+  const pricedChecks = session.checks.some((check) => check.cost !== null);
+  const complete = cost.totalEstimateUsd !== null && checksComplete;
+  const amount = (cost.totalEstimateUsd ?? cost.knownSubtotalUsd) + checksCost;
+  const showAmount = cost.modelEstimateUsd !== null || pricedChecks || amount > 0;
 
   return (
     <details className="min-w-0 flex-1 text-xs">
@@ -24,13 +25,15 @@ export function SessionCost({ session }: { session: Session }) {
           : "Cost pending"}
       </summary>
       <dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-6 gap-y-2 py-2 text-muted-foreground">
-        {session.requestCheck && (
+        {session.checks.length > 0 && (
           <>
-            <dt>Request check</dt>
+            <dt>Checks</dt>
             <dd className="text-right tabular-nums">
-              {session.requestCheckCost === null
-                ? "Unpriced"
-                : money.format(session.requestCheckCost)}
+              {checksComplete
+                ? money.format(checksCost)
+                : pricedChecks
+                  ? `${money.format(checksCost)} + unpriced`
+                  : "Unpriced"}
             </dd>
           </>
         )}

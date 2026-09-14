@@ -51,19 +51,27 @@ speculative prompt edits.
 - New Agents API sessions first run one request check. It generates a short title
   while preserving the original request. Pending, declined, and failed checks stay
   out of public results; owners can see their request and rejection reason.
-- Agents shows an always-expanded session tree: Request check, then Chat once the
-  main agent starts. Selecting a step changes the main panel and right inspector.
-  The check exposes its stored API input, response, model, duration, and estimated
-  cost to admins. Historical sessions have only Chat. There is no expansion state.
-- The check judges the request and supplied URLs, not website contents. It does
+- Agents shows an always-expanded session tree with one complete Chat and flat
+  Request check and Resume check entries. Selecting a check opens its evidence
+  and decision in the main panel, with API input, response, timing, and cost in
+  the right inspector. Check attempts stay in creation order; Chat is not split
+  around them. Historical sessions have only Chat. There is no expansion state.
+- The initial check judges the request and supplied URLs, not website contents. It does
   not browse, research, or certify a site's safety. The existing workflow starts
   the main agent only after approval. Failures remain visible for manual rerun.
+- Returning control after a handoff captures the current browser tabs and runs a
+  Resume check against the original task and handoff reason. Approval continues
+  the same OpenAI session. Rejection or capture/model failure keeps the handoff
+  paused and the Scout reserved; retrying creates a separate check. Stop prevents
+  late approval from resuming the session. The check reads page text, not images,
+  and cannot guarantee that a human will leave the browser unchanged afterward.
 - `scoutWorkspaces` distinguishes chat and site workspaces. A site workspace is
   shared knowledge keyed by exact hostname, not a product catalog or a chat subject.
 - Approved members can open Scouts from the main navigation and browse names,
   emails, and profiles through `access_scout_view`. Registration, provider resources,
-  service accounts, and credential controls remain admin-only. Profiles do not yet
-  show live availability or a Scout's public activity.
+  service accounts, and credential controls remain admin-only. Profiles show
+  availability and the task reserving each Scout; members see public tasks and
+  their own private tasks. Activity previews appear below the Scout's details.
 - PR #99 adds admin inspection of member-created Reviews in Agents. Its changes
   are separate from this proposed member experience.
 
@@ -127,6 +135,14 @@ stored locally in the ignored `apps/scout/.env.member-test.local` file. Settings
 shows the signed-in email so that each browser's identity is visible.
 
 ## Verification for that first slice
+
+Resume-check trial, September 14: the production capture code and real OpenAI
+classifier approved Example Domain, rejected a text-only prohibited-content
+fixture at the same URL, and approved the restored page in a controlled Firecrawl
+browser. All three captures preserved the open browser. The full Agents API trial
+remained in progress with no turns or tool requests for about 20 minutes, so it was
+stopped and the Scout released. Continuation through a real agent handoff still
+needs a successful trial; backend tests cover approval, rejection, retries, and Stop.
 
 - Use a real approved member account, not an admin account with hidden navigation.
 - Start an ordinary review without coaching each tool call. Check that its short

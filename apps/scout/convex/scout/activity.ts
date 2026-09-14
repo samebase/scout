@@ -11,7 +11,7 @@ import { canAccess } from "../../shared/accessModel";
 import { chatPermission, visibleChat, isPublicChat } from "./chatAccess";
 import { availabilityValidator, scoutReservation } from "./availability";
 import type { ViewerAccess } from "../access";
-import { getRequestCheck } from "../agentsApi/requestChecks";
+import { getInitialCheck } from "../agentsApi/requestChecks";
 import { chatPurposeValidator, chatVisibilityValidator, chatRuntimeValidator } from "./chatModel";
 import { scoutAgent } from "./agent";
 import { MAX_BROWSER_SESSIONS_PER_THREAD } from "./browserSessions";
@@ -147,6 +147,7 @@ function sessionSummary(session: Doc<"scoutBrowserSessions">) {
 function managedStatus(session: Doc<"agentsApiSessions">): typeof statusValidator.type {
   switch (session.state.kind) {
     case "starting":
+    case "checking":
     case "running":
       return "running";
     case "waiting":
@@ -362,7 +363,7 @@ export const messages = publicQuery({
     if (managedId) {
       const managed = await ctx.db.get(managedId);
       if (!managed?.providerId) {
-        const check = await getRequestCheck(ctx, managedId);
+        const check = await getInitialCheck(ctx, managedId);
         return {
           page: check ? [{ id: check._id, role: "user" as const, text: check.prompt }] : [],
           isDone: true,

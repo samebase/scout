@@ -218,7 +218,12 @@ test("Review uses managed controls and keeps live view, handoff and follow-up me
   remote.queries.set("scout/activity:get", review);
   remote.queries.set("scout/activity:liveView", { url: "about:blank#watch-only" });
   remote.queries.set("agentsApi/sessions:controls", {
-    state: { kind: "waiting", message: "Complete verification" },
+    state: {
+      kind: "waiting",
+      message: "Complete verification",
+      callId: "call-current",
+      turnId: "turn-current",
+    },
     canSend: false,
     canStop: true,
     busy: false,
@@ -236,7 +241,11 @@ test("Review uses managed controls and keeps live view, handoff and follow-up me
   );
   fireEvent.click(screen.getByRole("button", { name: "Resume Scout" }));
   await waitFor(() =>
-    expect(remote.resumeManaged).toHaveBeenCalledExactlyOnceWith({ sessionId: "managed-1" }),
+    expect(remote.resumeManaged).toHaveBeenCalledExactlyOnceWith({
+      sessionId: "managed-1",
+      callId: "call-current",
+      turnId: "turn-current",
+    }),
   );
   await waitFor(() =>
     expect(
@@ -295,6 +304,82 @@ test("public managed Reviews do not request owner controls or expose the handoff
   expect(screen.queryByRole("button", { name: "Stop Scout" })).toBeNull();
   expect(remote.queryCalls).toHaveBeenCalledWith("agentsApi/sessions:controls", "skip");
 });
+
+test.each(["Finish signing in before resuming.", "Could not capture browser evidence."])(
+  "keeps a blocked resume reason visible while waiting and disables resume and send during checking: %s",
+  async (reason) => {
+    const review = session({
+      purpose: { kind: "review" },
+      runtime: { kind: "agents_api", sessionId: "managed-1" },
+      status: "waiting",
+      sessions: [{ engine: "agents_api", sessionId: "browser-1", kind: "active", createdAt: 1000 }],
+    });
+    const controls = {
+      state: {
+        kind: "waiting",
+        message: "Complete verification",
+        callId: "call-latest",
+        turnId: "turn-latest",
+      },
+      canSend: false,
+      canStop: true,
+      busy: false,
+      interactiveLiveViewUrl: "https://liveview.firecrawl.dev/control",
+      handoffEmailFailed: false,
+      requestCheckMessage: reason,
+    };
+    remote.queries.set("scout/activity:get", review);
+    remote.queries.set("agentsApi/sessions:controls", controls);
+    remote.queries.set("scout/activity:liveView", { url: "about:blank#watch-only" });
+    remote.messages = [{ id: "message-1", role: "assistant", text: "I opened the site." }];
+    await openPlay("/review?thread=game-thread");
+    expect((await screen.findByRole("alert")).textContent).toBe(reason);
+    const draft = screen.getByLabelText<HTMLTextAreaElement>("Message Scout");
+    fireEvent.change(draft, { target: { value: "Keep this draft" } });
+    fireEvent.click(screen.getByRole("button", { name: "Resume Scout" }));
+    await waitFor(() =>
+      expect(remote.resumeManaged).toHaveBeenCalledExactlyOnceWith({
+        sessionId: "managed-1",
+        callId: "call-latest",
+        turnId: "turn-latest",
+      }),
+    );
+    act(() => {
+      remote.queries.set("agentsApi/sessions:controls", {
+        ...controls,
+        state: { kind: "checking", checkId: "resume-check-2" },
+        requestCheckMessage: null,
+      });
+      remote.revision++;
+      remote.subscribers.forEach((listener) => listener());
+    });
+    expect(await screen.findByText("Checking…")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Resume Scout" })).toBeNull();
+    expect(screen.queryByText(reason)).toBeNull();
+    expect(screen.queryByText("Complete verification")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Send message" })).toBeNull();
+    const form = draft.closest("form");
+    if (!form) throw new Error("The message draft has no form");
+    fireEvent.submit(form);
+    expect(remote.sendManaged).not.toHaveBeenCalled();
+    expect(draft.value).toBe("Keep this draft");
+    expect(screen.getByText("I opened the site.")).toBeTruthy();
+    expect(screen.getByTitle("Scout's live browser").getAttribute("src")).toBe(
+      "about:blank#watch-only",
+    );
+    await waitFor(() =>
+      expect(screen.getAllByRole("button", { name: "Stop Scout" })[0]).toHaveProperty(
+        "disabled",
+        false,
+      ),
+    );
+    fireEvent.click(screen.getAllByRole("button", { name: "Stop Scout" })[0]);
+    await waitFor(() =>
+      expect(remote.stopManaged).toHaveBeenCalledExactlyOnceWith({ sessionId: "managed-1" }),
+    );
+    expect(remote.resumeManaged).toHaveBeenCalledTimes(1);
+  },
+);
 
 const invitation = "Play with me at https://example.com/room/blue. Wait for me to start.";
 function fillInvite() {

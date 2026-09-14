@@ -21,6 +21,8 @@ import type * as agentsApi_client from "../agentsApi/client.js";
 import type * as agentsApi_cost from "../agentsApi/cost.js";
 import type * as agentsApi_events from "../agentsApi/events.js";
 import type * as agentsApi_handoff from "../agentsApi/handoff.js";
+import type * as agentsApi_handoffEvidence from "../agentsApi/handoffEvidence.js";
+import type * as agentsApi_handoffEvidenceModel from "../agentsApi/handoffEvidenceModel.js";
 import type * as agentsApi_instructions from "../agentsApi/instructions.js";
 import type * as agentsApi_lifecycle from "../agentsApi/lifecycle.js";
 import type * as agentsApi_model from "../agentsApi/model.js";
@@ -138,6 +140,8 @@ declare const fullApi: ApiFromModules<{
   "agentsApi/cost": typeof agentsApi_cost;
   "agentsApi/events": typeof agentsApi_events;
   "agentsApi/handoff": typeof agentsApi_handoff;
+  "agentsApi/handoffEvidence": typeof agentsApi_handoffEvidence;
+  "agentsApi/handoffEvidenceModel": typeof agentsApi_handoffEvidenceModel;
   "agentsApi/instructions": typeof agentsApi_instructions;
   "agentsApi/lifecycle": typeof agentsApi_lifecycle;
   "agentsApi/model": typeof agentsApi_model;

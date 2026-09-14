@@ -13,15 +13,16 @@ export const run = workflow
   })
   .handler(async (step, args): Promise<null> => {
     if (
-      args.command.kind === "start" &&
+      (args.command.kind === "start" || args.command.kind === "resume") &&
       !(await step.runAction(
         internal.agentsApi.requestCheck.run,
-        { sessionId: args.sessionId },
+        { checkId: args.command.checkId },
         { retry: false },
       ))
     )
       return null;
-    await step.runAction(internal.agentsApi.runtime.begin, args, { retry: false });
+    if (!(await step.runAction(internal.agentsApi.runtime.begin, args, { retry: false })))
+      return null;
     while (
       await step.runAction(
         internal.agentsApi.runtime.advance,

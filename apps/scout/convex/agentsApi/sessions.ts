@@ -22,8 +22,8 @@ import { omitNullish } from "../../shared/omitNullish";
 import { MAX_BROWSER_SESSIONS_PER_THREAD } from "../scout/browserSessions";
 import { browserSessionLifecycleValidator } from "../browserModel";
 import { estimateAgentsApiCost } from "./cost";
-import { getRequestCheck } from "./requestChecks";
-import { REQUEST_CHECK_MODEL } from "./requestCheckModel";
+import { getInitialCheck, listChecks, summarizeCheck, currentCheckMessage } from "./requestChecks";
+import { REQUEST_CHECK_MODEL, MAX_SESSION_CHECKS, checkSummary } from "./requestCheckModel";
 
 async function requireSession(ctx: QueryCtx, sessionId: Id<"agentsApiSessions">) {
   const session = await ctx.db.get(sessionId);
@@ -93,15 +93,7 @@ export const list = query({
       title: v.string(),
       scoutName: v.string(),
       state: sessionState,
-      requestCheck: v.union(
-        v.literal("pending"),
-        v.literal("running"),
-        v.literal("approved"),
-        v.literal("rejected"),
-        v.literal("failed"),
-        v.literal("cancelled"),
-        v.null(),
-      ),
+      checks: v.array(checkSummary),
       hasChat: v.boolean(),
     }),
   ),
@@ -115,17 +107,14 @@ export const list = query({
       ...sessions,
       page: await Promise.all(
         sessions.page.map(async ({ _id, _creationTime, title, scoutName, state, providerId }) => {
-          const check = await getRequestCheck(ctx, _id);
+          const checks = await listChecks(ctx, _id);
           return {
             _id,
             _creationTime,
             title,
             scoutName,
             state,
-            requestCheck:
-              check?.state.kind === "completed"
-                ? check.state.result.decision.kind
-                : (check?.state.kind ?? null),
+            checks: checks.map(summarizeCheck),
             hasChat: Boolean(providerId),
           };
         }),
@@ -172,23 +161,7 @@ export const get = query({
       firecrawlUsdPerCredit: null,
       now: Date.now(),
     });
-    const check = await getRequestCheck(ctx, session._id);
-    const requestCheck = check
-      ? { model: check.model, prompt: check.prompt, state: check.state }
-      : null;
-    const requestCheckCost = check
-      ? estimateAgentsApiCost({
-          model: check.model,
-          usage:
-            check.state.kind === "completed" || check.state.kind === "failed"
-              ? check.state.usage
-              : null,
-          webSearchCalls: 0,
-          browsers: [],
-          firecrawlUsdPerCredit: null,
-          now: 0,
-        }).modelEstimateUsd
-      : null;
+    const checks = await listChecks(ctx, session._id);
     return {
       _id,
       title,
@@ -202,8 +175,8 @@ export const get = query({
       providerId,
       usage,
       cost,
-      requestCheck,
-      requestCheckCost,
+      checks: checks.map(summarizeCheck),
+      checkMessage: await currentCheckMessage(ctx, session),
       browser: browser
         ? {
             liveViewUrl: browser.liveViewUrl,
@@ -288,13 +261,14 @@ export async function startSession(
     browser: null,
     usage: null,
   });
-  await ctx.db.insert("agentsApiRequestChecks", {
+  const checkId = await ctx.db.insert("agentsApiRequestChecks", {
+    kind: "initial",
     sessionId,
     model: REQUEST_CHECK_MODEL,
     prompt,
     state: { kind: "pending" },
   });
-  await startWorkflow(ctx, sessionId, { kind: "start", prompt });
+  await startWorkflow(ctx, sessionId, { kind: "start", prompt, checkId });
   return sessionId;
 }
 
@@ -317,15 +291,9 @@ export const controls = query({
       ? await ctx.db.system.get(session.handoffEmailJobId)
       : null;
     const busy = !session.active && (await scoutReservation(ctx, session.scoutId)) !== null;
-    const check = await getRequestCheck(ctx, session._id);
     return {
       state: session.state,
-      requestCheckMessage:
-        check?.state.kind === "completed" && check.state.result.decision.kind === "rejected"
-          ? check.state.result.decision.reason
-          : check?.state.kind === "failed"
-            ? "The request check failed. Start a new review to try again."
-            : null,
+      requestCheckMessage: await currentCheckMessage(ctx, session),
       canSend: !session.active && Boolean(session.providerId) && !busy,
       canStop:
         session.active && (session.state.kind !== "stopped" || cleanup?.state.kind === "failed"),
@@ -362,19 +330,38 @@ export const send = mutation({
 
 export const resume = mutation({
   access: "access_account",
-  args: { sessionId: v.id("agentsApiSessions") },
+  args: { sessionId: v.id("agentsApiSessions"), callId: v.string(), turnId: v.string() },
   returns: v.null(),
   handler: async (ctx, args): Promise<null> => {
     const session = await owned(ctx, args.sessionId, ctx.viewer.userId);
     await requireSessionPermission(ctx, session);
-    if (session.state.kind !== "waiting")
-      throw new Error("Session is not waiting for browser handoff");
-    await ctx.db.patch(session._id, { state: { kind: "running" } });
-    await startWorkflow(ctx, session._id, {
+    if (
+      session.state.kind !== "waiting" ||
+      session.state.callId !== args.callId ||
+      session.state.turnId !== args.turnId
+    )
+      throw new Error("Session is no longer waiting for this handoff");
+    if (!session.browser) throw new Error("Handoff browser is not available");
+    const initial = await getInitialCheck(ctx, session._id);
+    if (!initial) throw new Error("Original request check not found");
+    if ((await listChecks(ctx, session._id)).length >= MAX_SESSION_CHECKS)
+      throw new Error("This session reached its check limit. Stop it and start a new session.");
+    const checkId = await ctx.db.insert("agentsApiRequestChecks", {
       kind: "resume",
-      callId: session.state.callId,
-      turnId: session.state.turnId,
+      sessionId: session._id,
+      model: REQUEST_CHECK_MODEL,
+      prompt: initial.prompt,
+      handoff: {
+        callId: session.state.callId,
+        turnId: session.state.turnId,
+        message: session.state.message,
+      },
+      providerSessionId: session.browser.providerSessionId,
+      evidence: null,
+      state: { kind: "pending" },
     });
+    await ctx.db.patch(session._id, { state: { kind: "checking", checkId } });
+    await startWorkflow(ctx, session._id, { kind: "resume", checkId });
     return null;
   },
 });
@@ -390,10 +377,11 @@ export const stop = mutation({
     if (
       session.active &&
       (session.state.kind === "waiting" ||
+        session.state.kind === "checking" ||
         session.state.kind === "failed" ||
         session.cleanupJobId !== undefined)
     ) {
-      await scheduleSessionCleanup(ctx, session);
+      await scheduleSessionCleanup(ctx, { ...session, state: { kind: "stopped" } });
     }
     return null;
   },

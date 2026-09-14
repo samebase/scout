@@ -22,6 +22,7 @@ export async function scoutReservation(ctx: QueryCtx, scoutId: Id<"scouts">) {
     let status: Exclude<typeof availabilityValidator.type, "available">;
     switch (session.state.kind) {
       case "starting":
+      case "checking":
       case "running":
         status = "working";
         break;

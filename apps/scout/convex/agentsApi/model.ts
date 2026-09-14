@@ -4,6 +4,7 @@ import { agentsApiUsageValidator } from "./cost";
 export const sessionState = v.union(
   v.object({ kind: v.literal("starting") }),
   v.object({ kind: v.literal("running") }),
+  v.object({ kind: v.literal("checking"), checkId: v.id("agentsApiRequestChecks") }),
   v.object({
     kind: v.literal("waiting"),
     message: v.string(),
@@ -35,9 +36,13 @@ export const sessionItem = v.object({
 });
 
 export const command = v.union(
-  v.object({ kind: v.literal("start"), prompt: v.string() }),
+  v.object({
+    kind: v.literal("start"),
+    prompt: v.string(),
+    checkId: v.id("agentsApiRequestChecks"),
+  }),
   v.object({ kind: v.literal("send"), message: v.string() }),
-  v.object({ kind: v.literal("resume"), callId: v.string(), turnId: v.string() }),
+  v.object({ kind: v.literal("resume"), checkId: v.id("agentsApiRequestChecks") }),
   v.object({ kind: v.literal("observe") }),
 );
 

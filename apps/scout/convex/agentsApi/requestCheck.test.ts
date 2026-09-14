@@ -58,8 +58,13 @@ async function setup() {
   const saved = await backend.run((ctx) => ctx.db.query("agentsApiSessions").unique());
   if (!saved) throw new Error("Session not created");
   const sessionId = saved._id;
+  const initial = await backend.run((ctx) => ctx.db.query("agentsApiRequestChecks").unique());
+  if (!initial) throw new Error("Initial check not created");
+  const checkId = initial._id;
   const inspect = () => admin.query(api.agentsApi.sessions.get, { sessionId });
-  const check = () => backend.action(internal.agentsApi.requestCheck.run, { sessionId });
+  const inspectCheck = () =>
+    admin.query(api.agentsApi.requestChecks.inspect, { sessionId, checkId });
+  const check = () => backend.action(internal.agentsApi.requestCheck.run, { checkId });
   const publicFeed = () =>
     backend.query(api.scout.activity.list, { scope: "public", site: null, paginationOpts });
   return {
@@ -71,6 +76,8 @@ async function setup() {
     scoutId,
     prompt,
     inspect,
+    inspectCheck,
+    checkId,
     check,
     publicFeed,
   };
@@ -106,7 +113,7 @@ it("saves the real call and generated title, then makes an approved review publi
       model: REQUEST_CHECK_MODEL,
       store: false,
     });
-    expect((await t.inspect()).requestCheck?.state.kind).toBe("running");
+    expect((await t.inspectCheck()).state.kind).toBe("running");
     return response(result);
   });
   vi.stubGlobal("fetch", request);
@@ -121,18 +128,27 @@ it("saves the real call and generated title, then makes an approved review publi
   expect(session).toMatchObject({
     title: "Test Example",
     active: true,
-    requestCheck: {
-      prompt: t.prompt,
-      model: REQUEST_CHECK_MODEL,
-      state: { kind: "completed", result, usage: { inputTokens: 300, outputTokens: 30 } },
+    checks: [{ _id: t.checkId, kind: "initial", status: "approved" }],
+  });
+  const check = await t.inspectCheck();
+  expect(check).toMatchObject({
+    kind: "initial",
+    prompt: t.prompt,
+    model: REQUEST_CHECK_MODEL,
+    state: {
+      kind: "completed",
+      result: { kind: "initial", ...result },
+      call: { usage: { inputTokens: 300, outputTokens: 30 } },
     },
   });
-  if (session.requestCheck?.state.kind !== "completed") throw new Error("Expected completed check");
-  expect(JSON.parse(session.requestCheck.state.request)).toMatchObject({ input: t.prompt });
-  expect(JSON.parse(session.requestCheck.state.response ?? "null")).toMatchObject({
+  if (check.state.kind !== "completed") throw new Error("Expected completed check");
+  expect(JSON.parse(check.state.call.request)).toMatchObject({ input: t.prompt });
+  expect(JSON.parse(check.state.call.response ?? "null")).toMatchObject({
     id: "resp-check",
   });
-  expect(session.requestCheckCost).toBeCloseTo(0.000096);
+  expect(check.cost).toBeCloseTo(0.000096);
+  expect(session.checks[0]?.cost).toBe(check.cost);
+  expect(session.checks[0]).not.toHaveProperty("state");
   expect((await t.publicFeed()).page).toMatchObject([{ title: "Test Example" }]);
   await expect(
     t.member.query(api.agentsApi.sessions.get, { sessionId: t.sessionId }),
@@ -203,7 +219,7 @@ it.each([
   expect(await t.check()).toBe(false);
   expect(await t.inspect()).toMatchObject({
     active: false,
-    requestCheck: { state: { kind: "failed" } },
+    checks: [{ kind: "initial", status: "failed" }],
   });
   expect((await t.publicFeed()).page).toEqual([]);
   expect(request).toHaveBeenCalledTimes(1);
@@ -222,7 +238,7 @@ it("keeps a stop made during the call even when its response approves the reques
   expect(await t.inspect()).toMatchObject({
     active: false,
     state: { kind: "stopped" },
-    requestCheck: { state: { kind: "completed" } },
+    checks: [{ kind: "initial", status: "approved" }],
   });
 });
 
@@ -235,7 +251,7 @@ it("cancels before dispatch when stopped before the check begins", async () => {
   expect(request).not.toHaveBeenCalled();
   expect(await t.inspect()).toMatchObject({
     active: false,
-    requestCheck: { state: { kind: "cancelled" } },
+    checks: [{ kind: "initial", status: "cancelled", cost: 0 }],
   });
 });
 
@@ -246,4 +262,21 @@ it("requires a reason for rejections and a useful short title", () => {
   expect(requestCheckResult.safeParse({ title: " ", decision: { kind: "approved" } }).success).toBe(
     false,
   );
+});
+
+it("rejects browser evidence on an initial check without starting the call", async () => {
+  const t = await setup();
+  await expect(
+    t.backend.mutation(internal.agentsApi.requestChecks.start, {
+      checkId: t.checkId,
+      startedAt: Date.now(),
+      request: "{}",
+      evidence: { capturedAt: Date.now(), pages: [] },
+    }),
+  ).rejects.toThrow("Initial check cannot contain browser evidence");
+  expect(await t.inspectCheck()).toMatchObject({
+    kind: "initial",
+    state: { kind: "pending" },
+    cost: 0,
+  });
 });

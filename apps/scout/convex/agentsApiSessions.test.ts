@@ -139,9 +139,9 @@ it("lists and inspects a member's private Review without granting session contro
   await expect(
     admin.mutation(api.agentsApi.sessions.send, { sessionId, message: "Continue" }),
   ).rejects.toThrow("Session not found");
-  await expect(admin.mutation(api.agentsApi.sessions.resume, { sessionId })).rejects.toThrow(
-    "Session not found",
-  );
+  await expect(
+    admin.mutation(api.agentsApi.sessions.resume, { sessionId, callId: "call", turnId: "turn" }),
+  ).rejects.toThrow("Session not found");
   await expect(admin.mutation(api.agentsApi.sessions.stop, { sessionId })).rejects.toThrow(
     "Session not found",
   );
