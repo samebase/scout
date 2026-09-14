@@ -301,11 +301,6 @@ export function ConversationLobby({ kind }: { kind: ProductKind }) {
                     <SelectItem value="public">Public</SelectItem>
                   </SelectContent>
                 </Select>
-                {visibility === "public" && (
-                  <span className="w-full px-2 pb-1 text-xs">
-                    Anyone can watch the chat and browser.
-                  </span>
-                )}
               </div>
             </ConversationComposer>
             {isPlay && (
