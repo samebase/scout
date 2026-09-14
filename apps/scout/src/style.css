@@ -431,6 +431,34 @@
   box-shadow: none;
 }
 
+@media (min-width: 768px) {
+  .play-session-layout [data-sidebar-layout-part="pane"][data-pane-side="right"] {
+    border-inline-start-width: 0;
+  }
+
+  .play-session-layout [data-sidebar-layout-part="resize-handle"][data-resize-mode="edge"]::after {
+    width: 3px;
+    height: 32px;
+    border-radius: 999px;
+    background: var(--border);
+    content: "";
+  }
+
+  .play-session-layout
+    [data-sidebar-layout-part="resize-handle"]:is(:hover, :focus-visible, [data-resizing])::after {
+    background: var(--primary);
+  }
+
+  .play-session-layout [data-sidebar-layout-part="resize-handle"]:focus-visible {
+    outline: none;
+  }
+
+  .play-session-layout [data-sidebar-layout-part="resize-handle"]:focus-visible::after {
+    outline: 2px solid var(--ring);
+    outline-offset: 3px;
+  }
+}
+
 .chat-composer {
   max-height: 75%;
 }

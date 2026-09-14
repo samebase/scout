@@ -712,7 +712,7 @@ function ConversationSession({
       main={
         <section
           aria-label="Conversation with Scout"
-          className="flex h-full min-h-0 flex-col gap-3 min-[768px]:pr-6"
+          className="flex h-full min-h-0 flex-col gap-3 min-[768px]:pr-3"
         >
           <div className="min-h-0 flex-1 overflow-hidden rounded-[var(--product-panel-radius)] border border-border bg-card">
             <MessageScrollerProvider autoScroll defaultScrollPosition="end">
@@ -830,7 +830,7 @@ function ConversationSession({
       right={
         <section
           aria-label="Scout's browser"
-          className="flex h-full min-h-0 flex-col overflow-hidden rounded-[var(--product-panel-radius)] border border-border bg-secondary/50"
+          className="flex h-full min-h-0 flex-col overflow-hidden rounded-[var(--product-panel-radius)] border border-border bg-secondary/50 min-[768px]:ml-3"
         >
           {session?.kind === "closed" ? (
             <BrowserReplay
