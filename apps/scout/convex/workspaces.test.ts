@@ -25,6 +25,8 @@ import {
 import { requireRuntimeTool } from "./scout/lib/runtimeTool";
 import { createWorkspaceTools } from "./scout/workspaceTools";
 import { createWebTools } from "./scout/webTools";
+import { runtimeTools } from "./agentsApi/tools";
+import type { Id } from "./_generated/dataModel";
 
 const modules = import.meta.glob("./**/*.ts");
 const blobs = new Map<string, Uint8Array>();
@@ -134,6 +136,140 @@ async function setup() {
     readAsAgent,
   };
 }
+
+describe("Agents API workspaces", () => {
+  it.each(["general", "review"] as const)(
+    "persists %s session files and shares site files through the real tools",
+    async (purpose) => {
+      const t = await setup();
+      const userId =
+        purpose === "general"
+          ? t.userId
+          : await t.backend.run((ctx) => insertTestAccount(ctx, { email: "member@example.test" }));
+      const makeSession = (ownerId: Id<"users">) =>
+        t.backend.run(async (ctx) => {
+          const sessionId = await ctx.db.insert("agentsApiSessions", {
+            userId: ownerId,
+            scoutId: t.scoutId,
+            scoutName: "Workspace Scout",
+            title: "Research",
+            model: "gpt-5.6-luna",
+            active: true,
+            state: { kind: "running" },
+            nextSequence: 0,
+            usage: null,
+            browser: {
+              providerSessionId: "browser-test",
+              cdpUrl: "wss://browser.example.test/cdp",
+              liveViewUrl: null,
+              interactiveLiveViewUrl: null,
+              currentUrl: null,
+            },
+          });
+          if (purpose === "review")
+            await ctx.db.insert("scoutChats", {
+              threadId: sessionId,
+              userId: ownerId,
+              scoutId: t.scoutId,
+              createdAt: Date.now(),
+              runtime: { kind: "agents_api", sessionId },
+              purpose: { kind: "review" },
+              visibility: "private",
+            });
+          return sessionId;
+        });
+      const sessionId = await makeSession(userId);
+      const secondSession = await makeSession(userId);
+      const run = (id: Id<"agentsApiSessions">, command: string, workspace?: string) =>
+        t.backend.action(async (ctx) => {
+          const data = await ctx.runQuery(internal.agentsApi.sessions.runtime, { sessionId: id });
+          const resource = await runtimeTools(ctx, data.session, data.scout, "bash", data.purpose);
+          try {
+            return await requireRuntimeTool(resource.tools, "bash").execute(
+              { command, workspace },
+              { toolCallId: crypto.randomUUID(), messages: [], context: {} },
+            );
+          } finally {
+            await resource.dispose();
+          }
+        });
+      expect(
+        await run(sessionId, "mkdir notes; cd notes; printf private > result.txt"),
+      ).toMatchObject({ exitCode: 0 });
+      expect(await run(sessionId, "cat result.txt")).toMatchObject({
+        stdout: "private",
+        cwd: "/workspace/notes",
+      });
+      expect(await run(secondSession, "test ! -e notes/result.txt")).toMatchObject({ exitCode: 0 });
+      expect(await run(sessionId, "printf 'Public rules' > guide.md", "Example.com")).toMatchObject(
+        { exitCode: 0 },
+      );
+      expect(await run(secondSession, "cat guide.md", "example.com")).toMatchObject({
+        stdout: "Public rules",
+      });
+      const target = { kind: "agent_session", sessionId } as const;
+      const listed = await t.owner.query(api.scout.workspaces.list, { target });
+      expect(listed.entries.find((entry) => entry.kind === "file")).toMatchObject({
+        key: expect.stringContaining(
+          `/users/${userId}/agent-sessions/${sessionId}/files/notes/result.txt/`,
+        ),
+      });
+      expect(
+        await t.owner.action(api.scout.workspaceTools.readFile, {
+          target,
+          path: "/workspace/notes/result.txt",
+        }),
+      ).toMatchObject({ text: "private" });
+      expect(
+        await t.owner.action(api.scout.workspaceTools.readFile, {
+          target: { kind: "site", site: "example.com" },
+          path: "/workspace/guide.md",
+        }),
+      ).toMatchObject({ text: "Public rules" });
+      await expect(t.backend.query(api.scout.workspaces.list, { target })).rejects.toThrow(
+        "Not authorized",
+      );
+      const outsiderId = await t.backend.run((ctx) =>
+        insertTestAccount(ctx, { email: "outsider@example.test" }),
+      );
+      const outsider = t.backend.withIdentity({ subject: `${outsiderId}|session` });
+      await expect(outsider.query(api.scout.workspaces.list, { target })).rejects.toThrow(
+        "Not authorized",
+      );
+      await expect(
+        outsider.action(api.scout.workspaceTools.readFile, {
+          target,
+          path: "/workspace/notes/result.txt",
+        }),
+      ).rejects.toThrow("Not authorized");
+      await expect(
+        t.backend.mutation(internal.scout.workspaces.snapshot, { target, userId: outsiderId }),
+      ).rejects.toThrow("Session not found");
+      await expect(
+        t.backend.mutation(internal.scout.workspaces.commit, {
+          workspaceId: (
+            await t.backend.mutation(internal.scout.workspaces.snapshot, { target, userId })
+          ).workspaceId,
+          userId: t.otherId,
+          expectedRevision: listed.revision,
+          cwd: "/workspace",
+          entries: [],
+        }),
+      ).rejects.toThrow("Session not found");
+      await t.backend.run((ctx) => ctx.db.patch(sessionId, { state: { kind: "stopped" } }));
+      await expect(run(sessionId, "printf should-not-write > stopped.txt")).rejects.toThrow(
+        "no longer running",
+      );
+      await t.backend.run(async (ctx) => {
+        await ctx.db.patch(sessionId, { active: false });
+        await ctx.db.patch(secondSession, { active: false, state: { kind: "idle" } });
+      });
+      expect(await t.run("cat guide.md", "example.com")).toMatchObject({
+        outcome: { kind: "success", output: expect.stringContaining("Public rules") },
+      });
+    },
+  );
+});
 
 describe("workspace persistence and access", () => {
   it("writes under owner/thread prefixes and reloads files through the manual tool and viewer", async () => {
@@ -488,7 +624,7 @@ describe("shared site workspaces", () => {
     const output = await t.other.action(async (ctx) => {
       const tools = createWorkspaceTools(
         ctx,
-        { threadId: secondThreadId, userId: t.otherId },
+        { target: { kind: "chat", threadId: secondThreadId }, userId: t.otherId },
         async () => {},
       );
       return requireRuntimeTool(tools, "bash").execute(
@@ -1510,7 +1646,11 @@ describe("Workspace tool results", () => {
     const outputs = await Promise.all(
       ["cat saved.txt", "wc -l saved.txt"].map((command) =>
         owner.action(async (ctx) => {
-          return createWorkspaceTools(ctx, { threadId, userId }, async () => {}).bash.execute(
+          return createWorkspaceTools(
+            ctx,
+            { target: { kind: "chat", threadId }, userId },
+            async () => {},
+          ).bash.execute(
             { command },
             { toolCallId: crypto.randomUUID(), messages: [], context: {} },
           );

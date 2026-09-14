@@ -22,6 +22,7 @@ import {
 } from "../workspaceModel";
 import { workspaceStorage, workspaceStorageConfigured } from "../workspaceStorage";
 import { chatPermission } from "./chatAccess";
+import { requireSessionPermission } from "../agentsApi/access";
 
 async function requireWorkspaceChat(
   ctx: QueryCtx | MutationCtx,
@@ -37,6 +38,41 @@ async function requireWorkspaceChat(
   return chat;
 }
 
+async function requireWorkspaceOwner(
+  ctx: QueryCtx | MutationCtx,
+  target: WorkspaceTarget,
+  userId: Id<"users">,
+) {
+  switch (target.kind) {
+    case "chat":
+      await requireWorkspaceChat(ctx, target.threadId, userId);
+      return;
+    case "agent_session": {
+      const session = await ctx.db.get(target.sessionId);
+      if (!session || session.userId !== userId) throw new Error("Session not found");
+      await requireSessionPermission(ctx, session);
+      return;
+    }
+    case "site":
+      await requireUserPermission(ctx, userId, "access_play");
+      return;
+    default: {
+      const exhaustive: never = target;
+      return exhaustive;
+    }
+  }
+}
+
+async function requireWorkspaceViewer(ctx: QueryCtx, target: WorkspaceTarget) {
+  const viewer = await requirePermission(ctx, "access_lab");
+  // Agents admins can inspect member sessions, including their files, but cannot write them.
+  if (target.kind === "agent_session") {
+    if (!(await ctx.db.get(target.sessionId))) throw new Error("Session not found");
+    return;
+  }
+  await requireWorkspaceOwner(ctx, target, viewer.userId);
+}
+
 async function workspaceRows(ctx: QueryCtx | MutationCtx, workspaceId: Id<"scoutWorkspaces">) {
   const rows = await ctx.db
     .query("scoutWorkspaceFiles")
@@ -49,11 +85,20 @@ async function workspaceRows(ctx: QueryCtx | MutationCtx, workspaceId: Id<"scout
 
 function findWorkspace(ctx: QueryCtx | MutationCtx, target: WorkspaceTarget) {
   const query = ctx.db.query("scoutWorkspaces");
-  return target.kind === "chat"
-    ? query.withIndex("by_thread_id", (q) => q.eq("threadId", target.threadId)).unique()
-    : query
+  switch (target.kind) {
+    case "chat":
+      return query.withIndex("by_thread_id", (q) => q.eq("threadId", target.threadId)).unique();
+    case "agent_session":
+      return query.withIndex("by_session_id", (q) => q.eq("sessionId", target.sessionId)).unique();
+    case "site":
+      return query
         .withIndex("by_site", (q) => q.eq("site", siteHostnameSchema.parse(target.site)))
         .unique();
+    default: {
+      const exhaustive: never = target;
+      return exhaustive;
+    }
+  }
 }
 
 export const listSites = query({
@@ -87,8 +132,7 @@ export const list = query({
     entries: v.array(workspaceEntryValidator),
   }),
   handler: async (ctx, args) => {
-    if (args.target.kind === "chat")
-      await requireWorkspaceChat(ctx, args.target.threadId, ctx.viewer.userId);
+    await requireWorkspaceViewer(ctx, args.target);
     const workspace = await findWorkspace(ctx, args.target);
     return {
       exists: workspace !== null,
@@ -110,9 +154,7 @@ export const snapshot = internalMutation({
     entries: v.array(workspaceEntryValidator),
   }),
   handler: async (ctx, args) => {
-    await requireUserPermission(ctx, args.userId, "access_play");
-    if (args.target.kind === "chat")
-      await requireWorkspaceChat(ctx, args.target.threadId, args.userId);
+    await requireWorkspaceOwner(ctx, args.target, args.userId);
     const workspace = await findWorkspace(ctx, args.target);
     if (workspace)
       return {
@@ -123,9 +165,9 @@ export const snapshot = internalMutation({
         entries: (await workspaceRows(ctx, workspace._id)).map((row) => row.entry),
       };
     const owner: WorkspaceTarget =
-      args.target.kind === "chat"
-        ? args.target
-        : { kind: "site", site: siteHostnameSchema.parse(args.target.site) };
+      args.target.kind === "site"
+        ? { kind: "site", site: siteHostnameSchema.parse(args.target.site) }
+        : args.target;
     const workspaceId = await ctx.db.insert("scoutWorkspaces", {
       ...owner,
       cwd: WORKSPACE_ROOT,
@@ -214,14 +256,13 @@ export const commit = internalMutation({
   },
   returns: v.number(),
   handler: async (ctx, args) => {
-    await requireUserPermission(ctx, args.userId, "access_play");
     const workspace = await ctx.db.get("scoutWorkspaces", args.workspaceId);
     if (!workspace || workspace.revision !== args.expectedRevision) {
       throw new Error(
         "Another command changed this workspace. These changes were not saved; inspect the files before retrying.",
       );
     }
-    if (workspace.kind === "chat") await requireWorkspaceChat(ctx, workspace.threadId, args.userId);
+    await requireWorkspaceOwner(ctx, workspace, args.userId);
     if (args.entries.length > MAX_WORKSPACE_ENTRIES)
       throw new Error("Workspace entry limit exceeded");
     const rows = await workspaceRows(ctx, workspace._id);
@@ -259,9 +300,7 @@ export const fileForViewer = internalQuery({
   args: { target: workspaceTargetValidator, path: v.string() },
   returns: workspaceEntryValidator,
   handler: async (ctx, args) => {
-    const viewer = await requirePermission(ctx, "access_play");
-    if (args.target.kind === "chat")
-      await requireWorkspaceChat(ctx, args.target.threadId, viewer.userId);
+    await requireWorkspaceViewer(ctx, args.target);
     const workspace = await findWorkspace(ctx, args.target);
     if (!workspace) throw new Error("File not found");
     const row = await ctx.db

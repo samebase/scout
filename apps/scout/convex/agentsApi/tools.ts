@@ -17,6 +17,7 @@ import { attachPersistedBrowserSession } from "../scout/browserSessionConnection
 import { createAgentMailWriteTools } from "../scout/agentMailTools";
 import { createAgentMailInboxClient, requiredAgentMailApiKey } from "../scout/lib/agentMail";
 import { createAgentsAccountTools } from "./accounts";
+import { createWorkspaceTools } from "../scout/workspaceTools";
 
 export const handoffInput = z.object({ message: z.string().trim().min(1).max(2_000) });
 const mailNames = new Set([
@@ -114,6 +115,11 @@ export async function runtimeTools(
   let mailClient: Awaited<ReturnType<typeof createMCPClient>> | null = null;
   const tools: ToolSet = {
     ...browser.tools,
+    ...createWorkspaceTools(
+      ctx,
+      { target: { kind: "agent_session", sessionId }, userId: session.userId },
+      beforeDispatch,
+    ),
     ...createAgentsAccountTools(ctx, { sessionId, scout, browser }),
     request_browser_handoff: tool({
       description: outdent`
@@ -145,6 +151,7 @@ export async function runtimeTools(
     if (
       handle &&
       requestedTool !== null &&
+      requestedTool !== "bash" &&
       requestedTool !== "set_review_site" &&
       !mailNames.has(requestedTool)
     ) {

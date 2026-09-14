@@ -13,10 +13,22 @@ export function workspaceFileKey(
 ) {
   const deploymentUrl = getRuntimeEnv("CONVEX_CLOUD_URL");
   if (!deploymentUrl) throw new Error("Convex deployment URL is not configured");
-  const owner =
-    args.kind === "site"
-      ? `sites/${encodeURIComponent(args.site)}`
-      : `users/${args.userId}/threads/${encodeURIComponent(args.threadId)}`;
+  let owner: string;
+  switch (args.kind) {
+    case "site":
+      owner = `sites/${encodeURIComponent(args.site)}`;
+      break;
+    case "chat":
+      owner = `users/${args.userId}/threads/${encodeURIComponent(args.threadId)}`;
+      break;
+    case "agent_session":
+      owner = `users/${args.userId}/agent-sessions/${args.sessionId}`;
+      break;
+    default: {
+      const exhaustive: never = args;
+      return exhaustive;
+    }
+  }
   const prefix = `deployments/${encodeURIComponent(new URL(deploymentUrl).host)}/${owner}/files`;
   const relativePath = args.path
     .slice(WORKSPACE_ROOT.length + 1)

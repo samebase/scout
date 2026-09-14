@@ -149,7 +149,7 @@ export const executeTool = action({
         selectedTools = createWorkspaceTools(
           ctx,
           {
-            threadId: args.threadId,
+            target: { kind: "chat", threadId: args.threadId },
             userId: runtime.userId,
           },
           () => ctx.runQuery(internal.scout.manualState.authorize, { threadId: args.threadId }),
