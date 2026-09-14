@@ -77,9 +77,11 @@ export function scoutWebsiteIdentityInstructions(
     - Last name: ${JSON.stringify(scout.websiteIdentity.lastName)}
     - Display name: ${JSON.stringify(scout.displayName)}
     - Email: ${JSON.stringify(scout.agentMail.address)}
+    - Date of birth: 1996-01-01
 
     This identity and inbox belong to the Scout. Use this identity for the Scout's
-    accounts and this inbox for sending and receiving email.
+    accounts and this inbox for sending and receiving email. When a form asks for age,
+    calculate it from this date of birth.
   `;
 }
 
