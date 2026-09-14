@@ -712,9 +712,9 @@ function ConversationSession({
       main={
         <section
           aria-label="Conversation with Scout"
-          className="flex h-full min-h-0 flex-col min-[768px]:pr-6"
+          className="flex h-full min-h-0 flex-col gap-3 min-[768px]:pr-6"
         >
-          <div className="min-h-0 flex-1">
+          <div className="min-h-0 flex-1 overflow-hidden rounded-[var(--product-panel-radius)] border border-border bg-card">
             <MessageScrollerProvider autoScroll defaultScrollPosition="end">
               <MessageScroller>
                 <MessageScrollerViewport
@@ -722,7 +722,7 @@ function ConversationSession({
                   className="[mask-image:none]"
                 >
                   <MessageScrollerContent
-                    className="gap-7 px-1 pt-5 pb-7"
+                    className="gap-7 px-4 pt-5 pb-7"
                     role="log"
                     aria-label="Session messages"
                     aria-live="polite"
