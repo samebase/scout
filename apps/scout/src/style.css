@@ -436,6 +436,10 @@
     border-inline-start-width: 0;
   }
 
+  .play-session-layout [data-sidebar-layout-part="resize-handle"][data-resize-mode="edge"] {
+    width: 8px;
+  }
+
   .play-session-layout [data-sidebar-layout-part="resize-handle"][data-resize-mode="edge"]::after {
     width: 3px;
     height: 32px;

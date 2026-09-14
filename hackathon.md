@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-14T17:54:00Z
+- **Last updated:** 2026-09-14T19:24:15Z
 
 ## Log
 
@@ -1258,8 +1258,9 @@ Convex scopes private files to their session; admins can inspect them in the Age
 
 ### 2026-09-14 - working tree
 
-New reviews get a short title and a request check before the main agent starts.
+New Agents sessions get a short title and a request check before the main agent starts.
 Convex stores the decision and call details; declined requests stay out of public results.
-Admins inspect Request check and Chat as separate entries in an always-open sidebar tree,
-with the call's timing and estimated cost alongside its input and response
+Admins inspect Request check and Chat in an always-open tree that stays mounted during navigation,
+with the call's timing, estimated cost, input, and response. Review conversations use padded chat
+panels and a separate replay with a compact resize grip
 (`apps/scout/convex/agentsApi/requestCheck.ts`, `apps/scout/src/agents-api/page.tsx`).
