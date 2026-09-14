@@ -124,10 +124,7 @@ function ScoutsIndexPage() {
             const services = servicesByScout?.get(scout._id) ?? [];
 
             return (
-              <li
-                key={scout._id}
-                className={`surface-panel overflow-hidden ${scout.currentActivity ? "md:grid md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]" : ""}`}
-              >
+              <li key={scout._id} className="surface-panel overflow-hidden">
                 <Link
                   to="/scouts/$slug"
                   params={{ slug: scout.slug }}
@@ -176,10 +173,7 @@ function ScoutsIndexPage() {
                     ) : null}
                   </dl>
                 </Link>
-                <ScoutCurrentActivity
-                  activity={scout.currentActivity}
-                  className="border-t md:border-t-0 md:border-l"
-                />
+                <ScoutCurrentActivity activity={scout.currentActivity} className="border-t" />
               </li>
             );
           })}
