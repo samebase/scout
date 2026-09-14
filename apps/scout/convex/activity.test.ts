@@ -65,6 +65,28 @@ async function setup() {
       ctx.db.normalizeId("agentsApiSessions", threadId),
     );
     if (!sessionId) throw new Error("Expected a managed Review");
+    await backend.mutation(internal.agentsApi.requestChecks.start, {
+      sessionId,
+      startedAt: Date.now(),
+      request: "{}",
+    });
+    await backend.mutation(internal.agentsApi.requestChecks.finish, {
+      sessionId,
+      state: {
+        kind: "completed",
+        startedAt: Date.now(),
+        finishedAt: Date.now(),
+        request: "{}",
+        response: "{}",
+        usage: null,
+        result: { title: "Test product onboarding", decision: { kind: "approved" } },
+      },
+    });
+    await backend.mutation(internal.agentsApi.sessions.update, {
+      sessionId,
+      providerId: "provider-review",
+      state: { kind: "running" },
+    });
     return sessionId;
   }
   return { backend, member, other, memberId, otherId, adminId, scoutId, chat, review };

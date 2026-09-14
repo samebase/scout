@@ -22,6 +22,8 @@ import { omitNullish } from "../../shared/omitNullish";
 import { MAX_BROWSER_SESSIONS_PER_THREAD } from "../scout/browserSessions";
 import { browserSessionLifecycleValidator } from "../browserModel";
 import { estimateAgentsApiCost } from "./cost";
+import { getRequestCheck } from "./requestChecks";
+import { REQUEST_CHECK_MODEL } from "./requestCheckModel";
 
 async function requireSession(ctx: QueryCtx, sessionId: Id<"agentsApiSessions">) {
   const session = await ctx.db.get(sessionId);
@@ -97,6 +99,16 @@ export const list = query({
       title: v.string(),
       scoutName: v.string(),
       state: sessionState,
+      requestCheck: v.union(
+        v.literal("pending"),
+        v.literal("running"),
+        v.literal("approved"),
+        v.literal("rejected"),
+        v.literal("failed"),
+        v.literal("cancelled"),
+        v.null(),
+      ),
+      hasChat: v.boolean(),
     }),
   ),
   handler: async (ctx, args) => {
@@ -107,13 +119,23 @@ export const list = query({
       .paginate(args.paginationOpts);
     return {
       ...sessions,
-      page: sessions.page.map(({ _id, _creationTime, title, scoutName, state }) => ({
-        _id,
-        _creationTime,
-        title,
-        scoutName,
-        state,
-      })),
+      page: await Promise.all(
+        sessions.page.map(async ({ _id, _creationTime, title, scoutName, state, providerId }) => {
+          const check = await getRequestCheck(ctx, _id);
+          return {
+            _id,
+            _creationTime,
+            title,
+            scoutName,
+            state,
+            requestCheck:
+              check?.state.kind === "completed"
+                ? check.state.result.decision.kind
+                : (check?.state.kind ?? null),
+            hasChat: Boolean(providerId),
+          };
+        }),
+      ),
     };
   },
 });
@@ -156,6 +178,23 @@ export const get = query({
       firecrawlUsdPerCredit: null,
       now: Date.now(),
     });
+    const check = await getRequestCheck(ctx, session._id);
+    const requestCheck = check
+      ? { model: check.model, prompt: check.prompt, state: check.state }
+      : null;
+    const requestCheckCost = check
+      ? estimateAgentsApiCost({
+          model: check.model,
+          usage:
+            check.state.kind === "completed" || check.state.kind === "failed"
+              ? check.state.usage
+              : null,
+          webSearchCalls: 0,
+          browsers: [],
+          firecrawlUsdPerCredit: null,
+          now: 0,
+        }).modelEstimateUsd
+      : null;
     return {
       _id,
       title,
@@ -169,6 +208,8 @@ export const get = query({
       providerId,
       usage,
       cost,
+      requestCheck,
+      requestCheckCost,
       browser: browser
         ? {
             liveViewUrl: browser.liveViewUrl,
@@ -245,13 +286,19 @@ export async function startSession(
     userId: args.userId,
     scoutId: scout._id,
     scoutName: scout.displayName,
-    title: prompt.slice(0, 120),
+    title: "New session",
     model: "gpt-5.6-luna",
     state: { kind: "starting" },
     active: true,
     nextSequence: 0,
     browser: null,
     usage: null,
+  });
+  await ctx.db.insert("agentsApiRequestChecks", {
+    sessionId,
+    model: REQUEST_CHECK_MODEL,
+    prompt,
+    state: { kind: "pending" },
   });
   await startWorkflow(ctx, sessionId, { kind: "start", prompt });
   return sessionId;
@@ -276,8 +323,15 @@ export const controls = query({
       ? await ctx.db.system.get(session.handoffEmailJobId)
       : null;
     const busy = !session.active && (await scoutIsWorking(ctx, session.scoutId));
+    const check = await getRequestCheck(ctx, session._id);
     return {
       state: session.state,
+      requestCheckMessage:
+        check?.state.kind === "completed" && check.state.result.decision.kind === "rejected"
+          ? check.state.result.decision.reason
+          : check?.state.kind === "failed"
+            ? "The request check failed. Start a new review to try again."
+            : null,
       canSend: !session.active && Boolean(session.providerId) && !busy,
       canStop:
         session.active && (session.state.kind !== "stopped" || cleanup?.state.kind === "failed"),

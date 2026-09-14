@@ -1,6 +1,7 @@
 import { authTables } from "@convex-dev/auth/server";
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { requestCheckRecord } from "./agentsApi/requestCheckModel";
 import { vWorkflowId } from "@convex-dev/workflow";
 import {
   browserActionValidator,
@@ -71,6 +72,7 @@ const scoutTurnFields = {
 
 export default defineSchema({
   ...authTables,
+  agentsApiRequestChecks: defineTable(requestCheckRecord).index("by_session_id", ["sessionId"]),
   agentsApiSessions: defineTable({
     userId: v.id("users"),
     scoutId: v.id("scouts"),
