@@ -1,39 +1,19 @@
-import { Link } from "@tanstack/react-router";
-import { ArrowRightIcon, FocusIcon, Gamepad2Icon } from "lucide-react";
 import { ProductShell } from "../products/shell";
+import { ConversationLobby } from "../products/conversation/page";
+import type { ReviewFeedSearch } from "#lib/reviewFeedSearch";
 import { ActivityFeed } from "./activity-feed";
 
-export function ProductHome() {
+export function ProductHome({ search }: { search: ReviewFeedSearch }) {
   return (
-    <ProductShell product={null}>
+    <ProductShell product="review">
       <main
         id="main-content"
-        className="mx-auto max-w-[1120px] px-9 pt-10 pb-16 max-[640px]:px-5 max-[640px]:pt-5"
+        className="mx-auto max-w-[1120px] px-9 pt-14 pb-16 max-[640px]:px-5 max-[640px]:pt-8"
       >
-        <h1 className="mb-7 text-[42px] leading-tight font-semibold tracking-[-1.5px] max-[640px]:text-[32px]">
-          What are we doing today?
-        </h1>
-        <div className="mb-12 grid grid-cols-2 gap-4 max-[640px]:mb-8 max-[480px]:grid-cols-1">
-          <Link
-            to="/play"
-            search={{}}
-            className="flex min-h-20 items-center gap-4 rounded-2xl border border-play-line bg-play-sand px-6 text-lg font-medium transition-colors hover:border-play-blue"
-          >
-            <Gamepad2Icon size={24} aria-hidden="true" />
-            Play a game
-            <ArrowRightIcon size={18} className="ml-auto" aria-hidden="true" />
-          </Link>
-          <Link
-            to="/review"
-            search={{}}
-            className="flex min-h-20 items-center gap-4 rounded-2xl border border-review-accent bg-review-accent px-6 text-lg font-medium text-white transition-colors hover:bg-review-ink"
-          >
-            <FocusIcon size={24} aria-hidden="true" />
-            Review a product
-            <ArrowRightIcon size={18} className="ml-auto" aria-hidden="true" />
-          </Link>
+        <div className="mx-auto mb-14 max-w-[660px]">
+          <ConversationLobby kind="review" />
         </div>
-        <ActivityFeed />
+        <ActivityFeed search={search} />
       </main>
     </ProductShell>
   );

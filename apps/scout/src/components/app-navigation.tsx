@@ -1,10 +1,8 @@
 import { canAccess, useViewerAccess } from "../lib/access";
-import { Link } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import {
-  ActivityIcon,
   BotIcon,
   FocusIcon,
-  Gamepad2Icon,
   GlobeIcon,
   MessageSquareIcon,
   SettingsIcon,
@@ -17,6 +15,9 @@ const navigationLinkClass =
 
 export function AppNavigation() {
   const viewer = useViewerAccess();
+  const reviewPage = useRouterState({
+    select: (state) => state.location.pathname === "/" || state.location.pathname === "/review",
+  });
   const permissions = viewer?.kind === "account" ? viewer.accessKeys : [];
   return (
     <header className="app-navigation">
@@ -34,17 +35,14 @@ export function AppNavigation() {
         </Link>
 
         <nav className="app-navigation__routes" aria-label="Primary navigation">
-          <Link to="/" activeOptions={{ exact: true }} className={navigationLinkClass}>
-            <ActivityIcon aria-hidden="true" />
-            <span>Activity</span>
-          </Link>
-          <Link to="/play" search={{}} className={navigationLinkClass}>
-            <Gamepad2Icon aria-hidden="true" />
-            <span>Play</span>
-          </Link>
-          <Link to="/review" search={{}} className={navigationLinkClass}>
+          <Link
+            to="/"
+            activeOptions={{ exact: true }}
+            aria-current={reviewPage ? "page" : undefined}
+            className={navigationLinkClass}
+          >
             <FocusIcon aria-hidden="true" />
-            <span>Review</span>
+            <span>Reviews</span>
           </Link>
           {canAccess("access_scout_view", permissions) && (
             <Link to="/scouts" className={navigationLinkClass}>

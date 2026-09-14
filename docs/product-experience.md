@@ -1,8 +1,7 @@
 # Member experience
 
-Discussion checkpoint: September 14, 2026. This records the direction and proposed
-next work; it does not claim that the proposed experience is implemented. Continue
-here or use this file to brief a new task.
+Discussion checkpoint: September 14, 2026. Current behavior and remaining ideas are
+separated below. Continue here or use this file to brief a new task.
 
 ## Aim
 
@@ -13,8 +12,10 @@ speculative prompt edits.
 
 ## Direction from the discussion
 
-- Keep one public activity feed with Play/Review filters and access to live and
-  completed conversations. Private conversations stay out of public results.
+- Make Review the main product: one starting composer and one review list, with
+  site and public/my filters. Playing a game remains a task Scout can perform
+  through the same input, rather than a second product in the main navigation.
+  Private conversations stay out of public results.
 - Keep a free-text starting box. A user should not have to complete a site
   registration form before asking Scout to try something.
 - Give conversations a concise title separate from the original request, which
@@ -33,14 +34,21 @@ speculative prompt edits.
 
 ## Current implementation
 
-- `/` provides public activity and My activity. `/play` and `/review` each provide
-  their starting composer and conversation on the same route.
-- Activity type and visibility use shadcn Select controls. Rows distinguish Play
-  and Review with their existing icons and small yellow or emerald badges.
+- `/` provides the Review composer, Public reviews, and My reviews. Site filters
+  are stored in the URL. `/review?thread=…` opens a conversation. Existing Play
+  conversations remain accessible through their URLs and Lab.
+- The main navigation shows Reviews and Scouts for members, plus the existing
+  admin tools for staff. Scout selection and visibility use shadcn Select controls.
 - Review uses the OpenAI Agents API; Play still uses the Convex Agent. This product
   work does not require unifying or replacing those runtimes.
-- `scoutChats` stores purpose, visibility, owner, Scout, and runtime. It has no
-  primary-site relationship. Titles currently come from the first request.
+- `scoutChats.primarySite` stores the exact hostname once identified. The new
+  Review agent tool `set_review_site` sets it once; the owner can correct it on
+  the conversation page. Browser navigation does not write this field.
+- Public and owner-only site queries use dedicated indexes. Site links on rows
+  and conversations lead to the filtered review list. No workspace is required.
+- Existing conversations without a site remain visible in the unfiltered list.
+  Their owners can set the site; there is no automatic historical inference.
+- Titles still come from the first request. Concise, separate titles remain to do.
 - `scoutWorkspaces` distinguishes chat and site workspaces. A site workspace is
   shared knowledge keyed by exact hostname, not a product catalog or a chat subject.
 - Approved members can open Scouts from the main navigation and browse names,
@@ -78,10 +86,9 @@ presentation where useful, but do not simply remove the guard from management qu
 
 ## Implementation order to try
 
-The first slice adds member access to the existing Scout directory and profiles.
-Next, try conversation titles, primary-site metadata, and the existing feed's site
-filter, with links from conversation identities. Verify this whole path as an
-approved member before expanding it.
+Member Scout browsing and review site association are implemented. Next, verify
+the complete path with an ordinary member request, then address concise titles
+and any concrete failures observed during the review.
 
 Use recorded browser navigation for an optional “Other sites visited” view; it is
 evidence of a visit, not a permanent dependency relationship. A site can have

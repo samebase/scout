@@ -88,6 +88,7 @@ import type * as scout_models from "../scout/models.js";
 import type * as scout_play from "../scout/play.js";
 import type * as scout_playwrightBrowser from "../scout/playwrightBrowser.js";
 import type * as scout_review from "../scout/review.js";
+import type * as scout_reviewSites from "../scout/reviewSites.js";
 import type * as scout_runtimeInstructions from "../scout/runtimeInstructions.js";
 import type * as scout_scoutRegistration from "../scout/scoutRegistration.js";
 import type * as scout_scouts from "../scout/scouts.js";
@@ -199,6 +200,7 @@ declare const fullApi: ApiFromModules<{
   "scout/play": typeof scout_play;
   "scout/playwrightBrowser": typeof scout_playwrightBrowser;
   "scout/review": typeof scout_review;
+  "scout/reviewSites": typeof scout_reviewSites;
   "scout/runtimeInstructions": typeof scout_runtimeInstructions;
   "scout/scoutRegistration": typeof scout_scoutRegistration;
   "scout/scouts": typeof scout_scouts;

@@ -1,3 +1,4 @@
+import { siteHostnameSchema } from "../shared/site";
 import { outdent } from "outdent";
 import { v } from "convex/values";
 import { z } from "zod";
@@ -45,18 +46,8 @@ export const workspaceTargetValidator = v.union(
 );
 export type WorkspaceTarget = typeof workspaceTargetValidator.type;
 
-export const siteWorkspaceSchema = z
-  .string()
-  .trim()
-  .toLowerCase()
-  .max(253)
-  .regex(
-    /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/,
-    "Use the site's exact hostname, such as papergames.io, without a URL path or port",
-  );
-
 export const bashInputSchema = z.object({
-  workspace: siteWorkspaceSchema.optional(),
+  workspace: siteHostnameSchema.optional(),
   command: z
     .string()
     .min(1)

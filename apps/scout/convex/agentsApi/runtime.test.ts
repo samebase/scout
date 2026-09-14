@@ -203,6 +203,39 @@ function reasoning(id: string, status: "in_progress" | "completed"): AgentReason
   return { id, type: "reasoning", status, summary: [], turn_id: "turn-test" };
 }
 
+it("executes review site assignment through the real tools without connecting to the browser", async () => {
+  const t = await setup();
+  await t.backend.run(async (ctx) => {
+    const session = await ctx.db.get(t.sessionId);
+    if (!session) throw new Error("Session missing");
+    await ctx.db.insert("scoutChats", {
+      threadId: t.sessionId,
+      runtime: { kind: "agents_api", sessionId: t.sessionId },
+      userId: t.userId,
+      scoutId: session.scoutId,
+      createdAt: Date.now(),
+      purpose: { kind: "review" },
+      visibility: "private",
+    });
+  });
+  const original = await vi.importActual<typeof import("./tools")>("./tools");
+  vi.mocked(runtimeTools).mockImplementation(original.runtimeTools);
+  t.provider.call.name = "set_review_site";
+  t.provider.call.arguments = { site: "samebase.com" };
+  expect(await t.advance()).toBe(true);
+  expect(await t.savedCall()).toMatchObject({
+    result: { kind: "success", output: JSON.stringify({ primarySite: "samebase.com" }) },
+  });
+  expect(
+    await t.backend.run(async (ctx) =>
+      ctx.db
+        .query("scoutChats")
+        .withIndex("by_thread_id", (q) => q.eq("threadId", t.sessionId))
+        .unique(),
+    ),
+  ).toMatchObject({ primarySite: "samebase.com" });
+});
+
 it("subscribes before submitting a tool result and persists live output before history or completion", async () => {
   const { provider, advance, history, session } = await setup();
   vi.useRealTimers();

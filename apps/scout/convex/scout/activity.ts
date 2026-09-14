@@ -6,14 +6,10 @@ import type { Doc } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import { publicQuery } from "../functions";
 import { requireViewerPermission } from "../access";
+import { siteHostnameSchema } from "../../shared/site";
 import { canAccess } from "../../shared/accessModel";
 import { chatPermission, scoutIsWorking, visibleChat } from "./chatAccess";
-import {
-  chatPurposeValidator,
-  chatVisibilityValidator,
-  productKindValidator,
-  chatRuntimeValidator,
-} from "./chatModel";
+import { chatPurposeValidator, chatVisibilityValidator, chatRuntimeValidator } from "./chatModel";
 import { scoutAgent } from "./agent";
 import { MAX_BROWSER_SESSIONS_PER_THREAD } from "./browserSessions";
 import { requireFirecrawlLiveViewUrl } from "./lib/firecrawlLiveView";
@@ -51,6 +47,7 @@ const statusValidator = v.union(
 const activityValidator = v.object({
   threadId: v.string(),
   title: v.union(v.string(), v.null()),
+  primarySite: v.union(v.string(), v.null()),
   createdAt: v.number(),
   purpose: chatPurposeValidator,
   visibility: chatVisibilityValidator,
@@ -129,6 +126,7 @@ async function summary(ctx: QueryCtx, chat: Doc<"scoutChats">) {
     return {
       threadId: chat.threadId,
       title: managed.title,
+      primarySite: chat.primarySite ?? null,
       createdAt: chat.createdAt,
       purpose: chat.purpose,
       visibility: chat.visibility,
@@ -158,6 +156,7 @@ async function summary(ctx: QueryCtx, chat: Doc<"scoutChats">) {
   return {
     threadId: chat.threadId,
     title: thread.title ?? null,
+    primarySite: chat.primarySite ?? null,
     createdAt: chat.createdAt,
     purpose: chat.purpose,
     visibility: chat.visibility,
@@ -170,38 +169,38 @@ async function summary(ctx: QueryCtx, chat: Doc<"scoutChats">) {
 export const list = publicQuery({
   access: "access_public",
   args: {
-    kind: v.union(v.literal("all"), productKindValidator),
+    site: v.union(v.string(), v.null()),
     scope: v.union(v.literal("public"), v.literal("mine")),
     paginationOpts: paginationOptsValidator,
   },
   returns: paginationResultValidator(activityValidator),
   handler: async (ctx, args) => {
-    const kind = args.kind;
+    const site = args.site === null ? null : siteHostnameSchema.parse(args.site);
+    const userId =
+      args.scope === "mine" ? requireViewerPermission(ctx.viewer, "access_account").userId : null;
     const rows =
-      args.scope === "public"
-        ? kind === "all"
+      userId === null
+        ? site === null
           ? ctx.db
-              .query("scoutChats")
-              .withIndex("by_visibility_and_created_at", (q) => q.eq("visibility", "public"))
-              .filter((q) => q.neq(q.field("purpose.kind"), "general"))
-          : ctx.db
               .query("scoutChats")
               .withIndex("by_visibility_and_purpose_kind_and_created_at", (q) =>
-                q.eq("visibility", "public").eq("purpose.kind", kind),
+                q.eq("visibility", "public").eq("purpose.kind", "review"),
               )
-        : kind === "all"
-          ? ctx.db
-              .query("scoutChats")
-              .withIndex("by_user_id_and_created_at", (q) =>
-                q.eq("userId", requireViewerPermission(ctx.viewer, "access_account").userId),
-              )
-              .filter((q) => q.neq(q.field("purpose.kind"), "general"))
           : ctx.db
               .query("scoutChats")
+              .withIndex("by_visibility_and_purpose_kind_and_primary_site_and_created_at", (q) =>
+                q.eq("visibility", "public").eq("purpose.kind", "review").eq("primarySite", site),
+              )
+        : site === null
+          ? ctx.db
+              .query("scoutChats")
               .withIndex("by_user_id_and_purpose_kind_and_created_at", (q) =>
-                q
-                  .eq("userId", requireViewerPermission(ctx.viewer, "access_account").userId)
-                  .eq("purpose.kind", kind),
+                q.eq("userId", userId).eq("purpose.kind", "review"),
+              )
+          : ctx.db
+              .query("scoutChats")
+              .withIndex("by_user_id_and_purpose_kind_and_primary_site_and_created_at", (q) =>
+                q.eq("userId", userId).eq("purpose.kind", "review").eq("primarySite", site),
               );
     const result = await rows.order("desc").paginate(args.paginationOpts);
     return { ...result, page: await Promise.all(result.page.map((chat) => summary(ctx, chat))) };

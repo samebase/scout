@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-14T14:03:57Z
+- **Last updated:** 2026-09-14T14:29:19Z
 
 ## Log
 
@@ -1235,9 +1235,16 @@ cost, live view, and replay. The session list now loads older conversations, and
 Review links to its inspector for admins. Sending messages and controlling a run
 remain with its owner (`apps/scout/convex/agentsApi/`, `apps/scout/src/agents-api/`).
 
-### 2026-09-14 - working tree
+### 2026-09-14 - 27e5cfb
 
 Members can browse Scout profiles and email addresses while account management stays admin-only.
 Settings identifies the signed-in account. Activity filters use shadcn dropdowns, with yellow Play
 and emerald Review badges. The shared navigation keeps stable typography across product themes
 (`apps/scout/convex/scout/scouts.ts`, `apps/scout/src/components/`, `apps/scout/src/style.css`).
+
+### 2026-09-14 - working tree
+
+The homepage now starts reviews and lists previous ones, with site and public/my filters.
+Reviews store their primary hostname in Convex; Scout can identify it and the owner can correct it.
+Site links open the filtered list, independent of browser navigation and shared workspaces
+(`apps/scout/convex/scout/reviewSites.ts`, `apps/scout/src/components/activity-feed.tsx`).

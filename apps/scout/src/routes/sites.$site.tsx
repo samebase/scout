@@ -14,7 +14,7 @@ import { api } from "../../convex/_generated/api";
 import { Button } from "#components/ui/button";
 import { ScoutWorkspace } from "#components/scout-workspace";
 import { chatSearchSchema } from "#lib/chat-search";
-import { siteWorkspaceSchema } from "../../convex/workspaceModel";
+import { siteHostnameSchema } from "../../shared/site";
 
 const searchSchema = chatSearchSchema.pick({ file: true, terminal: true });
 
@@ -47,7 +47,7 @@ function SiteWorkspaceLayout() {
   const { site } = Route.useParams();
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
-  const parsed = siteWorkspaceSchema.safeParse(site);
+  const parsed = siteHostnameSchema.safeParse(site);
   const { setMobilePane } = useSidebarActions();
   const { results, status, loadMore } = usePaginatedQuery(
     api.scout.workspaces.listSites,

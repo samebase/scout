@@ -1,3 +1,11 @@
+import { z } from "zod";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "#components/ui/select";
 import { accountAccessMessage, canAccess, useViewerAccess } from "../../lib/access";
 import { SidebarLayout } from "@samebase/sidebars/SidebarLayout";
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -14,6 +22,7 @@ import { type FormEvent, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import { productRoutes, type ProductKind, type ConversationSearch } from "./model";
 import { gameInviteDisplayText } from "../play/invite";
+import { ReviewSite } from "./review-site";
 import { ConversationComposer } from "./composer";
 import { ConversationSidebar, BrowserToggle, BrowserStop } from "./sidebar";
 import {
@@ -36,6 +45,7 @@ import { playError, playLoading, playNotice, playRouteMessage, playTextLink } fr
 type ChatThread = NonNullable<FunctionReturnType<typeof api.scout.activity.get>>;
 type Activity = FunctionReturnType<typeof api.scout.chats.getScoutActivity>;
 type ThreadActivity = Extract<Activity, { threadId: string }>;
+const visibilitySchema = z.enum(["public", "private"]);
 type RequestState = { kind: "idle" } | { kind: "pending" } | { kind: "failed"; message: string };
 
 export function ConversationError() {
@@ -97,7 +107,7 @@ function ConversationUnavailable({ kind }: { kind: ProductKind }) {
   );
 }
 
-function ConversationLobby({ kind }: { kind: ProductKind }) {
+export function ConversationLobby({ kind }: { kind: ProductKind }) {
   const isPlay = kind === "play";
   const viewer = useViewerAccess();
   const canRun =
@@ -235,22 +245,22 @@ function ConversationLobby({ kind }: { kind: ProductKind }) {
               ) : activeScouts.length > 0 ? (
                 <div className="flex items-center gap-2.5">
                   {isPlay && <ScoutPiece size="brand" className="scale-75" />}
-                  <label htmlFor="conversation-scout" className="sr-only">
-                    Your Scout
-                  </label>
-                  <select
-                    id="conversation-scout"
-                    value={selectedScout?._id ?? ""}
-                    onChange={(event) => setSelectedScoutId(event.target.value)}
-                    className="min-h-11 max-w-[220px] rounded-lg bg-transparent pr-2 text-sm font-medium text-foreground"
-                  >
-                    {activeScouts.map((scout) => (
-                      <option key={scout._id} value={scout._id} disabled={scout.busy}>
-                        {scout.displayName}
-                        {scout.busy ? " · Busy" : ""}
-                      </option>
-                    ))}
-                  </select>
+                  <Select value={selectedScout?._id ?? ""} onValueChange={setSelectedScoutId}>
+                    <SelectTrigger
+                      aria-label="Your Scout"
+                      className="min-h-11 max-w-[220px] border-0 shadow-none"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent position="popper" align="start">
+                      {activeScouts.map((scout) => (
+                        <SelectItem key={scout._id} value={scout._id} disabled={scout.busy}>
+                          {scout.displayName}
+                          {scout.busy ? " · Busy" : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               ) : isPlay ? (
                 "Scout Play"
@@ -259,21 +269,19 @@ function ConversationLobby({ kind }: { kind: ProductKind }) {
               )}
             </ConversationComposer>
             <div className="mt-3 flex flex-wrap items-center justify-center gap-x-3 text-sm text-muted-foreground">
-              <label htmlFor="conversation-visibility" className="sr-only">
-                Visibility
-              </label>
-              <select
-                id="conversation-visibility"
+              <Select
                 value={visibility}
                 disabled={request.kind === "pending"}
-                onChange={(event) =>
-                  setVisibility(event.target.value === "public" ? "public" : "private")
-                }
-                className="min-h-11 rounded-lg bg-transparent px-2"
+                onValueChange={(value) => setVisibility(visibilitySchema.parse(value))}
               >
-                <option value="private">Private</option>
-                <option value="public">Public</option>
-              </select>
+                <SelectTrigger aria-label="Visibility" className="min-h-11 border-0 shadow-none">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent position="popper">
+                  <SelectItem value="private">Private</SelectItem>
+                  <SelectItem value="public">Public</SelectItem>
+                </SelectContent>
+              </Select>
               {visibility === "public" && <span>Anyone can watch the chat and browser.</span>}
             </div>
             <div className="mt-5 flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm text-muted-foreground">
@@ -553,7 +561,7 @@ function ConversationSession({
         <>
           <div className="mb-5 flex items-center justify-between gap-4 max-[760px]:mb-3">
             <Link
-              to={productRoutes[kind]}
+              to={kind === "review" ? "/" : productRoutes[kind]}
               search={{}}
               className={cn(playTextLink, "min-h-11 text-muted-foreground")}
             >
@@ -615,6 +623,16 @@ function ConversationSession({
               {thread.title ?? `Chat with ${scout.displayName}`}
             </h1>
           </div>
+          {kind === "review" && (thread.primarySite || thread.canControl) && (
+            <div className="mb-4">
+              <ReviewSite
+                threadId={thread.threadId}
+                site={thread.primarySite}
+                canEdit={thread.canControl}
+                visibility={thread.visibility}
+              />
+            </div>
+          )}
           {request.kind === "failed" && (
             <p role="alert" className={playError}>
               {request.message}

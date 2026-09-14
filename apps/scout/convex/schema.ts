@@ -199,16 +199,28 @@ export default defineSchema({
     modelSelection: v.optional(scoutModelSelectionValidator),
     purpose: chatPurposeValidator,
     visibility: chatVisibilityValidator,
+    primarySite: v.optional(v.string()),
   })
     .index("by_thread_id", ["threadId"])
     .index("by_user_id_and_created_at", ["userId", "createdAt"])
-    .index("by_visibility_and_created_at", ["visibility", "createdAt"])
     .index("by_visibility_and_purpose_kind_and_created_at", [
       "visibility",
       "purpose.kind",
       "createdAt",
     ])
-    .index("by_user_id_and_purpose_kind_and_created_at", ["userId", "purpose.kind", "createdAt"]),
+    .index("by_user_id_and_purpose_kind_and_created_at", ["userId", "purpose.kind", "createdAt"])
+    .index("by_visibility_and_purpose_kind_and_primary_site_and_created_at", [
+      "visibility",
+      "purpose.kind",
+      "primarySite",
+      "createdAt",
+    ])
+    .index("by_user_id_and_purpose_kind_and_primary_site_and_created_at", [
+      "userId",
+      "purpose.kind",
+      "primarySite",
+      "createdAt",
+    ]),
   scoutWorkspaces: defineTable(
     v.union(
       v.object({
