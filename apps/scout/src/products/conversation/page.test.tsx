@@ -362,7 +362,7 @@ describe("Play invitation", () => {
         kind: "review",
         scoutId: "scout-1",
         prompt: "Review example.com",
-        visibility: "private",
+        visibility: "public",
       }),
     );
     await waitFor(() => expect(router.state.location.pathname).toBe("/review"));
@@ -391,7 +391,6 @@ describe("Play invitation", () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole("combobox", { name: "Visibility" }));
     await user.click(screen.getByRole("option", { name: "Public" }));
-    expect(screen.getByText("Anyone can watch the chat and browser.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
     await waitFor(() =>
       expect(remote.createThread).toHaveBeenCalledWith({

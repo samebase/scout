@@ -11,13 +11,18 @@ import {
   RotateCcwIcon,
   SendIcon,
   SquareIcon,
+  CheckIcon,
+  XIcon,
+  LoaderCircleIcon,
+  MessageSquareIcon,
 } from "lucide-react";
 import { useMemo, useRef, useState, type FormEvent } from "react";
 import { api } from "../../convex/_generated/api";
 import { omitNullish } from "../../shared/omitNullish";
 import { Button } from "#components/ui/button";
 import { Textarea } from "#components/ui/textarea";
-import { sessionControls, type AgentsSearch, type Session } from "./model";
+import { selectedStep, sessionControls, type AgentsSearch, type Session } from "./model";
+import { RequestCheckView, RequestCheckInspector } from "./request-check";
 import { Transcript } from "./transcript";
 import { BrowserPanel } from "./browser";
 import { SessionCost } from "./cost";
@@ -29,16 +34,22 @@ type RequestState = { kind: "idle" } | { kind: "pending" } | { kind: "failed"; m
 export function AgentsPage({ search }: { search: AgentsSearch }) {
   return (
     <main className="flex h-[calc(100dvh-4rem)] min-h-0 w-full flex-col select-text">
-      {search.session === undefined ? (
-        <AgentsWorkspace search={search} session={null} />
-      ) : (
-        <SessionLoader key={search.session} search={search} sessionId={search.session} />
-      )}
+      <AgentsWorkspace search={search} />
     </main>
   );
 }
 
-function AgentsWorkspace({ search, session }: { search: AgentsSearch; session: Session | null }) {
+function AgentsWorkspace({ search }: { search: AgentsSearch }) {
+  const session = useQuery(
+    api.agentsApi.sessions.get,
+    // @ts-expect-error The server validates this URL string with v.id("agentsApiSessions"); downstream calls use the returned typed _id.
+    search.session === undefined
+      ? "skip"
+      : {
+          sessionId: search.session,
+        },
+  );
+  const checking = Boolean(session && selectedStep(session, search) === "request_check");
   const {
     results: sessions,
     status,
@@ -47,8 +58,11 @@ function AgentsWorkspace({ search, session }: { search: AgentsSearch; session: S
 
   return (
     <SidebarLayout
-      addressChrome={<AgentsChrome session={session} search={search} />}
-      resizeHandleLabels={{ left: "Resize sessions", right: "Resize browser" }}
+      addressChrome={<AgentsChrome session={session ?? null} search={search} />}
+      resizeHandleLabels={{
+        left: "Resize sessions",
+        right: checking ? "Resize call details" : "Resize browser",
+      }}
       formatResizeHandleValueText={({ widthPx }) => `${widthPx} pixels wide`}
       left={
         <PaneFrame
@@ -63,23 +77,78 @@ function AgentsWorkspace({ search, session }: { search: AgentsSearch; session: S
                 <p className="p-4 text-sm text-muted-foreground">No sessions yet.</p>
               ) : (
                 <nav className="flex flex-col gap-1 p-2" aria-label="Agent sessions">
-                  {sessions.map((session) => (
-                    <Link
-                      key={session._id}
-                      to="/agents"
-                      search={{
-                        session: session._id,
-                        sessions: search.sessions,
-                        inspector: search.inspector,
-                      }}
-                      aria-current={search.session === session._id ? "page" : undefined}
-                      className="rounded-lg px-3 py-2.5 text-sm outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:bg-muted"
-                    >
-                      <span className="block truncate font-medium">{session.title}</span>
-                      <span className="block truncate text-xs text-muted-foreground">
-                        {session.scoutName}
-                      </span>
-                    </Link>
+                  {sessions.map((item) => (
+                    <div key={item._id} className="pb-2">
+                      <Link
+                        to="/agents"
+                        resetScroll={false}
+                        search={{
+                          session: item._id,
+                          sessions: search.sessions,
+                          inspector: search.inspector,
+                        }}
+                        className="block rounded-lg px-3 py-2 text-sm outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <span className="block truncate font-medium">{item.title}</span>
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {item.scoutName}
+                        </span>
+                      </Link>
+                      <ul className="ml-5 space-y-0.5 border-l pl-2 text-sm">
+                        {item.requestCheck !== null && (
+                          <li>
+                            <Link
+                              to="/agents"
+                              resetScroll={false}
+                              search={{
+                                session: item._id,
+                                step: "request_check",
+                                sessions: search.sessions,
+                                inspector: search.inspector,
+                              }}
+                              aria-current={
+                                search.session === item._id && checking ? "page" : undefined
+                              }
+                              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-muted-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:bg-muted aria-[current=page]:text-foreground"
+                            >
+                              {item.requestCheck === "pending" ||
+                              item.requestCheck === "running" ? (
+                                <LoaderCircleIcon
+                                  className="size-3.5 animate-spin"
+                                  aria-hidden="true"
+                                />
+                              ) : item.requestCheck === "approved" ? (
+                                <CheckIcon className="size-3.5" aria-hidden="true" />
+                              ) : (
+                                <XIcon className="size-3.5" aria-hidden="true" />
+                              )}
+                              Request check<span className="sr-only"> · {item.requestCheck}</span>
+                            </Link>
+                          </li>
+                        )}
+                        {(item.hasChat || item.requestCheck === null) && (
+                          <li>
+                            <Link
+                              to="/agents"
+                              resetScroll={false}
+                              search={{
+                                session: item._id,
+                                step: "chat",
+                                sessions: search.sessions,
+                                inspector: search.inspector,
+                              }}
+                              aria-current={
+                                search.session === item._id && !checking ? "page" : undefined
+                              }
+                              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-muted-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:bg-muted aria-[current=page]:text-foreground"
+                            >
+                              <MessageSquareIcon className="size-3.5" aria-hidden="true" />
+                              Chat
+                            </Link>
+                          </li>
+                        )}
+                      </ul>
+                    </div>
                   ))}
                   {(status === "CanLoadMore" || status === "LoadingMore") && (
                     <Button
@@ -97,20 +166,42 @@ function AgentsWorkspace({ search, session }: { search: AgentsSearch; session: S
         />
       }
       main={
-        session ? (
-          <SessionContent session={session} search={search} />
-        ) : (
+        search.session === undefined ? (
           <PaneFrame content={<NewSession />} />
+        ) : session === undefined ? (
+          <PaneFrame
+            content={
+              <p role="status" className="p-6 text-sm text-muted-foreground">
+                Opening session…
+              </p>
+            }
+          />
+        ) : session === null ? (
+          <PaneFrame
+            content={<p className="p-6 text-sm text-muted-foreground">Session not found.</p>}
+          />
+        ) : (
+          <SessionContent key={session._id} session={session} search={search} />
         )
       }
       {...omitNullish({
-        right: session ? <BrowserPanel sessionId={session._id} search={search} /> : undefined,
+        right:
+          search.session === undefined ? undefined : session ? (
+            checking ? (
+              <RequestCheckInspector session={session} />
+            ) : (
+              <BrowserPanel key={session._id} sessionId={session._id} search={search} />
+            )
+          ) : (
+            <PaneFrame content={null} />
+          ),
       })}
     />
   );
 }
 
 function AgentsChrome({ session, search }: { session: Session | null; search: AgentsSearch }) {
+  const checking = session !== null && selectedStep(session, search) === "request_check";
   const navigate = useNavigate({ from: "/agents" });
   const { setMobilePane, toggleLeftPane, toggleRightPane } = useSidebarActions();
   const { isMobile, mobilePane, leftDesktopOpen, rightDesktopOpen } =
@@ -138,7 +229,7 @@ function AgentsChrome({ session, search }: { session: Session | null; search: Ag
         </h1>
         {session && <p className="truncate text-xs text-muted-foreground">{session.scoutName}</p>}
       </div>
-      {session && (
+      {session && !checking && (
         <Button
           type="button"
           variant="ghost"
@@ -162,7 +253,15 @@ function AgentsChrome({ session, search }: { session: Session | null; search: Ag
           type="button"
           variant="ghost"
           size="icon-sm"
-          aria-label={browserShown ? "Hide browser" : "Show browser"}
+          aria-label={
+            checking
+              ? browserShown
+                ? "Hide call details"
+                : "Show call details"
+              : browserShown
+                ? "Hide browser"
+                : "Show browser"
+          }
           aria-pressed={browserShown}
           onClick={() =>
             isMobile ? setMobilePane(browserShown ? "main" : "right") : toggleRightPane()
@@ -172,7 +271,7 @@ function AgentsChrome({ session, search }: { session: Session | null; search: Ag
         </Button>
       )}
       <Button asChild variant="ghost" size="sm">
-        <Link to="/agents" search={{}}>
+        <Link to="/agents" search={{}} resetScroll={false}>
           <PlusIcon aria-hidden="true" />
           New
         </Link>
@@ -282,23 +381,8 @@ function NewSession() {
   );
 }
 
-function SessionLoader({ sessionId, search }: { sessionId: string; search: AgentsSearch }) {
-  const session = useQuery(api.agentsApi.sessions.get, {
-    // @ts-expect-error The server validates this URL string with v.id("agentsApiSessions"); downstream calls use the returned typed _id.
-    sessionId,
-  });
-  if (session === undefined)
-    return (
-      <p role="status" className="p-6 text-sm text-muted-foreground">
-        Opening session…
-      </p>
-    );
-  if (session === null)
-    return <p className="p-6 text-sm text-muted-foreground">Session not found.</p>;
-  return <AgentsWorkspace search={search} session={session} />;
-}
-
 function SessionContent({ session, search }: { session: Session; search: AgentsSearch }) {
+  const checking = selectedStep(session, search) === "request_check";
   const navigate = useNavigate({ from: "/agents" });
   const target = useMemo<WorkspaceTarget>(
     () => ({ kind: "agent_session", sessionId: session._id }),
@@ -306,10 +390,11 @@ function SessionContent({ session, search }: { session: Session; search: AgentsS
   );
   return (
     <div className="h-full min-h-0">
-      <div className={search.view === "workspace" ? "hidden" : "h-full min-h-0"}>
-        <SessionView session={session} />
+      <div className={checking || search.view === "workspace" ? "hidden" : "h-full min-h-0"}>
+        {(session.providerId || !session.requestCheck) && <SessionView session={session} />}
       </div>
-      {search.view === "workspace" && (
+      {checking && <RequestCheckView session={session} />}
+      {!checking && search.view === "workspace" && (
         <ScoutWorkspace
           target={target}
           disabled

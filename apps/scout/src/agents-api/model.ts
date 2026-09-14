@@ -4,6 +4,7 @@ import type { api } from "../../convex/_generated/api";
 
 export const agentsSearch = z.object({
   session: z.string().min(1).optional(),
+  step: z.enum(["request_check", "chat"]).optional(),
   browser: z.string().min(1).optional(),
   replayPage: z.string().min(1).optional(),
   view: z.enum(["conversation", "workspace"]).optional(),
@@ -19,6 +20,12 @@ export type BrowserSession = FunctionReturnType<typeof api.agentsApi.sessions.li
 export type SessionItem = FunctionReturnType<
   typeof api.agentsApi.sessions.listItems
 >["page"][number];
+
+export function selectedStep(session: Session, search: AgentsSearch) {
+  if (!session.requestCheck) return "chat";
+  if (!session.providerId) return "request_check";
+  return search.step ?? "chat";
+}
 
 export function sessionControls(state: Session["state"]) {
   switch (state.kind) {

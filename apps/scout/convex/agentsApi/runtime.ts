@@ -11,7 +11,7 @@ import type { Doc } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
 import { internalAction } from "../_generated/server";
 import { action } from "../functions";
-import { getRuntimeEnv } from "../runtimeEnv";
+import { openAIClient as client } from "./client";
 import { omitNullish } from "../../shared/omitNullish";
 import { diagnosticMessage } from "../scout/lib/redaction";
 import { requireRuntimeTool } from "../scout/lib/runtimeTool";
@@ -28,12 +28,6 @@ import { readAgentsApiUsage } from "./cost";
 import { SessionOutput } from "./events";
 import { AGENTS_API_INSTRUCTIONS } from "./instructions";
 import { REVIEW_INSTRUCTIONS } from "../scout/review";
-
-function client() {
-  const apiKey = getRuntimeEnv("OPENAI_API_KEY");
-  if (!apiKey) throw new Error("OPENAI_API_KEY is not configured");
-  return new OpenAI({ apiKey, maxRetries: 0, timeout: 60_000 });
-}
 
 async function closeBrowser(ctx: ActionCtx, session: Doc<"agentsApiSessions">) {
   if (!session.browser) return;

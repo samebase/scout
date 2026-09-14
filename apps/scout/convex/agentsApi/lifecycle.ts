@@ -12,6 +12,15 @@ export const run = workflow
     returns: v.null(),
   })
   .handler(async (step, args): Promise<null> => {
+    if (
+      args.command.kind === "start" &&
+      !(await step.runAction(
+        internal.agentsApi.requestCheck.run,
+        { sessionId: args.sessionId },
+        { retry: false },
+      ))
+    )
+      return null;
     await step.runAction(internal.agentsApi.runtime.begin, args, { retry: false });
     while (
       await step.runAction(

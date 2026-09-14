@@ -4,6 +4,16 @@ import { MAX_BROWSER_OPERATIONS } from "../browserModel";
 import { scoutAgent } from "./agent";
 import { requireUserPermission, type ViewerAccess } from "../access";
 import { canAccess } from "../../shared/accessModel";
+import { getRequestCheck } from "../agentsApi/requestChecks";
+
+export async function isPublicChat(ctx: Pick<QueryCtx, "db">, chat: Doc<"scoutChats">) {
+  if (chat.visibility !== "public") return false;
+  if (chat.runtime?.kind !== "agents_api") return true;
+  const check = await getRequestCheck(ctx, chat.runtime.sessionId);
+  return (
+    !check || (check.state.kind === "completed" && check.state.result.decision.kind === "approved")
+  );
+}
 
 export function chatPermission(purpose: Doc<"scoutChats">["purpose"]) {
   switch (purpose.kind) {
@@ -30,7 +40,7 @@ export async function visibleChat(
   if (chat.purpose.kind === "general") {
     return owner && canAccess("access_lab", viewer.accessKeys) ? chat : null;
   }
-  return chat.visibility === "public" || owner ? chat : null;
+  return owner || (await isPublicChat(ctx, chat)) ? chat : null;
 }
 
 export async function requireRunnableThread(ctx: Pick<QueryCtx, "db">, threadId: string) {

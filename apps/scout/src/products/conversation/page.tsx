@@ -78,7 +78,7 @@ export function ConversationPage({
         id="main-content"
         className={
           thread
-            ? "mx-auto flex h-[calc(100dvh-4rem)] min-h-[540px] max-w-[1456px] flex-col px-12 pt-4 pb-6 max-[1100px]:px-7 max-[760px]:min-h-[460px] max-[760px]:px-4 max-[760px]:pt-4 max-[760px]:pb-3"
+            ? "mx-auto flex h-[calc(100dvh-4rem)] min-h-[540px] max-w-[1456px] flex-col px-1 pt-4 pb-6 max-[760px]:min-h-[460px] max-[760px]:pt-4 max-[760px]:pb-3"
             : "grid min-h-[calc(100dvh-4rem)] place-items-center px-5 pt-8 pb-[16vh] max-[760px]:pb-[12vh]"
         }
       >
@@ -121,7 +121,9 @@ export function ConversationLobby({ kind }: { kind: ProductKind }) {
   const [selectedScoutId, setSelectedScoutId] = useState("");
   const [signingIn, setSigningIn] = useState(false);
   const [request, setRequest] = useState<RequestState>({ kind: "idle" });
-  const [visibility, setVisibility] = useState<ChatThread["visibility"]>("private");
+  const [visibility, setVisibility] = useState<ChatThread["visibility"]>(
+    isPlay ? "private" : "public",
+  );
   const submitting = useRef(false);
   const activeScouts = scouts?.filter((scout) => scout.status === "active") ?? [];
   const selectedScout =
@@ -299,11 +301,6 @@ export function ConversationLobby({ kind }: { kind: ProductKind }) {
                     <SelectItem value="public">Public</SelectItem>
                   </SelectContent>
                 </Select>
-                {visibility === "public" && (
-                  <span className="w-full px-2 pb-1 text-xs">
-                    Anyone can watch the chat and browser.
-                  </span>
-                )}
               </div>
             </ConversationComposer>
             {isPlay && (
@@ -664,8 +661,10 @@ function ConversationSession({
           )}
           {thread.status === "failed" && (
             <p className={playNotice} role="alert">
-              Scout couldn't finish this turn.
-              {thread.canControl ? " Send a message to try again." : ""}
+              {managed?.requestCheckMessage ?? "Scout couldn't finish this turn."}
+              {!managed?.requestCheckMessage && (managed ? managed.canSend : thread.canControl)
+                ? " Send a message to try again."
+                : ""}
             </p>
           )}
           {handoff && (
@@ -713,9 +712,9 @@ function ConversationSession({
       main={
         <section
           aria-label="Conversation with Scout"
-          className="flex h-full min-h-0 flex-col min-[768px]:pr-6"
+          className="flex h-full min-h-0 flex-col gap-3 min-[768px]:pr-1"
         >
-          <div className="min-h-0 flex-1">
+          <div className="min-h-0 flex-1 overflow-hidden rounded-[var(--product-panel-radius)] border border-border bg-card">
             <MessageScrollerProvider autoScroll defaultScrollPosition="end">
               <MessageScroller>
                 <MessageScrollerViewport
@@ -723,7 +722,7 @@ function ConversationSession({
                   className="[mask-image:none]"
                 >
                   <MessageScrollerContent
-                    className="gap-7 px-1 pt-5 pb-7"
+                    className="gap-7 px-4 pt-5 pb-7"
                     role="log"
                     aria-label="Session messages"
                     aria-live="polite"
@@ -831,7 +830,7 @@ function ConversationSession({
       right={
         <section
           aria-label="Scout's browser"
-          className="flex h-full min-h-0 flex-col overflow-hidden rounded-[var(--product-panel-radius)] border border-border bg-secondary/50"
+          className="flex h-full min-h-0 flex-col overflow-hidden rounded-[var(--product-panel-radius)] border border-border bg-secondary/50 min-[768px]:ml-1"
         >
           {session?.kind === "closed" ? (
             <BrowserReplay

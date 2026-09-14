@@ -10,9 +10,11 @@ const number = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
 
 export function SessionCost({ session }: { session: Session }) {
   const { cost, usage } = session;
-  const complete = cost.totalEstimateUsd !== null;
-  const amount = cost.totalEstimateUsd ?? cost.knownSubtotalUsd;
-  const showAmount = cost.modelEstimateUsd !== null || amount > 0;
+  const complete =
+    cost.totalEstimateUsd !== null && (!session.requestCheck || session.requestCheckCost !== null);
+  const amount = (cost.totalEstimateUsd ?? cost.knownSubtotalUsd) + (session.requestCheckCost ?? 0);
+  const showAmount =
+    cost.modelEstimateUsd !== null || session.requestCheckCost !== null || amount > 0;
 
   return (
     <details className="min-w-0 flex-1 text-xs">
@@ -22,6 +24,16 @@ export function SessionCost({ session }: { session: Session }) {
           : "Cost pending"}
       </summary>
       <dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-6 gap-y-2 py-2 text-muted-foreground">
+        {session.requestCheck && (
+          <>
+            <dt>Request check</dt>
+            <dd className="text-right tabular-nums">
+              {session.requestCheckCost === null
+                ? "Unpriced"
+                : money.format(session.requestCheckCost)}
+            </dd>
+          </>
+        )}
         <dt>Model estimate</dt>
         <dd className="text-right tabular-nums">
           {cost.modelEstimateUsd === null ? "Unpriced" : money.format(cost.modelEstimateUsd)}

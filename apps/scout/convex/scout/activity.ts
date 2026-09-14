@@ -8,7 +8,8 @@ import { publicQuery } from "../functions";
 import { requireViewerPermission } from "../access";
 import { siteHostnameSchema } from "../../shared/site";
 import { canAccess } from "../../shared/accessModel";
-import { chatPermission, scoutIsWorking, visibleChat } from "./chatAccess";
+import { chatPermission, scoutIsWorking, visibleChat, isPublicChat } from "./chatAccess";
+import { getRequestCheck } from "../agentsApi/requestChecks";
 import { chatPurposeValidator, chatVisibilityValidator, chatRuntimeValidator } from "./chatModel";
 import { scoutAgent } from "./agent";
 import { MAX_BROWSER_SESSIONS_PER_THREAD } from "./browserSessions";
@@ -203,7 +204,12 @@ export const list = publicQuery({
                 q.eq("userId", userId).eq("purpose.kind", "review").eq("primarySite", site),
               );
     const result = await rows.order("desc").paginate(args.paginationOpts);
-    return { ...result, page: await Promise.all(result.page.map((chat) => summary(ctx, chat))) };
+    const page = await Promise.all(
+      result.page.map(async (chat) =>
+        args.scope === "public" && !(await isPublicChat(ctx, chat)) ? null : summary(ctx, chat),
+      ),
+    );
+    return { ...result, page: page.filter((chat) => chat !== null) };
   },
 });
 
@@ -276,6 +282,15 @@ export const messages = publicQuery({
     if (!chat) return { page: [], isDone: true, continueCursor: "" };
     const managedId = chat.runtime?.kind === "agents_api" ? chat.runtime.sessionId : null;
     if (managedId) {
+      const managed = await ctx.db.get(managedId);
+      if (!managed?.providerId) {
+        const check = await getRequestCheck(ctx, managedId);
+        return {
+          page: check ? [{ id: check._id, role: "user" as const, text: check.prompt }] : [],
+          isDone: true,
+          continueCursor: "",
+        };
+      }
       const result = await ctx.db
         .query("agentsApiItems")
         .withIndex("by_session_id_and_sequence", (q) => q.eq("sessionId", managedId))
