@@ -48,7 +48,16 @@ speculative prompt edits.
   and conversations lead to the filtered review list. No workspace is required.
 - Existing conversations without a site remain visible in the unfiltered list.
   Their owners can set the site; there is no automatic historical inference.
-- Titles still come from the first request. Concise, separate titles remain to do.
+- New Agents API sessions first run one request check. It generates a short title
+  while preserving the original request. Pending, declined, and failed checks stay
+  out of public results; owners can see their request and rejection reason.
+- Agents shows an always-expanded session tree: Request check, then Chat once the
+  main agent starts. Selecting a step changes the main panel and right inspector.
+  The check exposes its stored API input, response, model, duration, and estimated
+  cost to admins. Historical sessions have only Chat. There is no expansion state.
+- The check judges the request and supplied URLs, not website contents. It does
+  not browse, research, or certify a site's safety. The existing workflow starts
+  the main agent only after approval. Failures remain visible for manual rerun.
 - `scoutWorkspaces` distinguishes chat and site workspaces. A site workspace is
   shared knowledge keyed by exact hostname, not a product catalog or a chat subject.
 - Approved members can open Scouts from the main navigation and browse names,
@@ -66,8 +75,8 @@ speculative prompt edits.
    The Scout-owned email address can be shown as part of its identity. Whether
    signed-out visitors also see profiles and email addresses is still undecided.
 3. The member starts a Review with a normal request, such as “What is this site?
-   Try its main feature and tell me whether it works.” Keep the current private
-   default and explicit choice to publish.
+   Try its main feature and tell me whether it works.” New reviews default to
+   Public; the member can choose Private in the composer.
 4. Once the subject is understood, the conversation gets a short title and primary
    hostname. Allow correction. Do not blindly choose the first URL or replace the
    subject when the browser redirects. A request without a known site can start
@@ -86,9 +95,10 @@ presentation where useful, but do not simply remove the guard from management qu
 
 ## Implementation order to try
 
-Member Scout browsing and review site association are implemented. Next, verify
-the complete path with an ordinary member request, then address concise titles
-and any concrete failures observed during the review.
+Member Scout browsing, site association, and request checks with concise titles
+are implemented. Next, use ordinary requests to find concrete failures. Defer
+additional research phases until they demonstrate a benefit over the main agent
+using the existing site workspaces.
 
 Use recorded browser navigation for an optional “Other sites visited” view; it is
 evidence of a visit, not a permanent dependency relationship. A site can have
@@ -99,8 +109,8 @@ each. Do not make a workspace a prerequisite for starting or finding a review.
 ## Testing setup
 
 Keep product development on the primary checkout at `http://localhost:5173`, using
-the existing development deployment. Use Chrome for the admin and the in-app
-browser for an approved member, both against that same backend. Start work through
+the existing development deployment. Use the in-app browser for the admin and
+Chrome for an approved member, both against that same backend. Start work through
 the member interface and inspect the same conversation as admin when needed. Check
 the signed-out experience separately. After merging, run a small production smoke
 test of the published flow.
@@ -113,9 +123,8 @@ Moving selected Scouts to production is a separate task; this UX work does not
 require moving the development app to production or building ongoing data sync.
 
 Use `nicuchiciuc@gmail.com` for member testing in development. Its test password is
-stored locally in the ignored `apps/scout/.env.member-test.local` file. Chrome keeps
-the admin login; the in-app browser uses this approved member. Settings shows the
-signed-in email so that each browser's identity is visible.
+stored locally in the ignored `apps/scout/.env.member-test.local` file. Settings
+shows the signed-in email so that each browser's identity is visible.
 
 ## Verification for that first slice
 

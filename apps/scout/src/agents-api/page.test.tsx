@@ -109,6 +109,8 @@ function session(state: Session["state"] = { kind: "idle" }) {
     providerId: "provider-1",
     browser: null,
     usage: null,
+    requestCheck: null,
+    requestCheckCost: null,
     cost: {
       modelPricingBasis: "standard_short_context_excluding_cache_writes",
       modelEstimateUsd: null,
@@ -254,6 +256,68 @@ test("opens session files through a shareable URL and preserves the conversation
     "Keep this draft",
   );
   expect(remote.executeWorkspaceCommand).not.toHaveBeenCalled();
+});
+
+test("keeps both steps visible and selects their own inspector without losing a chat draft", async () => {
+  const requestCheck = {
+    model: "gpt-5.6-luna",
+    prompt: "Original review request",
+    state: {
+      kind: "completed",
+      startedAt: 1_000,
+      finishedAt: 3_500,
+      request: '{"input":"Original review request"}',
+      response: '{"id":"response-test"}',
+      usage: { inputTokens: 300, outputTokens: 30, cachedInputTokens: 0 },
+      result: { title: "Inspect the example site", decision: { kind: "approved" } },
+    },
+  } satisfies NonNullable<Session["requestCheck"]>;
+  remote.queries.set("agentsApi/sessions:get", {
+    ...session(),
+    requestCheck,
+    requestCheckCost: 0.000096,
+  });
+  remote.queries.set("agentsApi/sessions:list", [
+    { ...session(), requestCheck: "approved", hasChat: true },
+  ]);
+  const router = await open("/agents?session=session-1");
+  fireEvent.change(await screen.findByRole("textbox", { name: "Message" }), {
+    target: { value: "Keep my draft" },
+  });
+  const navigation = within(screen.getByRole("navigation", { name: "Agent sessions" }));
+  expect(navigation.getByRole("link", { name: "Chat" })).toBeTruthy();
+  fireEvent.click(navigation.getByRole("link", { name: "Request check · approved" }));
+  expect(await screen.findByRole("heading", { name: "Request check" })).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "Call details" })).toBeTruthy();
+  expect(screen.getByText("2.5s")).toBeTruthy();
+  expect(screen.getByText("$0.000096 estimated")).toBeTruthy();
+  expect(router.state.location.search).toMatchObject({ step: "request_check" });
+  expect(screen.queryByRole("button", { name: "Workspace" })).toBeNull();
+  fireEvent.click(screen.getByText("Request", { exact: true }));
+  expect(screen.getByText(/"input": "Original review request"/)).toBeTruthy();
+  fireEvent.click(navigation.getByRole("link", { name: "Chat" }));
+  expect(await screen.findByRole("textbox", { name: "Message" })).toHaveProperty(
+    "value",
+    "Keep my draft",
+  );
+  expect(screen.queryByRole("heading", { name: "Call details" })).toBeNull();
+});
+
+test("opens a pending check from its parent and only shows steps that have actually started", async () => {
+  remote.queries.set("agentsApi/sessions:get", {
+    ...session({ kind: "starting" }),
+    providerId: undefined,
+    requestCheck: { model: "gpt-5.6-luna", prompt: "Original request", state: { kind: "pending" } },
+  });
+  remote.queries.set("agentsApi/sessions:list", [
+    { ...session(), requestCheck: "pending", hasChat: false },
+  ]);
+  await open("/agents?session=session-1");
+  expect(await screen.findByRole("heading", { name: "Request check" })).toBeTruthy();
+  expect(screen.queryByRole("link", { name: "Chat" })).toBeNull();
+  expect(screen.getByText("Original request")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+  await waitFor(() => expect(remote.stop).toHaveBeenCalledWith({ sessionId: "session-1" }));
 });
 
 test("admins can open member session files directly without gaining session controls", async () => {

@@ -661,8 +661,10 @@ function ConversationSession({
           )}
           {thread.status === "failed" && (
             <p className={playNotice} role="alert">
-              Scout couldn't finish this turn.
-              {thread.canControl ? " Send a message to try again." : ""}
+              {managed?.requestCheckMessage ?? "Scout couldn't finish this turn."}
+              {!managed?.requestCheckMessage && (managed ? managed.canSend : thread.canControl)
+                ? " Send a message to try again."
+                : ""}
             </p>
           )}
           {handoff && (
