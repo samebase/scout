@@ -34,17 +34,22 @@ type RequestState = { kind: "idle" } | { kind: "pending" } | { kind: "failed"; m
 export function AgentsPage({ search }: { search: AgentsSearch }) {
   return (
     <main className="flex h-[calc(100dvh-4rem)] min-h-0 w-full flex-col select-text">
-      {search.session === undefined ? (
-        <AgentsWorkspace search={search} session={null} />
-      ) : (
-        <SessionLoader key={search.session} search={search} sessionId={search.session} />
-      )}
+      <AgentsWorkspace search={search} />
     </main>
   );
 }
 
-function AgentsWorkspace({ search, session }: { search: AgentsSearch; session: Session | null }) {
-  const checking = session !== null && selectedStep(session, search) === "request_check";
+function AgentsWorkspace({ search }: { search: AgentsSearch }) {
+  const session = useQuery(
+    api.agentsApi.sessions.get,
+    // @ts-expect-error The server validates this URL string with v.id("agentsApiSessions"); downstream calls use the returned typed _id.
+    search.session === undefined
+      ? "skip"
+      : {
+          sessionId: search.session,
+        },
+  );
+  const checking = Boolean(session && selectedStep(session, search) === "request_check");
   const {
     results: sessions,
     status,
@@ -53,7 +58,7 @@ function AgentsWorkspace({ search, session }: { search: AgentsSearch; session: S
 
   return (
     <SidebarLayout
-      addressChrome={<AgentsChrome session={session} search={search} />}
+      addressChrome={<AgentsChrome session={session ?? null} search={search} />}
       resizeHandleLabels={{
         left: "Resize sessions",
         right: checking ? "Resize call details" : "Resize browser",
@@ -76,6 +81,7 @@ function AgentsWorkspace({ search, session }: { search: AgentsSearch; session: S
                     <div key={item._id} className="pb-2">
                       <Link
                         to="/agents"
+                        resetScroll={false}
                         search={{
                           session: item._id,
                           sessions: search.sessions,
@@ -93,6 +99,7 @@ function AgentsWorkspace({ search, session }: { search: AgentsSearch; session: S
                           <li>
                             <Link
                               to="/agents"
+                              resetScroll={false}
                               search={{
                                 session: item._id,
                                 step: "request_check",
@@ -123,6 +130,7 @@ function AgentsWorkspace({ search, session }: { search: AgentsSearch; session: S
                           <li>
                             <Link
                               to="/agents"
+                              resetScroll={false}
                               search={{
                                 session: item._id,
                                 step: "chat",
@@ -158,20 +166,35 @@ function AgentsWorkspace({ search, session }: { search: AgentsSearch; session: S
         />
       }
       main={
-        session ? (
-          <SessionContent session={session} search={search} />
-        ) : (
+        search.session === undefined ? (
           <PaneFrame content={<NewSession />} />
+        ) : session === undefined ? (
+          <PaneFrame
+            content={
+              <p role="status" className="p-6 text-sm text-muted-foreground">
+                Opening session…
+              </p>
+            }
+          />
+        ) : session === null ? (
+          <PaneFrame
+            content={<p className="p-6 text-sm text-muted-foreground">Session not found.</p>}
+          />
+        ) : (
+          <SessionContent key={session._id} session={session} search={search} />
         )
       }
       {...omitNullish({
-        right: session ? (
-          checking ? (
-            <RequestCheckInspector session={session} />
+        right:
+          search.session === undefined ? undefined : session ? (
+            checking ? (
+              <RequestCheckInspector session={session} />
+            ) : (
+              <BrowserPanel key={session._id} sessionId={session._id} search={search} />
+            )
           ) : (
-            <BrowserPanel sessionId={session._id} search={search} />
-          )
-        ) : undefined,
+            <PaneFrame content={null} />
+          ),
       })}
     />
   );
@@ -248,7 +271,7 @@ function AgentsChrome({ session, search }: { session: Session | null; search: Ag
         </Button>
       )}
       <Button asChild variant="ghost" size="sm">
-        <Link to="/agents" search={{}}>
+        <Link to="/agents" search={{}} resetScroll={false}>
           <PlusIcon aria-hidden="true" />
           New
         </Link>
@@ -356,22 +379,6 @@ function NewSession() {
       </form>
     </section>
   );
-}
-
-function SessionLoader({ sessionId, search }: { sessionId: string; search: AgentsSearch }) {
-  const session = useQuery(api.agentsApi.sessions.get, {
-    // @ts-expect-error The server validates this URL string with v.id("agentsApiSessions"); downstream calls use the returned typed _id.
-    sessionId,
-  });
-  if (session === undefined)
-    return (
-      <p role="status" className="p-6 text-sm text-muted-foreground">
-        Opening session…
-      </p>
-    );
-  if (session === null)
-    return <p className="p-6 text-sm text-muted-foreground">Session not found.</p>;
-  return <AgentsWorkspace search={search} session={session} />;
 }
 
 function SessionContent({ session, search }: { session: Session; search: AgentsSearch }) {

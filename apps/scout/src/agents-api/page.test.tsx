@@ -50,7 +50,9 @@ vi.mock("convex/react", () => ({
     useSyncExternalStore(subscribe, () => remote.revision);
     const name = getFunctionName(reference);
     remote.queryCalls(name, args);
-    const value = remote.queries.get(name);
+    if (args === "skip") return undefined;
+    const key = `${name}:${JSON.stringify(args)}`;
+    const value = remote.queries.has(key) ? remote.queries.get(key) : remote.queries.get(name);
     if (value instanceof Error) throw value;
     return value;
   },
@@ -232,6 +234,66 @@ async function open(path = "/agents") {
   await router.load();
   return router;
 }
+
+test.each(["loading", "cached"])(
+  "keeps the session list mounted when switching to a %s chat without carrying over its draft",
+  async (queryState) => {
+    const secondSession = { ...session(), _id: "session-2", title: "Check another site" };
+    const secondSessionQuery = 'agentsApi/sessions:get:{"sessionId":"session-2"}';
+    remote.queries.set("agentsApi/sessions:list", [session(), secondSession]);
+    remote.queries.set(secondSessionQuery, queryState === "cached" ? secondSession : undefined);
+    const router = await open("/agents?session=session-1");
+    fireEvent.change(await screen.findByRole("textbox", { name: "Message" }), {
+      target: { value: "First chat draft" },
+    });
+    const navigation = screen.getByRole("navigation", { name: "Agent sessions" });
+    const scroller = navigation.closest("[data-scroll-restoration-id]");
+    if (!scroller) throw new Error("Session list has no scroll container");
+    scroller.scrollTop = 240;
+    const newLink = screen.getByRole("link", { name: "New" });
+    const rightPane = document.querySelector('[data-pane-side="right"]');
+    expect(rightPane).not.toBeNull();
+
+    fireEvent.click(within(navigation).getByRole("link", { name: "Check another site Pip" }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ session: "session-2" }));
+    if (queryState === "loading") {
+      expect(await screen.findByText("Opening session…")).toBeTruthy();
+      expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
+      expect(screen.getByRole("navigation", { name: "Agent sessions" })).toBe(navigation);
+      expect(screen.getByRole("link", { name: "New" })).toBe(newLink);
+      expect(document.querySelector('[data-pane-side="right"]')).toBe(rightPane);
+      expect(scroller.scrollTop).toBe(240);
+      updateQuery(secondSessionQuery, secondSession);
+    }
+
+    expect(await screen.findByRole("heading", { name: "Check another site" })).toBeTruthy();
+    expect(screen.getByRole("navigation", { name: "Agent sessions" })).toBe(navigation);
+    expect(screen.getByRole("link", { name: "New" })).toBe(newLink);
+    expect(document.querySelector('[data-pane-side="right"]')).toBe(rightPane);
+    expect(scroller.scrollTop).toBe(240);
+    expect(screen.getByRole("textbox", { name: "Message" })).toHaveProperty("value", "");
+    fireEvent.change(screen.getByRole("textbox", { name: "Message" }), {
+      target: { value: "Second chat message" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    await waitFor(() =>
+      expect(remote.send).toHaveBeenCalledWith({
+        sessionId: "session-2",
+        message: "Second chat message",
+      }),
+    );
+  },
+);
+
+test("keeps navigation available for a missing session and the new session form", async () => {
+  remote.queries.set("agentsApi/sessions:get", null);
+  await open("/agents?session=session-1");
+  expect(await screen.findByText("Session not found.")).toBeTruthy();
+  const navigation = screen.getByRole("navigation", { name: "Agent sessions" });
+  fireEvent.click(screen.getByRole("link", { name: "New" }));
+  expect(await screen.findByRole("heading", { name: "New session" })).toBeTruthy();
+  expect(screen.getByRole("navigation", { name: "Agent sessions" })).toBe(navigation);
+});
 
 test("opens session files through a shareable URL and preserves the conversation draft", async () => {
   const router = await open("/agents?session=session-1");
