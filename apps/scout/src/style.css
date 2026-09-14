@@ -423,7 +423,7 @@
 .play-session-layout [data-sidebar-layout-part="address-chrome"],
 .play-session-layout [data-sidebar-layout-part="pane"],
 .play-session-layout [data-sidebar-layout-part="pane-surface"] {
-  background: var(--color-play-paper);
+  background: var(--background);
 }
 
 .play-session-layout [data-sidebar-layout-part="address-chrome"] {
