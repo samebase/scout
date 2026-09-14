@@ -161,10 +161,7 @@ export const replayData = internalQuery({
     if (!browser) return null;
     const session = await ctx.db.get(browser.agentsSessionId);
     if (!session) return null;
-    const inspectable =
-      viewer.kind === "account" &&
-      session.userId === viewer.userId &&
-      canAccess("access_lab", viewer.accessKeys);
+    const inspectable = viewer.kind === "account" && canAccess("access_lab", viewer.accessKeys);
     if (!inspectable && !(await visibleChat(ctx, session._id, viewer))) return null;
     const operations = await ctx.db
       .query("agentsApiBrowserOperations")

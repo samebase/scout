@@ -3,7 +3,12 @@
 Open `/agents` with Lab access. Choose a Scout and enter a task. This page uses
 OpenAI's managed Agents API with `gpt-5.6-luna` at maximum reasoning effort.
 
-The existing Play, Review, and Lab runtimes remain separate. This experiment reuses
+Review uses this runtime, and its sessions also appear in `/agents`. Admins can
+inspect all sessions, including transcripts, cost, live view, and replay. Only the
+owner can send, stop, resume, or control the live browser. The list loads older
+sessions through pagination. Play still uses the Convex runtime and `/chats` inspector.
+
+This experiment reuses
 Scout identity, inbox access, encrypted account credentials, and Firecrawl browser
 tools. A Scout is reserved across both runtimes while its experiment is active.
 

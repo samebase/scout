@@ -36,15 +36,17 @@ async function setup() {
   return { backend, owner, ...ids, sessionId };
 }
 
-it("keeps the experiment private and holds the Scout for both runtimes", async () => {
+it("allows admin inspection and holds the Scout for both runtimes", async () => {
   const { backend, owner, scoutId, sessionId } = await setup();
   await expect(backend.query(api.agentsApi.sessions.get, { sessionId })).rejects.toThrow();
   const otherId = await backend.run((ctx) =>
     insertTestAccount(ctx, { email: "nicu@samebase.com" }),
   );
-  await expect(
-    backend.withIdentity({ subject: otherId }).query(api.agentsApi.sessions.get, { sessionId }),
-  ).rejects.toThrow("Session not found");
+  expect(
+    await backend
+      .withIdentity({ subject: otherId })
+      .query(api.agentsApi.sessions.get, { sessionId }),
+  ).toMatchObject({ _id: sessionId, canControl: false });
   await expect(
     owner.mutation(api.agentsApi.sessions.start, { scoutId, prompt: "Another run" }),
   ).rejects.toThrow("already working");
@@ -53,6 +55,97 @@ it("keeps the experiment private and holds the Scout for both runtimes", async (
   expect(await backend.run((ctx) => scoutIsWorking(ctx, scoutId))).toBe(true);
   await backend.mutation(internal.agentsApi.sessions.update, { sessionId, active: false });
   expect(await backend.run((ctx) => scoutIsWorking(ctx, scoutId))).toBe(false);
+});
+
+it("lists and inspects a member's private Review without granting session control", async () => {
+  const { backend, owner: admin, scoutId, sessionId: previousSessionId } = await setup();
+  await backend.mutation(internal.agentsApi.sessions.update, {
+    sessionId: previousSessionId,
+    state: { kind: "stopped" },
+    active: false,
+  });
+  const memberId = await backend.run((ctx) =>
+    insertTestAccount(ctx, { email: "reviewer@example.com" }),
+  );
+  const member = backend.withIdentity({ subject: memberId });
+  const { threadId } = await member.mutation(api.scout.chats.startProductChat, {
+    kind: "review",
+    scoutId,
+    prompt: "Try example.com",
+    visibility: "private",
+  });
+  const firstPage = await admin.query(api.agentsApi.sessions.list, {
+    paginationOpts: { numItems: 1, cursor: null },
+  });
+  const sessionId = firstPage.page[0]?._id;
+  if (!sessionId) throw new Error("Missing Review session");
+  expect(sessionId).toBe(threadId);
+  expect(firstPage.isDone).toBe(false);
+  const nextPage = await admin.query(api.agentsApi.sessions.list, {
+    paginationOpts: { numItems: 1, cursor: firstPage.continueCursor },
+  });
+  expect(nextPage.page.map((session) => session._id)).toEqual([previousSessionId]);
+  await backend.mutation(internal.agentsApi.sessions.saveItems, {
+    sessionId,
+    items: [
+      { providerItemId: "reply", kind: "assistant", text: "I opened the site.", details: "{}" },
+    ],
+  });
+  await backend.mutation(internal.agentsApi.browsers.open, {
+    sessionId,
+    browser: {
+      providerSessionId: "browser-1",
+      cdpUrl: "wss://private.example.com",
+      liveViewUrl: "https://example.com/view",
+      interactiveLiveViewUrl: "https://example.com/control",
+      currentUrl: null,
+    },
+  });
+  expect(await admin.query(api.agentsApi.sessions.get, { sessionId })).toMatchObject({
+    canControl: false,
+    browser: { liveViewUrl: "https://example.com/view", interactiveLiveViewUrl: null },
+  });
+  const items = await admin.query(api.agentsApi.sessions.listItems, {
+    sessionId,
+    paginationOpts: { numItems: 10, cursor: null },
+  });
+  expect(items.page[0]?.text).toBe("I opened the site.");
+  const browsers = await admin.query(api.agentsApi.sessions.listBrowsers, { sessionId });
+  expect(browsers[0]).toMatchObject({
+    liveViewUrl: "https://example.com/view",
+    interactiveLiveViewUrl: null,
+  });
+  expect(JSON.stringify(browsers)).not.toContain("private.example.com");
+
+  for (const viewer of [backend, member]) {
+    await expect(
+      viewer.query(api.agentsApi.sessions.list, {
+        paginationOpts: { numItems: 10, cursor: null },
+      }),
+    ).rejects.toThrow("Not authorized");
+    await expect(viewer.query(api.agentsApi.sessions.get, { sessionId })).rejects.toThrow(
+      "Not authorized",
+    );
+    await expect(
+      viewer.query(api.agentsApi.sessions.listItems, {
+        sessionId,
+        paginationOpts: { numItems: 10, cursor: null },
+      }),
+    ).rejects.toThrow("Not authorized");
+    await expect(viewer.query(api.agentsApi.sessions.listBrowsers, { sessionId })).rejects.toThrow(
+      "Not authorized",
+    );
+  }
+  await expect(
+    admin.mutation(api.agentsApi.sessions.send, { sessionId, message: "Continue" }),
+  ).rejects.toThrow("Session not found");
+  await expect(admin.mutation(api.agentsApi.sessions.resume, { sessionId })).rejects.toThrow(
+    "Session not found",
+  );
+  await expect(admin.mutation(api.agentsApi.sessions.stop, { sessionId })).rejects.toThrow(
+    "Session not found",
+  );
+  await expect(member.mutation(api.agentsApi.sessions.stop, { sessionId })).resolves.toBeNull();
 });
 
 it("does not revive a stopped session or dispatch tools after stopping", async () => {

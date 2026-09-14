@@ -373,7 +373,9 @@ function ConversationSession({
   const scout = thread.scout;
   const viewer = useViewerAccess();
   const canInspect =
-    thread.isOwner && viewer?.kind === "account" && canAccess("access_lab", viewer.accessKeys);
+    (thread.isOwner || thread.runtime.kind === "agents_api") &&
+    viewer?.kind === "account" &&
+    canAccess("access_lab", viewer.accessKeys);
   const navigate = useNavigate();
   const { threadId } = thread;
   const managedId = thread.runtime.kind === "agents_api" ? thread.runtime.sessionId : null;

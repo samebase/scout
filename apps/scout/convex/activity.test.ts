@@ -418,7 +418,13 @@ test("managed Reviews stay in the Agents inspector without breaking the Convex L
     paginationOpts: { numItems: 10, cursor: null },
   });
   expect(chats.page.map(({ threadId }) => threadId)).toEqual([existing.threadId]);
-  expect(await admin.query(api.agentsApi.sessions.list)).toHaveLength(1);
+  expect(
+    (
+      await admin.query(api.agentsApi.sessions.list, {
+        paginationOpts: { numItems: 10, cursor: null },
+      })
+    ).page,
+  ).toHaveLength(1);
 });
 
 test("members can start and continue Play, but cannot run Lab chats or another player's chat", async () => {

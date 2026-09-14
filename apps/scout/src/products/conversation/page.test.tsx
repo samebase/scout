@@ -184,6 +184,24 @@ async function openPlay(path = "/play") {
   return router;
 }
 
+test("admins can open another member's Review in the Agents inspector", async () => {
+  remote.queries.set(
+    "scout/activity:get",
+    session({
+      purpose: { kind: "review" },
+      runtime: { kind: "agents_api", sessionId: "managed-1" },
+      isOwner: false,
+      canControl: false,
+      visibility: "public",
+    }),
+  );
+  await openPlay("/review?thread=game-thread");
+  expect((await screen.findByRole("link", { name: "Open in lab" })).getAttribute("href")).toBe(
+    "/agents?session=managed-1",
+  );
+  expect(remote.queryCalls).toHaveBeenCalledWith("agentsApi/sessions:controls", "skip");
+});
+
 test("Review uses managed controls and keeps live view, handoff and follow-up messages on the same page", async () => {
   const review = session({
     purpose: { kind: "review" },
