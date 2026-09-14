@@ -569,7 +569,9 @@ describe("Chat workspace", () => {
       kind: "all",
       scope: "public",
     });
-    await userEvent.setup().click(screen.getByRole("button", { name: "Review" }));
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("combobox", { name: "Activity type" }));
+    await user.click(screen.getByRole("option", { name: "Review" }));
     expect(remote.queryCalls).toHaveBeenLastCalledWith("scout/activity:list", {
       kind: "review",
       scope: "public",
@@ -596,7 +598,7 @@ describe("Chat workspace", () => {
       within(navigation)
         .getAllByRole("link")
         .map((link) => link.textContent),
-    ).toEqual(["Activity", "Play", "Review", "Agents", "Lab", "Scouts", "Sites", "Members"]);
+    ).toEqual(["Activity", "Play", "Review", "Scouts", "Agents", "Lab", "Sites", "Members"]);
     const history = screen.getByRole("navigation", { name: "Chats" });
     expect(within(history).getAllByRole("list")).toHaveLength(1);
     expect(within(history).getByRole("link").getAttribute("href")).toBe("/chats?thread=thread-1");

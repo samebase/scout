@@ -4,6 +4,7 @@ import { ConvexError } from "convex/values";
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import schema from "../schema";
+import { api } from "../_generated/api";
 
 const modules = {
   ...import.meta.glob("../**/*.*s"),
@@ -11,6 +12,7 @@ const modules = {
     Object.entries({
       ...import.meta.glob("./scouts.ts"),
       ...import.meta.glob("./scoutRegistration.ts"),
+      ...import.meta.glob("./serviceAccounts.ts"),
     }).map(([path, module]) => [`../scout/${path.slice(2)}`, module]),
   ),
 };
@@ -126,10 +128,8 @@ describe("Scout registry", () => {
       slug: "conrad",
       status: "active",
       agentMail: {
-        inboxId: "test-scout@example.test",
         address: "test-scout@example.test",
       },
-      firecrawl: { profileName: "test-scout-profile" },
     };
     await expect(admin.query(scoutsApi["list"], {})).resolves.toEqual([expectedScout]);
     await expect(admin.query(scoutsApi["get"], { slug: "  CONRAD  " })).resolves.toEqual(
@@ -141,10 +141,53 @@ describe("Scout registry", () => {
       displayName: expectedScout.displayName,
       websiteIdentity: expectedScout.websiteIdentity,
       status: expectedScout.status,
-      agentMail: expectedScout.agentMail,
-      firecrawl: expectedScout.firecrawl,
+      agentMail: scoutRegistrationFields.agentMail,
+      firecrawl: scoutRegistrationFields.firecrawl,
     });
     await expect(admin.query(scoutsApi["get"], { slug: "missing" })).resolves.toBeNull();
+  });
+
+  it("lets members read Scout identities while restricting provider resources and account controls", async () => {
+    const backend = testBackend();
+    const adminId = await insertUser(backend, ADMIN_EMAIL);
+    const memberId = await insertUser(backend, "member@example.test");
+    const admin = backend.withIdentity({ subject: `${adminId}|test-session` });
+    const member = backend.withIdentity({ subject: `${memberId}|test-session` });
+    const { scoutId } = await admin.action(
+      api.scout.scoutRegistration.register,
+      scoutRegistrationFields,
+    );
+    const expected = {
+      _id: scoutId,
+      displayName: "Test Scout",
+      websiteIdentity: { firstName: "Conrad", lastName: "Scout" },
+      slug: "conrad",
+      status: "active",
+      agentMail: { address: "test-scout@example.test" },
+    };
+    await expect(member.query(api.scout.scouts.list, {})).resolves.toEqual([expected]);
+    await expect(member.query(api.scout.scouts.get, { slug: "conrad" })).resolves.toEqual(expected);
+    await expect(admin.query(api.scout.scouts.resources, { scoutId })).resolves.toEqual({
+      agentMail: scoutRegistrationFields.agentMail,
+      firecrawl: scoutRegistrationFields.firecrawl,
+    });
+    await expect(member.query(api.scout.scouts.resources, { scoutId })).rejects.toThrow(
+      "Not authorized",
+    );
+    await expect(member.query(api.scout.serviceAccounts.list, { scoutId })).rejects.toThrow(
+      "Not authorized",
+    );
+    await expect(
+      member.action(api.scout.scoutRegistration.register, scoutRegistrationFields),
+    ).rejects.toThrow("Not authorized");
+    await backend.run((ctx) => ctx.db.patch(memberId, { isApproved: false }));
+    await expect(member.query(api.scout.scouts.list, {})).rejects.toThrow("Not authorized");
+    await expect(member.query(api.scout.scouts.get, { slug: "conrad" })).rejects.toThrow(
+      "Not authorized",
+    );
+    await expect(backend.query(api.scout.scouts.resources, { scoutId })).rejects.toThrow(
+      "Not authorized",
+    );
   });
 
   it("requires a complete website identity and keeps registration create-only", async () => {

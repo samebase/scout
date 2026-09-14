@@ -16,8 +16,10 @@ import { omitNullish } from "../../shared/omitNullish";
 import { Route as ScoutsRoute } from "../routes/scouts.index";
 import { Route as ScoutRoute } from "../routes/scouts.$slug";
 import { ScoutSidebarProvider } from "../sidebars/ScoutSidebarProvider";
+import { readAccessKeysForRole } from "../../shared/accessModel";
 
 const remote = vi.hoisted(() => ({
+  admin: true,
   action: vi.fn(),
   mutation: vi.fn(),
   scout: {
@@ -32,16 +34,27 @@ const remote = vi.hoisted(() => ({
 }));
 
 vi.mock("convex/react", () => ({
+  useConvexAuth: () => ({ isAuthenticated: true, isLoading: false }),
   useAction: () => remote.action,
   useMutation: () => remote.mutation,
-  useQuery: (reference: FunctionReference<"query">) => {
+  useQuery: (reference: FunctionReference<"query">, args?: unknown) => {
+    if (args === "skip") return undefined;
     switch (getFunctionName(reference)) {
+      case "accounts:currentViewerAccess":
+        return {
+          kind: "account",
+          accessKeys: readAccessKeysForRole(remote.admin ? "role_staff" : "role_member"),
+        };
       case "scout/scouts:list":
         return [remote.scout];
       case "scout/scouts:get":
         return remote.scout;
       case "scout/serviceAccounts:list":
+        if (!remote.admin) throw new Error("Member queried private accounts");
         return [];
+      case "scout/scouts:resources":
+        if (!remote.admin) throw new Error("Member queried private resources");
+        return { agentMail: remote.scout.agentMail, firecrawl: remote.scout.firecrawl };
       default:
         throw new Error("Unexpected query: " + getFunctionName(reference));
     }
@@ -49,6 +62,7 @@ vi.mock("convex/react", () => ({
 }));
 
 afterEach(() => {
+  remote.admin = true;
   cleanup();
   vi.clearAllMocks();
   window.localStorage.clear();
@@ -67,11 +81,11 @@ async function openPage(path: string) {
     path: "/scouts",
     getParentRoute: () => root,
     component: Outlet,
-    staticData: { access: "access_scout_manage" },
+    staticData: { access: "access_scout_view" },
   });
   const index = createRoute({
     path: "/",
-    staticData: { access: "access_scout_manage" },
+    staticData: { access: "access_scout_view" },
     getParentRoute: () => scouts,
     ...omitNullish({
       component: ScoutsRoute.options.component,
@@ -80,7 +94,7 @@ async function openPage(path: string) {
   });
   const detail = createRoute({
     path: "$slug",
-    staticData: { access: "access_scout_manage" },
+    staticData: { access: "access_scout_view" },
     getParentRoute: () => scouts,
     ...omitNullish({
       component: ScoutRoute.options.component,
@@ -95,6 +109,29 @@ async function openPage(path: string) {
   await router.load();
   return router;
 }
+
+test("members can browse Scout profiles without loading management panels or private queries", async () => {
+  remote.admin = false;
+  const router = await openPage("/scouts?view=register");
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("link", { name: /Conrad Scout/ }));
+  expect(await screen.findByRole("heading", { name: "Conrad Scout" })).toBeTruthy();
+  expect(screen.getByText("conrad@example.test")).toBeTruthy();
+  await act(() =>
+    router.navigate({
+      to: "/scouts/$slug",
+      params: { slug: "conrad" },
+      search: { view: "add-account" },
+    }),
+  );
+  expect(screen.queryByRole("button", { name: "Register scout" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Add account" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "New chat" })).toBeNull();
+  expect(screen.queryByRole("heading", { name: "Runtime resources" })).toBeNull();
+  expect(screen.queryByRole("textbox")).toBeNull();
+  expect(remote.action).not.toHaveBeenCalled();
+  expect(remote.mutation).not.toHaveBeenCalled();
+});
 
 test.each([
   { path: "/scouts", button: "Register scout", field: "First name", view: "register" },

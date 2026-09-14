@@ -9,11 +9,12 @@ import { api } from "../../convex/_generated/api";
 import { ServiceIcon } from "#components/service-icon";
 import { Button } from "#components/ui/button";
 import { Input } from "#components/ui/input";
+import { canAccess, useViewerAccess } from "#lib/access";
 
 const searchSchema = z.object({ view: z.literal("register").optional().catch(undefined) });
 
 export const Route = createFileRoute("/scouts/")({
-  staticData: { access: "access_scout_manage" },
+  staticData: { access: "access_scout_view" },
   validateSearch: (search) => searchSchema.parse(search),
   component: ScoutsIndexPage,
 });
@@ -47,11 +48,14 @@ const EMPTY_REGISTRATION: RegistrationFields = {
 };
 
 function ScoutsIndexPage() {
+  const viewer = useViewerAccess();
+  const canManage =
+    viewer?.kind === "account" && canAccess("access_scout_manage", viewer.accessKeys);
   const search = Route.useSearch();
   const navigate = useNavigate({ from: "/scouts/" });
   const scouts = useQuery(api.scout.scouts.list);
-  const serviceAccounts = useQuery(api.scout.serviceAccounts.list, {});
-  const registrationOpen = search.view === "register";
+  const serviceAccounts = useQuery(api.scout.serviceAccounts.list, canManage ? {} : "skip");
+  const registrationOpen = canManage && search.view === "register";
   const [registrationSubmitting, setRegistrationSubmitting] = useState(false);
   const registrationButton = useRef<HTMLButtonElement>(null);
   const servicesByScout =
@@ -70,30 +74,27 @@ function ScoutsIndexPage() {
       <header className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between sm:gap-8">
         <div>
           <h1 className="route-heading">Scouts</h1>
-          <p className="mt-3 max-w-2xl text-base leading-7 text-muted-foreground">
-            Persistent identities and resources for replaceable worker models.
-          </p>
         </div>
         <div className="flex items-center gap-3 sm:pb-1">
           <p className="sr-only" aria-live="polite">
-            {scouts === undefined || serviceAccounts === undefined
-              ? "Loading scouts..."
-              : `Showing ${scouts.length}`}
+            {scouts === undefined ? "Loading scouts..." : `Showing ${scouts.length}`}
           </p>
-          <Button
-            ref={registrationButton}
-            type="button"
-            size="sm"
-            aria-expanded={registrationOpen}
-            aria-controls="register-scout-panel"
-            disabled={registrationSubmitting}
-            onClick={() => {
-              void navigate({ search: { view: registrationOpen ? undefined : "register" } });
-            }}
-          >
-            {registrationOpen ? <XIcon /> : <PlusIcon />}
-            {registrationOpen ? "Close" : "Register scout"}
-          </Button>
+          {canManage && (
+            <Button
+              ref={registrationButton}
+              type="button"
+              size="sm"
+              aria-expanded={registrationOpen}
+              aria-controls="register-scout-panel"
+              disabled={registrationSubmitting}
+              onClick={() => {
+                void navigate({ search: { view: registrationOpen ? undefined : "register" } });
+              }}
+            >
+              {registrationOpen ? <XIcon /> : <PlusIcon />}
+              {registrationOpen ? "Close" : "Register scout"}
+            </Button>
+          )}
         </div>
       </header>
 
@@ -104,21 +105,23 @@ function ScoutsIndexPage() {
         />
       ) : null}
 
-      {scouts === undefined || servicesByScout === undefined ? (
+      {scouts === undefined ? (
         <p className="surface-panel py-16 text-center text-sm text-muted-foreground" role="status">
           Loading scouts...
         </p>
       ) : scouts.length === 0 ? (
         <div className="surface-panel border-dashed px-5 py-16 text-center">
           <p className="text-base font-semibold">No Scouts yet</p>
-          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">
-            Register an AgentMail inbox and Firecrawl profile to give workers a reusable identity.
-          </p>
+          {canManage && (
+            <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">
+              Register an AgentMail inbox and Firecrawl profile to give workers a reusable identity.
+            </p>
+          )}
         </div>
       ) : (
         <ul className="grid gap-4 md:grid-cols-2" aria-label="Scouts">
           {scouts.map((scout) => {
-            const services = servicesByScout.get(scout._id) ?? [];
+            const services = servicesByScout?.get(scout._id) ?? [];
 
             return (
               <li key={scout._id} className="surface-panel overflow-hidden">
@@ -139,12 +142,8 @@ function ScoutsIndexPage() {
 
                   <dl className="mt-5 grid gap-4 text-sm sm:grid-cols-2">
                     <div className="min-w-0">
-                      <dt className="text-muted-foreground text-xs">AgentMail address</dt>
+                      <dt className="text-muted-foreground text-xs">Email</dt>
                       <dd className="mt-1 wrap-break-word">{scout.agentMail.address}</dd>
-                    </div>
-                    <div className="min-w-0">
-                      <dt className="text-muted-foreground text-xs">Firecrawl profile</dt>
-                      <dd className="mt-1 wrap-break-word">{scout.firecrawl.profileName}</dd>
                     </div>
                     {services.length > 0 ? (
                       <div className="min-w-0 sm:col-span-2">

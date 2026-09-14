@@ -223,6 +223,8 @@
 }
 
 .app-navigation {
+  @apply font-sans text-base;
+
   position: sticky;
   z-index: 30;
   top: 0;

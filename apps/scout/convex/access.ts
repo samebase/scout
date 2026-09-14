@@ -34,6 +34,7 @@ export async function readUserAccess(
   return {
     kind: "account",
     userId,
+    email: user.email ?? null,
     role,
     isApproved: user.isApproved ?? false,
     accessKeys: [...readAccessKeysForRole(role)],

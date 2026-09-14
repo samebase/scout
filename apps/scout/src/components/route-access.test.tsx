@@ -14,6 +14,7 @@ import { readAccessKeysForRole, type ViewerRole } from "../../shared/accessModel
 import { RouteAccessOutlet } from "./route-access";
 import { AppNavigation } from "./app-navigation";
 import { Route as SettingsRoute } from "../routes/settings";
+import { Route as ScoutsRoute } from "../routes/scouts";
 import { omitNullish } from "../../shared/omitNullish";
 
 const remote = vi.hoisted(() => ({
@@ -102,6 +103,12 @@ async function open(path: string) {
       review,
       createRoute({
         getParentRoute: () => root,
+        path: "/scouts",
+        staticData: ScoutsRoute.options.staticData,
+        component: () => <h1>Scouts directory</h1>,
+      }),
+      createRoute({
+        getParentRoute: () => root,
         path: "/",
         staticData: { access: "access_public" },
         component: () => <h1>Activity contents</h1>,
@@ -137,7 +144,7 @@ test("protected children wait for access and unmount on revocation", async () =>
   expect(screen.queryByRole("heading", { name: "Lab contents" })).toBeNull();
   expect(screen.queryByRole("link", { name: "Members" })).toBeNull();
   expect(screen.queryByRole("link", { name: "Lab" })).toBeNull();
-  expect(screen.queryByRole("link", { name: "Scouts" })).toBeNull();
+  expect(screen.getByRole("link", { name: "Scouts" })).toBeTruthy();
   expect(screen.getByRole("link", { name: "Play" })).toBeTruthy();
   expect(screen.getByRole("link", { name: "Review" })).toBeTruthy();
 });
@@ -147,6 +154,18 @@ test("a direct Lab link never mounts restricted content for a member", async () 
   await open("/chats");
   expect(await screen.findByRole("heading", { name: "Access unavailable" })).toBeTruthy();
   expect(remote.lab).not.toHaveBeenCalled();
+});
+
+test("members can navigate to Scouts and lose access when approval is revoked", async () => {
+  setViewer("role_member");
+  await open("/");
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("link", { name: "Scouts" }));
+  expect(await screen.findByRole("heading", { name: "Scouts directory" })).toBeTruthy();
+  setViewer("role_pending_access");
+  expect(await screen.findByRole("heading", { name: "Waiting for approval" })).toBeTruthy();
+  expect(screen.queryByRole("heading", { name: "Scouts directory" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "Scouts" })).toBeNull();
 });
 
 test("pending accounts retain account controls", async () => {

@@ -26,7 +26,7 @@ export function ProductHome() {
           <Link
             to="/review"
             search={{}}
-            className="flex min-h-20 items-center gap-4 rounded-2xl border border-play-line bg-[#e6edeb] px-6 text-lg font-medium transition-colors hover:border-play-blue"
+            className="flex min-h-20 items-center gap-4 rounded-2xl border border-review-accent bg-review-accent px-6 text-lg font-medium text-white transition-colors hover:bg-review-ink"
           >
             <FocusIcon size={24} aria-hidden="true" />
             Review a product

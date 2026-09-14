@@ -59,10 +59,17 @@ describe("password authentication", () => {
     const seedViewer = t.withIdentity({ subject: `${seedUserId}|session` });
     await expect(seedViewer.query(api.accounts.currentViewerAccess, {})).resolves.toEqual({
       kind: "account",
+      email: "preview@example.com",
       userId: seedUserId,
       role: "role_member",
       isApproved: true,
-      accessKeys: ["access_public", "access_account", "access_play", "access_review"],
+      accessKeys: [
+        "access_public",
+        "access_account",
+        "access_play",
+        "access_review",
+        "access_scout_view",
+      ],
     });
 
     vi.stubEnv("DEV_SEED_AUTH_PASSWORD", "replacement-password-456");
@@ -197,6 +204,7 @@ describe("password authentication", () => {
     const pending = t.withIdentity({ subject: `${userId}|session` });
     await expect(pending.query(api.accounts.currentViewerAccess, {})).resolves.toEqual({
       kind: "account",
+      email: MEMBER_EMAIL,
       userId,
       role: "role_pending_access",
       isApproved: false,
@@ -522,6 +530,7 @@ describe("password authentication", () => {
     const pending = t.withIdentity({ subject: `${user._id}|session` });
     expect(await pending.query(api.accounts.currentViewerAccess, {})).toEqual({
       kind: "account",
+      email,
       userId: user._id,
       role: "role_pending_access",
       isApproved: false,
@@ -547,6 +556,7 @@ describe("password authentication", () => {
       const staff = t.withIdentity({ subject: `${user._id}|session` });
       const staffAccess = {
         kind: "account" as const,
+        email,
         userId: user._id,
         role: "role_staff" as const,
         accessKeys: [
@@ -554,6 +564,7 @@ describe("password authentication", () => {
           "access_account",
           "access_play",
           "access_review",
+          "access_scout_view",
           "access_lab",
           "access_scout_manage",
           "access_members_manage",
@@ -590,11 +601,12 @@ describe("password authentication", () => {
     const viewer = t.withIdentity({ subject: `${user._id}|session` });
     const expected = {
       kind: "account" as const,
+      email,
       userId: user._id,
       role: isApproved ? ("role_member" as const) : ("role_pending_access" as const),
       isApproved,
       accessKeys: isApproved
-        ? ["access_public", "access_account", "access_play", "access_review"]
+        ? ["access_public", "access_account", "access_play", "access_review", "access_scout_view"]
         : ["access_public", "access_account"],
     };
     await expect(
