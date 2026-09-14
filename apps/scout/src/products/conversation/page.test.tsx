@@ -362,7 +362,7 @@ describe("Play invitation", () => {
         kind: "review",
         scoutId: "scout-1",
         prompt: "Review example.com",
-        visibility: "private",
+        visibility: "public",
       }),
     );
     await waitFor(() => expect(router.state.location.pathname).toBe("/review"));

@@ -121,7 +121,9 @@ export function ConversationLobby({ kind }: { kind: ProductKind }) {
   const [selectedScoutId, setSelectedScoutId] = useState("");
   const [signingIn, setSigningIn] = useState(false);
   const [request, setRequest] = useState<RequestState>({ kind: "idle" });
-  const [visibility, setVisibility] = useState<ChatThread["visibility"]>("private");
+  const [visibility, setVisibility] = useState<ChatThread["visibility"]>(
+    isPlay ? "private" : "public",
+  );
   const submitting = useRef(false);
   const activeScouts = scouts?.filter((scout) => scout.status === "active") ?? [];
   const selectedScout =
