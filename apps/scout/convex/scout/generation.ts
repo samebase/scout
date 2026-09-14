@@ -569,7 +569,7 @@ export const runSlice = internalAction({
           ),
           ...createWorkspaceTools(
             ctx,
-            { threadId: args.threadId, userId: args.userId },
+            { target: { kind: "chat", threadId: args.threadId }, userId: args.userId },
             beforeModelToolDispatch,
           ),
           ...agentMailTools,

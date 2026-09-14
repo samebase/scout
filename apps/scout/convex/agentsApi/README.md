@@ -30,8 +30,16 @@ not apply to this experiment.
   handoffs, research, reviews, and task completion. `runtime.ts` combines it with the
   Scout's identity and account inventory when creating the OpenAI session. Prompt edits
   apply to new sessions; follow-ups keep their session's original instructions.
-- Sessions use `environment.type: "none"`. Browser and email tools run through
-  Convex, so this experiment does not provision an additional shell sandbox.
+- Sessions use `environment.type: "none"`. Browser, email, and `bash` tools run
+  through Convex without provisioning an OpenAI-hosted environment.
+- `bash` reuses Scout's just-bash workspace. Omit `workspace` for private files owned
+  by this agent session, or set it to a hostname for shared site files. Both use the
+  existing Convex file index, R2 storage, and workspace limits. Bash does not attach
+  to the Firecrawl browser. New sessions receive the tool; existing OpenAI sessions
+  keep the tool definitions they were created with.
+- The Agents Workspace view reuses the existing file browser for inspection and
+  downloads. Admins can inspect member session files, but cannot run commands in
+  another owner's session. Shared files remain available in Sites.
 - Convex Workflow submits work and services requested functions. It does not run
   another LLM loop through `@convex-dev/agent`.
 - `sessions.ts` owns access checks, session state, and durable function-call claims.
@@ -58,9 +66,8 @@ not apply to this experiment.
   restarting it. A refresh preserves any failure or stopped state.
 
 Errors remain visible. Interrupted side effects are not automatically replayed.
-There is no built-in shell or integration with shared site workspaces or Scout
-credits. An OpenAI-hosted environment can be added when a task needs files or
-command execution; see the [architecture guide](https://developers.openai.com/api/docs/guides/agents-api/architecture).
+Scout credits are not integrated with this runtime. Workspace access does not yet
+add the proposed intake or automatic research stages.
 
 ## Live verification, September 12, 2026
 

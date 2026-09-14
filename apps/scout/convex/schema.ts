@@ -235,10 +235,17 @@ export default defineSchema({
         cwd: v.string(),
         revision: v.number(),
       }),
+      v.object({
+        kind: v.literal("agent_session"),
+        sessionId: v.id("agentsApiSessions"),
+        cwd: v.string(),
+        revision: v.number(),
+      }),
     ),
   )
     .index("by_thread_id", ["threadId"])
-    .index("by_site", ["site"]),
+    .index("by_site", ["site"])
+    .index("by_session_id", ["sessionId"]),
   scoutWorkspaceFiles: defineTable({
     workspaceId: v.id("scoutWorkspaces"),
     entry: workspaceEntryValidator,

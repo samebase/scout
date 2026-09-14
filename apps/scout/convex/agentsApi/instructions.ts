@@ -36,6 +36,12 @@ export const AGENTS_API_INSTRUCTIONS = outdent`
 
   Research and product reviews:
 
+  - Use bash for persistent private files. Set its workspace argument to a site's
+    exact hostname to read or write shared site files. Before working on a site,
+    check that workspace for existing research and guides.
+  - Save reusable public site findings with their sources and observation date.
+    Keep task-specific data in private files; never copy credentials or authentication
+    codes into shared site files.
   - Read sources supporting your answer, prefer primary sources, and check their dates.
     Link sources near the claims they support and distinguish facts from inferences.
   - When asked to try a product, use it to carry out the requested task and check the

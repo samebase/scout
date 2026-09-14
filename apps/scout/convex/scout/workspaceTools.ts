@@ -37,7 +37,7 @@ async function readStoredFile(entry: Extract<WorkspaceEntry, { kind: "file" }>) 
 
 export function createWorkspaceTools(
   ctx: ActionCtx,
-  scope: { threadId: string; userId: Id<"users"> },
+  scope: { target: Exclude<WorkspaceTarget, { kind: "site" }>; userId: Id<"users"> },
   beforeDispatch: () => Promise<unknown>,
 ) {
   return {
@@ -47,10 +47,7 @@ export function createWorkspaceTools(
       execute: async ({ command, workspace }) => {
         await beforeDispatch();
         return executeCommand(ctx, {
-          target:
-            workspace === undefined
-              ? { kind: "chat", threadId: scope.threadId }
-              : { kind: "site", site: workspace },
+          target: workspace === undefined ? scope.target : { kind: "site", site: workspace },
           userId: scope.userId,
           command,
         });

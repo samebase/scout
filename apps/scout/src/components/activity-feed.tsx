@@ -1,7 +1,7 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useAction, usePaginatedQuery, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
-import { ArrowUpRightIcon, PlayIcon, SearchIcon, XIcon } from "lucide-react";
+import { PlayIcon, SearchIcon, XIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { Button } from "#components/ui/button";
@@ -52,7 +52,7 @@ export function ActivityFeed({ search }: { search: ReviewFeedSearch }) {
   );
   return (
     <section aria-label="Reviews">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
         {signedIn ? (
           <Select
             value={selectedScope}
@@ -121,6 +121,15 @@ export function ActivityFeed({ search }: { search: ReviewFeedSearch }) {
           {error}
         </p>
       )}
+      {activities.results.length > 0 && (
+        <div
+          aria-hidden="true"
+          className="hidden grid-cols-[160px_minmax(0,1fr)_208px] gap-x-5 border-b border-border py-2 text-xs text-muted-foreground lg:grid"
+        >
+          <span className="col-span-2">Review</span>
+          <span>Site</span>
+        </div>
+      )}
       {activities.results.map((activity) => (
         <ActivityRow key={activity.threadId} activity={activity} scope={selectedScope} />
       ))}
@@ -170,13 +179,13 @@ function ActivityRow({ activity, scope }: { activity: Activity; scope: "public" 
       ref={element}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      className="grid grid-cols-[minmax(220px,320px)_1fr] items-center gap-8 border-b border-border py-7 max-[640px]:grid-cols-1 max-[640px]:gap-4"
+      className="grid grid-cols-[96px_minmax(0,1fr)] items-center gap-x-4 gap-y-1 border-b border-border py-3 sm:grid-cols-[144px_minmax(0,1fr)] lg:grid-cols-[160px_minmax(0,1fr)_208px] lg:gap-x-5"
     >
       <Link
         to="/review"
         search={{ thread: activity.threadId }}
         aria-label={`Watch ${activity.title ?? "chat"}`}
-        className="group relative block aspect-[8/5] overflow-hidden rounded-2xl border border-border bg-muted"
+        className="group relative row-span-2 block aspect-[8/5] overflow-hidden rounded-md border border-border bg-muted"
       >
         {visible && activity.latestSession ? (
           <ActivityPreview session={activity.latestSession} playing={hovered} />
@@ -184,52 +193,55 @@ function ActivityRow({ activity, scope }: { activity: Activity; scope: "public" 
           <PreviewPlaceholder />
         )}
         <span className="pointer-events-none absolute inset-0 grid place-items-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
-          <span className="grid size-12 place-items-center rounded-full bg-white/90 text-primary">
-            <PlayIcon size={20} fill="currentColor" />
+          <span className="grid size-8 place-items-center rounded-full bg-white/90 text-primary">
+            <PlayIcon size={14} fill="currentColor" />
           </span>
         </span>
       </Link>
-      <div className="min-w-0">
-        <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          {activity.primarySite && (
-            <Link
-              to="/"
-              search={{ site: activity.primarySite, scope }}
-              className="break-all rounded bg-primary px-2.5 py-1 font-medium text-primary-foreground hover:underline"
-            >
-              {activity.primarySite}
-            </Link>
-          )}
-          {activity.status === "running" && <span className="size-1.5 rounded-full bg-primary" />}
-          <span>{activityLabels[activity.status]}</span>
-          <span aria-hidden="true">·</span>
+      <div className="min-w-0 lg:row-span-2">
+        <h2 className="text-sm leading-snug font-semibold [overflow-wrap:anywhere] sm:text-base">
+          <Link
+            to="/review"
+            search={{ thread: activity.threadId }}
+            className="line-clamp-2 hover:text-primary"
+            title={activity.title ?? "New chat"}
+          >
+            {activity.title ?? "New chat"}
+          </Link>
+        </h2>
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          <span>{activity.scout.displayName}</span>
+          <span className="inline-flex items-center gap-1.5">
+            {activity.status === "running" && <span className="size-1.5 rounded-full bg-primary" />}
+            {activityLabels[activity.status]}
+          </span>
           <time dateTime={new Date(activity.createdAt).toISOString()}>
             {new Date(activity.createdAt).toLocaleDateString(undefined, {
               month: "short",
               day: "numeric",
             })}
           </time>
-          {activity.visibility === "private" && <span>· Private</span>}
-        </div>
-        <h2 className="text-xl leading-snug font-semibold tracking-[-0.4px] [overflow-wrap:anywhere]">
-          <Link to="/review" search={{ thread: activity.threadId }} className="hover:text-primary">
-            {activity.title ?? "New chat"}
-          </Link>
-        </h2>
-        <div className="mt-5 flex items-center justify-between gap-4">
-          <span className="flex items-center gap-2 text-sm text-muted-foreground">
-            <ScoutPiece size="brand" className="scale-65" />
-            {activity.scout.displayName}
-          </span>
-          <Link
-            to="/review"
-            search={{ thread: activity.threadId }}
-            className="inline-flex min-h-11 items-center gap-1 text-sm text-primary"
-          >
-            Watch <ArrowUpRightIcon size={16} />
-          </Link>
+          {activity.visibility === "private" && <span>Private</span>}
         </div>
       </div>
+      {activity.primarySite ? (
+        <div className="col-start-2 min-w-0 lg:col-start-3 lg:row-span-2">
+          <Link
+            to="/"
+            search={{ site: activity.primarySite, scope }}
+            className="inline-flex min-h-9 items-center break-all text-xs font-medium text-primary hover:underline sm:text-sm"
+          >
+            {activity.primarySite}
+          </Link>
+        </div>
+      ) : (
+        <span
+          aria-label="Site not set"
+          className="hidden text-sm text-muted-foreground lg:col-start-3 lg:row-span-2 lg:block"
+        >
+          —
+        </span>
+      )}
     </article>
   );
 }

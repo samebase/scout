@@ -4,6 +4,7 @@ import { useSidebarActions, useSidebarLayoutPresentation } from "@samebase/sideb
 import { Link, useNavigate, type ErrorComponentProps } from "@tanstack/react-router";
 import { useAction, useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import {
+  FolderIcon,
   PanelLeftIcon,
   PanelRightIcon,
   PlusIcon,
@@ -11,7 +12,7 @@ import {
   SendIcon,
   SquareIcon,
 } from "lucide-react";
-import { useRef, useState, type FormEvent } from "react";
+import { useMemo, useRef, useState, type FormEvent } from "react";
 import { api } from "../../convex/_generated/api";
 import { omitNullish } from "../../shared/omitNullish";
 import { Button } from "#components/ui/button";
@@ -20,6 +21,8 @@ import { sessionControls, type AgentsSearch, type Session } from "./model";
 import { Transcript } from "./transcript";
 import { BrowserPanel } from "./browser";
 import { SessionCost } from "./cost";
+import { ScoutWorkspace } from "#components/scout-workspace";
+import type { WorkspaceTarget } from "../../convex/workspaceModel";
 
 type RequestState = { kind: "idle" } | { kind: "pending" } | { kind: "failed"; message: string };
 
@@ -44,7 +47,7 @@ function AgentsWorkspace({ search, session }: { search: AgentsSearch; session: S
 
   return (
     <SidebarLayout
-      addressChrome={<AgentsChrome session={session} />}
+      addressChrome={<AgentsChrome session={session} search={search} />}
       resizeHandleLabels={{ left: "Resize sessions", right: "Resize browser" }}
       formatResizeHandleValueText={({ widthPx }) => `${widthPx} pixels wide`}
       left={
@@ -93,7 +96,13 @@ function AgentsWorkspace({ search, session }: { search: AgentsSearch; session: S
           }
         />
       }
-      main={session ? <SessionView session={session} /> : <PaneFrame content={<NewSession />} />}
+      main={
+        session ? (
+          <SessionContent session={session} search={search} />
+        ) : (
+          <PaneFrame content={<NewSession />} />
+        )
+      }
       {...omitNullish({
         right: session ? <BrowserPanel sessionId={session._id} search={search} /> : undefined,
       })}
@@ -101,7 +110,8 @@ function AgentsWorkspace({ search, session }: { search: AgentsSearch; session: S
   );
 }
 
-function AgentsChrome({ session }: { session: Session | null }) {
+function AgentsChrome({ session, search }: { session: Session | null; search: AgentsSearch }) {
+  const navigate = useNavigate({ from: "/agents" });
   const { setMobilePane, toggleLeftPane, toggleRightPane } = useSidebarActions();
   const { isMobile, mobilePane, leftDesktopOpen, rightDesktopOpen } =
     useSidebarLayoutPresentation();
@@ -128,6 +138,25 @@ function AgentsChrome({ session }: { session: Session | null }) {
         </h1>
         {session && <p className="truncate text-xs text-muted-foreground">{session.scoutName}</p>}
       </div>
+      {session && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          aria-pressed={search.view === "workspace"}
+          onClick={() =>
+            void navigate({
+              search: {
+                ...search,
+                view: search.view === "workspace" ? "conversation" : "workspace",
+              },
+            })
+          }
+        >
+          <FolderIcon aria-hidden="true" />
+          Workspace
+        </Button>
+      )}
       {session && (
         <Button
           type="button"
@@ -267,6 +296,31 @@ function SessionLoader({ sessionId, search }: { sessionId: string; search: Agent
   if (session === null)
     return <p className="p-6 text-sm text-muted-foreground">Session not found.</p>;
   return <AgentsWorkspace search={search} session={session} />;
+}
+
+function SessionContent({ session, search }: { session: Session; search: AgentsSearch }) {
+  const navigate = useNavigate({ from: "/agents" });
+  const target = useMemo<WorkspaceTarget>(
+    () => ({ kind: "agent_session", sessionId: session._id }),
+    [session._id],
+  );
+  return (
+    <div className="h-full min-h-0">
+      <div className={search.view === "workspace" ? "hidden" : "h-full min-h-0"}>
+        <SessionView session={session} />
+      </div>
+      {search.view === "workspace" && (
+        <ScoutWorkspace
+          target={target}
+          disabled
+          selectedPath={search.file ?? null}
+          onSelectPath={(file) => void navigate({ search: { ...search, file } })}
+          terminalOpen={false}
+          onToggleTerminal={() => {}}
+        />
+      )}
+    </div>
+  );
 }
 
 function SessionView({ session }: { session: Session }) {

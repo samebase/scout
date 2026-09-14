@@ -42,6 +42,7 @@ export type WorkspaceEntry = typeof workspaceEntryValidator.type;
 
 export const workspaceTargetValidator = v.union(
   v.object({ kind: v.literal("chat"), threadId: v.string() }),
+  v.object({ kind: v.literal("agent_session"), sessionId: v.id("agentsApiSessions") }),
   v.object({ kind: v.literal("site"), site: v.string() }),
 );
 export type WorkspaceTarget = typeof workspaceTargetValidator.type;

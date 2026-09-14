@@ -34,6 +34,8 @@ const remote = vi.hoisted(() => ({
   loadMore: vi.fn(),
   listReplayPages: vi.fn(),
   loadPlaylist: vi.fn(),
+  readFile: vi.fn(),
+  executeWorkspaceCommand: vi.fn(),
   paginationStatus: "Exhausted",
 }));
 
@@ -79,6 +81,13 @@ vi.mock("convex/react", () => ({
     if (getFunctionName(reference) === "agentsApi/runtime:refresh") return remote.refresh;
     if (getFunctionName(reference) === "browserReplay:listPages") return remote.listReplayPages;
     if (getFunctionName(reference) === "browserReplay:loadPlaylist") return remote.loadPlaylist;
+    if (getFunctionName(reference) === "scout/workspaceTools:readFile") return remote.readFile;
+    if (
+      ["scout/manual:executeTool", "scout/workspaceTools:executeSiteCommand"].includes(
+        getFunctionName(reference),
+      )
+    )
+      return remote.executeWorkspaceCommand;
     throw new Error("Unexpected action");
   },
 }));
@@ -130,6 +139,29 @@ beforeEach(() => {
   remote.loadMore.mockReset();
   remote.listReplayPages.mockReset().mockResolvedValue({ status: "unavailable" });
   remote.loadPlaylist.mockReset().mockResolvedValue({ status: "ready", playlist: "#EXTM3U" });
+  remote.readFile.mockReset().mockResolvedValue({
+    path: "/workspace/notes.md",
+    text: "Saved research",
+    bytes: new TextEncoder().encode("Saved research").buffer,
+  });
+  remote.executeWorkspaceCommand.mockReset();
+  remote.queries.set("scout/workspaces:list", {
+    exists: true,
+    configured: true,
+    cwd: "/workspace",
+    revision: 1,
+    entries: [
+      {
+        kind: "file",
+        path: "/workspace/notes.md",
+        key: "private-session-key",
+        size: 14,
+        sha256: "hash",
+        mode: 0o644,
+        mtime: 1,
+      },
+    ],
+  });
   remote.paginationStatus = "Exhausted";
   remote.queries.set("accounts:currentViewerAccess", {
     kind: "account",
@@ -198,6 +230,39 @@ async function open(path = "/agents") {
   await router.load();
   return router;
 }
+
+test("opens session files through a shareable URL and preserves the conversation draft", async () => {
+  const router = await open("/agents?session=session-1");
+  fireEvent.change(await screen.findByRole("textbox", { name: "Message" }), {
+    target: { value: "Keep this draft" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Workspace" }));
+  fireEvent.click(await screen.findByRole("button", { name: "notes.md" }));
+  expect((await screen.findByLabelText("File contents")).textContent).toBe("Saved research");
+  expect(remote.readFile).toHaveBeenCalledWith({
+    target: { kind: "agent_session", sessionId: "session-1" },
+    path: "/workspace/notes.md",
+  });
+  expect(router.state.location.search).toMatchObject({
+    view: "workspace",
+    file: "/workspace/notes.md",
+  });
+  expect(screen.queryByRole("textbox", { name: "Bash command" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Workspace" }));
+  expect(await screen.findByRole("textbox", { name: "Message" })).toHaveProperty(
+    "value",
+    "Keep this draft",
+  );
+  expect(remote.executeWorkspaceCommand).not.toHaveBeenCalled();
+});
+
+test("admins can open member session files directly without gaining session controls", async () => {
+  remote.queries.set("agentsApi/sessions:get", { ...session(), canControl: false });
+  await open("/agents?session=session-1&view=workspace&file=%2Fworkspace%2Fnotes.md");
+  expect((await screen.findByLabelText("File contents")).textContent).toBe("Saved research");
+  expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
+  expect(screen.queryByRole("textbox", { name: "Bash command" })).toBeNull();
+});
 
 test("starts with an active scout and opens the new session without mutating on page load", async () => {
   const router = await open();

@@ -49,7 +49,14 @@ export function ScoutWorkspace({
 
   async function runCommand(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!command.trim() || running.current || disabled || !workspace?.configured) return;
+    if (
+      !command.trim() ||
+      running.current ||
+      disabled ||
+      !workspace?.configured ||
+      target.kind === "agent_session"
+    )
+      return;
     running.current = true;
     const id = crypto.randomUUID();
     const submitted = command;
@@ -135,87 +142,89 @@ export function ScoutWorkspace({
           )}
         </div>
       </div>
-      <details open={terminalOpen} className="shrink-0 border-t">
-        <summary
-          className="cursor-pointer px-3 py-2 text-xs font-medium"
-          onClick={(event) => {
-            event.preventDefault();
-            onToggleTerminal();
-          }}
-        >
-          Terminal{" "}
-          <span className="text-muted-foreground ml-2 font-mono font-normal">
-            {workspace?.cwd ?? WORKSPACE_ROOT}
-          </span>
-        </summary>
-        <div
-          ref={output}
-          role="log"
-          aria-label="Terminal output"
-          className="h-36 overflow-auto px-3 pb-2 font-mono text-xs"
-        >
-          {history.map((record) => (
-            <div key={record.id} className="mb-3">
-              <pre className="whitespace-pre-wrap break-words text-muted-foreground">
-                $ {record.command}
-              </pre>
-              {record.kind === "running" ? (
-                <p className="mt-1">Running…</p>
-              ) : record.kind === "failed" ? (
-                <pre role="alert" className="whitespace-pre-wrap break-words text-destructive">
-                  {record.error}
-                </pre>
-              ) : (
-                <>
-                  {record.result.stdout ? (
-                    <pre className="whitespace-pre-wrap break-words">{record.result.stdout}</pre>
-                  ) : null}
-                  {record.result.stderr ? (
-                    <pre className="whitespace-pre-wrap break-words text-destructive">
-                      {record.result.stderr}
-                    </pre>
-                  ) : null}
-                  <p
-                    className={
-                      record.result.exitCode === 0 ? "text-muted-foreground" : "text-destructive"
-                    }
-                  >
-                    Exit {record.result.exitCode}
-                  </p>
-                </>
-              )}
-            </div>
-          ))}
-        </div>
-        <form
-          onSubmit={(event) => void runCommand(event)}
-          className="flex items-end gap-2 border-t p-2"
-        >
-          <Textarea
-            aria-label="Bash command"
-            placeholder={"printf 'Hello\\n' > hello.txt"}
-            value={command}
-            onChange={(event) => setCommand(event.target.value)}
-            disabled={disabled || busy || !workspace?.configured}
-            rows={2}
-            className="max-h-32 min-h-16 resize-y font-mono text-xs"
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-                event.preventDefault();
-                event.currentTarget.form?.requestSubmit();
-              }
+      {target.kind !== "agent_session" && (
+        <details open={terminalOpen} className="shrink-0 border-t">
+          <summary
+            className="cursor-pointer px-3 py-2 text-xs font-medium"
+            onClick={(event) => {
+              event.preventDefault();
+              onToggleTerminal();
             }}
-          />
-          <Button
-            type="submit"
-            size="icon-sm"
-            aria-label="Run command"
-            disabled={disabled || busy || !workspace?.configured || !command.trim()}
           >
-            {busy ? <LoaderCircleIcon className="animate-spin" /> : <PlayIcon />}
-          </Button>
-        </form>
-      </details>
+            Terminal{" "}
+            <span className="text-muted-foreground ml-2 font-mono font-normal">
+              {workspace?.cwd ?? WORKSPACE_ROOT}
+            </span>
+          </summary>
+          <div
+            ref={output}
+            role="log"
+            aria-label="Terminal output"
+            className="h-36 overflow-auto px-3 pb-2 font-mono text-xs"
+          >
+            {history.map((record) => (
+              <div key={record.id} className="mb-3">
+                <pre className="whitespace-pre-wrap break-words text-muted-foreground">
+                  $ {record.command}
+                </pre>
+                {record.kind === "running" ? (
+                  <p className="mt-1">Running…</p>
+                ) : record.kind === "failed" ? (
+                  <pre role="alert" className="whitespace-pre-wrap break-words text-destructive">
+                    {record.error}
+                  </pre>
+                ) : (
+                  <>
+                    {record.result.stdout ? (
+                      <pre className="whitespace-pre-wrap break-words">{record.result.stdout}</pre>
+                    ) : null}
+                    {record.result.stderr ? (
+                      <pre className="whitespace-pre-wrap break-words text-destructive">
+                        {record.result.stderr}
+                      </pre>
+                    ) : null}
+                    <p
+                      className={
+                        record.result.exitCode === 0 ? "text-muted-foreground" : "text-destructive"
+                      }
+                    >
+                      Exit {record.result.exitCode}
+                    </p>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+          <form
+            onSubmit={(event) => void runCommand(event)}
+            className="flex items-end gap-2 border-t p-2"
+          >
+            <Textarea
+              aria-label="Bash command"
+              placeholder={"printf 'Hello\\n' > hello.txt"}
+              value={command}
+              onChange={(event) => setCommand(event.target.value)}
+              disabled={disabled || busy || !workspace?.configured}
+              rows={2}
+              className="max-h-32 min-h-16 resize-y font-mono text-xs"
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                  event.preventDefault();
+                  event.currentTarget.form?.requestSubmit();
+                }
+              }}
+            />
+            <Button
+              type="submit"
+              size="icon-sm"
+              aria-label="Run command"
+              disabled={disabled || busy || !workspace?.configured || !command.trim()}
+            >
+              {busy ? <LoaderCircleIcon className="animate-spin" /> : <PlayIcon />}
+            </Button>
+          </form>
+        </details>
+      )}
     </section>
   );
 }
@@ -281,8 +290,6 @@ function WorkspaceFileTree({
 
 function WorkspaceFileViewer({ target, path }: { target: WorkspaceTarget; path: string }) {
   const readFile = useAction(api.scout.workspaceTools.readFile);
-  const kind = target.kind;
-  const targetId = target.kind === "chat" ? target.threadId : target.site;
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<
     | { kind: "loading" }
@@ -297,7 +304,7 @@ function WorkspaceFileViewer({ target, path }: { target: WorkspaceTarget; path: 
     let cancelled = false;
     let downloadUrl: string | undefined;
     void readFile({
-      target: kind === "chat" ? { kind, threadId: targetId } : { kind, site: targetId },
+      target,
       path,
     }).then(
       (file) => {
@@ -319,7 +326,7 @@ function WorkspaceFileViewer({ target, path }: { target: WorkspaceTarget; path: 
       cancelled = true;
       if (downloadUrl) URL.revokeObjectURL(downloadUrl);
     };
-  }, [attempt, path, readFile, kind, targetId]);
+  }, [attempt, path, readFile, target]);
   return (
     <>
       <div className="flex min-h-9 shrink-0 items-start justify-between gap-2 border-b px-3 py-2 text-xs">

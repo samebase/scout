@@ -6,6 +6,8 @@ export const agentsSearch = z.object({
   session: z.string().min(1).optional(),
   browser: z.string().min(1).optional(),
   replayPage: z.string().min(1).optional(),
+  view: z.enum(["conversation", "workspace"]).optional(),
+  file: z.string().min(1).optional(),
   sessions: z.literal("hidden").optional(),
   inspector: z.literal("hidden").optional(),
   pane: z.enum(["left", "main", "right"]).optional(),
