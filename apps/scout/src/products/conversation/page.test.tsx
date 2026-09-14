@@ -351,7 +351,7 @@ describe("Play invitation", () => {
   test("Review starts on its own route using the shared chat interface", async () => {
     remote.queries.set("scout/activity:get", session({ purpose: { kind: "review" } }));
     const router = await openPlay("/review");
-    expect(await screen.findByRole("heading", { name: "What should Scout review?" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Send a Scout instead." })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Find a game for us" })).toBeNull();
     fireEvent.change(screen.getByLabelText("Message Scout"), {
       target: { value: "Review example.com" },
