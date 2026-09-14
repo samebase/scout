@@ -7,7 +7,7 @@ import { internal } from "../_generated/api";
 import { internalMutation, internalQuery } from "../_generated/server";
 import { mutation, query } from "../functions";
 import { requireSessionPermission } from "./access";
-import { scoutIsWorking } from "../scout/chatAccess";
+import { scoutReservation } from "../scout/availability";
 import { workflow } from "./lifecycle";
 import {
   browserHandle,
@@ -38,17 +38,11 @@ async function owned(ctx: QueryCtx, sessionId: Id<"agentsApiSessions">, userId: 
 }
 
 async function requireAvailableScout(ctx: QueryCtx, scoutId: Id<"scouts">) {
-  if (await scoutIsWorking(ctx, scoutId)) throw new Error("This Scout is already working");
-  for (const kind of ["active", "closing"] as const) {
-    const browser = await ctx.db
-      .query("scoutBrowserSessions")
-      .withIndex("by_scout_id_and_lifecycle_kind", (q) =>
-        q.eq("scoutId", scoutId).eq("lifecycle.kind", kind),
-      )
-      .first();
-    if (browser)
-      throw new Error("Close this Scout's existing browser before starting another session");
-  }
+  const reservation = await scoutReservation(ctx, scoutId);
+  if (!reservation) return;
+  if (reservation.kind === "browser")
+    throw new Error("Close this Scout's existing browser before starting another session");
+  throw new Error("This Scout is already working");
 }
 
 async function scheduleSessionCleanup(ctx: MutationCtx, session: Doc<"agentsApiSessions">) {
@@ -322,7 +316,7 @@ export const controls = query({
     const notification = session.handoffEmailJobId
       ? await ctx.db.system.get(session.handoffEmailJobId)
       : null;
-    const busy = !session.active && (await scoutIsWorking(ctx, session.scoutId));
+    const busy = !session.active && (await scoutReservation(ctx, session.scoutId)) !== null;
     const check = await getRequestCheck(ctx, session._id);
     return {
       state: session.state,

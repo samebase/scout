@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-14T19:24:15Z
+- **Last updated:** 2026-09-14T19:45:43Z
 
 ## Log
 
@@ -1256,7 +1256,7 @@ the existing Bash workspace to keep private files and share research through sit
 Convex scopes private files to their session; admins can inspect them in the Agents workspace view
 (`apps/scout/convex/scout/workspaces.ts`, `apps/scout/src/agents-api/page.tsx`).
 
-### 2026-09-14 - working tree
+### 2026-09-14 - 4f4a7fe
 
 New Agents sessions get a short title and a request check before the main agent starts.
 Convex stores the decision and call details; declined requests stay out of public results.
@@ -1264,3 +1264,10 @@ Admins inspect Request check and Chat in an always-open tree that stays mounted 
 with the call's timing, estimated cost, input, and response. Review conversations use padded chat
 panels and a separate replay with a compact resize grip
 (`apps/scout/convex/agentsApi/requestCheck.ts`, `apps/scout/src/agents-api/page.tsx`).
+
+### 2026-09-14 - working tree
+
+Scout profiles now show availability and link to the session reserving them, including paused
+browser handoffs. The picker uses the same Convex lookup for running tasks and open browsers.
+Members can see public activity and their own sessions; other private tasks stay hidden
+(`apps/scout/convex/scout/availability.ts`, `apps/scout/src/components/scout-current-activity.tsx`).

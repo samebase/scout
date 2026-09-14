@@ -320,6 +320,14 @@ it.each(["active", "closing"] as const)(
       }),
     );
     expect(await backend.run((ctx) => scoutIsWorking(ctx, scoutId))).toBe(false);
+    const availability = kind === "closing" ? "stopping" : "browser_open";
+    expect(await owner.query(api.scout.scouts.get, { slug: "scout" })).toMatchObject({
+      availability,
+      currentActivity: { kind: "private" },
+    });
+    expect(await backend.query(api.scout.activity.players, {})).toMatchObject([
+      { availability, busy: true },
+    ]);
     await expect(
       owner.mutation(api.agentsApi.sessions.start, { scoutId, prompt: "New session" }),
     ).rejects.toThrow("existing browser");

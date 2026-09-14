@@ -4,6 +4,9 @@ import type { Doc } from "../_generated/dataModel";
 import { internalMutation, internalQuery, type QueryCtx } from "../_generated/server";
 import { requirePermission } from "../access";
 import { scoutWebsiteIdentityValidator } from "./model";
+import { availabilityValidator, scoutReservation } from "./availability";
+import { currentActivityValidator, currentScoutActivity } from "./activity";
+import type { ViewerAccess } from "../access";
 
 const MAX_SCOUTS = 50;
 const MAX_DISPLAY_NAME_LENGTH = 100;
@@ -37,6 +40,8 @@ const scoutPublicValidator = v.object({
   websiteIdentity: scoutWebsiteIdentityValidator,
   slug: v.string(),
   status: v.union(v.literal("active"), v.literal("disabled")),
+  availability: availabilityValidator,
+  currentActivity: currentActivityValidator,
   agentMail: v.object({
     address: v.string(),
   }),
@@ -120,13 +125,16 @@ function normalizeScoutFields(args: typeof scoutFieldsValidator.type) {
   };
 }
 
-function projectScout(scout: Doc<"scouts">) {
+async function projectScout(ctx: QueryCtx, scout: Doc<"scouts">, viewer: ViewerAccess) {
+  const reservation = await scoutReservation(ctx, scout._id);
   return {
     _id: scout._id,
     displayName: scout.displayName,
     websiteIdentity: scout.websiteIdentity,
     slug: scout.slug,
     status: scout.status,
+    availability: reservation?.status ?? ("available" as const),
+    currentActivity: await currentScoutActivity(ctx, scout, reservation, viewer),
     agentMail: { address: scout.agentMail.address },
   };
 }
@@ -174,7 +182,7 @@ export const list = query({
   returns: v.array(scoutPublicValidator),
   handler: async (ctx) => {
     const scouts = await ctx.db.query("scouts").order("desc").take(MAX_SCOUTS);
-    return scouts.map(projectScout);
+    return await Promise.all(scouts.map((scout) => projectScout(ctx, scout, ctx.viewer)));
   },
 });
 
@@ -189,7 +197,7 @@ export const get = query({
       .query("scouts")
       .withIndex("by_slug", (q) => q.eq("slug", canonicalSlug(args.slug)))
       .unique();
-    return scout ? projectScout(scout) : null;
+    return scout ? projectScout(ctx, scout, ctx.viewer) : null;
   },
 });
 

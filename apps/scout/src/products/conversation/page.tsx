@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { type FormEvent, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
+import { scoutAvailabilityLabels } from "#components/scout-current-activity";
 import { productRoutes, type ProductKind, type ConversationSearch } from "./model";
 import { gameInviteDisplayText } from "../play/invite";
 import { ReviewSite } from "./review-site";
@@ -274,7 +275,7 @@ export function ConversationLobby({ kind }: { kind: ProductKind }) {
                         {activeScouts.map((scout) => (
                           <SelectItem key={scout._id} value={scout._id} disabled={scout.busy}>
                             {scout.displayName}
-                            {scout.busy ? " · Busy" : ""}
+                            {scout.busy ? ` · ${scoutAvailabilityLabels[scout.availability]}` : ""}
                           </SelectItem>
                         ))}
                       </SelectContent>

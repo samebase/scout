@@ -509,6 +509,7 @@ test("members can start and continue Play, but cannot run Lab chats or another p
       displayName: "Play Scout",
       status: "active",
       busy: true,
+      availability: "working",
     },
   ]);
   await expect(

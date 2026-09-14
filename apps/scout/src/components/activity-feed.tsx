@@ -254,7 +254,7 @@ function PreviewPlaceholder() {
   );
 }
 
-function ActivityPreview({
+export function ActivityPreview({
   session,
   playing,
 }: {

@@ -178,8 +178,8 @@ beforeEach(() => {
   remote.queries.set("agentsApi/sessions:listBrowsers", []);
   remote.queries.set("scout/scouts:list", [
     { _id: "disabled-scout", displayName: "Disabled", status: "disabled" },
-    { _id: "scout-1", displayName: "Pip", status: "active" },
-    { _id: "scout-2", displayName: "Moss", status: "active" },
+    { _id: "scout-1", displayName: "Pip", status: "active", availability: "available" },
+    { _id: "scout-2", displayName: "Moss", status: "active", availability: "available" },
   ]);
 });
 

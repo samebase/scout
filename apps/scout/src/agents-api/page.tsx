@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useMemo, useRef, useState, type FormEvent } from "react";
 import { api } from "../../convex/_generated/api";
+import { scoutAvailabilityLabels } from "#components/scout-current-activity";
 import { omitNullish } from "../../shared/omitNullish";
 import { Button } from "#components/ui/button";
 import { Textarea } from "#components/ui/textarea";
@@ -296,11 +297,19 @@ function NewSession() {
     );
   const selectedScout =
     activeScouts?.find((scout) => scout._id === scoutId) ??
-    (scoutId === "" ? activeScouts?.[0] : undefined);
+    (scoutId === ""
+      ? activeScouts?.find((scout) => scout.availability === "available")
+      : undefined);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selectedScout || !prompt.trim() || submitting.current) return;
+    if (
+      !selectedScout ||
+      selectedScout.availability !== "available" ||
+      !prompt.trim() ||
+      submitting.current
+    )
+      return;
     submitting.current = true;
     setRequest({ kind: "pending" });
     try {
@@ -337,8 +346,15 @@ function NewSession() {
               </option>
             )}
             {activeScouts?.map((scout) => (
-              <option key={scout._id} value={scout._id}>
+              <option
+                key={scout._id}
+                value={scout._id}
+                disabled={scout.availability !== "available"}
+              >
                 {scout.displayName}
+                {scout.availability !== "available"
+                  ? ` · ${scoutAvailabilityLabels[scout.availability]}`
+                  : ""}
               </option>
             ))}
           </select>
@@ -371,7 +387,12 @@ function NewSession() {
         <div className="flex justify-end">
           <Button
             type="submit"
-            disabled={!selectedScout || !prompt.trim() || request.kind === "pending"}
+            disabled={
+              !selectedScout ||
+              selectedScout.availability !== "available" ||
+              !prompt.trim() ||
+              request.kind === "pending"
+            }
           >
             {request.kind === "pending" ? "Starting…" : "Start"}
           </Button>

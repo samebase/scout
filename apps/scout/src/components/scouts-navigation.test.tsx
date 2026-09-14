@@ -28,6 +28,8 @@ const remote = vi.hoisted(() => ({
     websiteIdentity: { firstName: "Conrad", lastName: "Scout" },
     displayName: "Conrad Scout",
     status: "active",
+    availability: "available",
+    currentActivity: null,
     agentMail: { inboxId: "inbox-1", address: "conrad@example.test" },
     firecrawl: { profileName: "conrad" },
   },
