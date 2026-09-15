@@ -32,6 +32,10 @@ import type * as agentsApi_requestCheckModel from "../agentsApi/requestCheckMode
 import type * as agentsApi_requestChecks from "../agentsApi/requestChecks.js";
 import type * as agentsApi_runtime from "../agentsApi/runtime.js";
 import type * as agentsApi_sessions from "../agentsApi/sessions.js";
+import type * as agentsApi_siteResearch from "../agentsApi/siteResearch.js";
+import type * as agentsApi_siteResearchModel from "../agentsApi/siteResearchModel.js";
+import type * as agentsApi_siteResearchRecords from "../agentsApi/siteResearchRecords.js";
+import type * as agentsApi_siteResearchSources from "../agentsApi/siteResearchSources.js";
 import type * as agentsApi_tools from "../agentsApi/tools.js";
 import type * as auth from "../auth.js";
 import type * as authEmail from "../authEmail.js";
@@ -151,6 +155,10 @@ declare const fullApi: ApiFromModules<{
   "agentsApi/requestChecks": typeof agentsApi_requestChecks;
   "agentsApi/runtime": typeof agentsApi_runtime;
   "agentsApi/sessions": typeof agentsApi_sessions;
+  "agentsApi/siteResearch": typeof agentsApi_siteResearch;
+  "agentsApi/siteResearchModel": typeof agentsApi_siteResearchModel;
+  "agentsApi/siteResearchRecords": typeof agentsApi_siteResearchRecords;
+  "agentsApi/siteResearchSources": typeof agentsApi_siteResearchSources;
   "agentsApi/tools": typeof agentsApi_tools;
   auth: typeof auth;
   authEmail: typeof authEmail;

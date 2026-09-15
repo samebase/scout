@@ -19,7 +19,7 @@ import {
 import { workspaceFileKey, workspaceStorage } from "../workspaceStorage";
 import { runWorkspaceShell } from "./workspaceShell";
 
-async function readStoredFile(entry: Extract<WorkspaceEntry, { kind: "file" }>) {
+export async function readStoredFile(entry: Extract<WorkspaceEntry, { kind: "file" }>) {
   const response = await fetch(await workspaceStorage().getUrl(entry.key), {
     signal: AbortSignal.timeout(20_000),
   });
@@ -33,6 +33,40 @@ async function readStoredFile(entry: Extract<WorkspaceEntry, { kind: "file" }>) 
   )
     throw new Error(`Workspace file failed its size or integrity check: ${entry.path}`);
   return bytes;
+}
+
+export async function saveWorkspaceFile(
+  ctx: ActionCtx,
+  args: { target: WorkspaceTarget; userId: Id<"users">; path: string; text: string },
+) {
+  const bytes = new TextEncoder().encode(args.text);
+  if (bytes.byteLength > MAX_WORKSPACE_FILE_BYTES)
+    throw new Error(`File exceeds ${MAX_WORKSPACE_FILE_BYTES} bytes: ${args.path}`);
+  const snapshot = await ctx.runMutation(internal.scout.workspaces.snapshot, {
+    target: args.target,
+    userId: args.userId,
+  });
+  const storage = workspaceStorage();
+  const key = workspaceFileKey({
+    ...args.target,
+    userId: args.userId,
+    uploadId: randomUUID(),
+    path: args.path,
+  });
+  await storage.store(ctx, bytes, { key, type: "text/plain; charset=utf-8" });
+  await ctx.runMutation(internal.scout.workspaces.addFile, {
+    workspaceId: snapshot.workspaceId,
+    userId: args.userId,
+    entry: {
+      kind: "file",
+      path: args.path,
+      key,
+      size: bytes.byteLength,
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+      mode: 0o644,
+      mtime: Date.now(),
+    },
+  });
 }
 
 export function createWorkspaceTools(

@@ -103,11 +103,11 @@ presentation where useful, but do not simply remove the guard from management qu
 
 ## Implementation order to try
 
-Member Scout browsing, site association, and request checks with concise titles
-are implemented. A [site-research prototype](site-research-prototype.md) now tests
-public source gathering before browser work. Three real trials produced briefings
-in 13–17 seconds, but improved browser behavior still needs a comparison. Keep the
-existing site workspaces and one chat; the proposed research step is not enabled.
+Member Scout browsing, site association, request checks, and [Site research](site-research.md)
+are implemented. New reviews gather a brief from public pages and existing guides
+before the browser agent starts. Agents shows the research beside the single chat,
+with source files and call details. Score Four completed a real review after reading
+its brief; broader comparisons are still needed.
 
 Use recorded browser navigation for an optional “Other sites visited” view; it is
 evidence of a visit, not a permanent dependency relationship. A site can have

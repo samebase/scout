@@ -193,9 +193,8 @@ export const addFile = internalMutation({
   handler: async (ctx, { workspaceId, userId, entry }) => {
     await requireUserPermission(ctx, userId, "access_play");
     const workspace = await ctx.db.get("scoutWorkspaces", workspaceId);
-    if (!workspace || workspace.kind !== "chat")
-      throw new Error("Private chat workspace not found");
-    await requireWorkspaceChat(ctx, workspace.threadId, userId);
+    if (!workspace) throw new Error("Workspace not found");
+    await requireWorkspaceOwner(ctx, workspace, userId);
     const segments = entry.path.split("/");
     if (
       !entry.path.startsWith(`${WORKSPACE_ROOT}/`) ||

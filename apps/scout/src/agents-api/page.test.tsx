@@ -112,6 +112,7 @@ function session(state: Session["state"] = { kind: "idle" }) {
     browser: null,
     usage: null,
     checks: [],
+    research: null,
     checkMessage: null,
     hasChat: true,
     cost: {
@@ -1243,4 +1244,74 @@ test("refreshes an ended session without sending, preserves drafts on failure, a
   updateQuery("agentsApi/sessions:get", session({ kind: "running" }));
   expect(screen.queryByRole("button", { name: "Refresh session" })).toBeNull();
   expect(remote.refresh).toHaveBeenCalledTimes(2);
+});
+
+test("opens research as a flat session step and links its calls to private workspace files", async () => {
+  const summary = { status: "completed", modelCost: 0.001, reportedCredits: 1 };
+  const research = {
+    _id: "research-1",
+    _creationTime: 1000,
+    sessionId: "session-1",
+    site: "example.com",
+    model: "gpt-5.6-luna",
+    ...summary,
+    state: {
+      kind: "completed",
+      finishedAt: 2000,
+      brief: "A public calculator.",
+      briefPath: "/workspace/research/brief.md",
+    },
+    calls: [
+      {
+        name: "brief",
+        startedAt: 1000,
+        finishedAt: 2000,
+        requestPath: "/workspace/research/request.json",
+        responsePath: "/workspace/research/response.json",
+        usage: { inputTokens: 100, outputTokens: 10 },
+        credits: null,
+      },
+    ],
+  };
+  remote.queries.set("agentsApi/sessions:get", { ...session(), research: summary });
+  remote.queries.set("agentsApi/sessions:list", [{ ...session(), research: summary }]);
+  remote.queries.set("agentsApi/siteResearchRecords:inspect", research);
+  const router = await open("/agents?session=session-1&step=site_research");
+  expect(await screen.findByRole("heading", { name: "Site research" })).toBeTruthy();
+  expect(screen.getByText("A public calculator.")).toBeTruthy();
+  expect(screen.getByRole("link", { name: /Site research/ }).getAttribute("aria-current")).toBe(
+    "page",
+  );
+  expect(screen.getByRole("link", { name: "Chat" }).getAttribute("aria-current")).toBeNull();
+  expect(screen.queryByRole("region", { name: "Conversation" })).toBeNull();
+  await userEvent.setup().click(screen.getByRole("link", { name: "Request" }));
+  expect(router.state.location.search).toMatchObject({
+    session: "session-1",
+    step: "chat",
+    view: "workspace",
+    file: "/workspace/research/request.json",
+  });
+});
+
+test("shows research during startup and allows stopping before the chat exists", async () => {
+  const summary = { status: "running", modelCost: null, reportedCredits: 0 };
+  remote.queries.set("agentsApi/sessions:get", {
+    ...session({ kind: "starting" }),
+    providerId: undefined,
+    research: summary,
+  });
+  remote.queries.set("agentsApi/siteResearchRecords:inspect", {
+    _id: "research-1",
+    _creationTime: 1000,
+    sessionId: "session-1",
+    site: "example.com",
+    model: "gpt-5.6-luna",
+    ...summary,
+    state: { kind: "running" },
+    calls: [],
+  });
+  await open("/agents?session=session-1");
+  expect(await screen.findByText("Gathering site information…")).toBeTruthy();
+  await userEvent.setup().click(screen.getByRole("button", { name: "Stop" }));
+  expect(remote.stop).toHaveBeenCalledWith({ sessionId: "session-1" });
 });

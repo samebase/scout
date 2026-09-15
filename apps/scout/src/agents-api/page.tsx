@@ -15,6 +15,7 @@ import {
   XIcon,
   LoaderCircleIcon,
   MessageSquareIcon,
+  SearchIcon,
 } from "lucide-react";
 import { useMemo, useRef, useState, type FormEvent } from "react";
 import { api } from "../../convex/_generated/api";
@@ -29,8 +30,10 @@ import {
   type AgentsSearch,
   type RequestCheck,
   type Session,
+  type SiteResearch,
 } from "./model";
 import { RequestCheckView, RequestCheckInspector } from "./request-check";
+import { SiteResearchView, SiteResearchInspector } from "./site-research";
 import { Transcript } from "./transcript";
 import { BrowserPanel } from "./browser";
 import { SessionCost } from "./cost";
@@ -58,6 +61,11 @@ function AgentsWorkspace({ search }: { search: AgentsSearch }) {
         },
   );
   const checking = Boolean(session && selectedStep(session, search) === "request_check");
+  const researching = Boolean(session && selectedStep(session, search) === "site_research");
+  const research = useQuery(
+    api.agentsApi.siteResearchRecords.inspect,
+    session && researching ? { sessionId: session._id } : "skip",
+  );
   const checkId = session && checking ? selectedCheckId(session, search) : undefined;
   const check = useQuery(
     api.agentsApi.requestChecks.inspect,
@@ -75,7 +83,7 @@ function AgentsWorkspace({ search }: { search: AgentsSearch }) {
       addressChrome={<AgentsChrome session={session ?? null} search={search} />}
       resizeHandleLabels={{
         left: "Resize sessions",
-        right: checking ? "Resize call details" : "Resize browser",
+        right: checking || researching ? "Resize call details" : "Resize browser",
       }}
       formatResizeHandleValueText={({ widthPx }) => `${widthPx} pixels wide`}
       left={
@@ -143,6 +151,35 @@ function AgentsWorkspace({ search }: { search: AgentsSearch }) {
                             </Link>
                           </li>
                         ))}
+                        {item.research && (
+                          <li>
+                            <Link
+                              to="/agents"
+                              resetScroll={false}
+                              search={{
+                                session: item._id,
+                                step: "site_research",
+                                sessions: search.sessions,
+                                inspector: search.inspector,
+                              }}
+                              aria-current={
+                                search.session === item._id && researching ? "page" : undefined
+                              }
+                              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-muted-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:bg-muted aria-[current=page]:text-foreground"
+                            >
+                              {item.research.status === "running" ? (
+                                <LoaderCircleIcon
+                                  className="size-3.5 animate-spin"
+                                  aria-hidden="true"
+                                />
+                              ) : (
+                                <SearchIcon className="size-3.5" aria-hidden="true" />
+                              )}
+                              Site research
+                              <span className="sr-only"> · {item.research.status}</span>
+                            </Link>
+                          </li>
+                        )}
                         {(item.hasChat || item.checks.length === 0) && (
                           <li>
                             <Link
@@ -155,7 +192,9 @@ function AgentsWorkspace({ search }: { search: AgentsSearch }) {
                                 inspector: search.inspector,
                               }}
                               aria-current={
-                                search.session === item._id && !checking ? "page" : undefined
+                                search.session === item._id && !checking && !researching
+                                  ? "page"
+                                  : undefined
                               }
                               className="flex items-center gap-2 rounded-md px-2 py-1.5 text-muted-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:bg-muted aria-[current=page]:text-foreground"
                             >
@@ -203,6 +242,7 @@ function AgentsWorkspace({ search }: { search: AgentsSearch }) {
             session={session}
             search={search}
             check={checkId === undefined ? null : check}
+            research={research}
           />
         )
       }
@@ -211,6 +251,8 @@ function AgentsWorkspace({ search }: { search: AgentsSearch }) {
           search.session === undefined ? undefined : session ? (
             checking ? (
               <RequestCheckInspector key={checkId} check={check} />
+            ) : researching ? (
+              <SiteResearchInspector research={research} />
             ) : (
               <BrowserPanel key={session._id} sessionId={session._id} search={search} />
             )
@@ -223,7 +265,7 @@ function AgentsWorkspace({ search }: { search: AgentsSearch }) {
 }
 
 function AgentsChrome({ session, search }: { session: Session | null; search: AgentsSearch }) {
-  const checking = session !== null && selectedStep(session, search) === "request_check";
+  const checking = session !== null && selectedStep(session, search) !== "chat";
   const navigate = useNavigate({ from: "/agents" });
   const { setMobilePane, toggleLeftPane, toggleRightPane } = useSidebarActions();
   const { isMobile, mobilePane, leftDesktopOpen, rightDesktopOpen } =
@@ -427,12 +469,15 @@ function SessionContent({
   session,
   search,
   check,
+  research,
 }: {
   session: Session;
   search: AgentsSearch;
   check: RequestCheck | null | undefined;
+  research: SiteResearch | null | undefined;
 }) {
   const checking = selectedStep(session, search) === "request_check";
+  const researching = selectedStep(session, search) === "site_research";
   const navigate = useNavigate({ from: "/agents" });
   const target = useMemo<WorkspaceTarget>(
     () => ({ kind: "agent_session", sessionId: session._id }),
@@ -440,13 +485,17 @@ function SessionContent({
   );
   return (
     <div className="h-full min-h-0">
-      <div className={checking || search.view === "workspace" ? "hidden" : "h-full min-h-0"}>
+      <div
+        hidden={checking || researching || search.view === "workspace"}
+        className="h-full min-h-0"
+      >
         {(session.providerId || session.checks.length === 0) && <SessionView session={session} />}
       </div>
       {checking && (
         <RequestCheckView key={selectedCheckId(session, search)} session={session} check={check} />
       )}
-      {!checking && search.view === "workspace" && (
+      {researching && <SiteResearchView session={session} research={research} />}
+      {!checking && !researching && search.view === "workspace" && (
         <ScoutWorkspace
           target={target}
           disabled

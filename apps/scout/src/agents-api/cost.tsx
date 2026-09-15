@@ -13,8 +13,11 @@ export function SessionCost({ session }: { session: Session }) {
   const checksCost = session.checks.reduce((sum, check) => sum + (check.cost ?? 0), 0);
   const checksComplete = session.checks.every((check) => check.cost !== null);
   const pricedChecks = session.checks.some((check) => check.cost !== null);
-  const complete = cost.totalEstimateUsd !== null && checksComplete;
-  const amount = (cost.totalEstimateUsd ?? cost.knownSubtotalUsd) + checksCost;
+  const complete = cost.totalEstimateUsd !== null && checksComplete && !session.research;
+  const amount =
+    (cost.totalEstimateUsd ?? cost.knownSubtotalUsd) +
+    checksCost +
+    (session.research?.modelCost ?? 0);
   const showAmount = cost.modelEstimateUsd !== null || pricedChecks || amount > 0;
 
   return (
@@ -25,6 +28,20 @@ export function SessionCost({ session }: { session: Session }) {
           : "Cost pending"}
       </summary>
       <dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-6 gap-y-2 py-2 text-muted-foreground">
+        {session.research && (
+          <>
+            <dt>Research model</dt>
+            <dd className="text-right tabular-nums">
+              {session.research.modelCost === null
+                ? "Unpriced"
+                : money.format(session.research.modelCost)}
+            </dd>
+            <dt>Research Firecrawl</dt>
+            <dd className="text-right tabular-nums">
+              {session.research.reportedCredits} reported credits
+            </dd>
+          </>
+        )}
         {session.checks.length > 0 && (
           <>
             <dt>Checks</dt>
