@@ -7,7 +7,6 @@ import {
   SelectValue,
 } from "#components/ui/select";
 import { accountAccessMessage, canAccess, useViewerAccess } from "../../lib/access";
-import { SidebarLayout } from "@samebase/sidebars/SidebarLayout";
 import { useSidebarActions } from "@samebase/sidebars/SidebarRuntime";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useConvexAuth, useMutation, usePaginatedQuery, useQuery } from "convex/react";
@@ -26,7 +25,7 @@ import { productRoutes, type ProductKind, type ConversationSearch } from "./mode
 import { gameInviteDisplayText } from "../play/invite";
 import { ReviewSite } from "./review-site";
 import { ConversationComposer } from "./composer";
-import { ConversationSidebar, BrowserToggle, BrowserStop } from "./sidebar";
+import { ConversationSidebar, ConversationLayout, BrowserToggle, BrowserStop } from "./sidebar";
 import {
   MessageScrollerProvider,
   MessageScroller,
@@ -363,7 +362,7 @@ function SessionLoader({
         (thread.status === "finished" && thread.hasWalkthrough ? "walkthrough" : "chat"))
       : "chat";
   return (
-    <ConversationSidebar key={threadId} initialBrowserOpen={initialView !== "walkthrough"}>
+    <ConversationSidebar key={threadId}>
       <ConversationSession thread={thread} kind={kind} search={search} initialView={initialView} />
     </ConversationSidebar>
   );
@@ -589,18 +588,13 @@ function ConversationSession({
           {session?.kind === "closed" ? "Replay" : "Scout’s view"}
         </span>
       )}
-      <BrowserToggle
-        action="close"
-        view={showingWalkthrough ? "walkthrough" : "chat"}
-        replay={kind === "review" && session?.kind === "closed"}
-      />
+      {kind === "play" && <BrowserToggle action="close" />}
     </div>
   );
 
   return (
-    <SidebarLayout
-      mobileMinResizeBehavior="min_resize_to_slide"
-      resizeHandleLabels={{ left: "Resize chat navigation", right: "Resize Scout’s view" }}
+    <ConversationLayout
+      kind={kind}
       addressChrome={
         <>
           <div className="mb-5 flex items-center justify-between gap-4 max-[760px]:mb-3">
@@ -647,12 +641,8 @@ function ConversationSession({
                   <ArrowUpRightIcon size={15} aria-hidden="true" />
                 </Link>
               )}
-              <BrowserToggle
-                action="open"
-                view={showingWalkthrough ? "walkthrough" : "chat"}
-                replay={kind === "review" && session?.kind === "closed"}
-              />
-              {canStop && (
+              {kind === "play" && <BrowserToggle action="open" />}
+              {kind === "play" && canStop && (
                 <BrowserStop
                   onStop={() => {
                     void stop();
@@ -914,76 +904,79 @@ function ConversationSession({
         </section>
       }
       right={
-        <section
-          aria-label="Scout's browser"
-          className="flex h-full min-h-0 flex-col overflow-hidden rounded-[var(--product-panel-radius)] border border-border bg-secondary/50 min-[768px]:ml-1"
-        >
-          {session?.kind === "closed" ? (
-            <BrowserReplay
-              key={session.sessionId}
-              sessionId={session.sessionId}
-              mode="playback"
-              header={browserHeader}
-              selectedPageId={
-                search.replay?.sessionId === session.sessionId ? search.replay.pageId : null
-              }
-              onSelectPage={(pageId) => {
-                void navigate({
-                  to: productRoutes[kind],
-                  search: {
-                    ...search,
-                    session: session.sessionId,
-                    replay: pageId === null ? undefined : { sessionId: session.sessionId, pageId },
-                  },
-                });
-              }}
-            />
-          ) : (
-            <>
-              {browserHeader}
-              {liveView?.url ? (
-                <>
-                  <iframe
-                    key={session?.sessionId}
-                    src={liveView.url}
-                    className="min-h-0 w-full flex-1 border-0 bg-white"
-                    title="Scout's live browser"
-                    sandbox="allow-same-origin allow-scripts"
-                    referrerPolicy="no-referrer"
-                  />
-                  <a
-                    className="flex min-h-11 items-center justify-center gap-1.5 p-2.5 text-xs text-muted-foreground hover:text-primary"
-                    href={liveView.url}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Open browser <ArrowUpRightIcon size={14} aria-hidden="true" />
-                  </a>
-                </>
-              ) : (
-                <div className="flex flex-1 flex-col items-center justify-center gap-6 p-7 text-center">
-                  {kind === "play" ? (
-                    <div className="grid size-32 place-items-center rounded-full bg-play-sand/80">
-                      <ScoutPiece className="-rotate-6" />
-                    </div>
-                  ) : (
-                    <MonitorIcon
-                      size={32}
-                      strokeWidth={1.25}
-                      className="text-muted-foreground"
-                      aria-hidden="true"
+        showingWalkthrough ? undefined : (
+          <section
+            aria-label="Scout's browser"
+            className="flex h-full min-h-0 flex-col overflow-hidden rounded-[var(--product-panel-radius)] border border-border bg-secondary/50 min-[768px]:ml-1"
+          >
+            {session?.kind === "closed" ? (
+              <BrowserReplay
+                key={session.sessionId}
+                sessionId={session.sessionId}
+                mode="playback"
+                header={browserHeader}
+                selectedPageId={
+                  search.replay?.sessionId === session.sessionId ? search.replay.pageId : null
+                }
+                onSelectPage={(pageId) => {
+                  void navigate({
+                    to: productRoutes[kind],
+                    search: {
+                      ...search,
+                      session: session.sessionId,
+                      replay:
+                        pageId === null ? undefined : { sessionId: session.sessionId, pageId },
+                    },
+                  });
+                }}
+              />
+            ) : (
+              <>
+                {browserHeader}
+                {liveView?.url ? (
+                  <>
+                    <iframe
+                      key={session?.sessionId}
+                      src={liveView.url}
+                      className="min-h-0 w-full flex-1 border-0 bg-white"
+                      title="Scout's live browser"
+                      sandbox="allow-same-origin allow-scripts"
+                      referrerPolicy="no-referrer"
                     />
-                  )}
-                  <p className="max-w-[270px] text-sm text-muted-foreground">
-                    {session?.kind === "closing"
-                      ? "Closing the browser…"
-                      : "Scout hasn’t opened a browser yet."}
-                  </p>
-                </div>
-              )}
-            </>
-          )}
-        </section>
+                    <a
+                      className="flex min-h-11 items-center justify-center gap-1.5 p-2.5 text-xs text-muted-foreground hover:text-primary"
+                      href={liveView.url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Open browser <ArrowUpRightIcon size={14} aria-hidden="true" />
+                    </a>
+                  </>
+                ) : (
+                  <div className="flex flex-1 flex-col items-center justify-center gap-6 p-7 text-center">
+                    {kind === "play" ? (
+                      <div className="grid size-32 place-items-center rounded-full bg-play-sand/80">
+                        <ScoutPiece className="-rotate-6" />
+                      </div>
+                    ) : (
+                      <MonitorIcon
+                        size={32}
+                        strokeWidth={1.25}
+                        className="text-muted-foreground"
+                        aria-hidden="true"
+                      />
+                    )}
+                    <p className="max-w-[270px] text-sm text-muted-foreground">
+                      {session?.kind === "closing"
+                        ? "Closing the browser…"
+                        : "Scout hasn’t opened a browser yet."}
+                    </p>
+                  </div>
+                )}
+              </>
+            )}
+          </section>
+        )
       }
     />
   );

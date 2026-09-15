@@ -186,8 +186,11 @@ verification of the saved image. Product trials must check the images themselves
 
 In Agents, add Walkthrough beside Request check, Site research, and Chat in the
 existing flat Task tree. In the public review, show the explanation with a large
-uncropped screenshot, Previous/Next controls, a counter, and Expand. Keep Chat and
-Replay reachable. Load the displayed original on demand, then preload the next
+uncropped screenshot, Previous/Next controls, a counter, and Expand. Chat pairs the
+conversation with its replay or live browser. Switching to Walkthrough replaces
+both with the explanations and screenshots; there is no separate replay toggle.
+On narrow screens, Chat stacks the conversation above the browser.
+Load the displayed original on demand, then preload the next
 screenshot at low priority. Reuse unexpired signed URLs within the open Task and
 share in-flight URL requests when navigation catches up with a preload. Do not
 decode 20 full images at once. Replay selection may open the source browser session, but should
@@ -247,7 +250,7 @@ Workspace button while viewing Walkthrough.
 
 The UI now puts explanations beside the uncropped image in a wide pane and stacks
 them in a narrow pane. Expanded screenshots fit the viewport. Finished public
-reviews start on Walkthrough, with Chat and Replay available and a compact
+reviews start on Walkthrough, with a Chat view containing the replay and a compact
 follow-up link. Running or interrupted tasks keep the composer and Stop controls.
 
 Three subagents reviewed and implemented capture association, storage/access, and

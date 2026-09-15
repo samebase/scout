@@ -194,7 +194,7 @@ async function openPlay(path = "/play") {
   return router;
 }
 
-test("a completed managed Review opens its walkthrough with Chat and Replay available", async () => {
+test("a completed managed Review opens its walkthrough and pairs replay with Chat", async () => {
   remote.queries.set(
     "scout/activity:get",
     session({
@@ -233,18 +233,20 @@ test("a completed managed Review opens its walkthrough with Chat and Replay avai
   expect(screen.getByRole("link", { name: "Walkthrough" }).getAttribute("aria-current")).toBe(
     "page",
   );
-  fireEvent.click(screen.getByRole("button", { name: "Show replay" }));
-  expect(screen.getByRole("button", { name: "Back to walkthrough" })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Back to walkthrough" }));
+  expect(screen.queryByRole("region", { name: "Scout's browser" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Show replay" })).toBeNull();
   fireEvent.click(screen.getByRole("link", { name: "Chat" }));
   expect(await screen.findByRole("region", { name: "Conversation with Scout" })).toBeTruthy();
+  expect(screen.getByRole("region", { name: "Scout's browser" })).toBeTruthy();
   expect(router.state.location.search).toMatchObject({ view: "chat" });
   const bookmark = router.state.location.href;
   act(() => router.history.back());
   expect(await screen.findByRole("heading", { name: "Undo a move" })).toBeTruthy();
+  expect(screen.queryByRole("region", { name: "Scout's browser" })).toBeNull();
   cleanup();
   await openPlay(bookmark);
   expect(await screen.findByRole("region", { name: "Conversation with Scout" })).toBeTruthy();
+  expect(screen.getByRole("region", { name: "Scout's browser" })).toBeTruthy();
   expect(screen.queryByRole("heading", { name: "Undo a move" })).toBeNull();
 });
 
@@ -330,7 +332,7 @@ test("a direct walkthrough link shows an older task's empty state without forcin
   expect(remote.sendManaged).not.toHaveBeenCalled();
 });
 
-test("desktop walkthrough starts with Replay collapsed and preserves pane choices while switching views", async () => {
+test("desktop Chat always shows its replay and Walkthrough occupies the full layout", async () => {
   vi.spyOn(window, "innerWidth", "get").mockReturnValue(1440);
   remote.queries.set(
     "scout/activity:get",
@@ -346,23 +348,23 @@ test("desktop walkthrough starts with Replay collapsed and preserves pane choice
   );
   remote.queries.set("agentsApi/walkthrough:get", { walkthrough: null, captures: [] });
   await openPlay("/review?thread=game-thread");
-  expect(await screen.findByRole("button", { name: "Show replay" })).toBeTruthy();
-  const pane = screen.getByRole("region", { name: "Scout's browser" }).closest("[data-pane-side]");
-  expect(pane?.hasAttribute("data-desktop-open")).toBe(false);
-  fireEvent.click(screen.getByRole("button", { name: "Show replay" }));
-  const browser = await screen.findByRole("region", { name: "Scout's browser" });
-  expect(pane?.hasAttribute("data-desktop-open")).toBe(true);
-  fireEvent.click(screen.getByRole("link", { name: "Chat" }));
-  expect(await screen.findByRole("region", { name: "Conversation with Scout" })).toBeTruthy();
-  expect(screen.getByRole("region", { name: "Scout's browser" })).toBe(browser);
-  fireEvent.click(screen.getByRole("button", { name: "Hide replay" }));
-  fireEvent.click(screen.getByRole("link", { name: "Walkthrough" }));
   expect(await screen.findByRole("heading", { name: "No screenshots saved" })).toBeTruthy();
-  expect(pane?.hasAttribute("data-desktop-open")).toBe(false);
-  expect(screen.getByRole("button", { name: "Show replay" })).toBeTruthy();
+  for (let visit = 0; visit < 2; visit += 1) {
+    expect(screen.queryByRole("region", { name: "Scout's browser" })).toBeNull();
+    expect(screen.queryByRole("separator", { name: "Resize Scout’s view" })).toBeNull();
+    fireEvent.click(screen.getByRole("link", { name: "Chat" }));
+    expect(await screen.findByRole("region", { name: "Conversation with Scout" })).toBeTruthy();
+    const pane = screen
+      .getByRole("region", { name: "Scout's browser" })
+      .closest("[data-pane-side]");
+    expect(pane?.hasAttribute("data-desktop-open")).toBe(true);
+    expect(screen.queryByRole("button", { name: /Show replay|Hide replay/ })).toBeNull();
+    fireEvent.click(screen.getByRole("link", { name: "Walkthrough" }));
+    expect(await screen.findByRole("heading", { name: "No screenshots saved" })).toBeTruthy();
+  }
 });
 
-test("mobile Review view links return from Replay to the selected main view", async () => {
+test("mobile Review keeps replay in Chat without pane toggles", async () => {
   remote.queries.set(
     "scout/activity:get",
     session({
@@ -377,20 +379,21 @@ test("mobile Review view links return from Replay to the selected main view", as
   );
   remote.queries.set("agentsApi/walkthrough:get", { walkthrough: null, captures: [] });
   const router = await openPlay("/review?thread=game-thread");
-  const layout = (await screen.findByRole("navigation", { name: "Review views" }))
-    .closest('[data-sidebar-layout-part="root"]')
-    ?.querySelector('[data-sidebar-layout-part="viewport"]');
+  await screen.findByRole("navigation", { name: "Review views" });
   for (const { label, view } of [
+    { label: "Chat", view: "chat" },
     { label: "Walkthrough", view: "walkthrough" },
     { label: "Chat", view: "chat" },
   ]) {
-    fireEvent.click(screen.getByRole("button", { name: "Show replay" }));
-    expect(layout?.getAttribute("data-mobile-pane")).toBe("right");
     fireEvent.click(screen.getByRole("link", { name: label }));
     await waitFor(() => expect(router.state.location.search.view).toBe(view));
-    expect(layout?.getAttribute("data-mobile-pane")).toBe("main");
     expect(screen.getByRole("link", { name: label }).getAttribute("aria-current")).toBe("page");
-    expect(screen.getByRole("button", { name: "Show replay" })).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "Scout's browser" }) !== null).toBe(
+      view === "chat",
+    );
+    expect(
+      screen.queryByRole("button", { name: /Show replay|Hide replay|Back to chat/ }),
+    ).toBeNull();
   }
 });
 
