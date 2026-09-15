@@ -558,14 +558,16 @@ describe("Chat workspace", () => {
     remote.authenticated = false;
     remote.queries.set("accounts:currentViewerAccess", { kind: "anonymous" });
     remote.queries.set("scout/activity:list", { results: [], status: "Exhausted" });
-    remote.queries.set("scout/activity:products", { page: [], nextSite: null });
     const router = await openChats("/");
 
     expect(await screen.findByRole("heading", { name: "Send a Scout instead." })).toBeTruthy();
     expect(router.state.location.pathname).toBe("/");
     expect(screen.queryByRole("link", { name: "Play a game" })).toBeNull();
     expect(screen.queryByLabelText("Password")).toBeNull();
-    expect(remote.queryCalls).toHaveBeenCalledWith("scout/activity:products", { afterSite: null });
+    expect(remote.queryCalls).toHaveBeenCalledWith("scout/activity:list", {
+      site: null,
+      scope: "public",
+    });
     const user = userEvent.setup();
     await user.type(screen.getByRole("textbox", { name: "Filter by site" }), "samebase.com");
     await user.click(screen.getByRole("button", { name: "Apply site filter" }));

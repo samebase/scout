@@ -89,9 +89,9 @@ test("shows a public review to members but hides an unapproved public request", 
   const t = await setup();
   await t.backend.run((ctx) => ctx.db.patch(t.chatId, { visibility: "public" }));
   expect(await t.member.query(api.scout.scouts.get, { slug: "conrad" })).toMatchObject({
-    currentActivity: { kind: "visible", activity: { primarySite: "samebase.com" } },
+    currentActivity: { kind: "private" },
   });
-  await t.backend.run((ctx) =>
+  const checkId = await t.backend.run((ctx) =>
     ctx.db.insert("agentsApiRequestChecks", {
       kind: "initial",
       sessionId: t.sessionId,
@@ -102,6 +102,23 @@ test("shows a public review to members but hides an unapproved public request", 
   );
   expect(await t.member.query(api.scout.scouts.get, { slug: "conrad" })).toMatchObject({
     currentActivity: { kind: "private" },
+  });
+  await t.backend.run((ctx) =>
+    ctx.db.patch(checkId, {
+      state: {
+        kind: "completed",
+        finishedAt: 1,
+        call: { startedAt: 0, request: "{}", response: "{}", usage: null },
+        result: {
+          kind: "initial",
+          title: "Test Samebase signup",
+          decision: { kind: "approved" },
+        },
+      },
+    }),
+  );
+  expect(await t.member.query(api.scout.scouts.get, { slug: "conrad" })).toMatchObject({
+    currentActivity: { kind: "visible", activity: { primarySite: "samebase.com" } },
   });
 });
 

@@ -7,6 +7,7 @@ import { api, components, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import schema from "./schema";
 import { ADMIN_EMAIL, insertTestAccount } from "./testing/accounts";
+import { omitNullish } from "../shared/omitNullish";
 
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => {
@@ -101,64 +102,350 @@ async function setup() {
     });
     return sessionId;
   }
-  return { backend, member, other, memberId, otherId, adminId, scoutId, chat, review };
+  async function managedReview(site: string | null) {
+    return backend.run(async (ctx) => {
+      const sessionId = await ctx.db.insert("agentsApiSessions", {
+        userId: memberId,
+        scoutId,
+        scoutName: "Play Scout",
+        title: "Review the signup flow",
+        model: "gpt-5.6-luna",
+        state: { kind: "idle" },
+        active: false,
+        nextSequence: 0,
+        browser: null,
+        usage: null,
+      });
+      const chatId = await ctx.db.insert("scoutChats", {
+        threadId: sessionId,
+        userId: memberId,
+        scoutId,
+        createdAt: Date.now(),
+        runtime: { kind: "agents_api", sessionId },
+        purpose: { kind: "review" },
+        visibility: "public",
+        ...omitNullish({ primarySite: site }),
+      });
+      const checkId = await ctx.db.insert("agentsApiRequestChecks", {
+        sessionId,
+        kind: "initial",
+        model: "gpt-5.6-luna",
+        prompt: "private initial request",
+        state: {
+          kind: "completed",
+          finishedAt: Date.now(),
+          call: { startedAt: Date.now(), request: "private metadata", response: "{}", usage: null },
+          result: {
+            kind: "initial",
+            title: "Review the signup flow",
+            decision: { kind: "approved" },
+          },
+        },
+      });
+      return { sessionId, chatId, checkId };
+    });
+  }
+  return {
+    backend,
+    member,
+    other,
+    memberId,
+    otherId,
+    adminId,
+    scoutId,
+    chat,
+    review,
+    managedReview,
+  };
 }
 
-test("product pages select the latest public review per site without duplicate products", async () => {
+test("one feed supports site groups, the first three reviews, and paginated inline history", async () => {
   const t = await setup();
-  const sites = Array.from({ length: 10 }, (_, i) => `product-${i}.test`);
-  for (const site of sites.toReversed()) {
-    const review = await t.chat({ kind: "review" }, "public");
-    await t.backend.run((ctx) => ctx.db.patch(review.chatId, { primarySite: site }));
-  }
-  let latestThreadId = "";
-  for (let i = 0; i < 12; i++) {
+  const otherSite = await t.managedReview("other.test");
+  const unassigned = await t.managedReview(null);
+  const reviews = [];
+  for (let i = 0; i < 8; i++) {
     vi.advanceTimersByTime(1);
-    const review = await t.chat({ kind: "review" }, "public");
-    await t.backend.run((ctx) => ctx.db.patch(review.chatId, { primarySite: sites[0] }));
-    latestThreadId = review.threadId;
+    reviews.unshift(await t.managedReview("example.test"));
   }
-  for (const site of [sites[0], "private-only.test"]) {
-    const review = await t.chat({ kind: "review" }, "private");
-    await t.backend.run((ctx) => ctx.db.patch(review.chatId, { primarySite: site }));
-  }
-  const general = await t.chat({ kind: "general" }, "public");
-  await t.backend.run((ctx) => ctx.db.patch(general.chatId, { primarySite: "general.test" }));
-  await t.chat({ kind: "review" }, "public");
-
-  const first = await t.backend.query(api.scout.activity.products, { afterSite: null });
-  expect(first.page.map((review) => review.primarySite)).toEqual(sites.slice(0, 8));
-  expect(first.page[0].threadId).toBe(latestThreadId);
-  expect(first.nextSite).toBe(sites[7]);
-  const second = await t.backend.query(api.scout.activity.products, { afterSite: first.nextSite });
-  expect(second.page.map((review) => review.primarySite)).toEqual(sites.slice(8));
-  expect(second.nextSite).toBeNull();
+  const feed = await t.backend.query(api.scout.activity.list, {
+    scope: "public",
+    site: null,
+    paginationOpts: { cursor: null, numItems: 24 },
+  });
+  expect(feed.page.map((review) => review.threadId)).toEqual([
+    ...reviews.map((review) => review.sessionId),
+    unassigned.sessionId,
+    otherSite.sessionId,
+  ]);
+  expect(feed.isDone).toBe(true);
+  const history = (cursor: string | null) =>
+    t.backend.query(api.scout.activity.list, {
+      scope: "public",
+      site: " EXAMPLE.TEST ",
+      paginationOpts: { cursor, numItems: 3 },
+    });
+  const first = await history(null);
+  const second = await history(first.continueCursor);
+  const third = await history(second.continueCursor);
+  expect(first.page.map((review) => review.threadId)).toEqual(
+    feed.page
+      .filter((review) => review.primarySite === "example.test")
+      .slice(0, 3)
+      .map((review) => review.threadId),
+  );
+  expect([...first.page, ...second.page, ...third.page].map((review) => review.threadId)).toEqual(
+    reviews.map((review) => review.sessionId),
+  );
+  expect(third.isDone).toBe(true);
 });
 
-test("an unchecked review cannot replace an approved product in the public directory", async () => {
+test.each([
+  { name: "missing", state: null },
+  { name: "pending", state: { kind: "pending" } },
+  { name: "running", state: { kind: "running", startedAt: 1, request: "private request" } },
+  { name: "cancelled", state: { kind: "cancelled" } },
+  { name: "failed", state: { kind: "failed", finishedAt: 1, call: null, error: "private error" } },
+  {
+    name: "rejected",
+    state: {
+      kind: "completed",
+      finishedAt: 1,
+      call: { startedAt: 1, request: "private request", response: "{}", usage: null },
+      result: {
+        kind: "initial",
+        title: "private rejected title",
+        decision: { kind: "rejected", reason: "private rejection reason" },
+      },
+    },
+  },
+] satisfies {
+  name: string;
+  state: Extract<Doc<"agentsApiRequestChecks">, { kind: "initial" }>["state"] | null;
+}[])(
+  "$name initial checks hide the task and hostname while preserving owner access",
+  async ({ state }) => {
+    const t = await setup();
+    const previous = await t.managedReview("visible.test");
+    vi.advanceTimersByTime(1);
+    const hidden = await t.managedReview("hidden-only.test");
+    await t.backend.run(async (ctx) => {
+      if (state === null) await ctx.db.delete(hidden.checkId);
+      else await ctx.db.patch(hidden.checkId, { state });
+      await ctx.db.patch(hidden.sessionId, {
+        walkthrough: { summary: "private walkthrough", sections: [] },
+      });
+    });
+    for (const reader of [t.backend, t.other, t.member]) {
+      const first = await reader.query(api.scout.activity.list, {
+        scope: "public",
+        site: null,
+        paginationOpts: { cursor: null, numItems: 1 },
+      });
+      expect(first.page).toEqual([]);
+      expect(first.isDone).toBe(false);
+      expect(JSON.stringify(first)).not.toMatch(/hidden-only|private walkthrough|private request/);
+      const next = await reader.query(api.scout.activity.list, {
+        scope: "public",
+        site: null,
+        paginationOpts: { cursor: first.continueCursor, numItems: 1 },
+      });
+      expect(next.page.map((review) => review.threadId)).toEqual([previous.sessionId]);
+    }
+    for (const reader of [t.backend, t.other]) {
+      expect(await reader.query(api.scout.activity.get, { threadId: hidden.sessionId })).toBeNull();
+      expect(
+        await reader.query(api.scout.activity.preview, { threadId: hidden.sessionId }),
+      ).toBeNull();
+      expect(
+        await reader.query(api.scout.activity.messages, {
+          threadId: hidden.sessionId,
+          paginationOpts: { cursor: null, numItems: 3 },
+        }),
+      ).toMatchObject({ page: [], isDone: true });
+      expect(
+        (
+          await reader.query(api.scout.activity.list, {
+            scope: "public",
+            site: "hidden-only.test",
+            paginationOpts: { cursor: null, numItems: 3 },
+          })
+        ).page,
+      ).toEqual([]);
+    }
+    const mine = await t.member.query(api.scout.activity.list, {
+      scope: "mine",
+      site: "hidden-only.test",
+      paginationOpts: { cursor: null, numItems: 3 },
+    });
+    expect(mine.page.map((review) => review.threadId)).toEqual([hidden.sessionId]);
+    expect(
+      await t.member.query(api.scout.activity.get, { threadId: hidden.sessionId }),
+    ).not.toBeNull();
+  },
+);
+
+test("bounded pages traverse a long run of hidden reviews without leaking site names or skipping older tasks", async () => {
   const t = await setup();
-  const previous = await t.chat({ kind: "review" }, "public");
-  await t.backend.run((ctx) => ctx.db.patch(previous.chatId, { primarySite: "example.test" }));
-  vi.advanceTimersByTime(1);
-  const sessionId = await t.review();
-  await t.backend.run(async (ctx) => {
-    const chat = await ctx.db
-      .query("scoutChats")
-      .withIndex("by_thread_id", (q) => q.eq("threadId", sessionId))
-      .unique();
-    const check = await ctx.db
-      .query("agentsApiRequestChecks")
-      .withIndex("by_session_id_and_kind", (q) =>
-        q.eq("sessionId", sessionId).eq("kind", "initial"),
-      )
-      .unique();
-    if (!chat || !check) throw new Error("Missing test review");
-    await ctx.db.patch(chat._id, { primarySite: "example.test" });
-    await ctx.db.patch(check._id, { state: { kind: "pending" } });
+  const oldest = await t.managedReview("oldest.test");
+  for (let i = 0; i < 60; i++) {
+    const hidden = await t.managedReview("hidden-only.test");
+    await t.backend.run((ctx) => ctx.db.patch(hidden.checkId, { state: { kind: "pending" } }));
+  }
+  const list = (cursor: string | null) =>
+    t.backend.query(api.scout.activity.list, {
+      scope: "public",
+      site: null,
+      paginationOpts: {
+        cursor,
+        numItems: 10_000,
+        maximumRowsRead: 10_000,
+        maximumBytesRead: 10_000_000,
+      },
+    });
+  const first = await list(null);
+  const second = await list(first.continueCursor);
+  const third = await list(second.continueCursor);
+  expect(first).toMatchObject({ page: [], isDone: false, pageStatus: "SplitRequired" });
+  expect(second).toMatchObject({ page: [], isDone: false, pageStatus: "SplitRequired" });
+  expect(first.splitCursor).toEqual(expect.any(String));
+  expect(second.continueCursor).not.toBe(first.continueCursor);
+  expect(third.page.map((review) => review.threadId)).toEqual([oldest.sessionId]);
+  expect(third.isDone).toBe(true);
+  expect(JSON.stringify([first, second, third])).not.toContain("hidden-only.test");
+});
+
+test("native page bounds preserve end cursors, split metadata, and stricter caller budgets", async () => {
+  const t = await setup();
+  const reviews = [];
+  for (let i = 0; i < 50; i++) reviews.unshift(await t.managedReview("example.test"));
+  const args = { scope: "public", site: null } as const;
+  const first = await t.backend.query(api.scout.activity.list, {
+    ...args,
+    paginationOpts: { cursor: null, numItems: 1000 },
   });
-  const products = await t.backend.query(api.scout.activity.products, { afterSite: null });
-  expect(products.page.map((review) => review.threadId)).toEqual([previous.threadId]);
-  expect(await t.backend.query(api.scout.activity.preview, { threadId: sessionId })).toBeNull();
+  expect(first.page).toHaveLength(24);
+  expect(first.pageStatus).toBe("SplitRequired");
+  const second = await t.backend.query(api.scout.activity.list, {
+    ...args,
+    paginationOpts: { cursor: first.continueCursor, numItems: 24 },
+  });
+  const third = await t.backend.query(api.scout.activity.list, {
+    ...args,
+    paginationOpts: { cursor: second.continueCursor, numItems: 24 },
+  });
+  expect([...first.page, ...second.page, ...third.page].map((review) => review.threadId)).toEqual(
+    reviews.map((review) => review.sessionId),
+  );
+  const bounded = await t.backend.query(api.scout.activity.list, {
+    ...args,
+    paginationOpts: { cursor: null, endCursor: third.continueCursor, numItems: 1, id: 42 },
+  });
+  expect(bounded.page.map((review) => review.threadId)).toEqual(
+    first.page.map((review) => review.threadId),
+  );
+  expect(bounded.pageStatus).toBe("SplitRequired");
+  const narrow = await t.backend.query(api.scout.activity.list, {
+    ...args,
+    paginationOpts: { cursor: null, numItems: 20, maximumRowsRead: 2 },
+  });
+  expect(narrow.page).toHaveLength(2);
+  expect(narrow.splitCursor).toEqual(expect.any(String));
+  const byteLimited = await t.backend.query(api.scout.activity.list, {
+    ...args,
+    paginationOpts: { cursor: null, numItems: 20, maximumBytesRead: 1 },
+  });
+  expect(byteLimited.page).toHaveLength(1);
+  expect(byteLimited.pageStatus).toBe("SplitRequired");
+  const split = await t.backend.query(api.scout.activity.list, {
+    ...args,
+    paginationOpts: {
+      cursor: null,
+      numItems: 20,
+      ...omitNullish({ endCursor: narrow.splitCursor }),
+    },
+  });
+  expect(split.page.map((review) => review.threadId)).toEqual([reviews[0].sessionId]);
+});
+
+test("unassigned reviews and private tasks remain accessible only to their owner in mine", async () => {
+  const t = await setup();
+  const own = await t.managedReview(null);
+  const other = await t.managedReview("private-other.test");
+  await t.backend.run(async (ctx) => {
+    await ctx.db.patch(own.chatId, { visibility: "private" });
+    await ctx.db.patch(own.checkId, { state: { kind: "pending" } });
+    await ctx.db.patch(other.chatId, { visibility: "private", userId: t.otherId });
+    await ctx.db.patch(other.sessionId, { userId: t.otherId });
+  });
+  const mine = await t.member.query(api.scout.activity.list, {
+    scope: "mine",
+    site: null,
+    paginationOpts: { cursor: null, numItems: 24 },
+  });
+  expect(mine.page).toMatchObject([
+    { threadId: own.sessionId, primarySite: null, visibility: "private", walkthrough: null },
+  ]);
+  expect(JSON.stringify(mine)).not.toContain("private-other.test");
+  const publicFeed = await t.backend.query(api.scout.activity.list, {
+    scope: "public",
+    site: null,
+    paginationOpts: { cursor: null, numItems: 24 },
+  });
+  expect(publicFeed.page).toEqual([]);
+  expect(JSON.stringify(publicFeed)).not.toContain("private-other.test");
+});
+
+test("tasks return the stored walkthrough summary and all check results without inventing checks for older reports", async () => {
+  const t = await setup();
+  const reviewed = await t.managedReview("example.test");
+  const walkthrough = {
+    summary: "Signup succeeded, but the settings page failed to save.",
+    checks: [
+      {
+        label: "Signup",
+        result: "passed",
+        explanation: "Created an account and opened the welcome page.",
+      },
+      {
+        label: "Save settings",
+        result: "failed",
+        explanation: "The save button returned a server error.",
+      },
+      { label: "Billing", result: "untested", explanation: "Billing was outside this review." },
+    ],
+    sections: [{ heading: "Signup", explanation: "Detailed walkthrough section", captureIds: [] }],
+  } satisfies NonNullable<Doc<"agentsApiSessions">["walkthrough"]>;
+  await t.backend.run((ctx) => ctx.db.patch(reviewed.sessionId, { walkthrough }));
+  const args = {
+    scope: "public",
+    site: null,
+    paginationOpts: { cursor: null, numItems: 3 },
+  } as const;
+  const feed = await t.backend.query(api.scout.activity.list, args);
+  expect(feed.page[0].walkthrough).toEqual({
+    summary: walkthrough.summary,
+    checks: walkthrough.checks,
+  });
+  expect(JSON.stringify(feed)).not.toMatch(
+    /private metadata|private initial request|Detailed walkthrough section/,
+  );
+  expect(
+    await t.backend.query(api.scout.activity.preview, { threadId: reviewed.sessionId }),
+  ).toEqual({
+    screenshot: null,
+    walkthroughSummary: walkthrough.summary,
+  });
+  await t.backend.run((ctx) =>
+    ctx.db.patch(reviewed.sessionId, {
+      walkthrough: { summary: "Existing report without structured checks", sections: [] },
+    }),
+  );
+  const old = await t.backend.query(api.scout.activity.list, args);
+  expect(old.page[0].walkthrough).toEqual({ summary: "Existing report without structured checks" });
+  await t.backend.run((ctx) => ctx.db.patch(reviewed.sessionId, { walkthrough: undefined }));
+  const pending = await t.backend.query(api.scout.activity.list, args);
+  expect(pending.page[0].walkthrough).toBeNull();
 });
 
 test("review site assignment preserves the subject across navigation and owner corrections", async () => {

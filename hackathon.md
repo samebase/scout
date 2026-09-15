@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-15T17:59:05Z
+- **Last updated:** 2026-09-15T21:52:01Z
 
 ## Log
 
@@ -1293,8 +1293,9 @@ explanations, Previous/Next, and Expand, while Chat, Replay, and Workspace remai
 
 ### 2026-09-15 - working tree
 
-The public landing page groups reviews by site, with screenshot previews and direct links to
-walkthroughs and each site's review history. Real product trials now supply the examples;
-interrupted reviews retain their status. Convex queries reuse the existing site index and
-task visibility rules (`apps/scout/convex/scout/activity.ts`,
-`apps/scout/src/components/activity-feed.tsx`).
+The landing page groups reviews beside a large screenshot of each site, keeps the review
+composer, and expands older reviews inline. Scout now saves concrete passed, failed, or
+untested checks with each walkthrough; the list shows their count and the walkthrough explains
+each result. Existing reviews retain their findings without inferred ratings. Paginated Convex
+queries use the existing site index and shared task visibility rules
+(`apps/scout/convex/scout/activity.ts`, `apps/scout/src/components/activity-feed.tsx`).

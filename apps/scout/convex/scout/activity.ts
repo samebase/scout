@@ -7,12 +7,14 @@ import type { QueryCtx } from "../_generated/server";
 import { publicQuery } from "../functions";
 import { requireViewerPermission } from "../access";
 import { siteHostnameSchema } from "../../shared/site";
+import { omitNullish } from "../../shared/omitNullish";
 import { canAccess } from "../../shared/accessModel";
-import { chatPermission, visibleChat, isPublicChat } from "./chatAccess";
+import { chatPermission, isPublicChat, visibleChat } from "./chatAccess";
 import { availabilityValidator, scoutReservation } from "./availability";
 import type { ViewerAccess } from "../access";
 import { getInitialCheck } from "../agentsApi/requestChecks";
 import { taskScreenshots } from "../agentsApi/screenshotRecords";
+import { walkthroughContent } from "../agentsApi/screenshotModel";
 import { chatPurposeValidator, chatVisibilityValidator, chatRuntimeValidator } from "./chatModel";
 import { scoutAgent } from "./agent";
 import { MAX_BROWSER_SESSIONS_PER_THREAD } from "./browserSessions";
@@ -58,7 +60,11 @@ const activityValidator = v.object({
   scout: scoutValidator,
   status: statusValidator,
   latestSession: v.union(sessionValidator, v.null()),
+  walkthrough: v.union(walkthroughContent.pick("summary", "checks"), v.null()),
 });
+
+const MAX_FEED_ROWS = 24;
+const MAX_FEED_BYTES = 256 * 1024;
 
 export const currentActivityValidator = v.union(
   v.object({ kind: v.literal("private") }),
@@ -109,6 +115,7 @@ export async function currentScoutActivity(
           status: managedStatus(session),
           scout: { _id: scout._id, displayName: scout.displayName, status: scout.status },
           latestSession: null,
+          walkthrough: null,
         };
     return {
       kind: "visible",
@@ -221,6 +228,12 @@ async function summary(ctx: QueryCtx, chat: Doc<"scoutChats">) {
             kind: browser.lifecycle.kind,
           }
         : null,
+      walkthrough: managed.walkthrough
+        ? {
+            summary: managed.walkthrough.summary,
+            ...omitNullish({ checks: managed.walkthrough.checks }),
+          }
+        : null,
     };
   }
   const [thread, scout, status, session] = await Promise.all([
@@ -244,6 +257,7 @@ async function summary(ctx: QueryCtx, chat: Doc<"scoutChats">) {
     status,
     scout: { _id: scout._id, displayName: scout.displayName, status: scout.status },
     latestSession: session ? sessionSummary(session) : null,
+    walkthrough: null,
   };
 }
 
@@ -283,54 +297,25 @@ export const list = publicQuery({
               .withIndex("by_user_id_and_purpose_kind_and_primary_site_and_created_at", (q) =>
                 q.eq("userId", userId).eq("purpose.kind", "review").eq("primarySite", site),
               );
-    const result = await rows.order("desc").paginate(args.paginationOpts);
+    // Bound both initial and reactive pages without discarding native cursor/split options.
+    const result = await rows.order("desc").paginate({
+      ...args.paginationOpts,
+      numItems: Math.min(args.paginationOpts.numItems, MAX_FEED_ROWS),
+      maximumRowsRead: Math.min(
+        args.paginationOpts.maximumRowsRead ?? MAX_FEED_ROWS,
+        MAX_FEED_ROWS,
+      ),
+      maximumBytesRead: Math.min(
+        args.paginationOpts.maximumBytesRead ?? MAX_FEED_BYTES,
+        MAX_FEED_BYTES,
+      ),
+    });
     const page = await Promise.all(
       result.page.map(async (chat) =>
         args.scope === "public" && !(await isPublicChat(ctx, chat)) ? null : summary(ctx, chat),
       ),
     );
     return { ...result, page: page.filter((chat) => chat !== null) };
-  },
-});
-
-// Seek by hostname so a product with many reviews cannot fill an entire directory page.
-export const products = publicQuery({
-  access: "access_public",
-  args: { afterSite: v.union(v.string(), v.null()) },
-  returns: v.object({
-    page: v.array(activityValidator),
-    nextSite: v.union(v.string(), v.null()),
-  }),
-  handler: async (ctx, args) => {
-    let afterSite = args.afterSite ?? "";
-    const page: (typeof activityValidator.type)[] = [];
-    const next = (site: string) =>
-      ctx.db
-        .query("scoutChats")
-        .withIndex("by_visibility_and_purpose_kind_and_primary_site_and_created_at", (q) =>
-          q.eq("visibility", "public").eq("purpose.kind", "review").gt("primarySite", site),
-        )
-        .order("asc")
-        .first();
-
-    for (let index = 0; index < 8; index++) {
-      const first = await next(afterSite);
-      if (!first?.primarySite) return { page, nextSite: null };
-      afterSite = first.primarySite;
-      const reviews = ctx.db
-        .query("scoutChats")
-        .withIndex("by_visibility_and_purpose_kind_and_primary_site_and_created_at", (q) =>
-          q.eq("visibility", "public").eq("purpose.kind", "review").eq("primarySite", afterSite),
-        )
-        .order("desc");
-      for await (const review of reviews) {
-        if (await isPublicChat(ctx, review)) {
-          page.push(await summary(ctx, review));
-          break;
-        }
-      }
-    }
-    return { page, nextSite: (await next(afterSite)) ? afterSite : null };
   },
 });
 

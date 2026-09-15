@@ -1,11 +1,19 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useAction, usePaginatedQuery, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
-import { ArrowUpRightIcon, ImagesIcon, PlayIcon, SearchIcon, XIcon } from "lucide-react";
+import {
+  ArrowRightIcon,
+  ChevronDownIcon,
+  ImagesIcon,
+  PlayIcon,
+  SearchIcon,
+  XIcon,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { Button } from "#components/ui/button";
 import { Input } from "#components/ui/input";
+import { ReviewCheckSummary } from "#components/review-checks";
 import type { ReviewFeedSearch } from "#lib/reviewFeedSearch";
 import { siteHostnameSchema } from "../../shared/site";
 import {
@@ -22,7 +30,7 @@ import { BrowserReplayTrack } from "./browser-replay";
 import { ScoutPiece } from "../products/play/scout-piece";
 import { buildReplayTimeline } from "../lib/browserReplayTimeline";
 
-type Activity = FunctionReturnType<typeof api.scout.activity.products>["page"][number];
+type Activity = FunctionReturnType<typeof api.scout.activity.list>["page"][number];
 const activityScope = z.enum(["public", "mine"]);
 const activityLabels: Record<Activity["status"], string> = {
   ready: "Ready",
@@ -44,13 +52,13 @@ export function ActivityFeed({ search }: { search: ReviewFeedSearch }) {
     setError(null);
   }, [search.site]);
   const signedIn = viewer?.kind === "account";
-  const selectedScope = signedIn ? (search.scope ?? "public") : "public";
+  const scope = signedIn ? (search.scope ?? "public") : "public";
   return (
     <section aria-label="Reviews">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
-        {signedIn ? (
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-t pt-5">
+        {signedIn && (
           <Select
-            value={selectedScope}
+            value={scope}
             onValueChange={(value) => {
               void navigate({ to: "/", search: { ...search, scope: activityScope.parse(value) } });
             }}
@@ -65,13 +73,9 @@ export function ActivityFeed({ search }: { search: ReviewFeedSearch }) {
               </SelectGroup>
             </SelectContent>
           </Select>
-        ) : (
-          <h2 className="text-lg font-medium">
-            {search.site ? "Public reviews" : "Explore products"}
-          </h2>
         )}
         <form
-          className="flex items-center gap-2"
+          className="ml-auto flex items-center gap-2"
           onSubmit={(event) => {
             event.preventDefault();
             const parsed = draft.trim() ? siteHostnameSchema.safeParse(draft) : null;
@@ -80,12 +84,7 @@ export function ActivityFeed({ search }: { search: ReviewFeedSearch }) {
               return;
             }
             setError(null);
-            void navigate({
-              to: "/",
-              search: parsed
-                ? { scope: selectedScope, site: parsed.data }
-                : { scope: selectedScope },
-            });
+            void navigate({ to: "/", search: parsed ? { scope, site: parsed.data } : { scope } });
           }}
         >
           <Input
@@ -105,7 +104,7 @@ export function ActivityFeed({ search }: { search: ReviewFeedSearch }) {
               size="icon"
               aria-label="Clear site filter"
               onClick={() => {
-                void navigate({ to: "/", search: { scope: selectedScope } });
+                void navigate({ to: "/", search: { scope } });
               }}
             >
               <XIcon aria-hidden="true" />
@@ -114,92 +113,43 @@ export function ActivityFeed({ search }: { search: ReviewFeedSearch }) {
         </form>
       </div>
       {error && (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="mb-3 text-sm text-destructive">
           {error}
         </p>
       )}
-      {selectedScope === "public" && !search.site ? (
-        <PublicProducts />
-      ) : (
-        <ReviewHistory site={search.site ?? null} scope={selectedScope} />
-      )}
+      <SiteGroups key={`${scope}:${search.site ?? ""}`} site={search.site ?? null} scope={scope} />
     </section>
   );
 }
 
-function PublicProducts() {
-  const [cursors, setCursors] = useState<Array<string | null>>([null]);
-  const products = useQuery(api.scout.activity.products, { afterSite: cursors.at(-1) ?? null });
-  return (
-    <div>
-      {products === undefined ? (
-        <p role="status" className="py-12 text-muted-foreground">
-          Loading products…
-        </p>
-      ) : (
-        <>
-          {products.page.map((activity) => (
-            <ActivityRow key={activity.threadId} activity={activity} scope="public" product />
-          ))}
-          {!products.page.length && (
-            <p className="py-12 text-muted-foreground">No public products on this page yet.</p>
-          )}
-        </>
-      )}
-      {(cursors.length > 1 || products?.nextSite) && (
-        <nav aria-label="Product pages" className="flex items-center justify-between py-5">
-          <Button
-            variant="outline"
-            disabled={cursors.length === 1 || !products}
-            onClick={() => setCursors((previous) => previous.slice(0, -1))}
-          >
-            Previous
-          </Button>
-          <span className="text-sm text-muted-foreground">Page {cursors.length}</span>
-          <Button
-            variant="outline"
-            disabled={!products?.nextSite}
-            onClick={() => {
-              if (products?.nextSite) setCursors((previous) => [...previous, products.nextSite]);
-            }}
-          >
-            Next
-          </Button>
-        </nav>
-      )}
-    </div>
-  );
-}
-
-function ReviewHistory({ site, scope }: { site: string | null; scope: "public" | "mine" }) {
+function SiteGroups({ site, scope }: { site: string | null; scope: "public" | "mine" }) {
   const activities = usePaginatedQuery(
     api.scout.activity.list,
     { site, scope },
-    { initialNumItems: 8 },
+    { initialNumItems: 24 },
   );
+  const groups = new Map<string | null, Activity[]>();
+  for (const activity of activities.results) {
+    const reviews = groups.get(activity.primarySite);
+    if (reviews) reviews.push(activity);
+    else groups.set(activity.primarySite, [activity]);
+  }
   return (
-    <div>
-      {site && (
-        <h2 className="py-4 text-lg font-semibold [overflow-wrap:anywhere]">Reviews of {site}</h2>
-      )}
-      {activities.results.length > 0 && (
-        <div
-          aria-hidden="true"
-          className="hidden grid-cols-[160px_minmax(0,1fr)_208px] gap-x-5 border-b border-border py-2 text-xs text-muted-foreground lg:grid"
-        >
-          <span className="col-span-2">Review</span>
-          <span>Site</span>
-        </div>
-      )}
-      {activities.results.map((activity) => (
-        <ActivityRow key={activity.threadId} activity={activity} scope={scope} product={false} />
+    <div className="space-y-5">
+      {Array.from(groups, ([hostname, reviews]) => (
+        <SiteGroup
+          key={hostname ?? "unassigned"}
+          site={hostname}
+          reviews={reviews}
+          fullyLoaded={activities.status === "Exhausted"}
+        />
       ))}
       {activities.status === "LoadingFirstPage" ? (
         <p role="status" className="py-12 text-muted-foreground">
           Loading reviews…
         </p>
-      ) : activities.results.length === 0 ? (
-        <p className="py-16 text-muted-foreground">
+      ) : activities.status === "Exhausted" && !activities.results.length ? (
+        <p className="py-12 text-muted-foreground">
           {site
             ? "No reviews for this site yet."
             : scope === "mine"
@@ -211,39 +161,118 @@ function ReviewHistory({ site, scope }: { site: string | null; scope: "public" |
         <Button
           type="button"
           variant="outline"
-          className="mx-auto my-6 flex"
+          className="mx-auto flex"
           disabled={activities.status === "LoadingMore"}
-          onClick={() => activities.loadMore(8)}
+          onClick={() => activities.loadMore(24)}
         >
-          More reviews
+          {activities.status === "LoadingMore" ? "Loading…" : "More reviews"}
         </Button>
       )}
     </div>
   );
 }
 
-function ActivityRow({
-  activity,
-  scope,
-  product,
+function SiteGroup({
+  site,
+  reviews,
+  fullyLoaded,
 }: {
-  activity: Activity;
-  scope: "public" | "mine";
-  product: boolean;
+  site: string | null;
+  reviews: Activity[];
+  fullyLoaded: boolean;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const representative = reviews.find((review) => review.walkthrough) ?? reviews[0];
+  const shown = expanded ? reviews : reviews.slice(0, 3);
+  return (
+    <article
+      aria-label={site ?? "Other reviews"}
+      className="overflow-hidden rounded-lg border bg-card min-[760px]:grid min-[760px]:grid-cols-[minmax(260px,36%)_minmax(0,1fr)]"
+    >
+      <header className="min-w-0 min-[760px]:border-r">
+        <SitePreview activity={representative} />
+        <h2 className="px-4 py-4 text-2xl leading-tight font-semibold tracking-tight wrap-anywhere">
+          {site ?? "Other reviews"}
+        </h2>
+      </header>
+      <div className="min-w-0 px-4 min-[760px]:px-5">
+        {shown.map((activity) => (
+          <ReviewRow key={activity.threadId} activity={activity} />
+        ))}
+        {reviews.length > 3 && (
+          <Button
+            variant="ghost"
+            className="w-full rounded-none border-t py-3 text-xs font-normal text-primary"
+            aria-expanded={expanded}
+            onClick={() => setExpanded((value) => !value)}
+          >
+            {expanded ? "Show less" : fullyLoaded ? `Show ${reviews.length - 3} more` : "Show more"}
+            <ChevronDownIcon className={expanded ? "rotate-180" : ""} aria-hidden="true" />
+          </Button>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function ReviewRow({ activity }: { activity: Activity }) {
+  const checks = activity.walkthrough?.checks;
+  const ongoing =
+    activity.status === "ready" ||
+    activity.status === "running" ||
+    activity.status === "waiting" ||
+    activity.status === "stopping";
+  return (
+    <Link
+      to="/review"
+      search={{ thread: activity.threadId, view: activity.walkthrough ? "walkthrough" : "chat" }}
+      className="group flex items-center gap-3 border-t py-4 outline-none focus-visible:ring-2 focus-visible:ring-ring min-[760px]:first:border-t-0"
+    >
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1.5">
+          <h3 className="min-w-0 text-sm leading-snug font-medium wrap-anywhere group-hover:underline min-[960px]:text-base">
+            {activity.title ?? "New review"}
+          </h3>
+          {checks && !ongoing ? (
+            <ReviewCheckSummary checks={checks} />
+          ) : (
+            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+              {activity.status === "running" && (
+                <span className="size-1.5 rounded-full bg-primary" />
+              )}
+              {activityLabels[activity.status]}
+            </span>
+          )}
+        </div>
+        {activity.walkthrough && (
+          <p className="mt-1.5 line-clamp-2 text-sm leading-relaxed wrap-anywhere text-muted-foreground">
+            {activity.walkthrough.summary}
+          </p>
+        )}
+        {activity.visibility === "private" && (
+          <p className="mt-1 text-xs text-muted-foreground">Private</p>
+        )}
+      </div>
+      <ArrowRightIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+    </Link>
+  );
+}
+
+function SitePreview({ activity }: { activity: Activity }) {
   const [hovered, setHovered] = useState(false);
   const [visible, setVisible] = useState(false);
-  const element = useRef<HTMLElement>(null);
+  const element = useRef<HTMLAnchorElement>(null);
   useEffect(() => {
     const target = element.current;
     if (!target) return;
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting) setVisible(true);
+        if (entry.isIntersecting) {
+          setVisible(true);
+          observer.disconnect();
+        }
       },
-      {
-        rootMargin: "100px",
-      },
+      { rootMargin: "100px" },
     );
     observer.observe(target);
     return () => observer.disconnect();
@@ -252,122 +281,37 @@ function ActivityRow({
     api.scout.activity.preview,
     visible ? { threadId: activity.threadId } : "skip",
   );
-  const hasWalkthrough =
-    preview?.walkthroughSummary !== null && preview?.walkthroughSummary !== undefined;
-  const destination = hasWalkthrough
-    ? { thread: activity.threadId, view: "walkthrough" as const }
-    : { thread: activity.threadId };
   return (
-    <article
+    <Link
       ref={element}
+      to="/review"
+      search={{ thread: activity.threadId, view: activity.walkthrough ? "walkthrough" : "chat" }}
+      aria-label={`Open ${activity.title ?? "review"}`}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      className={
-        product
-          ? "grid grid-cols-[112px_minmax(0,1fr)] items-start gap-4 border-b border-border py-5 sm:grid-cols-[208px_minmax(0,1fr)] sm:items-center sm:gap-6"
-          : "grid grid-cols-[96px_minmax(0,1fr)] items-center gap-x-4 gap-y-1 border-b border-border py-3 sm:grid-cols-[144px_minmax(0,1fr)] lg:grid-cols-[160px_minmax(0,1fr)_208px] lg:gap-x-5"
-      }
+      className="group relative block aspect-[8/5] overflow-hidden border-b bg-muted outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
     >
-      <Link
-        to="/review"
-        search={destination}
-        aria-label={`Open ${activity.title ?? "review"}`}
-        className="group relative row-span-2 block aspect-[8/5] overflow-hidden rounded-md border border-border bg-muted"
-      >
-        {preview?.screenshot ? (
-          <ScreenshotPreview key={preview.screenshot.id} screenshot={preview.screenshot} />
-        ) : visible && preview !== undefined && activity.latestSession ? (
-          <ActivityPreview session={activity.latestSession} playing={hovered} />
-        ) : (
-          <PreviewPlaceholder />
-        )}
-        <span className="pointer-events-none absolute inset-0 grid place-items-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
-          <span className="grid size-8 place-items-center rounded-full bg-white/90 text-primary">
-            {hasWalkthrough ? <ImagesIcon size={14} /> : <PlayIcon size={14} fill="currentColor" />}
-          </span>
+      {preview?.screenshot ? (
+        <ScreenshotPreview key={preview.screenshot.id} screenshot={preview.screenshot} />
+      ) : visible && preview !== undefined && activity.latestSession ? (
+        <ActivityPreview
+          key={activity.latestSession.sessionId}
+          session={activity.latestSession}
+          playing={hovered}
+        />
+      ) : (
+        <PreviewPlaceholder />
+      )}
+      <span className="pointer-events-none absolute inset-0 grid place-items-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+        <span className="grid size-8 place-items-center rounded-full bg-white/90 text-primary">
+          {activity.walkthrough ? (
+            <ImagesIcon size={14} />
+          ) : (
+            <PlayIcon size={14} fill="currentColor" />
+          )}
         </span>
-      </Link>
-      <div className="min-w-0 lg:row-span-2">
-        {product && activity.primarySite && (
-          <Link
-            to="/"
-            search={{ site: activity.primarySite, scope }}
-            className="mb-1.5 block text-lg font-semibold text-primary [overflow-wrap:anywhere] hover:underline"
-          >
-            {activity.primarySite}
-          </Link>
-        )}
-        <h2 className="text-sm leading-snug font-semibold [overflow-wrap:anywhere] sm:text-base">
-          <Link
-            to="/review"
-            search={destination}
-            className="line-clamp-2 hover:text-primary"
-            title={activity.title ?? "New chat"}
-          >
-            {activity.title ?? "New chat"}
-          </Link>
-        </h2>
-        {product && preview?.walkthroughSummary && (
-          <p className="mt-2 hidden text-sm leading-relaxed text-muted-foreground sm:line-clamp-2">
-            {preview.walkthroughSummary}
-          </p>
-        )}
-        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-          <span>{activity.scout.displayName}</span>
-          <span className="inline-flex items-center gap-1.5">
-            {activity.status === "running" && <span className="size-1.5 rounded-full bg-primary" />}
-            {activityLabels[activity.status]}
-          </span>
-          <time dateTime={new Date(activity.createdAt).toISOString()}>
-            {new Date(activity.createdAt).toLocaleDateString(undefined, {
-              month: "short",
-              day: "numeric",
-            })}
-          </time>
-          {activity.visibility === "private" && <span>Private</span>}
-        </div>
-        {product && (
-          <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs font-medium sm:text-sm">
-            <Link
-              to="/review"
-              search={destination}
-              className="inline-flex items-center gap-1 text-primary hover:underline"
-            >
-              {hasWalkthrough ? "Open walkthrough" : "Open review"}
-              <ArrowUpRightIcon size={14} aria-hidden="true" />
-            </Link>
-            {activity.primarySite && (
-              <Link
-                to="/"
-                search={{ site: activity.primarySite, scope }}
-                className="text-muted-foreground hover:underline"
-              >
-                All reviews
-              </Link>
-            )}
-          </div>
-        )}
-      </div>
-      {!product &&
-        (activity.primarySite ? (
-          <div className="col-start-2 min-w-0 lg:col-start-3 lg:row-span-2">
-            <Link
-              to="/"
-              search={{ site: activity.primarySite, scope }}
-              className="inline-flex min-h-9 items-center break-all text-xs font-medium text-primary hover:underline sm:text-sm"
-            >
-              {activity.primarySite}
-            </Link>
-          </div>
-        ) : (
-          <span
-            aria-label="Site not set"
-            className="hidden text-sm text-muted-foreground lg:col-start-3 lg:row-span-2 lg:block"
-          >
-            —
-          </span>
-        ))}
-    </article>
+      </span>
+    </Link>
   );
 }
 
