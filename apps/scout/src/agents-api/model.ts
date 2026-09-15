@@ -4,7 +4,7 @@ import type { api } from "../../convex/_generated/api";
 
 export const agentsSearch = z.object({
   session: z.string().min(1).optional(),
-  step: z.enum(["request_check", "site_research", "chat"]).optional(),
+  step: z.enum(["request_check", "site_research", "chat", "walkthrough"]).optional(),
   check: z.string().min(1).optional(),
   browser: z.string().min(1).optional(),
   replayPage: z.string().min(1).optional(),

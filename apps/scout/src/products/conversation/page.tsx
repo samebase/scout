@@ -8,6 +8,7 @@ import {
 } from "#components/ui/select";
 import { accountAccessMessage, canAccess, useViewerAccess } from "../../lib/access";
 import { SidebarLayout } from "@samebase/sidebars/SidebarLayout";
+import { useSidebarActions } from "@samebase/sidebars/SidebarRuntime";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useConvexAuth, useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
@@ -36,6 +37,8 @@ import {
 } from "../../components/ui/message-scroller";
 import { AuthPanel } from "../../components/auth-panel";
 import { BrowserReplay } from "../../components/browser-replay";
+import { TaskWalkthrough } from "#components/task-walkthrough";
+import { Button } from "#components/ui/button";
 import { ChatHandoffNotice } from "../../components/chat-handoff-notice";
 import { ProductShell } from "../shell";
 import { ScoutPiece } from "../play/scout-piece";
@@ -203,8 +206,8 @@ export function ConversationLobby({ kind }: { kind: ProductKind }) {
         )}
         {!isPlay && (
           <p className="mt-4 max-w-[580px] text-base text-muted-foreground">
-            Scout creates its own accounts, logs in, and tests the site. You get its findings and a
-            video replay.
+            Scout creates its own accounts, logs in, and tests the site. You get its findings,
+            screenshots, and a video replay.
           </p>
         )}
       </div>
@@ -354,9 +357,14 @@ function SessionLoader({
         {viewer?.kind !== "account" && <AuthPanel />}
       </div>
     );
+  const initialView =
+    kind === "review" && thread.runtime.kind === "agents_api"
+      ? (search.view ??
+        (thread.status === "finished" && thread.hasWalkthrough ? "walkthrough" : "chat"))
+      : "chat";
   return (
-    <ConversationSidebar key={threadId}>
-      <ConversationSession thread={thread} kind={kind} search={search} />
+    <ConversationSidebar key={threadId} initialBrowserOpen={initialView !== "walkthrough"}>
+      <ConversationSession thread={thread} kind={kind} search={search} initialView={initialView} />
     </ConversationSidebar>
   );
 }
@@ -395,10 +403,12 @@ function ConversationSession({
   thread,
   kind,
   search,
+  initialView,
 }: {
   thread: ChatThread;
   kind: ProductKind;
   search: ConversationSearch;
+  initialView: "walkthrough" | "chat";
 }) {
   const scout = thread.scout;
   const viewer = useViewerAccess();
@@ -407,8 +417,12 @@ function ConversationSession({
     viewer?.kind === "account" &&
     canAccess("access_lab", viewer.accessKeys);
   const navigate = useNavigate();
+  const { setMobilePane } = useSidebarActions();
   const { threadId } = thread;
   const managedId = thread.runtime.kind === "agents_api" ? thread.runtime.sessionId : null;
+  const [defaultView] = useState(initialView);
+  const showingWalkthrough =
+    kind === "review" && managedId !== null && (search.view ?? defaultView) === "walkthrough";
   const managed = useQuery(
     api.agentsApi.sessions.controls,
     thread.canControl && managedId ? { sessionId: managedId } : "skip",
@@ -544,11 +558,11 @@ function ConversationSession({
             if (selected)
               void navigate({
                 to: productRoutes[kind],
-                search: (previous) => ({
-                  ...previous,
+                search: {
+                  ...search,
                   session: selected.sessionId,
                   replay: undefined,
-                }),
+                },
               });
           }}
           className="min-h-11 min-w-0 flex-1 rounded-lg bg-transparent pr-1 font-medium"
@@ -575,7 +589,11 @@ function ConversationSession({
           {session?.kind === "closed" ? "Replay" : "Scout’s view"}
         </span>
       )}
-      <BrowserToggle action="close" />
+      <BrowserToggle
+        action="close"
+        view={showingWalkthrough ? "walkthrough" : "chat"}
+        replay={kind === "review" && session?.kind === "closed"}
+      />
     </div>
   );
 
@@ -629,7 +647,11 @@ function ConversationSession({
                   <ArrowUpRightIcon size={15} aria-hidden="true" />
                 </Link>
               )}
-              <BrowserToggle action="open" />
+              <BrowserToggle
+                action="open"
+                view={showingWalkthrough ? "walkthrough" : "chat"}
+                replay={kind === "review" && session?.kind === "closed"}
+              />
               {canStop && (
                 <BrowserStop
                   onStop={() => {
@@ -658,6 +680,35 @@ function ConversationSession({
                 visibility={thread.visibility}
               />
             </div>
+          )}
+          {kind === "review" && managedId && (
+            <nav
+              aria-label="Review views"
+              className="mb-3 flex w-fit items-center gap-1 rounded-lg border bg-card p-1"
+            >
+              <Button asChild variant={showingWalkthrough ? "secondary" : "ghost"} size="sm">
+                <Link
+                  to="/review"
+                  search={{ ...search, view: "walkthrough" }}
+                  resetScroll={false}
+                  onClick={() => setMobilePane("main")}
+                  aria-current={showingWalkthrough ? "page" : undefined}
+                >
+                  Walkthrough
+                </Link>
+              </Button>
+              <Button asChild variant={showingWalkthrough ? "ghost" : "secondary"} size="sm">
+                <Link
+                  to="/review"
+                  search={{ ...search, view: "chat" }}
+                  resetScroll={false}
+                  onClick={() => setMobilePane("main")}
+                  aria-current={!showingWalkthrough ? "page" : undefined}
+                >
+                  Chat
+                </Link>
+              </Button>
+            </nav>
           )}
           {request.kind === "failed" && (
             <p role="alert" className={playError}>
@@ -723,10 +774,18 @@ function ConversationSession({
       }
       main={
         <section
-          aria-label="Conversation with Scout"
+          aria-label={showingWalkthrough ? "Walkthrough with Scout" : "Conversation with Scout"}
           className="flex h-full min-h-0 flex-col gap-3 min-[768px]:pr-1"
         >
-          <div className="min-h-0 flex-1 overflow-hidden rounded-[var(--product-panel-radius)] border border-border bg-card">
+          {showingWalkthrough && managedId && (
+            <div className="min-h-0 flex-1 overflow-hidden rounded-[var(--product-panel-radius)] border border-border bg-card">
+              <TaskWalkthrough sessionId={managedId} />
+            </div>
+          )}
+          <div
+            hidden={showingWalkthrough}
+            className="min-h-0 flex-1 overflow-hidden rounded-[var(--product-panel-radius)] border border-border bg-card"
+          >
             <MessageScrollerProvider autoScroll defaultScrollPosition="end">
               <MessageScroller>
                 <MessageScrollerViewport
@@ -858,11 +917,11 @@ function ConversationSession({
               onSelectPage={(pageId) => {
                 void navigate({
                   to: productRoutes[kind],
-                  search: (previous) => ({
-                    ...previous,
+                  search: {
+                    ...search,
                     session: session.sessionId,
                     replay: pageId === null ? undefined : { sessionId: session.sessionId, pageId },
-                  }),
+                  },
                 });
               }}
             />

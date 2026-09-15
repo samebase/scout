@@ -190,6 +190,202 @@ async function openPlay(path = "/play") {
   return router;
 }
 
+test("a completed managed Review opens its walkthrough with Chat and Replay available", async () => {
+  remote.queries.set(
+    "scout/activity:get",
+    session({
+      purpose: { kind: "review" },
+      status: "finished",
+      hasWalkthrough: true,
+      runtime: { kind: "agents_api", sessionId: "managed-1" },
+      sessions: [{ engine: "agents_api", sessionId: "browser-1", kind: "closed", createdAt: 1000 }],
+      isOwner: false,
+      canControl: false,
+    }),
+  );
+  remote.queries.set("agentsApi/walkthrough:get", {
+    walkthrough: {
+      summary: "The game works.",
+      sections: [
+        {
+          heading: "Undo a move",
+          explanation: "The board returned to its previous state.",
+          captureIds: ["capture-1"],
+        },
+      ],
+    },
+    captures: [
+      {
+        id: "capture-1",
+        note: "Undo restores the board",
+        browserSequence: 0,
+        operationSequence: 1,
+        state: { kind: "pending" },
+      },
+    ],
+  });
+  const router = await openPlay("/review?thread=game-thread");
+  expect(await screen.findByRole("heading", { name: "Undo a move" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Walkthrough" }).getAttribute("aria-current")).toBe(
+    "page",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Show replay" }));
+  expect(screen.getByRole("button", { name: "Back to walkthrough" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Back to walkthrough" }));
+  fireEvent.click(screen.getByRole("link", { name: "Chat" }));
+  expect(await screen.findByRole("region", { name: "Conversation with Scout" })).toBeTruthy();
+  expect(router.state.location.search).toMatchObject({ view: "chat" });
+  const bookmark = router.state.location.href;
+  act(() => router.history.back());
+  expect(await screen.findByRole("heading", { name: "Undo a move" })).toBeTruthy();
+  cleanup();
+  await openPlay(bookmark);
+  expect(await screen.findByRole("region", { name: "Conversation with Scout" })).toBeTruthy();
+  expect(screen.queryByRole("heading", { name: "Undo a move" })).toBeNull();
+});
+
+test("a report arriving during a running Review keeps the reader in Chat and preserves the draft", async () => {
+  const running = session({
+    purpose: { kind: "review" },
+    status: "running",
+    hasWalkthrough: false,
+    runtime: { kind: "agents_api", sessionId: "managed-1" },
+  });
+  remote.queries.set("scout/activity:get", running);
+  remote.queries.set("agentsApi/sessions:controls", {
+    state: { kind: "running" },
+    canStop: true,
+    canSend: false,
+  });
+  remote.queries.set("agentsApi/walkthrough:get", { walkthrough: null, captures: [] });
+  await openPlay("/review?thread=game-thread");
+  expect(await screen.findByRole("region", { name: "Conversation with Scout" })).toBeTruthy();
+  fireEvent.change(screen.getByLabelText("Message Scout"), {
+    target: { value: "Keep this thought" },
+  });
+  act(() => {
+    remote.queries.set("scout/activity:get", {
+      ...running,
+      status: "finished",
+      hasWalkthrough: true,
+    });
+    remote.queries.set("agentsApi/walkthrough:get", {
+      walkthrough: {
+        summary: "The game works.",
+        sections: [
+          {
+            heading: "Start again",
+            explanation: "New game clears the board.",
+            captureIds: ["capture-1"],
+          },
+        ],
+      },
+      captures: [
+        {
+          id: "capture-1",
+          note: "New game clears the board",
+          browserSequence: 0,
+          operationSequence: 1,
+          state: { kind: "pending" },
+        },
+      ],
+    });
+    remote.revision += 1;
+    remote.subscribers.forEach((listener) => listener());
+  });
+  expect(screen.getByRole("region", { name: "Conversation with Scout" })).toBeTruthy();
+  expect(screen.queryByRole("heading", { name: "Start again" })).toBeNull();
+  fireEvent.click(screen.getByRole("link", { name: "Walkthrough" }));
+  expect(await screen.findByRole("heading", { name: "Start again" })).toBeTruthy();
+  expect(screen.getByDisplayValue("Keep this thought")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Stop Scout" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("link", { name: "Chat" }));
+  expect(await screen.findByRole("region", { name: "Conversation with Scout" })).toBeTruthy();
+  expect(screen.getByDisplayValue("Keep this thought")).toBeTruthy();
+  expect(remote.sendManaged).not.toHaveBeenCalled();
+});
+
+test("a direct walkthrough link shows an older task's empty state without forcing a report", async () => {
+  remote.queries.set(
+    "scout/activity:get",
+    session({
+      purpose: { kind: "review" },
+      status: "finished",
+      hasWalkthrough: false,
+      runtime: { kind: "agents_api", sessionId: "managed-1" },
+    }),
+  );
+  remote.queries.set("agentsApi/walkthrough:get", { walkthrough: null, captures: [] });
+  await openPlay("/review?thread=game-thread&view=walkthrough");
+  expect(await screen.findByRole("heading", { name: "No screenshots yet" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Chat" })).toBeTruthy();
+  expect(remote.sendManaged).not.toHaveBeenCalled();
+});
+
+test("desktop walkthrough starts with Replay collapsed and preserves pane choices while switching views", async () => {
+  vi.spyOn(window, "innerWidth", "get").mockReturnValue(1440);
+  remote.queries.set(
+    "scout/activity:get",
+    session({
+      purpose: { kind: "review" },
+      status: "finished",
+      hasWalkthrough: true,
+      runtime: { kind: "agents_api", sessionId: "managed-1" },
+      sessions: [{ engine: "agents_api", sessionId: "browser-1", kind: "closed", createdAt: 1000 }],
+      isOwner: false,
+      canControl: false,
+    }),
+  );
+  remote.queries.set("agentsApi/walkthrough:get", { walkthrough: null, captures: [] });
+  await openPlay("/review?thread=game-thread");
+  expect(await screen.findByRole("button", { name: "Show replay" })).toBeTruthy();
+  const pane = screen.getByRole("region", { name: "Scout's browser" }).closest("[data-pane-side]");
+  expect(pane?.hasAttribute("data-desktop-open")).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "Show replay" }));
+  const browser = await screen.findByRole("region", { name: "Scout's browser" });
+  expect(pane?.hasAttribute("data-desktop-open")).toBe(true);
+  fireEvent.click(screen.getByRole("link", { name: "Chat" }));
+  expect(await screen.findByRole("region", { name: "Conversation with Scout" })).toBeTruthy();
+  expect(screen.getByRole("region", { name: "Scout's browser" })).toBe(browser);
+  fireEvent.click(screen.getByRole("button", { name: "Hide replay" }));
+  fireEvent.click(screen.getByRole("link", { name: "Walkthrough" }));
+  expect(await screen.findByRole("heading", { name: "No screenshots yet" })).toBeTruthy();
+  expect(pane?.hasAttribute("data-desktop-open")).toBe(false);
+  expect(screen.getByRole("button", { name: "Show replay" })).toBeTruthy();
+});
+
+test("mobile Review view links return from Replay to the selected main view", async () => {
+  remote.queries.set(
+    "scout/activity:get",
+    session({
+      purpose: { kind: "review" },
+      status: "finished",
+      hasWalkthrough: true,
+      runtime: { kind: "agents_api", sessionId: "managed-1" },
+      sessions: [{ engine: "agents_api", sessionId: "browser-1", kind: "closed", createdAt: 1000 }],
+      isOwner: false,
+      canControl: false,
+    }),
+  );
+  remote.queries.set("agentsApi/walkthrough:get", { walkthrough: null, captures: [] });
+  const router = await openPlay("/review?thread=game-thread");
+  const layout = (await screen.findByRole("navigation", { name: "Review views" }))
+    .closest('[data-sidebar-layout-part="root"]')
+    ?.querySelector('[data-sidebar-layout-part="viewport"]');
+  for (const { label, view } of [
+    { label: "Walkthrough", view: "walkthrough" },
+    { label: "Chat", view: "chat" },
+  ]) {
+    fireEvent.click(screen.getByRole("button", { name: "Show replay" }));
+    expect(layout?.getAttribute("data-mobile-pane")).toBe("right");
+    fireEvent.click(screen.getByRole("link", { name: label }));
+    await waitFor(() => expect(router.state.location.search.view).toBe(view));
+    expect(layout?.getAttribute("data-mobile-pane")).toBe("main");
+    expect(screen.getByRole("link", { name: label }).getAttribute("aria-current")).toBe("page");
+    expect(screen.getByRole("button", { name: "Show replay" })).toBeTruthy();
+  }
+});
+
 test("admins can open another member's Review in the Agents inspector", async () => {
   remote.queries.set(
     "scout/activity:get",

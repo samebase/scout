@@ -7,14 +7,20 @@ import type { SidebarLayoutState } from "@samebase/sidebars/SidebarLayoutState";
 import { useState, type ReactNode } from "react";
 import { MonitorIcon, SquareIcon, XIcon } from "lucide-react";
 
-export function ConversationSidebar({ children }: { children: ReactNode }) {
+export function ConversationSidebar({
+  children,
+  initialBrowserOpen,
+}: {
+  children: ReactNode;
+  initialBrowserOpen: boolean;
+}) {
   const [state, setState] = useState<SidebarLayoutState>({
     leftDesktopOpen: false,
     leftDesktopWidthPx: 0,
     leftMobileWidthPx: 0,
     mobilePane: "main",
     mobileSurface: { kind: "unmerged" },
-    rightDesktopOpen: true,
+    rightDesktopOpen: initialBrowserOpen,
     rightDesktopWidthPx: 560,
     rightMobileWidthPx: 768,
   });
@@ -26,20 +32,36 @@ export function ConversationSidebar({ children }: { children: ReactNode }) {
   );
 }
 
-export function BrowserToggle({ action }: { action: "open" | "close" }) {
+export function BrowserToggle({
+  action,
+  view,
+  replay,
+}: {
+  action: "open" | "close";
+  view: "chat" | "walkthrough";
+  replay: boolean;
+}) {
   const { isMobile, mobilePane, rightDesktopOpen } = useSidebarLayoutPresentation();
   const { setMobilePane, toggleRightPane } = useSidebarActions();
   const shown = isMobile ? mobilePane === "right" : rightDesktopOpen;
   if (action === "open" && shown) return null;
   const label =
-    action === "open" ? "Show Scout’s view" : isMobile ? "Back to chat" : "Hide Scout’s view";
+    action === "open"
+      ? replay
+        ? "Show replay"
+        : "Show Scout’s view"
+      : isMobile
+        ? `Back to ${view}`
+        : replay
+          ? "Hide replay"
+          : "Hide Scout’s view";
 
   return (
     <button
       type="button"
       aria-label={label}
       title={label}
-      className="grid size-11 shrink-0 place-items-center rounded-lg hover:bg-secondary"
+      className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-lg px-2 hover:bg-secondary"
       onClick={() =>
         isMobile ? setMobilePane(action === "open" ? "right" : "main") : toggleRightPane()
       }
@@ -49,6 +71,7 @@ export function BrowserToggle({ action }: { action: "open" | "close" }) {
       ) : (
         <XIcon size={18} aria-hidden="true" />
       )}
+      {replay && action === "open" && <span className="text-xs">Replay</span>}
     </button>
   );
 }

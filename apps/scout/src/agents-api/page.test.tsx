@@ -322,6 +322,60 @@ test("opens session files through a shareable URL and preserves the conversation
   expect(remote.executeWorkspaceCommand).not.toHaveBeenCalled();
 });
 
+test("opens Walkthrough alongside Chat with Workspace, active controls, and router history intact", async () => {
+  remote.queries.set("agentsApi/sessions:get", session({ kind: "running" }));
+  remote.queries.set("agentsApi/walkthrough:get", { walkthrough: null, captures: [] });
+  const router = await open("/agents?session=session-1");
+  fireEvent.change(await screen.findByRole("textbox", { name: "Message" }), {
+    target: { value: "Keep this draft" },
+  });
+  const tasks = screen.getByRole("navigation", { name: "Tasks" });
+  fireEvent.click(within(tasks).getByRole("link", { name: "Walkthrough" }));
+  expect(await screen.findByRole("heading", { name: "No screenshots yet" })).toBeTruthy();
+  expect(router.state.location.search).toMatchObject({ session: "session-1", step: "walkthrough" });
+  expect(
+    within(tasks).getByRole("link", { name: "Walkthrough" }).getAttribute("aria-current"),
+  ).toBe("page");
+  expect(within(tasks).getByRole("link", { name: "Chat" }).getAttribute("aria-current")).toBeNull();
+  expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Hide browser" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Workspace" }));
+  fireEvent.click(await screen.findByRole("button", { name: "notes.md" }));
+  expect((await screen.findByLabelText("File contents")).textContent).toBe("Saved research");
+  expect(router.state.location.search).toMatchObject({ step: "walkthrough", view: "workspace" });
+  fireEvent.click(screen.getByRole("button", { name: "Workspace" }));
+  expect(await screen.findByRole("heading", { name: "No screenshots yet" })).toBeTruthy();
+  fireEvent.click(within(tasks).getByRole("link", { name: "Chat" }));
+  expect(await screen.findByRole("region", { name: "Conversation" })).toBeTruthy();
+  expect(screen.getByDisplayValue("Keep this draft")).toBeTruthy();
+  act(() => router.history.back());
+  expect(await screen.findByRole("heading", { name: "No screenshots yet" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+  await waitFor(() =>
+    expect(remote.stop).toHaveBeenCalledExactlyOnceWith({ sessionId: "session-1" }),
+  );
+});
+
+test("walkthrough remains discoverable before Chat exists and can stop the starting task", async () => {
+  const starting = {
+    ...session({ kind: "starting" }),
+    providerId: null,
+    hasChat: false,
+    checks: [initialCheck()],
+  };
+  remote.queries.set("agentsApi/sessions:get", starting);
+  remote.queries.set("agentsApi/sessions:list", [starting]);
+  remote.queries.set("agentsApi/walkthrough:get", { walkthrough: null, captures: [] });
+  await open("/agents?session=session-1&step=walkthrough");
+  expect(await screen.findByRole("heading", { name: "No screenshots yet" })).toBeTruthy();
+  expect(screen.queryByRole("link", { name: "Chat" })).toBeNull();
+  expect(screen.getByRole("link", { name: "Walkthrough" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+  await waitFor(() =>
+    expect(remote.stop).toHaveBeenCalledExactlyOnceWith({ sessionId: "session-1" }),
+  );
+});
+
 function initialCheck() {
   return {
     _id: "check-initial",
@@ -453,7 +507,10 @@ test("keeps one full Chat and chronological sibling checks with independent sele
     secondResume._id,
   ]);
   const siblings = chatLinks[0].closest("li")?.parentElement;
-  expect(siblings?.children).toHaveLength(4);
+  expect(siblings?.children).toHaveLength(5);
+  expect(navigation.getByRole("link", { name: "Walkthrough" }).closest("li")?.parentElement).toBe(
+    siblings,
+  );
   for (const link of checkLinks) expect(link.closest("li")?.parentElement).toBe(siblings);
   expect(siblings?.querySelector("ul")).toBeNull();
   expect(screen.getByText("Before the handoff")).toBeTruthy();
