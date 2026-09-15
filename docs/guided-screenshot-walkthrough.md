@@ -4,10 +4,12 @@ Research date: September 15, 2026. Baseline: `bdf25f2`, v214.
 This continues the Codex task "Research manual screenshots". Three independent
 reviews covered storage, capture association, and the finished experience.
 
-The capture probes work in a real Firecrawl browser. Screenshot storage, agent
-capture requests, and the walkthrough UI are **proposed, not implemented**.
+Implemented and tested on the development deployment. An ordinary Score Four
+review produced six saved PNGs and a four-section walkthrough. The screenshots
+and report survived browser closure. Provider history errors interrupted the
+trial; the task finished after a manual follow-up. Details are below.
 
-## Recommended first version
+## Implemented first version
 
 Give each Task an agent-created **Walkthrough**: a short explanation illustrated
 by selected screenshots. A visitor can understand what the product does, what
@@ -76,7 +78,7 @@ the viewport just to request a larger image. CDP returns image data without a
 render timestamp, so record the capture's start and completion times rather than
 claiming an exact frame time. See the [Chrome protocol definition](https://raw.githubusercontent.com/ChromeDevTools/devtools-protocol/master/pdl/domains/Page.pdl).
 
-Start with a small Task cap, provisionally 20 captures. Scout should capture the
+The Task cap is 20 captures, with an 8 MiB limit per PNG. Scout should capture the
 starting context, meaningful results, observed problems, and the final state.
 The normal target is fewer images. Do not capture every wait, inspection, password
 fill, or verification code. Multiple interactions in one script produce only its
@@ -91,8 +93,8 @@ Current implementation touchpoints:
   operations, reconciles selected target IDs, and rejects overlapping operations
   within one harness.
 - [CDP browser](../apps/scout/convex/scout/playwrightBrowser.ts) owns Page handles.
-  Its existing fallback selection is unsuitable for evidence capture; add a
-  method that requires the exact target.
+  Evidence capture requires the exact target and rejects a missing or changed
+  page instead of using its ordinary fallback selection.
 - [Runtime tool wiring](../apps/scout/convex/agentsApi/tools.ts) connects operation
   callbacks to persistence.
 
@@ -116,7 +118,7 @@ files; application authorization controls access. R2 stores bytes, while Convex
 stores the capture's meaning and ownership. The R2 component's synchronized file
 metadata is not a second copy of the Task model.
 
-Prefer one small `agentsApiScreenshots` table:
+The `agentsApiScreenshots` table stores:
 
 | Fields                                                           | Purpose                                                                    |
 | ---------------------------------------------------------------- | -------------------------------------------------------------------------- |
@@ -148,7 +150,7 @@ viewer or persist signed URLs as identity. The installed R2 component already
 provides upload, signing, and deletion. [R2 component](https://github.com/get-convex/r2#readme),
 [Cloudflare signed URLs](https://developers.cloudflare.com/r2/api/s3/presigned-urls/).
 
-Keep task-specific captures out of shared Site workspaces. For the proposed public
+Keep task-specific captures out of shared Site workspaces. For the public
 Walkthrough, use the Task's existing public/private visibility and owner/admin
 controls. This follows today's public Chat and Replay contract. It does not make
 account screens safe to capture: URL/text sanitation cannot remove secrets from
@@ -175,15 +177,12 @@ walkthrough on the existing Task record. Follow-up Chat instructions can replace
 it. We do not need another autonomous agent, a slide table, or an owner-editing UI
 for the first trial.
 
-The agent must receive actual image content to assess whether a capture supports
-its explanation. The installed OpenAI SDK 7.15.0 accepts `input_text` and
-`input_image` content in an Agents tool result. Our
-[runtime](../apps/scout/convex/agentsApi/runtime.ts) currently stringifies every
-result, and [call persistence](../apps/scout/convex/agentsApi/model.ts) only stores
-a string. Preserve a capture reference in the stored result and resolve it to
-signed image content when submitting the provider result. Passing an image URL
-inside a JSON string does not give the model image input. This provider path still
-needs a real Scout test.
+The capture tool returns an ID, the agent's note, and observed page metadata.
+Scout continues its normal task and writes explanations from its browser
+observations. PNG bytes stay in R2 and are delivered to the viewer through signed
+URLs. There is no image-input round trip or separate vision-analysis pass. This
+means captions reflect Scout's observations, rather than an independent visual
+verification of the saved image. Product trials must check the images themselves.
 
 In Agents, add Walkthrough beside Request check, Site research, and Chat in the
 existing flat Task tree. In the public review, show the explanation with a large
@@ -197,21 +196,59 @@ exports, and shared screenshot libraries. The images and captions could later
 produce a slideshow video without aligning Firecrawl's recording clock, but that
 is not required to make the review readable.
 
-## Next implementation and test
+## Product trial
 
-Implement capture-to-R2, image tool results, and the simple walkthrough renderer
-together. Then run an ordinary review prompt through Scout on a site that needs
-no human handoff. Verify the completed explanation against its actual screenshots,
-not just successful tool calls.
+The homepage submitted this ordinary prompt to Conrad, without screenshot instructions:
 
-Test a short form or calculator flow and a multi-page product flow. Check capture
-selection, observed captions, persisted order after reconnect, private/public
-access, survival after browser closure, signed URL refresh, and an upload failure
-that does not repeat the interaction. Change capture defaults only if these trials
-show that Scout misses important states or captures too much.
+> Try https://score-four.pfp.workers.dev/. Check local play, undo, and starting a new game. Tell me what works and any problems you observe.
 
-The subagent reviews supplied the storage, tab-association, and walkthrough
-recommendations. Their proposed editor controls, duplicate provenance IDs, and
-new capture-order counter were deferred or removed from this MVP. All reviewers
-were read-only and used the primary checkout. Research and probes are on
-`nicu-guided-screenshot-research`; no product code or deployment changed.
+The first attempt failed on an OpenAI history request before opening a browser.
+A manual continuation then received a provider conflict when submitting a tool
+result. It supplies no evidence for screenshot capture.
+
+The fresh second task is available in development at
+`/review?thread=s573q12n8qh2npsvjxxwq5nbg98eetb8&view=walkthrough` and its admin
+inspector at `/agents?session=s573q12n8qh2npsvjxxwq5nbg98eetb8&step=walkthrough`.
+Scout read its research, tested the game, and saved six 2560 × 1600 PNGs:
+
+1. Homepage with local play and invitation controls.
+2. Empty local board, Maple to move, Undo disabled.
+3. First move placed on A1, Walnut to move, Undo enabled.
+4. Undo restored the empty board and Maple's turn.
+5. New game confirmation dialog.
+6. Confirmed reset with an empty board and Undo disabled.
+
+Scout called `save_walkthrough` with four sections covering local play, move/Undo,
+reset confirmation, and the unavailable 3D view. Those sections reference seven
+images because the empty-board capture also illustrates the 3D limitation.
+All six tool results contained only `kind`, `captureId`, `note`, and `metadata`.
+Capture start-to-finish measurements were 389–792 ms, excluding R2 upload.
+
+A second OpenAI history 404 interrupted wrap-up after the walkthrough was saved.
+Browser cleanup closed the session. A manual follow-up asking for the final
+summary completed the task, which is now idle. Later read-only requests for both
+failed history reads returned 200. The exact cause of those transient errors is
+unresolved; this was not an uninterrupted end-to-end run.
+
+Investigation also found a separate cursor bug: failed tool items were not treated
+as terminal and could hold the local history cursor behind completed work. That
+condition now advances the cursor and has a regression test. It does not explain
+or fix the provider 404/conflict responses. No retry framework was added.
+
+The saved images were checked in the public viewer against the captions. An
+unauthenticated client could read this public report and fetch its signed image
+URL as `200 image/png` after browser closure. Automated checks cover private/public
+authorization, foreign capture rejection, upload failure without replaying an
+interaction, task switching, and signed URL refresh. Browser checks cover the
+desktop and mobile walkthrough, Expand, Previous/Next, Replay, and the admin
+Workspace button while viewing Walkthrough.
+
+The UI now puts explanations beside the uncropped image in a wide pane and stacks
+them in a narrow pane. Expanded screenshots fit the viewport. Finished public
+reviews start on Walkthrough, with Chat and Replay available and a compact
+follow-up link. Running or interrupted tasks keep the composer and Stop controls.
+
+Three subagents reviewed and implemented capture association, storage/access, and
+the shared viewer. The remaining empirical work is a short form or calculator
+review and a multi-page product review. OAuth, human handoff, zoom, and changing
+canvas content have not been validated by these screenshot trials.

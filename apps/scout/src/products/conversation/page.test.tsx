@@ -269,6 +269,11 @@ test("a report arriving during a running Review keeps the reader in Chat and pre
       status: "finished",
       hasWalkthrough: true,
     });
+    remote.queries.set("agentsApi/sessions:controls", {
+      state: { kind: "idle" },
+      canStop: false,
+      canSend: true,
+    });
     remote.queries.set("agentsApi/walkthrough:get", {
       walkthrough: {
         summary: "The game works.",
@@ -297,9 +302,8 @@ test("a report arriving during a running Review keeps the reader in Chat and pre
   expect(screen.queryByRole("heading", { name: "Start again" })).toBeNull();
   fireEvent.click(screen.getByRole("link", { name: "Walkthrough" }));
   expect(await screen.findByRole("heading", { name: "Start again" })).toBeTruthy();
-  expect(screen.getByDisplayValue("Keep this thought")).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Stop Scout" })).toBeTruthy();
-  fireEvent.click(screen.getByRole("link", { name: "Chat" }));
+  expect(screen.queryByRole("textbox", { name: "Message Scout" })).toBeNull();
+  fireEvent.click(screen.getByRole("link", { name: "Ask a follow-up" }));
   expect(await screen.findByRole("region", { name: "Conversation with Scout" })).toBeTruthy();
   expect(screen.getByDisplayValue("Keep this thought")).toBeTruthy();
   expect(remote.sendManaged).not.toHaveBeenCalled();
@@ -317,7 +321,7 @@ test("a direct walkthrough link shows an older task's empty state without forcin
   );
   remote.queries.set("agentsApi/walkthrough:get", { walkthrough: null, captures: [] });
   await openPlay("/review?thread=game-thread&view=walkthrough");
-  expect(await screen.findByRole("heading", { name: "No screenshots yet" })).toBeTruthy();
+  expect(await screen.findByRole("heading", { name: "No screenshots saved" })).toBeTruthy();
   expect(screen.getByRole("link", { name: "Chat" })).toBeTruthy();
   expect(remote.sendManaged).not.toHaveBeenCalled();
 });
@@ -349,7 +353,7 @@ test("desktop walkthrough starts with Replay collapsed and preserves pane choice
   expect(screen.getByRole("region", { name: "Scout's browser" })).toBe(browser);
   fireEvent.click(screen.getByRole("button", { name: "Hide replay" }));
   fireEvent.click(screen.getByRole("link", { name: "Walkthrough" }));
-  expect(await screen.findByRole("heading", { name: "No screenshots yet" })).toBeTruthy();
+  expect(await screen.findByRole("heading", { name: "No screenshots saved" })).toBeTruthy();
   expect(pane?.hasAttribute("data-desktop-open")).toBe(false);
   expect(screen.getByRole("button", { name: "Show replay" })).toBeTruthy();
 });

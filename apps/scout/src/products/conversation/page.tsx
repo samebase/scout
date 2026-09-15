@@ -859,35 +859,48 @@ function ConversationSession({
             </MessageScrollerProvider>
           </div>
           {thread.canControl ? (
-            <ConversationComposer
-              value={draft}
-              onChange={setDraft}
-              onSubmit={(event) => {
-                void send(event);
-              }}
-              disabled={request.kind === "pending"}
-              canSend={canSend}
-              onStop={
-                canStop
-                  ? () => {
-                      void stop();
-                    }
-                  : null
-              }
-              placeholder="Message Scout…"
-            >
-              <span role="status">
-                {scout?.status !== "active"
-                  ? "This Scout is unavailable."
-                  : managedId
-                    ? managed?.busy
-                      ? "This Scout is busy in another chat."
-                      : thread.status === "stopping"
-                        ? "Stopping Scout…"
-                        : null
-                    : activityNotice(activity, threadId)}
-              </span>
-            </ConversationComposer>
+            showingWalkthrough && thread.status === "finished" ? (
+              <Button asChild variant="outline" size="sm" className="self-end">
+                <Link
+                  to="/review"
+                  search={{ ...search, view: "chat" }}
+                  resetScroll={false}
+                  onClick={() => setMobilePane("main")}
+                >
+                  Ask a follow-up
+                </Link>
+              </Button>
+            ) : (
+              <ConversationComposer
+                value={draft}
+                onChange={setDraft}
+                onSubmit={(event) => {
+                  void send(event);
+                }}
+                disabled={request.kind === "pending"}
+                canSend={canSend}
+                onStop={
+                  canStop
+                    ? () => {
+                        void stop();
+                      }
+                    : null
+                }
+                placeholder="Message Scout…"
+              >
+                <span role="status">
+                  {scout?.status !== "active"
+                    ? "This Scout is unavailable."
+                    : managedId
+                      ? managed?.busy
+                        ? "This Scout is busy in another chat."
+                        : thread.status === "stopping"
+                          ? "Stopping Scout…"
+                          : null
+                      : activityNotice(activity, threadId)}
+                </span>
+              </ConversationComposer>
+            )
           ) : (
             <Link
               to={productRoutes[kind]}

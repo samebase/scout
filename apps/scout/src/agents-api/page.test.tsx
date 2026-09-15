@@ -331,7 +331,7 @@ test("opens Walkthrough alongside Chat with Workspace, active controls, and rout
   });
   const tasks = screen.getByRole("navigation", { name: "Tasks" });
   fireEvent.click(within(tasks).getByRole("link", { name: "Walkthrough" }));
-  expect(await screen.findByRole("heading", { name: "No screenshots yet" })).toBeTruthy();
+  expect(await screen.findByRole("heading", { name: "No screenshots saved" })).toBeTruthy();
   expect(router.state.location.search).toMatchObject({ session: "session-1", step: "walkthrough" });
   expect(
     within(tasks).getByRole("link", { name: "Walkthrough" }).getAttribute("aria-current"),
@@ -344,12 +344,12 @@ test("opens Walkthrough alongside Chat with Workspace, active controls, and rout
   expect((await screen.findByLabelText("File contents")).textContent).toBe("Saved research");
   expect(router.state.location.search).toMatchObject({ step: "walkthrough", view: "workspace" });
   fireEvent.click(screen.getByRole("button", { name: "Workspace" }));
-  expect(await screen.findByRole("heading", { name: "No screenshots yet" })).toBeTruthy();
+  expect(await screen.findByRole("heading", { name: "No screenshots saved" })).toBeTruthy();
   fireEvent.click(within(tasks).getByRole("link", { name: "Chat" }));
   expect(await screen.findByRole("region", { name: "Conversation" })).toBeTruthy();
   expect(screen.getByDisplayValue("Keep this draft")).toBeTruthy();
   act(() => router.history.back());
-  expect(await screen.findByRole("heading", { name: "No screenshots yet" })).toBeTruthy();
+  expect(await screen.findByRole("heading", { name: "No screenshots saved" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Stop" }));
   await waitFor(() =>
     expect(remote.stop).toHaveBeenCalledExactlyOnceWith({ sessionId: "session-1" }),
@@ -367,7 +367,7 @@ test("walkthrough remains discoverable before Chat exists and can stop the start
   remote.queries.set("agentsApi/sessions:list", [starting]);
   remote.queries.set("agentsApi/walkthrough:get", { walkthrough: null, captures: [] });
   await open("/agents?session=session-1&step=walkthrough");
-  expect(await screen.findByRole("heading", { name: "No screenshots yet" })).toBeTruthy();
+  expect(await screen.findByRole("heading", { name: "No screenshots saved" })).toBeTruthy();
   expect(screen.queryByRole("link", { name: "Chat" })).toBeNull();
   expect(screen.getByRole("link", { name: "Walkthrough" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Stop" }));

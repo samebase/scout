@@ -135,6 +135,7 @@ test("follows the illustrated report order and loads only the selected original"
     1800,
   );
   expect(screen.getByRole("heading", { name: "Undo the move" })).toBeTruthy();
+  expect(screen.queryByText("Playing, undoing a move, and starting again all worked.")).toBeNull();
   expect(screen.getByText("2 of 2")).toBeTruthy();
   expect(screen.getByRole<HTMLButtonElement>("button", { name: "Next" }).disabled).toBe(true);
   expect(remote.imageUrl).toHaveBeenCalledTimes(2);
@@ -143,6 +144,7 @@ test("follows the illustrated report order and loads only the selected original"
   );
   fireEvent.click(screen.getByRole("button", { name: "Previous" }));
   expect(await screen.findByRole("heading", { name: "Play a move" })).toBeTruthy();
+  expect(screen.getByText("Playing, undoing a move, and starting again all worked.")).toBeTruthy();
 });
 
 test("shows notes in capture creation order while the final walkthrough is absent", async () => {
@@ -180,7 +182,8 @@ test("distinguishes loading, access denial, and an empty older task", () => {
   publish(firstSession, null);
   expect(screen.getByRole("heading", { name: "Walkthrough unavailable" })).toBeTruthy();
   publish(firstSession, { walkthrough: null, captures: [] });
-  expect(screen.getByRole("heading", { name: "No screenshots yet" })).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "No screenshots saved" })).toBeTruthy();
+  expect(screen.getByText("Read the chat for this task’s findings.")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Next" })).toBeNull();
   expect(remote.imageUrl).not.toHaveBeenCalled();
 });
@@ -225,14 +228,14 @@ test("ignores image requests that finish after a task switch", async () => {
   expect(current.getAttribute("src")).not.toContain("stale");
 });
 
-test("expands the original in a focus-trapped dialog and returns focus after Escape", async () => {
+test("expands the screenshot to fit a focus-trapped dialog and returns focus after Escape", async () => {
   const user = userEvent.setup();
   render(<TaskWalkthrough sessionId={firstSession} />);
   await screen.findByRole("img", { name: "A piece in the board" });
   const expand = screen.getByRole("button", { name: "Expand" });
   await user.click(expand);
   const dialog = screen.getByRole("dialog", { name: "Play a move" });
-  expect(within(dialog).getByRole("img").className).toContain("max-w-none");
+  expect(within(dialog).getByRole("img").className).toContain("object-contain");
   expect(dialog.contains(document.activeElement)).toBe(true);
   await user.tab();
   await user.tab();
@@ -298,4 +301,35 @@ test("shows revoked or failed image access without mounting a broken image", asy
     "Couldn’t load this screenshot. Try again.",
   );
   expect(remote.imageUrl).toHaveBeenCalledTimes(2);
+});
+
+test("a failed URL renewal keeps the loaded screenshot, while revoked access removes it", async () => {
+  vi.useFakeTimers();
+  remote.imageUrl
+    .mockResolvedValueOnce({
+      url: "https://images.example.com/loaded.png",
+      expiresAtMs: Date.now() + 60_000,
+    })
+    .mockRejectedValueOnce(new Error("Offline"))
+    .mockResolvedValueOnce(null);
+  await act(async () => {
+    render(<TaskWalkthrough sessionId={firstSession} />);
+  });
+  const loaded = screen.getByRole("img");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(60_000);
+  });
+  expect(remote.imageUrl).toHaveBeenCalledTimes(2);
+  expect(screen.getByRole("img")).toBe(loaded);
+  expect(screen.queryByRole("alert")).toBeNull();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(600_000);
+  });
+  expect(remote.imageUrl).toHaveBeenCalledTimes(2);
+  await act(async () => {
+    fireEvent.error(loaded);
+  });
+  expect(remote.imageUrl).toHaveBeenCalledTimes(3);
+  expect(screen.queryByRole("img")).toBeNull();
+  expect(screen.getByRole("alert").textContent).toBe("This screenshot is no longer available.");
 });

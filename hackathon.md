@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-15T12:29:46.811Z
+- **Last updated:** 2026-09-15T13:52:55Z
 
 ## Log
 
@@ -1274,7 +1274,7 @@ Convex retains each attempt for inspection; rejection keeps the handoff paused, 
 late approvals. The admin tree keeps one Chat beside the request and resume checks
 (`apps/scout/convex/agentsApi/requestChecks.ts`, `apps/scout/src/agents-api/page.tsx`).
 
-### 2026-09-15 - working tree
+### 2026-09-15 - bdf25f2
 
 Reviews gather public site information with a bounded Firecrawl Agent job before browser work.
 The existing Convex workflow handles polling and cancellation; each task retains its briefing
@@ -1282,3 +1282,11 @@ and provider request/result in R2, while the site workspace holds the latest pub
 Admins inspect research beside Chat, with timing and reported credits; the task workspace stays
 available from every step
 (`apps/scout/convex/agentsApi/siteResearch.ts`, `apps/scout/src/agents-api/site-research.tsx`).
+
+### 2026-09-15 - working tree
+
+Scout can save screenshots during a review and assemble them into an illustrated walkthrough.
+Convex records each capture's task, page, timing, and note; original PNGs stay in the existing
+R2 bucket and follow the task's public/private access. Review and Agents share a viewer with
+explanations, Previous/Next, and Expand, while Chat, Replay, and Workspace remain available
+(`apps/scout/convex/agentsApi/walkthrough.ts`, `apps/scout/src/components/task-walkthrough.tsx`).
