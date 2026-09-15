@@ -19,7 +19,7 @@ import {
 import { workspaceFileKey, workspaceStorage } from "../workspaceStorage";
 import { runWorkspaceShell } from "./workspaceShell";
 
-export async function readStoredFile(entry: Extract<WorkspaceEntry, { kind: "file" }>) {
+async function readStoredFile(entry: Extract<WorkspaceEntry, { kind: "file" }>) {
   const response = await fetch(await workspaceStorage().getUrl(entry.key), {
     signal: AbortSignal.timeout(20_000),
   });

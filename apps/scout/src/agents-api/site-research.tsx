@@ -30,7 +30,7 @@ export function SiteResearchView({
                   variant="outline"
                   onClick={() =>
                     void stop({ sessionId: session._id }).catch((cause) =>
-                      setError(cause instanceof Error ? cause.message : "Could not stop session"),
+                      setError(cause instanceof Error ? cause.message : "Could not stop task"),
                     )
                   }
                 >
@@ -45,7 +45,7 @@ export function SiteResearchView({
           )}
           {!research && (
             <p role="status">
-              {research === undefined ? "Opening research…" : "No research for this session."}
+              {research === undefined ? "Opening research…" : "No research for this task."}
             </p>
           )}
           {research?.state.kind === "running" && (

@@ -82,7 +82,7 @@ function AgentsWorkspace({ search }: { search: AgentsSearch }) {
     <SidebarLayout
       addressChrome={<AgentsChrome session={session ?? null} search={search} />}
       resizeHandleLabels={{
-        left: "Resize sessions",
+        left: "Resize tasks",
         right: checking || researching ? "Resize call details" : "Resize browser",
       }}
       formatResizeHandleValueText={({ widthPx }) => `${widthPx} pixels wide`}
@@ -90,15 +90,15 @@ function AgentsWorkspace({ search }: { search: AgentsSearch }) {
         <PaneFrame
           scrollRestorationId="agents-sessions"
           content={
-            <aside aria-label="Sessions">
+            <aside aria-label="Tasks">
               {status === "LoadingFirstPage" ? (
                 <p role="status" className="p-4 text-sm text-muted-foreground">
-                  Loading sessions…
+                  Loading tasks…
                 </p>
               ) : sessions.length === 0 ? (
-                <p className="p-4 text-sm text-muted-foreground">No sessions yet.</p>
+                <p className="p-4 text-sm text-muted-foreground">No tasks yet.</p>
               ) : (
-                <nav className="flex flex-col gap-1 p-2" aria-label="Agent sessions">
+                <nav className="flex flex-col gap-1 p-2" aria-label="Tasks">
                   {sessions.map((item) => (
                     <div key={item._id} className="pb-2">
                       <Link
@@ -212,7 +212,7 @@ function AgentsWorkspace({ search }: { search: AgentsSearch }) {
                       disabled={status === "LoadingMore"}
                       onClick={() => loadMore(50)}
                     >
-                      {status === "LoadingMore" ? "Loading…" : "Load more sessions"}
+                      {status === "LoadingMore" ? "Loading…" : "Load more tasks"}
                     </Button>
                   )}
                 </nav>
@@ -228,13 +228,13 @@ function AgentsWorkspace({ search }: { search: AgentsSearch }) {
           <PaneFrame
             content={
               <p role="status" className="p-6 text-sm text-muted-foreground">
-                Opening session…
+                Opening task…
               </p>
             }
           />
         ) : session === null ? (
           <PaneFrame
-            content={<p className="p-6 text-sm text-muted-foreground">Session not found.</p>}
+            content={<p className="p-6 text-sm text-muted-foreground">Task not found.</p>}
           />
         ) : (
           <SessionContent
@@ -279,7 +279,7 @@ function AgentsChrome({ session, search }: { session: Session | null; search: Ag
         type="button"
         variant="ghost"
         size="icon-sm"
-        aria-label={navigationShown ? "Hide sessions" : "Show sessions"}
+        aria-label={navigationShown ? "Hide tasks" : "Show tasks"}
         aria-pressed={navigationShown}
         onClick={() =>
           isMobile ? setMobilePane(navigationShown ? "main" : "left") : toggleLeftPane()
@@ -289,7 +289,7 @@ function AgentsChrome({ session, search }: { session: Session | null; search: Ag
       </Button>
       <div className="min-w-0 flex-1">
         <h1 className="truncate text-sm font-semibold" title={session?.title}>
-          {session?.title ?? "Agents"}
+          {session?.title ?? "Tasks"}
         </h1>
         {session && <p className="truncate text-xs text-muted-foreground">{session.scoutName}</p>}
       </div>
@@ -337,7 +337,7 @@ function AgentsChrome({ session, search }: { session: Session | null; search: Ag
       <Button asChild variant="ghost" size="sm">
         <Link to="/agents" search={{}} resetScroll={false}>
           <PlusIcon aria-hidden="true" />
-          New
+          New task
         </Link>
       </Button>
     </div>
@@ -381,7 +381,7 @@ function NewSession() {
     } catch (error) {
       setRequest({
         kind: "failed",
-        message: error instanceof Error ? error.message : "Could not start session.",
+        message: error instanceof Error ? error.message : "Could not start task.",
       });
     } finally {
       submitting.current = false;
@@ -390,7 +390,7 @@ function NewSession() {
 
   return (
     <section className="mx-auto flex w-full max-w-2xl flex-col justify-center px-4 py-10 sm:px-8">
-      <h2 className="mb-6 text-2xl font-semibold tracking-tight">New session</h2>
+      <h2 className="mb-6 text-2xl font-semibold tracking-tight">New task</h2>
       <form onSubmit={(event) => void submit(event)} className="space-y-4">
         <div className="space-y-2">
           <label htmlFor="agents-scout" className="text-sm font-medium">
@@ -564,7 +564,7 @@ function SessionView({ session }: { session: Session }) {
     } catch (error) {
       setRequest({
         kind: "failed",
-        message: error instanceof Error ? error.message : `Could not ${operation} session.`,
+        message: error instanceof Error ? error.message : `Could not ${operation} task.`,
       });
     } finally {
       submitting.current = false;
@@ -581,7 +581,7 @@ function SessionView({ session }: { session: Session }) {
             <Button
               variant="ghost"
               size="sm"
-              aria-label="Refresh session"
+              aria-label="Refresh task"
               disabled={pending}
               onClick={() => void run("refresh")}
             >
@@ -695,7 +695,7 @@ export function AgentsError({ error, reset }: ErrorComponentProps) {
         </Button>
         <Button asChild variant="ghost">
           <Link to="/agents" search={{}}>
-            New session
+            New task
           </Link>
         </Button>
       </div>

@@ -22,7 +22,7 @@ export function RequestCheckView({
     try {
       await stop({ sessionId: session._id });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not stop session.");
+      setError(cause instanceof Error ? cause.message : "Could not stop task.");
     } finally {
       setStopping(false);
     }

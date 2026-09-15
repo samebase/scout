@@ -51,11 +51,13 @@ speculative prompt edits.
 - New Agents API sessions first run one request check. It generates a short title
   while preserving the original request. Pending, declined, and failed checks stay
   out of public results; owners can see their request and rejection reason.
-- Agents shows an always-expanded session tree with one complete Chat and flat
-  Request check and Resume check entries. Selecting a check opens its evidence
+- Agents calls the overall request a Task, distinct from its Firecrawl browser
+  sessions. Its always-expanded tree has one complete Chat and flat Request check,
+  Site research, and Resume check entries. Selecting a check opens its evidence
   and decision in the main panel, with API input, response, timing, and cost in
   the right inspector. Check attempts stay in creation order; Chat is not split
-  around them. Historical sessions have only Chat. There is no expansion state.
+  around them. Historical tasks have only Chat. The task workspace is available
+  from every entry. There is no expansion state.
 - The initial check judges the request and supplied URLs, not website contents. It does
   not browse, research, or certify a site's safety. The existing workflow starts
   the main agent only after approval. Failures remain visible for manual rerun.
@@ -104,9 +106,10 @@ presentation where useful, but do not simply remove the guard from management qu
 ## Implementation order to try
 
 Member Scout browsing, site association, request checks, and [Site research](site-research.md)
-are implemented. New reviews gather a brief from public pages and existing guides
-before the browser agent starts. Agents shows the research beside the single chat,
-with source files and call details. Score Four completed a real review after reading
+are implemented. Firecrawl Agent gathers a brief from public pages before the browser
+agent starts; the browser agent reads that brief and existing site guides. Agents shows
+research beside the single chat, with its saved request, result, and job details.
+Score Four completed a real review after reading
 its brief; broader comparisons are still needed.
 
 Use recorded browser navigation for an optional “Other sites visited” view; it is
