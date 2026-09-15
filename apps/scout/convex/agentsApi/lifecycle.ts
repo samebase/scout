@@ -21,6 +21,27 @@ export const run = workflow
       ))
     )
       return null;
+    if (args.command.kind === "start") {
+      const researching = await step.runAction(
+        internal.agentsApi.siteResearch.run,
+        {
+          sessionId: args.sessionId,
+          prompt: args.command.prompt,
+        },
+        { retry: false },
+      );
+      if (researching) {
+        while (
+          await step.runAction(
+            internal.agentsApi.siteResearch.advance,
+            { sessionId: args.sessionId },
+            { retry: false, runAfter: 5_000 },
+          )
+        ) {
+          /* Firecrawl researches the site; the workflow polls without holding an action open. */
+        }
+      }
+    }
     if (!(await step.runAction(internal.agentsApi.runtime.begin, args, { retry: false })))
       return null;
     while (

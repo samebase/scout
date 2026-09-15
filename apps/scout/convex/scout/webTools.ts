@@ -169,6 +169,7 @@ export function createWebTools(
           disposition: `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
         });
         await ctx.runMutation(internal.scout.workspaces.addFile, {
+          overwrite: false,
           workspaceId: snapshot.workspaceId,
           userId: scope.userId,
           entry: {

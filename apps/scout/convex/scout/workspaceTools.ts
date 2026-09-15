@@ -35,6 +35,46 @@ async function readStoredFile(entry: Extract<WorkspaceEntry, { kind: "file" }>) 
   return bytes;
 }
 
+export async function saveWorkspaceFile(
+  ctx: ActionCtx,
+  args: { target: WorkspaceTarget; userId: Id<"users">; path: string; text: string },
+) {
+  const bytes = new TextEncoder().encode(args.text);
+  if (bytes.byteLength > MAX_WORKSPACE_FILE_BYTES)
+    throw new Error(`File exceeds ${MAX_WORKSPACE_FILE_BYTES} bytes: ${args.path}`);
+  const snapshot = await ctx.runMutation(internal.scout.workspaces.snapshot, {
+    target: args.target,
+    userId: args.userId,
+  });
+  const storage = workspaceStorage();
+  const key = workspaceFileKey({
+    ...args.target,
+    userId: args.userId,
+    uploadId: randomUUID(),
+    path: args.path,
+  });
+  await storage.store(ctx, bytes, { key, type: "text/plain; charset=utf-8" });
+  try {
+    await ctx.runMutation(internal.scout.workspaces.addFile, {
+      overwrite: true,
+      workspaceId: snapshot.workspaceId,
+      userId: args.userId,
+      entry: {
+        kind: "file",
+        path: args.path,
+        key,
+        size: bytes.byteLength,
+        sha256: createHash("sha256").update(bytes).digest("hex"),
+        mode: 0o644,
+        mtime: Date.now(),
+      },
+    });
+  } catch (error) {
+    await storage.deleteObject(ctx, key);
+    throw error;
+  }
+}
+
 export function createWorkspaceTools(
   ctx: ActionCtx,
   scope: { target: Exclude<WorkspaceTarget, { kind: "site" }>; userId: Id<"users"> },

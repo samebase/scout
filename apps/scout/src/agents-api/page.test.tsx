@@ -112,6 +112,7 @@ function session(state: Session["state"] = { kind: "idle" }) {
     browser: null,
     usage: null,
     checks: [],
+    research: null,
     checkMessage: null,
     hasChat: true,
     cost: {
@@ -247,29 +248,29 @@ test.each(["loading", "cached"])(
     fireEvent.change(await screen.findByRole("textbox", { name: "Message" }), {
       target: { value: "First chat draft" },
     });
-    const navigation = screen.getByRole("navigation", { name: "Agent sessions" });
+    const navigation = screen.getByRole("navigation", { name: "Tasks" });
     const scroller = navigation.closest("[data-scroll-restoration-id]");
     if (!scroller) throw new Error("Session list has no scroll container");
     scroller.scrollTop = 240;
-    const newLink = screen.getByRole("link", { name: "New" });
+    const newLink = screen.getByRole("link", { name: "New task" });
     const rightPane = document.querySelector('[data-pane-side="right"]');
     expect(rightPane).not.toBeNull();
 
     fireEvent.click(within(navigation).getByRole("link", { name: "Check another site Pip" }));
     await waitFor(() => expect(router.state.location.search).toEqual({ session: "session-2" }));
     if (queryState === "loading") {
-      expect(await screen.findByText("Opening session…")).toBeTruthy();
+      expect(await screen.findByText("Opening task…")).toBeTruthy();
       expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
-      expect(screen.getByRole("navigation", { name: "Agent sessions" })).toBe(navigation);
-      expect(screen.getByRole("link", { name: "New" })).toBe(newLink);
+      expect(screen.getByRole("navigation", { name: "Tasks" })).toBe(navigation);
+      expect(screen.getByRole("link", { name: "New task" })).toBe(newLink);
       expect(document.querySelector('[data-pane-side="right"]')).toBe(rightPane);
       expect(scroller.scrollTop).toBe(240);
       updateQuery(secondSessionQuery, secondSession);
     }
 
     expect(await screen.findByRole("heading", { name: "Check another site" })).toBeTruthy();
-    expect(screen.getByRole("navigation", { name: "Agent sessions" })).toBe(navigation);
-    expect(screen.getByRole("link", { name: "New" })).toBe(newLink);
+    expect(screen.getByRole("navigation", { name: "Tasks" })).toBe(navigation);
+    expect(screen.getByRole("link", { name: "New task" })).toBe(newLink);
     expect(document.querySelector('[data-pane-side="right"]')).toBe(rightPane);
     expect(scroller.scrollTop).toBe(240);
     expect(screen.getByRole("textbox", { name: "Message" })).toHaveProperty("value", "");
@@ -289,11 +290,11 @@ test.each(["loading", "cached"])(
 test("keeps navigation available for a missing session and the new session form", async () => {
   remote.queries.set("agentsApi/sessions:get", null);
   await open("/agents?session=session-1");
-  expect(await screen.findByText("Session not found.")).toBeTruthy();
-  const navigation = screen.getByRole("navigation", { name: "Agent sessions" });
-  fireEvent.click(screen.getByRole("link", { name: "New" }));
-  expect(await screen.findByRole("heading", { name: "New session" })).toBeTruthy();
-  expect(screen.getByRole("navigation", { name: "Agent sessions" })).toBe(navigation);
+  expect(await screen.findByText("Task not found.")).toBeTruthy();
+  const navigation = screen.getByRole("navigation", { name: "Tasks" });
+  fireEvent.click(screen.getByRole("link", { name: "New task" }));
+  expect(await screen.findByRole("heading", { name: "New task" })).toBeTruthy();
+  expect(screen.getByRole("navigation", { name: "Tasks" })).toBe(navigation);
 });
 
 test("opens session files through a shareable URL and preserves the conversation draft", async () => {
@@ -442,7 +443,7 @@ test("keeps one full Chat and chronological sibling checks with independent sele
   fireEvent.change(await screen.findByRole("textbox", { name: "Message" }), {
     target: { value: "Keep my draft" },
   });
-  const navigation = within(screen.getByRole("navigation", { name: "Agent sessions" }));
+  const navigation = within(screen.getByRole("navigation", { name: "Tasks" }));
   const chatLinks = navigation.getAllByRole("link", { name: "Chat" });
   expect(chatLinks).toHaveLength(1);
   const checkLinks = navigation.getAllByRole<HTMLAnchorElement>("link", { name: /check ·/ });
@@ -463,7 +464,19 @@ test("keeps one full Chat and chronological sibling checks with independent sele
   expect(screen.getByText("2.5s")).toBeTruthy();
   expect(screen.getByText("$0.000096 estimated")).toBeTruthy();
   expect(router.state.location.search).toMatchObject({ step: "request_check", check: initial._id });
-  expect(screen.queryByRole("button", { name: "Workspace" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Workspace" }));
+  fireEvent.click(await screen.findByRole("button", { name: "notes.md" }));
+  expect((await screen.findByLabelText("File contents")).textContent).toBe("Saved research");
+  expect(router.state.location.search).toMatchObject({
+    step: "request_check",
+    check: initial._id,
+    view: "workspace",
+    file: "/workspace/notes.md",
+  });
+  expect(screen.queryByRole("heading", { name: "Request check" })).toBeNull();
+  expect(screen.getByRole("heading", { name: "Call details" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Workspace" }));
+  expect(await screen.findByRole("heading", { name: "Request check" })).toBeTruthy();
   fireEvent.click(screen.getByText("Request", { exact: true }));
   expect(screen.getByText(/"input": "Original review request"/)).toBeTruthy();
   fireEvent.click(navigation.getByRole("link", { name: "Resume check · rejected" }));
@@ -655,7 +668,7 @@ test("admins can open member session files directly without gaining session cont
 
 test("starts with an active scout and opens the new session without mutating on page load", async () => {
   const router = await open();
-  await screen.findByRole("heading", { name: "New session" });
+  await screen.findByRole("heading", { name: "New task" });
   expect(remote.start).not.toHaveBeenCalled();
   expect(screen.queryByRole("option", { name: "Disabled" })).toBeNull();
   fireEvent.change(screen.getByLabelText("Scout"), { target: { value: "scout-1" } });
@@ -666,8 +679,8 @@ test("starts with an active scout and opens the new session without mutating on 
   );
   await waitFor(() => expect(router.state.location.search).toEqual({ session: "session-1" }));
   expect(await screen.findByLabelText("Message")).toBeTruthy();
-  await userEvent.setup().click(screen.getByRole("link", { name: "New" }));
-  expect(await screen.findByRole("heading", { name: "New session" })).toBeTruthy();
+  await userEvent.setup().click(screen.getByRole("link", { name: "New task" }));
+  expect(await screen.findByRole("heading", { name: "New task" })).toBeTruthy();
   expect(router.state.location.search).toEqual({});
 });
 
@@ -695,7 +708,7 @@ test("a saved link opens a session outside the recent list through the validated
 test("loads older sessions from the sidebar", async () => {
   remote.paginationStatus = "CanLoadMore";
   await open();
-  fireEvent.click(await screen.findByRole("button", { name: "Load more sessions" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Load more tasks" }));
   expect(remote.loadMore).toHaveBeenCalledExactlyOnceWith(50);
 });
 
@@ -1064,16 +1077,16 @@ test("restores desktop sidebar visibility through history while retaining the br
   const draft = await screen.findByLabelText<HTMLTextAreaElement>("Message");
   fireEvent.change(draft, { target: { value: "Still writing" } });
   const user = userEvent.setup();
-  await user.click(screen.getByRole("button", { name: "Hide sessions" }));
+  await user.click(screen.getByRole("button", { name: "Hide tasks" }));
   expect(router.state.location.search.sessions).toBe("hidden");
   await user.click(screen.getByRole("button", { name: "Hide browser" }));
   expect(router.state.location.search.inspector).toBe("hidden");
   expect(router.state.location.search.browser).toBe("browser-1");
   act(() => router.history.back());
   expect(await screen.findByRole("button", { name: "Hide browser" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Show sessions" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Show tasks" })).toBeTruthy();
   act(() => router.history.back());
-  expect(await screen.findByRole("button", { name: "Hide sessions" })).toBeTruthy();
+  expect(await screen.findByRole("button", { name: "Hide tasks" })).toBeTruthy();
   expect(draft.value).toBe("Still writing");
   expect(
     screen.getByRole("region", { name: "Conversation" }).closest('[data-pane-side="main"]'),
@@ -1094,10 +1107,10 @@ test("keeps mobile conversation selected when a browser arrives and restores pan
   expect(router.state.location.search.pane).toBe("right");
   await user.click(screen.getByRole("button", { name: "Hide browser" }));
   expect(router.state.location.search.pane).toBeUndefined();
-  await user.click(screen.getByRole("button", { name: "Show sessions" }));
+  await user.click(screen.getByRole("button", { name: "Show tasks" }));
   expect(router.state.location.search.pane).toBe("left");
   act(() => router.history.back());
-  expect(await screen.findByRole("button", { name: "Show sessions" })).toBeTruthy();
+  expect(await screen.findByRole("button", { name: "Show tasks" })).toBeTruthy();
   expect(draft.value).toBe("Still writing");
 });
 
@@ -1112,7 +1125,7 @@ test("navigates sidebar panes on Agents after leaving Lab at 675px without a sta
   await user.click(screen.getByRole("button", { name: "Show browser" }));
   expect(router.state.location.pathname).toBe("/agents");
   expect(router.state.location.search).toEqual({ session: "session-1", pane: "right" });
-  await user.click(screen.getByRole("button", { name: "Show sessions" }));
+  await user.click(screen.getByRole("button", { name: "Show tasks" }));
   expect(router.state.location.search).toEqual({ session: "session-1", pane: "left" });
   expect(warnings).not.toHaveBeenCalled();
 });
@@ -1232,15 +1245,93 @@ test("refreshes an ended session without sending, preserves drafts on failure, a
   const draft = await screen.findByLabelText<HTMLTextAreaElement>("Message");
   fireEvent.change(draft, { target: { value: "Keep this follow-up" } });
   const user = userEvent.setup();
-  await user.click(screen.getByRole("button", { name: "Refresh session" }));
+  await user.click(screen.getByRole("button", { name: "Refresh task" }));
   expect((await screen.findByRole("alert")).textContent).toBe("Could not read provider usage");
   expect(draft.value).toBe("Keep this follow-up");
   expect(remote.refresh).toHaveBeenCalledWith({ sessionId: "session-1" });
   expect(remote.send).not.toHaveBeenCalled();
-  await user.click(screen.getByRole("button", { name: "Refresh session" }));
+  await user.click(screen.getByRole("button", { name: "Refresh task" }));
   await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
   expect(draft.value).toBe("Keep this follow-up");
   updateQuery("agentsApi/sessions:get", session({ kind: "running" }));
-  expect(screen.queryByRole("button", { name: "Refresh session" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Refresh task" })).toBeNull();
   expect(remote.refresh).toHaveBeenCalledTimes(2);
+});
+
+test("opens research as a flat session step and links its calls to private workspace files", async () => {
+  const summary = { status: "completed", reportedCredits: 1 };
+  const research = {
+    _id: "research-1",
+    _creationTime: 1000,
+    sessionId: "session-1",
+    site: "example.com",
+    model: "spark-2",
+    maxCredits: 50,
+    jobId: "job-1",
+    requestPath: "/workspace/research/request.json",
+    responsePath: "/workspace/research/result.json",
+    credits: 1,
+    ...summary,
+    state: {
+      kind: "completed",
+      finishedAt: 2000,
+      brief: "A public calculator.",
+      briefPath: "/workspace/research/brief.md",
+    },
+  };
+  remote.queries.set("agentsApi/sessions:get", { ...session(), research: summary });
+  remote.queries.set("agentsApi/sessions:list", [{ ...session(), research: summary }]);
+  remote.queries.set("agentsApi/siteResearchRecords:inspect", research);
+  const router = await open("/agents?session=session-1&step=site_research");
+  expect(await screen.findByRole("heading", { name: "Site research" })).toBeTruthy();
+  expect(screen.getByText("A public calculator.")).toBeTruthy();
+  expect(screen.getByRole("link", { name: /Site research/ }).getAttribute("aria-current")).toBe(
+    "page",
+  );
+  expect(screen.getByRole("link", { name: "Chat" }).getAttribute("aria-current")).toBeNull();
+  expect(screen.queryByRole("region", { name: "Conversation" })).toBeNull();
+  await userEvent.setup().click(screen.getByRole("button", { name: "Workspace" }));
+  expect(await screen.findByRole("button", { name: "notes.md" })).toBeTruthy();
+  expect(router.state.location.search).toMatchObject({
+    step: "site_research",
+    view: "workspace",
+  });
+  expect(screen.queryByRole("heading", { name: "Site research" })).toBeNull();
+  expect(screen.getByRole("heading", { name: "Research details" })).toBeTruthy();
+  await userEvent.setup().click(screen.getByRole("button", { name: "Workspace" }));
+  expect(await screen.findByRole("heading", { name: "Site research" })).toBeTruthy();
+  await userEvent.setup().click(screen.getByRole("link", { name: "Request" }));
+  expect(router.state.location.search).toMatchObject({
+    session: "session-1",
+    step: "site_research",
+    view: "workspace",
+    file: "/workspace/research/request.json",
+  });
+});
+
+test("shows research during startup and allows stopping before the chat exists", async () => {
+  const summary = { status: "running", reportedCredits: 0 };
+  remote.queries.set("agentsApi/sessions:get", {
+    ...session({ kind: "starting" }),
+    providerId: undefined,
+    research: summary,
+  });
+  remote.queries.set("agentsApi/siteResearchRecords:inspect", {
+    _id: "research-1",
+    _creationTime: 1000,
+    sessionId: "session-1",
+    site: "example.com",
+    model: "spark-2",
+    maxCredits: 50,
+    jobId: "job-1",
+    requestPath: "/workspace/research/request.json",
+    responsePath: "/workspace/research/result.json",
+    credits: 1,
+    ...summary,
+    state: { kind: "running" },
+  });
+  await open("/agents?session=session-1");
+  expect(await screen.findByText("Gathering site information…")).toBeTruthy();
+  await userEvent.setup().click(screen.getByRole("button", { name: "Stop" }));
+  expect(remote.stop).toHaveBeenCalledWith({ sessionId: "session-1" });
 });

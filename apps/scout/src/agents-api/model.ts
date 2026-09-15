@@ -4,7 +4,7 @@ import type { api } from "../../convex/_generated/api";
 
 export const agentsSearch = z.object({
   session: z.string().min(1).optional(),
-  step: z.enum(["request_check", "chat"]).optional(),
+  step: z.enum(["request_check", "site_research", "chat"]).optional(),
   check: z.string().min(1).optional(),
   browser: z.string().min(1).optional(),
   replayPage: z.string().min(1).optional(),
@@ -20,6 +20,9 @@ export type Session = NonNullable<FunctionReturnType<typeof api.agentsApi.sessio
 export type RequestCheck = NonNullable<
   FunctionReturnType<typeof api.agentsApi.requestChecks.inspect>
 >;
+export type SiteResearch = NonNullable<
+  FunctionReturnType<typeof api.agentsApi.siteResearchRecords.inspect>
+>;
 export type BrowserSession = FunctionReturnType<typeof api.agentsApi.sessions.listBrowsers>[number];
 export type SessionItem = FunctionReturnType<
   typeof api.agentsApi.sessions.listItems
@@ -27,7 +30,12 @@ export type SessionItem = FunctionReturnType<
 
 export function selectedStep(session: Session, search: AgentsSearch) {
   return (
-    search.step ?? (!session.providerId && session.checks.length > 0 ? "request_check" : "chat")
+    search.step ??
+    (!session.providerId && session.research
+      ? "site_research"
+      : !session.providerId && session.checks.length > 0
+        ? "request_check"
+        : "chat")
   );
 }
 

@@ -24,6 +24,8 @@ import { browserSessionLifecycleValidator } from "../browserModel";
 import { estimateAgentsApiCost } from "./cost";
 import { getInitialCheck, listChecks, summarizeCheck, currentCheckMessage } from "./requestChecks";
 import { REQUEST_CHECK_MODEL, MAX_SESSION_CHECKS, checkSummary } from "./requestCheckModel";
+import { getResearch, summarizeResearch } from "./siteResearchRecords";
+import { researchSummary } from "./siteResearchModel";
 
 async function requireSession(ctx: QueryCtx, sessionId: Id<"agentsApiSessions">) {
   const session = await ctx.db.get(sessionId);
@@ -95,6 +97,7 @@ export const list = query({
       state: sessionState,
       checks: v.array(checkSummary),
       hasChat: v.boolean(),
+      research: v.union(researchSummary, v.null()),
     }),
   ),
   handler: async (ctx, args) => {
@@ -108,6 +111,7 @@ export const list = query({
       page: await Promise.all(
         sessions.page.map(async ({ _id, _creationTime, title, scoutName, state, providerId }) => {
           const checks = await listChecks(ctx, _id);
+          const research = await getResearch(ctx, _id);
           return {
             _id,
             _creationTime,
@@ -116,6 +120,7 @@ export const list = query({
             state,
             checks: checks.map(summarizeCheck),
             hasChat: Boolean(providerId),
+            research: research ? summarizeResearch(research) : null,
           };
         }),
       ),
@@ -162,6 +167,7 @@ export const get = query({
       now: Date.now(),
     });
     const checks = await listChecks(ctx, session._id);
+    const research = await getResearch(ctx, session._id);
     return {
       _id,
       title,
@@ -176,6 +182,7 @@ export const get = query({
       usage,
       cost,
       checks: checks.map(summarizeCheck),
+      research: research ? summarizeResearch(research) : null,
       checkMessage: await currentCheckMessage(ctx, session),
       browser: browser
         ? {
