@@ -1,4 +1,4 @@
-import { isStepCount, streamText, tool, type ToolSet } from "ai";
+import { asSchema, isStepCount, streamText, tool, type ToolSet } from "ai";
 import { convertArrayToReadableStream, MockLanguageModelV4 } from "ai/test";
 import { EventEmitter, once } from "node:events";
 import {
@@ -10,7 +10,8 @@ import {
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { createBrowserHarness, selectAgentMailTools } from "./browserTools";
-import type { PlaywrightBrowser } from "./playwrightBrowser";
+import type { BrowserScreenshot, PlaywrightBrowser } from "./playwrightBrowser";
+import { MAX_SCREENSHOT_NOTE_LENGTH } from "../agentsApi/screenshotModel";
 
 const firstTab = {
   tabId: "t1",
@@ -27,6 +28,19 @@ const passwordTarget = {
 
 function runtime() {
   return {
+    captureScreenshot: vi.fn<PlaywrightBrowser["captureScreenshot"]>(async (tabId) => ({
+      bytes: Buffer.from("screenshot bytes stay outside tool output"),
+      metadata: {
+        tabId,
+        url: "https://example.com/",
+        title: "Example",
+        startedAtMs: 10,
+        completedAtMs: 20,
+        width: 2560,
+        height: 1600,
+        viewport: { width: 1280, height: 800, scrollX: 0, scrollY: 600 },
+      },
+    })),
     disconnect: vi.fn(async () => undefined),
     startClickCapture: vi.fn(async () => undefined),
     finishClickCapture: vi.fn<PlaywrightBrowser["finishClickCapture"]>(async () => ({
@@ -80,6 +94,309 @@ function dependencies(browserRuntime = runtime()) {
     sleep: vi.fn(async () => undefined),
   };
 }
+
+type CaptureCallback = NonNullable<
+  NonNullable<Parameters<typeof createBrowserHarness>[0]>["captureScreenshot"]
+>;
+
+function captureHarness(succeeded = true) {
+  const playwright = runtime();
+  const deps = dependencies(playwright);
+  deps.browserExecute.mockResolvedValue({
+    success: true,
+    exitCode: 0,
+    result: `__SCOUT_PLAYWRIGHT_RESULT__capture-step:${JSON.stringify(
+      succeeded
+        ? { ok: true, output: "action complete", activeTabId: "t2" }
+        : { ok: false, output: "before failure", error: "Button missing", activeTabId: "t2" },
+    )}`,
+  });
+  const saved: BrowserScreenshot[] = [];
+  const captureScreenshot = vi.fn<CaptureCallback>(async ({ take, note }) => {
+    const screenshot = await take();
+    saved.push(screenshot);
+    return { kind: "ready", captureId: "capture-1", note, metadata: screenshot.metadata };
+  });
+  const onOperationSettled = vi.fn(async () => undefined);
+  const browser = createBrowserHarness(
+    {
+      captureScreenshot,
+      onSessionCreated: async () => ({ captureOperations: true }),
+      onOperationPrepared: async () => true,
+      onOperationSettled,
+    },
+    deps,
+  );
+  return { browser, playwright, deps, captureScreenshot, onOperationSettled, saved };
+}
+
+describe("browser screenshot results", () => {
+  test.each([
+    { succeeded: true, snapshotFails: false },
+    { succeeded: true, snapshotFails: true },
+    { succeeded: false, snapshotFails: false },
+    { succeeded: false, snapshotFails: true },
+  ])(
+    "retains ready capture independently of action=$succeeded and snapshot failure=$snapshotFails",
+    async ({ succeeded, snapshotFails }) => {
+      const { browser, playwright, deps, captureScreenshot, saved, onOperationSettled } =
+        captureHarness(succeeded);
+      await browser.open("https://example.com");
+      playwright.snapshot.mockClear();
+      if (snapshotFails) playwright.snapshot.mockRejectedValueOnce(new Error("ARIA unavailable"));
+
+      const result = await browser.actions.executeCode(
+        "return await browserState(target)",
+        "capture-step",
+        undefined,
+        "Result screen",
+      );
+
+      expect(result).toMatchObject({
+        success: succeeded && !snapshotFails,
+        capture: {
+          kind: "ready",
+          captureId: "capture-1",
+          note: "Result screen",
+          metadata: { tabId: "t2", width: 2560, height: 1600 },
+        },
+      });
+      if (succeeded && snapshotFails)
+        expect(result).toMatchObject({ mutationApplied: true, doNotRetry: true });
+      if (!succeeded) expect(result.error).toBe("Button missing");
+      expect(saved).toHaveLength(1);
+      expect(playwright.captureScreenshot).toHaveBeenCalledExactlyOnceWith("t2", undefined);
+      expect(playwright.selectTab.mock.invocationCallOrder.at(-1)).toBeLessThan(
+        captureScreenshot.mock.invocationCallOrder[0],
+      );
+      expect(captureScreenshot.mock.invocationCallOrder[0]).toBeLessThan(
+        playwright.snapshot.mock.invocationCallOrder[0],
+      );
+      expect(JSON.stringify(result)).not.toContain("bytes");
+      expect(JSON.stringify(result)).not.toContain(saved[0].bytes.toString("base64"));
+      expect(deps.browserExecute).toHaveBeenCalledOnce();
+      expect(onOperationSettled).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          outcome: expect.objectContaining({
+            kind: succeeded
+              ? snapshotFails
+                ? "applied_snapshot_failed"
+                : "applied"
+              : "indeterminate_after_dispatch",
+          }),
+        }),
+      );
+    },
+  );
+
+  test.each(["capture", "upload", "returned failure", "limit"])(
+    "keeps a successful action applied when %s fails and permits another ordinary step",
+    async (failure) => {
+      const { browser, playwright, deps, captureScreenshot, onOperationSettled } = captureHarness();
+      await browser.open("https://example.com");
+      if (failure === "capture")
+        playwright.captureScreenshot.mockRejectedValueOnce(new Error("Capture failed"));
+      if (failure === "upload")
+        captureScreenshot.mockImplementationOnce(async ({ take }) => {
+          await take();
+          throw new Error("R2 upload failed");
+        });
+      if (failure === "returned failure")
+        captureScreenshot.mockResolvedValueOnce({ kind: "failed", message: "R2 upload failed" });
+      if (failure === "limit")
+        captureScreenshot.mockRejectedValueOnce(new Error("Task screenshot limit reached"));
+
+      const result = await browser.actions.executeCode(
+        "await page.getByRole('button').click()",
+        "capture-step",
+        undefined,
+        "Result screen",
+      );
+
+      expect(result).toMatchObject({
+        success: true,
+        output: "action complete",
+        error: null,
+        capture: { kind: "failed" },
+      });
+      expect(onOperationSettled).toHaveBeenLastCalledWith(
+        expect.objectContaining({ outcome: expect.objectContaining({ kind: "applied" }) }),
+      );
+      expect(deps.browserExecute).toHaveBeenCalledOnce();
+      expect(captureScreenshot).toHaveBeenCalledOnce();
+      expect(deps.sleep).not.toHaveBeenCalled();
+      await browser.actions.executeCode("return await browserState(page)", "capture-step");
+      expect(deps.browserExecute).toHaveBeenCalledTimes(2);
+      expect(captureScreenshot).toHaveBeenCalledOnce();
+    },
+  );
+
+  test("holds the exclusive operation through capture upload", async () => {
+    const { browser, playwright, captureScreenshot } = captureHarness();
+    await browser.open("https://example.com");
+    playwright.snapshot.mockClear();
+    const events = new EventEmitter();
+    const entered = once(events, "entered");
+    const release = once(events, "release");
+    captureScreenshot.mockImplementationOnce(async ({ take, note }) => {
+      const screenshot = await take();
+      events.emit("entered");
+      await release;
+      return { kind: "ready", captureId: "capture-1", note, metadata: screenshot.metadata };
+    });
+    const pending = browser.actions.executeCode(
+      "return await browserState(page)",
+      "capture-step",
+      undefined,
+      "Stationary screen",
+    );
+    try {
+      await entered;
+      await expect(browser.actions.executeCode("return await browserState(page)")).rejects.toThrow(
+        "Only one browser operation",
+      );
+      await expect(browser.actions.snapshot()).rejects.toThrow("Only one browser operation");
+      expect(playwright.snapshot).not.toHaveBeenCalled();
+    } finally {
+      events.emit("release");
+    }
+    expect(await pending).toMatchObject({ success: true, capture: { kind: "ready" } });
+  });
+
+  test.each(["closed", "unreported", "request failure"])(
+    "reports capture failure without selecting a fallback for %s target",
+    async (failure) => {
+      const { browser, playwright, deps, captureScreenshot } = captureHarness();
+      await browser.open("https://example.com");
+      if (failure === "closed") playwright.selectTab.mockResolvedValueOnce(false);
+      if (failure === "unreported")
+        deps.browserExecute.mockResolvedValueOnce({
+          success: true,
+          exitCode: 0,
+          stdout: "legacy result",
+        });
+      if (failure === "request failure")
+        deps.browserExecute.mockRejectedValueOnce(new Error("Provider connection lost"));
+
+      const result = await browser.actions.executeCode(
+        "return await browserState(target)",
+        "capture-step",
+        undefined,
+        "Result screen",
+      );
+
+      expect(result).toMatchObject({ capture: { kind: "failed" } });
+      expect(playwright.captureScreenshot).not.toHaveBeenCalled();
+      expect(captureScreenshot).toHaveBeenCalledOnce();
+      expect(deps.browserExecute).toHaveBeenCalledOnce();
+    },
+  );
+
+  test("preserves a completed capture when post-action observation fails", async () => {
+    const { browser, playwright, captureScreenshot } = captureHarness();
+    await browser.open("https://example.com");
+    playwright.observe
+      .mockResolvedValueOnce({ capturedAtMs: 1_020, tabs: [firstTab] })
+      .mockRejectedValueOnce(new Error("Observation lost"));
+    const result = await browser.actions.executeCode(
+      "return await browserState(page)",
+      "capture-step",
+      undefined,
+      "Result screen",
+    );
+    expect(result).toMatchObject({
+      success: false,
+      capture: { kind: "ready", captureId: "capture-1" },
+    });
+    expect(captureScreenshot).toHaveBeenCalledOnce();
+  });
+
+  test("reserves a failed capture before settling a failed provider request", async () => {
+    const playwright = runtime();
+    const deps = dependencies(playwright);
+    deps.browserExecute.mockRejectedValueOnce(new Error("Provider connection lost"));
+    const preparedOperations = new Set<string>();
+    const failedCaptures: string[] = [];
+    const captureScreenshot = vi.fn<CaptureCallback>(async ({ toolCallId, take }) => {
+      // screenshotRecords.prepare accepts only an operation that is still prepared.
+      expect(preparedOperations.has(toolCallId)).toBe(true);
+      try {
+        await take();
+      } catch (error) {
+        if (!(error instanceof Error)) throw error;
+        failedCaptures.push(error.message);
+        return { kind: "failed", message: error.message };
+      }
+      throw new Error("A failed provider request must not take a screenshot");
+    });
+    const browser = createBrowserHarness(
+      {
+        captureScreenshot,
+        onSessionCreated: async () => ({ captureOperations: true }),
+        onOperationPrepared: async ({ toolCallId }) => {
+          preparedOperations.add(toolCallId);
+          return true;
+        },
+        onOperationSettled: async ({ toolCallId }) => {
+          preparedOperations.delete(toolCallId);
+        },
+      },
+      deps,
+    );
+    await browser.open("https://example.com");
+
+    const result = await browser.actions.executeCode(
+      "return await browserState(page)",
+      "failed-request",
+      undefined,
+      "Result screen",
+    );
+
+    const message = "Screenshot target could not be confirmed after the Playwright request failed";
+    expect(result).toMatchObject({
+      success: false,
+      error: "Firecrawl Playwright request failed: Provider connection lost",
+      capture: { kind: "failed", message },
+    });
+    expect(failedCaptures).toEqual([message]);
+    expect(preparedOperations.size).toBe(0);
+    expect(captureScreenshot).toHaveBeenCalledOnce();
+    expect(playwright.captureScreenshot).not.toHaveBeenCalled();
+    expect(deps.browserExecute).toHaveBeenCalledOnce();
+  });
+
+  test("exposes nullable captureNote only on configured harnesses and retains ordinary tool calls", async () => {
+    const { browser, captureScreenshot } = captureHarness();
+    const legacy = createBrowserHarness({}, dependencies());
+    const schema = await asSchema(browser.tools.browser_execute.inputSchema).jsonSchema;
+    const legacySchema = await asSchema(legacy.tools.browser_execute.inputSchema).jsonSchema;
+    expect(schema.required).toEqual(["code", "captureNote"]);
+    expect(schema.properties).toHaveProperty("captureNote");
+    expect(legacySchema.required).toEqual(["code"]);
+    expect(legacySchema.properties).not.toHaveProperty("captureNote");
+    expect(legacy.tools.browser_execute.description).not.toContain("captureNote");
+    expect(browser.tools.browser_execute.description).not.toContain("input_image");
+    await browser.open("https://example.com");
+    expect(
+      await browser.tools.browser_execute.execute(
+        { code: "return await browserState(page)", captureNote: null },
+        { toolCallId: "capture-step", messages: [], context: undefined },
+      ),
+    ).not.toHaveProperty("capture");
+    expect(captureScreenshot).not.toHaveBeenCalled();
+    expect(() =>
+      browser.actions.executeCode(
+        "return 1",
+        "capture-step",
+        undefined,
+        "x".repeat(MAX_SCREENSHOT_NOTE_LENGTH + 1),
+      ),
+    ).toThrow();
+    expect(() =>
+      browser.actions.executeCode("return 1", "capture-step", undefined, "  "),
+    ).toThrow();
+  });
+});
 
 describe("Lab browser harness", () => {
   test("disconnect releases the local connection without closing the remote session", async () => {

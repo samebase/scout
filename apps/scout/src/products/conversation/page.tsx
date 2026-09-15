@@ -7,7 +7,7 @@ import {
   SelectValue,
 } from "#components/ui/select";
 import { accountAccessMessage, canAccess, useViewerAccess } from "../../lib/access";
-import { SidebarLayout } from "@samebase/sidebars/SidebarLayout";
+import { useSidebarActions } from "@samebase/sidebars/SidebarRuntime";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useConvexAuth, useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
@@ -25,7 +25,7 @@ import { productRoutes, type ProductKind, type ConversationSearch } from "./mode
 import { gameInviteDisplayText } from "../play/invite";
 import { ReviewSite } from "./review-site";
 import { ConversationComposer } from "./composer";
-import { ConversationSidebar, BrowserToggle, BrowserStop } from "./sidebar";
+import { ConversationSidebar, ConversationLayout, BrowserToggle, BrowserStop } from "./sidebar";
 import {
   MessageScrollerProvider,
   MessageScroller,
@@ -36,6 +36,8 @@ import {
 } from "../../components/ui/message-scroller";
 import { AuthPanel } from "../../components/auth-panel";
 import { BrowserReplay } from "../../components/browser-replay";
+import { TaskWalkthrough } from "#components/task-walkthrough";
+import { Button } from "#components/ui/button";
 import { ChatHandoffNotice } from "../../components/chat-handoff-notice";
 import { ProductShell } from "../shell";
 import { ScoutPiece } from "../play/scout-piece";
@@ -203,8 +205,8 @@ export function ConversationLobby({ kind }: { kind: ProductKind }) {
         )}
         {!isPlay && (
           <p className="mt-4 max-w-[580px] text-base text-muted-foreground">
-            Scout creates its own accounts, logs in, and tests the site. You get its findings and a
-            video replay.
+            Scout creates its own accounts, logs in, and tests the site. You get its findings,
+            screenshots, and a video replay.
           </p>
         )}
       </div>
@@ -354,9 +356,14 @@ function SessionLoader({
         {viewer?.kind !== "account" && <AuthPanel />}
       </div>
     );
+  const initialView =
+    kind === "review" && thread.runtime.kind === "agents_api"
+      ? (search.view ??
+        (thread.status === "finished" && thread.hasWalkthrough ? "walkthrough" : "chat"))
+      : "chat";
   return (
     <ConversationSidebar key={threadId}>
-      <ConversationSession thread={thread} kind={kind} search={search} />
+      <ConversationSession thread={thread} kind={kind} search={search} initialView={initialView} />
     </ConversationSidebar>
   );
 }
@@ -395,10 +402,12 @@ function ConversationSession({
   thread,
   kind,
   search,
+  initialView,
 }: {
   thread: ChatThread;
   kind: ProductKind;
   search: ConversationSearch;
+  initialView: "walkthrough" | "chat";
 }) {
   const scout = thread.scout;
   const viewer = useViewerAccess();
@@ -407,8 +416,12 @@ function ConversationSession({
     viewer?.kind === "account" &&
     canAccess("access_lab", viewer.accessKeys);
   const navigate = useNavigate();
+  const { setMobilePane } = useSidebarActions();
   const { threadId } = thread;
   const managedId = thread.runtime.kind === "agents_api" ? thread.runtime.sessionId : null;
+  const [defaultView] = useState(initialView);
+  const showingWalkthrough =
+    kind === "review" && managedId !== null && (search.view ?? defaultView) === "walkthrough";
   const managed = useQuery(
     api.agentsApi.sessions.controls,
     thread.canControl && managedId ? { sessionId: managedId } : "skip",
@@ -544,11 +557,11 @@ function ConversationSession({
             if (selected)
               void navigate({
                 to: productRoutes[kind],
-                search: (previous) => ({
-                  ...previous,
+                search: {
+                  ...search,
                   session: selected.sessionId,
                   replay: undefined,
-                }),
+                },
               });
           }}
           className="min-h-11 min-w-0 flex-1 rounded-lg bg-transparent pr-1 font-medium"
@@ -575,14 +588,13 @@ function ConversationSession({
           {session?.kind === "closed" ? "Replay" : "Scout’s view"}
         </span>
       )}
-      <BrowserToggle action="close" />
+      {kind === "play" && <BrowserToggle action="close" />}
     </div>
   );
 
   return (
-    <SidebarLayout
-      mobileMinResizeBehavior="min_resize_to_slide"
-      resizeHandleLabels={{ left: "Resize chat navigation", right: "Resize Scout’s view" }}
+    <ConversationLayout
+      kind={kind}
       addressChrome={
         <>
           <div className="mb-5 flex items-center justify-between gap-4 max-[760px]:mb-3">
@@ -629,8 +641,8 @@ function ConversationSession({
                   <ArrowUpRightIcon size={15} aria-hidden="true" />
                 </Link>
               )}
-              <BrowserToggle action="open" />
-              {canStop && (
+              {kind === "play" && <BrowserToggle action="open" />}
+              {kind === "play" && canStop && (
                 <BrowserStop
                   onStop={() => {
                     void stop();
@@ -658,6 +670,35 @@ function ConversationSession({
                 visibility={thread.visibility}
               />
             </div>
+          )}
+          {kind === "review" && managedId && (
+            <nav
+              aria-label="Review views"
+              className="mb-3 flex w-fit items-center gap-1 rounded-lg border bg-card p-1"
+            >
+              <Button asChild variant={showingWalkthrough ? "secondary" : "ghost"} size="sm">
+                <Link
+                  to="/review"
+                  search={{ ...search, view: "walkthrough" }}
+                  resetScroll={false}
+                  onClick={() => setMobilePane("main")}
+                  aria-current={showingWalkthrough ? "page" : undefined}
+                >
+                  Walkthrough
+                </Link>
+              </Button>
+              <Button asChild variant={showingWalkthrough ? "ghost" : "secondary"} size="sm">
+                <Link
+                  to="/review"
+                  search={{ ...search, view: "chat" }}
+                  resetScroll={false}
+                  onClick={() => setMobilePane("main")}
+                  aria-current={!showingWalkthrough ? "page" : undefined}
+                >
+                  Chat
+                </Link>
+              </Button>
+            </nav>
           )}
           {request.kind === "failed" && (
             <p role="alert" className={playError}>
@@ -723,10 +764,18 @@ function ConversationSession({
       }
       main={
         <section
-          aria-label="Conversation with Scout"
+          aria-label={showingWalkthrough ? "Walkthrough with Scout" : "Conversation with Scout"}
           className="flex h-full min-h-0 flex-col gap-3 min-[768px]:pr-1"
         >
-          <div className="min-h-0 flex-1 overflow-hidden rounded-[var(--product-panel-radius)] border border-border bg-card">
+          {showingWalkthrough && managedId && (
+            <div className="min-h-0 flex-1 overflow-hidden rounded-[var(--product-panel-radius)] border border-border bg-card">
+              <TaskWalkthrough sessionId={managedId} />
+            </div>
+          )}
+          <div
+            hidden={showingWalkthrough}
+            className="min-h-0 flex-1 overflow-hidden rounded-[var(--product-panel-radius)] border border-border bg-card"
+          >
             <MessageScrollerProvider autoScroll defaultScrollPosition="end">
               <MessageScroller>
                 <MessageScrollerViewport
@@ -800,35 +849,48 @@ function ConversationSession({
             </MessageScrollerProvider>
           </div>
           {thread.canControl ? (
-            <ConversationComposer
-              value={draft}
-              onChange={setDraft}
-              onSubmit={(event) => {
-                void send(event);
-              }}
-              disabled={request.kind === "pending"}
-              canSend={canSend}
-              onStop={
-                canStop
-                  ? () => {
-                      void stop();
-                    }
-                  : null
-              }
-              placeholder="Message Scout…"
-            >
-              <span role="status">
-                {scout?.status !== "active"
-                  ? "This Scout is unavailable."
-                  : managedId
-                    ? managed?.busy
-                      ? "This Scout is busy in another chat."
-                      : thread.status === "stopping"
-                        ? "Stopping Scout…"
-                        : null
-                    : activityNotice(activity, threadId)}
-              </span>
-            </ConversationComposer>
+            showingWalkthrough && thread.status === "finished" ? (
+              <Button asChild variant="outline" size="sm" className="self-end">
+                <Link
+                  to="/review"
+                  search={{ ...search, view: "chat" }}
+                  resetScroll={false}
+                  onClick={() => setMobilePane("main")}
+                >
+                  Ask a follow-up
+                </Link>
+              </Button>
+            ) : (
+              <ConversationComposer
+                value={draft}
+                onChange={setDraft}
+                onSubmit={(event) => {
+                  void send(event);
+                }}
+                disabled={request.kind === "pending"}
+                canSend={canSend}
+                onStop={
+                  canStop
+                    ? () => {
+                        void stop();
+                      }
+                    : null
+                }
+                placeholder="Message Scout…"
+              >
+                <span role="status">
+                  {scout?.status !== "active"
+                    ? "This Scout is unavailable."
+                    : managedId
+                      ? managed?.busy
+                        ? "This Scout is busy in another chat."
+                        : thread.status === "stopping"
+                          ? "Stopping Scout…"
+                          : null
+                      : activityNotice(activity, threadId)}
+                </span>
+              </ConversationComposer>
+            )
           ) : (
             <Link
               to={productRoutes[kind]}
@@ -842,76 +904,79 @@ function ConversationSession({
         </section>
       }
       right={
-        <section
-          aria-label="Scout's browser"
-          className="flex h-full min-h-0 flex-col overflow-hidden rounded-[var(--product-panel-radius)] border border-border bg-secondary/50 min-[768px]:ml-1"
-        >
-          {session?.kind === "closed" ? (
-            <BrowserReplay
-              key={session.sessionId}
-              sessionId={session.sessionId}
-              mode="playback"
-              header={browserHeader}
-              selectedPageId={
-                search.replay?.sessionId === session.sessionId ? search.replay.pageId : null
-              }
-              onSelectPage={(pageId) => {
-                void navigate({
-                  to: productRoutes[kind],
-                  search: (previous) => ({
-                    ...previous,
-                    session: session.sessionId,
-                    replay: pageId === null ? undefined : { sessionId: session.sessionId, pageId },
-                  }),
-                });
-              }}
-            />
-          ) : (
-            <>
-              {browserHeader}
-              {liveView?.url ? (
-                <>
-                  <iframe
-                    key={session?.sessionId}
-                    src={liveView.url}
-                    className="min-h-0 w-full flex-1 border-0 bg-white"
-                    title="Scout's live browser"
-                    sandbox="allow-same-origin allow-scripts"
-                    referrerPolicy="no-referrer"
-                  />
-                  <a
-                    className="flex min-h-11 items-center justify-center gap-1.5 p-2.5 text-xs text-muted-foreground hover:text-primary"
-                    href={liveView.url}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Open browser <ArrowUpRightIcon size={14} aria-hidden="true" />
-                  </a>
-                </>
-              ) : (
-                <div className="flex flex-1 flex-col items-center justify-center gap-6 p-7 text-center">
-                  {kind === "play" ? (
-                    <div className="grid size-32 place-items-center rounded-full bg-play-sand/80">
-                      <ScoutPiece className="-rotate-6" />
-                    </div>
-                  ) : (
-                    <MonitorIcon
-                      size={32}
-                      strokeWidth={1.25}
-                      className="text-muted-foreground"
-                      aria-hidden="true"
+        showingWalkthrough ? undefined : (
+          <section
+            aria-label="Scout's browser"
+            className="flex h-full min-h-0 flex-col overflow-hidden rounded-[var(--product-panel-radius)] border border-border bg-secondary/50 min-[768px]:ml-1"
+          >
+            {session?.kind === "closed" ? (
+              <BrowserReplay
+                key={session.sessionId}
+                sessionId={session.sessionId}
+                mode="playback"
+                header={browserHeader}
+                selectedPageId={
+                  search.replay?.sessionId === session.sessionId ? search.replay.pageId : null
+                }
+                onSelectPage={(pageId) => {
+                  void navigate({
+                    to: productRoutes[kind],
+                    search: {
+                      ...search,
+                      session: session.sessionId,
+                      replay:
+                        pageId === null ? undefined : { sessionId: session.sessionId, pageId },
+                    },
+                  });
+                }}
+              />
+            ) : (
+              <>
+                {browserHeader}
+                {liveView?.url ? (
+                  <>
+                    <iframe
+                      key={session?.sessionId}
+                      src={liveView.url}
+                      className="min-h-0 w-full flex-1 border-0 bg-white"
+                      title="Scout's live browser"
+                      sandbox="allow-same-origin allow-scripts"
+                      referrerPolicy="no-referrer"
                     />
-                  )}
-                  <p className="max-w-[270px] text-sm text-muted-foreground">
-                    {session?.kind === "closing"
-                      ? "Closing the browser…"
-                      : "Scout hasn’t opened a browser yet."}
-                  </p>
-                </div>
-              )}
-            </>
-          )}
-        </section>
+                    <a
+                      className="flex min-h-11 items-center justify-center gap-1.5 p-2.5 text-xs text-muted-foreground hover:text-primary"
+                      href={liveView.url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Open browser <ArrowUpRightIcon size={14} aria-hidden="true" />
+                    </a>
+                  </>
+                ) : (
+                  <div className="flex flex-1 flex-col items-center justify-center gap-6 p-7 text-center">
+                    {kind === "play" ? (
+                      <div className="grid size-32 place-items-center rounded-full bg-play-sand/80">
+                        <ScoutPiece className="-rotate-6" />
+                      </div>
+                    ) : (
+                      <MonitorIcon
+                        size={32}
+                        strokeWidth={1.25}
+                        className="text-muted-foreground"
+                        aria-hidden="true"
+                      />
+                    )}
+                    <p className="max-w-[270px] text-sm text-muted-foreground">
+                      {session?.kind === "closing"
+                        ? "Closing the browser…"
+                        : "Scout hasn’t opened a browser yet."}
+                    </p>
+                  </div>
+                )}
+              </>
+            )}
+          </section>
+        )
       }
     />
   );

@@ -3,6 +3,7 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import { requestCheckRecord } from "./agentsApi/requestCheckModel";
 import { siteResearchRecord } from "./agentsApi/siteResearchModel";
+import { screenshotRecord, walkthroughContent } from "./agentsApi/screenshotModel";
 import { vWorkflowId } from "@convex-dev/workflow";
 import {
   browserActionValidator,
@@ -74,6 +75,13 @@ const scoutTurnFields = {
 export default defineSchema({
   ...authTables,
   agentsApiSiteResearch: defineTable(siteResearchRecord).index("by_session_id", ["sessionId"]),
+  agentsApiScreenshots: defineTable(screenshotRecord)
+    .index("by_session_id_and_browser_sequence_and_operation_sequence", [
+      "sessionId",
+      "browserSequence",
+      "operationSequence",
+    ])
+    .index("by_operation_id", ["operationId"]),
   agentsApiRequestChecks: defineTable(requestCheckRecord)
     .index("by_session_id", ["sessionId"])
     .index("by_session_id_and_kind", ["sessionId", "kind"]),
@@ -94,6 +102,7 @@ export default defineSchema({
     nextSequence: v.number(),
     browser: v.union(browserHandle, v.null()),
     usage: v.union(sessionUsage, v.null()),
+    walkthrough: v.optional(walkthroughContent),
   })
     .index("by_user_id", ["userId"])
     .index("by_scout_id_and_active", ["scoutId", "active"]),

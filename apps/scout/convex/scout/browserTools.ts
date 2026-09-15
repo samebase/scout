@@ -8,11 +8,13 @@ import { SdkError, type BrowserExecuteResponse, type Firecrawl } from "firecrawl
 import { setTimeout as wait } from "node:timers/promises";
 import { z } from "zod";
 import { browserActionValidator, browserOutcomeValidator } from "../browserModel";
+import { MAX_SCREENSHOT_NOTE_LENGTH } from "../agentsApi/screenshotModel";
 import { omitNullish } from "../../shared/omitNullish";
 import { type BrowserTarget } from "./browserTarget";
 import {
   BROWSER_CLOSE_DESCRIPTION,
   BROWSER_EXECUTE_DESCRIPTION,
+  BROWSER_SCREENSHOT_DESCRIPTION,
   BROWSER_EXECUTION_TIMEOUT_SECONDS,
   BROWSER_STATE_HELPER_SOURCE,
   CREATE_FIRECRAWL_SESSION_DESCRIPTION,
@@ -31,6 +33,7 @@ import {
   connectPlaywrightBrowser,
   type PlaywrightBrowser,
   type BrowserTelemetry,
+  type BrowserScreenshot,
 } from "./playwrightBrowser";
 
 const MAX_TOOL_TEXT_LENGTH = 20_000;
@@ -86,8 +89,32 @@ type CreatedBrowserSessionHandle = BrowserSessionHandle & { providerExpiresAtMs:
 
 type BrowserSessionPolicy = { captureOperations: boolean };
 type BrowserOperationOutcome = Infer<typeof browserOutcomeValidator>;
+type BrowserCaptureResult =
+  | { kind: "ready"; captureId: string; note: string; metadata: BrowserScreenshot["metadata"] }
+  | { kind: "failed"; message: string };
+
+const screenshotNoteSchema = z.string().trim().min(1).max(MAX_SCREENSHOT_NOTE_LENGTH);
+const browserExecuteInput = z.object({
+  code: z
+    .string()
+    .min(1)
+    .max(MAX_TOOL_TEXT_LENGTH)
+    .describe("JavaScript body executed with Playwright page available"),
+});
+const browserExecuteCaptureInput = browserExecuteInput.extend({
+  captureNote: screenshotNoteSchema
+    .nullable()
+    .describe(
+      "Why the resulting page is useful evidence. Use null for ordinary steps without capture.",
+    ),
+});
 
 type BrowserHarnessOptions = {
+  captureScreenshot?: (args: {
+    toolCallId: string;
+    note: string;
+    take: () => Promise<BrowserScreenshot>;
+  }) => Promise<BrowserCaptureResult>;
   profileName?: string;
   beforeDispatch?: () => Promise<void>;
   onSessionCreated?: (
@@ -786,13 +813,49 @@ export function createBrowserHarness(
     );
   }
 
-  function executeCode(code: string, toolCallId = localToolCallId(), abortSignal?: AbortSignal) {
+  function executeCode(
+    code: string,
+    toolCallId = localToolCallId(),
+    abortSignal?: AbortSignal,
+    captureNote?: string | null,
+  ) {
     const source = boundedText(code, "Playwright code");
+    const note = captureNote == null ? null : screenshotNoteSchema.parse(captureNote);
+    if (note !== null && !options.captureScreenshot) {
+      throw new Error("Browser screenshot capture is not configured");
+    }
     return exclusiveOperation(async () => {
       abortSignal?.throwIfAborted();
       const browser = activeBrowser();
       const activeSessionId = sessionId;
       if (!activeSessionId) throw new Error("Open a browser session before using it");
+      const captureScreenshot = async (
+        take: () => Promise<BrowserScreenshot>,
+      ): Promise<BrowserCaptureResult | undefined> => {
+        if (note === null || !options.captureScreenshot) return undefined;
+        try {
+          const result = await options.captureScreenshot({
+            toolCallId,
+            note: redactSensitiveValues(note, sensitiveValues),
+            take,
+          });
+          if (result.kind === "failed") {
+            return { kind: "failed", message: browserFailure(result.message, sensitiveValues) };
+          }
+          return {
+            kind: "ready",
+            captureId: result.captureId,
+            note: redactSensitiveValues(result.note, sensitiveValues),
+            metadata: {
+              ...result.metadata,
+              url: redactSensitiveValues(result.metadata.url, sensitiveValues),
+              title: redactSensitiveValues(result.metadata.title, sensitiveValues),
+            },
+          };
+        } catch (error) {
+          return { kind: "failed", message: browserFailure(error, sensitiveValues) };
+        }
+      };
       const action: BrowserAction = { kind: "execute", code: source };
       if (captureOperations) {
         if (!options.onOperationPrepared || !options.onOperationSettled) {
@@ -871,6 +934,11 @@ export function createBrowserHarness(
           }
           abortSignal.throwIfAborted();
         }
+        const capture = await captureScreenshot(async () => {
+          throw new Error(
+            "Screenshot target could not be confirmed after the Playwright request failed",
+          );
+        });
         if (captureOperations) {
           await settle(toolCallId, {
             kind: "indeterminate_after_dispatch",
@@ -890,6 +958,7 @@ export function createBrowserHarness(
           dispatchedAtMs,
           returnedAtMs,
           browserStateObserved: after !== before,
+          ...omitNullish({ capture }),
         };
       }
 
@@ -909,6 +978,7 @@ export function createBrowserHarness(
       }
       let after: BrowserTelemetry["after"];
       const execution = parsedPlaywrightExecution(response, scopedExecution, sensitiveValues);
+      let capture: BrowserCaptureResult | undefined;
       try {
         if (execution.activeTabId !== null) {
           if (!(await browser.selectTab(execution.activeTabId, abortSignal))) {
@@ -917,9 +987,18 @@ export function createBrowserHarness(
             );
           }
         }
+        capture = await captureScreenshot(async () => {
+          if (execution.activeTabId === null) {
+            throw new Error("Playwright execution did not identify the screenshot target");
+          }
+          return await browser.captureScreenshot(execution.activeTabId, abortSignal);
+        });
         after = await browser.observe(abortSignal);
       } catch (error) {
         const failure = `Playwright code returned, but browser observation failed: ${browserFailure(error, sensitiveValues)}`;
+        capture ??= await captureScreenshot(async () => {
+          throw new Error(failure);
+        });
         if (captureOperations) {
           await settle(toolCallId, {
             kind: "indeterminate_after_dispatch",
@@ -930,8 +1009,10 @@ export function createBrowserHarness(
         abortSignal?.throwIfAborted();
         return {
           success: false,
+          currentPage: "",
           output: executionOutput(response, sensitiveValues),
           error: failure,
+          ...omitNullish({ capture }),
         };
       }
 
@@ -962,13 +1043,17 @@ export function createBrowserHarness(
           );
         }
         abortSignal?.throwIfAborted();
-        return succeeded
-          ? postActionSnapshotFailed(error)
-          : {
-              success: false,
-              output: execution.output,
-              error: execution.error,
-            };
+        return {
+          ...(succeeded
+            ? postActionSnapshotFailed(error)
+            : {
+                success: false,
+                currentPage: "",
+                output: execution.output,
+                error: execution.error,
+              }),
+          ...omitNullish({ capture }),
+        };
       }
 
       if (captureOperations) {
@@ -993,6 +1078,7 @@ export function createBrowserHarness(
         error: execution.error,
         exitCode: response.exitCode ?? null,
         killed: response.killed ?? false,
+        ...omitNullish({ capture }),
       };
     });
   }
@@ -1253,6 +1339,10 @@ export function createBrowserHarness(
     },
   };
 
+  const executeInputSchema: z.ZodType<
+    z.infer<typeof browserExecuteInput> | z.infer<typeof browserExecuteCaptureInput>
+  > = options.captureScreenshot ? browserExecuteCaptureInput : browserExecuteInput;
+
   const tools = {
     create_new_firecrawl_session: tool({
       description: CREATE_FIRECRAWL_SESSION_DESCRIPTION,
@@ -1263,16 +1353,17 @@ export function createBrowserHarness(
         await open(url, execution.toolCallId, execution.abortSignal),
     }),
     browser_execute: tool({
-      description: BROWSER_EXECUTE_DESCRIPTION,
-      inputSchema: z.object({
-        code: z
-          .string()
-          .min(1)
-          .max(MAX_TOOL_TEXT_LENGTH)
-          .describe("JavaScript body executed with Playwright page available"),
-      }),
-      execute: async ({ code }, execution) =>
-        await actions.executeCode(code, execution.toolCallId, execution.abortSignal),
+      description: options.captureScreenshot
+        ? `${BROWSER_EXECUTE_DESCRIPTION}\n\n${BROWSER_SCREENSHOT_DESCRIPTION}`
+        : BROWSER_EXECUTE_DESCRIPTION,
+      inputSchema: executeInputSchema,
+      execute: async (input, execution) =>
+        await actions.executeCode(
+          input.code,
+          execution.toolCallId,
+          execution.abortSignal,
+          "captureNote" in input ? input.captureNote : undefined,
+        ),
     }),
     browser_close: tool({
       description: BROWSER_CLOSE_DESCRIPTION,

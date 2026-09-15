@@ -5,6 +5,17 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { omitNullish } from "../../shared/omitNullish";
 import { browserTargetSchema } from "./browserTarget";
 import { connectPlaywrightBrowser } from "./playwrightBrowser";
+import { MAX_SCREENSHOT_BYTES } from "../agentsApi/screenshotModel";
+
+function pngHeader(width = 2560, height = 1600, byteLength = 33) {
+  const bytes = Buffer.alloc(byteLength);
+  bytes.write("89504e470d0a1a0a", 0, "hex");
+  bytes.writeUInt32BE(13, 8);
+  bytes.write("IHDR", 12, "ascii");
+  bytes.writeUInt32BE(width, 16);
+  bytes.writeUInt32BE(height, 20);
+  return bytes;
+}
 
 function fakePage(
   url: string,
@@ -14,6 +25,8 @@ function fakePage(
 ) {
   const focus = { current: initiallyFocused };
   const location = { current: url };
+  const frame = {};
+  const events = new EventEmitter<{ framenavigated: [object] }>();
   const fill = vi.fn(async () => undefined);
   const filter = vi.fn();
   const first = vi.fn();
@@ -33,17 +46,22 @@ function fakePage(
   const getByRole = vi.fn(() => semanticLocator);
   const page = {
     targetId,
+    loaderId: "loader-1",
+    viewport: { pageX: 125, pageY: 600, clientWidth: 1280, clientHeight: 800, scale: 1 },
+    mainFrame: () => frame,
+    on: events.on.bind(events),
+    off: events.off.bind(events),
     bringToFront: vi.fn(async () => undefined),
     evaluate: vi.fn(async () => focus.current),
     getByRole,
     goto: vi.fn(async () => null),
-    isClosed: () => false,
+    isClosed: vi.fn(() => false),
     locator: vi.fn(() => bodyLocator),
     setViewportSize: vi.fn(async () => undefined),
     title: vi.fn(async () => (location.current === "about:blank" ? "" : location.current)),
     url: () => location.current,
   };
-  return { ariaSnapshot, fill, filter, focus, getByRole, location, page };
+  return { ariaSnapshot, fill, filter, focus, getByRole, location, page, events, frame };
 }
 
 type FakePage = ReturnType<typeof fakePage>["page"];
@@ -53,12 +71,26 @@ function fakeContext(pages: FakePage[]) {
   const events = new EventEmitter<{ page: [FakePage]; dialog: [FakeDialog] }>();
   const cdpMethods: string[] = [];
   const detach = vi.fn(async () => undefined);
+  const capture = vi.fn(async (_page: FakePage, _params: unknown) => ({
+    data: pngHeader().toString("base64"),
+  }));
   const context = {
     newCDPSession: vi.fn(async (page: FakePage) => ({
       detach,
-      send: vi.fn(async (method: string) => {
+      send: vi.fn(async (method: string, params?: unknown) => {
         cdpMethods.push(method);
-        return { targetInfo: { targetId: page.targetId } };
+        switch (method) {
+          case "Target.getTargetInfo":
+            return { targetInfo: { targetId: page.targetId } };
+          case "Page.getFrameTree":
+            return { frameTree: { frame: { id: "frame-1", loaderId: page.loaderId } } };
+          case "Page.getLayoutMetrics":
+            return { cssVisualViewport: { ...page.viewport } };
+          case "Page.captureScreenshot":
+            return await capture(page, params);
+          default:
+            throw new Error(`Unexpected CDP method: ${method}`);
+        }
       }),
     })),
     on: events.on.bind(events),
@@ -68,6 +100,7 @@ function fakeContext(pages: FakePage[]) {
   };
   return {
     cdpMethods,
+    capture,
     context,
     detach,
     events,
@@ -90,6 +123,253 @@ afterEach(() => {
 });
 
 describe("trusted Playwright observer", () => {
+  test("captures the exact selected target at 2x using scrolled CSS viewport coordinates", async () => {
+    const first = fakePage("https://example.com/?private=yes#details", "first", true, "first");
+    const second = fakePage("https://example.com/?private=yes#details", "second", true, "second");
+    const pages = [first.page, second.page];
+    const { context, capture, detach } = fakeContext(pages);
+    connectFakeContext(context);
+    const browser = await connectPlaywrightBrowser("wss://browser.firecrawl.dev/cdp");
+    await browser.selectTab("first");
+    pages.reverse();
+    first.page.setViewportSize.mockClear();
+    second.page.setViewportSize.mockClear();
+    detach.mockClear();
+
+    const result = await browser.captureScreenshot("first");
+
+    expect(capture).toHaveBeenCalledExactlyOnceWith(first.page, {
+      format: "png",
+      fromSurface: true,
+      captureBeyondViewport: false,
+      clip: { x: 125, y: 600, width: 1280, height: 800, scale: 2 },
+    });
+    expect(result.bytes).toEqual(pngHeader());
+    expect(result.metadata).toEqual({
+      tabId: "first",
+      url: "https://example.com/",
+      title: first.location.current,
+      startedAtMs: expect.any(Number),
+      completedAtMs: expect.any(Number),
+      width: 2560,
+      height: 1600,
+      viewport: { width: 1280, height: 800, scrollX: 125, scrollY: 600 },
+    });
+    expect(result.metadata.completedAtMs).toBeGreaterThanOrEqual(result.metadata.startedAtMs);
+    expect(first.page.setViewportSize).not.toHaveBeenCalled();
+    expect(second.page.setViewportSize).not.toHaveBeenCalled();
+    expect(first.page.bringToFront).not.toHaveBeenCalled();
+    expect(detach).toHaveBeenCalledOnce();
+    expect(first.events.listenerCount("framenavigated")).toBe(0);
+    expect(await browser.selectedTabId()).toBe("first");
+  });
+
+  test("rejects closed or mismatched targets without falling back to another page", async () => {
+    const first = fakePage("https://example.com/", "first", true, "first");
+    const second = fakePage("https://example.com/", "second", true, "second");
+    const { context, capture } = fakeContext([first.page, second.page]);
+    connectFakeContext(context);
+    const browser = await connectPlaywrightBrowser("wss://browser.firecrawl.dev/cdp");
+    await browser.selectTab("first");
+    await expect(browser.captureScreenshot("second")).rejects.toThrow("does not match");
+    first.page.isClosed.mockReturnValue(true);
+    await expect(browser.captureScreenshot("first")).rejects.toThrow("target is closed");
+    expect(capture).not.toHaveBeenCalled();
+    expect(second.page.bringToFront).not.toHaveBeenCalled();
+  });
+
+  test.each(["navigation", "reload", "scroll", "resize", "title", "target", "popup", "closed"])(
+    "rejects a %s change during capture and releases the CDP session",
+    async (change) => {
+      const initial = fakePage("https://example.com/", "initial", true, "first");
+      const { context, capture, detach, openPage } = fakeContext([initial.page]);
+      connectFakeContext(context);
+      const browser = await connectPlaywrightBrowser("wss://browser.firecrawl.dev/cdp");
+      capture.mockImplementationOnce(async () => {
+        switch (change) {
+          case "navigation":
+            initial.location.current = "https://example.com/other";
+            break;
+          case "reload":
+            initial.events.emit("framenavigated", initial.frame);
+            break;
+          case "scroll":
+            initial.page.viewport.pageY += 1;
+            break;
+          case "resize":
+            initial.page.viewport.clientWidth += 1;
+            break;
+          case "title":
+            initial.page.title.mockResolvedValue("Changed title");
+            break;
+          case "target":
+            initial.page.targetId = "different-target";
+            break;
+          case "popup":
+            openPage(fakePage("https://example.com/", "popup").page);
+            break;
+          case "closed":
+            initial.page.isClosed.mockReturnValue(true);
+            break;
+        }
+        return { data: pngHeader().toString("base64") };
+      });
+
+      await expect(browser.captureScreenshot("first")).rejects.toThrow(/Screenshot target/);
+
+      expect(capture).toHaveBeenCalledOnce();
+      expect(detach).toHaveBeenCalledOnce();
+      expect(initial.events.listenerCount("framenavigated")).toBe(0);
+    },
+  );
+
+  test("rejects reloads detected by loader identity even if the navigation event has not arrived", async () => {
+    const initial = fakePage("https://example.com/", "initial", true, "first");
+    const { context, capture } = fakeContext([initial.page]);
+    connectFakeContext(context);
+    const browser = await connectPlaywrightBrowser("wss://browser.firecrawl.dev/cdp");
+    capture.mockImplementationOnce(async () => {
+      initial.page.loaderId = "loader-2";
+      return { data: pngHeader().toString("base64") };
+    });
+    await expect(browser.captureScreenshot("first")).rejects.toThrow("changed during capture");
+  });
+
+  test.each([
+    { data: "not a png", message: "not a PNG" },
+    { data: pngHeader(1280, 800).toString("base64"), message: "2x viewport" },
+    {
+      data: pngHeader(2560, 1600, MAX_SCREENSHOT_BYTES + 1).toString("base64"),
+      message: "byte limit",
+    },
+    { data: "A".repeat(Math.ceil(MAX_SCREENSHOT_BYTES / 3) * 4 + 4), message: "byte limit" },
+  ])("rejects invalid or oversized PNG output: $message", async ({ data, message }) => {
+    const { context, capture, detach } = fakeContext([
+      fakePage("https://example.com/", "page", true, "first").page,
+    ]);
+    connectFakeContext(context);
+    const browser = await connectPlaywrightBrowser("wss://browser.firecrawl.dev/cdp");
+    capture.mockResolvedValueOnce({ data });
+    await expect(browser.captureScreenshot("first")).rejects.toThrow(message);
+    expect(detach).toHaveBeenCalledOnce();
+  });
+
+  test("accepts the exact byte limit and aborts an in-flight capture without another attempt", async () => {
+    const initial = fakePage("https://example.com/", "page", true, "first");
+    const { context, capture, detach } = fakeContext([initial.page]);
+    connectFakeContext(context);
+    const browser = await connectPlaywrightBrowser("wss://browser.firecrawl.dev/cdp");
+    capture.mockResolvedValueOnce({
+      data: pngHeader(2560, 1600, MAX_SCREENSHOT_BYTES).toString("base64"),
+    });
+    expect((await browser.captureScreenshot("first")).bytes.length).toBe(MAX_SCREENSHOT_BYTES);
+
+    const controller = new AbortController();
+    capture.mockImplementationOnce(async () => {
+      controller.abort(new Error("Capture canceled"));
+      return await new Promise<never>(() => {});
+    });
+    await expect(browser.captureScreenshot("first", controller.signal)).rejects.toThrow(
+      "Capture canceled",
+    );
+    await setImmediate();
+    expect(capture).toHaveBeenCalledTimes(2);
+    expect(detach).toHaveBeenCalledTimes(2);
+    expect(initial.events.listenerCount("framenavigated")).toBe(0);
+  });
+
+  test.skipIf(process.env["SCOUT_RUN_BROWSER_PROOF"] !== "true")(
+    "captures native 2x scrolled pixels while preserving viewport, focus, and form state",
+    async () => {
+      const nativeBrowser = await chromium.launch(
+        omitNullish({
+          executablePath: process.env["SCOUT_BROWSER_PROOF_CHROMIUM"],
+          headless: true,
+        }),
+      );
+      try {
+        const context = await nativeBrowser.newContext();
+        const page = await context.newPage();
+        await page.route(
+          "https://example.com/capture",
+          async (route) =>
+            await route.fulfill({
+              contentType: "text/html",
+              body: `
+          <title>Capture proof</title>
+          <body style="margin:0;background:red;width:3000px;height:2400px">
+            <div style="position:absolute;top:600px;width:3000px;height:1800px;background:blue"></div>
+            <input style="position:fixed;left:100px;top:100px" value="Preserved draft">
+            <div style="position:fixed;left:0;top:0;width:30px;height:30px;background:yellow"></div>
+          </body>
+        `,
+            }),
+        );
+        await page.goto("https://example.com/capture");
+        vi.spyOn(chromium, "connectOverCDP").mockResolvedValue(nativeBrowser);
+        const browser = await connectPlaywrightBrowser("wss://browser.firecrawl.dev/cdp");
+        const selectedId = await browser.selectedTabId();
+        if (!selectedId) throw new Error("Expected a selected tab");
+        await page.locator("input").focus();
+        await page.evaluate(() => window.scrollTo(200, 650));
+        const state = () =>
+          page.evaluate(() => ({
+            x: scrollX,
+            y: scrollY,
+            width: innerWidth,
+            height: innerHeight,
+            focused: document.activeElement?.tagName,
+            value: document.querySelector("input")?.value,
+          }));
+        const before = await state();
+        const screenshot = await browser.captureScreenshot(selectedId);
+        expect(await state()).toEqual(before);
+        expect(page.viewportSize()).toEqual({ width: 1280, height: 800 });
+        expect(screenshot.metadata).toMatchObject({
+          tabId: selectedId,
+          title: "Capture proof",
+          width: 2560,
+          height: 1600,
+          viewport: { width: 1280, height: 800, scrollX: 200, scrollY: 650 },
+        });
+        const pixels = await page.evaluate(
+          async (data) => {
+            const bitmap = await createImageBitmap(
+              new Blob([new Uint8Array(data)], { type: "image/png" }),
+            );
+            const canvas = document.createElement("canvas");
+            canvas.width = bitmap.width;
+            canvas.height = bitmap.height;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) throw new Error("Canvas context missing");
+            ctx.drawImage(bitmap, 0, 0);
+            return {
+              width: bitmap.width,
+              height: bitmap.height,
+              fixed: [...ctx.getImageData(10, 10, 1, 1).data],
+              scrolled: [...ctx.getImageData(1000, 1000, 1, 1).data],
+            };
+          },
+          [...screenshot.bytes],
+        );
+        expect(pixels).toEqual({
+          width: 2560,
+          height: 1600,
+          fixed: [255, 255, 0, 255],
+          scrolled: [0, 0, 255, 255],
+        });
+        const other = await context.newPage();
+        await other.setContent("<h1>Another tab</h1>");
+        await browser.selectTab(selectedId);
+        await page.close();
+        await expect(browser.captureScreenshot(selectedId)).rejects.toThrow("target is closed");
+      } finally {
+        await nativeBrowser.close();
+      }
+    },
+    30_000,
+  );
+
   test("disconnect releases the CDP connection", async () => {
     const { context } = fakeContext([fakePage("https://example.com", "Example").page]);
     const close = connectFakeContext(context);

@@ -35,6 +35,7 @@ const remote = vi.hoisted(() => ({
   signIn: vi.fn(),
   queryCalls: vi.fn(),
   listReplayPages: vi.fn(),
+  screenshotUrl: vi.fn(),
 }));
 
 function subscribe(listener: () => void) {
@@ -66,6 +67,8 @@ vi.mock("convex/react", () => ({
     return remote.queries.get(getFunctionName(reference));
   },
   useAction: (reference: FunctionReference<"action">) => {
+    if (getFunctionName(reference) === "agentsApi/screenshots:imageUrl")
+      return remote.screenshotUrl;
     if (getFunctionName(reference) === "browserReplay:listPages") return remote.listReplayPages;
     throw new Error("Unexpected action");
   },
@@ -127,6 +130,7 @@ beforeEach(() => {
   remote.messages = [];
   remote.authenticated = true;
   remote.queryCalls.mockClear();
+  remote.screenshotUrl.mockReset().mockResolvedValue(null);
   remote.revision = 0;
   remote.queries.clear();
   remote.queries.set("accounts:currentViewerAccess", {
@@ -189,6 +193,209 @@ async function openPlay(path = "/play") {
   await router.load();
   return router;
 }
+
+test("a completed managed Review opens its walkthrough and pairs replay with Chat", async () => {
+  remote.queries.set(
+    "scout/activity:get",
+    session({
+      purpose: { kind: "review" },
+      status: "finished",
+      hasWalkthrough: true,
+      runtime: { kind: "agents_api", sessionId: "managed-1" },
+      sessions: [{ engine: "agents_api", sessionId: "browser-1", kind: "closed", createdAt: 1000 }],
+      isOwner: false,
+      canControl: false,
+    }),
+  );
+  remote.queries.set("agentsApi/walkthrough:get", {
+    walkthrough: {
+      summary: "The game works.",
+      sections: [
+        {
+          heading: "Undo a move",
+          explanation: "The board returned to its previous state.",
+          captureIds: ["capture-1"],
+        },
+      ],
+    },
+    captures: [
+      {
+        id: "capture-1",
+        note: "Undo restores the board",
+        browserSequence: 0,
+        operationSequence: 1,
+        state: { kind: "pending" },
+      },
+    ],
+  });
+  const router = await openPlay("/review?thread=game-thread");
+  expect(await screen.findByRole("heading", { name: "Undo a move" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Walkthrough" }).getAttribute("aria-current")).toBe(
+    "page",
+  );
+  expect(screen.queryByRole("region", { name: "Scout's browser" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Show replay" })).toBeNull();
+  fireEvent.click(screen.getByRole("link", { name: "Chat" }));
+  expect(await screen.findByRole("region", { name: "Conversation with Scout" })).toBeTruthy();
+  expect(screen.getByRole("region", { name: "Scout's browser" })).toBeTruthy();
+  expect(router.state.location.search).toMatchObject({ view: "chat" });
+  const bookmark = router.state.location.href;
+  act(() => router.history.back());
+  expect(await screen.findByRole("heading", { name: "Undo a move" })).toBeTruthy();
+  expect(screen.queryByRole("region", { name: "Scout's browser" })).toBeNull();
+  cleanup();
+  await openPlay(bookmark);
+  expect(await screen.findByRole("region", { name: "Conversation with Scout" })).toBeTruthy();
+  expect(screen.getByRole("region", { name: "Scout's browser" })).toBeTruthy();
+  expect(screen.queryByRole("heading", { name: "Undo a move" })).toBeNull();
+});
+
+test("a report arriving during a running Review keeps the reader in Chat and preserves the draft", async () => {
+  const running = session({
+    purpose: { kind: "review" },
+    status: "running",
+    hasWalkthrough: false,
+    runtime: { kind: "agents_api", sessionId: "managed-1" },
+  });
+  remote.queries.set("scout/activity:get", running);
+  remote.queries.set("agentsApi/sessions:controls", {
+    state: { kind: "running" },
+    canStop: true,
+    canSend: false,
+  });
+  remote.queries.set("agentsApi/walkthrough:get", { walkthrough: null, captures: [] });
+  await openPlay("/review?thread=game-thread");
+  expect(await screen.findByRole("region", { name: "Conversation with Scout" })).toBeTruthy();
+  fireEvent.change(screen.getByLabelText("Message Scout"), {
+    target: { value: "Keep this thought" },
+  });
+  act(() => {
+    remote.queries.set("scout/activity:get", {
+      ...running,
+      status: "finished",
+      hasWalkthrough: true,
+    });
+    remote.queries.set("agentsApi/sessions:controls", {
+      state: { kind: "idle" },
+      canStop: false,
+      canSend: true,
+    });
+    remote.queries.set("agentsApi/walkthrough:get", {
+      walkthrough: {
+        summary: "The game works.",
+        sections: [
+          {
+            heading: "Start again",
+            explanation: "New game clears the board.",
+            captureIds: ["capture-1"],
+          },
+        ],
+      },
+      captures: [
+        {
+          id: "capture-1",
+          note: "New game clears the board",
+          browserSequence: 0,
+          operationSequence: 1,
+          state: { kind: "pending" },
+        },
+      ],
+    });
+    remote.revision += 1;
+    remote.subscribers.forEach((listener) => listener());
+  });
+  expect(screen.getByRole("region", { name: "Conversation with Scout" })).toBeTruthy();
+  expect(screen.queryByRole("heading", { name: "Start again" })).toBeNull();
+  fireEvent.click(screen.getByRole("link", { name: "Walkthrough" }));
+  expect(await screen.findByRole("heading", { name: "Start again" })).toBeTruthy();
+  expect(screen.queryByRole("textbox", { name: "Message Scout" })).toBeNull();
+  fireEvent.click(screen.getByRole("link", { name: "Ask a follow-up" }));
+  expect(await screen.findByRole("region", { name: "Conversation with Scout" })).toBeTruthy();
+  expect(screen.getByDisplayValue("Keep this thought")).toBeTruthy();
+  expect(remote.sendManaged).not.toHaveBeenCalled();
+});
+
+test("a direct walkthrough link shows an older task's empty state without forcing a report", async () => {
+  remote.queries.set(
+    "scout/activity:get",
+    session({
+      purpose: { kind: "review" },
+      status: "finished",
+      hasWalkthrough: false,
+      runtime: { kind: "agents_api", sessionId: "managed-1" },
+    }),
+  );
+  remote.queries.set("agentsApi/walkthrough:get", { walkthrough: null, captures: [] });
+  await openPlay("/review?thread=game-thread&view=walkthrough");
+  expect(await screen.findByRole("heading", { name: "No screenshots saved" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Chat" })).toBeTruthy();
+  expect(remote.sendManaged).not.toHaveBeenCalled();
+});
+
+test("desktop Chat always shows its replay and Walkthrough occupies the full layout", async () => {
+  vi.spyOn(window, "innerWidth", "get").mockReturnValue(1440);
+  remote.queries.set(
+    "scout/activity:get",
+    session({
+      purpose: { kind: "review" },
+      status: "finished",
+      hasWalkthrough: true,
+      runtime: { kind: "agents_api", sessionId: "managed-1" },
+      sessions: [{ engine: "agents_api", sessionId: "browser-1", kind: "closed", createdAt: 1000 }],
+      isOwner: false,
+      canControl: false,
+    }),
+  );
+  remote.queries.set("agentsApi/walkthrough:get", { walkthrough: null, captures: [] });
+  await openPlay("/review?thread=game-thread");
+  expect(await screen.findByRole("heading", { name: "No screenshots saved" })).toBeTruthy();
+  for (let visit = 0; visit < 2; visit += 1) {
+    expect(screen.queryByRole("region", { name: "Scout's browser" })).toBeNull();
+    expect(screen.queryByRole("separator", { name: "Resize Scout’s view" })).toBeNull();
+    fireEvent.click(screen.getByRole("link", { name: "Chat" }));
+    expect(await screen.findByRole("region", { name: "Conversation with Scout" })).toBeTruthy();
+    const pane = screen
+      .getByRole("region", { name: "Scout's browser" })
+      .closest("[data-pane-side]");
+    expect(pane?.hasAttribute("data-desktop-open")).toBe(true);
+    expect(screen.queryByRole("button", { name: /Show replay|Hide replay/ })).toBeNull();
+    fireEvent.click(screen.getByRole("link", { name: "Walkthrough" }));
+    expect(await screen.findByRole("heading", { name: "No screenshots saved" })).toBeTruthy();
+  }
+});
+
+test("mobile Review keeps replay in Chat without pane toggles", async () => {
+  remote.queries.set(
+    "scout/activity:get",
+    session({
+      purpose: { kind: "review" },
+      status: "finished",
+      hasWalkthrough: true,
+      runtime: { kind: "agents_api", sessionId: "managed-1" },
+      sessions: [{ engine: "agents_api", sessionId: "browser-1", kind: "closed", createdAt: 1000 }],
+      isOwner: false,
+      canControl: false,
+    }),
+  );
+  remote.queries.set("agentsApi/walkthrough:get", { walkthrough: null, captures: [] });
+  const router = await openPlay("/review?thread=game-thread");
+  await screen.findByRole("navigation", { name: "Review views" });
+  for (const { label, view } of [
+    { label: "Chat", view: "chat" },
+    { label: "Walkthrough", view: "walkthrough" },
+    { label: "Chat", view: "chat" },
+  ]) {
+    fireEvent.click(screen.getByRole("link", { name: label }));
+    await waitFor(() => expect(router.state.location.search.view).toBe(view));
+    expect(screen.getByRole("link", { name: label }).getAttribute("aria-current")).toBe("page");
+    expect(screen.queryByRole("region", { name: "Scout's browser" }) !== null).toBe(
+      view === "chat",
+    );
+    expect(
+      screen.queryByRole("button", { name: /Show replay|Hide replay|Back to chat/ }),
+    ).toBeNull();
+  }
+});
 
 test("admins can open another member's Review in the Agents inspector", async () => {
   remote.queries.set(

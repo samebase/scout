@@ -67,6 +67,7 @@ async function setup() {
     return { userId, scout, sessionId };
   });
   const runtime = {
+    captureScreenshot: vi.fn<PlaywrightBrowser["captureScreenshot"]>(),
     disconnect: vi.fn(async () => undefined),
     startClickCapture: vi.fn(async () => undefined),
     finishClickCapture: vi.fn<PlaywrightBrowser["finishClickCapture"]>(async () => ({

@@ -2,7 +2,10 @@ import type { AgentSessionItem } from "openai/resources/beta/agents/agents";
 
 export function itemIsComplete(item: AgentSessionItem) {
   return (
-    item.type === "agent_message" || item.status === "completed" || item.status === "incomplete"
+    item.type === "agent_message" ||
+    item.status === "completed" ||
+    item.status === "failed" ||
+    item.status === "incomplete"
   );
 }
 

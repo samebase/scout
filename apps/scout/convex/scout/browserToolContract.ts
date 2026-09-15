@@ -65,6 +65,20 @@ export const BROWSER_EXECUTE_EXAMPLE = outdent`
   return await browserState(cloudflare);
 `;
 
+export const BROWSER_SCREENSHOT_DESCRIPTION = outdent`
+  Occasional screenshots:
+
+  - Continue the normal task and set captureNote only when the resulting page is useful
+    evidence for the walkthrough. Describe what the capture should show. Use null otherwise.
+  - Capture records the final selected tab after this code runs. After changing tabs,
+    select the intended Page with browserState(target). For a stationary capture, use
+    return await browserState(page).
+  - The capture result returns a captureId, note, and observed metadata for later walkthrough
+    references. Continue from the browser state and your observations.
+  - Capture can fail independently of the action. Never repeat a successful action because
+    its screenshot or upload failed. Inspect the current state before requesting another capture.
+`;
+
 export const BROWSER_CLOSE_DESCRIPTION = outdent`
   Stop the current Firecrawl browser session and report provider duration and credits.
   Call once after browser work is complete.

@@ -4,8 +4,11 @@ import {
   useSidebarLayoutPresentation,
 } from "@samebase/sidebars/SidebarRuntime";
 import type { SidebarLayoutState } from "@samebase/sidebars/SidebarLayoutState";
-import { useState, type ReactNode } from "react";
+import { SidebarLayout, type SidebarLayoutProps } from "@samebase/sidebars/SidebarLayout";
+import { useState, useSyncExternalStore, type ReactNode } from "react";
 import { MonitorIcon, SquareIcon, XIcon } from "lucide-react";
+import type { ProductKind } from "./model";
+import { omitNullish } from "../../../shared/omitNullish";
 
 export function ConversationSidebar({ children }: { children: ReactNode }) {
   const [state, setState] = useState<SidebarLayoutState>({
@@ -26,6 +29,46 @@ export function ConversationSidebar({ children }: { children: ReactNode }) {
   );
 }
 
+function subscribeViewport(onChange: () => void) {
+  window.addEventListener("resize", onChange);
+  return () => window.removeEventListener("resize", onChange);
+}
+
+export function ConversationLayout({
+  kind,
+  addressChrome,
+  main,
+  right,
+}: Pick<SidebarLayoutProps, "addressChrome" | "main"> & {
+  kind: ProductKind;
+  right: SidebarLayoutProps["right"];
+}) {
+  const isMobile = useSyncExternalStore(
+    subscribeViewport,
+    () => window.innerWidth < 768,
+    () => false,
+  );
+  if (kind === "review" && isMobile) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <div className="shrink-0">{addressChrome}</div>
+        <div className="min-h-96 shrink-0 basis-[65dvh] grow">{main}</div>
+        {right && <div className="mt-3 h-[60dvh] min-h-96 shrink-0">{right}</div>}
+      </div>
+    );
+  }
+
+  return (
+    <SidebarLayout
+      addressChrome={addressChrome}
+      main={main}
+      {...omitNullish({ right })}
+      mobileMinResizeBehavior="min_resize_to_slide"
+      resizeHandleLabels={{ left: "Resize chat navigation", right: "Resize Scout’s view" }}
+    />
+  );
+}
+
 export function BrowserToggle({ action }: { action: "open" | "close" }) {
   const { isMobile, mobilePane, rightDesktopOpen } = useSidebarLayoutPresentation();
   const { setMobilePane, toggleRightPane } = useSidebarActions();
@@ -39,7 +82,7 @@ export function BrowserToggle({ action }: { action: "open" | "close" }) {
       type="button"
       aria-label={label}
       title={label}
-      className="grid size-11 shrink-0 place-items-center rounded-lg hover:bg-secondary"
+      className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-lg px-2 hover:bg-secondary"
       onClick={() =>
         isMobile ? setMobilePane(action === "open" ? "right" : "main") : toggleRightPane()
       }

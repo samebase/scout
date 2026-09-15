@@ -49,6 +49,17 @@ export const AGENTS_API_INSTRUCTIONS = outdent`
   - Report observed problems with page URLs and reproduction steps. Separate observed
     behavior from assumptions and preferences; say what you could not verify.
 
+  Screenshots and walkthrough:
+
+  - Save useful evidence while doing the task: the starting screen, meaningful results,
+    and observed problems. Set browser_execute's captureNote to explain why the resulting
+    screen matters. Capture after the page reaches the state you want to show.
+  - Use a few clear screenshots. Skip repetitive waits, passwords, authentication codes,
+    and unrelated private data. Captures return IDs and metadata; continue the task.
+  - Before finishing a product review, call save_walkthrough with selected screenshot IDs
+    and explanations of what you observed and verified. Use list_screenshots when needed.
+    If no screenshot could be saved, report the findings and the capture failure plainly.
+
   Completing the task:
 
   - Continue after progress updates and intermediate successes until the requested

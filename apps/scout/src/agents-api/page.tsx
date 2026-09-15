@@ -16,6 +16,7 @@ import {
   LoaderCircleIcon,
   MessageSquareIcon,
   SearchIcon,
+  ImagesIcon,
 } from "lucide-react";
 import { useMemo, useRef, useState, type FormEvent } from "react";
 import { api } from "../../convex/_generated/api";
@@ -38,6 +39,7 @@ import { Transcript } from "./transcript";
 import { BrowserPanel } from "./browser";
 import { SessionCost } from "./cost";
 import { ScoutWorkspace } from "#components/scout-workspace";
+import { TaskWalkthrough } from "#components/task-walkthrough";
 import type { WorkspaceTarget } from "../../convex/workspaceModel";
 
 type RequestState = { kind: "idle" } | { kind: "pending" } | { kind: "failed"; message: string };
@@ -192,7 +194,9 @@ function AgentsWorkspace({ search }: { search: AgentsSearch }) {
                                 inspector: search.inspector,
                               }}
                               aria-current={
-                                search.session === item._id && !checking && !researching
+                                search.session === item._id &&
+                                session &&
+                                selectedStep(session, search) === "chat"
                                   ? "page"
                                   : undefined
                               }
@@ -203,6 +207,27 @@ function AgentsWorkspace({ search }: { search: AgentsSearch }) {
                             </Link>
                           </li>
                         )}
+                        <li>
+                          <Link
+                            to="/agents"
+                            resetScroll={false}
+                            search={{
+                              session: item._id,
+                              step: "walkthrough",
+                              sessions: search.sessions,
+                              inspector: search.inspector,
+                            }}
+                            aria-current={
+                              search.session === item._id && search.step === "walkthrough"
+                                ? "page"
+                                : undefined
+                            }
+                            className="flex items-center gap-2 rounded-md px-2 py-1.5 text-muted-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:bg-muted aria-[current=page]:text-foreground"
+                          >
+                            <ImagesIcon className="size-3.5" aria-hidden="true" />
+                            Walkthrough
+                          </Link>
+                        </li>
                       </ul>
                     </div>
                   ))}
@@ -265,7 +290,8 @@ function AgentsWorkspace({ search }: { search: AgentsSearch }) {
 }
 
 function AgentsChrome({ session, search }: { session: Session | null; search: AgentsSearch }) {
-  const checking = session !== null && selectedStep(session, search) !== "chat";
+  const step = session && selectedStep(session, search);
+  const checking = step === "request_check" || step === "site_research";
   const navigate = useNavigate({ from: "/agents" });
   const { setMobilePane, toggleLeftPane, toggleRightPane } = useSidebarActions();
   const { isMobile, mobilePane, leftDesktopOpen, rightDesktopOpen } =
@@ -489,7 +515,12 @@ function SessionContent({
         hidden={checking || researching || search.view === "workspace"}
         className="h-full min-h-0"
       >
-        {(session.providerId || session.checks.length === 0) && <SessionView session={session} />}
+        {(session.providerId || session.checks.length === 0 || search.step === "walkthrough") && (
+          <SessionView
+            session={session}
+            walkthrough={search.step === "walkthrough" && search.view !== "workspace"}
+          />
+        )}
       </div>
       {checking && search.view !== "workspace" && (
         <RequestCheckView key={selectedCheckId(session, search)} session={session} check={check} />
@@ -513,7 +544,7 @@ function SessionContent({
   );
 }
 
-function SessionView({ session }: { session: Session }) {
+function SessionView({ session, walkthrough }: { session: Session; walkthrough: boolean }) {
   const send = useMutation(api.agentsApi.sessions.send);
   const stop = useMutation(api.agentsApi.sessions.stop);
   const resume = useMutation(api.agentsApi.sessions.resume);
@@ -572,8 +603,18 @@ function SessionView({ session }: { session: Session }) {
   }
 
   return (
-    <section aria-label="Conversation" className="flex h-full min-h-0 min-w-0 flex-col">
-      <Transcript sessionId={session._id} />
+    <section
+      aria-label={walkthrough ? "Walkthrough and task controls" : "Conversation"}
+      className="flex h-full min-h-0 min-w-0 flex-col"
+    >
+      <div hidden={walkthrough} className="flex min-h-0 flex-1 flex-col">
+        <Transcript sessionId={session._id} />
+      </div>
+      {walkthrough && (
+        <div className="min-h-0 flex-1">
+          <TaskWalkthrough sessionId={session._id} />
+        </div>
+      )}
       <div className="shrink-0 space-y-3 border-t p-4">
         <div className="flex items-start justify-between gap-3">
           <SessionCost session={session} />
@@ -659,7 +700,9 @@ function SessionView({ session }: { session: Session }) {
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               disabled={pending}
-              className="max-h-48 min-h-20 resize-none"
+              className={
+                walkthrough ? "max-h-32 min-h-12 resize-none" : "max-h-48 min-h-20 resize-none"
+              }
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                   event.preventDefault();

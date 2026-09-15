@@ -74,6 +74,7 @@ it.each([undefined, Buffer.alloc(32, 8).toString("base64")])(
     vi.stubEnv("SCOUT_CREDENTIAL_MASTER_KEY_V1", masterKey);
     const snapshot = vi.fn(async () => "");
     vi.mocked(connectPlaywrightBrowser).mockResolvedValue({
+      captureScreenshot: vi.fn<PlaywrightBrowser["captureScreenshot"]>(),
       selectTab: vi.fn(async () => true),
       selectedTabId: vi.fn(async () => "tab-1"),
       snapshot,

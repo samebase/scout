@@ -8,6 +8,7 @@ export const productRoutes = { play: "/play", review: "/review" } as const;
 
 export const conversationSearch = z.object({
   thread: z.string().min(1).optional(),
+  view: z.enum(["walkthrough", "chat"]).optional(),
   session: z.string().min(1).optional().catch(undefined),
   replay: z.object({ sessionId: z.string(), pageId: z.string() }).optional(),
 });
