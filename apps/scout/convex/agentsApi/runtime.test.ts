@@ -630,6 +630,51 @@ it("traverses pages past unfinished items, dispatches the tool, and later advanc
   expect(execute).toHaveBeenCalledOnce();
 });
 
+it("marks failed tool items complete and advances the cursor up to the next unfinished item", async () => {
+  const { provider, advance, session, history } = await setup();
+  provider.items.push(
+    reasoning("head", "completed"),
+    {
+      id: "failed-call",
+      type: "function_call",
+      name: "set_review_site",
+      call_id: "cancelled-call",
+      arguments: { site: "example.test" },
+      status: "failed",
+      turn_id: "previous-turn",
+    },
+    {
+      id: "failed-output",
+      type: "function_call_output",
+      call_id: "cancelled-call",
+      output: null,
+      error: "Tool call was cancelled.",
+      status: "failed",
+      turn_id: "previous-turn",
+    },
+    reasoning("tail", "completed"),
+    reasoning("still-running", "in_progress"),
+  );
+
+  await advance();
+  expect(
+    (await history()).map(({ providerItemId, complete }) => ({ providerItemId, complete })),
+  ).toEqual([
+    { providerItemId: "head", complete: true },
+    { providerItemId: "failed-call", complete: true },
+    { providerItemId: "failed-output", complete: true },
+    { providerItemId: "tail", complete: true },
+    { providerItemId: "still-running", complete: false },
+  ]);
+  expect((await session()).itemCursor).toBe("tail");
+
+  provider.after.length = 0;
+  provider.items[4] = reasoning("still-running", "completed");
+  await advance();
+  expect(provider.after).toEqual(["tail", "tail"]);
+  expect((await session()).itemCursor).toBe("still-running");
+});
+
 it("keeps delayed assistant preambles ahead of tool calls by waiting for the provider transcript", async () => {
   const { provider, advance, history, savedCall } = await setup();
   await advance();
