@@ -301,6 +301,7 @@ export const get = publicQuery({
       canControl: v.boolean(),
       sessions: v.array(sessionValidator),
       runtime: chatRuntimeValidator,
+      hasWalkthrough: v.boolean(),
     }),
     v.null(),
   ),
@@ -342,6 +343,7 @@ export const get = publicQuery({
       runtime: managedId
         ? { kind: "agents_api" as const, sessionId: managedId }
         : { kind: "convex_agent" as const },
+      hasWalkthrough: managedId ? Boolean((await ctx.db.get(managedId))?.walkthrough) : false,
     };
   },
 });

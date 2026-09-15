@@ -1,7 +1,23 @@
-import type { Doc } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
-import { requireUserPermission } from "../access";
-import { chatPermission } from "../scout/chatAccess";
+import { requireUserPermission, type ViewerAccess } from "../access";
+import { chatPermission, visibleChat } from "../scout/chatAccess";
+import { canAccess } from "../../shared/accessModel";
+
+export async function readableSession(
+  ctx: Pick<QueryCtx, "db">,
+  sessionId: Id<"agentsApiSessions">,
+  viewer: ViewerAccess,
+) {
+  const session = await ctx.db.get(sessionId);
+  if (!session) return null;
+  if (
+    viewer.kind === "account" &&
+    (viewer.userId === session.userId || canAccess("access_lab", viewer.accessKeys))
+  )
+    return session;
+  return (await visibleChat(ctx, sessionId, viewer)) ? session : null;
+}
 
 export async function requireSessionPermission(
   ctx: Pick<QueryCtx, "db">,

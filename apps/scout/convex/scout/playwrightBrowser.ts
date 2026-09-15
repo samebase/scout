@@ -1,14 +1,17 @@
 "use node";
 
 import { type Infer } from "convex/values";
+import { isDeepStrictEqual } from "node:util";
 import {
   chromium,
   type Browser,
   type BrowserContext,
+  type Frame,
   type Locator,
   type Page,
 } from "playwright-core";
 import { omitNullish } from "../../shared/omitNullish";
+import { MAX_SCREENSHOT_BYTES, type screenshotMetadata } from "../agentsApi/screenshotModel";
 import { browserTelemetryValidator } from "../browserModel";
 import { type BrowserTarget } from "./browserTarget";
 import { BrowserClickRecorder, type BrowserClickCapture } from "./browserClickRecorder";
@@ -21,12 +24,17 @@ const VIEWPORT = { width: 1280, height: 800 } as const;
 
 export type BrowserTelemetry = Infer<typeof browserTelemetryValidator>;
 export type BrowserObservation = BrowserTelemetry["before"];
+export type BrowserScreenshot = {
+  bytes: Buffer;
+  metadata: Infer<typeof screenshotMetadata>;
+};
 
 export type PlaywrightBrowser = {
   disconnect: () => Promise<void>;
   startClickCapture: () => Promise<void>;
   finishClickCapture: () => Promise<BrowserClickCapture>;
   snapshot: (abortSignal?: AbortSignal) => Promise<string>;
+  captureScreenshot: (tabId: string, abortSignal?: AbortSignal) => Promise<BrowserScreenshot>;
   navigate: (url: string, abortSignal?: AbortSignal) => Promise<void>;
   getPage: (kind: "url" | "title", abortSignal?: AbortSignal) => Promise<string>;
   getElement: (target: BrowserTarget, abortSignal?: AbortSignal) => Promise<string>;
@@ -219,6 +227,136 @@ class ConnectedPlaywrightBrowser implements PlaywrightBrowser {
     if (!active) throw new Error("The browser has no open tab");
     this.activePage = active;
     return active;
+  }
+
+  async captureScreenshot(tabId: string, abortSignal?: AbortSignal): Promise<BrowserScreenshot> {
+    // Capture only the reconciled Page. page() intentionally falls back for ordinary reads.
+    const page = this.activePage;
+    const url = page.url();
+    let navigated = false;
+    const onNavigation = (frame: Frame) => {
+      if (frame === page.mainFrame()) navigated = true;
+    };
+    const signal = AbortSignal.any([
+      ...(abortSignal ? [abortSignal] : []),
+      AbortSignal.timeout(BROWSER_CONTROL_TIMEOUT_MS),
+    ]);
+    const checkTarget = () => {
+      signal.throwIfAborted();
+      if (page.isClosed()) throw new Error("Screenshot target is closed");
+      if (page !== this.activePage) throw new Error("Screenshot target changed during capture");
+      if (navigated || page.url() !== url) {
+        throw new Error("Screenshot target navigated during capture");
+      }
+    };
+    checkTarget();
+    page.on("framenavigated", onNavigation);
+    try {
+      return await this.withDialogs(async () => {
+        checkTarget();
+        // A late connection still reaches finally and detaches after cancellation.
+        return await runBoundedControlOperation(async () => {
+          const session = await this.context.newCDPSession(page);
+          try {
+            const bounded = async <T>(operation: () => Promise<T>) => {
+              checkTarget();
+              const value = await runBoundedControlOperation(operation, signal);
+              checkTarget();
+              return value;
+            };
+            const readState = async () => {
+              const { targetInfo } = await bounded(() => session.send("Target.getTargetInfo"));
+              if (targetInfo.targetId !== tabId) {
+                throw new Error("Screenshot target does not match the selected tab");
+              }
+              const { frameTree } = await bounded(() => session.send("Page.getFrameTree"));
+              const { cssVisualViewport } = await bounded(() =>
+                session.send("Page.getLayoutMetrics"),
+              );
+              return {
+                url: page.url(),
+                title: await bounded(() => page.title()),
+                frameId: frameTree.frame.id,
+                loaderId: frameTree.frame.loaderId,
+                viewport: cssVisualViewport,
+              };
+            };
+            const before = await readState();
+            const { pageX, pageY, clientWidth, clientHeight } = before.viewport;
+            if (
+              !Number.isFinite(pageX) ||
+              !Number.isFinite(pageY) ||
+              !Number.isFinite(clientWidth) ||
+              !Number.isFinite(clientHeight) ||
+              clientWidth <= 0 ||
+              clientHeight <= 0
+            ) {
+              throw new Error("Screenshot target has invalid viewport geometry");
+            }
+            const screenshotUrl = displayUrl(before.url);
+            if (screenshotUrl === null || screenshotUrl === "about:blank") {
+              throw new Error("Screenshot target must have an HTTP(S) URL");
+            }
+            const startedAtMs = Date.now();
+            const { data } = await bounded(() =>
+              session.send("Page.captureScreenshot", {
+                format: "png",
+                fromSurface: true,
+                captureBeyondViewport: false,
+                clip: { x: pageX, y: pageY, width: clientWidth, height: clientHeight, scale: 2 },
+              }),
+            );
+            const completedAtMs = Date.now();
+            if (data.length > Math.ceil(MAX_SCREENSHOT_BYTES / 3) * 4) {
+              throw new Error("Screenshot exceeds the maximum byte limit");
+            }
+            const bytes = Buffer.from(data, "base64");
+            if (bytes.length > MAX_SCREENSHOT_BYTES) {
+              throw new Error("Screenshot exceeds the maximum byte limit");
+            }
+            if (
+              bytes.length < 33 ||
+              bytes.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a" ||
+              bytes.readUInt32BE(8) !== 13 ||
+              bytes.toString("ascii", 12, 16) !== "IHDR"
+            ) {
+              throw new Error("Screenshot response is not a PNG");
+            }
+            const width = bytes.readUInt32BE(16);
+            const height = bytes.readUInt32BE(20);
+            if (width !== clientWidth * 2 || height !== clientHeight * 2) {
+              throw new Error("Screenshot dimensions do not match the 2x viewport");
+            }
+            const after = await readState();
+            if (!isDeepStrictEqual(before, after)) {
+              throw new Error("Screenshot target or viewport changed during capture");
+            }
+            return {
+              bytes,
+              metadata: {
+                tabId,
+                url: screenshotUrl,
+                title: before.title,
+                startedAtMs,
+                completedAtMs,
+                width,
+                height,
+                viewport: {
+                  width: clientWidth,
+                  height: clientHeight,
+                  scrollX: pageX,
+                  scrollY: pageY,
+                },
+              },
+            };
+          } finally {
+            await session.detach().catch(() => undefined);
+          }
+        }, signal);
+      }, signal);
+    } finally {
+      page.off("framenavigated", onNavigation);
+    }
   }
 
   private locator(target: BrowserTarget): Locator {

@@ -18,6 +18,8 @@ import { createAgentMailWriteTools } from "../scout/agentMailTools";
 import { createAgentMailInboxClient, requiredAgentMailApiKey } from "../scout/lib/agentMail";
 import { createAgentsAccountTools } from "./accounts";
 import { createWorkspaceTools } from "../scout/workspaceTools";
+import { saveScreenshot } from "./screenshots";
+import { MAX_TASK_SCREENSHOTS } from "./screenshotModel";
 
 export const handoffInput = z.object({ message: z.string().trim().min(1).max(2_000) });
 const mailNames = new Set([
@@ -50,6 +52,17 @@ export async function runtimeTools(
   const browser = createBrowserHarness({
     profileName: scout.firecrawl.profileName,
     beforeDispatch,
+    captureScreenshot: async ({ toolCallId, note, take }) => {
+      await beforeDispatch();
+      if (!handle) throw new Error("Browser is not open");
+      return await saveScreenshot(ctx, {
+        sessionId,
+        providerSessionId: handle.providerSessionId,
+        toolCallId,
+        note,
+        take,
+      });
+    },
     onSessionCreated: async (created) => {
       handle = {
         providerSessionId: created.providerSessionId,
@@ -115,6 +128,45 @@ export async function runtimeTools(
   let mailClient: Awaited<ReturnType<typeof createMCPClient>> | null = null;
   const tools: ToolSet = {
     ...browser.tools,
+    list_screenshots: tool({
+      description: outdent`
+        List this task's saved screenshots in capture order, with IDs, notes, page URLs,
+        and capture status. Use their IDs when saving a walkthrough. Images remain in
+        storage; this returns references and metadata.
+      `,
+      inputSchema: z.object({}),
+      execute: async () => {
+        await beforeDispatch();
+        return await ctx.runQuery(internal.agentsApi.walkthrough.listForAgent, { sessionId });
+      },
+    }),
+    save_walkthrough: tool({
+      description: outdent`
+        Save this task's illustrated result using existing screenshot IDs. Summarize what
+        the product does and what you verified. Each section explains an observed step,
+        result, or problem and references 1–3 screenshots from this task. The section order
+        is the reading order. Omit repetitive setup and distinguish findings from assumptions.
+        This replaces the previous walkthrough; it does not end the task.
+      `,
+      inputSchema: z.object({
+        summary: z.string().trim().min(1).max(2000),
+        sections: z
+          .array(
+            z.object({
+              heading: z.string().trim().min(1).max(120),
+              explanation: z.string().trim().min(1).max(2000),
+              captureIds: z.array(z.string()).min(1).max(3),
+            }),
+          )
+          .min(1)
+          .max(MAX_TASK_SCREENSHOTS),
+      }),
+      execute: async (content) => {
+        await beforeDispatch();
+        await ctx.runMutation(internal.agentsApi.walkthrough.save, { sessionId, ...content });
+        return { saved: true, sections: content.sections.length };
+      },
+    }),
     ...createWorkspaceTools(
       ctx,
       { target: { kind: "agent_session", sessionId }, userId: session.userId },
