@@ -293,7 +293,7 @@ function AgentsChrome({ session, search }: { session: Session | null; search: Ag
         </h1>
         {session && <p className="truncate text-xs text-muted-foreground">{session.scoutName}</p>}
       </div>
-      {session && !checking && (
+      {session && (
         <Button
           type="button"
           variant="ghost"
@@ -491,13 +491,13 @@ function SessionContent({
       >
         {(session.providerId || session.checks.length === 0) && <SessionView session={session} />}
       </div>
-      {checking && (
+      {checking && search.view !== "workspace" && (
         <RequestCheckView key={selectedCheckId(session, search)} session={session} check={check} />
       )}
       {researching && search.view !== "workspace" && (
         <SiteResearchView session={session} research={research} />
       )}
-      {!checking && search.view === "workspace" && (
+      {search.view === "workspace" && (
         <ScoutWorkspace
           target={target}
           disabled

@@ -464,7 +464,19 @@ test("keeps one full Chat and chronological sibling checks with independent sele
   expect(screen.getByText("2.5s")).toBeTruthy();
   expect(screen.getByText("$0.000096 estimated")).toBeTruthy();
   expect(router.state.location.search).toMatchObject({ step: "request_check", check: initial._id });
-  expect(screen.queryByRole("button", { name: "Workspace" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Workspace" }));
+  fireEvent.click(await screen.findByRole("button", { name: "notes.md" }));
+  expect((await screen.findByLabelText("File contents")).textContent).toBe("Saved research");
+  expect(router.state.location.search).toMatchObject({
+    step: "request_check",
+    check: initial._id,
+    view: "workspace",
+    file: "/workspace/notes.md",
+  });
+  expect(screen.queryByRole("heading", { name: "Request check" })).toBeNull();
+  expect(screen.getByRole("heading", { name: "Call details" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Workspace" }));
+  expect(await screen.findByRole("heading", { name: "Request check" })).toBeTruthy();
   fireEvent.click(screen.getByText("Request", { exact: true }));
   expect(screen.getByText(/"input": "Original review request"/)).toBeTruthy();
   fireEvent.click(navigation.getByRole("link", { name: "Resume check · rejected" }));
@@ -1278,6 +1290,16 @@ test("opens research as a flat session step and links its calls to private works
   );
   expect(screen.getByRole("link", { name: "Chat" }).getAttribute("aria-current")).toBeNull();
   expect(screen.queryByRole("region", { name: "Conversation" })).toBeNull();
+  await userEvent.setup().click(screen.getByRole("button", { name: "Workspace" }));
+  expect(await screen.findByRole("button", { name: "notes.md" })).toBeTruthy();
+  expect(router.state.location.search).toMatchObject({
+    step: "site_research",
+    view: "workspace",
+  });
+  expect(screen.queryByRole("heading", { name: "Site research" })).toBeNull();
+  expect(screen.getByRole("heading", { name: "Research details" })).toBeTruthy();
+  await userEvent.setup().click(screen.getByRole("button", { name: "Workspace" }));
+  expect(await screen.findByRole("heading", { name: "Site research" })).toBeTruthy();
   await userEvent.setup().click(screen.getByRole("link", { name: "Request" }));
   expect(router.state.location.search).toMatchObject({
     session: "session-1",
