@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-15T01:10:02.644Z
+- **Last updated:** 2026-09-15T11:35:26.917Z
 
 ## Log
 
@@ -1276,8 +1276,8 @@ late approvals. The admin tree keeps one Chat beside the request and resume chec
 
 ### 2026-09-15 - working tree
 
-Reviews now gather public site information before the browser agent starts, using Firecrawl
-and existing site guides. A short briefing and its sources stay in the shared site workspace,
-with private copies and provider calls retained per session. The existing Convex workflow runs
-this step after request approval; admins can inspect its sources, timing, and cost beside Chat
+Reviews gather public site information with a bounded Firecrawl Agent job before browser work.
+The existing Convex workflow handles polling and cancellation; each chat retains its briefing
+and provider request/result in R2, while the site workspace holds the latest public brief.
+Admins inspect research and its files beside the same Chat, including timing and reported credits
 (`apps/scout/convex/agentsApi/siteResearch.ts`, `apps/scout/src/agents-api/site-research.tsx`).

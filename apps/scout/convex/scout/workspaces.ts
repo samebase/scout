@@ -188,9 +188,10 @@ export const addFile = internalMutation({
     workspaceId: v.id("scoutWorkspaces"),
     userId: v.id("users"),
     entry: workspaceFileValidator,
+    overwrite: v.boolean(),
   },
   returns: v.number(),
-  handler: async (ctx, { workspaceId, userId, entry }) => {
+  handler: async (ctx, { workspaceId, userId, entry, overwrite }) => {
     await requireUserPermission(ctx, userId, "access_play");
     const workspace = await ctx.db.get("scoutWorkspaces", workspaceId);
     if (!workspace) throw new Error("Workspace not found");
@@ -214,7 +215,9 @@ export const addFile = internalMutation({
       throw new Error(`Workspace file exceeds ${MAX_WORKSPACE_FILE_BYTES} bytes: ${entry.path}`);
     const rows = await workspaceRows(ctx, workspaceId);
     const existing = new Map(rows.map((row) => [row.entry.path, row.entry]));
-    if (existing.has(entry.path)) throw new Error(`Workspace path already exists: ${entry.path}`);
+    const previous = rows.find((row) => row.entry.path === entry.path);
+    if (previous && (!overwrite || previous.entry.kind !== "file"))
+      throw new Error(`Workspace path already exists: ${entry.path}`);
     const parents: string[] = [];
     for (let depth = 2; depth < segments.length; depth++) {
       const path = segments.slice(0, depth).join("/");
@@ -223,12 +226,13 @@ export const addFile = internalMutation({
         throw new Error(`Workspace parent is not a directory: ${path}`);
       if (!parent) parents.push(path);
     }
-    if (rows.length + parents.length + 1 > MAX_WORKSPACE_ENTRIES)
+    if (rows.length + parents.length + (previous ? 0 : 1) > MAX_WORKSPACE_ENTRIES)
       throw new Error(
         "Workspace entry limit exceeded; remove files or folders before reading another page",
       );
     const totalBytes = rows.reduce(
-      (sum, row) => sum + (row.entry.kind === "file" ? row.entry.size : 0),
+      (sum, row) =>
+        sum + (row.entry.kind === "file" && row.entry.path !== entry.path ? row.entry.size : 0),
       entry.size,
     );
     if (totalBytes > MAX_WORKSPACE_BYTES)
@@ -238,7 +242,13 @@ export const addFile = internalMutation({
         workspaceId,
         entry: { kind: "directory", path, mode: 0o755, mtime: entry.mtime },
       });
-    await ctx.db.insert("scoutWorkspaceFiles", { workspaceId, entry });
+    if (previous) {
+      await ctx.db.patch(previous._id, { entry });
+      if (previous.entry.kind === "file" && previous.entry.key !== entry.key)
+        await workspaceStorage().deleteObject(ctx, previous.entry.key);
+    } else {
+      await ctx.db.insert("scoutWorkspaceFiles", { workspaceId, entry });
+    }
     const revision = workspace.revision + 1;
     await ctx.db.patch("scoutWorkspaces", workspaceId, { revision });
     return revision;

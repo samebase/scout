@@ -8,12 +8,7 @@ import { api, internal } from "../_generated/api";
 import schema from "../schema";
 import { ADMIN_EMAIL, insertTestAccount } from "../testing/accounts";
 import { saveWorkspaceFile } from "../scout/workspaceTools";
-import {
-  researchSite,
-  researchCandidates,
-  selectedPages,
-  renderBrief,
-} from "./siteResearchSources";
+import { researchSite, researchRequest, siteBrief } from "./siteResearchSources";
 
 vi.mock("../scout/workspaceTools", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../scout/workspaceTools")>()),
@@ -30,20 +25,31 @@ const modules = {
   ),
 };
 
-const scrape = vi.fn<Firecrawl["scrape"]>();
-
+const startAgent = vi.fn<Firecrawl["startAgent"]>();
+const getAgentStatus = vi.fn<Firecrawl["getAgentStatus"]>();
+const cancelAgent = vi.fn<Firecrawl["cancelAgent"]>();
+const result = {
+  success: true,
+  status: "completed" as const,
+  expiresAt: "2026-09-16T00:00:00Z",
+  creditsUsed: 12,
+  data: {
+    overview: "A public calculator.",
+    facts: [{ text: "No account required.", sources: ["https://example.com/help"] }],
+    unknowns: [],
+  },
+};
 beforeEach(() => {
   vi.useFakeTimers();
   vi.stubEnv("OPENAI_API_KEY", "test-key");
   vi.stubEnv("FIRECRAWL_API_KEY", "test-key");
-  vi.mocked(saveWorkspaceFile).mockClear();
-  scrape.mockReset().mockResolvedValue({
-    markdown: "Example Product. Public calculator with no account required.",
-    links: [],
-    metadata: { statusCode: 200, creditsUsed: 1, sourceURL: "https://example.com/" },
-  });
-  vi.spyOn(Firecrawl.prototype, "scrape").mockImplementation(scrape);
-  vi.spyOn(Firecrawl.prototype, "map").mockResolvedValue({ links: [] });
+  vi.mocked(saveWorkspaceFile).mockReset().mockResolvedValue(undefined);
+  startAgent.mockReset().mockResolvedValue({ success: true, id: "job-1" });
+  getAgentStatus.mockReset().mockResolvedValue(result);
+  cancelAgent.mockReset().mockResolvedValue(true);
+  vi.spyOn(Firecrawl.prototype, "startAgent").mockImplementation(startAgent);
+  vi.spyOn(Firecrawl.prototype, "getAgentStatus").mockImplementation(getAgentStatus);
+  vi.spyOn(Firecrawl.prototype, "cancelAgent").mockImplementation(cancelAgent);
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -97,94 +103,57 @@ async function setup(prompt = "Try https://example.com and tell me whether it wo
     prompt,
     run: () =>
       backend.action(internal.agentsApi.siteResearch.run, { sessionId: session._id, prompt }),
+    advance: () =>
+      backend.action(internal.agentsApi.siteResearch.advance, { sessionId: session._id }),
     inspect: () =>
       admin.query(api.agentsApi.siteResearchRecords.inspect, { sessionId: session._id }),
   };
 }
 
-function mockProviders() {
-  let calls = 0;
-  const request = vi.fn<typeof fetch>(async (input, init) => {
-    const url = new Request(input, init).url;
-    if (url.endsWith("/scrape"))
-      return Response.json({
-        success: true,
-        data: {
-          markdown: "Example Product. Public calculator with no account required.",
-          links: [],
-          metadata: { statusCode: 200, creditsUsed: 1, sourceURL: "https://example.com/" },
-        },
-      });
-    if (url.includes("/map")) return Response.json({ success: true, links: [] });
-    if (url.endsWith("/responses")) {
-      const result =
-        calls++ === 0
-          ? { pages: [], reason: "Landing page suffices" }
-          : {
-              overview: "A public calculator.",
-              facts: [{ text: "No account required.", sources: [0] }],
-              unknowns: [],
-            };
-      return Response.json({
-        id: `resp-${calls}`,
-        object: "response",
-        status: "completed",
-        model: "gpt-5.6-luna",
-        output: [
-          {
-            id: `msg-${calls}`,
-            type: "message",
-            role: "assistant",
-            status: "completed",
-            content: [{ type: "output_text", text: JSON.stringify(result), annotations: [] }],
-          },
-        ],
-        usage: { input_tokens: 100, output_tokens: 10, input_tokens_details: { cached_tokens: 0 } },
-      });
-    }
-    throw new Error(`Unexpected provider call: ${url}`);
-  });
-  vi.stubGlobal("fetch", request);
-  return request;
-}
-
-it("collects once after approval, preserves private request data, and records costs and the frozen brief", async () => {
+it("starts one bounded research job, saves a frozen brief, and keeps private notes out of shared research", async () => {
   const t = await setup(
-    "Try https://example.com/secret-invite?token=private-token. My private note is secret-note.",
+    "Try https://example.com/invite?token=private-token. My private note is secret-note.",
   );
-  const request = mockProviders();
-  await t.run();
-  const research = await t.inspect();
-  expect(research?.state.kind, JSON.stringify(research?.state)).toBe("completed");
-  expect(research).toMatchObject({
-    site: "example.com",
-    state: { kind: "completed", brief: expect.stringContaining("A public calculator") },
-    calls: [
-      { name: "landing", credits: 1 },
-      { name: "map" },
-      { name: "selection" },
-      { name: "brief" },
-    ],
+  expect(await t.run()).toBe(true);
+  expect((await t.inspect())?.jobId).toBe("job-1");
+  getAgentStatus.mockResolvedValueOnce({
+    success: true,
+    status: "processing",
+    expiresAt: result.expiresAt,
   });
-  expect(research?.modelCost).toBeCloseTo(0.000064);
+  expect(await t.advance()).toBe(true);
+  expect(await t.advance()).toBe(false);
+  expect(await t.inspect()).toMatchObject({
+    site: "example.com",
+    jobId: "job-1",
+    reportedCredits: 12,
+    state: {
+      kind: "completed",
+      brief: expect.stringContaining("A public calculator."),
+      briefPath: "/workspace/research/brief.md",
+    },
+  });
   const files = vi.mocked(saveWorkspaceFile).mock.calls.map(([, args]) => args);
+  expect(files.map((f) => f.path)).toEqual([
+    "/workspace/research/request.json",
+    "/workspace/research/result.json",
+    "/workspace/research/brief.md",
+    "/workspace/research/brief.md",
+  ]);
+  expect(files.at(-1)?.target).toEqual({ kind: "site", site: "example.com" });
   expect(
-    files
-      .filter((file) => file.target.kind === "site")
-      .every((file) => !file.text.includes("secret-note") && !file.text.includes("private-token")),
+    files.every((f) => !f.text.includes("private-token") && !f.text.includes("secret-note")),
   ).toBe(true);
-  expect(files.find((file) => file.path.endsWith("selection-request.json"))?.text).toContain(
-    t.prompt,
-  );
-  expect(
-    files.some((file) => file.target.kind === "agent_session" && file.path.endsWith("brief.md")),
-  ).toBe(true);
+  expect(startAgent.mock.calls[0][0]).toMatchObject({
+    maxCredits: 50,
+    model: "spark-2",
+    schema: { properties: { overview: { type: "string" } } },
+  });
   expect((await t.backend.run((ctx) => ctx.db.query("scoutChats").unique()))?.primarySite).toBe(
     "example.com",
   );
   await t.run();
-  expect(request).toHaveBeenCalledTimes(2);
-  expect(scrape).toHaveBeenCalledTimes(1);
+  expect(startAgent).toHaveBeenCalledTimes(1);
   await expect(
     t.backend.query(api.agentsApi.siteResearchRecords.inspect, { sessionId: t.sessionId }),
   ).rejects.toThrow();
@@ -192,55 +161,139 @@ it("collects once after approval, preserves private request data, and records co
 
 it("skips ambiguous sites without provider calls", async () => {
   const t = await setup("Compare https://example.com with https://example.org");
-  const request = mockProviders();
-  await t.run();
+  expect(await t.run()).toBe(false);
   expect((await t.inspect())?.state.kind).toBe("skipped");
-  expect(request).not.toHaveBeenCalled();
+  expect(startAgent).not.toHaveBeenCalled();
 });
 
 it("cannot research a rejected request", async () => {
   const t = await setup();
   await t.backend.run((ctx) => ctx.db.patch(t.checkId, { state: { kind: "cancelled" } }));
-  const request = mockProviders();
   await expect(t.run()).rejects.toThrow("approved request");
-  expect(request).not.toHaveBeenCalled();
+  expect(startAgent).not.toHaveBeenCalled();
 });
 
-it("records a scrape failure without failing the approved session", async () => {
+it("records provider failure and its raw response without failing the approved session", async () => {
   const t = await setup();
-  scrape.mockRejectedValue(new Error("Site unavailable"));
   await t.run();
-  expect((await t.inspect())?.state.kind).toBe("failed");
+  getAgentStatus.mockResolvedValue({
+    ...result,
+    status: "failed",
+    error: "Site unavailable",
+    data: undefined,
+  });
+  expect(await t.advance()).toBe(false);
+  expect(await t.inspect()).toMatchObject({
+    state: { kind: "failed", error: "Site unavailable" },
+    responsePath: "/workspace/research/result.json",
+    credits: 12,
+  });
   expect((await t.backend.run((ctx) => ctx.db.get(t.sessionId)))?.state.kind).toBe("starting");
 });
 
-it("stops between requests and cannot start the browser afterward", async () => {
+it("checks Stop again after saving the request, before launching paid research", async () => {
   const t = await setup();
-  const request = vi.fn<typeof fetch>(async () => {
+  vi.mocked(saveWorkspaceFile).mockImplementationOnce(async () => {
     await t.admin.mutation(api.agentsApi.sessions.stop, { sessionId: t.sessionId });
-    return Response.json({
-      success: true,
-      data: { markdown: "Home", links: [], metadata: { statusCode: 200 } },
-    });
   });
-  vi.stubGlobal("fetch", request);
-  scrape.mockImplementation(async () => {
-    await t.admin.mutation(api.agentsApi.sessions.stop, { sessionId: t.sessionId });
-    return { markdown: "Home", links: [], metadata: { statusCode: 200 } };
-  });
-  await t.run();
+  expect(await t.run()).toBe(false);
+  expect(startAgent).not.toHaveBeenCalled();
   expect((await t.inspect())?.state.kind).toBe("cancelled");
-  expect(request).not.toHaveBeenCalled();
+});
+
+it("cancels a job if Stop arrives during submission", async () => {
+  const t = await setup();
+  startAgent.mockImplementation(async () => {
+    await t.admin.mutation(api.agentsApi.sessions.stop, { sessionId: t.sessionId });
+    return { success: true, id: "job-1" };
+  });
+  expect(await t.run()).toBe(false);
+  expect(cancelAgent).toHaveBeenCalledWith("job-1");
+  expect((await t.inspect())?.state.kind).toBe("cancelled");
+});
+
+it("cancels running research on Stop and never starts the browser afterward", async () => {
+  const t = await setup();
+  await t.run();
+  getAgentStatus.mockResolvedValue({
+    success: true,
+    status: "processing",
+    expiresAt: result.expiresAt,
+  });
+  await t.admin.mutation(api.agentsApi.sessions.stop, { sessionId: t.sessionId });
+  expect(await t.advance()).toBe(false);
+  expect(cancelAgent).toHaveBeenCalledWith("job-1");
+  expect(await t.inspect()).toMatchObject({ state: { kind: "cancelled" }, credits: null });
   expect(
     await t.backend.action(internal.agentsApi.runtime.begin, {
       sessionId: t.sessionId,
       command: { kind: "start", prompt: t.prompt, checkId: t.checkId },
     }),
   ).toBe(false);
-  expect(request).not.toHaveBeenCalled();
 });
 
-it("uses only public origins and observed same-site candidates", () => {
+it("cancels research at its deadline instead of polling forever", async () => {
+  const t = await setup();
+  await t.run();
+  getAgentStatus.mockResolvedValue({
+    success: true,
+    status: "processing",
+    expiresAt: result.expiresAt,
+  });
+  vi.setSystemTime(Date.now() + 180_001);
+  expect(await t.advance()).toBe(false);
+  expect(cancelAgent).toHaveBeenCalledWith("job-1");
+  expect((await t.inspect())?.state).toMatchObject({
+    kind: "failed",
+    error: expect.stringContaining("180 seconds"),
+  });
+});
+
+it("preserves the workflow failure when cancelling its unfinished research", async () => {
+  const t = await setup();
+  await t.run();
+  getAgentStatus.mockResolvedValue({
+    success: true,
+    status: "processing",
+    expiresAt: result.expiresAt,
+  });
+  await t.backend.run((ctx) =>
+    ctx.db.patch(t.sessionId, { state: { kind: "failed", error: "Workflow failed" } }),
+  );
+  expect(await t.advance()).toBe(false);
+  expect(cancelAgent).toHaveBeenCalledWith("job-1");
+  expect((await t.inspect())?.state).toMatchObject({
+    kind: "failed",
+    error: "Workflow failed",
+  });
+});
+
+it("shows a cancellation failure instead of pretending the provider stopped", async () => {
+  const t = await setup();
+  await t.run();
+  getAgentStatus.mockResolvedValue({
+    success: true,
+    status: "processing",
+    expiresAt: result.expiresAt,
+  });
+  cancelAgent.mockResolvedValue(false);
+  await t.admin.mutation(api.agentsApi.sessions.stop, { sessionId: t.sessionId });
+  await expect(t.advance()).rejects.toThrow("Could not cancel");
+  expect((await t.inspect())?.state.kind).toBe("running");
+});
+
+it("rejects malformed briefs instead of giving the browser invented fallback data", async () => {
+  const t = await setup();
+  await t.run();
+  getAgentStatus.mockResolvedValue({ ...result, data: { brief: "Wrong shape" } });
+  await t.advance();
+  expect((await t.inspect())?.state.kind).toBe("failed");
+  expect(vi.mocked(saveWorkspaceFile).mock.calls.some(([, f]) => f.path.endsWith("brief.md"))).toBe(
+    false,
+  );
+});
+
+it("uses public origins and a concrete draft-7 schema for Firecrawl", () => {
   expect(researchSite("Try (https://example.com/invite?token=abc).")).toBe("example.com");
   for (const text of [
     "Find a calculator",
@@ -250,24 +303,13 @@ it("uses only public origins and observed same-site candidates", () => {
     "http://example.com",
   ])
     expect(researchSite(text)).toBeNull();
-  const candidates = researchCandidates("example.com", [
-    { url: "/help", title: "Help" },
-    { url: "https://evil-example.com/help", title: "Wrong site" },
-    { url: "https://example.com/help?token=abc", title: "Private" },
-    { url: "https://docs.example.com/start", title: "Docs" },
-  ]);
-  expect(candidates.map((page) => page.url)).toEqual([
-    "https://example.com/help",
-    "https://docs.example.com/start",
-  ]);
+  const request = researchRequest("example.com");
+  expect(request.schema.$schema).toContain("draft-07");
+  expect(request.schema.properties).toHaveProperty("facts");
   expect(() =>
-    selectedPages({ pages: [{ index: 2, reason: "made up" }], reason: "" }, candidates),
-  ).toThrow("outside");
-  expect(() =>
-    renderBrief(
-      "example.com",
-      { overview: "Test", facts: [{ text: "unsupported", sources: [0] }], unknowns: [] },
-      [],
-    ),
-  ).toThrow("not read");
+    siteBrief.parse({
+      ...result.data,
+      facts: [{ text: "Bad link", sources: ["javascript:alert(1)"] }],
+    }),
+  ).toThrow();
 });

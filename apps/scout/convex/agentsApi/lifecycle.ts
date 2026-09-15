@@ -3,7 +3,6 @@ import { v } from "convex/values";
 import { components, internal } from "../_generated/api";
 import { internalMutation } from "../_generated/server";
 import { command } from "./model";
-import { getResearch } from "./siteResearchRecords";
 
 export const workflow = new WorkflowManager(components.workflow);
 
@@ -23,7 +22,7 @@ export const run = workflow
     )
       return null;
     if (args.command.kind === "start") {
-      await step.runAction(
+      const researching = await step.runAction(
         internal.agentsApi.siteResearch.run,
         {
           sessionId: args.sessionId,
@@ -31,6 +30,17 @@ export const run = workflow
         },
         { retry: false },
       );
+      if (researching) {
+        while (
+          await step.runAction(
+            internal.agentsApi.siteResearch.advance,
+            { sessionId: args.sessionId },
+            { retry: false, runAfter: 5_000 },
+          )
+        ) {
+          /* Firecrawl researches the site; the workflow polls without holding an action open. */
+        }
+      }
     }
     if (!(await step.runAction(internal.agentsApi.runtime.begin, args, { retry: false })))
       return null;
@@ -59,16 +69,6 @@ export const onComplete = internalMutation({
   handler: async (ctx, args) => {
     const session = await ctx.db.get(args.context.sessionId);
     if (session?.workflowId === args.workflowId && args.result.kind !== "success") {
-      const research = await getResearch(ctx, session._id);
-      if (research?.state.kind === "running") {
-        await ctx.runMutation(internal.agentsApi.siteResearchRecords.finish, {
-          researchId: research._id,
-          state:
-            args.result.kind === "failed"
-              ? { kind: "failed", finishedAt: Date.now(), error: args.result.error }
-              : { kind: "cancelled", finishedAt: Date.now() },
-        });
-      }
       if (session.state.kind !== "stopped") {
         await ctx.db.patch(session._id, {
           state: {

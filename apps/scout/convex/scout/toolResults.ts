@@ -79,6 +79,7 @@ export async function saveToolResult(
         : "application/json; charset=utf-8",
   });
   await ctx.runMutation(internal.scout.workspaces.addFile, {
+    overwrite: false,
     workspaceId: snapshot.workspaceId,
     userId: scope.userId,
     entry: {

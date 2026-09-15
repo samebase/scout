@@ -1,105 +1,79 @@
 # Site research before browser work
 
-Implemented September 15, 2026. New Review conversations run Site research after
-request approval and before the OpenAI browser agent starts. The same chat and
-existing Convex workflow continue afterward; no additional Scout is reserved.
+New Review conversations gather public site information after request approval and
+before the OpenAI browser agent starts. This is one step in the existing Convex
+workflow, followed by the same Chat. It does not reserve another Scout.
 
-## Startup and storage
+## Research and persistence
 
-- Research runs once for an approved Review whose explicit HTTPS URLs name one
-  public hostname. It uses the homepage, stripping invitation paths, queries, and
-  fragments. Missing or ambiguous sites produce an inspectable skipped step.
-- Read up to three existing Markdown guides (excluding generated research folders),
-  newest first. Treat these as historical evidence, not proof of current behavior.
-- Scrape the homepage, Map up to 25 links, and ask Luna low to select zero to two
-  additional pages from observed same-site candidates. Read those pages and create
-  a short cited brief. The original request guides selection but is excluded from
-  the reusable briefing call.
-- Save files under `/workspace/research/<research-id>/`. Public pages, guide snapshots,
-  and the briefing are copied into the site workspace. Each session retains its
-  own copies plus the private provider requests/responses. Convex also retains the
-  exact briefing text, state, call timings, reported usage, and file paths.
-- Tell the browser agent to read its briefing before browser actions. Its original
-  user request is unchanged. Research does not constitute a completed review.
+- Start one Firecrawl `/agent` job through the installed SDK, using Spark 2 with low
+  effort, a 50-credit limit, and a three-minute deadline. Firecrawl chooses which
+  public pages to read and returns an overview, facts with source URLs, and unknowns.
+- Research only starts when the request names one public HTTPS hostname. The input
+  is its homepage, without invitation paths, query strings, or private user notes.
+  Ambiguous requests get an inspectable skipped step.
+- Convex stores the job ID, state, timing, credit limit, reported credits, and file
+  paths. Workflow actions poll every five seconds without holding an action open.
+- Each chat keeps `/workspace/research/brief.md`, `request.json`, and `result.json`.
+  The site workspace receives the latest public `research/brief.md`; earlier chats
+  retain their own copies. Raw provider responses stay private to the chat.
+- The browser agent is told to read its briefing and existing shared site guides
+  before browser actions. The original user request is unchanged. Reading public
+  documentation does not establish that the product works.
 
-The admin tree contains Request check, Site research, and one Chat, plus resume
-checks when needed. Research citations and call details link to the session's
-private workspace. The chat cost includes the research model estimate; Firecrawl
-scrape credits are shown separately. Map does not report billed credits, and no
-plan-specific dollar rate is guessed.
+No Firecrawl Convex component is installed. Convex and the existing R2 workspace
+already retain the data Scout needs. The provider's full browsing trace and source
+page snapshots are not mirrored; the saved result includes citations to source URLs.
 
-Research failure is visible in Agents and does not block an approved browser task.
-Stop prevents later provider calls and browser startup after the in-flight request
-returns. Failed jobs do not retry automatically. This is not a website safety
-scanner; the request check still precedes every research request.
+The admin tree shows Request check, Site research, and Chat. Research details show
+the provider job and credits, and link to saved request/result files. Opening those
+files keeps Site research selected. The shared site brief is a latest snapshot,
+not a history of every research run or a replacement for learned interaction guides.
 
-Workspace limits still apply: 200 entries, 256 KiB per file, 5 MiB per workspace.
-Research also bounds individual page text to 60,000 characters and each selected
-guide to 20,000. Oversized sources fail visibly rather than being silently shortened.
-Generated research directories accumulate; use existing workspace tools to remove
-old shared research when capacity is reached. Private session copies remain separate.
+## Failure and cancellation
 
-## Integrated localhost trials
+Research failure remains visible and does not prevent an approved browser task.
+There are no automatic retries. Stop is checked before submission and between polls;
+a job submitted while Stop arrives is cancelled. The workflow cancels timed-out jobs,
+and existing session cleanup also cancels unfinished research after workflow failure.
+Firecrawl cancellation is cooperative, so unreported final credits remain unknown.
 
-- Score Four: research took 17.6 seconds, loaded the shared guide and homepage,
-  and selected no additional pages. Conrad's first tool read the briefing through
-  Bash. He verified local moves, Undo, and New game, reported observed board changes,
-  and closed the browser. Session: `s573ncvx4mbdh71tc0yd73cy2n8eem1b`.
-- Excalidraw: research took 18.4 seconds and produced a briefing. The managed chat
-  then failed with an empty OpenAI 404 before using the browser. That trial does
-  not establish whether the briefing improves canvas interaction. Session:
-  `s572awt4vttx68sgapxz1yz2sh8ef35n`.
-- Stop: stopped a Samebase review while research was running. Research finished
-  cancelled; the Scout reservation cleared and no OpenAI session or browser was
-  created. Session: `s577c7qnmzbyra5sdygm7dn9es8eejh8`.
-- Samebase: research took 33.4 seconds and selected the DIY and Cloudflare setup
-  documentation alongside the homepage. Conrad read the briefing, inspected the
-  shared workspace, and then opened the browser. The Agents API returned the same
-  empty 404 during browser startup; cleanup released the Scout and closed the
-  browser. Session: `s570pwnazm25sd1g4mxnyzg8ts8efmad`.
+Workspace limits apply: 200 entries, 256 KiB per file, and 5 MiB per workspace. Storage
+failures are visible. An upload rejected by the workspace is removed from R2.
 
-These are individual trials, not an A/B measurement of improved agent performance.
-The earlier standalone script was removed after integrating the implementation;
-start a Review through localhost to exercise the real workflow.
+## Verification
 
-## Earlier prototype trials
+Direct SDK trials on September 15, 2026:
 
-The prototype used fresh public-page scrapes, one Map request, and two Luna low
-Responses calls per site. Sources, selection reasoning, complete model calls, and
-timings were retained in local output directories.
+| Site       | Elapsed | Observation                                                                      |
+| ---------- | ------: | -------------------------------------------------------------------------------- |
+| Samebase   |    64 s | Found the homepage, DIY setup, and pricing without a custom page-selection call. |
+| Score Four |    53 s | Read the homepage and public How to play help.                                   |
+| Excalidraw |    43 s | Returned the requested overview, cited facts, and unknowns.                      |
 
-| Site       | Total time | Pages read | Outcome                                                                         |
-| ---------- | ---------: | ---------: | ------------------------------------------------------------------------------- |
-| Score Four |     12.7 s |          1 | Used the existing shared guide; selected no extra pages.                        |
-| Excalidraw |     13.3 s |          1 | Skipped developer/API and paid-product docs as irrelevant to the public canvas. |
-| Samebase   |     16.8 s |          3 | Found Cloudflare setup and DIY docs, including provider-account prerequisites.  |
+All three reported zero credits. This is recorded provider output, not a claim
+that Agent is free. These are individual trials, not a performance guarantee or
+proof of better browser-agent behavior. The earlier custom flow completed its
+integrated research in 17.6–33.4 seconds, so the direct Agent trials were slower.
 
-These are individual observations, not latency guarantees. Each successful scrape
-reported one Firecrawl credit. Map billing is documented as one credit per call;
-the tested SDK response did not include billed credits. Model usage is saved in the
-response files, rather than inferred from text length.
+Testing exposed two schema compatibility issues in Firecrawl 4.38: automatic Zod 4
+conversion drops properties, and the provider's final submission validator rejects
+URI format. Scout sends an explicit draft-7 JSON Schema with a URL pattern and
+validates the complete result, including URL parsing, once on receipt.
 
-What the trials changed:
+The first integrated Samebase trial saved that submission failure and the chat
+continued successfully. After the schema fix, the localhost Score Four trial
+completed research in 30 seconds. Conrad read the saved brief and the existing
+site guide, started a local game, made two moves, and verified Undo and New game.
+The final response accurately described both controls and the browser's 3D limitation.
 
-- A fresh landing-page read took about two seconds. Map initially took 4.6–6.8
-  seconds, returned nothing for Score Four, and later returned a sitemap. It cannot
-  establish that a site has no other pages or replace live navigation.
-- Samebase's initial response contained large inline SVG image URLs. Excluding
-  image/SVG tags reduced its Markdown to roughly 6 KiB while keeping text and links.
-- Excalidraw's map was mostly developer documentation. Selecting the first few
-  results would have given the agent irrelevant context.
-- Existing Score Four knowledge was more useful than the landing page. The guide
-  covers accessible peg names and historical local-game results that Scrape cannot
-  discover without interaction.
-- The first briefs repeated caveats and generic browser instructions. A shorter
-  format produced roughly 150–200 words of facts and specific gaps. Retrieval dates
-  must be distinguished from dates of actual prior interaction observations.
-- Samebase's DIY material is less relevant to testing the hosted onboarding. Source
-  selection now accepts the actual review request privately. Repeating with “Try
-  Samebase by creating a disposable app. Check that the deployed app actually works”
-  selected the public dashboard/sign-in page and Cloudflare setup guide instead of
-  the DIY guide, and completed in 11.6 seconds. A generic site briefing can still
-  include material unrelated to a particular task.
+Stopping an Excalidraw research job shortly after submission left the session stopped
+without an OpenAI chat or browser; Firecrawl confirmed that the job was cancelled.
+An earlier, later cancellation raced with completion: Firecrawl finished and reported
+30 credits. An accepted cancellation does not guarantee that no work will be billed.
 
-Firecrawl documentation: [Map](https://docs.firecrawl.dev/features/map) and
-[Scrape](https://docs.firecrawl.dev/features/scrape).
+Automated coverage also checks repeated research replacing the shared site's latest
+brief while retaining the earlier chat's copy, rejected-upload cleanup, schema
+validation, provider failure, timeout, and Stop races.
+
+Official reference: [Firecrawl Agent](https://docs.firecrawl.dev/features/agent).

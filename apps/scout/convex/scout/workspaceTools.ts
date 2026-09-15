@@ -54,19 +54,25 @@ export async function saveWorkspaceFile(
     path: args.path,
   });
   await storage.store(ctx, bytes, { key, type: "text/plain; charset=utf-8" });
-  await ctx.runMutation(internal.scout.workspaces.addFile, {
-    workspaceId: snapshot.workspaceId,
-    userId: args.userId,
-    entry: {
-      kind: "file",
-      path: args.path,
-      key,
-      size: bytes.byteLength,
-      sha256: createHash("sha256").update(bytes).digest("hex"),
-      mode: 0o644,
-      mtime: Date.now(),
-    },
-  });
+  try {
+    await ctx.runMutation(internal.scout.workspaces.addFile, {
+      overwrite: true,
+      workspaceId: snapshot.workspaceId,
+      userId: args.userId,
+      entry: {
+        kind: "file",
+        path: args.path,
+        key,
+        size: bytes.byteLength,
+        sha256: createHash("sha256").update(bytes).digest("hex"),
+        mode: 0o644,
+        mtime: Date.now(),
+      },
+    });
+  } catch (error) {
+    await storage.deleteObject(ctx, key);
+    throw error;
+  }
 }
 
 export function createWorkspaceTools(

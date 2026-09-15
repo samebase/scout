@@ -5,9 +5,8 @@ import { query } from "../functions";
 import schema from "../schema";
 import { getInitialCheck } from "./requestChecks";
 import { requireSessionPermission } from "./access";
-import { estimateAgentsApiCost } from "./cost";
 import {
-  researchCall,
+  SITE_RESEARCH_MAX_CREDITS,
   researchFinishedState,
   researchSummary,
   SITE_RESEARCH_MODEL,
@@ -27,26 +26,7 @@ export const get = internalQuery({
 });
 
 export function summarizeResearch(research: Doc<"agentsApiSiteResearch">) {
-  const calls = research.calls.filter((call) => call.name === "selection" || call.name === "brief");
-  const costs = calls.map(
-    (call) =>
-      estimateAgentsApiCost({
-        model: research.model,
-        usage: call.usage,
-        webSearchCalls: 0,
-        browsers: [],
-        firecrawlUsdPerCredit: null,
-        now: 0,
-      }).modelEstimateUsd,
-  );
-  return {
-    status: research.state.kind,
-    modelCost:
-      research.state.kind === "running" || costs.some((cost) => cost === null)
-        ? null
-        : costs.reduce<number>((sum, cost) => sum + (cost ?? 0), 0),
-    reportedCredits: research.calls.reduce((sum, call) => sum + (call.credits ?? 0), 0),
-  };
+  return { status: research.state.kind, reportedCredits: research.credits };
 }
 
 export const inspect = query({
@@ -79,36 +59,49 @@ export const start = internalMutation({
       sessionId: session._id,
       site: args.site,
       model: SITE_RESEARCH_MODEL,
-      calls: [],
+      maxCredits: SITE_RESEARCH_MAX_CREDITS,
+      jobId: null,
+      requestPath: null,
+      responsePath: null,
+      credits: null,
       state: { kind: "running" },
     });
   },
 });
 
-export const recordCall = internalMutation({
-  args: { researchId: v.id("agentsApiSiteResearch"), call: researchCall },
-  returns: v.null(),
+export const submitted = internalMutation({
+  args: { researchId: v.id("agentsApiSiteResearch"), jobId: v.string(), requestPath: v.string() },
+  returns: v.boolean(),
   handler: async (ctx, args) => {
     const research = await ctx.db.get(args.researchId);
-    if (!research) throw new Error("Site research not found");
-    if (research.calls.length >= 6) throw new Error("Site research call limit exceeded");
-    await ctx.db.patch(research._id, { calls: [...research.calls, args.call] });
-    return null;
+    if (!research || research.jobId) throw new Error("Research job already submitted or missing");
+    await ctx.db.patch(research._id, { jobId: args.jobId, requestPath: args.requestPath });
+    const session = await ctx.db.get(research.sessionId);
+    return session?.state.kind === "starting" && session.active;
   },
 });
 
 export const finish = internalMutation({
-  args: { researchId: v.id("agentsApiSiteResearch"), state: researchFinishedState },
+  args: {
+    researchId: v.id("agentsApiSiteResearch"),
+    state: researchFinishedState,
+    responsePath: v.union(v.string(), v.null()),
+    credits: v.union(v.number(), v.null()),
+  },
   returns: v.null(),
   handler: async (ctx, args) => {
     const research = await ctx.db.get(args.researchId);
     if (!research || research.state.kind !== "running") return null;
     const session = await ctx.db.get(research.sessionId);
+    let state = args.state;
+    if (session?.state.kind === "failed")
+      state = { kind: "failed", finishedAt: Date.now(), error: session.state.error };
+    else if (session?.state.kind !== "starting" || !session.active)
+      state = { kind: "cancelled", finishedAt: Date.now() };
     await ctx.db.patch(research._id, {
-      state:
-        session?.state.kind === "starting" && session.active
-          ? args.state
-          : { kind: "cancelled", finishedAt: Date.now() },
+      responsePath: args.responsePath,
+      credits: args.credits,
+      state,
     });
     return null;
   },

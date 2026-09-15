@@ -494,12 +494,16 @@ function SessionContent({
       {checking && (
         <RequestCheckView key={selectedCheckId(session, search)} session={session} check={check} />
       )}
-      {researching && <SiteResearchView session={session} research={research} />}
-      {!checking && !researching && search.view === "workspace" && (
+      {researching && search.view !== "workspace" && (
+        <SiteResearchView session={session} research={research} />
+      )}
+      {!checking && search.view === "workspace" && (
         <ScoutWorkspace
           target={target}
           disabled
-          selectedPath={search.file ?? null}
+          selectedPath={
+            search.file ?? (research?.state.kind === "completed" ? research.state.briefPath : null)
+          }
           onSelectPath={(file) => void navigate({ search: { ...search, file } })}
           terminalOpen={false}
           onToggleTerminal={() => {}}

@@ -23,7 +23,7 @@ import {
   withWorkspaceResults,
 } from "./scout/toolResults";
 import { requireRuntimeTool } from "./scout/lib/runtimeTool";
-import { createWorkspaceTools } from "./scout/workspaceTools";
+import { createWorkspaceTools, saveWorkspaceFile } from "./scout/workspaceTools";
 import { createWebTools } from "./scout/webTools";
 import { runtimeTools } from "./agentsApi/tools";
 import type { Id } from "./_generated/dataModel";
@@ -1281,6 +1281,7 @@ describe("web reads saved to the workspace", () => {
       );
       await expect(
         backend.mutation(internal.scout.workspaces.addFile, {
+          overwrite: false,
           workspaceId: snapshot.workspaceId,
           userId,
           entry: file,
@@ -1297,6 +1298,7 @@ describe("web reads saved to the workspace", () => {
     ]) {
       await expect(
         backend.mutation(internal.scout.workspaces.addFile, {
+          overwrite: false,
           workspaceId: snapshot.workspaceId,
           userId,
           entry: { ...file, path },
@@ -1350,6 +1352,7 @@ describe("web reads saved to the workspace", () => {
         }
       });
       await backend.mutation(internal.scout.workspaces.addFile, {
+        overwrite: false,
         workspaceId: snapshot.workspaceId,
         userId,
         entry: file,
@@ -1359,6 +1362,7 @@ describe("web reads saved to the workspace", () => {
       });
       await expect(
         backend.mutation(internal.scout.workspaces.addFile, {
+          overwrite: false,
           workspaceId: snapshot.workspaceId,
           userId,
           entry: { ...file, path: "/workspace/sources/example.com/another.md", key: "another" },
@@ -1664,4 +1668,67 @@ describe("Workspace tool results", () => {
       }),
     ).toEqual(before);
   });
+});
+
+it("removes an uploaded research file when the workspace rejects it at capacity", async () => {
+  const t = await setup();
+  const snapshot = await t.backend.mutation(internal.scout.workspaces.snapshot, {
+    target: { kind: "chat", threadId: t.threadId },
+    userId: t.userId,
+  });
+  await t.backend.run(async (ctx) => {
+    for (let i = 0; i < MAX_WORKSPACE_ENTRIES; i++)
+      await ctx.db.insert("scoutWorkspaceFiles", {
+        workspaceId: snapshot.workspaceId,
+        entry: { kind: "directory", path: "/workspace/dir-" + i, mode: 0o755, mtime: 0 },
+      });
+  });
+  await expect(
+    t.owner.action((ctx) =>
+      saveWorkspaceFile(ctx, {
+        target: { kind: "chat", threadId: t.threadId },
+        userId: t.userId,
+        path: "/workspace/research/brief.md",
+        text: "A brief",
+      }),
+    ),
+  ).rejects.toThrow();
+  expect(blobs.size).toBe(1);
+  expect(deleted).toEqual([...blobs.keys()]);
+});
+
+it("replaces the latest site brief while retaining each chat's private copy", async () => {
+  const t = await setup();
+  const path = "/workspace/research/brief.md";
+  const saveSite = (text: string) =>
+    t.owner.action((ctx) =>
+      saveWorkspaceFile(ctx, {
+        target: { kind: "site", site: "example.com" },
+        userId: t.userId,
+        path,
+        text,
+      }),
+    );
+  await saveSite("First research");
+  await t.owner.action((ctx) =>
+    saveWorkspaceFile(ctx, {
+      target: { kind: "chat", threadId: t.threadId },
+      userId: t.userId,
+      path,
+      text: "First research",
+    }),
+  );
+  const oldSiteKey = [...blobs.keys()][0];
+  await saveSite("Second research");
+  const siteFile = await t.owner.action(api.scout.workspaceTools.readFile, {
+    target: { kind: "site", site: "example.com" },
+    path,
+  });
+  const chatFile = await t.owner.action(api.scout.workspaceTools.readFile, {
+    target: { kind: "chat", threadId: t.threadId },
+    path,
+  });
+  expect(siteFile.text).toBe("Second research");
+  expect(chatFile.text).toBe("First research");
+  expect(deleted).toEqual([oldSiteKey]);
 });

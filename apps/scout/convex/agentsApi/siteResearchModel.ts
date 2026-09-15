@@ -1,17 +1,8 @@
 import { v } from "convex/values";
-import { agentsApiUsageValidator } from "./cost";
 
-export const SITE_RESEARCH_MODEL = "gpt-5.6-luna";
-
-export const researchCall = v.object({
-  name: v.string(),
-  startedAt: v.number(),
-  finishedAt: v.number(),
-  requestPath: v.string(),
-  responsePath: v.union(v.string(), v.null()),
-  usage: v.union(agentsApiUsageValidator, v.null()),
-  credits: v.union(v.number(), v.null()),
-});
+export const SITE_RESEARCH_MODEL = "spark-2";
+export const SITE_RESEARCH_MAX_CREDITS = 50;
+export const SITE_RESEARCH_TIMEOUT_MS = 180_000;
 
 export const researchFinishedState = v.union(
   v.object({
@@ -29,13 +20,16 @@ export const siteResearchRecord = v.object({
   sessionId: v.id("agentsApiSessions"),
   site: v.union(v.string(), v.null()),
   model: v.string(),
-  calls: v.array(researchCall),
+  maxCredits: v.number(),
+  jobId: v.union(v.string(), v.null()),
+  requestPath: v.union(v.string(), v.null()),
+  responsePath: v.union(v.string(), v.null()),
+  credits: v.union(v.number(), v.null()),
   state: v.union(v.object({ kind: v.literal("running") }), researchFinishedState),
 });
 
 export const researchSummary = v.object({
-  modelCost: v.union(v.number(), v.null()),
-  reportedCredits: v.number(),
+  reportedCredits: v.union(v.number(), v.null()),
   status: v.union(
     v.literal("running"),
     v.literal("completed"),

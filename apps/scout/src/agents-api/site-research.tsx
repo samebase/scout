@@ -66,7 +66,7 @@ export function SiteResearchView({
                           to="/agents"
                           search={{
                             session: session._id,
-                            step: "chat",
+                            step: "site_research",
                             view: "workspace",
                             file: href,
                           }}
@@ -88,7 +88,7 @@ export function SiteResearchView({
                 to="/agents"
                 search={{
                   session: session._id,
-                  step: "chat",
+                  step: "site_research",
                   view: "workspace",
                   file: research.state.briefPath,
                 }}
@@ -136,61 +136,56 @@ export function SiteResearchInspector({ research }: { research: SiteResearch | n
                 <dd>{((research.state.finishedAt - research._creationTime) / 1000).toFixed(1)}s</dd>
               </>
             )}
-            <dt className="text-muted-foreground">Model cost</dt>
-            <dd>
-              {research.modelCost === null
-                ? "Not reported"
-                : `$${research.modelCost.toFixed(6)} estimated`}
-            </dd>
+            <dt className="text-muted-foreground">Firecrawl credits</dt>
+            <dd>{research.credits === null ? "Not reported" : research.credits}</dd>
+            <dt className="text-muted-foreground">Credit limit</dt>
+            <dd>{research.maxCredits}</dd>
+            {research.jobId && (
+              <>
+                <dt className="text-muted-foreground">Job ID</dt>
+                <dd className="break-all">{research.jobId}</dd>
+              </>
+            )}
           </dl>
-          {research.calls.map((call) => (
-            <div key={call.name} className="space-y-2 border-t pt-3">
-              <div className="flex justify-between gap-2">
-                <span className="font-medium">{call.name}</span>
-                <span>{((call.finishedAt - call.startedAt) / 1000).toFixed(1)}s</span>
-              </div>
-              {call.usage && (
-                <p className="text-xs text-muted-foreground">
-                  {call.usage.inputTokens} input · {call.usage.outputTokens} output tokens
-                </p>
-              )}
-              {!call.usage && (
-                <p className="text-xs text-muted-foreground">
-                  {call.credits === null
-                    ? "Credits not reported"
-                    : `${call.credits} Firecrawl credits`}
-                </p>
-              )}
-              <div className="flex gap-3">
-                <Link
-                  to="/agents"
-                  search={{
-                    session: research.sessionId,
-                    step: "chat",
-                    view: "workspace",
-                    file: call.requestPath,
-                  }}
-                  className="underline"
-                >
-                  Request
-                </Link>
-                {call.responsePath && (
-                  <Link
-                    to="/agents"
-                    search={{
-                      session: research.sessionId,
-                      step: "chat",
-                      view: "workspace",
-                      file: call.responsePath,
-                    }}
-                    className="underline"
-                  >
-                    Response
-                  </Link>
-                )}
-              </div>
-            </div>
-          ))}
+          <div className="flex flex-wrap gap-3">
+            {research.requestPath && (
+              <Link
+                to="/agents"
+                search={{
+                  session: research.sessionId,
+                  step: "site_research",
+                  view: "workspace",
+                  file: research.requestPath,
+                }}
+                className="underline"
+              >
+                Request
+              </Link>
+            )}
+            {research.responsePath && (
+              <Link
+                to="/agents"
+                search={{
+                  session: research.sessionId,
+                  step: "site_research",
+                  view: "workspace",
+                  file: research.responsePath,
+                }}
+                className="underline"
+              >
+                Response
+              </Link>
+            )}
+            {research.state.kind === "completed" && (
+              <Link
+                to="/agents"
+                search={{ session: research.sessionId, step: "site_research" }}
+                className="underline"
+              >
+                Brief
+              </Link>
+            )}
+          </div>
         </div>
       }
     />
