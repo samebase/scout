@@ -187,8 +187,10 @@ verification of the saved image. Product trials must check the images themselves
 In Agents, add Walkthrough beside Request check, Site research, and Chat in the
 existing flat Task tree. In the public review, show the explanation with a large
 uncropped screenshot, Previous/Next controls, a counter, and Expand. Keep Chat and
-Replay reachable. Load the displayed original on demand; do not decode 20 full
-images at once. Replay selection may open the source browser session, but should
+Replay reachable. Load the displayed original on demand, then preload the next
+screenshot at low priority. Reuse unexpired signed URLs within the open Task and
+share in-flight URL requests when navigation catches up with a preload. Do not
+decode 20 full images at once. Replay selection may open the source browser session, but should
 not claim an exact matching video time.
 
 Defer annotations, drag-to-reorder editing, narration, transitions, thumbnails,

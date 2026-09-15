@@ -21,6 +21,8 @@ const secondSession: FunctionArgs<typeof api.agentsApi.walkthrough.get>["session
 const firstId: Capture["id"] = "capture-first";
 // @ts-expect-error The mocked Convex transport uses this stable string in place of a database-generated screenshot ID.
 const secondId: Capture["id"] = "capture-second";
+// @ts-expect-error The mocked Convex transport uses this stable string in place of a database-generated screenshot ID.
+const thirdId: Capture["id"] = "capture-third";
 
 const remote = vi.hoisted(() => ({
   results: new Map<string, Result | undefined>(),
@@ -119,7 +121,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-test("follows the illustrated report order and loads only the selected original", async () => {
+test("follows the illustrated report order and reuses visited image URLs", async () => {
   render(<TaskWalkthrough sessionId={firstSession} />);
   expect(await screen.findByRole("img", { name: "A piece in the board" })).toHaveProperty(
     "width",
@@ -145,6 +147,108 @@ test("follows the illustrated report order and loads only the selected original"
   fireEvent.click(screen.getByRole("button", { name: "Previous" }));
   expect(await screen.findByRole("heading", { name: "Play a move" })).toBeTruthy();
   expect(screen.getByText("Playing, undoing a move, and starting again all worked.")).toBeTruthy();
+  expect(screen.getByRole("img", { name: "A piece in the board" })).toBeTruthy();
+  expect(remote.imageUrl).toHaveBeenCalledTimes(2);
+});
+
+test("preloads only the next screenshot after the current image loads", async () => {
+  remote.results.set(firstSession, {
+    walkthrough: null,
+    captures: [
+      capture(firstId, "First screen"),
+      capture(secondId, "Second screen"),
+      capture(thirdId, "Third screen"),
+    ],
+  });
+  render(<TaskWalkthrough sessionId={firstSession} />);
+  const first = await screen.findByRole("img", { name: "First screen" });
+  expect(remote.imageUrl).toHaveBeenCalledExactlyOnceWith({ screenshotId: firstId });
+  fireEvent.load(first);
+  await waitFor(() => {
+    expect(document.querySelector("img[hidden]")?.getAttribute("src")).toBe(
+      `https://images.example.com/${secondId}.png`,
+    );
+  });
+  expect(remote.imageUrl).toHaveBeenCalledTimes(2);
+  expect(remote.imageUrl).not.toHaveBeenCalledWith({ screenshotId: thirdId });
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  const second = screen.getByRole("img", { name: "Second screen" });
+  expect(screen.queryByText("Loading screenshot…")).toBeNull();
+  expect(remote.imageUrl).toHaveBeenCalledTimes(2);
+  fireEvent.load(second);
+  await waitFor(() => expect(remote.imageUrl).toHaveBeenCalledWith({ screenshotId: thirdId }));
+  fireEvent.click(screen.getByRole("button", { name: "Previous" }));
+  expect(screen.getByRole("img", { name: "First screen" })).toBeTruthy();
+  expect(remote.imageUrl).toHaveBeenCalledTimes(3);
+});
+
+test("shares an in-flight preload when Next is clicked before its URL arrives", async () => {
+  let resolveImage: (value: ImageResult) => void = () => {
+    throw new Error("Image request has not started.");
+  };
+  const pending = new Promise<ImageResult>((resolve) => {
+    resolveImage = resolve;
+  });
+  remote.imageUrl.mockImplementation(async ({ screenshotId }) =>
+    screenshotId === secondId
+      ? pending
+      : { url: "https://images.example.com/first.png", expiresAtMs: Date.now() + 60_000 },
+  );
+  render(<TaskWalkthrough sessionId={firstSession} />);
+  fireEvent.load(await screen.findByRole("img", { name: "A piece in the board" }));
+  await waitFor(() => expect(remote.imageUrl).toHaveBeenCalledTimes(2));
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  expect(screen.getByText("Loading screenshot…")).toBeTruthy();
+  expect(remote.imageUrl).toHaveBeenCalledTimes(2);
+  await act(async () =>
+    resolveImage({
+      url: "https://images.example.com/second.png",
+      expiresAtMs: Date.now() + 60_000,
+    }),
+  );
+  expect(screen.getByRole("img", { name: "An empty board after undo" }).getAttribute("src")).toBe(
+    "https://images.example.com/second.png",
+  );
+  expect(remote.imageUrl).toHaveBeenCalledTimes(2);
+});
+
+test("a failed preload does not interrupt reading or prevent loading on selection", async () => {
+  remote.imageUrl
+    .mockResolvedValueOnce({
+      url: "https://images.example.com/first.png",
+      expiresAtMs: Date.now() + 60_000,
+    })
+    .mockRejectedValueOnce(new Error("Offline"));
+  render(<TaskWalkthrough sessionId={firstSession} />);
+  fireEvent.load(await screen.findByRole("img", { name: "A piece in the board" }));
+  await waitFor(() => expect(remote.imageUrl).toHaveBeenCalledTimes(2));
+  expect(screen.queryByRole("alert")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  expect(await screen.findByRole("img", { name: "An empty board after undo" })).toBeTruthy();
+  expect(remote.imageUrl).toHaveBeenCalledTimes(3);
+});
+
+test("refreshes a preloaded URL when it has expired before selection", async () => {
+  vi.useFakeTimers();
+  remote.imageUrl.mockImplementation(async ({ screenshotId }) => ({
+    url: `https://images.example.com/${screenshotId}.png?t=${Date.now()}`,
+    expiresAtMs: Date.now() + (screenshotId === secondId ? 1000 : 60_000),
+  }));
+  await act(async () => {
+    render(<TaskWalkthrough sessionId={firstSession} />);
+  });
+  await act(async () => {
+    fireEvent.load(screen.getByRole("img", { name: "A piece in the board" }));
+  });
+  expect(remote.imageUrl).toHaveBeenCalledTimes(2);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2000);
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  });
+  expect(remote.imageUrl).toHaveBeenCalledTimes(3);
+  expect(screen.getByRole("img", { name: "An empty board after undo" })).toBeTruthy();
 });
 
 test("shows notes in capture creation order while the final walkthrough is absent", async () => {

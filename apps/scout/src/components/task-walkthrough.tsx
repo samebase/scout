@@ -7,7 +7,7 @@ import {
   ImageIcon,
   MaximizeIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { Button } from "#components/ui/button";
@@ -34,7 +34,9 @@ export function TaskWalkthrough({ sessionId }: { sessionId: Id<"agentsApiSession
 
 function SessionWalkthrough({ sessionId }: { sessionId: Id<"agentsApiSessions"> }) {
   const result = useQuery(api.agentsApi.walkthrough.get, { sessionId });
+  const imageUrls = useScreenshotUrls();
   const [selection, setSelection] = useState(0);
+  const [loadedCaptureId, setLoadedCaptureId] = useState<Capture["id"] | null>(null);
   const [dialogContainer, setDialogContainer] = useState<HTMLElement | null>(null);
   const scroll = useRef<HTMLDivElement>(null);
   const captionScroll = useRef<HTMLDivElement>(null);
@@ -72,6 +74,7 @@ function SessionWalkthrough({ sessionId }: { sessionId: Id<"agentsApiSessions"> 
       }));
   const index = Math.min(selection, Math.max(0, steps.length - 1));
   const step = steps.at(index);
+  const nextCapture = steps.at(index + 1)?.capture;
 
   if (!step) {
     return (
@@ -119,6 +122,8 @@ function SessionWalkthrough({ sessionId }: { sessionId: Id<"agentsApiSessions"> 
               capture={step.capture}
               heading={step.heading}
               dialogContainer={dialogContainer}
+              imageUrls={imageUrls}
+              onLoad={setLoadedCaptureId}
             />
           ) : (
             <p className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
@@ -146,8 +151,75 @@ function SessionWalkthrough({ sessionId }: { sessionId: Id<"agentsApiSessions"> 
           Next <ArrowRightIcon aria-hidden="true" />
         </Button>
       </nav>
+      {step.capture?.id === loadedCaptureId &&
+        nextCapture?.state.kind === "ready" &&
+        nextCapture.id !== loadedCaptureId && (
+          <PreloadScreenshot
+            key={nextCapture.id}
+            screenshotId={nextCapture.id}
+            imageUrls={imageUrls}
+          />
+        )}
     </section>
   );
+}
+
+function useScreenshotUrls() {
+  const imageUrl = useAction(api.agentsApi.screenshots.imageUrl);
+  return useMemo(() => {
+    const urls = new Map<Capture["id"], ImageUrl>();
+    const requests = new Map<Capture["id"], Promise<ImageUrl | null>>();
+    function peek(screenshotId: Capture["id"]) {
+      const image = urls.get(screenshotId);
+      return image && image.expiresAtMs > Date.now() ? image : null;
+    }
+    return {
+      peek,
+      invalidate: (screenshotId: Capture["id"]) => urls.delete(screenshotId),
+      load(screenshotId: Capture["id"]) {
+        const cached = peek(screenshotId);
+        if (cached) return Promise.resolve(cached);
+        const pending = requests.get(screenshotId);
+        if (pending) return pending;
+        const request = imageUrl({ screenshotId })
+          .then((image) => {
+            if (image) urls.set(screenshotId, image);
+            else urls.delete(screenshotId);
+            return image;
+          })
+          .finally(() => requests.delete(screenshotId));
+        requests.set(screenshotId, request);
+        return request;
+      },
+    };
+  }, [imageUrl]);
+}
+
+function PreloadScreenshot({
+  screenshotId,
+  imageUrls,
+}: {
+  screenshotId: Capture["id"];
+  imageUrls: ReturnType<typeof useScreenshotUrls>;
+}) {
+  const [image, setImage] = useState<ImageUrl | null>(() => imageUrls.peek(screenshotId));
+  useEffect(() => {
+    let cancelled = false;
+    void imageUrls.load(screenshotId).then(
+      (image) => {
+        if (!cancelled) setImage(image);
+      },
+      () => {
+        // Selecting this screenshot can request it again and show any failure.
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [imageUrls, screenshotId]);
+  return image ? (
+    <img hidden alt="" src={image.url} referrerPolicy="no-referrer" fetchPriority="low" />
+  ) : null;
 }
 
 function WalkthroughNotice({
@@ -179,10 +251,14 @@ function CaptureImage({
   capture,
   heading,
   dialogContainer,
+  imageUrls,
+  onLoad,
 }: {
   capture: Capture;
   heading: string;
   dialogContainer: HTMLElement | null;
+  imageUrls: ReturnType<typeof useScreenshotUrls>;
+  onLoad: (screenshotId: Capture["id"]) => void;
 }) {
   switch (capture.state.kind) {
     case "pending":
@@ -210,6 +286,8 @@ function CaptureImage({
           note={capture.note}
           heading={heading}
           dialogContainer={dialogContainer}
+          imageUrls={imageUrls}
+          onLoad={() => onLoad(capture.id)}
         />
       );
     default: {
@@ -225,15 +303,21 @@ function OriginalImage({
   note,
   heading,
   dialogContainer,
+  imageUrls,
+  onLoad,
 }: {
   screenshotId: Capture["id"];
   metadata: Extract<Capture["state"], { kind: "ready" }>["metadata"];
   note: Capture["note"];
   heading: string;
   dialogContainer: HTMLElement | null;
+  imageUrls: ReturnType<typeof useScreenshotUrls>;
+  onLoad: () => void;
 }) {
-  const imageUrl = useAction(api.agentsApi.screenshots.imageUrl);
-  const [state, setState] = useState<ImageState>({ kind: "loading" });
+  const [state, setState] = useState<ImageState>(() => {
+    const image = imageUrls.peek(screenshotId);
+    return image ? { kind: "ready", image } : { kind: "loading" };
+  });
   const [attempt, setAttempt] = useState(0);
   const [expanded, setExpanded] = useState(false);
   const imageErrors = useRef(0);
@@ -241,7 +325,7 @@ function OriginalImage({
 
   useEffect(() => {
     let cancelled = false;
-    void imageUrl({ screenshotId }).then(
+    void imageUrls.load(screenshotId).then(
       (image) => {
         if (cancelled) return;
         refreshing.current = false;
@@ -264,13 +348,14 @@ function OriginalImage({
     return () => {
       cancelled = true;
     };
-  }, [imageUrl, screenshotId, attempt]);
+  }, [imageUrls, screenshotId, attempt]);
 
   const renew = useCallback(() => {
     if (refreshing.current) return;
     refreshing.current = true;
+    imageUrls.invalidate(screenshotId);
     setAttempt((value) => value + 1);
-  }, []);
+  }, [imageUrls, screenshotId]);
 
   const refreshAfterError = useCallback(() => {
     if (refreshing.current) return;
@@ -301,6 +386,7 @@ function OriginalImage({
         height={metadata.height}
         decoding="async"
         referrerPolicy="no-referrer"
+        onLoad={onLoad}
         onError={refreshAfterError}
         className="block h-auto w-full @2xl/walkthrough:h-full @2xl/walkthrough:min-h-0 @2xl/walkthrough:object-contain"
       />
@@ -316,6 +402,7 @@ function OriginalImage({
             onClick={() => {
               imageErrors.current = 0;
               refreshing.current = true;
+              imageUrls.invalidate(screenshotId);
               setState({ kind: "loading" });
               setAttempt((value) => value + 1);
             }}

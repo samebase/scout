@@ -35,6 +35,7 @@ const remote = vi.hoisted(() => ({
   signIn: vi.fn(),
   queryCalls: vi.fn(),
   listReplayPages: vi.fn(),
+  screenshotUrl: vi.fn(),
 }));
 
 function subscribe(listener: () => void) {
@@ -66,6 +67,8 @@ vi.mock("convex/react", () => ({
     return remote.queries.get(getFunctionName(reference));
   },
   useAction: (reference: FunctionReference<"action">) => {
+    if (getFunctionName(reference) === "agentsApi/screenshots:imageUrl")
+      return remote.screenshotUrl;
     if (getFunctionName(reference) === "browserReplay:listPages") return remote.listReplayPages;
     throw new Error("Unexpected action");
   },
@@ -127,6 +130,7 @@ beforeEach(() => {
   remote.messages = [];
   remote.authenticated = true;
   remote.queryCalls.mockClear();
+  remote.screenshotUrl.mockReset().mockResolvedValue(null);
   remote.revision = 0;
   remote.queries.clear();
   remote.queries.set("accounts:currentViewerAccess", {

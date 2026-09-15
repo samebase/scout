@@ -31,6 +31,7 @@ const remote = vi.hoisted(() => ({
   stop: vi.fn(),
   resume: vi.fn(),
   refresh: vi.fn(),
+  screenshotUrl: vi.fn(),
   loadMore: vi.fn(),
   listReplayPages: vi.fn(),
   loadPlaylist: vi.fn(),
@@ -80,6 +81,8 @@ vi.mock("convex/react", () => ({
     }
   },
   useAction: (reference: FunctionReference<"action">) => {
+    if (getFunctionName(reference) === "agentsApi/screenshots:imageUrl")
+      return remote.screenshotUrl;
     if (getFunctionName(reference) === "agentsApi/runtime:refresh") return remote.refresh;
     if (getFunctionName(reference) === "browserReplay:listPages") return remote.listReplayPages;
     if (getFunctionName(reference) === "browserReplay:loadPlaylist") return remote.loadPlaylist;
@@ -142,6 +145,7 @@ beforeEach(() => {
   remote.stop.mockReset().mockResolvedValue(null);
   remote.resume.mockReset().mockResolvedValue(null);
   remote.refresh.mockReset().mockResolvedValue(null);
+  remote.screenshotUrl.mockReset().mockResolvedValue(null);
   remote.loadMore.mockReset();
   remote.listReplayPages.mockReset().mockResolvedValue({ status: "unavailable" });
   remote.loadPlaylist.mockReset().mockResolvedValue({ status: "ready", playlist: "#EXTM3U" });
