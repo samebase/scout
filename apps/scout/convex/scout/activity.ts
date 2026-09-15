@@ -12,6 +12,7 @@ import { chatPermission, visibleChat, isPublicChat } from "./chatAccess";
 import { availabilityValidator, scoutReservation } from "./availability";
 import type { ViewerAccess } from "../access";
 import { getInitialCheck } from "../agentsApi/requestChecks";
+import { taskScreenshots } from "../agentsApi/screenshotRecords";
 import { chatPurposeValidator, chatVisibilityValidator, chatRuntimeValidator } from "./chatModel";
 import { scoutAgent } from "./agent";
 import { MAX_BROWSER_SESSIONS_PER_THREAD } from "./browserSessions";
@@ -289,6 +290,80 @@ export const list = publicQuery({
       ),
     );
     return { ...result, page: page.filter((chat) => chat !== null) };
+  },
+});
+
+// Seek by hostname so a product with many reviews cannot fill an entire directory page.
+export const products = publicQuery({
+  access: "access_public",
+  args: { afterSite: v.union(v.string(), v.null()) },
+  returns: v.object({
+    page: v.array(activityValidator),
+    nextSite: v.union(v.string(), v.null()),
+  }),
+  handler: async (ctx, args) => {
+    let afterSite = args.afterSite ?? "";
+    const page: (typeof activityValidator.type)[] = [];
+    const next = (site: string) =>
+      ctx.db
+        .query("scoutChats")
+        .withIndex("by_visibility_and_purpose_kind_and_primary_site_and_created_at", (q) =>
+          q.eq("visibility", "public").eq("purpose.kind", "review").gt("primarySite", site),
+        )
+        .order("asc")
+        .first();
+
+    for (let index = 0; index < 8; index++) {
+      const first = await next(afterSite);
+      if (!first?.primarySite) return { page, nextSite: null };
+      afterSite = first.primarySite;
+      const reviews = ctx.db
+        .query("scoutChats")
+        .withIndex("by_visibility_and_purpose_kind_and_primary_site_and_created_at", (q) =>
+          q.eq("visibility", "public").eq("purpose.kind", "review").eq("primarySite", afterSite),
+        )
+        .order("desc");
+      for await (const review of reviews) {
+        if (await isPublicChat(ctx, review)) {
+          page.push(await summary(ctx, review));
+          break;
+        }
+      }
+    }
+    return { page, nextSite: (await next(afterSite)) ? afterSite : null };
+  },
+});
+
+export const preview = publicQuery({
+  access: "access_public",
+  args: { threadId: v.string() },
+  returns: v.union(
+    v.object({
+      screenshot: v.union(
+        v.object({ id: v.id("agentsApiScreenshots"), note: v.string() }),
+        v.null(),
+      ),
+      walkthroughSummary: v.union(v.string(), v.null()),
+    }),
+    v.null(),
+  ),
+  handler: async (ctx, args) => {
+    const chat = await visibleChat(ctx, args.threadId, ctx.viewer);
+    if (!chat || chat.runtime?.kind !== "agents_api") return null;
+    const [session, captures] = await Promise.all([
+      ctx.db.get(chat.runtime.sessionId),
+      taskScreenshots(ctx, chat.runtime.sessionId),
+    ]);
+    const ready = captures.filter((capture) => capture.state.kind === "ready");
+    const selected = session?.walkthrough?.sections
+      .flatMap((section) => section.captureIds)
+      .map((id) => ready.find((capture) => capture._id === id))
+      .find((capture) => capture !== undefined);
+    const screenshot = selected ?? ready.at(-1);
+    return {
+      screenshot: screenshot ? { id: screenshot._id, note: screenshot.note } : null,
+      walkthroughSummary: session?.walkthrough?.summary ?? null,
+    };
   },
 });
 

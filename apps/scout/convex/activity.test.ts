@@ -104,6 +104,63 @@ async function setup() {
   return { backend, member, other, memberId, otherId, adminId, scoutId, chat, review };
 }
 
+test("product pages select the latest public review per site without duplicate products", async () => {
+  const t = await setup();
+  const sites = Array.from({ length: 10 }, (_, i) => `product-${i}.test`);
+  for (const site of sites.toReversed()) {
+    const review = await t.chat({ kind: "review" }, "public");
+    await t.backend.run((ctx) => ctx.db.patch(review.chatId, { primarySite: site }));
+  }
+  let latestThreadId = "";
+  for (let i = 0; i < 12; i++) {
+    vi.advanceTimersByTime(1);
+    const review = await t.chat({ kind: "review" }, "public");
+    await t.backend.run((ctx) => ctx.db.patch(review.chatId, { primarySite: sites[0] }));
+    latestThreadId = review.threadId;
+  }
+  for (const site of [sites[0], "private-only.test"]) {
+    const review = await t.chat({ kind: "review" }, "private");
+    await t.backend.run((ctx) => ctx.db.patch(review.chatId, { primarySite: site }));
+  }
+  const general = await t.chat({ kind: "general" }, "public");
+  await t.backend.run((ctx) => ctx.db.patch(general.chatId, { primarySite: "general.test" }));
+  await t.chat({ kind: "review" }, "public");
+
+  const first = await t.backend.query(api.scout.activity.products, { afterSite: null });
+  expect(first.page.map((review) => review.primarySite)).toEqual(sites.slice(0, 8));
+  expect(first.page[0].threadId).toBe(latestThreadId);
+  expect(first.nextSite).toBe(sites[7]);
+  const second = await t.backend.query(api.scout.activity.products, { afterSite: first.nextSite });
+  expect(second.page.map((review) => review.primarySite)).toEqual(sites.slice(8));
+  expect(second.nextSite).toBeNull();
+});
+
+test("an unchecked review cannot replace an approved product in the public directory", async () => {
+  const t = await setup();
+  const previous = await t.chat({ kind: "review" }, "public");
+  await t.backend.run((ctx) => ctx.db.patch(previous.chatId, { primarySite: "example.test" }));
+  vi.advanceTimersByTime(1);
+  const sessionId = await t.review();
+  await t.backend.run(async (ctx) => {
+    const chat = await ctx.db
+      .query("scoutChats")
+      .withIndex("by_thread_id", (q) => q.eq("threadId", sessionId))
+      .unique();
+    const check = await ctx.db
+      .query("agentsApiRequestChecks")
+      .withIndex("by_session_id_and_kind", (q) =>
+        q.eq("sessionId", sessionId).eq("kind", "initial"),
+      )
+      .unique();
+    if (!chat || !check) throw new Error("Missing test review");
+    await ctx.db.patch(chat._id, { primarySite: "example.test" });
+    await ctx.db.patch(check._id, { state: { kind: "pending" } });
+  });
+  const products = await t.backend.query(api.scout.activity.products, { afterSite: null });
+  expect(products.page.map((review) => review.threadId)).toEqual([previous.threadId]);
+  expect(await t.backend.query(api.scout.activity.preview, { threadId: sessionId })).toBeNull();
+});
+
 test("review site assignment preserves the subject across navigation and owner corrections", async () => {
   const t = await setup();
   const sessionId = await t.review();

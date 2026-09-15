@@ -1,7 +1,7 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useAction, usePaginatedQuery, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
-import { PlayIcon, SearchIcon, XIcon } from "lucide-react";
+import { ArrowUpRightIcon, ImagesIcon, PlayIcon, SearchIcon, XIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { Button } from "#components/ui/button";
@@ -22,7 +22,7 @@ import { BrowserReplayTrack } from "./browser-replay";
 import { ScoutPiece } from "../products/play/scout-piece";
 import { buildReplayTimeline } from "../lib/browserReplayTimeline";
 
-type Activity = FunctionReturnType<typeof api.scout.activity.list>["page"][number];
+type Activity = FunctionReturnType<typeof api.scout.activity.products>["page"][number];
 const activityScope = z.enum(["public", "mine"]);
 const activityLabels: Record<Activity["status"], string> = {
   ready: "Ready",
@@ -45,11 +45,6 @@ export function ActivityFeed({ search }: { search: ReviewFeedSearch }) {
   }, [search.site]);
   const signedIn = viewer?.kind === "account";
   const selectedScope = signedIn ? (search.scope ?? "public") : "public";
-  const activities = usePaginatedQuery(
-    api.scout.activity.list,
-    { site: search.site ?? null, scope: selectedScope },
-    { initialNumItems: 8 },
-  );
   return (
     <section aria-label="Reviews">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
@@ -71,7 +66,9 @@ export function ActivityFeed({ search }: { search: ReviewFeedSearch }) {
             </SelectContent>
           </Select>
         ) : (
-          <h2 className="text-lg font-medium">Public reviews</h2>
+          <h2 className="text-lg font-medium">
+            {search.site ? "Public reviews" : "Explore products"}
+          </h2>
         )}
         <form
           className="flex items-center gap-2"
@@ -121,6 +118,70 @@ export function ActivityFeed({ search }: { search: ReviewFeedSearch }) {
           {error}
         </p>
       )}
+      {selectedScope === "public" && !search.site ? (
+        <PublicProducts />
+      ) : (
+        <ReviewHistory site={search.site ?? null} scope={selectedScope} />
+      )}
+    </section>
+  );
+}
+
+function PublicProducts() {
+  const [cursors, setCursors] = useState<Array<string | null>>([null]);
+  const products = useQuery(api.scout.activity.products, { afterSite: cursors.at(-1) ?? null });
+  return (
+    <div>
+      {products === undefined ? (
+        <p role="status" className="py-12 text-muted-foreground">
+          Loading products…
+        </p>
+      ) : (
+        <>
+          {products.page.map((activity) => (
+            <ActivityRow key={activity.threadId} activity={activity} scope="public" product />
+          ))}
+          {!products.page.length && (
+            <p className="py-12 text-muted-foreground">No public products on this page yet.</p>
+          )}
+        </>
+      )}
+      {(cursors.length > 1 || products?.nextSite) && (
+        <nav aria-label="Product pages" className="flex items-center justify-between py-5">
+          <Button
+            variant="outline"
+            disabled={cursors.length === 1 || !products}
+            onClick={() => setCursors((previous) => previous.slice(0, -1))}
+          >
+            Previous
+          </Button>
+          <span className="text-sm text-muted-foreground">Page {cursors.length}</span>
+          <Button
+            variant="outline"
+            disabled={!products?.nextSite}
+            onClick={() => {
+              if (products?.nextSite) setCursors((previous) => [...previous, products.nextSite]);
+            }}
+          >
+            Next
+          </Button>
+        </nav>
+      )}
+    </div>
+  );
+}
+
+function ReviewHistory({ site, scope }: { site: string | null; scope: "public" | "mine" }) {
+  const activities = usePaginatedQuery(
+    api.scout.activity.list,
+    { site, scope },
+    { initialNumItems: 8 },
+  );
+  return (
+    <div>
+      {site && (
+        <h2 className="py-4 text-lg font-semibold [overflow-wrap:anywhere]">Reviews of {site}</h2>
+      )}
       {activities.results.length > 0 && (
         <div
           aria-hidden="true"
@@ -131,7 +192,7 @@ export function ActivityFeed({ search }: { search: ReviewFeedSearch }) {
         </div>
       )}
       {activities.results.map((activity) => (
-        <ActivityRow key={activity.threadId} activity={activity} scope={selectedScope} />
+        <ActivityRow key={activity.threadId} activity={activity} scope={scope} product={false} />
       ))}
       {activities.status === "LoadingFirstPage" ? (
         <p role="status" className="py-12 text-muted-foreground">
@@ -139,9 +200,9 @@ export function ActivityFeed({ search }: { search: ReviewFeedSearch }) {
         </p>
       ) : activities.results.length === 0 ? (
         <p className="py-16 text-muted-foreground">
-          {search.site
+          {site
             ? "No reviews for this site yet."
-            : selectedScope === "mine"
+            : scope === "mine"
               ? "Your reviews will appear here."
               : "No public reviews yet."}
         </p>
@@ -157,58 +218,100 @@ export function ActivityFeed({ search }: { search: ReviewFeedSearch }) {
           More reviews
         </Button>
       )}
-    </section>
+    </div>
   );
 }
 
-function ActivityRow({ activity, scope }: { activity: Activity; scope: "public" | "mine" }) {
+function ActivityRow({
+  activity,
+  scope,
+  product,
+}: {
+  activity: Activity;
+  scope: "public" | "mine";
+  product: boolean;
+}) {
   const [hovered, setHovered] = useState(false);
   const [visible, setVisible] = useState(false);
   const element = useRef<HTMLElement>(null);
   useEffect(() => {
     const target = element.current;
     if (!target) return;
-    const observer = new IntersectionObserver(([entry]) => setVisible(entry.isIntersecting), {
-      rootMargin: "100px",
-    });
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) setVisible(true);
+      },
+      {
+        rootMargin: "100px",
+      },
+    );
     observer.observe(target);
     return () => observer.disconnect();
   }, []);
+  const preview = useQuery(
+    api.scout.activity.preview,
+    visible ? { threadId: activity.threadId } : "skip",
+  );
+  const hasWalkthrough =
+    preview?.walkthroughSummary !== null && preview?.walkthroughSummary !== undefined;
+  const destination = hasWalkthrough
+    ? { thread: activity.threadId, view: "walkthrough" as const }
+    : { thread: activity.threadId };
   return (
     <article
       ref={element}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      className="grid grid-cols-[96px_minmax(0,1fr)] items-center gap-x-4 gap-y-1 border-b border-border py-3 sm:grid-cols-[144px_minmax(0,1fr)] lg:grid-cols-[160px_minmax(0,1fr)_208px] lg:gap-x-5"
+      className={
+        product
+          ? "grid grid-cols-[112px_minmax(0,1fr)] items-start gap-4 border-b border-border py-5 sm:grid-cols-[208px_minmax(0,1fr)] sm:items-center sm:gap-6"
+          : "grid grid-cols-[96px_minmax(0,1fr)] items-center gap-x-4 gap-y-1 border-b border-border py-3 sm:grid-cols-[144px_minmax(0,1fr)] lg:grid-cols-[160px_minmax(0,1fr)_208px] lg:gap-x-5"
+      }
     >
       <Link
         to="/review"
-        search={{ thread: activity.threadId }}
-        aria-label={`Watch ${activity.title ?? "chat"}`}
+        search={destination}
+        aria-label={`Open ${activity.title ?? "review"}`}
         className="group relative row-span-2 block aspect-[8/5] overflow-hidden rounded-md border border-border bg-muted"
       >
-        {visible && activity.latestSession ? (
+        {preview?.screenshot ? (
+          <ScreenshotPreview key={preview.screenshot.id} screenshot={preview.screenshot} />
+        ) : visible && preview !== undefined && activity.latestSession ? (
           <ActivityPreview session={activity.latestSession} playing={hovered} />
         ) : (
           <PreviewPlaceholder />
         )}
         <span className="pointer-events-none absolute inset-0 grid place-items-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
           <span className="grid size-8 place-items-center rounded-full bg-white/90 text-primary">
-            <PlayIcon size={14} fill="currentColor" />
+            {hasWalkthrough ? <ImagesIcon size={14} /> : <PlayIcon size={14} fill="currentColor" />}
           </span>
         </span>
       </Link>
       <div className="min-w-0 lg:row-span-2">
+        {product && activity.primarySite && (
+          <Link
+            to="/"
+            search={{ site: activity.primarySite, scope }}
+            className="mb-1.5 block text-lg font-semibold text-primary [overflow-wrap:anywhere] hover:underline"
+          >
+            {activity.primarySite}
+          </Link>
+        )}
         <h2 className="text-sm leading-snug font-semibold [overflow-wrap:anywhere] sm:text-base">
           <Link
             to="/review"
-            search={{ thread: activity.threadId }}
+            search={destination}
             className="line-clamp-2 hover:text-primary"
             title={activity.title ?? "New chat"}
           >
             {activity.title ?? "New chat"}
           </Link>
         </h2>
+        {product && preview?.walkthroughSummary && (
+          <p className="mt-2 hidden text-sm leading-relaxed text-muted-foreground sm:line-clamp-2">
+            {preview.walkthroughSummary}
+          </p>
+        )}
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
           <span>{activity.scout.displayName}</span>
           <span className="inline-flex items-center gap-1.5">
@@ -223,26 +326,92 @@ function ActivityRow({ activity, scope }: { activity: Activity; scope: "public" 
           </time>
           {activity.visibility === "private" && <span>Private</span>}
         </div>
+        {product && (
+          <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs font-medium sm:text-sm">
+            <Link
+              to="/review"
+              search={destination}
+              className="inline-flex items-center gap-1 text-primary hover:underline"
+            >
+              {hasWalkthrough ? "Open walkthrough" : "Open review"}
+              <ArrowUpRightIcon size={14} aria-hidden="true" />
+            </Link>
+            {activity.primarySite && (
+              <Link
+                to="/"
+                search={{ site: activity.primarySite, scope }}
+                className="text-muted-foreground hover:underline"
+              >
+                All reviews
+              </Link>
+            )}
+          </div>
+        )}
       </div>
-      {activity.primarySite ? (
-        <div className="col-start-2 min-w-0 lg:col-start-3 lg:row-span-2">
-          <Link
-            to="/"
-            search={{ site: activity.primarySite, scope }}
-            className="inline-flex min-h-9 items-center break-all text-xs font-medium text-primary hover:underline sm:text-sm"
+      {!product &&
+        (activity.primarySite ? (
+          <div className="col-start-2 min-w-0 lg:col-start-3 lg:row-span-2">
+            <Link
+              to="/"
+              search={{ site: activity.primarySite, scope }}
+              className="inline-flex min-h-9 items-center break-all text-xs font-medium text-primary hover:underline sm:text-sm"
+            >
+              {activity.primarySite}
+            </Link>
+          </div>
+        ) : (
+          <span
+            aria-label="Site not set"
+            className="hidden text-sm text-muted-foreground lg:col-start-3 lg:row-span-2 lg:block"
           >
-            {activity.primarySite}
-          </Link>
-        </div>
-      ) : (
-        <span
-          aria-label="Site not set"
-          className="hidden text-sm text-muted-foreground lg:col-start-3 lg:row-span-2 lg:block"
-        >
-          —
-        </span>
-      )}
+            —
+          </span>
+        ))}
     </article>
+  );
+}
+
+function ScreenshotPreview({
+  screenshot,
+}: {
+  screenshot: NonNullable<
+    NonNullable<FunctionReturnType<typeof api.scout.activity.preview>>["screenshot"]
+  >;
+}) {
+  const imageUrl = useAction(api.agentsApi.screenshots.imageUrl);
+  const [image, setImage] = useState<
+    { kind: "loading" } | { kind: "ready"; url: string } | { kind: "failed" }
+  >({ kind: "loading" });
+  useEffect(() => {
+    let cancelled = false;
+    void imageUrl({ screenshotId: screenshot.id }).then(
+      (result) => {
+        if (!cancelled) setImage(result ? { kind: "ready", url: result.url } : { kind: "failed" });
+      },
+      () => {
+        if (!cancelled) setImage({ kind: "failed" });
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [imageUrl, screenshot.id]);
+  if (image.kind === "failed")
+    return (
+      <span className="grid size-full place-items-center p-2 text-center text-xs text-muted-foreground">
+        Preview unavailable
+      </span>
+    );
+  if (image.kind === "loading") return <PreviewPlaceholder />;
+  return (
+    <img
+      src={image.url}
+      alt={screenshot.note}
+      loading="lazy"
+      decoding="async"
+      className="size-full object-contain"
+      onError={() => setImage({ kind: "failed" })}
+    />
   );
 }
 
