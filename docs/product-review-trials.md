@@ -96,3 +96,32 @@ or hiding them behind unlimited retries.
 
 Then update the homepage around products and their completed walkthroughs. The
 landing page has not been changed in this trial batch.
+
+## Site groups and saved checks — September 15
+
+Started task `s573xjaph56j53s22xfbeng2e18eej4v` through the normal composer at
+`localhost:5173` against the development deployment. The request was: “Try
+https://excalidraw.com. Draw a rectangle, undo it, and redo it. Check whether each
+action works.” No instructions about screenshots, check counts, or walkthrough
+tools were added to that request.
+
+Scout completed research, read the brief and site workspace, and exercised the
+three actions without a handoff. It saved four screenshots and a walkthrough with
+three passing checks. Visual inspection confirmed the drawn rectangle, its removal
+after Undo, and its restoration after Redo. The walkthrough and homepage display
+the stored `3/3 passed` result; no counts were backfilled into older reviews.
+
+The task did not finish cleanly. After Convex saved the walkthrough, the agent
+received an HTTP 424/500 tool-transport error for `save_walkthrough`. It attempted
+to inspect the captures before retrying, then the OpenAI Agents API stream returned
+`500 An internal error occurred` in `runtime.ts:streamOutput`. The task became
+inactive and its browser was closed. The saved evidence remains available, and the
+homepage retains an Interrupted label beside the check count. The exact cause of
+the provider/transport failure is unresolved; this is not a product failure in
+Excalidraw or proof of a cleanly completed Scout run.
+
+The actual homepage retains its composer, groups tasks beside a large site image,
+expands three Score Four rows to five, and filters by site. Existing walkthrough
+links and screenshot expansion work. At a 390px viewport, the site image is 356px
+wide and the page has no horizontal overflow. Formatting, lint, all TypeScript
+projects, 964 tests, and the local app build passed.
