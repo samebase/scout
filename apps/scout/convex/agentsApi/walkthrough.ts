@@ -4,10 +4,12 @@ import type { Id } from "../_generated/dataModel";
 import { publicQuery } from "../functions";
 import { readableSession } from "./access";
 import { taskScreenshots } from "./screenshotRecords";
+import { reviewChecksSchema } from "../../shared/reviewChecks";
 import {
   MAX_TASK_SCREENSHOTS,
   screenshotPresentation,
   walkthroughContent,
+  reviewChecksValidator,
 } from "./screenshotModel";
 
 export const get = publicQuery({
@@ -60,6 +62,7 @@ export const save = internalMutation({
   args: {
     sessionId: v.id("agentsApiSessions"),
     summary: v.string(),
+    checks: reviewChecksValidator,
     sections: v.array(
       v.object({
         heading: v.string(),
@@ -72,6 +75,7 @@ export const save = internalMutation({
   handler: async (ctx, args) => {
     const session = await ctx.db.get(args.sessionId);
     if (!session || session.state.kind !== "running") throw new Error("Task is no longer running");
+    const checks = reviewChecksSchema.parse(args.checks);
     if (!args.summary.trim() || args.summary.length > 2000)
       throw new Error("Write a summary of at most 2000 characters");
     if (!args.sections.length || args.sections.length > MAX_TASK_SCREENSHOTS)
@@ -103,7 +107,9 @@ export const save = internalMutation({
         captureIds,
       });
     }
-    await ctx.db.patch(session._id, { walkthrough: { summary: args.summary.trim(), sections } });
+    await ctx.db.patch(session._id, {
+      walkthrough: { summary: args.summary.trim(), checks, sections },
+    });
     return null;
   },
 });

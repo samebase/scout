@@ -121,6 +121,27 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+test("shows saved check results without treating untested work as a failure", async () => {
+  const value = report();
+  if (!value.walkthrough) throw new Error("Fixture requires a walkthrough");
+  value.walkthrough.checks = [
+    {
+      label: "Play a move",
+      result: "passed",
+      explanation: "The piece landed in the chosen column.",
+    },
+    { label: "Export the board", result: "untested", explanation: "Export required a paid plan." },
+  ];
+  remote.results.set(firstSession, value);
+  render(<TaskWalkthrough sessionId={firstSession} />);
+  const checks = screen.getByRole("list", { name: "Review checks" });
+  expect(screen.getByText("1/2 passed")).toBeTruthy();
+  expect(within(checks).getByText("Not tested:")).toBeTruthy();
+  expect(within(checks).getByText("Export required a paid plan.")).toBeTruthy();
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  expect(screen.getByRole("list", { name: "Review checks" })).toBeTruthy();
+});
+
 test("follows the illustrated report order and reuses visited image URLs", async () => {
   render(<TaskWalkthrough sessionId={firstSession} />);
   expect(await screen.findByRole("img", { name: "A piece in the board" })).toHaveProperty(

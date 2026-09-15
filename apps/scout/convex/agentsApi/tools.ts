@@ -20,6 +20,7 @@ import { createAgentsAccountTools } from "./accounts";
 import { createWorkspaceTools } from "../scout/workspaceTools";
 import { saveScreenshot } from "./screenshots";
 import { MAX_TASK_SCREENSHOTS } from "./screenshotModel";
+import { reviewChecksSchema } from "../../shared/reviewChecks";
 
 export const handoffInput = z.object({ message: z.string().trim().min(1).max(2_000) });
 const mailNames = new Set([
@@ -142,14 +143,23 @@ export async function runtimeTools(
     }),
     save_walkthrough: tool({
       description: outdent`
-        Save this task's illustrated result using existing screenshot IDs. Summarize what
-        the product does and what you verified. Each section explains an observed step,
+        Save this task's illustrated result using existing screenshot IDs. Lead the summary
+        with the requested outcome and what you verified, in one or two short sentences.
+        Each section explains an observed step,
         result, or problem and references 1–3 screenshots from this task. The section order
         is the reading order. Omit repetitive setup and distinguish findings from assumptions.
         This replaces the previous walkthrough; it does not end the task.
+
+        Include 1–10 concrete checks of the requested behavior, each with a short explanation.
+        Use passed for verified success, failed for an observed product failure, and untested
+        for behavior you could not verify. A paywall, missing access, or a Scout/browser-service
+        error leaves that behavior untested; it does not establish a product failure.
+        Keep checks at the task level, such as saving a project or exporting a file.
+        Do not count navigation, screenshots, or other setup as successful product checks.
       `,
       inputSchema: z.object({
         summary: z.string().trim().min(1).max(2000),
+        checks: reviewChecksSchema,
         sections: z
           .array(
             z.object({

@@ -57,7 +57,8 @@ export const AGENTS_API_INSTRUCTIONS = outdent`
   - Use a few clear screenshots. Skip repetitive waits, passwords, authentication codes,
     and unrelated private data. Captures return IDs and metadata; continue the task.
   - Before finishing a product review, call save_walkthrough with selected screenshot IDs
-    and explanations of what you observed and verified. Use list_screenshots when needed.
+    and checks of the requested behavior, marking each passed, failed, or untested.
+    Explain what you observed and verified. Use list_screenshots when needed.
     If no screenshot could be saved, report the findings and the capture failure plainly.
 
   Completing the task:
