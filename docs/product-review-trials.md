@@ -196,3 +196,17 @@ same request before and after the change. Useful candidates are the session-crea
 503 handling, verifying screenshot captions against the actual captured state, and
 supporting file export in the remote browser. Keep those outcomes separate from
 product check results; do not treat saved checks as evidence of a finished run.
+
+### Bounded HTTP retries
+
+The shared OpenAI client now permits three SDK retries, for four HTTP attempts
+total, using the SDK's backoff and provider retry-delay headers. Convex workflow
+steps still do not retry, so this does not replay a whole browser/tool operation.
+Errors received after an event stream opens are not recovered by this change.
+
+Tests using the real SDK with a simulated HTTP transport verify that streaming
+session creation survives three 503 responses, persistent 503s stop after four
+attempts, and a 401 is not retried. Existing request-check, resume-check, and cleanup
+tests now verify behavior after retries are exhausted. The full check and build
+pass with 967 tests passing and 11 skipped. This verifies the retry mechanism; it
+does not establish a new live completion rate.

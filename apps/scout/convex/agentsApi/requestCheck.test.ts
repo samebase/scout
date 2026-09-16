@@ -198,10 +198,12 @@ it("runs the rejection through the real workflow without starting the agent or b
 it.each([
   {
     name: "invalid decision",
+    attempts: 1,
     makeResponse: () => response({ title: "Invalid", decision: { kind: "maybe" } }),
   },
   {
     name: "refusal",
+    attempts: 1,
     makeResponse: () =>
       Response.json({
         status: "completed",
@@ -210,10 +212,16 @@ it.each([
   },
   {
     name: "provider error",
-    makeResponse: () => Response.json({ error: { message: "Unavailable" } }, { status: 503 }),
+    attempts: 4,
+    makeResponse: () =>
+      Response.json(
+        { error: { message: "Unavailable" } },
+        { status: 503, headers: { "retry-after-ms": "1" } },
+      ),
   },
-])("fails closed on $name without retrying", async ({ makeResponse }) => {
+])("fails closed on $name after $attempts HTTP attempts", async ({ makeResponse, attempts }) => {
   const t = await setup();
+  vi.useRealTimers();
   const request = vi.fn<typeof fetch>(async () => makeResponse());
   vi.stubGlobal("fetch", request);
   expect(await t.check()).toBe(false);
@@ -222,7 +230,7 @@ it.each([
     checks: [{ kind: "initial", status: "failed" }],
   });
   expect((await t.publicFeed()).page).toEqual([]);
-  expect(request).toHaveBeenCalledTimes(1);
+  expect(request).toHaveBeenCalledTimes(attempts);
 });
 
 it("keeps a stop made during the call even when its response approves the request", async () => {
