@@ -55,7 +55,10 @@ not apply to this experiment.
   Provider HTTP requests use the default Convex runtime. Node actions only run Scout's
   command setup and tools; no action waits on an OpenAI event stream.
 - `sessions.ts` owns access checks, session state, and durable function-call claims.
-  A completed tool result is reused if OpenAI requests the same call again.
+  A completed tool result is reused if OpenAI requests the same call again. Claims
+  retain their scheduled job ID: a terminated job fails visibly without replaying
+  the tool. Stop releases abandoned claims after cleanup and remains available if
+  a tool terminates after browser cleanup has finished.
 - Webhooks schedule short refresh actions. One refresh runs per session at a time;
   events received during it schedule another pass. Duplicate deliveries do not start
   duplicate work, and acknowledged tool results are not resubmitted while the provider
@@ -63,7 +66,8 @@ not apply to this experiment.
 - The component calls `sessions.onEvent` with completed output, state changes, or a
   tool request. Scout keeps its existing authorized transcript queries and browser/tool
   records. Messages appear at lifecycle updates rather than token by token. Every
-  callback carries the command's run ID; late results cannot overwrite a newer run.
+  callback carries the command's run ID; late state updates cannot overwrite a newer
+  run. Transcript items belong to the session and are saved even during a resume check.
 - Stop schedules cancellation and browser cleanup. If an input command is still being
   submitted, the Scout stays reserved until it finishes so a new command cannot race
   the old HTTP request. The stopped session retains its completed transcript and usage.

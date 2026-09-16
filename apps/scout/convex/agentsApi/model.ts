@@ -39,4 +39,8 @@ export const command = v.union(
   v.object({ kind: v.literal("resume"), checkId: v.id("agentsApiRequestChecks") }),
 );
 
-export const callResult = v.union(v.object({ kind: v.literal("running") }), toolResult);
+export const callResult = v.union(
+  v.object({ kind: v.literal("scheduled"), jobId: v.id("_scheduled_functions") }),
+  v.object({ kind: v.literal("running"), jobId: v.id("_scheduled_functions") }),
+  toolResult,
+);

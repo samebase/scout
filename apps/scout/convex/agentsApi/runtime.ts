@@ -200,7 +200,7 @@ export const executeTool = internalAction({
       });
       let result = claimed.call.result;
       // Another delivery may arrive while the original tool action is still running.
-      if (!claimed.fresh && result.kind === "running") return null;
+      if (!claimed.fresh && (result.kind === "running" || result.kind === "scheduled")) return null;
       if (claimed.fresh) {
         let resource: Awaited<ReturnType<typeof runtimeTools>> | null = null;
         try {
@@ -232,7 +232,8 @@ export const executeTool = internalAction({
         sessionId,
       });
       if (current.state.kind !== "running" || current.workflowId !== runKey) return null;
-      if (result.kind === "running") throw new Error("Tool result is not available");
+      if (result.kind === "running" || result.kind === "scheduled")
+        throw new Error("Tool result is not available");
       await ctx.runAction(components.openaiAgents.runtime.submitToolResult, {
         sessionKey: sessionId,
         runKey,

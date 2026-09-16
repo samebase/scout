@@ -216,6 +216,16 @@ it("updates a saved item without duplicating history and remembers tool results"
   });
   expect(history.page).toHaveLength(1);
   expect(history.page[0]?.text).toBe("Opened the site");
+  const session = await backend.query(internal.agentsApi.sessions.cleanupResources, { sessionId });
+  if (!session.workflowId) throw new Error("Expected a command workflow");
+  await backend.mutation(internal.agentsApi.sessions.onEvent, {
+    sessionKey: sessionId,
+    runKey: session.workflowId,
+    event: {
+      kind: "tool",
+      call: { callId: "send-email", turnId: "turn", name: "send_email", argumentsJson: "{}" },
+    },
+  });
   const first = await backend.mutation(internal.agentsApi.sessions.claimCall, {
     sessionId,
     callId: "send-email",

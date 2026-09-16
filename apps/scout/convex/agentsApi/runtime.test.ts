@@ -396,6 +396,22 @@ it("does not submit a tool result if Stop happens during the tool", async () => 
   expect((await t.session()).state.kind).toBe("stopped");
 });
 
+it("stops a queued tool without executing its side effects", async () => {
+  const t = await setup();
+  await t.backend.mutation(internal.agentsApi.sessions.onEvent, {
+    sessionKey: t.sessionId,
+    runKey,
+    event: {
+      kind: "tool",
+      call: { callId: call.call_id, turnId: call.turn_id, name: call.name, argumentsJson: "{}" },
+    },
+  });
+  await t.owner.mutation(api.agentsApi.sessions.stop, { sessionId: t.sessionId });
+  await t.flush();
+  expect((await t.session()).active).toBe(false);
+  expect(t.execute).not.toHaveBeenCalled();
+});
+
 it("rejects a stale app callback after a newer run has started", async () => {
   const t = await setup();
   await t.backend.mutation(internal.agentsApi.sessions.onEvent, {
@@ -485,6 +501,14 @@ it("holds the Scout until a stopped tool settles, even if browser cleanup finish
   });
   const refreshing = t.refresh();
   await started.promise;
+  await t.backend.mutation(internal.agentsApi.sessions.onEvent, {
+    sessionKey: t.sessionId,
+    runKey,
+    event: {
+      kind: "tool",
+      call: { callId: call.call_id, turnId: call.turn_id, name: call.name, argumentsJson: "{}" },
+    },
+  });
   await t.owner.mutation(api.agentsApi.sessions.stop, { sessionId: t.sessionId });
   await t.backend.action(internal.agentsApi.runtime.cleanup, { sessionId: t.sessionId });
   expect((await t.session()).active).toBe(true);
@@ -492,6 +516,7 @@ it("holds the Scout until a stopped tool settles, even if browser cleanup finish
   await refreshing;
   expect((await t.session()).active).toBe(false);
   expect((await t.session()).state.kind).toBe("stopped");
+  expect(t.execute).toHaveBeenCalledOnce();
 });
 
 it("does not let another admin resume work through Refresh", async () => {
@@ -504,4 +529,114 @@ it("does not let another admin resume work through Refresh", async () => {
       .withIdentity({ subject: otherId })
       .action(api.agentsApi.runtime.refresh, { sessionId: t.sessionId }),
   ).rejects.toThrow("Only the owner");
+});
+
+it("keeps history delivered while a resume check owns the new run key", async () => {
+  const t = await setup();
+  // Starting a resume workflow updates the app run key before component.prepare runs.
+  await t.backend.run(async (ctx) => {
+    // @ts-expect-error Same vWorkflowId fixture boundary as setup.
+    await ctx.db.patch(t.sessionId, { workflowId: "resume-run", pendingCommand: true });
+  });
+  t.provider.items.push(message("handoff-message", "Please complete this browser step."));
+  await t.refresh();
+  expect((await t.items()).map((item) => item.providerItemId)).toEqual(["handoff-message"]);
+  expect((await t.session()).pendingCommand).toBe(true);
+  const component = await t.backend.query(components.openaiAgents.state.get, {
+    sessionKey: t.sessionId,
+  });
+  if (!component) throw new Error("Missing component session");
+  await t.backend.mutation(components.openaiAgents.state.prepare, {
+    sessionKey: t.sessionId,
+    runKey: "resume-run",
+    previousTurnId: null,
+    expectedGeneration: component.generation,
+  });
+  await t.refresh();
+  expect((await t.items()).map((item) => item.providerItemId)).toEqual(["handoff-message"]);
+});
+
+it.each(["failed", "canceled", "success"] as const)(
+  "releases a Scout without replaying a tool whose job ended %s without a result",
+  async (kind) => {
+    const t = await setup();
+    const jobId = await t.backend.run((ctx) =>
+      ctx.scheduler.runAfter(0, internal.agentsApi.sessions.saveItems, {
+        sessionId: t.sessionId,
+        items: [],
+      }),
+    );
+    await t.flush();
+    t.provider.status.mockReturnValue("requires_action");
+    t.provider.calls.mockReturnValue([call]);
+    await t.backend.run(async (ctx) => {
+      // @ts-expect-error convex-test's patch syscall permits simulating termination of a completed scheduler fixture.
+      await ctx.db.patch<"_scheduled_functions">(jobId, {
+        state: kind === "failed" ? { kind, error: "Action timed out" } : { kind },
+      });
+      await ctx.db.insert("agentsApiCalls", {
+        sessionId: t.sessionId,
+        callId: call.call_id,
+        result: { kind: "running", jobId },
+      });
+    });
+    await t.refresh();
+    expect((await t.session()).state).toMatchObject({
+      kind: "failed",
+      error: expect.stringContaining("side effects may have occurred"),
+    });
+    await t.owner.mutation(api.agentsApi.sessions.stop, { sessionId: t.sessionId });
+    await t.flush();
+    const stopped = await t.session();
+    expect(stopped.state.kind).toBe("stopped");
+    expect(stopped.cleanupComplete).toBe(true);
+    expect(stopped.active).toBe(false);
+    expect(t.execute).not.toHaveBeenCalled();
+    expect(t.provider.inputs).not.toContainEqual(
+      expect.objectContaining({
+        events: [expect.objectContaining({ type: "agent.session.input.tool_result" })],
+      }),
+    );
+  },
+);
+
+it("keeps Stop available when a tool terminates after browser cleanup", async () => {
+  const t = await setup();
+  const jobId = await t.backend.run((ctx) =>
+    ctx.scheduler.runAfter(0, internal.agentsApi.sessions.saveItems, {
+      sessionId: t.sessionId,
+      items: [],
+    }),
+  );
+  await t.flush();
+  await t.backend.run(async (ctx) => {
+    // @ts-expect-error convex-test's patch syscall permits simulating a running scheduler fixture.
+    await ctx.db.patch<"_scheduled_functions">(jobId, {
+      state: { kind: "inProgress" },
+    });
+    await ctx.db.insert("agentsApiCalls", {
+      sessionId: t.sessionId,
+      callId: call.call_id,
+      result: { kind: "running", jobId },
+    });
+  });
+  await t.owner.mutation(api.agentsApi.sessions.stop, { sessionId: t.sessionId });
+  await t.flush();
+  expect(await t.session()).toMatchObject({
+    active: true,
+    cleanupComplete: true,
+    state: { kind: "stopped" },
+  });
+  expect(
+    await t.owner.query(api.agentsApi.sessions.controls, { sessionId: t.sessionId }),
+  ).toMatchObject({ canStop: true });
+  await t.backend.run(async (ctx) => {
+    // @ts-expect-error convex-test permits simulating platform termination in its system-table fixture.
+    await ctx.db.patch<"_scheduled_functions">(jobId, {
+      state: { kind: "failed", error: "Action timed out" },
+    });
+  });
+  await t.owner.mutation(api.agentsApi.sessions.stop, { sessionId: t.sessionId });
+  expect((await t.session()).active).toBe(false);
+  expect(t.execute).not.toHaveBeenCalled();
 });

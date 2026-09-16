@@ -5,17 +5,11 @@ import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { internalMutation, internalQuery } from "../_generated/server";
 import { mutation, query } from "../functions";
+import schema from "../schema";
 import { requireSessionPermission } from "./access";
 import { scoutReservation } from "../scout/availability";
 import { workflow } from "./lifecycle";
-import {
-  browserHandle,
-  callResult,
-  command,
-  sessionItem,
-  sessionState,
-  sessionUsage,
-} from "./model";
+import { browserHandle, command, sessionItem, sessionState, sessionUsage } from "./model";
 import type { Infer } from "convex/values";
 import { MAX_BROWSER_SESSIONS_PER_THREAD } from "../scout/browserSessions";
 import { browserSessionLifecycleValidator } from "../browserModel";
@@ -24,7 +18,22 @@ import { getInitialCheck, listChecks, summarizeCheck, currentCheckMessage } from
 import { REQUEST_CHECK_MODEL, MAX_SESSION_CHECKS, checkSummary } from "./requestCheckModel";
 import { getResearch, summarizeResearch } from "./siteResearchRecords";
 import { researchSummary } from "./siteResearchModel";
-import { notification } from "../../shared/openaiAgents";
+import { notification, toolResult } from "../../shared/openaiAgents";
+
+const INTERRUPTED_TOOL =
+  "Tool action ended without saving its result. Its side effects may have occurred; inspect the task before starting again.";
+
+async function toolIsActive(ctx: MutationCtx, call: Doc<"agentsApiCalls">, cancelPending: boolean) {
+  if (call.result.kind !== "scheduled" && call.result.kind !== "running") return false;
+  const job = await ctx.db.system.get(call.result.jobId);
+  if (job?.state.kind === "inProgress") return true;
+  if (job?.state.kind === "pending") {
+    if (!cancelPending) return true;
+    await ctx.scheduler.cancel(call.result.jobId);
+  }
+  await ctx.db.patch(call._id, { result: { kind: "error", error: INTERRUPTED_TOOL } });
+  return false;
+}
 
 async function requireSession(ctx: QueryCtx, sessionId: Id<"agentsApiSessions">) {
   const session = await ctx.db.get(sessionId);
@@ -71,13 +80,18 @@ async function scheduleSessionCleanup(ctx: MutationCtx, session: Doc<"agentsApiS
 
 async function releaseScout(ctx: MutationCtx, session: Doc<"agentsApiSessions">) {
   if (!session.cleanupComplete || (session.pendingCommand && session.providerId)) return;
-  const runningCall = await ctx.db
-    .query("agentsApiCalls")
-    .withIndex("by_session_id_and_result_kind", (q) =>
-      q.eq("sessionId", session._id).eq("result.kind", "running"),
-    )
-    .first();
-  if (!runningCall) await ctx.db.patch(session._id, { active: false });
+  let executing = false;
+  for (const kind of ["scheduled", "running"] as const) {
+    const calls = ctx.db
+      .query("agentsApiCalls")
+      .withIndex("by_session_id_and_result_kind", (q) =>
+        q.eq("sessionId", session._id).eq("result.kind", kind),
+      );
+    for await (const call of calls) {
+      if (await toolIsActive(ctx, call, true)) executing = true;
+    }
+  }
+  if (!executing) await ctx.db.patch(session._id, { active: false });
 }
 
 async function startWorkflow(
@@ -309,7 +323,6 @@ export const controls = query({
   handler: async (ctx, args) => {
     const session = await owned(ctx, args.sessionId, ctx.viewer.userId);
     await requireSessionPermission(ctx, session);
-    const cleanup = session.cleanupJobId ? await ctx.db.system.get(session.cleanupJobId) : null;
     const notification = session.handoffEmailJobId
       ? await ctx.db.system.get(session.handoffEmailJobId)
       : null;
@@ -318,8 +331,7 @@ export const controls = query({
       state: session.state,
       requestCheckMessage: await currentCheckMessage(ctx, session),
       canSend: !session.active && Boolean(session.providerId) && !busy,
-      canStop:
-        session.active && (session.state.kind !== "stopped" || cleanup?.state.kind === "failed"),
+      canStop: session.active,
       busy,
       handoffEmailFailed: notification?.state.kind === "failed",
       interactiveLiveViewUrl:
@@ -547,24 +559,26 @@ export const saveItems = internalMutation({
 
 export const claimCall = internalMutation({
   args: { sessionId: v.id("agentsApiSessions"), callId: v.string() },
+  returns: v.object({ fresh: v.boolean(), call: schema.doc("agentsApiCalls") }),
   handler: async (ctx, args) => {
+    const session = await requireSession(ctx, args.sessionId);
+    if (session.state.kind !== "running") throw new Error("Session stopped before tool dispatch");
     const existing = await ctx.db
       .query("agentsApiCalls")
       .withIndex("by_session_id_and_call_id", (q) =>
         q.eq("sessionId", args.sessionId).eq("callId", args.callId),
       )
       .unique();
-    if (existing) return { fresh: false, call: existing };
-    const session = await ctx.db.get(args.sessionId);
-    if (!session || session.state.kind !== "running")
-      throw new Error("Session stopped before tool dispatch");
-    const id = await ctx.db.insert("agentsApiCalls", { ...args, result: { kind: "running" } });
-    return { fresh: true, call: (await ctx.db.get(id))! };
+    if (!existing) throw new Error("Tool call was not scheduled");
+    if (existing.result.kind !== "scheduled") return { fresh: false, call: existing };
+    const result = { kind: "running" as const, jobId: existing.result.jobId };
+    await ctx.db.patch(existing._id, { result });
+    return { fresh: true, call: { ...existing, result } };
   },
 });
 
 export const finishCall = internalMutation({
-  args: { callId: v.id("agentsApiCalls"), result: callResult },
+  args: { callId: v.id("agentsApiCalls"), result: toolResult },
   returns: v.null(),
   handler: async (ctx, args) => {
     const call = await ctx.db.get(args.callId);
@@ -601,7 +615,9 @@ export const onEvent = internalMutation({
   handler: async (ctx, { sessionKey, runKey, event }) => {
     const sessionId = ctx.db.normalizeId("agentsApiSessions", sessionKey);
     const session = sessionId ? await ctx.db.get(sessionId) : null;
-    if (!session || session.workflowId !== runKey) return null;
+    if (!session) return null;
+    // Transcript items belong to the session, even while a new command awaits approval.
+    if (event.kind !== "item" && session.workflowId !== runKey) return null;
     switch (event.kind) {
       case "created":
         await ctx.db.patch(session._id, {
@@ -618,11 +634,31 @@ export const onEvent = internalMutation({
         break;
       case "tool":
         if (session.active && session.state.kind === "running") {
-          await ctx.scheduler.runAfter(0, internal.agentsApi.runtime.executeTool, {
+          const existing = await ctx.db
+            .query("agentsApiCalls")
+            .withIndex("by_session_id_and_call_id", (q) =>
+              q.eq("sessionId", session._id).eq("callId", event.call.callId),
+            )
+            .unique();
+          if (existing?.result.kind === "scheduled" || existing?.result.kind === "running") {
+            if (await toolIsActive(ctx, existing, false)) break;
+            const state = { kind: "failed" as const, error: INTERRUPTED_TOOL };
+            await ctx.db.patch(session._id, { state });
+            await scheduleSessionCleanup(ctx, { ...session, state });
+            break;
+          }
+          const jobId = await ctx.scheduler.runAfter(0, internal.agentsApi.runtime.executeTool, {
             sessionId: session._id,
             runKey,
             call: event.call,
           });
+          if (!existing && event.call.name !== "request_browser_handoff") {
+            await ctx.db.insert("agentsApiCalls", {
+              sessionId: session._id,
+              callId: event.call.callId,
+              result: { kind: "scheduled", jobId },
+            });
+          }
         }
         break;
       case "state":
