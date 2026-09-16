@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-16T14:34:59.721Z
+- **Last updated:** 2026-09-16T21:31:17.448Z
 
 ## Log
 
@@ -1302,9 +1302,27 @@ OpenAI HTTP requests now allow three retries for transient failures
 
 ### 2026-09-16 - working tree
 
-The homepage loads sites on scroll, with two tasks per card and independent task expansion.
-Site images and names open task lists; each review keeps its site's other tasks in the sidebar.
-Sites own their public landing image in R2 and a Firecrawl research brief with product name and
-homepage URL. Tasks share one research job and keep a frozen copy of the brief they used.
-Admins can refresh research explicitly; public and owner-specific listings share the same order
-(`apps/scout/convex/scout/sites.ts`, `apps/scout/convex/agentsApi/siteResearch.ts`).
+Sites now connect the browsing experience: start with a site on the homepage, open its task list,
+then inspect a review. The homepage keeps the task composer and loads more sites as you scroll,
+with two task previews per card. A link shows the task count and opens the full list. Counts follow
+the Public/My filter, and the directory and site sidebar share the same ordering. Convex stores
+site membership and counts alongside task changes so browsing can paginate sites without loading
+the entire task history (`apps/scout/convex/scout/sites.ts`).
+
+Each site owns its name, homepage URL, and landing screenshot. Firecrawl captures the public
+homepage separately from a Scout's logged-in browser, and the image lives in the existing R2
+bucket. This gives the directory and sidebar a consistent preview independent of any review's
+walkthrough. Cards show the site name and domain, or just the domain when no name is available;
+the screenshot fills its panel (`apps/scout/convex/scout/sitePreviews.ts`).
+
+Site research is shared too. Tasks reuse completed Firecrawl research or wait for the same running
+job. The site workspace holds the request, result, and latest brief; each task receives its own
+copy of the brief in its workspace and records which research it used. Admins can inspect the
+workspace beside the site's task list and explicitly refresh research. A refresh does not change
+the brief retained by earlier tasks (`apps/scout/convex/agentsApi/siteResearch.ts`).
+
+Inside a review, the left sidebar lists other tasks for that site. Switching tasks keeps the
+navigation, pane widths, and sidebar scroll position while the selected content loads. The title
+and view tabs span the main area: Walkthrough pairs explanations with screenshots, while
+Chat & replay pairs the conversation with its recording. Interruption notices sit inside the chat
+(`apps/scout/src/products/conversation/page.tsx`).

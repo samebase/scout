@@ -326,7 +326,7 @@ test("researches a pending site and updates its name and address when the profil
   remote.sites.set(site.hostname, site);
   await openPage("/sites/chessmerge.com");
   const heading = await screen.findByRole("heading", { name: "chessmerge.com", level: 1 });
-  expect(heading.nextElementSibling?.textContent).toBe("Not researched");
+  expect(heading.nextElementSibling).toBeNull();
   expect(screen.getByRole("link", { name: "Visit website" }).getAttribute("href")).toBe(
     "https://chessmerge.com",
   );

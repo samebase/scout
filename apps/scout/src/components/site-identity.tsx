@@ -4,15 +4,6 @@ import { cn } from "#lib/utils";
 
 type Site = NonNullable<FunctionReturnType<typeof api.scout.sites.get>>;
 
-const researchLabels: Record<NonNullable<Site["research"]>["status"], string> = {
-  running: "Researching…",
-  waiting: "Waiting for research…",
-  completed: "Research completed",
-  failed: "Research failed",
-  cancelled: "Research cancelled",
-  skipped: "Research skipped",
-};
-
 export function SiteIdentity({
   site,
   heading: Heading,
@@ -35,13 +26,9 @@ export function SiteIdentity({
       >
         {site.profile === null ? site.hostname : site.profile.name}
       </Heading>
-      {site.profile !== null ? (
+      {site.profile !== null && (
         <p className="truncate text-sm font-normal text-muted-foreground" title={site.hostname}>
           {site.hostname}
-        </p>
-      ) : (
-        <p className="text-xs font-normal text-muted-foreground">
-          {site.research === null ? "Not researched" : researchLabels[site.research.status]}
         </p>
       )}
     </div>

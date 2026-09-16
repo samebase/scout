@@ -306,7 +306,7 @@ test.each(["public", "mine"])("site heading links preserve the %s scope", async 
   for (const site of ["chessmerge.com", "papergames.io"]) {
     const card = within(screen.getByRole("article", { name: site }));
     const link = card.getByRole("link", {
-      name: site === "chessmerge.com" ? "Chess Merge chessmerge.com" : "papergames.io Researching…",
+      name: site === "chessmerge.com" ? "Chess Merge chessmerge.com" : "papergames.io",
     });
     expect(link.getAttribute("href")).toBe(`/sites/${site}?scope=${scope}`);
     const previewLink = card.getByRole("link", {
@@ -321,7 +321,7 @@ test.each(["public", "mine"])("site heading links preserve the %s scope", async 
       }),
     ).toBeTruthy();
   }
-  await user.click(screen.getByRole("link", { name: "papergames.io Researching…" }));
+  await user.click(screen.getByRole("link", { name: "papergames.io" }));
   await waitFor(() => expect(router.state.location.pathname).toBe("/sites/papergames.io"));
   expect(router.state.location.search).toEqual({ scope });
   expect(await screen.findByRole("region", { name: "Tasks for papergames.io" })).toBeTruthy();
@@ -338,30 +338,8 @@ test("site groups put the researched product name above its hostname", async () 
   const heading = card.getByRole("heading", { name: "Chess Merge", level: 2 });
   expect(heading.nextElementSibling?.textContent).toBe("chessmerge.com");
   expect(card.queryByText("Research completed")).toBeNull();
+  const unnamed = within(screen.getByRole("article", { name: "papergames.io" }));
+  expect(
+    unnamed.getByRole("heading", { name: "papergames.io", level: 2 }).nextElementSibling,
+  ).toBeNull();
 });
-
-test.each([
-  { research: null, label: "Not researched" },
-  { research: { status: "running", error: null }, label: "Researching…" },
-  { research: { status: "waiting", error: null }, label: "Waiting for research…" },
-  { research: { status: "failed", error: "Provider error" }, label: "Research failed" },
-  { research: { status: "cancelled", error: null }, label: "Research cancelled" },
-  { research: { status: "skipped", error: null }, label: "Research skipped" },
-  { research: { status: "completed", error: null }, label: "Research completed" },
-] satisfies { research: Sites["results"][number]["research"]; label: string }[])(
-  "pending site groups keep the hostname and show $label",
-  async ({ research, label }) => {
-    remote.sites[1] = {
-      hostname: "papergames.io",
-      taskCount: 3,
-      preview: null,
-      profile: null,
-      research,
-    };
-    await openFeed();
-    const card = within(screen.getByRole("article", { name: "papergames.io" }));
-    const heading = card.getByRole("heading", { name: "papergames.io", level: 2 });
-    expect(heading.nextElementSibling?.textContent).toBe(label);
-    expect(card.queryByText("Provider error")).toBeNull();
-  },
-);
