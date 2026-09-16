@@ -255,15 +255,15 @@ test("a completed managed Review opens its walkthrough and pairs replay with Cha
   });
   const router = await openPlay("/review?thread=game-thread");
   expect(await screen.findByRole("heading", { name: "Undo a move" })).toBeTruthy();
-  const walkthroughPane = screen.getByRole("region", { name: "Walkthrough with Scout" });
-  expect(within(walkthroughPane).getByRole("heading", { level: 1 })).toBeTruthy();
-  expect(within(walkthroughPane).getByRole("navigation", { name: "Review views" })).toBeTruthy();
+  expect(screen.getByRole("region", { name: "Walkthrough with Scout" })).toBeTruthy();
+  expect(screen.getByRole("heading", { level: 1 })).toBeTruthy();
+  expect(screen.getByRole("navigation", { name: "Review views" })).toBeTruthy();
   expect(screen.getByRole("link", { name: "Walkthrough" }).getAttribute("aria-current")).toBe(
     "page",
   );
   expect(screen.queryByRole("region", { name: "Scout's browser" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Show replay" })).toBeNull();
-  fireEvent.click(screen.getByRole("link", { name: "Chat" }));
+  fireEvent.click(screen.getByRole("link", { name: "Chat & replay" }));
   expect(await screen.findByRole("region", { name: "Conversation with Scout" })).toBeTruthy();
   expect(screen.getByRole("region", { name: "Scout's browser" })).toBeTruthy();
   expect(router.state.location.search).toMatchObject({ view: "chat" });
@@ -356,7 +356,7 @@ test("a direct walkthrough link shows an older task's empty state without forcin
   remote.queries.set("agentsApi/walkthrough:get", { walkthrough: null, captures: [] });
   await openPlay("/review?thread=game-thread&view=walkthrough");
   expect(await screen.findByRole("heading", { name: "No screenshots saved" })).toBeTruthy();
-  expect(screen.getByRole("link", { name: "Chat" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Chat & replay" })).toBeTruthy();
   expect(remote.sendManaged).not.toHaveBeenCalled();
 });
 
@@ -380,7 +380,7 @@ test("desktop Chat always shows its replay and Walkthrough occupies the full lay
   for (let visit = 0; visit < 2; visit += 1) {
     expect(screen.queryByRole("region", { name: "Scout's browser" })).toBeNull();
     expect(screen.queryByRole("separator", { name: "Resize Scout’s view" })).toBeNull();
-    fireEvent.click(screen.getByRole("link", { name: "Chat" }));
+    fireEvent.click(screen.getByRole("link", { name: "Chat & replay" }));
     expect(await screen.findByRole("region", { name: "Conversation with Scout" })).toBeTruthy();
     const pane = screen
       .getByRole("region", { name: "Scout's browser" })
@@ -409,9 +409,9 @@ test("mobile Review keeps replay in Chat without pane toggles", async () => {
   const router = await openPlay("/review?thread=game-thread");
   await screen.findByRole("navigation", { name: "Review views" });
   for (const { label, view } of [
-    { label: "Chat", view: "chat" },
+    { label: "Chat & replay", view: "chat" },
     { label: "Walkthrough", view: "walkthrough" },
-    { label: "Chat", view: "chat" },
+    { label: "Chat & replay", view: "chat" },
   ]) {
     fireEvent.click(screen.getByRole("link", { name: label }));
     await waitFor(() => expect(router.state.location.search.view).toBe(view));
