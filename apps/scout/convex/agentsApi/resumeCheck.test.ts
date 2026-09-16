@@ -2,10 +2,12 @@
 import agentTest from "@convex-dev/agent/test";
 import workflowTest from "@convex-dev/workflow/test";
 import { convexTest } from "convex-test";
+import { createFunctionHandle } from "convex/server";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
-import { api, internal } from "../_generated/api";
+import { api, components, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import schema from "../schema";
+import componentSchema from "../components/openaiAgents/schema";
 import { scoutIsWorking } from "../scout/chatAccess";
 import { closeFirecrawlBrowserSession } from "../scout/lib/firecrawl";
 import { ADMIN_EMAIL, insertTestAccount } from "../testing/accounts";
@@ -29,6 +31,7 @@ const modules = {
   ),
 };
 const capture = vi.mocked(captureHandoffEvidence);
+const componentModules = import.meta.glob("../components/openaiAgents/**/*.ts");
 const closeBrowser = vi.mocked(closeFirecrawlBrowserSession);
 const handoff = { callId: "verify-call", turnId: "turn-1", message: "Complete verification" };
 const browser = {
@@ -77,6 +80,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(evidence.capturedAt);
   vi.stubEnv("OPENAI_API_KEY", "test-key");
+  vi.stubEnv("OPENAI_WEBHOOK_SECRET", "test-webhook-secret");
   vi.stubEnv("FIRECRAWL_API_KEY", "test-key");
   capture.mockReset().mockResolvedValue(evidence);
   closeBrowser.mockReset();
@@ -96,6 +100,7 @@ afterEach(() => {
 
 async function setup() {
   const backend = convexTest(schema, modules);
+  backend.registerComponent("openaiAgents", componentSchema, componentModules);
   agentTest.register(backend);
   workflowTest.register(backend);
   const ids = await backend.run(async (ctx) => {
@@ -146,6 +151,25 @@ async function setup() {
     });
     return { ownerId, otherId, adminId, scoutId, sessionId, initialCheckId };
   });
+  const originalFetch = fetch;
+  vi.stubGlobal("fetch", async () =>
+    Response.json({
+      id: "provider-session",
+      status: "in_progress",
+      error: null,
+      required_actions: [],
+      usage: null,
+    }),
+  );
+  await backend.action(components.openaiAgents.runtime.create, {
+    sessionKey: ids.sessionId,
+    runKey: "before-resume",
+    onEvent: await backend.run(() => createFunctionHandle(internal.agentsApi.sessions.onEvent)),
+    model: REQUEST_CHECK_MODEL,
+    instructions: "Test",
+    toolsJson: "[]",
+  });
+  vi.stubGlobal("fetch", originalFetch);
   await backend.mutation(internal.agentsApi.browsers.open, { sessionId: ids.sessionId, browser });
   await backend.mutation(internal.agentsApi.sessions.update, {
     sessionId: ids.sessionId,
@@ -159,6 +183,15 @@ async function setup() {
     admin.query(api.agentsApi.requestChecks.inspect, { sessionId: ids.sessionId, checkId });
   const run = (checkId: Id<"agentsApiRequestChecks">) =>
     backend.action(internal.agentsApi.requestCheck.run, { checkId });
+  async function finishCommand() {
+    const current = await session();
+    if (!current.workflowId) throw new Error("Expected a command workflow");
+    await backend.mutation(internal.agentsApi.lifecycle.onComplete, {
+      workflowId: current.workflowId,
+      context: { sessionId: ids.sessionId },
+      result: { kind: "success", returnValue: null },
+    });
+  }
   async function resume(current: Pick<typeof handoff, "callId" | "turnId"> = handoff) {
     await owner.mutation(api.agentsApi.sessions.resume, {
       sessionId: ids.sessionId,
@@ -178,6 +211,7 @@ async function setup() {
     session,
     inspect,
     run,
+    finishCommand,
     resume,
   };
 }
@@ -595,8 +629,9 @@ it.each(["capture", "LLM"])(
         state: { kind: "stopped" },
         active: true,
         browser,
-        cleanupJobId: expect.any(String),
+        pendingCommand: true,
       });
+      expect((await t.session()).cleanupJobId).toBeUndefined();
     } finally {
       proceed.resolve();
       await running;
@@ -617,6 +652,8 @@ it.each(["capture", "LLM"])(
         checkId,
       }),
     ).toBeNull();
+    await t.finishCommand();
+    expect((await t.session()).cleanupJobId).toBeDefined();
     expect(await t.session()).toMatchObject({ state: { kind: "stopped" }, browser, active: true });
     expect(await t.backend.run((ctx) => scoutIsWorking(ctx, t.scoutId))).toBe(true);
     expect(closeBrowser).not.toHaveBeenCalled();
@@ -688,7 +725,7 @@ it("cannot use an old approval for a later handoff or another browser", async ()
   expect(closeBrowser).not.toHaveBeenCalled();
 });
 
-it("schedules cleanup when Stop precedes begin and sends no provider result", async () => {
+it("schedules cleanup after a stopped command finishes and sends no provider result", async () => {
   const t = await setup();
   const checkId = await t.resume();
   await t.backend.mutation(internal.agentsApi.sessions.update, {
@@ -701,6 +738,9 @@ it("schedules cleanup when Stop precedes begin and sends no provider result", as
       command: { kind: "resume", checkId },
     }),
   ).toBe(false);
+  expect((await t.session()).pendingCommand).toBe(true);
+  expect((await t.session()).cleanupJobId).toBeUndefined();
+  await t.finishCommand();
   expect(await t.session()).toMatchObject({
     state: { kind: "stopped" },
     active: true,
@@ -727,7 +767,13 @@ it("releases the Scout only after the provider confirms browser cleanup", async 
       const call = new Request(input, init);
       expect(call.method).toBe("GET");
       if (call.url === "https://api.openai.com/v1/agents/sessions/provider-session")
-        return Response.json({ id: "provider-session", status: "completed", usage: null });
+        return Response.json({
+          id: "provider-session",
+          status: "idle",
+          usage: null,
+          error: null,
+          required_actions: [],
+        });
       if (call.url.startsWith("https://api.openai.com/v1/agents/sessions/provider-session/items?"))
         return Response.json({ object: "list", data: [], has_more: false });
       throw new Error(`Unexpected cleanup request: ${call.url}`);

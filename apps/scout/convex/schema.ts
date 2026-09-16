@@ -94,11 +94,11 @@ export default defineSchema({
     state: sessionState,
     active: v.boolean(),
     providerId: v.optional(v.string()),
-    previousTurnId: v.optional(v.string()),
     workflowId: v.optional(vWorkflowId),
+    pendingCommand: v.optional(v.literal(true)),
+    cleanupComplete: v.optional(v.literal(true)),
     cleanupJobId: v.optional(v.id("_scheduled_functions")),
     handoffEmailJobId: v.optional(v.id("_scheduled_functions")),
-    itemCursor: v.optional(v.string()),
     nextSequence: v.number(),
     browser: v.union(browserHandle, v.null()),
     usage: v.union(sessionUsage, v.null()),
@@ -119,7 +119,9 @@ export default defineSchema({
     sessionId: v.id("agentsApiSessions"),
     callId: v.string(),
     result: callResult,
-  }).index("by_session_id_and_call_id", ["sessionId", "callId"]),
+  })
+    .index("by_session_id_and_call_id", ["sessionId", "callId"])
+    .index("by_session_id_and_result_kind", ["sessionId", "result.kind"]),
   agentsApiBrowserSessions: defineTable({
     agentsSessionId: v.id("agentsApiSessions"),
     sequence: v.number(),

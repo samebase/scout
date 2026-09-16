@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { agentsApiUsageValidator } from "./cost";
+import { item, toolResult, usage } from "../../shared/openaiAgents";
 
 export const sessionState = v.union(
   v.object({ kind: v.literal("starting") }),
@@ -25,15 +25,9 @@ export const browserHandle = v.object({
   currentUrl: v.union(v.string(), v.null()),
 });
 
-export const sessionUsage = agentsApiUsageValidator;
+export const sessionUsage = usage;
 
-export const sessionItem = v.object({
-  providerItemId: v.string(),
-  kind: v.string(),
-  text: v.string(),
-  details: v.string(),
-  complete: v.optional(v.boolean()),
-});
+export const sessionItem = item;
 
 export const command = v.union(
   v.object({
@@ -43,11 +37,10 @@ export const command = v.union(
   }),
   v.object({ kind: v.literal("send"), message: v.string() }),
   v.object({ kind: v.literal("resume"), checkId: v.id("agentsApiRequestChecks") }),
-  v.object({ kind: v.literal("observe") }),
 );
 
 export const callResult = v.union(
-  v.object({ kind: v.literal("running") }),
-  v.object({ kind: v.literal("success"), output: v.string() }),
-  v.object({ kind: v.literal("error"), error: v.string() }),
+  v.object({ kind: v.literal("scheduled"), jobId: v.id("_scheduled_functions") }),
+  v.object({ kind: v.literal("running"), jobId: v.id("_scheduled_functions") }),
+  toolResult,
 );

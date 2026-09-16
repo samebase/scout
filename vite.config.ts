@@ -2,10 +2,17 @@ import { defineConfig } from "vite-plus";
 
 export default defineConfig({
   fmt: {
-    ignorePatterns: ["**/.agents/**", "**/convex/_generated/**", "**/src/routeTree.gen.ts"],
+    ignorePatterns: ["**/.agents/**", "**/convex/**/_generated/**", "**/src/routeTree.gen.ts"],
   },
   lint: {
-    ignorePatterns: ["**/.agents/**", "**/convex/_generated/**", "**/src/routeTree.gen.ts"],
+    ignorePatterns: ["**/.agents/**", "**/convex/**/_generated/**", "**/src/routeTree.gen.ts"],
+    overrides: [
+      {
+        files: ["apps/scout/convex/components/**/*.ts"],
+        // Component exports are internal to the app and use their own generated builders.
+        rules: { "no-restricted-imports": "off" },
+      },
+    ],
     options: { typeAware: true },
     rules: {
       "no-restricted-imports": [

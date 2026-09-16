@@ -1299,7 +1299,7 @@ test("sums all checks once and marks incomplete check pricing as a subtotal", as
   expect(await screen.findByText("Cost · $0.00 subtotal")).toBeTruthy();
 });
 
-test("refreshes an ended session without sending, preserves drafts on failure, and hides refresh while active", async () => {
+test("refreshes without sending, preserves drafts, and lets the owner refresh an active session", async () => {
   remote.queries.set("agentsApi/sessions:get", session({ kind: "stopped" }));
   remote.refresh.mockRejectedValueOnce(new Error("Could not read provider usage"));
   await open("/agents?session=session-1");
@@ -1315,8 +1315,8 @@ test("refreshes an ended session without sending, preserves drafts on failure, a
   await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
   expect(draft.value).toBe("Keep this follow-up");
   updateQuery("agentsApi/sessions:get", session({ kind: "running" }));
-  expect(screen.queryByRole("button", { name: "Refresh task" })).toBeNull();
-  expect(remote.refresh).toHaveBeenCalledTimes(2);
+  await user.click(screen.getByRole("button", { name: "Refresh task" }));
+  expect(remote.refresh).toHaveBeenCalledTimes(3);
 });
 
 test("opens research as a flat session step and links its calls to private workspace files", async () => {

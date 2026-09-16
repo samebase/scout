@@ -567,7 +567,6 @@ function SessionView({ session, walkthrough }: { session: Session; walkthrough: 
   async function run(operation: "send" | "stop" | "resume" | "refresh") {
     if (submitting.current || (operation !== "refresh" && !session.canControl)) return;
     if (operation === "send" && !canSend) return;
-    if (operation === "refresh" && session.active) return;
     submitting.current = true;
     setRequest({ kind: "pending" });
     try {
@@ -618,7 +617,7 @@ function SessionView({ session, walkthrough }: { session: Session; walkthrough: 
       <div className="shrink-0 space-y-3 border-t p-4">
         <div className="flex items-start justify-between gap-3">
           <SessionCost session={session} />
-          {!session.active && (
+          {(!session.active || session.canControl) && (
             <Button
               variant="ghost"
               size="sm"

@@ -42,20 +42,7 @@ export const run = workflow
         }
       }
     }
-    if (!(await step.runAction(internal.agentsApi.runtime.begin, args, { retry: false })))
-      return null;
-    while (
-      await step.runAction(
-        internal.agentsApi.runtime.advance,
-        { sessionId: args.sessionId },
-        {
-          retry: false,
-          runAfter: 2_000,
-        },
-      )
-    ) {
-      /* OpenAI runs the agent; Convex services its requested functions. */
-    }
+    await step.runAction(internal.agentsApi.runtime.begin, args, { retry: false });
     return null;
   });
 
@@ -68,6 +55,9 @@ export const onComplete = internalMutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const session = await ctx.db.get(args.context.sessionId);
+    if (session?.workflowId === args.workflowId) {
+      await ctx.db.patch(session._id, { pendingCommand: undefined });
+    }
     if (session?.workflowId === args.workflowId && args.result.kind !== "success") {
       if (session.state.kind !== "stopped") {
         await ctx.db.patch(session._id, {
@@ -77,6 +67,17 @@ export const onComplete = internalMutation({
           },
         });
       }
+      await ctx.runMutation(internal.agentsApi.sessions.scheduleCleanup, {
+        sessionId: session._id,
+      });
+    }
+    if (
+      session?.workflowId === args.workflowId &&
+      args.result.kind === "success" &&
+      (session.state.kind === "stopped" ||
+        session.state.kind === "failed" ||
+        session.state.kind === "idle")
+    ) {
       await ctx.runMutation(internal.agentsApi.sessions.scheduleCleanup, {
         sessionId: session._id,
       });

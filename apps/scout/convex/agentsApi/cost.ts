@@ -1,5 +1,5 @@
 import { type Infer, v } from "convex/values";
-import { z } from "zod";
+import { usage, providerUsage, readUsage } from "../../shared/openaiAgents";
 
 // Standard USD rates verified 2026-09-12. Agents use the model/tool API rates:
 // https://developers.openai.com/api/docs/guides/agents-api/overview
@@ -8,41 +8,17 @@ import { z } from "zod";
 const lunaRates = { input: 0.2, cachedInput: 0.02, output: 1.2 };
 const webSearchUsdPerCall = 10 / 1_000;
 
-export const agentsApiUsageValidator = v.object({
-  inputTokens: v.number(),
-  outputTokens: v.number(),
-  cachedInputTokens: v.optional(v.union(v.number(), v.null())),
-});
+export const agentsApiUsageValidator = usage;
 export type AgentsApiUsage = Infer<typeof agentsApiUsageValidator>;
-
-const tokenCount = z.int().nonnegative();
-const providerUsage = z
-  .object({
-    input_tokens: tokenCount,
-    output_tokens: tokenCount,
-    input_tokens_details: z.object({ cached_tokens: tokenCount.nullish() }).nullish(),
-  })
-  .refine(
-    (usage) => (usage.input_tokens_details?.cached_tokens ?? 0) <= usage.input_tokens,
-    "Cached input tokens cannot exceed input tokens",
-  )
-  .nullable();
 
 /**
  * Parse the latest SDK TokenUsage snapshot. Missing cached details remain unknown.
- * Replace saved session usage on each poll; never add successive snapshots or add
+ * Replace saved session usage on each update; never add successive snapshots or add
  * turn usage to session usage. Reasoning tokens already belong to output_tokens.
  * https://developers.openai.com/api/docs/guides/agents-api/observability
  */
 export function readAgentsApiUsage(value: unknown): AgentsApiUsage | null {
-  const usage = providerUsage.parse(value);
-  return usage === null
-    ? null
-    : {
-        inputTokens: usage.input_tokens,
-        outputTokens: usage.output_tokens,
-        cachedInputTokens: usage.input_tokens_details?.cached_tokens ?? null,
-      };
+  return readUsage(providerUsage.parse(value));
 }
 
 export const agentsApiBrowserUsageValidator = v.object({

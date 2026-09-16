@@ -198,7 +198,7 @@ it("reports workflow errors when the owner has not stopped the session", async (
   expect(failed.cleanupJobId).toBeDefined();
 });
 
-it("updates a streamed item without duplicating history and remembers tool results", async () => {
+it("updates a saved item without duplicating history and remembers tool results", async () => {
   const { backend, owner, sessionId } = await setup();
   await backend.mutation(internal.agentsApi.sessions.update, {
     sessionId,
@@ -209,7 +209,6 @@ it("updates a streamed item without duplicating history and remembers tool resul
   await backend.mutation(internal.agentsApi.sessions.saveItems, {
     sessionId,
     items: [{ ...item, text: "Opened the site" }],
-    cursor: "message",
   });
   const history = await owner.query(api.agentsApi.sessions.listItems, {
     sessionId,
@@ -217,6 +216,16 @@ it("updates a streamed item without duplicating history and remembers tool resul
   });
   expect(history.page).toHaveLength(1);
   expect(history.page[0]?.text).toBe("Opened the site");
+  const session = await backend.query(internal.agentsApi.sessions.cleanupResources, { sessionId });
+  if (!session.workflowId) throw new Error("Expected a command workflow");
+  await backend.mutation(internal.agentsApi.sessions.onEvent, {
+    sessionKey: sessionId,
+    runKey: session.workflowId,
+    event: {
+      kind: "tool",
+      call: { callId: "send-email", turnId: "turn", name: "send_email", argumentsJson: "{}" },
+    },
+  });
   const first = await backend.mutation(internal.agentsApi.sessions.claimCall, {
     sessionId,
     callId: "send-email",
@@ -255,6 +264,7 @@ it("does not schedule cleanup over an idle session's next send", async () => {
 
 it("keeps the Scout reserved while stopping a handoff and schedules cleanup only once", async () => {
   const { backend, owner, sessionId } = await setup();
+  await backend.run((ctx) => ctx.db.patch(sessionId, { pendingCommand: undefined }));
   await backend.mutation(internal.agentsApi.sessions.update, {
     sessionId,
     providerId: "provider-session",
