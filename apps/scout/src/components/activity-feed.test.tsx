@@ -28,6 +28,7 @@ const remote = vi.hoisted(() => ({
   loadPaperTasks: vi.fn<(count: number) => void>(),
   loadUnassigned: vi.fn<(count: number) => void>(),
   tasks: new Map<string, Tasks>(),
+  sites: new Array<Sites["results"][number]>(),
 }));
 
 vi.mock("../lib/access", () => ({
@@ -49,10 +50,7 @@ vi.mock("convex/react", () => ({
     switch (name) {
       case "scout/sites:list":
         return {
-          results: [
-            { hostname: "chessmerge.com", preview: null },
-            { hostname: "papergames.io", preview: null },
-          ],
+          results: remote.sites,
           status: "CanLoadMore",
           isLoading: false,
           loadMore: remote.loadSites,
@@ -151,6 +149,20 @@ function task(site: string, number: number): Activity {
 
 beforeEach(() => {
   vi.stubGlobal("IntersectionObserver", TestIntersectionObserver);
+  remote.sites = [
+    {
+      hostname: "chessmerge.com",
+      preview: null,
+      profile: { name: "Chess Merge", homepageUrl: "https://chessmerge.com", researchedAt: 1000 },
+      research: { status: "completed", error: null },
+    },
+    {
+      hostname: "papergames.io",
+      preview: null,
+      profile: null,
+      research: { status: "running", error: null },
+    },
+  ];
   remote.tasks.set("chessmerge.com", {
     results: [task("chessmerge.com", 1), task("chessmerge.com", 2)],
     status: "CanLoadMore",
@@ -270,12 +282,20 @@ test.each(["public", "mine"])("site heading links preserve the %s scope", async 
   const user = userEvent.setup();
 
   for (const site of ["chessmerge.com", "papergames.io"]) {
-    const link = screen.getByRole("link", { name: site });
+    const card = within(screen.getByRole("article", { name: site }));
+    const link = card.getByRole("link", {
+      name: site === "chessmerge.com" ? "Chess Merge chessmerge.com" : "papergames.io Researching…",
+    });
     expect(link.getAttribute("href")).toBe(`/sites/${site}?scope=${scope}`);
     expect(within(link).getByTestId("site-preview")).toBeTruthy();
-    expect(within(link).getByRole("heading", { name: site, level: 2 })).toBeTruthy();
+    expect(
+      within(link).getByRole("heading", {
+        name: site === "chessmerge.com" ? "Chess Merge" : site,
+        level: 2,
+      }),
+    ).toBeTruthy();
   }
-  await user.click(screen.getByRole("link", { name: "papergames.io" }));
+  await user.click(screen.getByRole("link", { name: "papergames.io Researching…" }));
   await waitFor(() => expect(router.state.location.pathname).toBe("/sites/papergames.io"));
   expect(router.state.location.search).toEqual({ scope });
   expect(await screen.findByRole("region", { name: "Tasks for papergames.io" })).toBeTruthy();
@@ -285,3 +305,31 @@ test.each(["public", "mine"])("site heading links preserve the %s scope", async 
     "/review?",
   );
 });
+
+test("site groups put the researched product name above its hostname", async () => {
+  await openFeed();
+  const card = within(screen.getByRole("article", { name: "chessmerge.com" }));
+  const heading = card.getByRole("heading", { name: "Chess Merge", level: 2 });
+  expect(heading.nextElementSibling?.textContent).toBe("chessmerge.com");
+  expect(card.queryByText("Research completed")).toBeNull();
+});
+
+test.each([
+  { research: null, label: "Not researched" },
+  { research: { status: "running", error: null }, label: "Researching…" },
+  { research: { status: "waiting", error: null }, label: "Waiting for research…" },
+  { research: { status: "failed", error: "Provider error" }, label: "Research failed" },
+  { research: { status: "cancelled", error: null }, label: "Research cancelled" },
+  { research: { status: "skipped", error: null }, label: "Research skipped" },
+  { research: { status: "completed", error: null }, label: "Research completed" },
+] satisfies { research: Sites["results"][number]["research"]; label: string }[])(
+  "pending site groups keep the hostname and show $label",
+  async ({ research, label }) => {
+    remote.sites[1] = { hostname: "papergames.io", preview: null, profile: null, research };
+    await openFeed();
+    const card = within(screen.getByRole("article", { name: "papergames.io" }));
+    const heading = card.getByRole("heading", { name: "papergames.io", level: 2 });
+    expect(heading.nextElementSibling?.textContent).toBe(label);
+    expect(card.queryByText("Provider error")).toBeNull();
+  },
+);

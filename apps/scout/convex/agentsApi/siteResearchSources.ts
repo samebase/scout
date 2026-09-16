@@ -4,27 +4,8 @@ import type { Firecrawl } from "firecrawl";
 import { siteHostnameSchema } from "../../shared/site";
 import { SITE_RESEARCH_MAX_CREDITS, SITE_RESEARCH_MODEL } from "./siteResearchModel";
 
-export const siteBrief = z.object({
-  overview: z.string().trim().min(1).max(1_000),
-  facts: z
-    .array(
-      z.object({
-        text: z.string().trim().min(1).max(1_000),
-        sources: z
-          // Firecrawl's submission validator rejects JSON Schema's URI format.
-          .array(
-            z
-              .string()
-              .regex(/^https?:\/\/[^\s<>]+$/)
-              .refine((url) => URL.canParse(url)),
-          )
-          .min(1)
-          .max(6),
-      }),
-    )
-    .max(6),
-  unknowns: z.array(z.string().max(500)).max(4),
-});
+import { siteBrief } from "../../shared/siteResearch";
+export { siteBrief } from "../../shared/siteResearch";
 
 export function researchRequest(site: string) {
   return {
@@ -38,6 +19,8 @@ export function researchRequest(site: string) {
       Research ${site} to brief a browser agent that will try the product.
       Read its public homepage and relevant public help or setup pages.
 
+      - Identify its actual product name. Use the product name
+        shown on the site, without a marketing tagline. Do not invent a name.
       - Explain what it does and the documented steps, accounts, and integrations
         needed to get started. Keep the brief under 200 words.
       - Include source URLs for each fact. Report missing information as unknowns.
@@ -72,11 +55,11 @@ export function researchSite(prompt: string) {
   return hosts.size === 1 ? [...hosts][0] : null;
 }
 
-export function renderBrief(site: string, brief: z.infer<typeof siteBrief>) {
+export function renderBrief(site: string, brief: z.infer<typeof siteBrief>, researchedAt: number) {
   const sources = [...new Set(brief.facts.flatMap((fact) => fact.sources))];
   return [
-    `# ${site}`,
-    `Gathered ${new Date().toISOString()}. Public research, not a completed product test.`,
+    `# ${brief.name}\n\n${site}`,
+    `Gathered ${new Date(researchedAt).toISOString()}. Public research, not a completed product test.`,
     brief.overview,
     ...brief.facts.map(
       (fact) =>

@@ -2,19 +2,49 @@ import { paginationOptsValidator, paginationResultValidator } from "convex/serve
 import { v } from "convex/values";
 import { siteHostnameSchema } from "../../shared/site";
 import type { Doc } from "../_generated/dataModel";
-import { internalMutation } from "../_generated/server";
-import { requireViewerPermission } from "../access";
+import { internalMutation, type QueryCtx } from "../_generated/server";
+import { canAccess } from "../../shared/accessModel";
+import { requireViewerPermission, type ViewerAccess } from "../access";
 import { publicQuery } from "../functions";
 import { accessibleSite, ensureSite, syncChatSite } from "./siteListings";
 import { previewMetadata, sitePreviewMetadata } from "./sitePreviewModel";
 
+import { siteProfile, researchSummary } from "../agentsApi/siteResearchModel";
+
 const siteRow = v.object({
   hostname: v.string(),
   preview: v.union(sitePreviewMetadata, v.null()),
+  profile: v.union(siteProfile.pick("name", "homepageUrl", "researchedAt"), v.null()),
+  research: v.union(
+    v.object({ status: researchSummary.fields.status, error: v.union(v.string(), v.null()) }),
+    v.null(),
+  ),
 });
 
-function presentSite(site: Doc<"sites">) {
-  return { hostname: site.hostname, preview: previewMetadata(site.preview) };
+async function presentSite(ctx: QueryCtx, site: Doc<"sites">, viewer: ViewerAccess) {
+  const research = site.researchId ? await ctx.db.get(site.researchId) : null;
+  return {
+    hostname: site.hostname,
+    preview: previewMetadata(site.preview),
+    profile: site.profile
+      ? {
+          name: site.profile.name,
+          homepageUrl: site.profile.homepageUrl,
+          researchedAt: site.profile.researchedAt,
+        }
+      : null,
+    research: research
+      ? {
+          status: research.state.kind,
+          error:
+            research.state.kind === "failed" &&
+            viewer.kind === "account" &&
+            canAccess("access_lab", viewer.accessKeys)
+              ? research.state.error
+              : null,
+        }
+      : null,
+  };
 }
 
 export const list = publicQuery({
@@ -40,7 +70,10 @@ export const list = publicQuery({
           ? ctx.db.query("sites").withIndex("by_hostname")
           : ctx.db.query("sites").withIndex("by_hostname", (q) => q.eq("hostname", hostname));
       const page = await rows.order("asc").paginate(paginationOpts);
-      return { ...page, page: page.page.map(presentSite) };
+      return {
+        ...page,
+        page: await Promise.all(page.page.map((site) => presentSite(ctx, site, ctx.viewer))),
+      };
     }
     if (args.scope === "mine") {
       const { userId } = requireViewerPermission(ctx.viewer, "access_account");
@@ -66,7 +99,7 @@ export const list = publicQuery({
               .withIndex("by_hostname", (q) => q.eq("hostname", hostname))
               .unique();
             if (!site) throw new Error("Site listing has no site");
-            return presentSite(site);
+            return presentSite(ctx, site, ctx.viewer);
           }),
         ),
       };
@@ -84,7 +117,10 @@ export const list = publicQuery({
               q.eq("hostname", hostname).gt("latestPublicTask.createdAt", undefined),
             );
     const page = await rows.order("desc").paginate(paginationOpts);
-    return { ...page, page: page.page.map(presentSite) };
+    return {
+      ...page,
+      page: await Promise.all(page.page.map((site) => presentSite(ctx, site, ctx.viewer))),
+    };
   },
 });
 
@@ -95,7 +131,7 @@ export const get = publicQuery({
   handler: async (ctx, { site }) => {
     const hostname = siteHostnameSchema.parse(site);
     const row = await accessibleSite(ctx, hostname, ctx.viewer);
-    return row ? presentSite(row) : null;
+    return row ? presentSite(ctx, row, ctx.viewer) : null;
   },
 });
 

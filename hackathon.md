@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-16T13:26:00Z
+- **Last updated:** 2026-09-16T14:34:59.721Z
 
 ## Log
 
@@ -1303,8 +1303,8 @@ OpenAI HTTP requests now allow three retries for transient failures
 ### 2026-09-16 - working tree
 
 The homepage loads sites on scroll, with two tasks per card and independent task expansion.
-Site images and names open full-width task lists; each task links back to its site.
-The first research pass captures a public landing-page image in R2, reused in the directory and
-site sidebar. Research files remain in the admin Workspace tab. Convex maintains public and
-owner-specific site listings as tasks change
-(`apps/scout/convex/scout/sites.ts`, `apps/scout/convex/scout/sitePreviews.ts`).
+Site images and names open task lists; each review keeps its site's other tasks in the sidebar.
+Sites own their public landing image in R2 and a Firecrawl research brief with product name and
+homepage URL. Tasks share one research job and keep a frozen copy of the brief they used.
+Admins can refresh research explicitly; public and owner-specific listings share the same order
+(`apps/scout/convex/scout/sites.ts`, `apps/scout/convex/agentsApi/siteResearch.ts`).

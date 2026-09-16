@@ -187,14 +187,20 @@ test("approval, identification, edits, and visibility update public and owner di
     site: " EXAMPLE.TEST ",
   });
   expect((await t.list("public")).page).toEqual([]);
-  expect((await t.list("mine")).page).toEqual([{ hostname: "example.test", preview: null }]);
+  expect((await t.list("mine")).page).toEqual([
+    { hostname: "example.test", preview: null, profile: null, research: null },
+  ]);
   expect(await t.other.query(api.scout.sites.get, { site: "example.test" })).toBeNull();
   expect(await t.owner.query(api.scout.sites.get, { site: "EXAMPLE.TEST" })).toEqual({
     hostname: "example.test",
     preview: null,
+    profile: null,
+    research: null,
   });
   await t.decide(pending.checkId, true);
-  expect((await t.list("public")).page).toEqual([{ hostname: "example.test", preview: null }]);
+  expect((await t.list("public")).page).toEqual([
+    { hostname: "example.test", preview: null, profile: null, research: null },
+  ]);
   expect((await t.tasks("public", "example.test")).page.map((row) => row.threadId)).toEqual([
     pending.sessionId,
   ]);
@@ -207,15 +213,23 @@ test("approval, identification, edits, and visibility update public and owner di
     threadId: pending.sessionId,
     site: " MOVED.TEST ",
   });
-  expect((await t.list("public")).page).toEqual([{ hostname: "moved.test", preview: null }]);
-  expect((await t.list("mine")).page).toEqual([{ hostname: "moved.test", preview: null }]);
+  expect((await t.list("public")).page).toEqual([
+    { hostname: "moved.test", preview: null, profile: null, research: null },
+  ]);
+  expect((await t.list("mine")).page).toEqual([
+    { hostname: "moved.test", preview: null, profile: null, research: null },
+  ]);
   expect(await t.owner.query(api.scout.sites.get, { site: "example.test" })).toBeNull();
   await t.visibility(pending.sessionId, "private");
   expect((await t.list("public")).page).toEqual([]);
   expect((await t.tasks("public", "moved.test")).page).toEqual([]);
-  expect((await t.list("mine")).page).toEqual([{ hostname: "moved.test", preview: null }]);
+  expect((await t.list("mine")).page).toEqual([
+    { hostname: "moved.test", preview: null, profile: null, research: null },
+  ]);
   await t.visibility(pending.sessionId, "public");
-  expect((await t.list("public")).page).toEqual([{ hostname: "moved.test", preview: null }]);
+  expect((await t.list("public")).page).toEqual([
+    { hostname: "moved.test", preview: null, profile: null, research: null },
+  ]);
   await expect(
     t.other.mutation(api.scout.reviewSites.set, {
       threadId: pending.sessionId,
@@ -228,7 +242,9 @@ test("approval, identification, edits, and visibility update public and owner di
       site: "https://invalid.test/path",
     }),
   ).rejects.toThrow();
-  expect((await t.list("public")).page).toEqual([{ hostname: "moved.test", preview: null }]);
+  expect((await t.list("public")).page).toEqual([
+    { hostname: "moved.test", preview: null, profile: null, research: null },
+  ]);
 });
 
 test("site cursors count sites, order by latest eligible activity, and never expose other owners' private sites", async () => {
@@ -246,9 +262,9 @@ test("site cursors count sites, order by latest eligible activity, and never exp
   const second = await t.list("public", first.continueCursor, 1);
   const third = await t.list("public", second.continueCursor, 1);
   expect([...first.page, ...second.page, ...third.page]).toEqual([
-    { hostname: "other-public.test", preview: null },
-    { hostname: "old.test", preview: null },
-    { hostname: "second.test", preview: null },
+    { hostname: "other-public.test", preview: null, profile: null, research: null },
+    { hostname: "old.test", preview: null, profile: null, research: null },
+    { hostname: "second.test", preview: null, profile: null, research: null },
   ]);
   expect(third.isDone).toBe(true);
   expect((await t.list("mine")).page.map((row) => row.hostname)).toEqual([
@@ -261,7 +277,7 @@ test("site cursors count sites, order by latest eligible activity, and never exp
   expect(await t.owner.query(api.scout.sites.get, { site: "other-private.test" })).toBeNull();
   expect((await t.list("public", null, 2, " PRIVATE.TEST ")).page).toEqual([]);
   expect((await t.list("mine", null, 2, " PRIVATE.TEST ")).page).toEqual([
-    { hostname: "private.test", preview: null },
+    { hostname: "private.test", preview: null, profile: null, research: null },
   ]);
   await t.visibility(latest.sessionId, "private");
   expect((await t.list("public")).page.map((row) => row.hostname)).toEqual([
@@ -302,10 +318,14 @@ test("anonymous exact-site pagination metadata is identical for hidden and absen
     expect(await t.admin.query(api.scout.sites.get, { site: hostname })).toEqual({
       hostname,
       preview: null,
+      profile: null,
+      research: null,
     });
     expect(await list(hostname)).toEqual(absent);
   }
-  expect((await list("public.test")).page).toEqual([{ hostname: "public.test", preview: null }]);
+  expect((await list("public.test")).page).toEqual([
+    { hostname: "public.test", preview: null, profile: null, research: null },
+  ]);
 });
 
 test("per-site task cursors include every eligible task, keep mine separate, and retain unassigned mine tasks", async () => {
@@ -328,7 +348,9 @@ test("per-site task cursors include every eligible task, keep mine separate, and
     threadId: unassigned.sessionId,
     primarySite: null,
   });
-  expect((await t.list("mine")).page).toEqual([{ hostname: "site.test", preview: null }]);
+  expect((await t.list("mine")).page).toEqual([
+    { hostname: "site.test", preview: null, profile: null, research: null },
+  ]);
   await expect(
     t.backend.query(api.scout.sites.list, {
       scope: "mine",
@@ -377,7 +399,9 @@ test("a stopped session's completed initial check still synchronizes public admi
       },
     }),
   ).toBe(false);
-  expect((await t.list("public")).page).toEqual([{ hostname: "site.test", preview: null }]);
+  expect((await t.list("public")).page).toEqual([
+    { hostname: "site.test", preview: null, profile: null, research: null },
+  ]);
 });
 
 test("workspace creation registers an admin-accessible site without making a public or owner task listing", async () => {
@@ -392,6 +416,8 @@ test("workspace creation registers an admin-accessible site without making a pub
   expect(await t.admin.query(api.scout.sites.get, { site: "workspace.test" })).toEqual({
     hostname: "workspace.test",
     preview: null,
+    profile: null,
+    research: null,
   });
   expect(await t.owner.query(api.scout.sites.get, { site: "workspace.test" })).toBeNull();
   expect(await t.backend.query(api.scout.sites.get, { site: "workspace.test" })).toBeNull();
@@ -418,15 +444,15 @@ test("admin all-sites cursors include workspace-only and private sites in hostna
     paginationOpts: { cursor: first.continueCursor, numItems: 2 },
   });
   expect([...first.page, ...second.page]).toEqual([
-    { hostname: "a.test", preview: null },
-    { hostname: "b.test", preview: null },
-    { hostname: "c.test", preview: null },
+    { hostname: "a.test", preview: null, profile: null, research: null },
+    { hostname: "b.test", preview: null, profile: null, research: null },
+    { hostname: "c.test", preview: null, profile: null, research: null },
   ]);
   expect(second.isDone).toBe(true);
   await expect(t.owner.query(api.scout.sites.list, args)).rejects.toThrow("Not authorized");
   await expect(t.backend.query(api.scout.sites.list, args)).rejects.toThrow("Not authorized");
   expect((await t.admin.query(api.scout.sites.list, { ...args, site: " C.TEST " })).page).toEqual([
-    { hostname: "c.test", preview: null },
+    { hostname: "c.test", preview: null, profile: null, research: null },
   ]);
 });
 
@@ -509,6 +535,8 @@ test("manual backfill uses bounded resumable pages and is idempotent for existin
   expect(await t.admin.query(api.scout.sites.get, { site: "workspace.test" })).toEqual({
     hostname: "workspace.test",
     preview: null,
+    profile: null,
+    research: null,
   });
   const a = await t.list("public");
   const b = await t.list("public", a.continueCursor);
@@ -558,6 +586,8 @@ test("account deletion removes all owner listings in batches and keeps retained 
   expect(await t.backend.query(api.scout.sites.get, { site: "site-69.test" })).toEqual({
     hostname: "site-69.test",
     preview: null,
+    profile: null,
+    research: null,
   });
   expect(
     (
@@ -567,5 +597,57 @@ test("account deletion removes all owner listings in batches and keeps retained 
         paginationOpts: { cursor: null, numItems: 24 },
       })
     ).page,
-  ).toEqual([{ hostname: "shared.test", preview: null }]);
+  ).toEqual([{ hostname: "shared.test", preview: null, profile: null, research: null }]);
+});
+
+test("site metadata exposes the name publicly but keeps research diagnostics for admins", async () => {
+  const t = await setup();
+  await t.review("example.test", 1);
+  await t.backend.run(async (ctx) => {
+    const site = await ctx.db
+      .query("sites")
+      .withIndex("by_hostname", (q) => q.eq("hostname", "example.test"))
+      .unique();
+    if (!site) throw new Error("Missing site");
+    const researchId = await ctx.db.insert("agentsApiSiteResearch", {
+      site: site.hostname,
+      sessionId: null,
+      userId: t.userId,
+      model: "spark-2",
+      maxCredits: 50,
+      jobId: "job-1",
+      requestPath: null,
+      responsePath: null,
+      credits: null,
+      state: { kind: "failed", finishedAt: 20, error: "Provider diagnostic for operators" },
+    });
+    await ctx.db.patch(site._id, {
+      researchId,
+      profile: {
+        name: "Example App",
+        homepageUrl: "https://example.test/",
+        researchedAt: 10,
+        brief: "Public brief",
+      },
+    });
+  });
+  for (const viewer of [t.backend, t.owner]) {
+    const site = await viewer.query(api.scout.sites.get, { site: "example.test" });
+    expect(site?.profile).toEqual({
+      name: "Example App",
+      homepageUrl: "https://example.test/",
+      researchedAt: 10,
+    });
+    expect(site?.research).toEqual({ status: "failed", error: null });
+    const page = await viewer.query(api.scout.sites.list, {
+      scope: "public",
+      site: null,
+      paginationOpts: { cursor: null, numItems: 6 },
+    });
+    expect(page.page[0].research).toEqual({ status: "failed", error: null });
+  }
+  expect((await t.admin.query(api.scout.sites.get, { site: "example.test" }))?.research).toEqual({
+    status: "failed",
+    error: "Provider diagnostic for operators",
+  });
 });

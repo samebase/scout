@@ -127,7 +127,12 @@ test("captures the unauthenticated root once, including overlapping requests, in
   });
   expect(await t.backend.run((ctx) => ctx.db.query("agentsApiScreenshots").first())).toBeNull();
   expect(await t.backend.run((ctx) => ctx.db.query("agentsApiBrowserSessions").first())).toBeNull();
-  const row = { hostname: "example.com", preview: { kind: "ready", capturedAt: Date.now() } };
+  const row = {
+    hostname: "example.com",
+    preview: { kind: "ready", capturedAt: Date.now() },
+    profile: null,
+    research: null,
+  };
   expect(await t.owner.query(api.scout.sites.get, { site: "example.com" })).toEqual(row);
   expect(
     (

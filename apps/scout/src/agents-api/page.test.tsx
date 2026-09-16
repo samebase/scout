@@ -1319,80 +1319,115 @@ test("refreshes an ended session without sending, preserves drafts on failure, a
   expect(remote.refresh).toHaveBeenCalledTimes(2);
 });
 
-test("opens research as a flat session step and links its calls to private workspace files", async () => {
-  const summary = { status: "completed", reportedCredits: 1 };
-  const research = {
-    _id: "research-1",
-    _creationTime: 1000,
-    sessionId: "session-1",
-    site: "example.com",
-    model: "spark-2",
-    maxCredits: 50,
-    jobId: "job-1",
-    requestPath: "/workspace/research/request.json",
-    responsePath: "/workspace/research/result.json",
-    credits: 1,
-    ...summary,
-    state: {
-      kind: "completed",
-      finishedAt: 2000,
-      brief: "A public calculator.",
-      briefPath: "/workspace/research/brief.md",
-    },
-  };
-  remote.queries.set("agentsApi/sessions:get", { ...session(), research: summary });
-  remote.queries.set("agentsApi/sessions:list", [{ ...session(), research: summary }]);
-  remote.queries.set("agentsApi/siteResearchRecords:inspect", research);
-  const router = await open("/agents?session=session-1&step=site_research");
-  expect(await screen.findByRole("heading", { name: "Site research" })).toBeTruthy();
-  expect(screen.getByText("A public calculator.")).toBeTruthy();
-  expect(screen.getByRole("link", { name: /Site research/ }).getAttribute("aria-current")).toBe(
-    "page",
-  );
-  expect(screen.getByRole("link", { name: "Chat" }).getAttribute("aria-current")).toBeNull();
-  expect(screen.queryByRole("region", { name: "Conversation" })).toBeNull();
-  await userEvent.setup().click(screen.getByRole("button", { name: "Workspace" }));
-  expect(await screen.findByRole("button", { name: "notes.md" })).toBeTruthy();
-  expect(router.state.location.search).toMatchObject({
-    step: "site_research",
-    view: "workspace",
-  });
-  expect(screen.queryByRole("heading", { name: "Site research" })).toBeNull();
-  expect(screen.getByRole("heading", { name: "Research details" })).toBeTruthy();
-  await userEvent.setup().click(screen.getByRole("button", { name: "Workspace" }));
-  expect(await screen.findByRole("heading", { name: "Site research" })).toBeTruthy();
-  await userEvent.setup().click(screen.getByRole("link", { name: "Request" }));
-  expect(router.state.location.search).toMatchObject({
-    session: "session-1",
-    step: "site_research",
-    view: "workspace",
-    file: "/workspace/research/request.json",
-  });
-});
+test.each([undefined, false, true])(
+  "opens raw research and links its calls to private workspace files, reused=%s",
+  async (reused) => {
+    const summary = { status: "completed", reportedCredits: 1 };
+    const research = {
+      _id: "research-1",
+      _creationTime: 1000,
+      sessionId: "session-1",
+      site: "example.com",
+      model: "spark-2",
+      maxCredits: 50,
+      jobId: "job-1",
+      requestPath: "/workspace/research/request.json",
+      responsePath: "/workspace/research/result.json",
+      credits: 1,
+      state: {
+        kind: "completed",
+        finishedAt: 2000,
+        brief: "A public calculator.",
+        briefPath: "/workspace/research/brief.md",
+        ...omitNullish({
+          source:
+            reused === undefined
+              ? undefined
+              : { researchId: "source-research", researchedAt: Date.UTC(2026, 8, 14, 12), reused },
+        }),
+      },
+    };
+    remote.queries.set("agentsApi/sessions:get", { ...session(), research: summary });
+    remote.queries.set("agentsApi/sessions:list", [{ ...session(), research: summary }]);
+    remote.queries.set("agentsApi/siteResearchRecords:inspect", research);
+    const router = await open("/agents?session=session-1&step=site_research");
+    expect(await screen.findByRole("heading", { name: "Site research" })).toBeTruthy();
+    expect(screen.getByText("A public calculator.")).toBeTruthy();
+    expect(screen.getByText("1.0s")).toBeTruthy();
+    expect(screen.getByText("1", { exact: true })).toBeTruthy();
+    if (reused) {
+      const source = screen.getByText(/Reused research from/);
+      expect(source.querySelector("time")?.getAttribute("datetime")).toBe(
+        "2026-09-14T12:00:00.000Z",
+      );
+      expect(source.textContent).toContain(
+        new Date(Date.UTC(2026, 8, 14, 12)).toLocaleDateString(undefined, { dateStyle: "medium" }),
+      );
+    } else {
+      expect(screen.queryByText(/Reused research from/)).toBeNull();
+    }
+    expect(screen.getByRole("link", { name: /Site research/ }).getAttribute("aria-current")).toBe(
+      "page",
+    );
+    expect(screen.getByRole("link", { name: "Chat" }).getAttribute("aria-current")).toBeNull();
+    expect(screen.queryByRole("region", { name: "Conversation" })).toBeNull();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Workspace" }));
+    expect(await screen.findByRole("button", { name: "notes.md" })).toBeTruthy();
+    expect(router.state.location.search).toMatchObject({
+      step: "site_research",
+      view: "workspace",
+    });
+    expect(screen.queryByRole("heading", { name: "Site research" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "Research details" })).toBeTruthy();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Workspace" }));
+    expect(await screen.findByRole("heading", { name: "Site research" })).toBeTruthy();
+    await userEvent.setup().click(screen.getByRole("link", { name: "Request" }));
+    expect(router.state.location.search).toMatchObject({
+      session: "session-1",
+      step: "site_research",
+      view: "workspace",
+      file: "/workspace/research/request.json",
+    });
+  },
+);
 
-test("shows research during startup and allows stopping before the chat exists", async () => {
-  const summary = { status: "running", reportedCredits: 0 };
-  remote.queries.set("agentsApi/sessions:get", {
-    ...session({ kind: "starting" }),
-    providerId: undefined,
-    research: summary,
-  });
-  remote.queries.set("agentsApi/siteResearchRecords:inspect", {
-    _id: "research-1",
-    _creationTime: 1000,
-    sessionId: "session-1",
-    site: "example.com",
-    model: "spark-2",
-    maxCredits: 50,
-    jobId: "job-1",
-    requestPath: "/workspace/research/request.json",
-    responsePath: "/workspace/research/result.json",
-    credits: 1,
-    ...summary,
-    state: { kind: "running" },
-  });
-  await open("/agents?session=session-1");
-  expect(await screen.findByText("Gathering site information…")).toBeTruthy();
-  await userEvent.setup().click(screen.getByRole("button", { name: "Stop" }));
-  expect(remote.stop).toHaveBeenCalledWith({ sessionId: "session-1" });
-});
+test.each(["running", "waiting"])(
+  "shows %s research during startup and allows stopping before the chat exists",
+  async (kind) => {
+    const summary = { status: kind, reportedCredits: 0 };
+    remote.queries.set("agentsApi/sessions:list", [
+      { ...session({ kind: "starting" }), research: summary },
+    ]);
+    remote.queries.set("agentsApi/sessions:get", {
+      ...session({ kind: "starting" }),
+      providerId: undefined,
+      research: summary,
+    });
+    remote.queries.set("agentsApi/siteResearchRecords:inspect", {
+      _id: "research-1",
+      _creationTime: 1000,
+      sessionId: "session-1",
+      site: "example.com",
+      model: "spark-2",
+      maxCredits: 50,
+      jobId: "job-1",
+      requestPath: "/workspace/research/request.json",
+      responsePath: "/workspace/research/result.json",
+      credits: 0,
+      state: kind === "waiting" ? { kind, researchId: "source-research", reused: true } : { kind },
+    });
+    await open("/agents?session=session-1");
+    expect(
+      await screen.findByText(
+        kind === "waiting" ? "Waiting for site research…" : "Gathering site information…",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText("Duration")).toBeNull();
+    expect(screen.queryByText(/NaN/)).toBeNull();
+    expect(screen.getByText("0", { exact: true })).toBeTruthy();
+    const link = screen.getByRole("link", { name: `Site research · ${kind}` });
+    expect(link.querySelector("svg")?.classList.contains("animate-spin")).toBe(true);
+    await userEvent.setup().click(screen.getByRole("button", { name: "Stop" }));
+    expect(remote.stop).toHaveBeenCalledWith({ sessionId: "session-1" });
+  },
+);

@@ -2,7 +2,7 @@ import { authTables } from "@convex-dev/auth/server";
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import { requestCheckRecord } from "./agentsApi/requestCheckModel";
-import { siteResearchRecord } from "./agentsApi/siteResearchModel";
+import { siteProfile, siteResearchRecord } from "./agentsApi/siteResearchModel";
 import { screenshotRecord, walkthroughContent } from "./agentsApi/screenshotModel";
 import { vWorkflowId } from "@convex-dev/workflow";
 import {
@@ -240,6 +240,8 @@ export default defineSchema({
     hostname: v.string(),
     latestPublicTask: v.union(siteTask, v.null()),
     preview: v.optional(sitePreviewState),
+    profile: v.optional(siteProfile),
+    researchId: v.optional(v.id("agentsApiSiteResearch")),
   })
     .index("by_hostname", ["hostname"])
     .index("by_hostname_and_latest_public_task_created_at", [

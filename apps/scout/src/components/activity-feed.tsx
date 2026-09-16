@@ -9,6 +9,7 @@ import { Input } from "#components/ui/input";
 import { ReviewCheckSummary } from "#components/review-checks";
 import { LoadOnScroll } from "#components/load-on-scroll";
 import { SitePreview } from "#components/site-preview";
+import { SiteIdentity } from "#components/site-identity";
 import type { ReviewFeedSearch } from "#lib/reviewFeedSearch";
 import { siteHostnameSchema } from "../../shared/site";
 import {
@@ -191,9 +192,9 @@ function SiteCard({
           className="group block outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         >
           <SitePreview site={site} />
-          <h2 className="px-4 py-4 text-2xl leading-tight font-semibold tracking-tight wrap-anywhere group-hover:underline">
-            {site.hostname}
-          </h2>
+          <div className="p-4">
+            <SiteIdentity site={site} heading="h2" />
+          </div>
         </Link>
       </header>
       <div className="min-w-0 px-4 min-[760px]:px-5">

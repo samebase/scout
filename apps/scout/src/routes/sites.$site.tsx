@@ -7,8 +7,9 @@ import {
   useSidebarLayoutPresentation,
 } from "@samebase/sidebars/SidebarRuntime";
 import type { SidebarLayoutState } from "@samebase/sidebars/SidebarLayoutState";
-import { usePaginatedQuery, useQuery } from "convex/react";
-import { ArrowLeftIcon, ArrowUpRightIcon, PanelLeftIcon } from "lucide-react";
+import { useAction, usePaginatedQuery, useQuery } from "convex/react";
+import type { FunctionReturnType } from "convex/server";
+import { ArrowLeftIcon, ArrowUpRightIcon, PanelLeftIcon, SearchIcon } from "lucide-react";
 import { useState } from "react";
 import { z } from "zod";
 import { api } from "../../convex/_generated/api";
@@ -16,6 +17,7 @@ import { Button } from "#components/ui/button";
 import { ScoutWorkspace } from "#components/scout-workspace";
 import { SiteTaskList } from "#components/activity-feed";
 import { SitePreview, SitePreviewCapture } from "#components/site-preview";
+import { SiteIdentity } from "#components/site-identity";
 import { LoadOnScroll } from "#components/load-on-scroll";
 import {
   Select,
@@ -120,9 +122,9 @@ function SiteLayout() {
                         className="group block overflow-hidden rounded-md border border-transparent bg-card hover:border-muted-foreground/40 focus-visible:outline-2 focus-visible:outline-ring aria-[current=page]:border-primary aria-[current=page]:bg-primary/5 aria-[current=page]:font-medium"
                       >
                         <SitePreview site={site} />
-                        <span className="block truncate px-2.5 py-2.5" title={site.hostname}>
-                          {site.hostname}
-                        </span>
+                        <div className="p-2.5">
+                          <SiteIdentity site={site} heading="span" />
+                        </div>
                       </Link>
                     </li>
                   ))}
@@ -145,13 +147,20 @@ function SiteLayout() {
               ) : (
                 <div className="flex min-h-full flex-col p-4 sm:p-6">
                   <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-                    <h1 className="min-w-0 text-2xl font-semibold tracking-tight wrap-anywhere sm:text-3xl">
-                      {record.hostname}
-                    </h1>
-                    <div className="flex items-center gap-3">
-                      {canInspect && <SitePreviewCapture key={record.hostname} site={record} />}
+                    <SiteIdentity site={record} heading="h1" />
+                    <div className="flex flex-wrap items-center gap-3">
+                      {canInspect && (
+                        <>
+                          <SiteResearchControl key={`research:${record.hostname}`} site={record} />
+                          <SitePreviewCapture key={`preview:${record.hostname}`} site={record} />
+                        </>
+                      )}
                       <a
-                        href={`https://${record.hostname}`}
+                        href={
+                          record.profile === null
+                            ? `https://${record.hostname}`
+                            : record.profile.homepageUrl
+                        }
                         target="_blank"
                         rel="noreferrer"
                         className="flex shrink-0 items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
@@ -236,6 +245,51 @@ function SiteLayout() {
         }
       />
     </main>
+  );
+}
+
+function SiteResearchControl({
+  site,
+}: {
+  site: NonNullable<FunctionReturnType<typeof api.scout.sites.get>>;
+}) {
+  const refresh = useAction(api.agentsApi.siteResearch.refresh);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const busy =
+    pending || site.research?.status === "running" || site.research?.status === "waiting";
+  const failure = error ?? (site.research?.status === "failed" ? site.research.error : null);
+  return (
+    <div className="min-w-0">
+      <Button
+        variant="ghost"
+        size="sm"
+        disabled={busy}
+        onClick={() => {
+          setPending(true);
+          setError(null);
+          void refresh({ site: site.hostname })
+            .catch((cause) => {
+              setError(cause instanceof Error ? cause.message : "Couldn't start research.");
+            })
+            .finally(() => setPending(false));
+        }}
+      >
+        <SearchIcon aria-hidden="true" />
+        {busy
+          ? "Researching…"
+          : site.research?.status === "failed" || site.research?.status === "cancelled"
+            ? "Retry research"
+            : site.profile === null
+              ? "Research site"
+              : "Refresh research"}
+      </Button>
+      {failure && (
+        <p role="alert" className="mt-1 text-xs wrap-anywhere text-destructive">
+          {failure}
+        </p>
+      )}
+    </div>
   );
 }
 

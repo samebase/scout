@@ -48,7 +48,7 @@ async function cleanupSession(ctx: ActionCtx, session: Doc<"agentsApiSessions">)
   const research = await ctx.runQuery(internal.agentsApi.siteResearchRecords.get, {
     sessionId: session._id,
   });
-  if (research?.state.kind === "running") {
+  if (research?.state.kind === "running" || research?.state.kind === "waiting") {
     await endResearch(
       ctx,
       research,

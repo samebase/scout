@@ -169,7 +169,8 @@ function AgentsWorkspace({ search }: { search: AgentsSearch }) {
                               }
                               className="flex items-center gap-2 rounded-md px-2 py-1.5 text-muted-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:bg-muted aria-[current=page]:text-foreground"
                             >
-                              {item.research.status === "running" ? (
+                              {item.research.status === "running" ||
+                              item.research.status === "waiting" ? (
                                 <LoaderCircleIcon
                                   className="size-3.5 animate-spin"
                                   aria-hidden="true"
@@ -277,7 +278,7 @@ function AgentsWorkspace({ search }: { search: AgentsSearch }) {
             checking ? (
               <RequestCheckInspector key={checkId} check={check} />
             ) : researching ? (
-              <SiteResearchInspector research={research} />
+              <SiteResearchInspector research={research} sessionId={session._id} />
             ) : (
               <BrowserPanel key={session._id} sessionId={session._id} search={search} />
             )
