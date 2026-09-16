@@ -170,7 +170,33 @@ it("cannot research a rejected request", async () => {
   const t = await setup();
   await t.backend.run((ctx) => ctx.db.patch(t.checkId, { state: { kind: "cancelled" } }));
   await expect(t.run()).rejects.toThrow("approved request");
+  expect(await t.backend.run((ctx) => ctx.db.query("sites").first())).toBeNull();
   expect(startAgent).not.toHaveBeenCalled();
+});
+
+it("schedules a site-owned capture at approved research start and keeps capture failure independent", async () => {
+  const t = await setup();
+  await t.run();
+  const scheduled = await t.backend.run((ctx) =>
+    ctx.db.system.query("_scheduled_functions").collect(),
+  );
+  const previewJobs = scheduled.filter((job) => job.name === "scout/sitePreviews:ensure");
+  expect(previewJobs).toHaveLength(1);
+  expect(previewJobs[0].args).toEqual([{ site: "example.com" }]);
+  const site = await t.backend.run((ctx) => ctx.db.query("sites").unique());
+  expect(site?.hostname).toBe("example.com");
+  vi.stubEnv("R2_BUCKET", "");
+  await t.backend.action(internal.scout.sitePreviews.ensure, { site: "example.com" });
+  expect(await t.backend.run((ctx) => ctx.db.query("sites").unique())).toMatchObject({
+    preview: { kind: "failed" },
+  });
+  expect((await t.inspect())?.state.kind).toBe("running");
+  await t.advance();
+  expect((await t.inspect())?.state.kind).toBe("completed");
+  expect(await t.backend.run((ctx) => ctx.db.query("agentsApiSessions").unique())).toMatchObject({
+    state: { kind: "starting" },
+    active: true,
+  });
 });
 
 it("records provider failure and its raw response without failing the approved session", async () => {

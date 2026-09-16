@@ -14,6 +14,8 @@ import { useSyncExternalStore } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { Route as ReviewRoute } from "../../routes/review";
 import { Route as PlayRoute } from "../../routes/play";
+import { Route as SiteRoute } from "../../routes/sites.$site";
+import { reviewFeedSearch } from "../../lib/reviewFeedSearch";
 import { api } from "../../../convex/_generated/api";
 import { ROLE_ACCESS_GRANTS } from "../../../shared/accessModel";
 import { omitNullish } from "../../../shared/omitNullish";
@@ -185,8 +187,20 @@ async function openPlay(path = "/play") {
       validateSearch: ReviewRoute.options.validateSearch,
     }),
   });
+  const directory = createRoute({
+    getParentRoute: () => root,
+    path: "/",
+    staticData: { access: "access_public" },
+    validateSearch: reviewFeedSearch,
+  });
+  const site = createRoute({
+    getParentRoute: () => root,
+    path: "/sites/$site",
+    staticData: { access: "access_public" },
+    ...omitNullish({ validateSearch: SiteRoute.options.validateSearch }),
+  });
   const router = createRouter({
-    routeTree: root.addChildren([route, review]),
+    routeTree: root.addChildren([route, review, directory, site]),
     history: createMemoryHistory({ initialEntries: [path] }),
   });
   render(<RouterProvider router={router} />);
@@ -599,11 +613,13 @@ describe("Play invitation", () => {
       "scout/activity:get",
       session({ purpose: { kind: "review" }, primarySite: "samebase.com" }),
     );
-    await openPlay("/review?thread=game-thread");
+    const router = await openPlay("/review?thread=game-thread");
     const user = userEvent.setup();
-    expect((await screen.findByRole("link", { name: "samebase.com" })).getAttribute("href")).toBe(
-      "/?site=samebase.com&scope=mine",
-    );
+    expect(
+      (await screen.findByRole("link", { name: "samebase.com tasks" })).getAttribute("href"),
+    ).toBe("/sites/samebase.com?scope=mine&view=tasks");
+    expect(screen.queryByRole("link", { name: "New chat" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "samebase.com" })).toBeNull();
     await user.click(screen.getByRole("button", { name: "Edit review site" }));
     const field = screen.getByRole("textbox", { name: "Review site" });
     await user.clear(field);
@@ -620,6 +636,17 @@ describe("Play invitation", () => {
       threadId: "game-thread",
       site: "www.samebase.com",
     });
+    act(() => {
+      remote.queries.set(
+        "scout/activity:get",
+        session({ purpose: { kind: "review" }, primarySite: "www.samebase.com" }),
+      );
+      remote.revision += 1;
+      remote.subscribers.forEach((notify) => notify());
+    });
+    await user.click(await screen.findByRole("link", { name: "www.samebase.com tasks" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/sites/www.samebase.com"));
+    expect(router.state.location.search).toEqual({ scope: "mine", view: "tasks" });
   });
 
   test("a public Review viewer can follow its site but cannot edit it", async () => {
@@ -633,11 +660,38 @@ describe("Play invitation", () => {
         canControl: false,
       }),
     );
-    await openPlay("/review?thread=game-thread");
-    expect((await screen.findByRole("link", { name: "samebase.com" })).getAttribute("href")).toBe(
-      "/?site=samebase.com&scope=public",
-    );
+    const router = await openPlay("/review?thread=game-thread");
+    const parent = await screen.findByRole("link", { name: "samebase.com tasks" });
+    expect(parent.getAttribute("href")).toBe("/sites/samebase.com?scope=public&view=tasks");
     expect(screen.queryByRole("button", { name: "Edit review site" })).toBeNull();
+    await userEvent.setup().click(parent);
+    await waitFor(() => expect(router.state.location.pathname).toBe("/sites/samebase.com"));
+    expect(router.state.location.search).toEqual({ scope: "public", view: "tasks" });
+  });
+
+  test.each([
+    { visibility: "public", scope: "public" },
+    { visibility: "private", scope: "mine" },
+  ])("a $visibility Review without a site returns to All sites", async ({ visibility, scope }) => {
+    remote.queries.set("scout/activity:get", session({ purpose: { kind: "review" }, visibility }));
+    const router = await openPlay("/review?thread=game-thread&view=chat");
+    const parent = await screen.findByRole("link", { name: "All sites" });
+    expect(parent.getAttribute("href")).toBe(`/?scope=${scope}`);
+    expect(screen.getByRole("button", { name: "Set review site" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "New chat" })).toBeNull();
+    await userEvent.setup().click(parent);
+    await waitFor(() => expect(router.state.location.pathname).toBe("/"));
+    expect(router.state.location.search).toEqual({ scope });
+  });
+
+  test("Play keeps its New chat link and clears the current conversation", async () => {
+    const router = await openPlay("/play?thread=game-thread");
+    const parent = await screen.findByRole("link", { name: "New chat" });
+    expect(parent.getAttribute("href")).toBe("/play");
+    await userEvent.setup().click(parent);
+    await waitFor(() => expect(router.state.location.search).toEqual({}));
+    expect(router.state.location.pathname).toBe("/play");
+    expect(await screen.findByRole("button", { name: "Find a game for us" })).toBeTruthy();
   });
 
   test("Review starts on its own route using the shared chat interface", async () => {

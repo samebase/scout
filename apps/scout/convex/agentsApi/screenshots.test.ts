@@ -164,46 +164,6 @@ async function setup(visibility: Doc<"scoutChats">["visibility"]) {
   };
 }
 
-it("uses the first walkthrough image for a feed preview and hides private previews", async () => {
-  const t = await setup("public");
-  const first = await t.reserve("first", "browser-1");
-  await t.finish(first);
-  const second = await t.reserve("second", "browser-1");
-  await t.finish(second);
-  await t.reserve("still-pending", "browser-1");
-  expect(await t.backend.query(api.scout.activity.preview, { threadId: t.sessionId })).toEqual({
-    screenshot: { id: second, note },
-    walkthroughSummary: null,
-  });
-  await t.backend.run((ctx) =>
-    ctx.db.patch(t.sessionId, {
-      walkthrough: {
-        summary: "The calculator returned the expected result.",
-        sections: [
-          {
-            heading: "Result",
-            explanation: "The calculated total is correct.",
-            captureIds: [first, second],
-          },
-        ],
-      },
-    }),
-  );
-  const expected = {
-    screenshot: { id: first, note },
-    walkthroughSummary: "The calculator returned the expected result.",
-  };
-  expect(await t.backend.query(api.scout.activity.preview, { threadId: t.sessionId })).toEqual(
-    expected,
-  );
-  await t.backend.run((ctx) => ctx.db.patch(t.chatId, { visibility: "private" }));
-  expect(await t.backend.query(api.scout.activity.preview, { threadId: t.sessionId })).toBeNull();
-  expect(await t.other.query(api.scout.activity.preview, { threadId: t.sessionId })).toBeNull();
-  expect(await t.owner.query(api.scout.activity.preview, { threadId: t.sessionId })).toEqual(
-    expected,
-  );
-});
-
 it("lets a private task's owner and admin read metadata and sign its image", async () => {
   const t = await setup("private");
   const captureId = await t.reserve("capture-1", "browser-1");

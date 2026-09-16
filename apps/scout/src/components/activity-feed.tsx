@@ -1,19 +1,14 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useAction, usePaginatedQuery, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
-import {
-  ArrowRightIcon,
-  ChevronDownIcon,
-  ImagesIcon,
-  PlayIcon,
-  SearchIcon,
-  XIcon,
-} from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { ArrowRightIcon, ChevronDownIcon, SearchIcon, XIcon } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { z } from "zod";
 import { Button } from "#components/ui/button";
 import { Input } from "#components/ui/input";
 import { ReviewCheckSummary } from "#components/review-checks";
+import { LoadOnScroll } from "#components/load-on-scroll";
+import { SitePreview } from "#components/site-preview";
 import type { ReviewFeedSearch } from "#lib/reviewFeedSearch";
 import { siteHostnameSchema } from "../../shared/site";
 import {
@@ -117,38 +112,47 @@ export function ActivityFeed({ search }: { search: ReviewFeedSearch }) {
           {error}
         </p>
       )}
+      {scope === "mine" && !search.site && <UnassignedTasks />}
       <SiteGroups key={`${scope}:${search.site ?? ""}`} site={search.site ?? null} scope={scope} />
     </section>
   );
 }
 
-function SiteGroups({ site, scope }: { site: string | null; scope: "public" | "mine" }) {
-  const activities = usePaginatedQuery(
-    api.scout.activity.list,
-    { site, scope },
-    { initialNumItems: 24 },
+function UnassignedTasks() {
+  const tasks = usePaginatedQuery(api.scout.activity.unassigned, {}, { initialNumItems: 2 });
+  if (!tasks.results.length) return null;
+  return (
+    <section aria-label="Tasks without a site" className="mb-5 rounded-lg border bg-card px-5">
+      <h2 className="pt-4 text-sm font-medium text-muted-foreground">Tasks without a site</h2>
+      {tasks.results.map((activity) => (
+        <ReviewRow key={activity.threadId} activity={activity} />
+      ))}
+      {(tasks.status === "CanLoadMore" || tasks.status === "LoadingMore") && (
+        <Button
+          variant="ghost"
+          className="w-full border-t text-xs"
+          disabled={tasks.status === "LoadingMore"}
+          onClick={() => tasks.loadMore(2)}
+        >
+          {tasks.status === "LoadingMore" ? "Loading…" : "Show more tasks"}
+        </Button>
+      )}
+    </section>
   );
-  const groups = new Map<string | null, Activity[]>();
-  for (const activity of activities.results) {
-    const reviews = groups.get(activity.primarySite);
-    if (reviews) reviews.push(activity);
-    else groups.set(activity.primarySite, [activity]);
-  }
+}
+
+function SiteGroups({ site, scope }: { site: string | null; scope: "public" | "mine" }) {
+  const sites = usePaginatedQuery(api.scout.sites.list, { site, scope }, { initialNumItems: 6 });
   return (
     <div className="space-y-5">
-      {Array.from(groups, ([hostname, reviews]) => (
-        <SiteGroup
-          key={hostname ?? "unassigned"}
-          site={hostname}
-          reviews={reviews}
-          fullyLoaded={activities.status === "Exhausted"}
-        />
+      {sites.results.map((site) => (
+        <SiteCard key={site.hostname} site={site} scope={scope} />
       ))}
-      {activities.status === "LoadingFirstPage" ? (
+      {sites.status === "LoadingFirstPage" ? (
         <p role="status" className="py-12 text-muted-foreground">
-          Loading reviews…
+          Loading sites…
         </p>
-      ) : activities.status === "Exhausted" && !activities.results.length ? (
+      ) : sites.status === "Exhausted" && !sites.results.length ? (
         <p className="py-12 text-muted-foreground">
           {site
             ? "No reviews for this site yet."
@@ -157,61 +161,96 @@ function SiteGroups({ site, scope }: { site: string | null; scope: "public" | "m
               : "No public reviews yet."}
         </p>
       ) : null}
-      {(activities.status === "CanLoadMore" || activities.status === "LoadingMore") && (
-        <Button
-          type="button"
-          variant="outline"
-          className="mx-auto flex"
-          disabled={activities.status === "LoadingMore"}
-          onClick={() => activities.loadMore(24)}
-        >
-          {activities.status === "LoadingMore" ? "Loading…" : "More reviews"}
-        </Button>
-      )}
+      <LoadOnScroll status={sites.status} onLoad={() => sites.loadMore(6)} />
     </div>
   );
 }
 
-function SiteGroup({
+function SiteCard({
   site,
-  reviews,
-  fullyLoaded,
+  scope,
 }: {
-  site: string | null;
-  reviews: Activity[];
-  fullyLoaded: boolean;
+  site: FunctionReturnType<typeof api.scout.sites.list>["page"][number];
+  scope: "public" | "mine";
 }) {
-  const [expanded, setExpanded] = useState(false);
-  const representative = reviews.find((review) => review.walkthrough) ?? reviews[0];
-  const shown = expanded ? reviews : reviews.slice(0, 3);
+  const tasks = usePaginatedQuery(
+    api.scout.activity.list,
+    { site: site.hostname, scope },
+    { initialNumItems: 2 },
+  );
   return (
     <article
-      aria-label={site ?? "Other reviews"}
+      aria-label={site.hostname}
       className="overflow-hidden rounded-lg border bg-card min-[760px]:grid min-[760px]:grid-cols-[minmax(260px,36%)_minmax(0,1fr)]"
     >
       <header className="min-w-0 min-[760px]:border-r">
-        <SitePreview activity={representative} />
-        <h2 className="px-4 py-4 text-2xl leading-tight font-semibold tracking-tight wrap-anywhere">
-          {site ?? "Other reviews"}
-        </h2>
+        <Link
+          to="/sites/$site"
+          params={{ site: site.hostname }}
+          search={{ scope }}
+          className="group block outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        >
+          <SitePreview site={site} />
+          <h2 className="px-4 py-4 text-2xl leading-tight font-semibold tracking-tight wrap-anywhere group-hover:underline">
+            {site.hostname}
+          </h2>
+        </Link>
       </header>
       <div className="min-w-0 px-4 min-[760px]:px-5">
-        {shown.map((activity) => (
+        {tasks.results.map((activity) => (
           <ReviewRow key={activity.threadId} activity={activity} />
         ))}
-        {reviews.length > 3 && (
+        {tasks.status === "LoadingFirstPage" && (
+          <p role="status" className="py-6 text-sm text-muted-foreground">
+            Loading tasks…
+          </p>
+        )}
+        {tasks.status === "Exhausted" && !tasks.results.length && (
+          <p className="py-6 text-sm text-muted-foreground">
+            {scope === "mine" ? "You haven't reviewed this site yet." : "No public tasks yet."}
+          </p>
+        )}
+        {(tasks.status === "CanLoadMore" || tasks.status === "LoadingMore") && (
           <Button
             variant="ghost"
             className="w-full rounded-none border-t py-3 text-xs font-normal text-primary"
-            aria-expanded={expanded}
-            onClick={() => setExpanded((value) => !value)}
+            disabled={tasks.status === "LoadingMore"}
+            onClick={() => tasks.loadMore(2)}
           >
-            {expanded ? "Show less" : fullyLoaded ? `Show ${reviews.length - 3} more` : "Show more"}
-            <ChevronDownIcon className={expanded ? "rotate-180" : ""} aria-hidden="true" />
+            {tasks.status === "LoadingMore" ? "Loading…" : "Show more tasks"}
+            <ChevronDownIcon aria-hidden="true" />
           </Button>
         )}
       </div>
     </article>
+  );
+}
+
+export function SiteTaskList({ site, scope }: { site: string; scope: "public" | "mine" }) {
+  const tasks = usePaginatedQuery(
+    api.scout.activity.list,
+    { site, scope },
+    { initialNumItems: 10 },
+  );
+  return (
+    <section aria-label={`Tasks for ${site}`} className="min-w-0">
+      <div className="rounded-lg border bg-card px-4 sm:px-5">
+        {tasks.results.map((activity) => (
+          <ReviewRow key={activity.threadId} activity={activity} />
+        ))}
+        {tasks.status === "LoadingFirstPage" && (
+          <p role="status" className="py-6 text-sm text-muted-foreground">
+            Loading tasks…
+          </p>
+        )}
+        {tasks.status === "Exhausted" && !tasks.results.length && (
+          <p className="py-6 text-sm text-muted-foreground">
+            {scope === "mine" ? "You haven't reviewed this site yet." : "No public tasks yet."}
+          </p>
+        )}
+      </div>
+      <LoadOnScroll status={tasks.status} onLoad={() => tasks.loadMore(10)} />
+    </section>
   );
 }
 
@@ -228,7 +267,7 @@ function ReviewRow({ activity }: { activity: Activity }) {
     <Link
       to="/review"
       search={{ thread: activity.threadId, view: activity.walkthrough ? "walkthrough" : "chat" }}
-      className="group flex items-center gap-3 border-t py-4 outline-none focus-visible:ring-2 focus-visible:ring-ring min-[760px]:first:border-t-0"
+      className="group flex items-center gap-3 border-t py-4 outline-none first:border-t-0 focus-visible:ring-2 focus-visible:ring-ring"
     >
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1.5">
@@ -258,107 +297,6 @@ function ReviewRow({ activity }: { activity: Activity }) {
       </div>
       <ArrowRightIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
     </Link>
-  );
-}
-
-function SitePreview({ activity }: { activity: Activity }) {
-  const [hovered, setHovered] = useState(false);
-  const [visible, setVisible] = useState(false);
-  const element = useRef<HTMLAnchorElement>(null);
-  useEffect(() => {
-    const target = element.current;
-    if (!target) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setVisible(true);
-          observer.disconnect();
-        }
-      },
-      { rootMargin: "100px" },
-    );
-    observer.observe(target);
-    return () => observer.disconnect();
-  }, []);
-  const preview = useQuery(
-    api.scout.activity.preview,
-    visible ? { threadId: activity.threadId } : "skip",
-  );
-  return (
-    <Link
-      ref={element}
-      to="/review"
-      search={{ thread: activity.threadId, view: activity.walkthrough ? "walkthrough" : "chat" }}
-      aria-label={`Open ${activity.title ?? "review"}`}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      className="group relative block aspect-[8/5] overflow-hidden border-b bg-muted outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-    >
-      {preview?.screenshot ? (
-        <ScreenshotPreview key={preview.screenshot.id} screenshot={preview.screenshot} />
-      ) : visible && preview !== undefined && activity.latestSession ? (
-        <ActivityPreview
-          key={activity.latestSession.sessionId}
-          session={activity.latestSession}
-          playing={hovered}
-        />
-      ) : (
-        <PreviewPlaceholder />
-      )}
-      <span className="pointer-events-none absolute inset-0 grid place-items-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
-        <span className="grid size-8 place-items-center rounded-full bg-white/90 text-primary">
-          {activity.walkthrough ? (
-            <ImagesIcon size={14} />
-          ) : (
-            <PlayIcon size={14} fill="currentColor" />
-          )}
-        </span>
-      </span>
-    </Link>
-  );
-}
-
-function ScreenshotPreview({
-  screenshot,
-}: {
-  screenshot: NonNullable<
-    NonNullable<FunctionReturnType<typeof api.scout.activity.preview>>["screenshot"]
-  >;
-}) {
-  const imageUrl = useAction(api.agentsApi.screenshots.imageUrl);
-  const [image, setImage] = useState<
-    { kind: "loading" } | { kind: "ready"; url: string } | { kind: "failed" }
-  >({ kind: "loading" });
-  useEffect(() => {
-    let cancelled = false;
-    void imageUrl({ screenshotId: screenshot.id }).then(
-      (result) => {
-        if (!cancelled) setImage(result ? { kind: "ready", url: result.url } : { kind: "failed" });
-      },
-      () => {
-        if (!cancelled) setImage({ kind: "failed" });
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [imageUrl, screenshot.id]);
-  if (image.kind === "failed")
-    return (
-      <span className="grid size-full place-items-center p-2 text-center text-xs text-muted-foreground">
-        Preview unavailable
-      </span>
-    );
-  if (image.kind === "loading") return <PreviewPlaceholder />;
-  return (
-    <img
-      src={image.url}
-      alt={screenshot.note}
-      loading="lazy"
-      decoding="async"
-      className="size-full object-contain"
-      onError={() => setImage({ kind: "failed" })}
-    />
   );
 }
 

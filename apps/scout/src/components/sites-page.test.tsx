@@ -14,7 +14,6 @@ import { getFunctionName, type FunctionArgs, type FunctionReference } from "conv
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
 import { api } from "../../convex/_generated/api";
 import { omitNullish } from "../../shared/omitNullish";
-import { Route as SitesRoute } from "../routes/sites.index";
 import { Route as SiteRoute } from "../routes/sites.$site";
 
 const remote = vi.hoisted(() => ({
@@ -22,13 +21,30 @@ const remote = vi.hoisted(() => ({
   execute: vi.fn(),
   manual: vi.fn(),
   query: vi.fn(),
+  admin: true,
+}));
+vi.mock("../lib/access", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/access")>()),
+  useViewerAccess: () => ({ kind: "account", accessKeys: remote.admin ? ["access_lab"] : [] }),
+}));
+vi.mock("./site-preview", () => ({ SitePreview: () => <div />, SitePreviewCapture: () => null }));
+vi.mock("./activity-feed", () => ({
+  SiteTaskList: ({ site }: { site: string }) => <p>Tasks for {site}</p>,
 }));
 vi.mock("convex/react", () => ({
-  usePaginatedQuery: () => ({ results: ["chessmerge.com", "papergames.io"], status: "Exhausted" }),
+  usePaginatedQuery: () => ({
+    results: [{ hostname: "chessmerge.com" }, { hostname: "papergames.io" }],
+    status: "Exhausted",
+  }),
   useQuery: (
     _ref: FunctionReference<"query">,
-    args: FunctionArgs<typeof api.scout.workspaces.list>,
+    args:
+      | FunctionArgs<typeof api.scout.workspaces.list>
+      | FunctionArgs<typeof api.scout.sites.get>
+      | "skip",
   ) => {
+    if (args === "skip") return undefined;
+    if ("site" in args) return args.site === "missing.example" ? null : { hostname: args.site };
     remote.query(args);
     return {
       exists: args.target.kind === "site" && args.target.site !== "missing.example",
@@ -63,6 +79,7 @@ vi.mock("convex/react", () => ({
 }));
 
 beforeEach(() => {
+  remote.admin = true;
   remote.read.mockResolvedValue({
     path: "/workspace/guide.md",
     text: "Site guide",
@@ -87,29 +104,17 @@ afterEach(() => {
 
 async function openPage(path: string) {
   const root = createRootRoute({ staticData: { access: "access_public" }, component: Outlet });
-  const sites = createRoute({
-    path: "/sites",
-    getParentRoute: () => root,
-    staticData: { access: "access_lab" },
-    component: Outlet,
-  });
-  const index = createRoute({
-    path: "/",
-    getParentRoute: () => sites,
-    staticData: { access: "access_lab" },
-    ...omitNullish({ component: SitesRoute.options.component }),
-  });
   const detail = createRoute({
-    path: "$site",
-    getParentRoute: () => sites,
-    staticData: { access: "access_lab" },
+    path: "/sites/$site",
+    getParentRoute: () => root,
+    staticData: { access: "access_public" },
     ...omitNullish({
       component: SiteRoute.options.component,
       validateSearch: SiteRoute.options.validateSearch,
     }),
   });
   const router = createRouter({
-    routeTree: root.addChildren([sites.addChildren([index, detail])]),
+    routeTree: root.addChildren([detail]),
     history: createMemoryHistory({ initialEntries: [path] }),
   });
   render(<RouterProvider router={router} />);
@@ -118,9 +123,10 @@ async function openPage(path: string) {
 }
 
 test("opens a site, previews and downloads files, and runs commands without a chat", async () => {
-  const router = await openPage("/sites");
+  const router = await openPage("/sites/chessmerge.com");
   const user = userEvent.setup();
-  await user.click(await screen.findByRole("link", { name: "chessmerge.com" }));
+  expect(await screen.findByText("Tasks for chessmerge.com")).toBeTruthy();
+  await user.click(await screen.findByRole("link", { name: "Workspace" }));
   await user.click(await screen.findByRole("button", { name: "guide.md" }));
   expect((await screen.findByLabelText("File contents")).textContent).toBe("Site guide");
   expect(remote.read).toHaveBeenCalledWith({
@@ -155,7 +161,7 @@ test.each(["missing.example", "invalid-host"])(
   "shows a missing site without a terminal: %s",
   async (site) => {
     await openPage(`/sites/${site}`);
-    expect(await screen.findByText("Site workspace not found.")).toBeTruthy();
+    expect(await screen.findByText("Site not found.")).toBeTruthy();
     expect(screen.queryByRole("textbox", { name: "Bash command" })).toBeNull();
     expect(remote.execute).not.toHaveBeenCalled();
     expect(remote.manual).not.toHaveBeenCalled();
@@ -163,7 +169,9 @@ test.each(["missing.example", "invalid-host"])(
 );
 
 test("switches sites from the sidebar and clears the previous file and terminal draft", async () => {
-  const router = await openPage("/sites/chessmerge.com?file=%2Fworkspace%2Fguide.md");
+  const router = await openPage(
+    "/sites/chessmerge.com?view=workspace&file=%2Fworkspace%2Fguide.md",
+  );
   const user = userEvent.setup();
   await screen.findByLabelText("File contents");
   expect(screen.getByRole("link", { name: "chessmerge.com" }).getAttribute("aria-current")).toBe(
@@ -190,11 +198,20 @@ test("opens the mobile site list and returns to the workspace after selecting a 
   await openPage("/sites/chessmerge.com");
   const user = userEvent.setup();
   await user.click(await screen.findByRole("button", { name: "Show sites" }));
-  expect(await screen.findByRole("button", { name: "Back to workspace" })).toBeTruthy();
+  expect(await screen.findByRole("button", { name: "Back to site" })).toBeTruthy();
   await user.click(screen.getByRole("link", { name: "papergames.io" }));
   await screen.findByRole("heading", { name: "papergames.io" });
   expect(await screen.findByRole("button", { name: "Show sites" })).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Show sites" }));
-  await user.click(screen.getByRole("button", { name: "Back to workspace" }));
+  await user.click(screen.getByRole("button", { name: "Back to site" }));
   expect(await screen.findByRole("button", { name: "Show sites" })).toBeTruthy();
+});
+
+test("members see tasks and cannot mount the workspace from its URL", async () => {
+  remote.admin = false;
+  await openPage("/sites/chessmerge.com?view=workspace");
+  expect(await screen.findByText("Tasks for chessmerge.com")).toBeTruthy();
+  expect(screen.queryByRole("link", { name: "Workspace" })).toBeNull();
+  expect(screen.queryByRole("textbox", { name: "Bash command" })).toBeNull();
+  expect(remote.query).not.toHaveBeenCalled();
 });

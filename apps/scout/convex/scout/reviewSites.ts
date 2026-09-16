@@ -3,6 +3,7 @@ import { internalMutation } from "../_generated/server";
 import { mutation } from "../functions";
 import { requireSessionPermission } from "../agentsApi/access";
 import { siteHostnameSchema } from "../../shared/site";
+import { syncChatSite } from "./siteListings";
 
 export const set = mutation({
   access: "access_review",
@@ -16,6 +17,7 @@ export const set = mutation({
     if (!chat || chat.userId !== ctx.viewer.userId || chat.purpose.kind !== "review")
       throw new Error("Review not found");
     await ctx.db.patch(chat._id, { primarySite: siteHostnameSchema.parse(args.site) });
+    await syncChatSite(ctx, chat);
     return null;
   },
 });
@@ -39,6 +41,7 @@ export const identify = internalMutation({
     const site = siteHostnameSchema.parse(args.site);
     if (chat.primarySite) return { primarySite: chat.primarySite };
     await ctx.db.patch(chat._id, { primarySite: site });
+    await syncChatSite(ctx, chat);
     return { primarySite: site };
   },
 });

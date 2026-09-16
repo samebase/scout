@@ -42,6 +42,7 @@ import { activeSkillsValidator, orderedSkills } from "./skills";
 import { playStepValidator } from "./play";
 import { chatPurposeValidator, chatVisibilityValidator, productKindValidator } from "./chatModel";
 import { startSession } from "../agentsApi/sessions";
+import { syncChatSite } from "./siteListings";
 
 const MAX_PROMPT_LENGTH = 16_000;
 const MAX_THREAD_TITLE_LENGTH = 80;
@@ -322,6 +323,7 @@ export const createThread = mutation({
       modelSelection: await defaultModelSelection(ctx, userId),
       purpose: args.purpose === "play" ? { kind: "play", step: null } : { kind: "general" },
       visibility: "private",
+      publicSiteEligible: false,
     });
     return created;
   },
@@ -355,6 +357,7 @@ export const startProductChat = mutation({
         createdAt: Date.now(),
         purpose,
         visibility: args.visibility,
+        publicSiteEligible: false,
       });
       return { threadId };
     }
@@ -374,6 +377,7 @@ export const startProductChat = mutation({
       runtime: { kind: "convex_agent" },
       purpose,
       visibility: args.visibility,
+      publicSiteEligible: false,
     });
     await enqueueTurn(ctx, {
       threadId,
@@ -399,6 +403,7 @@ export const setVisibility = mutation({
       throw new Error("Chat not found");
     if (args.visibility === "public") await requireRunnableThread(ctx, args.threadId);
     await ctx.db.patch(chat._id, { visibility: args.visibility });
+    await syncChatSite(ctx, chat);
     return null;
   },
 });

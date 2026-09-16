@@ -1,11 +1,13 @@
 import { Link } from "@tanstack/react-router";
 import { useMutation } from "convex/react";
-import { PencilIcon } from "lucide-react";
+import { ArrowLeftIcon, PencilIcon } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import { siteHostnameSchema } from "../../../shared/site";
 import { Button } from "#components/ui/button";
 import { Input } from "#components/ui/input";
+import { cn } from "#lib/utils";
+import { playTextLink } from "./ui";
 
 export function ReviewSite({
   threadId,
@@ -47,7 +49,7 @@ export function ReviewSite({
   if (editing)
     return (
       <form
-        className="flex flex-wrap items-center gap-2"
+        className="flex min-w-0 flex-1 flex-wrap items-center gap-2"
         onSubmit={(event) => {
           void save(event);
         }}
@@ -59,7 +61,7 @@ export function ReviewSite({
           placeholder="samebase.com"
           autoFocus
           disabled={saving}
-          className="w-64"
+          className="w-64 max-w-full"
         />
         <Button type="submit" disabled={saving}>
           Save
@@ -77,13 +79,24 @@ export function ReviewSite({
 
   return (
     <div className="flex min-w-0 items-center gap-1 text-sm">
-      {site && (
+      {site ? (
+        <Link
+          to="/sites/$site"
+          params={{ site }}
+          search={{ scope: visibility === "private" ? "mine" : "public", view: "tasks" }}
+          className={cn(playTextLink, "min-h-11 min-w-0 text-muted-foreground")}
+        >
+          <ArrowLeftIcon size={16} className="shrink-0" aria-hidden="true" />
+          <span className="truncate">{site} tasks</span>
+        </Link>
+      ) : (
         <Link
           to="/"
-          search={{ site, scope: visibility === "private" ? "mine" : "public" }}
-          className="truncate text-primary underline-offset-4 hover:underline"
+          search={{ scope: visibility === "private" ? "mine" : "public" }}
+          className={cn(playTextLink, "min-h-11 whitespace-nowrap text-muted-foreground")}
         >
-          {site}
+          <ArrowLeftIcon size={16} aria-hidden="true" />
+          All sites
         </Link>
       )}
       {canEdit && (

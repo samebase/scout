@@ -3,7 +3,6 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import {
   BotIcon,
   FocusIcon,
-  GlobeIcon,
   MessageSquareIcon,
   SettingsIcon,
   TelescopeIcon,
@@ -16,7 +15,10 @@ const navigationLinkClass =
 export function AppNavigation() {
   const viewer = useViewerAccess();
   const reviewPage = useRouterState({
-    select: (state) => state.location.pathname === "/" || state.location.pathname === "/review",
+    select: (state) =>
+      state.location.pathname === "/" ||
+      state.location.pathname === "/review" ||
+      state.location.pathname.startsWith("/sites/"),
   });
   const permissions = viewer?.kind === "account" ? viewer.accessKeys : [];
   return (
@@ -60,12 +62,6 @@ export function AppNavigation() {
             <Link to="/chats" className={navigationLinkClass}>
               <MessageSquareIcon aria-hidden="true" />
               <span>Lab</span>
-            </Link>
-          )}
-          {canAccess("access_lab", permissions) && (
-            <Link to="/sites" className={navigationLinkClass}>
-              <GlobeIcon aria-hidden="true" />
-              <span>Sites</span>
             </Link>
           )}
           {canAccess("access_members_manage", permissions) && (

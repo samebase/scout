@@ -598,14 +598,23 @@ function ConversationSession({
       addressChrome={
         <>
           <div className="mb-5 flex items-center justify-between gap-4 max-[760px]:mb-3">
-            <Link
-              to={kind === "review" ? "/" : productRoutes[kind]}
-              search={{}}
-              className={cn(playTextLink, "min-h-11 text-muted-foreground")}
-            >
-              <ArrowLeftIcon size={16} aria-hidden="true" />{" "}
-              <span className="whitespace-nowrap">New chat</span>
-            </Link>
+            {kind === "review" ? (
+              <ReviewSite
+                threadId={thread.threadId}
+                site={thread.primarySite}
+                canEdit={thread.canControl}
+                visibility={thread.visibility}
+              />
+            ) : (
+              <Link
+                to={productRoutes[kind]}
+                search={{}}
+                className={cn(playTextLink, "min-h-11 text-muted-foreground")}
+              >
+                <ArrowLeftIcon size={16} aria-hidden="true" />{" "}
+                <span className="whitespace-nowrap">New chat</span>
+              </Link>
+            )}
             <div className="flex items-center gap-5 max-[760px]:gap-4">
               {thread.isOwner && thread.purpose.kind !== "general" ? (
                 <select
@@ -661,16 +670,6 @@ function ConversationSession({
               {thread.title ?? `Chat with ${scout.displayName}`}
             </h1>
           </div>
-          {kind === "review" && (thread.primarySite || thread.canControl) && (
-            <div className="mb-4">
-              <ReviewSite
-                threadId={thread.threadId}
-                site={thread.primarySite}
-                canEdit={thread.canControl}
-                visibility={thread.visibility}
-              />
-            </div>
-          )}
           {kind === "review" && managedId && (
             <nav
               aria-label="Review views"

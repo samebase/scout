@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-16T10:24:11Z
+- **Last updated:** 2026-09-16T13:26:00Z
 
 ## Log
 
@@ -1291,7 +1291,7 @@ R2 bucket and follow the task's public/private access. Review and Agents share a
 explanations, Previous/Next, and Expand, while Chat, Replay, and Workspace remain available
 (`apps/scout/convex/agentsApi/walkthrough.ts`, `apps/scout/src/components/task-walkthrough.tsx`).
 
-### 2026-09-16 - working tree
+### 2026-09-16 - 817ddbf
 
 The landing page groups reviews beside a large site screenshot, keeps the composer, and
 expands older reviews inline. New walkthroughs save passed, failed, or untested checks with
@@ -1299,3 +1299,12 @@ explanations; interrupted tasks keep their status beside any saved results. Publ
 an approved request check, and the feed uses bounded pagination over existing site indexes.
 OpenAI HTTP requests now allow three retries for transient failures
 (`apps/scout/convex/scout/activity.ts`, `apps/scout/convex/agentsApi/client.ts`).
+
+### 2026-09-16 - working tree
+
+The homepage loads sites on scroll, with two tasks per card and independent task expansion.
+Site images and names open full-width task lists; each task links back to its site.
+The first research pass captures a public landing-page image in R2, reused in the directory and
+site sidebar. Research files remain in the admin Workspace tab. Convex maintains public and
+owner-specific site listings as tasks change
+(`apps/scout/convex/scout/sites.ts`, `apps/scout/convex/scout/sitePreviews.ts`).

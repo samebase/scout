@@ -1,4 +1,6 @@
 import { v } from "convex/values";
+import { internal } from "../_generated/api";
+import { ensureSite } from "../scout/siteListings";
 import { internalMutation, internalQuery, type QueryCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { query } from "../functions";
@@ -55,6 +57,10 @@ export const start = internalMutation({
     if (check?.state.kind !== "completed" || check.state.result.decision.kind !== "approved")
       throw new Error("Site research requires an approved request");
     if (await getResearch(ctx, session._id)) return null;
+    if (args.site) {
+      await ensureSite(ctx, args.site);
+      await ctx.scheduler.runAfter(0, internal.scout.sitePreviews.ensure, { site: args.site });
+    }
     return ctx.db.insert("agentsApiSiteResearch", {
       sessionId: session._id,
       site: args.site,

@@ -23,6 +23,7 @@ import {
 import { workspaceStorage, workspaceStorageConfigured } from "../workspaceStorage";
 import { chatPermission } from "./chatAccess";
 import { requireSessionPermission } from "../agentsApi/access";
+import { ensureSite } from "./siteListings";
 
 async function requireWorkspaceChat(
   ctx: QueryCtx | MutationCtx,
@@ -155,6 +156,8 @@ export const snapshot = internalMutation({
   }),
   handler: async (ctx, args) => {
     await requireWorkspaceOwner(ctx, args.target, args.userId);
+    if (args.target.kind === "site")
+      await ensureSite(ctx, siteHostnameSchema.parse(args.target.site));
     const workspace = await findWorkspace(ctx, args.target);
     if (workspace)
       return {

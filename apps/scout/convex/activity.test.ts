@@ -8,6 +8,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import schema from "./schema";
 import { ADMIN_EMAIL, insertTestAccount } from "./testing/accounts";
 import { omitNullish } from "../shared/omitNullish";
+import { syncChatSite } from "./scout/siteListings";
 
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => {
@@ -52,6 +53,7 @@ async function setup() {
         createdAt: Date.now(),
         purpose,
         visibility,
+        publicSiteEligible: purpose.kind === "review" && visibility === "public",
       }),
     );
     return { threadId: thread._id, chatId };
@@ -124,6 +126,7 @@ async function setup() {
         runtime: { kind: "agents_api", sessionId },
         purpose: { kind: "review" },
         visibility: "public",
+        publicSiteEligible: true,
         ...omitNullish({ primarySite: site }),
       });
       const checkId = await ctx.db.insert("agentsApiRequestChecks", {
@@ -232,6 +235,9 @@ test.each([
     await t.backend.run(async (ctx) => {
       if (state === null) await ctx.db.delete(hidden.checkId);
       else await ctx.db.patch(hidden.checkId, { state });
+      const chat = await ctx.db.get(hidden.chatId);
+      if (!chat) throw new Error("Missing chat");
+      await syncChatSite(ctx, chat);
       await ctx.db.patch(hidden.sessionId, {
         walkthrough: { summary: "private walkthrough", sections: [] },
       });
@@ -242,21 +248,12 @@ test.each([
         site: null,
         paginationOpts: { cursor: null, numItems: 1 },
       });
-      expect(first.page).toEqual([]);
-      expect(first.isDone).toBe(false);
+      expect(first.page.map((review) => review.threadId)).toEqual([previous.sessionId]);
+      expect(first.isDone).toBe(true);
       expect(JSON.stringify(first)).not.toMatch(/hidden-only|private walkthrough|private request/);
-      const next = await reader.query(api.scout.activity.list, {
-        scope: "public",
-        site: null,
-        paginationOpts: { cursor: first.continueCursor, numItems: 1 },
-      });
-      expect(next.page.map((review) => review.threadId)).toEqual([previous.sessionId]);
     }
     for (const reader of [t.backend, t.other]) {
       expect(await reader.query(api.scout.activity.get, { threadId: hidden.sessionId })).toBeNull();
-      expect(
-        await reader.query(api.scout.activity.preview, { threadId: hidden.sessionId }),
-      ).toBeNull();
       expect(
         await reader.query(api.scout.activity.messages, {
           threadId: hidden.sessionId,
@@ -285,12 +282,17 @@ test.each([
   },
 );
 
-test("bounded pages traverse a long run of hidden reviews without leaking site names or skipping older tasks", async () => {
+test("indexed pages skip a long run of hidden reviews without consuming the public cursor", async () => {
   const t = await setup();
   const oldest = await t.managedReview("oldest.test");
   for (let i = 0; i < 60; i++) {
     const hidden = await t.managedReview("hidden-only.test");
-    await t.backend.run((ctx) => ctx.db.patch(hidden.checkId, { state: { kind: "pending" } }));
+    await t.backend.run(async (ctx) => {
+      await ctx.db.patch(hidden.checkId, { state: { kind: "pending" } });
+      const chat = await ctx.db.get(hidden.chatId);
+      if (!chat) throw new Error("Missing chat");
+      await syncChatSite(ctx, chat);
+    });
   }
   const list = (cursor: string | null) =>
     t.backend.query(api.scout.activity.list, {
@@ -304,15 +306,9 @@ test("bounded pages traverse a long run of hidden reviews without leaking site n
       },
     });
   const first = await list(null);
-  const second = await list(first.continueCursor);
-  const third = await list(second.continueCursor);
-  expect(first).toMatchObject({ page: [], isDone: false, pageStatus: "SplitRequired" });
-  expect(second).toMatchObject({ page: [], isDone: false, pageStatus: "SplitRequired" });
-  expect(first.splitCursor).toEqual(expect.any(String));
-  expect(second.continueCursor).not.toBe(first.continueCursor);
-  expect(third.page.map((review) => review.threadId)).toEqual([oldest.sessionId]);
-  expect(third.isDone).toBe(true);
-  expect(JSON.stringify([first, second, third])).not.toContain("hidden-only.test");
+  expect(first.page.map((review) => review.threadId)).toEqual([oldest.sessionId]);
+  expect(first.isDone).toBe(true);
+  expect(JSON.stringify(first)).not.toContain("hidden-only.test");
 });
 
 test("native page bounds preserve end cursors, split metadata, and stricter caller budgets", async () => {
@@ -377,6 +373,11 @@ test("unassigned reviews and private tasks remain accessible only to their owner
     await ctx.db.patch(own.checkId, { state: { kind: "pending" } });
     await ctx.db.patch(other.chatId, { visibility: "private", userId: t.otherId });
     await ctx.db.patch(other.sessionId, { userId: t.otherId });
+    for (const id of [own.chatId, other.chatId]) {
+      const chat = await ctx.db.get(id);
+      if (!chat) throw new Error("Missing chat");
+      await syncChatSite(ctx, chat);
+    }
   });
   const mine = await t.member.query(api.scout.activity.list, {
     scope: "mine",
@@ -430,12 +431,6 @@ test("tasks return the stored walkthrough summary and all check results without 
   expect(JSON.stringify(feed)).not.toMatch(
     /private metadata|private initial request|Detailed walkthrough section/,
   );
-  expect(
-    await t.backend.query(api.scout.activity.preview, { threadId: reviewed.sessionId }),
-  ).toEqual({
-    screenshot: null,
-    walkthroughSummary: walkthrough.summary,
-  });
   await t.backend.run((ctx) =>
     ctx.db.patch(reviewed.sessionId, {
       walkthrough: { summary: "Existing report without structured checks", sections: [] },
@@ -928,6 +923,12 @@ test.each(["approved", "rejected"] as const)(
             },
           },
         });
+      const chat = await ctx.db
+        .query("scoutChats")
+        .withIndex("by_thread_id", (q) => q.eq("threadId", sessionId))
+        .unique();
+      if (!chat) throw new Error("Missing chat");
+      await syncChatSite(ctx, chat);
       await ctx.db.insert("agentsApiRequestChecks", {
         kind: "resume",
         sessionId,
