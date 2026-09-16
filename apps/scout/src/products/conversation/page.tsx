@@ -700,8 +700,8 @@ function ConversationSession({
         </>
       }
       main={
-        <div className="conversation-content flex h-full min-h-0 flex-col gap-3">
-          <header className="conversation-header shrink-0 space-y-3 px-3 py-2">
+        <div className="conversation-content flex h-full min-h-0 flex-col gap-2">
+          <header className="conversation-header shrink-0 space-y-3 px-3 pt-2">
             <div className="flex min-w-0 items-center gap-4">
               {kind === "play" && <ScoutPiece size="brand" className="max-[760px]:hidden" />}
               <h1
@@ -745,16 +745,6 @@ function ConversationSession({
                 {request.message}
               </p>
             )}
-            {thread.status === "failed" &&
-              managed?.state.kind !== "waiting" &&
-              managed?.state.kind !== "checking" && (
-                <p className={playNotice} role="alert">
-                  {managed?.requestCheckMessage ?? "Scout couldn't finish this turn."}
-                  {!managed?.requestCheckMessage && (managed ? managed.canSend : thread.canControl)
-                    ? " Send a message to try again."
-                    : ""}
-                </p>
-              )}
             {handoff && (
               <ChatHandoffNotice
                 handoff={handoff}
@@ -869,6 +859,22 @@ function ConversationSession({
                           </p>
                         </MessageScrollerItem>
                       ))}
+                      {thread.status === "failed" &&
+                        managed?.state.kind !== "waiting" &&
+                        managed?.state.kind !== "checking" && (
+                          <MessageScrollerItem
+                            messageId="turn-status"
+                            className="mr-auto max-w-[95%]"
+                          >
+                            <p className={cn(playNotice, "mb-0 px-3 py-2")} role="alert">
+                              {managed?.requestCheckMessage ?? "Scout couldn't finish this turn."}
+                              {!managed?.requestCheckMessage &&
+                              (managed ? managed.canSend : thread.canControl)
+                                ? " Send a message to try again."
+                                : ""}
+                            </p>
+                          </MessageScrollerItem>
+                        )}
                       {(thread.status === "running" || managed?.state.kind === "checking") && (
                         <p
                           role="status"

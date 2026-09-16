@@ -438,7 +438,7 @@
       var(--sidebar-layout-left-desktop-width) minmax(0, 1fr)
       var(--sidebar-layout-right-desktop-width);
     grid-template-rows: auto minmax(0, 1fr);
-    row-gap: 12px;
+    row-gap: 8px;
   }
 
   .play-session-layout [data-sidebar-layout-part="pane"][data-pane-side="main"],
