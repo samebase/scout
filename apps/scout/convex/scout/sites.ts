@@ -54,7 +54,7 @@ export const list = publicQuery({
     site: v.union(v.string(), v.null()),
     paginationOpts: paginationOptsValidator,
   },
-  returns: paginationResultValidator(siteRow),
+  returns: paginationResultValidator(siteRow.extend({ taskCount: v.number() })),
   handler: async (ctx, args) => {
     const hostname = args.site === null ? null : siteHostnameSchema.parse(args.site);
     const paginationOpts = {
@@ -72,7 +72,12 @@ export const list = publicQuery({
       const page = await rows.order("asc").paginate(paginationOpts);
       return {
         ...page,
-        page: await Promise.all(page.page.map((site) => presentSite(ctx, site, ctx.viewer))),
+        page: await Promise.all(
+          page.page.map(async (site) => ({
+            ...(await presentSite(ctx, site, ctx.viewer)),
+            taskCount: site.taskCount,
+          })),
+        ),
       };
     }
     if (args.scope === "mine") {
@@ -93,13 +98,13 @@ export const list = publicQuery({
       return {
         ...page,
         page: await Promise.all(
-          page.page.map(async ({ hostname }) => {
+          page.page.map(async ({ hostname, taskCount }) => {
             const site = await ctx.db
               .query("sites")
               .withIndex("by_hostname", (q) => q.eq("hostname", hostname))
               .unique();
             if (!site) throw new Error("Site listing has no site");
-            return presentSite(ctx, site, ctx.viewer);
+            return { ...(await presentSite(ctx, site, ctx.viewer)), taskCount };
           }),
         ),
       };
@@ -119,7 +124,12 @@ export const list = publicQuery({
     const page = await rows.order("desc").paginate(paginationOpts);
     return {
       ...page,
-      page: await Promise.all(page.page.map((site) => presentSite(ctx, site, ctx.viewer))),
+      page: await Promise.all(
+        page.page.map(async (site) => ({
+          ...(await presentSite(ctx, site, ctx.viewer)),
+          taskCount: site.publicTaskCount,
+        })),
+      ),
     };
   },
 });

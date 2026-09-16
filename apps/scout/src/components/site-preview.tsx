@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import { Button } from "./ui/button";
 
-type Site = FunctionReturnType<typeof api.scout.sites.list>["page"][number];
+type Site = NonNullable<FunctionReturnType<typeof api.scout.sites.get>>;
 type ImageUrl = NonNullable<FunctionReturnType<typeof api.scout.sitePreviews.imageUrl>>;
 const imageUrls = new Map<string, ImageUrl>();
 

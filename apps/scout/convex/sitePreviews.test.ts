@@ -73,15 +73,19 @@ async function setup() {
       purpose: { kind: "review" },
       visibility: "private",
       primarySite: "example.com",
+      siteCounted: true,
     });
     const siteId = await ctx.db.insert("sites", {
       hostname: "example.com",
       latestPublicTask: null,
+      taskCount: 1,
+      publicTaskCount: 0,
     });
     await ctx.db.insert("siteUserListings", {
       userId,
       hostname: "example.com",
       latestTask: { chatId, createdAt: 1 },
+      taskCount: 1,
     });
     return { userId, otherId, adminId, siteId, chatId };
   });
@@ -142,7 +146,7 @@ test("captures the unauthenticated root once, including overlapping requests, in
         paginationOpts: { cursor: null, numItems: 10 },
       })
     ).page,
-  ).toEqual([row]);
+  ).toEqual([{ ...row, taskCount: 1 }]);
   expect(
     (
       await t.admin.query(api.scout.sites.list, {
@@ -151,10 +155,11 @@ test("captures the unauthenticated root once, including overlapping requests, in
         paginationOpts: { cursor: null, numItems: 10 },
       })
     ).page,
-  ).toEqual([row]);
+  ).toEqual([{ ...row, taskCount: 1 }]);
   await t.backend.run((ctx) =>
     ctx.db.patch(t.siteId, {
       latestPublicTask: { chatId: t.chatId, createdAt: 1 },
+      publicTaskCount: 1,
     }),
   );
   expect(
@@ -165,7 +170,7 @@ test("captures the unauthenticated root once, including overlapping requests, in
         paginationOpts: { cursor: null, numItems: 10 },
       })
     ).page,
-  ).toEqual([row]);
+  ).toEqual([{ ...row, taskCount: 1 }]);
 });
 
 test("records failures, never automatically retries, and allows only an admin to retry", async () => {

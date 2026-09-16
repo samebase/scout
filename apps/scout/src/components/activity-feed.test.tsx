@@ -152,12 +152,14 @@ beforeEach(() => {
   remote.sites = [
     {
       hostname: "chessmerge.com",
+      taskCount: 7,
       preview: null,
       profile: { name: "Chess Merge", homepageUrl: "https://chessmerge.com", researchedAt: 1000 },
       research: { status: "completed", error: null },
     },
     {
       hostname: "papergames.io",
+      taskCount: 3,
       preview: null,
       profile: null,
       research: { status: "running", error: null },
@@ -233,10 +235,22 @@ test("requests six sites initially and two tasks for each site", async () => {
     const card = within(screen.getByRole("article", { name: site }));
     expect(card.getByRole("heading", { name: `${site} task 1`, level: 3 })).toBeTruthy();
     expect(card.getByRole("heading", { name: `${site} task 2`, level: 3 })).toBeTruthy();
+    expect(
+      card.getByRole("link", {
+        name: site === "chessmerge.com" ? "View all 7 tasks" : "View all 3 tasks",
+      }),
+    ).toBeTruthy();
   }
   expect(remote.loadSites).not.toHaveBeenCalled();
   expect(remote.loadChessTasks).not.toHaveBeenCalled();
   expect(remote.loadPaperTasks).not.toHaveBeenCalled();
+});
+
+test("a site with one task uses a singular link", async () => {
+  remote.sites[0].taskCount = 1;
+  await openFeed();
+  const card = within(screen.getByRole("article", { name: "chessmerge.com" }));
+  expect(card.getByRole("link", { name: "View 1 task" })).toBeTruthy();
 });
 
 test.each(["public", "mine"])(
@@ -245,7 +259,7 @@ test.each(["public", "mine"])(
     const router = await openFeed(`/?scope=${scope}`);
     const user = userEvent.setup();
     const card = within(screen.getByRole("article", { name: "chessmerge.com" }));
-    const link = card.getByRole("link", { name: "View all tasks" });
+    const link = card.getByRole("link", { name: "View all 7 tasks" });
     expect(link.getAttribute("href")).toBe(`/sites/chessmerge.com?scope=${scope}`);
     expect(card.queryByRole("button", { name: "Show more tasks" })).toBeNull();
     await user.click(link);
@@ -333,7 +347,13 @@ test.each([
 ] satisfies { research: Sites["results"][number]["research"]; label: string }[])(
   "pending site groups keep the hostname and show $label",
   async ({ research, label }) => {
-    remote.sites[1] = { hostname: "papergames.io", preview: null, profile: null, research };
+    remote.sites[1] = {
+      hostname: "papergames.io",
+      taskCount: 3,
+      preview: null,
+      profile: null,
+      research,
+    };
     await openFeed();
     const card = within(screen.getByRole("article", { name: "papergames.io" }));
     const heading = card.getByRole("heading", { name: "papergames.io", level: 2 });

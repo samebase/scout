@@ -2,7 +2,7 @@ import type { FunctionReturnType } from "convex/server";
 import type { api } from "../../convex/_generated/api";
 import { cn } from "#lib/utils";
 
-type Site = FunctionReturnType<typeof api.scout.sites.list>["page"][number];
+type Site = NonNullable<FunctionReturnType<typeof api.scout.sites.get>>;
 
 const researchLabels: Record<NonNullable<Site["research"]>["status"], string> = {
   running: "Researching…",

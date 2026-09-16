@@ -217,7 +217,7 @@ function SiteCard({
           className="w-full rounded-none border-t py-3 text-xs font-normal text-primary"
         >
           <Link to="/sites/$site" params={{ site: site.hostname }} search={{ scope }}>
-            View all tasks
+            {site.taskCount === 1 ? "View 1 task" : `View all ${site.taskCount} tasks`}
             <ArrowRightIcon aria-hidden="true" />
           </Link>
         </Button>

@@ -220,6 +220,8 @@ export default defineSchema({
     primarySite: v.optional(v.string()),
     // Absent until the manual site-directory backfill processes existing chats.
     publicSiteEligible: v.optional(v.boolean()),
+    // Absent until syncChatSite has included this chat in the directory counters.
+    siteCounted: v.optional(v.literal(true)),
   })
     .index("by_thread_id", ["threadId"])
     .index("by_user_id_and_created_at", ["userId", "createdAt"])
@@ -239,6 +241,8 @@ export default defineSchema({
   sites: defineTable({
     hostname: v.string(),
     latestPublicTask: v.union(siteTask, v.null()),
+    taskCount: v.number(),
+    publicTaskCount: v.number(),
     preview: v.optional(sitePreviewState),
     profile: v.optional(siteProfile),
     researchId: v.optional(v.id("agentsApiSiteResearch")),
@@ -256,6 +260,7 @@ export default defineSchema({
     userId: v.id("users"),
     hostname: v.string(),
     latestTask: siteTask,
+    taskCount: v.number(),
   })
     .index("by_user_id_and_hostname", ["userId", "hostname"])
     .index("by_user_id_and_latest_task_created_at_and_hostname", [
