@@ -125,3 +125,74 @@ expands three Score Four rows to five, and filters by site. Existing walkthrough
 links and screenshot expansion work. At a 390px viewport, the site image is 356px
 wide and the page has no horizontal overflow. Formatting, lint, all TypeScript
 projects, 964 tests, and the local app build passed.
+
+## Interruption audit — September 16
+
+Before the new batch, development contained 17 approved public managed review
+tasks: six finished, seven interrupted, and four stopped. This is a snapshot of
+task statuses, not a failure rate: tasks span different code versions, can contain
+several turns, and include manually stopped experiments. Rejected, unchecked, and
+legacy Convex-agent tasks were excluded.
+
+The seven interrupted tasks include three OpenAI API 404 failures, one 409 saying
+an MCP call no longer accepted results, and three internal/500 failures. Rezi
+failed both while consuming events and, after a manual continuation, while reading
+the remote session. Pika finished its original turn before an evidence-quality
+follow-up failed. These errors are at the OpenAI integration boundary; their
+messages alone do not establish a shared provider-side root cause.
+
+The current branch records these failures and keeps their status visible beside
+saved checks. It does not implement an interruption recovery fix.
+
+### Fresh batch
+
+Started through the actual `localhost:5173` composer at commit `bdb0d62`, using
+Conrad, Magda, and John respectively. No runtime or prompt changes were made during
+the batch; no follow-ups or retries were sent. These are account-free tasks with
+the normal request-check, research, and agent path.
+
+- `s57ce9rnhvm6y339eyffjwag6d8ehbn9`: repeat the exact rectangle/undo/redo prompt.
+- `s573eqxbmawv1y3m9wk2dwa7458ehyr7`: create a rectangle labeled “Launch”, change
+  its fill, export a PNG, and verify its label and color.
+- `s572gy87xrctsjawk9bgwmyvvd8ehnxe`: capture example.com in Pika, change its
+  background, export with a free option, and compare the export to the preview.
+
+The repeated drawing task finished without intervention, saved four screenshots
+and three passing checks, closed its browser, and sent a final answer. However,
+visual inspection of its saved screenshots contradicts its “empty canvas” caption:
+the starting canvas contains an existing rectangle. Drawing and Redo show two
+overlapping rectangles; Undo returns to the original one. The action checks have
+support, but the starting-state explanation is inaccurate. Finishing successfully
+does not by itself establish review quality.
+
+Pika failed before any browser or agent messages were created:
+`api.beta.agents.sessions.create` returned HTTP 503, “The service is temporarily
+unavailable” (`runtime.ts:127`). The initial request check had succeeded. There is
+no provider session ID, saved screenshot, or walkthrough. This is a fresh OpenAI
+API failure, not evidence that Pika or Firecrawl failed.
+
+The colored-rectangle export task reached a human handoff after about 13 minutes.
+Its seven saved captures include a blue rectangle labeled “Launch” in the export
+preview and the subsequent error: `Failed to execute 'showSaveFilePicker' on
+'Window': File picker already active.` The saved PNG itself was not verified.
+Scout distinguished the native-picker limitation from a confirmed product failure,
+but did not save a finished walkthrough before handing off. I stopped the task at
+that boundary to release its browser and Scout; its final Stopped status is a
+deliberate test cleanup, not an OpenAI interruption.
+
+This task also encountered HTTP 424 tool-transport errors early in the turn:
+`The managed agent session has no active turn`. These appear in the provider's
+function-call outputs. Scout retried and later continued through the drawing and
+export steps, so a task's final status alone also misses recoverable tool errors.
+
+Batch result: one autonomous completion with an inaccurate starting-state caption,
+one native-file-picker handoff with partial evidence, and one OpenAI session-create
+503 with no investigation. None needed an account or payment. This small batch
+demonstrates current interruptions and concrete report-quality gaps; it does not
+estimate their general frequency or show that a proposed recovery change works.
+
+The next experiment should isolate one of these observed problems and compare the
+same request before and after the change. Useful candidates are the session-create
+503 handling, verifying screenshot captions against the actual captured state, and
+supporting file export in the remote browser. Keep those outcomes separate from
+product check results; do not treat saved checks as evidence of a finished run.
