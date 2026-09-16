@@ -184,20 +184,26 @@ function SiteCard({
       aria-label={site.hostname}
       className="overflow-hidden rounded-lg border bg-card min-[760px]:grid min-[760px]:grid-cols-[minmax(260px,36%)_minmax(0,1fr)]"
     >
-      <header className="min-w-0 min-[760px]:border-r">
-        <Link
-          to="/sites/$site"
-          params={{ site: site.hostname }}
-          search={{ scope }}
-          className="group block outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-        >
-          <SitePreview site={site} />
-          <div className="p-4">
-            <SiteIdentity site={site} heading="h2" />
-          </div>
-        </Link>
-      </header>
+      <Link
+        to="/sites/$site"
+        params={{ site: site.hostname }}
+        search={{ scope }}
+        aria-label={`View ${site.profile?.name ?? site.hostname} details`}
+        className="block min-w-0 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring min-[760px]:border-r"
+      >
+        <SitePreview site={site} />
+      </Link>
       <div className="min-w-0 px-4 min-[760px]:px-5">
+        <header className="border-b py-3">
+          <Link
+            to="/sites/$site"
+            params={{ site: site.hostname }}
+            search={{ scope }}
+            className="group block rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <SiteIdentity site={site} heading="h2" />
+          </Link>
+        </header>
         {tasks.results.slice(0, 2).map((activity) => (
           <ReviewRow key={activity.threadId} activity={activity} />
         ))}

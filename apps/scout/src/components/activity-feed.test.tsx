@@ -309,7 +309,11 @@ test.each(["public", "mine"])("site heading links preserve the %s scope", async 
       name: site === "chessmerge.com" ? "Chess Merge chessmerge.com" : "papergames.io Researching…",
     });
     expect(link.getAttribute("href")).toBe(`/sites/${site}?scope=${scope}`);
-    expect(within(link).getByTestId("site-preview")).toBeTruthy();
+    const previewLink = card.getByRole("link", {
+      name: `View ${site === "chessmerge.com" ? "Chess Merge" : site} details`,
+    });
+    expect(previewLink.getAttribute("href")).toBe(link.getAttribute("href"));
+    expect(within(previewLink).getByTestId("site-preview")).toBeTruthy();
     expect(
       within(link).getByRole("heading", {
         name: site === "chessmerge.com" ? "Chess Merge" : site,
