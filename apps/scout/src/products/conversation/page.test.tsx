@@ -33,7 +33,6 @@ const remote = vi.hoisted(() => ({
   stopManaged: vi.fn(),
   resumeManaged: vi.fn(),
   setVisibility: vi.fn(),
-  setReviewSite: vi.fn(),
   signIn: vi.fn(),
   queryCalls: vi.fn(),
   listReplayPages: vi.fn(),
@@ -98,8 +97,6 @@ vi.mock("convex/react", () => ({
         return remote.sendMessage;
       case "scout/chats:stop":
         return remote.stop;
-      case "scout/reviewSites:set":
-        return remote.setReviewSite;
       case "scout/chats:setVisibility":
         return remote.setVisibility;
       case "agentsApi/sessions:send":
@@ -169,7 +166,6 @@ beforeEach(() => {
   remote.sendManaged.mockReset().mockResolvedValue(null);
   remote.stopManaged.mockReset().mockResolvedValue(null);
   remote.resumeManaged.mockReset().mockResolvedValue(null);
-  remote.setReviewSite.mockReset().mockResolvedValue(null);
   remote.setVisibility.mockReset().mockResolvedValue(null);
   remote.signIn.mockReset();
   remote.listReplayPages.mockReset().mockResolvedValue({ status: "unavailable" });
@@ -259,6 +255,9 @@ test("a completed managed Review opens its walkthrough and pairs replay with Cha
   });
   const router = await openPlay("/review?thread=game-thread");
   expect(await screen.findByRole("heading", { name: "Undo a move" })).toBeTruthy();
+  const walkthroughPane = screen.getByRole("region", { name: "Walkthrough with Scout" });
+  expect(within(walkthroughPane).getByRole("heading", { level: 1 })).toBeTruthy();
+  expect(within(walkthroughPane).getByRole("navigation", { name: "Review views" })).toBeTruthy();
   expect(screen.getByRole("link", { name: "Walkthrough" }).getAttribute("aria-current")).toBe(
     "page",
   );
@@ -704,44 +703,20 @@ test("a directly opened older task remains selected even before its list page lo
 });
 
 describe("Play invitation", () => {
-  test("a Review owner can correct its site and sees save errors", async () => {
+  test("a Review owner can follow its site without an editing control", async () => {
     remote.queries.set(
       "scout/activity:get",
       session({ purpose: { kind: "review" }, primarySite: "samebase.com" }),
     );
     const router = await openPlay("/review?thread=game-thread");
-    const user = userEvent.setup();
     expect(
       (await screen.findByRole("link", { name: "samebase.com tasks" })).getAttribute("href"),
     ).toBe("/sites/samebase.com?scope=mine&view=tasks");
     expect(screen.queryByRole("link", { name: "New chat" })).toBeNull();
     expect(screen.queryByRole("link", { name: "samebase.com" })).toBeNull();
-    await user.click(screen.getByRole("button", { name: "Edit review site" }));
-    const field = screen.getByRole("textbox", { name: "Review site" });
-    await user.clear(field);
-    await user.type(field, "www.samebase.com");
-    remote.setReviewSite.mockRejectedValueOnce(new Error("Offline"));
-    await user.click(screen.getByRole("button", { name: "Save" }));
-    expect(await screen.findByRole("alert")).toHaveProperty(
-      "textContent",
-      "Couldn't save the site. Try again.",
-    );
-    await user.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(screen.queryByRole("textbox", { name: "Review site" })).toBeNull());
-    expect(remote.setReviewSite).toHaveBeenLastCalledWith({
-      threadId: "game-thread",
-      site: "www.samebase.com",
-    });
-    act(() => {
-      remote.queries.set(
-        "scout/activity:get",
-        session({ purpose: { kind: "review" }, primarySite: "www.samebase.com" }),
-      );
-      remote.revision += 1;
-      remote.subscribers.forEach((notify) => notify());
-    });
-    await user.click(await screen.findByRole("link", { name: "www.samebase.com tasks" }));
-    await waitFor(() => expect(router.state.location.pathname).toBe("/sites/www.samebase.com"));
+    expect(screen.queryByRole("button", { name: "Edit review site" })).toBeNull();
+    await userEvent.setup().click(screen.getByRole("link", { name: "samebase.com tasks" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/sites/samebase.com"));
     expect(router.state.location.search).toEqual({ scope: "mine", view: "tasks" });
   });
 
@@ -773,7 +748,7 @@ describe("Play invitation", () => {
     const router = await openPlay("/review?thread=game-thread&view=chat");
     const parent = await screen.findByRole("link", { name: "All sites" });
     expect(parent.getAttribute("href")).toBe(`/?scope=${scope}`);
-    expect(screen.getByRole("button", { name: "Set review site" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Set review site" })).toBeNull();
     expect(screen.queryByRole("link", { name: "New chat" })).toBeNull();
     await userEvent.setup().click(parent);
     await waitFor(() => expect(router.state.location.pathname).toBe("/"));
