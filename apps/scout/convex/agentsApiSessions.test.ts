@@ -198,7 +198,7 @@ it("reports workflow errors when the owner has not stopped the session", async (
   expect(failed.cleanupJobId).toBeDefined();
 });
 
-it("updates a streamed item without duplicating history and remembers tool results", async () => {
+it("updates a saved item without duplicating history and remembers tool results", async () => {
   const { backend, owner, sessionId } = await setup();
   await backend.mutation(internal.agentsApi.sessions.update, {
     sessionId,
@@ -209,7 +209,6 @@ it("updates a streamed item without duplicating history and remembers tool resul
   await backend.mutation(internal.agentsApi.sessions.saveItems, {
     sessionId,
     items: [{ ...item, text: "Opened the site" }],
-    cursor: "message",
   });
   const history = await owner.query(api.agentsApi.sessions.listItems, {
     sessionId,
@@ -255,6 +254,7 @@ it("does not schedule cleanup over an idle session's next send", async () => {
 
 it("keeps the Scout reserved while stopping a handoff and schedules cleanup only once", async () => {
   const { backend, owner, sessionId } = await setup();
+  await backend.run((ctx) => ctx.db.patch(sessionId, { pendingCommand: undefined }));
   await backend.mutation(internal.agentsApi.sessions.update, {
     sessionId,
     providerId: "provider-session",

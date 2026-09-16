@@ -1,21 +1,16 @@
 /// <reference types="vite/client" />
-import workflowTest from "@convex-dev/workflow/test";
-import { tool } from "ai";
+import { createFunctionHandle } from "convex/server";
 import { convexTest } from "convex-test";
-import type {
-  AgentReasoningItem,
-  AgentSessionItem,
-  TokenUsage,
-} from "openai/resources/beta/agents/agents";
-import type { AgentSessionEvent } from "openai/resources/beta/agents/agents";
-import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
+import { tool } from "ai";
 import { z } from "zod";
-import { api, internal } from "../_generated/api";
+import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
+import { api, components, internal } from "../_generated/api";
 import schema from "../schema";
-import { createBrowserHarness } from "../scout/browserTools";
-import { closeFirecrawlBrowserSession } from "../scout/lib/firecrawl";
+import componentSchema from "../components/openaiAgents/schema";
 import { ADMIN_EMAIL, insertTestAccount } from "../testing/accounts";
 import { runtimeTools } from "./tools";
+import { createBrowserHarness } from "../scout/browserTools";
+import { closeFirecrawlBrowserSession } from "../scout/lib/firecrawl";
 
 vi.mock("./tools", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./tools")>()),
@@ -35,32 +30,42 @@ const modules = {
     ]),
   ),
 };
+const componentModules = import.meta.glob("../components/openaiAgents/**/*.ts");
+const runKey = "run-test";
+
+function gate() {
+  let release: () => void;
+  const promise = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { promise, release: () => release() };
+}
 
 beforeEach(() => {
   vi.useFakeTimers();
   vi.stubEnv("OPENAI_API_KEY", "test-openai-key");
+  vi.stubEnv("OPENAI_WEBHOOK_SECRET", "test-webhook-secret");
   vi.stubEnv("FIRECRAWL_API_KEY", "test-firecrawl-key");
-  vi.mocked(runtimeTools).mockReset();
   vi.mocked(closeFirecrawlBrowserSession).mockReset().mockResolvedValue({ success: true });
 });
 afterEach(() => {
   vi.useRealTimers();
-  vi.unstubAllEnvs();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 async function setup() {
   const backend = convexTest(schema, modules);
-  workflowTest.register(backend);
-  const seeded = await backend.run(async (ctx) => {
+  backend.registerComponent("openaiAgents", componentSchema, componentModules);
+  const { sessionId, userId } = await backend.run(async (ctx) => {
     const userId = await insertTestAccount(ctx, { email: ADMIN_EMAIL });
     const scoutId = await ctx.db.insert("scouts", {
       displayName: "Scout",
       websiteIdentity: { firstName: "Scout", lastName: "Test" },
       slug: "scout",
       status: "active",
-      agentMail: { inboxId: "scout", address: "scout@example.test" },
-      firecrawl: { profileName: "scout-profile" },
+      agentMail: { inboxId: "inbox", address: "scout@example.test" },
+      firecrawl: { profileName: "profile" },
     });
     const sessionId = await ctx.db.insert("agentsApiSessions", {
       userId,
@@ -69,89 +74,64 @@ async function setup() {
       title: "Test",
       model: "gpt-5.6-luna",
       active: true,
-      state: { kind: "running" },
+      state: { kind: "starting" },
       nextSequence: 0,
       usage: null,
-      providerId: "session-test",
-      browser: {
-        providerSessionId: "browser-test",
-        cdpUrl: "wss://browser.example.test/cdp",
-        interactiveLiveViewUrl: "https://browser.example.test/live",
-        liveViewUrl: null,
-        currentUrl: null,
-      },
+      browser: null,
+      // @ts-expect-error vWorkflowId validates strings; this fixture exercises callbacks without scheduling a command workflow.
+      workflowId: runKey,
     });
-    await ctx.db.insert("agentsApiBrowserSessions", {
-      agentsSessionId: sessionId,
-      sequence: 1,
-      providerSessionId: "browser-test",
-      viewport: { width: 1280, height: 800 },
-      lifecycle: { kind: "active", openedAtMs: Date.now() },
-      nextOperationSequence: 1,
-    });
-    return { userId, sessionId };
+    return { sessionId, userId };
   });
-  const items: AgentSessionItem[] = [];
-  const events: unknown[] = [];
-  const after: Array<string | null> = [];
+  const items: unknown[] = [];
+  const inputs: unknown[] = [];
+  const subagentTurns: unknown[] = [];
   const provider = {
+    status: vi.fn<() => "in_progress" | "requires_action" | "idle" | "failed">(() => "in_progress"),
+    calls: vi.fn<() => unknown[]>(() => []),
     items,
-    events,
-    after,
+    latest: { id: "turn-current", status: "completed", error: null, subagent_id: null },
+    subagentTurns,
     beforeRetrieve: vi.fn<() => Promise<void>>(async () => {}),
     beforeItems: vi.fn<() => Promise<void>>(async () => {}),
-    onInput: vi.fn<() => void>(),
-    stream: vi.fn(
-      () =>
-        new ReadableStream<Uint8Array>({
-          start(controller) {
-            controller.close();
-          },
-        }),
-    ),
-    usage: vi.fn<() => TokenUsage | null>(() => null),
-    status: vi.fn<() => "idle" | "requires_action">(() => "requires_action"),
-    turn: vi.fn(() => ({ id: "previous-turn", status: "cancelled" })),
-    call: {
-      type: "function_call",
-      call_id: "call-test",
-      turn_id: "turn-test",
-      name: "test_tool",
-      arguments: {},
-    },
+    beforeInput: vi.fn<() => Promise<void>>(async () => {}),
+    inputs,
   };
+  const remote = () => ({
+    id: "provider-session",
+    status: provider.status(),
+    error: null,
+    required_actions: provider.calls(),
+    usage: { input_tokens: 100, output_tokens: 20, input_tokens_details: { cached_tokens: 10 } },
+  });
   const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
     const request = new Request(input, init);
     const url = new URL(request.url);
-    if (request.method === "GET" && url.pathname.endsWith("/sessions/session-test")) {
+    if (request.method === "POST" && url.pathname.endsWith("/sessions"))
+      return Response.json(remote());
+    if (request.method === "GET" && url.pathname.endsWith("/sessions/provider-session")) {
       await provider.beforeRetrieve();
-      return Response.json({
-        status: provider.status(),
-        usage: provider.usage(),
-        required_actions: [provider.call],
-      });
+      return Response.json(remote());
     }
-    if (request.method === "GET" && url.pathname.endsWith("/sessions/session-test/turns")) {
-      return Response.json({ data: [provider.turn()], has_more: false });
-    }
-    if (request.method === "GET" && url.pathname.endsWith("/sessions/session-test/items")) {
+    if (request.method === "GET" && url.pathname.endsWith("/items")) {
       await provider.beforeItems();
       const cursor = url.searchParams.get("after");
-      provider.after.push(cursor);
-      const start =
-        cursor === null ? 0 : provider.items.findIndex((item) => item.id === cursor) + 1;
-      const data = provider.items.slice(start, start + 50);
-      return Response.json({ data, has_more: start + data.length < provider.items.length });
-    }
-    if (request.method === "GET" && url.pathname.endsWith("/sessions/session-test/events")) {
-      return new Response(provider.stream(), {
-        headers: { "Content-Type": "text/event-stream" },
+      const index = cursor
+        ? provider.items.findIndex(
+            (value) => z.object({ id: z.string() }).parse(value).id === cursor,
+          ) + 1
+        : 0;
+      return Response.json({
+        data: provider.items.slice(index, index + 50),
+        has_more: index + 50 < provider.items.length,
       });
     }
-    if (request.method === "POST" && url.pathname.endsWith("/sessions/session-test/events")) {
+    if (request.method === "GET" && url.pathname.endsWith("/turns"))
+      return Response.json({ data: [...provider.subagentTurns, provider.latest], has_more: false });
+    if (request.method === "POST" && url.pathname.endsWith("/events")) {
       const body: unknown = await request.json();
-      provider.events.push(body);
-      provider.onInput();
+      provider.inputs.push(body);
+      await provider.beforeInput();
       return new Response(null, { status: 204 });
     }
     throw new Error(`Unexpected provider request: ${request.method} ${url.pathname}`);
@@ -159,655 +139,369 @@ async function setup() {
   vi.stubGlobal("fetch", fetchMock);
   const execute = vi.fn(async () => ({ done: true }));
   const dispose = vi.fn(async () => {});
-  vi.mocked(runtimeTools).mockResolvedValue({
-    tools: { test_tool: tool({ inputSchema: z.object({}), execute }) },
-    browser: createBrowserHarness(),
-    dispose,
+  vi.mocked(runtimeTools)
+    .mockReset()
+    .mockResolvedValue({
+      tools: { test_tool: tool({ inputSchema: z.object({}), execute }) },
+      browser: createBrowserHarness(),
+      dispose,
+    });
+  const onEvent = await backend.run(() =>
+    createFunctionHandle(internal.agentsApi.sessions.onEvent),
+  );
+  await backend.action(components.openaiAgents.runtime.create, {
+    sessionKey: sessionId,
+    runKey,
+    onEvent,
+    model: "gpt-5.6-luna",
+    instructions: "Test",
+    toolsJson: "[]",
   });
-  const owner = backend.withIdentity({ subject: seeded.userId });
-  const advance = () =>
-    backend.action(internal.agentsApi.runtime.advance, { sessionId: seeded.sessionId });
-  const session = () =>
-    backend.query(internal.agentsApi.sessions.cleanupResources, { sessionId: seeded.sessionId });
-  const history = () =>
-    backend.run(async (ctx) =>
-      ctx.db
-        .query("agentsApiItems")
-        .withIndex("by_session_id_and_sequence", (q) => q.eq("sessionId", seeded.sessionId))
-        .take(100),
-    );
-  const savedCall = () =>
-    backend.run(async (ctx) =>
-      ctx.db
-        .query("agentsApiCalls")
-        .withIndex("by_session_id_and_call_id", (q) =>
-          q.eq("sessionId", seeded.sessionId).eq("callId", provider.call.call_id),
-        )
-        .unique(),
-    );
+  const owner = backend.withIdentity({ subject: userId });
+  const flush = () => backend.finishAllScheduledFunctions(() => vi.runAllTimers(), 100);
+  const refresh = async () => {
+    await backend.mutation(components.openaiAgents.state.refresh, { sessionKey: sessionId });
+    await flush();
+  };
+  const session = () => backend.query(internal.agentsApi.sessions.cleanupResources, { sessionId });
+  const history = async () =>
+    (
+      await owner.query(api.agentsApi.sessions.listItems, {
+        sessionId,
+        paginationOpts: { cursor: null, numItems: 100 },
+      })
+    ).page;
   return {
     backend,
     owner,
-    ...seeded,
+    sessionId,
     provider,
     execute,
     dispose,
-    advance,
+    fetchMock,
+    flush,
+    refresh,
     session,
-    history,
-    savedCall,
+    items: history,
   };
 }
 
-function reasoning(id: string, status: "in_progress" | "completed"): AgentReasoningItem {
-  return { id, type: "reasoning", status, summary: [], turn_id: "turn-test" };
+function message(id: string, text: string, status = "completed") {
+  return {
+    id,
+    type: "message",
+    role: "assistant",
+    content: [{ type: "output_text", text }],
+    status,
+  };
 }
 
-it("executes review site assignment through the real tools without connecting to the browser", async () => {
+const call = {
+  type: "function_call",
+  call_id: "call-1",
+  turn_id: "turn-current",
+  name: "test_tool",
+  arguments: {},
+};
+
+it("returns after input submission and saves completed messages without opening an event stream", async () => {
   const t = await setup();
-  await t.backend.run(async (ctx) => {
-    const session = await ctx.db.get(t.sessionId);
-    if (!session) throw new Error("Session missing");
-    await ctx.db.insert("scoutChats", {
-      threadId: t.sessionId,
-      runtime: { kind: "agents_api", sessionId: t.sessionId },
-      userId: t.userId,
-      scoutId: session.scoutId,
-      createdAt: Date.now(),
-      purpose: { kind: "review" },
-      visibility: "private",
-    });
+  t.provider.items.push(message("partial", "Half", "in_progress"), message("done", "Complete"));
+  await t.backend.action(components.openaiAgents.runtime.send, {
+    sessionKey: t.sessionId,
+    runKey,
+    message: "Start",
   });
-  const original = await vi.importActual<typeof import("./tools")>("./tools");
-  vi.mocked(runtimeTools).mockImplementation(original.runtimeTools);
-  t.provider.call.name = "set_review_site";
-  t.provider.call.arguments = { site: "samebase.com" };
-  expect(await t.advance()).toBe(true);
-  expect(await t.savedCall()).toMatchObject({
-    result: { kind: "success", output: JSON.stringify({ primarySite: "samebase.com" }) },
-  });
+  await t.flush();
+  expect((await t.items()).map((item) => item.text)).toEqual(["Complete"]);
+  t.provider.items[0] = message("partial", "Finished");
+  await t.refresh();
+  expect((await t.items()).map((item) => item.text)).toEqual(["Complete", "Finished"]);
   expect(
-    await t.backend.run(async (ctx) =>
-      ctx.db
-        .query("scoutChats")
-        .withIndex("by_thread_id", (q) => q.eq("threadId", t.sessionId))
-        .unique(),
+    t.fetchMock.mock.calls.some(
+      ([input, init]) =>
+        new Request(input, init).method === "GET" &&
+        new Request(input, init).url.endsWith("/events"),
     ),
-  ).toMatchObject({ primarySite: "samebase.com" });
+  ).toBe(false);
 });
 
-it("subscribes before submitting a tool result and persists live output before history or completion", async () => {
-  const { provider, advance, history, session } = await setup();
-  vi.useRealTimers();
-  let signalInput: () => void = () => {};
-  const inputSent = new Promise<void>((resolve) => {
-    signalInput = resolve;
-  });
-  const live = new TransformStream<Uint8Array, Uint8Array>();
-  const writer = live.writable.getWriter();
-  const emit = (event: AgentSessionEvent) =>
-    writer.write(new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`));
-  provider.stream.mockReturnValue(live.readable);
-  provider.onInput.mockImplementation(() => {
-    expect(provider.stream).toHaveBeenCalledOnce();
-    signalInput();
-  });
-  const running = advance();
-  await inputSent;
-  const eventBase = {
-    event_id: "event",
-    session_id: "session-test",
-    turn_id: "turn-test",
-    output_index: 0,
-  };
-  await emit({
-    ...eventBase,
-    item_id: "assistant",
-    content_index: 0,
-    type: "agent.session.turn.output_text.delta",
-    delta: "I am checking the page.",
-  });
-  await emit({
-    ...eventBase,
-    item_id: "reasoning",
-    summary_index: 0,
-    type: "agent.session.turn.reasoning_summary_text.delta",
-    delta: "Checking what the controls do.",
-  });
-  await vi.waitFor(
-    async () => {
-      expect((await history()).map(({ kind, text }) => ({ kind, text }))).toEqual([
-        { kind: "assistant", text: "I am checking the page." },
-        { kind: "reasoning", text: "Checking what the controls do." },
-      ]);
-    },
-    { timeout: 3_000 },
-  );
-  expect((await session()).active).toBe(true);
-  expect(provider.items).toEqual([]);
-  await emit({
-    ...eventBase,
-    item_id: "assistant",
-    content_index: 0,
-    type: "agent.session.turn.output_text.done",
-    text: "I checked the page.",
-  });
-  await writer.close();
-  await expect(running).resolves.toBe(true);
-  expect((await history())[0].text).toBe("I checked the page.");
-});
-
-it("syncs history and usage produced by cancellation while preserving the stopped state", async () => {
-  const { backend, provider, owner, sessionId, history, session } = await setup();
-  await owner.mutation(api.agentsApi.sessions.stop, { sessionId });
-  provider.onInput.mockImplementation(() => {
-    provider.items.push({
-      ...reasoning("cancelled-reason", "completed"),
-      summary: [{ type: "summary_text", text: "Checked the page before cancellation." }],
-    });
-    provider.usage.mockReturnValue({
-      input_tokens: 100,
-      output_tokens: 20,
-      total_tokens: 120,
-      input_tokens_details: { cached_tokens: 0 },
-      output_tokens_details: { reasoning_tokens: 10 },
-    });
-  });
-  await backend.action(internal.agentsApi.runtime.cleanup, { sessionId });
-  expect(await session()).toMatchObject({
-    active: false,
-    state: { kind: "stopped" },
-    usage: { inputTokens: 100, outputTokens: 20 },
-  });
-  expect((await history())[0].text).toBe("Checked the page before cancellation.");
-});
-
-it("cancels and releases the browser even when recovering history fails", async () => {
-  const { backend, provider, owner, sessionId, session } = await setup();
-  await owner.mutation(api.agentsApi.sessions.stop, { sessionId });
-  provider.beforeItems.mockRejectedValue(new Error("History unavailable"));
-  const cleanup = expect(
-    backend.action(internal.agentsApi.runtime.cleanup, { sessionId }),
-  ).rejects.toThrow();
-  await vi.advanceTimersByTimeAsync(10_000);
-  await cleanup;
-  expect(provider.events).toContainEqual({ events: [{ type: "agent.session.input.cancel" }] });
-  expect(await session()).toMatchObject({
-    active: false,
-    browser: null,
-    state: { kind: "stopped" },
-  });
-});
-
-it("restores chronological order when earlier history arrives after a later streamed item", async () => {
-  const { backend, provider, owner, sessionId, history } = await setup();
-  await backend.mutation(internal.agentsApi.sessions.saveItems, {
-    sessionId,
-    items: [
-      {
-        providerItemId: "later",
-        kind: "reasoning",
-        text: "streamed",
-        details: "{}",
-        complete: false,
-      },
-    ],
-  });
-  provider.items.push(reasoning("earlier", "completed"), reasoning("later", "completed"));
-  await backend.mutation(internal.agentsApi.sessions.update, {
-    sessionId,
-    active: false,
-    state: { kind: "stopped" },
-  });
-  await owner.action(api.agentsApi.runtime.refresh, { sessionId });
-  await backend.mutation(internal.agentsApi.sessions.saveItems, {
-    sessionId,
-    items: [
-      {
-        providerItemId: "later",
-        kind: "reasoning",
-        text: "stale delta",
-        details: "{}",
-        complete: false,
-      },
-    ],
-  });
-  expect(
-    (await history()).map((item) => ({
-      id: item.providerItemId,
-      sequence: item.sequence,
-      text: item.text,
-    })),
-  ).toEqual([
-    { id: "earlier", sequence: 0, text: "" },
-    { id: "later", sequence: 1, text: "" },
-  ]);
-});
-
-it("places delayed items after the saved cursor during a running turn", async () => {
-  const { backend, provider, sessionId, history, advance } = await setup();
-  const saved = (providerItemId: string) => ({
-    providerItemId,
-    kind: "reasoning",
-    text: "",
-    details: "{}",
-    complete: false,
-  });
-  await backend.mutation(internal.agentsApi.sessions.saveItems, {
-    sessionId,
-    cursor: "head",
-    items: [saved("head"), saved("later")],
-  });
-  provider.items.push(
-    reasoning("head", "completed"),
-    reasoning("earlier", "completed"),
-    reasoning("later", "completed"),
-  );
-  await advance();
-  expect((await history()).map((item) => item.providerItemId)).toEqual([
-    "head",
-    "earlier",
-    "later",
-  ]);
-});
-
-it("replaces cumulative usage snapshots and prices cached input without counting reasoning twice", async () => {
-  const { provider, advance, session, owner, sessionId } = await setup();
-  provider.usage.mockReturnValue({
-    input_tokens: 100_000,
-    output_tokens: 1_000,
-    total_tokens: 101_000,
-    input_tokens_details: { cached_tokens: 90_000 },
-    output_tokens_details: { reasoning_tokens: 800 },
-  });
-  await advance();
-  await advance();
-  expect((await session()).usage).toEqual({
-    inputTokens: 100_000,
-    outputTokens: 1_000,
-    cachedInputTokens: 90_000,
-  });
-  expect(
-    (await owner.query(api.agentsApi.sessions.get, { sessionId })).cost.modelEstimateUsd,
-  ).toBeCloseTo(0.005);
-  provider.usage.mockReturnValue({
-    input_tokens: 200_000,
-    output_tokens: 2_000,
-    total_tokens: 202_000,
-    input_tokens_details: { cached_tokens: 190_000 },
-    output_tokens_details: { reasoning_tokens: 1_500 },
-  });
-  await advance();
-  expect((await session()).usage?.inputTokens).toBe(200_000);
-  expect(
-    (await owner.query(api.agentsApi.sessions.get, { sessionId })).cost.modelEstimateUsd,
-  ).toBeCloseTo(0.0082);
-});
-
-it("cleans up when Stop wins the handoff transition race", async () => {
-  const { backend, owner, sessionId, provider, advance, session } = await setup();
-  provider.call.name = "request_browser_handoff";
-  provider.call.arguments = { message: "Complete the CAPTCHA" };
-  provider.beforeRetrieve.mockImplementationOnce(async () => {
-    await owner.mutation(api.agentsApi.sessions.stop, { sessionId });
-  });
-  await expect(advance()).resolves.toBe(true);
-  expect(await session()).toMatchObject({ state: { kind: "stopped" }, active: true });
-  await expect(advance()).resolves.toBe(false);
-  await backend.finishAllScheduledFunctions(vi.runAllTimers);
-  expect(await session()).toMatchObject({
-    state: { kind: "stopped" },
-    active: false,
-    browser: null,
-  });
-  expect(closeFirecrawlBrowserSession).toHaveBeenCalledOnce();
-  expect(provider.events).toContainEqual({ events: [{ type: "agent.session.input.cancel" }] });
-});
-
-it("waits for the follow-up turn instead of finishing against the previous cancelled turn", async () => {
-  const { backend, sessionId, provider, advance, session } = await setup();
-  provider.status.mockReturnValue("idle");
-  await backend.action(internal.agentsApi.runtime.begin, {
-    sessionId,
-    command: { kind: "send", message: "Next task" },
-  });
-  expect((await session()).previousTurnId).toBe("previous-turn");
-  await expect(advance()).resolves.toBe(true);
-  expect(await session()).toMatchObject({ state: { kind: "running" }, active: true });
-  expect(closeFirecrawlBrowserSession).not.toHaveBeenCalled();
-  provider.status.mockReturnValue("requires_action");
-  provider.call.turn_id = "previous-turn";
-  await expect(advance()).resolves.toBe(true);
-  expect(runtimeTools).not.toHaveBeenCalled();
-  provider.status.mockReturnValue("idle");
-  provider.turn.mockReturnValue({ id: "new-turn", status: "completed" });
-  await expect(advance()).resolves.toBe(false);
-  expect(await session()).toMatchObject({ state: { kind: "idle" }, active: false });
-  expect(closeFirecrawlBrowserSession).toHaveBeenCalledOnce();
-});
-
-it("refreshes ended-session history and cost without restarting the agent or changing the failure", async () => {
-  const { backend, owner, sessionId, provider, execute, session } = await setup();
-  await expect(owner.action(api.agentsApi.runtime.refresh, { sessionId })).rejects.toThrow(
-    "already being refreshed",
-  );
-  await backend.run(async (ctx) => {
-    await ctx.db.patch(sessionId, {
-      active: false,
-      state: { kind: "failed", error: "Browser interrupted" },
-    });
-  });
-  provider.usage.mockReturnValue({
-    input_tokens: 100,
-    output_tokens: 20,
-    total_tokens: 120,
-    input_tokens_details: { cached_tokens: 80 },
-    output_tokens_details: { reasoning_tokens: 10 },
-  });
-  provider.items.push(reasoning("completed-item", "completed"));
-  await owner.action(api.agentsApi.runtime.refresh, { sessionId });
-  expect(await session()).toMatchObject({
-    active: false,
-    state: { kind: "failed", error: "Browser interrupted" },
-    usage: { inputTokens: 100, cachedInputTokens: 80, outputTokens: 20 },
-  });
-  expect(provider.events).toEqual([]);
-  expect(execute).not.toHaveBeenCalled();
-  const adminId = await backend.run((ctx) => insertTestAccount(ctx, { email: ADMIN_EMAIL }));
-  await backend
-    .withIdentity({ subject: adminId })
-    .action(api.agentsApi.runtime.refresh, { sessionId });
-  const strangerId = await backend.run((ctx) =>
-    insertTestAccount(ctx, { email: "member@example.com" }),
-  );
-  const stranger = backend.withIdentity({ subject: strangerId });
-  await expect(stranger.action(api.agentsApi.runtime.refresh, { sessionId })).rejects.toThrow(
-    "Not authorized",
-  );
-});
-
-it.each([
-  { race: "the same workflow reactivates", priorWorkflow: true, newWorkflow: false, active: true },
-  { race: "a follow-up is active", priorWorkflow: true, newWorkflow: true, active: true },
-  { race: "a follow-up has ended", priorWorkflow: true, newWorkflow: true, active: false },
-  { race: "the first follow-up has ended", priorWorkflow: false, newWorkflow: true, active: false },
-])(
-  "discards late Refresh writes when $race during pagination",
-  async ({ priorWorkflow, newWorkflow, active }) => {
-    const { backend, owner, sessionId, provider, session, history, execute } = await setup();
-    await backend.mutation(internal.agentsApi.sessions.update, {
-      sessionId,
-      active: false,
-      state: { kind: "idle" },
-    });
-    if (priorWorkflow) {
-      await owner.mutation(api.agentsApi.sessions.send, { sessionId, message: "Previous task" });
-      await backend.mutation(internal.agentsApi.sessions.update, { sessionId, active: false });
-    }
-    const capturedWorkflowId = (await session()).workflowId;
-    const currentUsage = { inputTokens: 200, cachedInputTokens: 160, outputTokens: 40 };
-    const currentItem = {
-      providerItemId: "item-50",
-      kind: "reasoning",
-      text: "Current transcript",
-      details: "Current provider details",
-    };
-    provider.usage.mockReturnValue({
-      input_tokens: 100,
-      output_tokens: 20,
-      total_tokens: 120,
-      input_tokens_details: { cached_tokens: 80 },
-      output_tokens_details: { reasoning_tokens: 10 },
-    });
-    provider.items.push(
-      ...Array.from({ length: 52 }, (_, index) => reasoning(`item-${index}`, "completed")),
-    );
-    provider.beforeItems.mockImplementationOnce(async () => {});
-    provider.beforeItems.mockImplementationOnce(async () => {
-      expect(await history()).toHaveLength(50);
-      if (newWorkflow)
-        await owner.mutation(api.agentsApi.sessions.send, { sessionId, message: "Next task" });
-      await backend.mutation(internal.agentsApi.sessions.update, {
-        sessionId,
-        active,
-        state: active ? { kind: "running" } : { kind: "idle" },
-        usage: currentUsage,
-      });
-      await backend.mutation(internal.agentsApi.sessions.saveItems, {
-        sessionId,
-        items: [currentItem, { ...currentItem, providerItemId: "new-item" }],
-        cursor: "new-item",
-      });
-    });
-
-    await owner.action(api.agentsApi.runtime.refresh, { sessionId });
-
-    const currentSession = await session();
-    expect(currentSession).toMatchObject({
-      active,
-      state: { kind: active ? "running" : "idle" },
-      usage: currentUsage,
-      itemCursor: "new-item",
-      nextSequence: 52,
-    });
-    expect(currentSession.workflowId === capturedWorkflowId).toBe(!newWorkflow);
-    const transcript = await history();
-    expect(transcript).toHaveLength(52);
-    expect(transcript.find((item) => item.providerItemId === "item-50")).toMatchObject(currentItem);
-    expect(transcript.some((item) => item.providerItemId === "item-51")).toBe(false);
-    expect(provider.after).toEqual([null, "item-49"]);
-    expect(provider.events).toEqual([]);
-    expect(execute).not.toHaveBeenCalled();
-  },
-);
-
-it("pauses only after the handoff transition actually enters waiting", async () => {
-  const { provider, advance, session } = await setup();
-  provider.call.name = "request_browser_handoff";
-  provider.call.arguments = { message: "Complete the CAPTCHA" };
-  await expect(advance()).resolves.toBe(false);
-  expect(await session()).toMatchObject({
-    state: { kind: "waiting", callId: "call-test" },
-    active: true,
-  });
-  expect(closeFirecrawlBrowserSession).not.toHaveBeenCalled();
-});
-
-it("traverses pages past unfinished items, dispatches the tool, and later advances the durable cursor", async () => {
-  const { provider, advance, session, history, execute } = await setup();
-  provider.items.push(
-    ...Array.from({ length: 51 }, (_, index) =>
-      reasoning(`item-${index}`, index === 0 ? "in_progress" : "completed"),
-    ),
-  );
-  await expect(advance()).resolves.toBe(true);
-  expect(provider.after).toEqual([null, "item-49", null, "item-49"]);
-  expect((await session()).itemCursor).toBeUndefined();
-  expect((await history()).map((item) => item.providerItemId)).toEqual(
-    provider.items.map((item) => item.id),
-  );
-  expect(execute).toHaveBeenCalledOnce();
-  provider.items[0] = reasoning("item-0", "completed");
-  await advance();
-  expect((await session()).itemCursor).toBe("item-50");
-  expect(await history()).toHaveLength(51);
-  expect(execute).toHaveBeenCalledOnce();
-});
-
-it("marks failed tool items complete and advances the cursor up to the next unfinished item", async () => {
-  const { provider, advance, session, history } = await setup();
-  provider.items.push(
-    reasoning("head", "completed"),
-    {
-      id: "failed-call",
-      type: "function_call",
-      name: "set_review_site",
-      call_id: "cancelled-call",
-      arguments: { site: "example.test" },
-      status: "failed",
-      turn_id: "previous-turn",
-    },
+it("advances past failed tool items while revisiting the next unfinished item", async () => {
+  const t = await setup();
+  t.provider.items.push(
+    message("head", "Before tool"),
+    { id: "failed-call", type: "function_call", name: "test_tool", status: "failed" },
     {
       id: "failed-output",
       type: "function_call_output",
-      call_id: "cancelled-call",
-      output: null,
       error: "Tool call was cancelled.",
       status: "failed",
-      turn_id: "previous-turn",
     },
-    reasoning("tail", "completed"),
-    reasoning("still-running", "in_progress"),
+    message("tail", "After tool"),
+    message("unfinished", "Partial", "in_progress"),
   );
-
-  await advance();
+  await t.refresh();
   expect(
-    (await history()).map(({ providerItemId, complete }) => ({ providerItemId, complete })),
+    (await t.items()).map(({ providerItemId, complete }) => ({ providerItemId, complete })),
   ).toEqual([
-    { providerItemId: "head", complete: true },
-    { providerItemId: "failed-call", complete: true },
-    { providerItemId: "failed-output", complete: true },
     { providerItemId: "tail", complete: true },
-    { providerItemId: "still-running", complete: false },
+    { providerItemId: "failed-output", complete: true },
+    { providerItemId: "failed-call", complete: true },
+    { providerItemId: "head", complete: true },
   ]);
-  expect((await session()).itemCursor).toBe("tail");
-
-  provider.after.length = 0;
-  provider.items[4] = reasoning("still-running", "completed");
-  await advance();
-  expect(provider.after).toEqual(["tail", "tail"]);
-  expect((await session()).itemCursor).toBe("still-running");
+  expect(
+    await t.backend.query(components.openaiAgents.state.get, { sessionKey: t.sessionId }),
+  ).toMatchObject({ itemCursor: "tail" });
+  t.provider.items[4] = message("unfinished", "Finished");
+  await t.refresh();
+  expect(
+    await t.backend.query(components.openaiAgents.state.get, { sessionKey: t.sessionId }),
+  ).toMatchObject({ itemCursor: "unfinished" });
+  expect((await t.items())[0]?.text).toBe("Finished");
 });
 
-it("keeps delayed assistant preambles ahead of tool calls by waiting for the provider transcript", async () => {
-  const { provider, advance, history, savedCall } = await setup();
-  await advance();
-  expect(await history()).toEqual([]);
-  expect((await savedCall())?.result).toEqual({ kind: "success", output: '{"done":true}' });
-  provider.items.push(
-    {
-      id: "preamble",
-      type: "message",
-      role: "assistant",
-      phase: "commentary",
-      status: "completed",
-      turn_id: "turn-test",
-      content: [{ type: "output_text", text: "I will run the tool." }],
-    },
-    {
-      id: "call-item",
-      type: "function_call",
-      name: "test_tool",
-      call_id: "call-test",
-      arguments: {},
-      status: "completed",
-      turn_id: "turn-test",
-    },
-  );
-  await advance();
-  expect((await history()).map((item) => item.kind)).toEqual(["assistant", "function_call"]);
-});
-
-it("closes the browser even if OpenAI cancellation fails, retaining the Scout lease", async () => {
-  const { backend, sessionId, provider, session } = await setup();
-  provider.beforeRetrieve.mockRejectedValue(new Error("Cancellation unavailable"));
-  const run = () => backend.action(internal.agentsApi.runtime.cleanup, { sessionId });
-  const cleanup = expect(run()).rejects.toThrow("Connection error.");
-  await vi.advanceTimersByTimeAsync(10_000);
-  await cleanup;
-  expect(provider.beforeRetrieve).toHaveBeenCalledTimes(4);
-  expect(closeFirecrawlBrowserSession).toHaveBeenCalledOnce();
-  expect(await session()).toMatchObject({ active: true, browser: null });
-  provider.beforeRetrieve.mockResolvedValue(undefined);
-  await run();
-  expect((await session()).active).toBe(false);
-  expect(closeFirecrawlBrowserSession).toHaveBeenCalledOnce();
-});
-
-it("retries failed cleanup only on Stop, deduplicates pending/running jobs, and clears the job before the next send", async () => {
-  const { backend, owner, sessionId, provider, session } = await setup();
-  await backend.mutation(internal.agentsApi.sessions.update, {
-    sessionId,
-    state: { kind: "failed", error: "Run failed" },
+it("executes a requested tool once and does not spin on a stale required-action snapshot", async () => {
+  const t = await setup();
+  t.provider.status.mockReturnValue("requires_action");
+  t.provider.calls.mockReturnValue([call]);
+  await t.refresh();
+  await t.refresh();
+  expect(t.execute).toHaveBeenCalledTimes(1);
+  expect(t.dispose).toHaveBeenCalledTimes(1);
+  expect(t.provider.inputs).toHaveLength(1);
+  expect(t.provider.inputs[0]).toMatchObject({
+    events: [{ type: "agent.session.input.tool_result", call_id: "call-1", success: true }],
   });
-  await backend.mutation(internal.agentsApi.sessions.scheduleCleanup, { sessionId });
-  const firstJobId = (await session()).cleanupJobId;
-  if (!firstJobId) throw new Error("Cleanup was not scheduled");
-  provider.beforeRetrieve.mockRejectedValue(new Error("Cancellation unavailable"));
-  const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
-  try {
-    await backend.finishAllScheduledFunctions(vi.runAllTimers);
-    expect(errorLog).toHaveBeenCalled();
-  } finally {
-    errorLog.mockRestore();
-  }
-  expect((await backend.run((ctx) => ctx.db.system.get(firstJobId)))?.state.kind).toBe("failed");
-  expect(await session()).toMatchObject({ active: true, browser: null });
-  await owner.mutation(api.agentsApi.sessions.stop, { sessionId });
-  const retryJobId = (await session()).cleanupJobId;
-  if (!retryJobId) throw new Error("Cleanup retry was not scheduled");
-  expect(retryJobId).not.toBe(firstJobId);
-  await owner.mutation(api.agentsApi.sessions.stop, { sessionId });
-  expect((await session()).cleanupJobId).toBe(retryJobId);
-  provider.beforeRetrieve.mockResolvedValue(undefined).mockImplementationOnce(async () => {
-    expect((await backend.run((ctx) => ctx.db.system.get(retryJobId)))?.state.kind).toBe(
-      "inProgress",
+});
+
+it("runs two outstanding tools sequentially", async () => {
+  const t = await setup();
+  t.provider.status.mockReturnValue("requires_action");
+  t.provider.calls.mockReturnValue([call, { ...call, call_id: "call-2" }]);
+  await t.refresh();
+  expect(t.execute).toHaveBeenCalledTimes(2);
+  expect(t.provider.inputs).toHaveLength(2);
+});
+
+it("pauses for human handoff and resumes by submitting the held tool result", async () => {
+  const t = await setup();
+  await t.backend.mutation(internal.agentsApi.browsers.open, {
+    sessionId: t.sessionId,
+    browser: {
+      providerSessionId: "browser",
+      cdpUrl: "wss://browser",
+      interactiveLiveViewUrl: "https://browser/control",
+      liveViewUrl: null,
+      currentUrl: null,
+    },
+  });
+  t.provider.status.mockReturnValue("requires_action");
+  t.provider.calls.mockReturnValue([
+    {
+      ...call,
+      name: "request_browser_handoff",
+      arguments: { message: "Please solve the captcha" },
+    },
+  ]);
+  await t.refresh();
+  expect((await t.session()).state.kind).toBe("waiting");
+  expect(t.provider.inputs).toHaveLength(0);
+  await t.backend.mutation(internal.agentsApi.sessions.update, {
+    sessionId: t.sessionId,
+    state: { kind: "running" },
+  });
+  await t.backend.action(components.openaiAgents.runtime.submitToolResult, {
+    sessionKey: t.sessionId,
+    runKey,
+    callId: call.call_id,
+    turnId: call.turn_id,
+    resume: true,
+    result: { kind: "success", output: "Control returned" },
+  });
+  await t.flush();
+  expect(t.provider.inputs).toHaveLength(1);
+  expect((await t.session()).state.kind).toBe("running");
+});
+
+it.each(["completed", "failed", "cancelled"])(
+  "uses the turn outcome when the session becomes idle: %s",
+  async (status) => {
+    const t = await setup();
+    t.provider.status.mockReturnValue("idle");
+    t.provider.latest.status = status;
+    t.provider.items.push(message("final", "Finished"));
+    await t.refresh();
+    expect((await t.session()).state.kind).toBe(
+      status === "completed" ? "idle" : status === "cancelled" ? "stopped" : "failed",
     );
-    await owner.mutation(api.agentsApi.sessions.stop, { sessionId });
-    expect((await session()).cleanupJobId).toBe(retryJobId);
-    await expect(
-      owner.mutation(api.agentsApi.sessions.send, { sessionId, message: "Next task" }),
-    ).rejects.toThrow("Stop the current run");
+    expect((await t.session()).active).toBe(false);
+    expect((await t.items())[0]?.text).toBe("Finished");
+    expect((await t.session()).usage).toEqual({
+      inputTokens: 100,
+      outputTokens: 20,
+      cachedInputTokens: 10,
+    });
+  },
+);
+
+it("ignores the previous idle turn after submitting a follow-up", async () => {
+  const t = await setup();
+  t.provider.status.mockReturnValue("idle");
+  await t.backend.action(components.openaiAgents.runtime.send, {
+    sessionKey: t.sessionId,
+    runKey,
+    message: "Continue",
   });
-  await backend.finishAllScheduledFunctions(vi.runAllTimers);
-  expect((await session()).active).toBe(false);
-  expect((await backend.run((ctx) => ctx.db.system.get(retryJobId)))?.state.kind).toBe("success");
-  await owner.mutation(api.agentsApi.sessions.send, { sessionId, message: "Next task" });
-  expect((await session()).cleanupJobId).toBeUndefined();
-  expect(provider.beforeRetrieve).toHaveBeenCalledTimes(6);
-  expect(closeFirecrawlBrowserSession).toHaveBeenCalledOnce();
+  await t.flush();
+  expect((await t.session()).active).toBe(true);
+  expect((await t.session()).state.kind).toBe("running");
+  t.provider.latest.id = "next-turn";
+  await t.refresh();
+  expect((await t.session()).state.kind).toBe("idle");
 });
 
-it("persists connection errors as tool results and does not rerun an already claimed call", async () => {
-  const { provider, advance, execute, dispose, savedCall } = await setup();
-  vi.mocked(runtimeTools).mockRejectedValueOnce(new Error("CDP connection failed"));
-  await expect(advance()).resolves.toBe(true);
-  expect((await savedCall())?.result).toEqual({ kind: "error", error: "CDP connection failed" });
-  expect(provider.events).toContainEqual({
-    events: [
-      {
-        type: "agent.session.input.tool_result",
-        turn_id: "turn-test",
-        call_id: "call-test",
-        success: false,
-        error: "CDP connection failed",
-      },
-    ],
+it("uses the parent turn outcome when a newer subagent turn succeeded", async () => {
+  const t = await setup();
+  t.provider.status.mockReturnValue("idle");
+  t.provider.latest.status = "failed";
+  t.provider.subagentTurns.push({
+    id: "child-turn",
+    status: "completed",
+    error: null,
+    subagent_id: "child",
   });
-  await advance();
-  expect(runtimeTools).toHaveBeenCalledOnce();
-  expect(execute).not.toHaveBeenCalled();
-  expect(dispose).not.toHaveBeenCalled();
+  await t.refresh();
+  expect((await t.session()).state.kind).toBe("failed");
 });
 
-it("saves successful side effects before disposal and never repeats them after disposal fails", async () => {
-  const { advance, execute, dispose, savedCall } = await setup();
-  dispose.mockRejectedValueOnce(new Error("Disconnect failed"));
-  await expect(advance()).rejects.toThrow("Disconnect failed");
-  expect((await savedCall())?.result).toEqual({ kind: "success", output: '{"done":true}' });
-  await expect(advance()).resolves.toBe(true);
-  expect(execute).toHaveBeenCalledOnce();
-  expect(runtimeTools).toHaveBeenCalledOnce();
+it("Stop schedules cancellation without waiting for another provider event", async () => {
+  const t = await setup();
+  await t.owner.mutation(api.agentsApi.sessions.stop, { sessionId: t.sessionId });
+  await t.flush();
+  expect(t.provider.inputs).toContainEqual({ events: [{ type: "agent.session.input.cancel" }] });
+  expect((await t.session()).state.kind).toBe("stopped");
+  expect((await t.session()).active).toBe(false);
 });
 
-it("refuses to replay an interrupted call whose side-effect outcome is unknown", async () => {
-  const { backend, sessionId, provider, advance, execute } = await setup();
-  await backend.mutation(internal.agentsApi.sessions.claimCall, {
-    sessionId,
-    callId: provider.call.call_id,
+it("does not submit a tool result if Stop happens during the tool", async () => {
+  const t = await setup();
+  t.provider.status.mockReturnValue("requires_action");
+  t.provider.calls.mockReturnValue([call]);
+  t.execute.mockImplementationOnce(async () => {
+    await t.owner.mutation(api.agentsApi.sessions.stop, { sessionId: t.sessionId });
+    return { done: true };
   });
-  await expect(advance()).rejects.toThrow("Tool execution was interrupted");
-  expect(execute).not.toHaveBeenCalled();
-  expect(runtimeTools).not.toHaveBeenCalled();
-  expect(provider.events).toEqual([]);
+  await t.refresh();
+  expect(t.provider.inputs).toEqual([{ events: [{ type: "agent.session.input.cancel" }] }]);
+  expect((await t.session()).state.kind).toBe("stopped");
+});
+
+it("rejects a stale app callback after a newer run has started", async () => {
+  const t = await setup();
+  await t.backend.mutation(internal.agentsApi.sessions.onEvent, {
+    sessionKey: t.sessionId,
+    runKey: "older-run",
+    event: { kind: "state", state: { kind: "idle" }, usage: null },
+  });
+  expect((await t.session()).state.kind).toBe("running");
+});
+
+it("keeps Refresh authenticated and allows it to recover a missed lifecycle event", async () => {
+  const t = await setup();
+  await expect(
+    t.backend.action(api.agentsApi.runtime.refresh, { sessionId: t.sessionId }),
+  ).rejects.toThrow();
+  t.provider.status.mockReturnValue("idle");
+  await t.owner.action(api.agentsApi.runtime.refresh, { sessionId: t.sessionId });
+  await t.flush();
+  expect((await t.session()).active).toBe(false);
+});
+
+it("processes a lifecycle update arriving during a refresh", async () => {
+  const t = await setup();
+  const started = gate();
+  const response = gate();
+  t.provider.beforeItems.mockImplementationOnce(async () => {
+    started.release();
+    await response.promise;
+  });
+  await t.backend.mutation(components.openaiAgents.state.refresh, { sessionKey: t.sessionId });
+  vi.runAllTimers();
+  await started.promise;
+  t.provider.status.mockReturnValue("idle");
+  await t.backend.mutation(components.openaiAgents.state.refresh, { sessionKey: t.sessionId });
+  response.release();
+  await t.flush();
+  expect((await t.session()).state.kind).toBe("idle");
+  expect((await t.session()).active).toBe(false);
+});
+
+it("reports a provider refresh failure and releases the Scout after cleanup", async () => {
+  const t = await setup();
+  for (let attempt = 0; attempt < 4; attempt++)
+    t.provider.beforeRetrieve.mockRejectedValueOnce(new Error("Provider unavailable"));
+  await t.refresh();
+  expect((await t.session()).state).toEqual({ kind: "failed", error: "Connection error." });
+  expect((await t.session()).active).toBe(false);
+});
+
+it("cancels again when Stop races an acknowledged input request", async () => {
+  const t = await setup();
+  const started = gate();
+  const response = gate();
+  t.provider.beforeInput.mockImplementationOnce(async () => {
+    started.release();
+    await response.promise;
+  });
+  const sending = t.backend.action(components.openaiAgents.runtime.send, {
+    sessionKey: t.sessionId,
+    runKey,
+    message: "Start",
+  });
+  await started.promise;
+  await t.owner.mutation(api.agentsApi.sessions.stop, { sessionId: t.sessionId });
+  await t.backend.action(components.openaiAgents.runtime.cancel, { sessionKey: t.sessionId });
+  response.release();
+  await sending;
+  expect(t.provider.inputs).toHaveLength(3);
+  expect(t.provider.inputs.slice(1)).toEqual([
+    { events: [{ type: "agent.session.input.cancel" }] },
+    { events: [{ type: "agent.session.input.cancel" }] },
+  ]);
+  await t.flush();
+  expect((await t.session()).state.kind).toBe("stopped");
+});
+
+it("holds the Scout until a stopped tool settles, even if browser cleanup finishes first", async () => {
+  const t = await setup();
+  const started = gate();
+  const result = gate();
+  t.provider.status.mockReturnValue("requires_action");
+  t.provider.calls.mockReturnValue([call]);
+  t.execute.mockImplementationOnce(async () => {
+    started.release();
+    await result.promise;
+    return { done: true };
+  });
+  const refreshing = t.refresh();
+  await started.promise;
+  await t.owner.mutation(api.agentsApi.sessions.stop, { sessionId: t.sessionId });
+  await t.backend.action(internal.agentsApi.runtime.cleanup, { sessionId: t.sessionId });
+  expect((await t.session()).active).toBe(true);
+  result.release();
+  await refreshing;
+  expect((await t.session()).active).toBe(false);
+  expect((await t.session()).state.kind).toBe("stopped");
+});
+
+it("does not let another admin resume work through Refresh", async () => {
+  const t = await setup();
+  const otherId = await t.backend.run((ctx) =>
+    insertTestAccount(ctx, { email: "nicu@samebase.com" }),
+  );
+  await expect(
+    t.backend
+      .withIdentity({ subject: otherId })
+      .action(api.agentsApi.runtime.refresh, { sessionId: t.sessionId }),
+  ).rejects.toThrow("Only the owner");
 });

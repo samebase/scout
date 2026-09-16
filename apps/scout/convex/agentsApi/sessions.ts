@@ -1,5 +1,4 @@
 import { paginationOptsValidator, paginationResultValidator } from "convex/server";
-import { vWorkflowId } from "@convex-dev/workflow";
 import { v } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
@@ -18,7 +17,6 @@ import {
   sessionUsage,
 } from "./model";
 import type { Infer } from "convex/values";
-import { omitNullish } from "../../shared/omitNullish";
 import { MAX_BROWSER_SESSIONS_PER_THREAD } from "../scout/browserSessions";
 import { browserSessionLifecycleValidator } from "../browserModel";
 import { estimateAgentsApiCost } from "./cost";
@@ -26,6 +24,7 @@ import { getInitialCheck, listChecks, summarizeCheck, currentCheckMessage } from
 import { REQUEST_CHECK_MODEL, MAX_SESSION_CHECKS, checkSummary } from "./requestCheckModel";
 import { getResearch, summarizeResearch } from "./siteResearchRecords";
 import { researchSummary } from "./siteResearchModel";
+import { notification } from "../../shared/openaiAgents";
 
 async function requireSession(ctx: QueryCtx, sessionId: Id<"agentsApiSessions">) {
   const session = await ctx.db.get(sessionId);
@@ -49,9 +48,15 @@ async function requireAvailableScout(ctx: QueryCtx, scoutId: Id<"scouts">) {
 
 async function scheduleSessionCleanup(ctx: MutationCtx, session: Doc<"agentsApiSessions">) {
   if (!session.active) return;
+  if (session.pendingCommand && session.providerId) return;
+  if (session.cleanupComplete) {
+    await releaseScout(ctx, session);
+    return;
+  }
   if (
     session.state.kind !== "stopped" &&
     session.state.kind !== "failed" &&
+    session.state.kind !== "idle" &&
     session.state.kind !== "waiting"
   ) {
     throw new Error("Stop the session before scheduling cleanup");
@@ -62,6 +67,17 @@ async function scheduleSessionCleanup(ctx: MutationCtx, session: Doc<"agentsApiS
     sessionId: session._id,
   });
   await ctx.db.patch(session._id, { cleanupJobId });
+}
+
+async function releaseScout(ctx: MutationCtx, session: Doc<"agentsApiSessions">) {
+  if (!session.cleanupComplete || (session.pendingCommand && session.providerId)) return;
+  const runningCall = await ctx.db
+    .query("agentsApiCalls")
+    .withIndex("by_session_id_and_result_kind", (q) =>
+      q.eq("sessionId", session._id).eq("result.kind", "running"),
+    )
+    .first();
+  if (!runningCall) await ctx.db.patch(session._id, { active: false });
 }
 
 async function startWorkflow(
@@ -82,7 +98,7 @@ async function startWorkflow(
       context: { sessionId },
     },
   );
-  await ctx.db.patch(sessionId, { workflowId });
+  await ctx.db.patch(sessionId, { workflowId, pendingCommand: true, cleanupComplete: undefined });
 }
 
 export const list = query({
@@ -381,15 +397,7 @@ export const stop = mutation({
     const session = await owned(ctx, args.sessionId, ctx.viewer.userId);
     await requireSessionPermission(ctx, session);
     await ctx.db.patch(session._id, { state: { kind: "stopped" } });
-    if (
-      session.active &&
-      (session.state.kind === "waiting" ||
-        session.state.kind === "checking" ||
-        session.state.kind === "failed" ||
-        session.cleanupJobId !== undefined)
-    ) {
-      await scheduleSessionCleanup(ctx, { ...session, state: { kind: "stopped" } });
-    }
+    await scheduleSessionCleanup(ctx, { ...session, state: { kind: "stopped" } });
     return null;
   },
 });
@@ -473,23 +481,16 @@ export const runtime = internalQuery({
 export const update = internalMutation({
   args: {
     sessionId: v.id("agentsApiSessions"),
-    refreshWorkflowId: v.optional(v.union(vWorkflowId, v.null())),
     providerId: v.optional(v.string()),
-    previousTurnId: v.optional(v.string()),
     state: v.optional(sessionState),
     active: v.optional(v.boolean()),
     usage: v.optional(v.union(sessionUsage, v.null())),
     browser: v.optional(v.union(browserHandle, v.null())),
   },
   returns: v.null(),
-  handler: async (ctx, { sessionId, refreshWorkflowId, ...patch }) => {
+  handler: async (ctx, { sessionId, ...patch }) => {
     const session = await ctx.db.get(sessionId);
     if (!session) throw new Error("Session not found");
-    if (
-      refreshWorkflowId !== undefined &&
-      (session.active || (session.workflowId ?? null) !== refreshWorkflowId)
-    )
-      return null;
     if (session.state.kind === "stopped") delete patch.state;
     await ctx.db.patch(sessionId, patch);
     return null;
@@ -499,20 +500,13 @@ export const update = internalMutation({
 export const saveItems = internalMutation({
   args: {
     sessionId: v.id("agentsApiSessions"),
-    refreshWorkflowId: v.optional(v.union(vWorkflowId, v.null())),
     items: v.array(sessionItem),
-    cursor: v.optional(v.string()),
     sequence: v.optional(v.number()),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
     const session = await ctx.db.get(args.sessionId);
     if (!session) throw new Error("Session not found");
-    if (
-      args.refreshWorkflowId !== undefined &&
-      (session.active || (session.workflowId ?? null) !== args.refreshWorkflowId)
-    )
-      return null;
     let sequence = args.sequence ?? session.nextSequence;
     for (const item of args.items) {
       const existing = await ctx.db
@@ -546,24 +540,8 @@ export const saveItems = internalMutation({
     }
     await ctx.db.patch(session._id, {
       nextSequence: Math.max(session.nextSequence, sequence),
-      ...omitNullish({ itemCursor: args.cursor }),
     });
     return null;
-  },
-});
-
-export const itemSequence = internalQuery({
-  args: { sessionId: v.id("agentsApiSessions"), providerItemId: v.string() },
-  returns: v.number(),
-  handler: async (ctx, args) => {
-    const item = await ctx.db
-      .query("agentsApiItems")
-      .withIndex("by_session_id_and_provider_item_id", (q) =>
-        q.eq("sessionId", args.sessionId).eq("providerItemId", args.providerItemId),
-      )
-      .unique();
-    if (!item) throw new Error("Saved history cursor is missing its item");
-    return item.sequence;
   },
 });
 
@@ -589,7 +567,21 @@ export const finishCall = internalMutation({
   args: { callId: v.id("agentsApiCalls"), result: callResult },
   returns: v.null(),
   handler: async (ctx, args) => {
+    const call = await ctx.db.get(args.callId);
+    if (!call) throw new Error("Tool call not found");
     await ctx.db.patch(args.callId, { result: args.result });
+    await releaseScout(ctx, await requireSession(ctx, call.sessionId));
+    return null;
+  },
+});
+
+export const completeCleanup = internalMutation({
+  args: { sessionId: v.id("agentsApiSessions") },
+  returns: v.null(),
+  handler: async (ctx, { sessionId }) => {
+    const session = await requireSession(ctx, sessionId);
+    await ctx.db.patch(sessionId, { cleanupComplete: true });
+    await releaseScout(ctx, { ...session, cleanupComplete: true });
     return null;
   },
 });
@@ -600,5 +592,66 @@ export const cleanupResources = internalQuery({
     const session = await ctx.db.get(args.sessionId);
     if (!session) throw new Error("Session not found");
     return session;
+  },
+});
+
+export const onEvent = internalMutation({
+  args: notification.fields,
+  returns: v.null(),
+  handler: async (ctx, { sessionKey, runKey, event }) => {
+    const sessionId = ctx.db.normalizeId("agentsApiSessions", sessionKey);
+    const session = sessionId ? await ctx.db.get(sessionId) : null;
+    if (!session || session.workflowId !== runKey) return null;
+    switch (event.kind) {
+      case "created":
+        await ctx.db.patch(session._id, {
+          providerId: event.providerId,
+          ...(session.state.kind === "starting" ? { state: { kind: "running" as const } } : {}),
+        });
+        break;
+      case "item":
+        await ctx.runMutation(internal.agentsApi.sessions.saveItems, {
+          sessionId: session._id,
+          items: [event.item],
+          sequence: event.sequence,
+        });
+        break;
+      case "tool":
+        if (session.active && session.state.kind === "running") {
+          await ctx.scheduler.runAfter(0, internal.agentsApi.runtime.executeTool, {
+            sessionId: session._id,
+            runKey,
+            call: event.call,
+          });
+        }
+        break;
+      case "state":
+        if (event.usage !== null) await ctx.db.patch(session._id, { usage: event.usage });
+        if (!session.active || session.state.kind === "stopped" || session.state.kind === "failed")
+          break;
+        if (event.state.kind === "running") break;
+        await ctx.db.patch(session._id, { state: event.state });
+        await scheduleSessionCleanup(ctx, { ...session, state: event.state });
+        break;
+      default: {
+        const unhandled: never = event;
+        throw new Error(`Unknown session event: ${JSON.stringify(unhandled)}`);
+      }
+    }
+    return null;
+  },
+});
+
+export const fail = internalMutation({
+  args: { sessionId: v.id("agentsApiSessions"), runKey: v.string(), error: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { sessionId, runKey, error }) => {
+    const session = await requireSession(ctx, sessionId);
+    if (session.workflowId !== runKey) return null;
+    const state =
+      session.state.kind === "stopped" ? session.state : { kind: "failed" as const, error };
+    await ctx.db.patch(sessionId, { state });
+    await scheduleSessionCleanup(ctx, { ...session, state });
+    return null;
   },
 });

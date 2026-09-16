@@ -19,6 +19,14 @@ restricted key permissions are Agents read/write, Responses read/write, and List
 models read. Existing Firecrawl, AgentMail, and credential-encryption configuration
 must also be present.
 
+Create an endpoint in the OpenAI project's webhook settings pointing to
+`https://<deployment>.convex.site/openai-agents/webhook`, using that deployment's
+HTTP actions URL. Subscribe to `agent.session.created`, `agent.session.action_required`,
+`agent.session.in_progress`, `agent.session.idle`, and `agent.session.failed`. Save
+the endpoint's signing secret as `OPENAI_WEBHOOK_SECRET` on that Convex deployment.
+Both OpenAI variables are bound to the local component in `convex.config.ts`.
+New sessions fail visibly if either variable is missing.
+
 Run `pnpm run dev` from the primary checkout for port 5173 and its development
 deployment. API usage is billed to the configured OpenAI project; Scout credits do
 not apply to this experiment.
@@ -40,14 +48,25 @@ not apply to this experiment.
 - The Agents Workspace view reuses the existing file browser for inspection and
   downloads. Admins can inspect member session files, but cannot run commands in
   another owner's session. Shared files remain available in Sites.
-- Convex Workflow submits work and services requested functions. It does not run
-  another LLM loop through `@convex-dev/agent`.
+- Convex Workflow runs the request or resume check, gathers site research for new
+  reviews, submits the command, then exits.
+  The local `components/openaiAgents` component owns provider requests, signed webhook
+  handling, delivery receipts, session cursors, and submitted tool-result IDs.
+  Provider HTTP requests use the default Convex runtime. Node actions only run Scout's
+  command setup and tools; no action waits on an OpenAI event stream.
 - `sessions.ts` owns access checks, session state, and durable function-call claims.
   A completed tool result is reused if OpenAI requests the same call again.
-- `runtime.ts` streams assistant text, reasoning summaries, and tool items into
-  Convex by provider item ID. It subscribes before submitting input or tool results.
-  Bounded stream slices restore saved items on reconnect. Stop retains streamed
-  output, cancels the run, and releases the browser before refreshing history and usage.
+- Webhooks schedule short refresh actions. One refresh runs per session at a time;
+  events received during it schedule another pass. Duplicate deliveries do not start
+  duplicate work, and acknowledged tool results are not resubmitted while the provider
+  still shows an older required-action snapshot. Refresh failures remain inspectable.
+- The component calls `sessions.onEvent` with completed output, state changes, or a
+  tool request. Scout keeps its existing authorized transcript queries and browser/tool
+  records. Messages appear at lifecycle updates rather than token by token. Every
+  callback carries the command's run ID; late results cannot overwrite a newer run.
+- Stop schedules cancellation and browser cleanup. If an input command is still being
+  submitted, the Scout stays reserved until it finishes so a new command cannot race
+  the old HTTP request. The stopped session retains its completed transcript and usage.
 - Each browser operation reconnects to the saved Firecrawl browser, then disconnects
   its local Playwright transport. Completing or stopping a turn closes the remote
   browser and saves its profile.
@@ -62,8 +81,10 @@ not apply to this experiment.
   previous snapshots. Firecrawl dollars depend on the subscription's credit price.
   Model estimates use standard rates, excluding cache-write premiums and possible
   long-context charges, because session totals do not report per-request context sizes.
-- Refresh retrieves late provider history and usage for an ended session without
-  restarting it. A refresh preserves any failure or stopped state.
+- Refresh schedules a provider update without sending a message. The owner can also
+  refresh an active session after a missed webhook; other admins can refresh ended
+  sessions. Refresh preserves failure and stopped states. No polling fallback or
+  automatic replay of interrupted side effects is installed.
 
 Errors remain visible. Interrupted side effects are not automatically replayed.
 Scout credits are not integrated with this runtime. Workspace access does not yet
