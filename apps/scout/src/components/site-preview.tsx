@@ -2,6 +2,7 @@ import { useAction } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { CameraIcon, GlobeIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { cn } from "#lib/utils";
 import { api } from "../../convex/_generated/api";
 import { Button } from "./ui/button";
 
@@ -9,9 +10,12 @@ type Site = NonNullable<FunctionReturnType<typeof api.scout.sites.get>>;
 type ImageUrl = NonNullable<FunctionReturnType<typeof api.scout.sitePreviews.imageUrl>>;
 const imageUrls = new Map<string, ImageUrl>();
 
-export function SitePreview({ site }: { site: Site }) {
+export function SitePreview({ site, className }: { site: Site; className?: string }) {
   return (
-    <div aria-hidden="true" className="relative aspect-[8/5] overflow-hidden bg-muted">
+    <div
+      aria-hidden="true"
+      className={cn("relative aspect-[8/5] overflow-hidden bg-muted", className)}
+    >
       {site.preview?.kind === "ready" ? (
         <LandingImage
           key={`${site.hostname}:${site.preview.capturedAt}`}

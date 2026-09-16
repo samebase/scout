@@ -189,9 +189,12 @@ function SiteCard({
         params={{ site: site.hostname }}
         search={{ scope }}
         aria-label={`View ${site.profile?.name ?? site.hostname} details`}
-        className="block min-w-0 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring min-[760px]:border-r"
+        className="relative block min-w-0 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring min-[760px]:border-r"
       >
-        <SitePreview site={site} />
+        <SitePreview
+          site={site}
+          className="min-[760px]:absolute min-[760px]:inset-0 min-[760px]:aspect-auto"
+        />
       </Link>
       <div className="min-w-0 px-4 min-[760px]:px-5">
         <header className="border-b py-3">
