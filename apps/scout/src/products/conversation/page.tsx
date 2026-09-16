@@ -23,9 +23,15 @@ import { api } from "../../../convex/_generated/api";
 import { scoutAvailabilityLabels } from "#components/scout-current-activity";
 import { productRoutes, type ProductKind, type ConversationSearch } from "./model";
 import { gameInviteDisplayText } from "../play/invite";
-import { ReviewSite } from "./review-site";
 import { ConversationComposer } from "./composer";
-import { ConversationSidebar, ConversationLayout, BrowserToggle, BrowserStop } from "./sidebar";
+import {
+  ConversationSidebar,
+  ConversationLayout,
+  BrowserToggle,
+  BrowserStop,
+  TasksToggle,
+} from "./sidebar";
+import { TaskNavigation } from "./task-navigation";
 import {
   MessageScrollerProvider,
   MessageScroller,
@@ -43,7 +49,7 @@ import { ProductShell } from "../shell";
 import { ScoutPiece } from "../play/scout-piece";
 import { cn } from "#lib/utils";
 import { productButtonVariants } from "../ui";
-import { playError, playLoading, playNotice, playRouteMessage, playTextLink } from "./ui";
+import { playError, playNotice, playRouteMessage, playTextLink } from "./ui";
 
 type ChatThread = NonNullable<FunctionReturnType<typeof api.scout.activity.get>>;
 type Activity = FunctionReturnType<typeof api.scout.chats.getScoutActivity>;
@@ -86,7 +92,9 @@ export function ConversationPage({
         }
       >
         {thread ? (
-          <SessionLoader threadId={thread} kind={kind} search={search} />
+          <ConversationSidebar>
+            <SessionLoader threadId={thread} kind={kind} search={search} />
+          </ConversationSidebar>
         ) : (
           <ConversationLobby key={kind} kind={kind} />
         )}
@@ -339,32 +347,377 @@ function SessionLoader({
 }) {
   const viewer = useViewerAccess();
   const thread = useQuery(api.scout.activity.get, { threadId });
-  if (thread === undefined)
-    return (
-      <p className={playLoading} role="status">
-        Opening session…
-      </p>
-    );
-  if (thread === null || thread.purpose.kind !== kind)
-    return (
-      <div className={playRouteMessage}>
-        <h1 className="text-[30px]">Session unavailable</h1>
-        <p className="text-muted-foreground">This link is private or no longer available.</p>
-        <Link to="/" className={productButtonVariants({ variant: "play" })}>
-          Browse activity
-        </Link>
-        {viewer?.kind !== "account" && <AuthPanel />}
-      </div>
-    );
-  const initialView =
-    kind === "review" && thread.runtime.kind === "agents_api"
-      ? (search.view ??
-        (thread.status === "finished" && thread.hasWalkthrough ? "walkthrough" : "chat"))
-      : "chat";
+  const [opened, setOpened] = useState<{
+    thread: ChatThread;
+    defaultView: "walkthrough" | "chat";
+  } | null>(null);
+  if (thread && thread !== opened?.thread) {
+    setOpened({
+      thread,
+      defaultView:
+        opened?.thread.threadId === threadId
+          ? opened.defaultView
+          : kind === "review" &&
+              thread.runtime.kind === "agents_api" &&
+              thread.status === "finished" &&
+              thread.hasWalkthrough
+            ? "walkthrough"
+            : "chat",
+    });
+  }
+  // Keep only the navigation context while the next task loads. Its content and actions
+  // always use the current query result, never the previously opened task.
+  const navigationThread = thread === undefined ? opened?.thread : thread;
+  const showingWalkthrough =
+    kind === "review" &&
+    navigationThread?.runtime.kind === "agents_api" &&
+    (search.view ?? opened?.defaultView) === "walkthrough";
+  const available = thread && thread.purpose.kind === kind;
   return (
-    <ConversationSidebar key={threadId}>
-      <ConversationSession thread={thread} kind={kind} search={search} initialView={initialView} />
-    </ConversationSidebar>
+    <ConversationLayout
+      kind={kind}
+      left={
+        kind === "review" && navigationThread?.primarySite ? (
+          <TaskNavigation
+            key={`${navigationThread.primarySite}:${navigationThread.visibility}`}
+            site={navigationThread.primarySite}
+            scope={navigationThread.visibility === "private" ? "mine" : "public"}
+            current={navigationThread}
+            selectedThreadId={threadId}
+            view={showingWalkthrough ? "walkthrough" : "chat"}
+          />
+        ) : undefined
+      }
+      addressChrome={
+        <div className="mb-5 flex items-center justify-between gap-4 max-[760px]:mb-3">
+          {navigationThread && <ConversationBreadcrumb thread={navigationThread} kind={kind} />}
+          {available && <ConversationActions key={threadId} thread={thread} kind={kind} />}
+        </div>
+      }
+      main={
+        thread === undefined ? (
+          <div className="conversation-content flex h-full min-h-0 flex-col">
+            <div className="conversation-header" />
+            <div className="conversation-body p-3" role="status">
+              Opening task…
+            </div>
+          </div>
+        ) : !available ? (
+          <div className="conversation-content flex h-full min-h-0 flex-col">
+            <div className="conversation-header" />
+            <div className={cn("conversation-body", playRouteMessage)}>
+              <h1 className="text-[30px]">Session unavailable</h1>
+              <p className="text-muted-foreground">This link is private or no longer available.</p>
+              <Link to="/" className={productButtonVariants({ variant: "play" })}>
+                Browse activity
+              </Link>
+              {viewer?.kind !== "account" && <AuthPanel />}
+            </div>
+          </div>
+        ) : (
+          <ConversationSession
+            key={threadId}
+            thread={thread}
+            kind={kind}
+            search={search}
+            showingWalkthrough={showingWalkthrough}
+          />
+        )
+      }
+      right={
+        showingWalkthrough ? undefined : available ? (
+          <ConversationBrowser key={threadId} thread={thread} kind={kind} search={search} />
+        ) : (
+          <div aria-busy="true" />
+        )
+      }
+    />
+  );
+}
+
+function ConversationBreadcrumb({ thread, kind }: { thread: ChatThread; kind: ProductKind }) {
+  return kind === "review" ? (
+    <div className="flex min-w-0 items-center gap-1">
+      {thread.primarySite && <TasksToggle />}
+      {thread.primarySite ? (
+        <Link
+          to="/sites/$site"
+          params={{ site: thread.primarySite }}
+          search={{
+            scope: thread.visibility === "private" ? "mine" : "public",
+            view: "tasks",
+          }}
+          className={cn(playTextLink, "min-h-11 min-w-0 text-muted-foreground")}
+        >
+          <ArrowLeftIcon size={16} className="shrink-0" aria-hidden="true" />
+          <span className="truncate">{thread.primarySite} tasks</span>
+        </Link>
+      ) : (
+        <Link
+          to="/"
+          search={{ scope: thread.visibility === "private" ? "mine" : "public" }}
+          className={cn(playTextLink, "min-h-11 whitespace-nowrap text-muted-foreground")}
+        >
+          <ArrowLeftIcon size={16} aria-hidden="true" /> All sites
+        </Link>
+      )}
+    </div>
+  ) : (
+    <Link
+      to={productRoutes[kind]}
+      search={{}}
+      className={cn(playTextLink, "min-h-11 text-muted-foreground")}
+    >
+      <ArrowLeftIcon size={16} aria-hidden="true" />{" "}
+      <span className="whitespace-nowrap">New chat</span>
+    </Link>
+  );
+}
+
+function ConversationActions({ thread, kind }: { thread: ChatThread; kind: ProductKind }) {
+  const viewer = useViewerAccess();
+  const canInspect =
+    (thread.isOwner || thread.runtime.kind === "agents_api") &&
+    viewer?.kind === "account" &&
+    canAccess("access_lab", viewer.accessKeys);
+  const { threadId } = thread;
+  const managedId = thread.runtime.kind === "agents_api" ? thread.runtime.sessionId : null;
+  const managed = useQuery(
+    api.agentsApi.sessions.controls,
+    kind === "play" && thread.canControl && managedId ? { sessionId: managedId } : "skip",
+  );
+  const activity = useQuery(
+    api.scout.chats.getScoutActivity,
+    kind === "play" && thread.canControl && !managedId ? { threadId } : "skip",
+  );
+  const ownActivity = activityForThread(activity, threadId);
+  const canStop = managedId
+    ? managed?.canStop === true
+    : ownActivity !== undefined && (ownActivity.kind !== "stopping" || ownActivity.retryable);
+  const setVisibility = useMutation(api.scout.chats.setVisibility);
+  const stopScout = useMutation(api.scout.chats.stop);
+  const stopManaged = useMutation(api.agentsApi.sessions.stop);
+  const [request, setRequest] = useState<RequestState>({ kind: "idle" });
+  const pending = useRef(false);
+  async function changeVisibility(visibility: ChatThread["visibility"]) {
+    if (pending.current) return;
+    pending.current = true;
+    setRequest({ kind: "pending" });
+    try {
+      await setVisibility({ threadId, visibility });
+      setRequest({ kind: "idle" });
+    } catch {
+      setRequest({ kind: "failed", message: "Couldn't change visibility. Try again." });
+    } finally {
+      pending.current = false;
+    }
+  }
+  async function stop() {
+    if (pending.current) return;
+    pending.current = true;
+    setRequest({ kind: "pending" });
+    try {
+      if (managedId) await stopManaged({ sessionId: managedId });
+      else await stopScout({ threadId });
+      setRequest({ kind: "idle" });
+    } catch {
+      setRequest({ kind: "failed", message: "Couldn't stop. Try again." });
+    } finally {
+      pending.current = false;
+    }
+  }
+  return (
+    <div className="flex flex-col items-end gap-2">
+      <div className="flex items-center gap-5 max-[760px]:gap-4">
+        {thread.isOwner && thread.purpose.kind !== "general" ? (
+          <select
+            aria-label="Chat visibility"
+            title="Public shares the chat and browser with anyone."
+            className="min-h-11 rounded-lg bg-transparent text-xs text-muted-foreground"
+            value={thread.visibility}
+            disabled={request.kind === "pending"}
+            onChange={(event) => {
+              void changeVisibility(event.target.value === "public" ? "public" : "private");
+            }}
+          >
+            <option value="private">Private</option>
+            <option value="public" disabled={!thread.canControl}>
+              Public
+            </option>
+          </select>
+        ) : (
+          <span className="text-xs text-muted-foreground">
+            {thread.visibility === "public" ? "Public" : "Private"}
+          </span>
+        )}
+        {canInspect && (
+          <Link
+            to={managedId ? "/agents" : "/chats"}
+            search={managedId ? { session: managedId } : { thread: threadId }}
+            aria-label="Open in lab"
+            className={cn(playTextLink, "min-h-11 text-muted-foreground")}
+          >
+            <span className="whitespace-nowrap">
+              <span className="max-[760px]:hidden">Open in </span>Lab
+            </span>{" "}
+            <ArrowUpRightIcon size={15} aria-hidden="true" />
+          </Link>
+        )}
+        {kind === "play" && <BrowserToggle action="open" />}
+        {kind === "play" && canStop && (
+          <BrowserStop
+            onStop={() => {
+              void stop();
+            }}
+            disabled={request.kind === "pending"}
+          />
+        )}
+      </div>
+      {request.kind === "failed" && (
+        <p role="alert" className={playError}>
+          {request.message}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ConversationBrowser({
+  thread,
+  kind,
+  search,
+}: {
+  thread: ChatThread;
+  kind: ProductKind;
+  search: ConversationSearch;
+}) {
+  const navigate = useNavigate();
+  const sessions = thread.sessions;
+  const session =
+    sessions.find((session) => session.sessionId === search.session) ?? sessions.at(-1);
+  const liveView = useQuery(
+    api.scout.activity.liveView,
+    session && session.kind !== "closed" ? { sessionId: session.sessionId } : "skip",
+  );
+  const browserHeader = (
+    <div className="flex min-h-14 shrink-0 items-center gap-2 border-b border-border px-3 text-[13px]">
+      <MonitorIcon size={16} className="shrink-0" aria-hidden="true" />
+      {sessions && sessions.length > 1 && session ? (
+        <select
+          aria-label="Browser session"
+          value={session.sessionId}
+          onChange={(event) => {
+            const selected = sessions.find(
+              (session) => session.sessionId === event.currentTarget.value,
+            );
+            if (selected)
+              void navigate({
+                to: productRoutes[kind],
+                search: {
+                  ...search,
+                  session: selected.sessionId,
+                  replay: undefined,
+                },
+              });
+          }}
+          className="min-h-11 min-w-0 flex-1 rounded-lg bg-transparent pr-1 font-medium"
+        >
+          {sessions.toReversed().map((session) => (
+            <option key={session.sessionId} value={session.sessionId}>
+              {new Date(session.createdAt).toLocaleString(undefined, {
+                month: "short",
+                day: "numeric",
+                hour: "numeric",
+                minute: "2-digit",
+                second: "2-digit",
+              })}
+              {session.kind === "active"
+                ? " · Live"
+                : session.kind === "closing"
+                  ? " · Closing"
+                  : ""}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <span className="min-w-0 flex-1 font-medium">
+          {session?.kind === "closed" ? "Replay" : "Scout’s view"}
+        </span>
+      )}
+      {kind === "play" && <BrowserToggle action="close" />}
+    </div>
+  );
+  return (
+    <section
+      aria-label="Scout's browser"
+      className="flex h-full min-h-0 flex-col overflow-hidden rounded-[var(--product-panel-radius)] border border-border bg-secondary/50 min-[768px]:ml-1"
+    >
+      {session?.kind === "closed" ? (
+        <BrowserReplay
+          key={session.sessionId}
+          sessionId={session.sessionId}
+          mode="playback"
+          header={browserHeader}
+          selectedPageId={
+            search.replay?.sessionId === session.sessionId ? search.replay.pageId : null
+          }
+          onSelectPage={(pageId) => {
+            void navigate({
+              to: productRoutes[kind],
+              search: {
+                ...search,
+                session: session.sessionId,
+                replay: pageId === null ? undefined : { sessionId: session.sessionId, pageId },
+              },
+            });
+          }}
+        />
+      ) : (
+        <>
+          {browserHeader}
+          {liveView?.url ? (
+            <>
+              <iframe
+                key={session?.sessionId}
+                src={liveView.url}
+                className="min-h-0 w-full flex-1 border-0 bg-white"
+                title="Scout's live browser"
+                sandbox="allow-same-origin allow-scripts"
+                referrerPolicy="no-referrer"
+              />
+              <a
+                className="flex min-h-11 items-center justify-center gap-1.5 p-2.5 text-xs text-muted-foreground hover:text-primary"
+                href={liveView.url}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Open browser <ArrowUpRightIcon size={14} aria-hidden="true" />
+              </a>
+            </>
+          ) : (
+            <div className="flex flex-1 flex-col items-center justify-center gap-6 p-7 text-center">
+              {kind === "play" ? (
+                <div className="grid size-32 place-items-center rounded-full bg-play-sand/80">
+                  <ScoutPiece className="-rotate-6" />
+                </div>
+              ) : (
+                <MonitorIcon
+                  size={32}
+                  strokeWidth={1.25}
+                  className="text-muted-foreground"
+                  aria-hidden="true"
+                />
+              )}
+              <p className="max-w-[270px] text-sm text-muted-foreground">
+                {session?.kind === "closing"
+                  ? "Closing the browser…"
+                  : "Scout hasn’t opened a browser yet."}
+              </p>
+            </div>
+          )}
+        </>
+      )}
+    </section>
   );
 }
 
@@ -402,26 +755,17 @@ function ConversationSession({
   thread,
   kind,
   search,
-  initialView,
+  showingWalkthrough,
 }: {
   thread: ChatThread;
   kind: ProductKind;
   search: ConversationSearch;
-  initialView: "walkthrough" | "chat";
+  showingWalkthrough: boolean;
 }) {
   const scout = thread.scout;
-  const viewer = useViewerAccess();
-  const canInspect =
-    (thread.isOwner || thread.runtime.kind === "agents_api") &&
-    viewer?.kind === "account" &&
-    canAccess("access_lab", viewer.accessKeys);
-  const navigate = useNavigate();
   const { setMobilePane } = useSidebarActions();
   const { threadId } = thread;
   const managedId = thread.runtime.kind === "agents_api" ? thread.runtime.sessionId : null;
-  const [defaultView] = useState(initialView);
-  const showingWalkthrough =
-    kind === "review" && managedId !== null && (search.view ?? defaultView) === "walkthrough";
   const managed = useQuery(
     api.agentsApi.sessions.controls,
     thread.canControl && managedId ? { sessionId: managedId } : "skip",
@@ -432,12 +776,6 @@ function ConversationSession({
   );
   const sessions = thread.sessions;
   const latestSession = sessions?.at(-1);
-  const session =
-    sessions?.find((session) => session.sessionId === search.session) ?? latestSession;
-  const liveView = useQuery(
-    api.scout.activity.liveView,
-    session && session.kind !== "closed" ? { sessionId: session.sessionId } : "skip",
-  );
   const handoff = useQuery(
     api.humanHandoffs.forSession,
     thread.canControl && latestSession?.engine === "convex_agent"
@@ -454,7 +792,6 @@ function ConversationSession({
   const sendManaged = useMutation(api.agentsApi.sessions.send);
   const stopManaged = useMutation(api.agentsApi.sessions.stop);
   const resumeManaged = useMutation(api.agentsApi.sessions.resume);
-  const setVisibility = useMutation(api.scout.chats.setVisibility);
   const [draft, setDraft] = useState("");
   const [request, setRequest] = useState<RequestState>({ kind: "idle" });
   const pending = useRef(false);
@@ -474,20 +811,6 @@ function ConversationSession({
         phase
       ]
     : null;
-
-  async function changeVisibility(visibility: ChatThread["visibility"]) {
-    if (pending.current) return;
-    pending.current = true;
-    setRequest({ kind: "pending" });
-    try {
-      await setVisibility({ threadId, visibility });
-      setRequest({ kind: "idle" });
-    } catch {
-      setRequest({ kind: "failed", message: "Couldn't change visibility. Try again." });
-    } finally {
-      pending.current = false;
-    }
-  }
 
   async function stop() {
     if (pending.current) return;
@@ -543,441 +866,244 @@ function ConversationSession({
     }
   }
 
-  const browserHeader = (
-    <div className="flex min-h-14 shrink-0 items-center gap-2 border-b border-border px-3 text-[13px]">
-      <MonitorIcon size={16} className="shrink-0" aria-hidden="true" />
-      {sessions && sessions.length > 1 && session ? (
-        <select
-          aria-label="Browser session"
-          value={session.sessionId}
-          onChange={(event) => {
-            const selected = sessions.find(
-              (session) => session.sessionId === event.currentTarget.value,
-            );
-            if (selected)
-              void navigate({
-                to: productRoutes[kind],
-                search: {
-                  ...search,
-                  session: selected.sessionId,
-                  replay: undefined,
-                },
-              });
-          }}
-          className="min-h-11 min-w-0 flex-1 rounded-lg bg-transparent pr-1 font-medium"
-        >
-          {sessions.toReversed().map((session) => (
-            <option key={session.sessionId} value={session.sessionId}>
-              {new Date(session.createdAt).toLocaleString(undefined, {
-                month: "short",
-                day: "numeric",
-                hour: "numeric",
-                minute: "2-digit",
-                second: "2-digit",
-              })}
-              {session.kind === "active"
-                ? " · Live"
-                : session.kind === "closing"
-                  ? " · Closing"
-                  : ""}
-            </option>
-          ))}
-        </select>
-      ) : (
-        <span className="min-w-0 flex-1 font-medium">
-          {session?.kind === "closed" ? "Replay" : "Scout’s view"}
-        </span>
-      )}
-      {kind === "play" && <BrowserToggle action="close" />}
-    </div>
-  );
-
   return (
-    <ConversationLayout
-      kind={kind}
-      addressChrome={
-        <>
-          <div className="mb-5 flex items-center justify-between gap-4 max-[760px]:mb-3">
-            <Link
-              to={kind === "review" ? "/" : productRoutes[kind]}
-              search={{}}
-              className={cn(playTextLink, "min-h-11 text-muted-foreground")}
-            >
-              <ArrowLeftIcon size={16} aria-hidden="true" />{" "}
-              <span className="whitespace-nowrap">New chat</span>
-            </Link>
-            <div className="flex items-center gap-5 max-[760px]:gap-4">
-              {thread.isOwner && thread.purpose.kind !== "general" ? (
-                <select
-                  aria-label="Chat visibility"
-                  title="Public shares the chat and browser with anyone."
-                  className="min-h-11 rounded-lg bg-transparent text-xs text-muted-foreground"
-                  value={thread.visibility}
-                  disabled={request.kind === "pending"}
-                  onChange={(event) => {
-                    void changeVisibility(event.target.value === "public" ? "public" : "private");
-                  }}
-                >
-                  <option value="private">Private</option>
-                  <option value="public" disabled={!thread.canControl}>
-                    Public
-                  </option>
-                </select>
-              ) : (
-                <span className="text-xs text-muted-foreground">
-                  {thread.visibility === "public" ? "Public" : "Private"}
-                </span>
-              )}
-              {canInspect && (
-                <Link
-                  to={managedId ? "/agents" : "/chats"}
-                  search={managedId ? { session: managedId } : { thread: threadId }}
-                  aria-label="Open in lab"
-                  className={cn(playTextLink, "min-h-11 text-muted-foreground")}
-                >
-                  <span className="whitespace-nowrap">
-                    <span className="max-[760px]:hidden">Open in </span>Lab
-                  </span>{" "}
-                  <ArrowUpRightIcon size={15} aria-hidden="true" />
-                </Link>
-              )}
-              {kind === "play" && <BrowserToggle action="open" />}
-              {kind === "play" && canStop && (
-                <BrowserStop
-                  onStop={() => {
-                    void stop();
-                  }}
-                  disabled={request.kind === "pending"}
-                />
-              )}
-            </div>
-          </div>
-          <div className="mb-5 flex min-w-0 items-center gap-4 max-[760px]:mb-4">
-            {kind === "play" && <ScoutPiece size="brand" className="max-[760px]:hidden" />}
-            <h1
-              className="truncate text-[28px] font-semibold tracking-[-0.8px] max-[760px]:text-[24px]"
-              title={thread.title ?? undefined}
-            >
-              {thread.title ?? `Chat with ${scout.displayName}`}
-            </h1>
-          </div>
-          {kind === "review" && (thread.primarySite || thread.canControl) && (
-            <div className="mb-4">
-              <ReviewSite
-                threadId={thread.threadId}
-                site={thread.primarySite}
-                canEdit={thread.canControl}
-                visibility={thread.visibility}
-              />
-            </div>
-          )}
-          {kind === "review" && managedId && (
-            <nav
-              aria-label="Review views"
-              className="mb-3 flex w-fit items-center gap-1 rounded-lg border bg-card p-1"
-            >
-              <Button asChild variant={showingWalkthrough ? "secondary" : "ghost"} size="sm">
-                <Link
-                  to="/review"
-                  search={{ ...search, view: "walkthrough" }}
-                  resetScroll={false}
-                  onClick={() => setMobilePane("main")}
-                  aria-current={showingWalkthrough ? "page" : undefined}
-                >
-                  Walkthrough
-                </Link>
-              </Button>
-              <Button asChild variant={showingWalkthrough ? "ghost" : "secondary"} size="sm">
-                <Link
-                  to="/review"
-                  search={{ ...search, view: "chat" }}
-                  resetScroll={false}
-                  onClick={() => setMobilePane("main")}
-                  aria-current={!showingWalkthrough ? "page" : undefined}
-                >
-                  Chat
-                </Link>
-              </Button>
-            </nav>
-          )}
-          {request.kind === "failed" && (
-            <p role="alert" className={playError}>
-              {request.message}
-            </p>
-          )}
-          {thread.status === "failed" &&
-            managed?.state.kind !== "waiting" &&
-            managed?.state.kind !== "checking" && (
-              <p className={playNotice} role="alert">
-                {managed?.requestCheckMessage ?? "Scout couldn't finish this turn."}
-                {!managed?.requestCheckMessage && (managed ? managed.canSend : thread.canControl)
-                  ? " Send a message to try again."
-                  : ""}
+    <div className="conversation-content flex h-full min-h-0 flex-col gap-2">
+      <header className="conversation-header shrink-0 space-y-3 px-3 pt-2">
+        <div className="flex min-w-0 items-center gap-4">
+          {kind === "play" && <ScoutPiece size="brand" className="max-[760px]:hidden" />}
+          <h1
+            className="line-clamp-2 min-w-0 text-[28px] leading-tight font-semibold tracking-[-0.8px] wrap-anywhere max-[760px]:text-[24px]"
+            title={thread.title ?? undefined}
+          >
+            {thread.title ?? `Chat with ${scout.displayName}`}
+          </h1>
+        </div>
+        {kind === "review" && managedId && (
+          <nav
+            aria-label="Review views"
+            className="flex w-fit items-center gap-1 rounded-lg border bg-card p-1"
+          >
+            <Button asChild variant={showingWalkthrough ? "secondary" : "ghost"} size="sm">
+              <Link
+                to="/review"
+                search={{ ...search, view: "walkthrough" }}
+                resetScroll={false}
+                onClick={() => setMobilePane("main")}
+                aria-current={showingWalkthrough ? "page" : undefined}
+              >
+                Walkthrough
+              </Link>
+            </Button>
+            <Button asChild variant={showingWalkthrough ? "ghost" : "secondary"} size="sm">
+              <Link
+                to="/review"
+                search={{ ...search, view: "chat" }}
+                resetScroll={false}
+                onClick={() => setMobilePane("main")}
+                aria-current={!showingWalkthrough ? "page" : undefined}
+              >
+                Chat &amp; replay
+              </Link>
+            </Button>
+          </nav>
+        )}
+        {request.kind === "failed" && (
+          <p role="alert" className={playError}>
+            {request.message}
+          </p>
+        )}
+        {handoff && (
+          <ChatHandoffNotice
+            handoff={handoff}
+            browserClosed={latestSession?.kind === "closed"}
+            canCancel={Boolean(canStop) && request.kind !== "pending"}
+            onCancel={() => {
+              void stop();
+            }}
+          />
+        )}
+        {managed?.state.kind === "waiting" && (
+          <div className={cn(playNotice, "space-y-3")}>
+            <p className="whitespace-pre-wrap">{managed.state.message}</p>
+            {managed.requestCheckMessage && (
+              <p role="alert" className="whitespace-pre-wrap">
+                {managed.requestCheckMessage}
               </p>
             )}
-          {handoff && (
-            <ChatHandoffNotice
-              handoff={handoff}
-              browserClosed={latestSession?.kind === "closed"}
-              canCancel={Boolean(canStop) && request.kind !== "pending"}
-              onCancel={() => {
-                void stop();
-              }}
-            />
-          )}
-          {managed?.state.kind === "waiting" && (
-            <div className={cn(playNotice, "space-y-3")}>
-              <p className="whitespace-pre-wrap">{managed.state.message}</p>
-              {managed.requestCheckMessage && (
-                <p role="alert" className="whitespace-pre-wrap">
-                  {managed.requestCheckMessage}
-                </p>
-              )}
-              {managed.handoffEmailFailed && (
-                <p role="alert">
-                  The handoff email couldn’t be sent. You can open the browser here.
-                </p>
-              )}
-              <div className="flex items-center gap-4">
-                {managed.interactiveLiveViewUrl && (
-                  <a
-                    href={managed.interactiveLiveViewUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className={playTextLink}
-                  >
-                    Open browser <ArrowUpRightIcon size={15} aria-hidden="true" />
-                  </a>
-                )}
-                <button
-                  type="button"
-                  disabled={request.kind === "pending"}
-                  className={productButtonVariants({ variant: "play" })}
-                  onClick={() => void resume()}
+            {managed.handoffEmailFailed && (
+              <p role="alert">The handoff email couldn’t be sent. You can open the browser here.</p>
+            )}
+            <div className="flex items-center gap-4">
+              {managed.interactiveLiveViewUrl && (
+                <a
+                  href={managed.interactiveLiveViewUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={playTextLink}
                 >
-                  Resume Scout
-                </button>
-              </div>
+                  Open browser <ArrowUpRightIcon size={15} aria-hidden="true" />
+                </a>
+              )}
+              <button
+                type="button"
+                disabled={request.kind === "pending"}
+                className={productButtonVariants({ variant: "play" })}
+                onClick={() => void resume()}
+              >
+                Resume Scout
+              </button>
             </div>
-          )}
-        </>
-      }
-      main={
-        <section
-          aria-label={showingWalkthrough ? "Walkthrough with Scout" : "Conversation with Scout"}
-          className="flex h-full min-h-0 flex-col gap-3 min-[768px]:pr-1"
+          </div>
+        )}
+      </header>
+      <section
+        aria-label={showingWalkthrough ? "Walkthrough with Scout" : "Conversation with Scout"}
+        className="conversation-body flex min-h-0 flex-1 flex-col gap-3 min-[768px]:pr-1"
+      >
+        {showingWalkthrough && managedId && (
+          <div className="min-h-0 flex-1 overflow-hidden rounded-[var(--product-panel-radius)] border border-border bg-card">
+            <TaskWalkthrough sessionId={managedId} />
+          </div>
+        )}
+        <div
+          hidden={showingWalkthrough}
+          className="min-h-0 flex-1 overflow-hidden rounded-[var(--product-panel-radius)] border border-border bg-card"
         >
-          {showingWalkthrough && managedId && (
-            <div className="min-h-0 flex-1 overflow-hidden rounded-[var(--product-panel-radius)] border border-border bg-card">
-              <TaskWalkthrough sessionId={managedId} />
-            </div>
-          )}
-          <div
-            hidden={showingWalkthrough}
-            className="min-h-0 flex-1 overflow-hidden rounded-[var(--product-panel-radius)] border border-border bg-card"
-          >
-            <MessageScrollerProvider autoScroll defaultScrollPosition="end">
-              <MessageScroller>
-                <MessageScrollerViewport
+          <MessageScrollerProvider autoScroll defaultScrollPosition="end">
+            <MessageScroller>
+              <MessageScrollerViewport aria-label="Session messages" className="[mask-image:none]">
+                <MessageScrollerContent
+                  className="gap-7 px-4 pt-5 pb-7"
+                  role="log"
                   aria-label="Session messages"
-                  className="[mask-image:none]"
+                  aria-live="polite"
                 >
-                  <MessageScrollerContent
-                    className="gap-7 px-4 pt-5 pb-7"
-                    role="log"
-                    aria-label="Session messages"
-                    aria-live="polite"
-                  >
-                    {messages.status === "CanLoadMore" && (
-                      <button
-                        type="button"
-                        className={cn(playTextLink, "self-center py-2")}
-                        onClick={() => {
-                          messages.loadMore(50);
-                        }}
-                      >
-                        Earlier messages
-                      </button>
-                    )}
-                    {messages.status === "LoadingFirstPage" && (
-                      <p role="status" className="text-sm text-muted-foreground">
-                        Loading messages…
-                      </p>
-                    )}
-                    {visibleMessages.map((message) => (
-                      <MessageScrollerItem
-                        key={message.id}
-                        messageId={message.id}
+                  {messages.status === "CanLoadMore" && (
+                    <button
+                      type="button"
+                      className={cn(playTextLink, "self-center py-2")}
+                      onClick={() => {
+                        messages.loadMore(50);
+                      }}
+                    >
+                      Earlier messages
+                    </button>
+                  )}
+                  {messages.status === "LoadingFirstPage" && (
+                    <p role="status" className="text-sm text-muted-foreground">
+                      Loading messages…
+                    </p>
+                  )}
+                  {visibleMessages.map((message) => (
+                    <MessageScrollerItem
+                      key={message.id}
+                      messageId={message.id}
+                      className={cn(
+                        "min-w-0 max-w-[95%] text-[15px] [overflow-wrap:anywhere]",
+                        message.role === "user" ? "ml-auto" : "mr-auto",
+                      )}
+                    >
+                      {message.role !== "user" && (
+                        <span className="mb-2 block text-xs font-medium text-muted-foreground">
+                          {scout?.displayName ?? "Scout"}
+                        </span>
+                      )}
+                      <p
                         className={cn(
-                          "min-w-0 max-w-[95%] text-[15px] [overflow-wrap:anywhere]",
-                          message.role === "user" ? "ml-auto" : "mr-auto",
+                          "whitespace-pre-wrap",
+                          message.role === "user" &&
+                            "rounded-[var(--product-message-radius)] bg-secondary px-5 py-3.5",
                         )}
                       >
-                        {message.role !== "user" && (
-                          <span className="mb-2 block text-xs font-medium text-muted-foreground">
-                            {scout?.displayName ?? "Scout"}
-                          </span>
-                        )}
-                        <p
-                          className={cn(
-                            "whitespace-pre-wrap",
-                            message.role === "user" &&
-                              "rounded-[var(--product-message-radius)] bg-secondary px-5 py-3.5",
-                          )}
-                        >
-                          {message.role === "user"
-                            ? gameInviteDisplayText(message.text)
-                            : message.text}
+                        {message.role === "user"
+                          ? gameInviteDisplayText(message.text)
+                          : message.text}
+                      </p>
+                    </MessageScrollerItem>
+                  ))}
+                  {thread.status === "failed" &&
+                    managed?.state.kind !== "waiting" &&
+                    managed?.state.kind !== "checking" && (
+                      <MessageScrollerItem messageId="turn-status" className="mr-auto max-w-[95%]">
+                        <p className={cn(playNotice, "mb-0 px-3 py-2")} role="alert">
+                          {managed?.requestCheckMessage ?? "Scout couldn't finish this turn."}
+                          {!managed?.requestCheckMessage &&
+                          (managed ? managed.canSend : thread.canControl)
+                            ? " Send a message to try again."
+                            : ""}
                         </p>
                       </MessageScrollerItem>
-                    ))}
-                    {(thread.status === "running" || managed?.state.kind === "checking") && (
-                      <p
-                        role="status"
-                        className="flex items-center gap-2.5 text-sm text-muted-foreground"
-                      >
-                        <LoaderCircleIcon size={15} className="animate-spin" aria-hidden="true" />
-                        {managed?.state.kind === "checking"
-                          ? "Checking…"
-                          : (phaseLabel ?? <span className="sr-only">Scout is working</span>)}
-                      </p>
                     )}
-                  </MessageScrollerContent>
-                </MessageScrollerViewport>
-                <MessageScrollerButton className="size-11" />
-              </MessageScroller>
-            </MessageScrollerProvider>
-          </div>
-          {thread.canControl ? (
-            showingWalkthrough && thread.status === "finished" ? (
-              <Button asChild variant="outline" size="sm" className="self-end">
-                <Link
-                  to="/review"
-                  search={{ ...search, view: "chat" }}
-                  resetScroll={false}
-                  onClick={() => setMobilePane("main")}
-                >
-                  Ask a follow-up
-                </Link>
-              </Button>
-            ) : (
-              <ConversationComposer
-                value={draft}
-                onChange={setDraft}
-                onSubmit={(event) => {
-                  void send(event);
-                }}
-                disabled={request.kind === "pending"}
-                canSend={canSend}
-                onStop={
-                  canStop
-                    ? () => {
-                        void stop();
-                      }
-                    : null
-                }
-                placeholder="Message Scout…"
-              >
-                <span role="status">
-                  {scout?.status !== "active"
-                    ? "This Scout is unavailable."
-                    : managedId
-                      ? managed?.busy
-                        ? "This Scout is busy in another chat."
-                        : thread.status === "stopping"
-                          ? "Stopping Scout…"
-                          : null
-                      : activityNotice(activity, threadId)}
-                </span>
-              </ConversationComposer>
-            )
-          ) : (
-            <Link
-              to={productRoutes[kind]}
-              search={{}}
-              className={cn(productButtonVariants({ variant: "play" }), "self-center my-3")}
-            >
-              {kind === "play" ? "Play with Scout" : "Review with Scout"}{" "}
-              <ArrowRightIcon size={16} />
-            </Link>
-          )}
-        </section>
-      }
-      right={
-        showingWalkthrough ? undefined : (
-          <section
-            aria-label="Scout's browser"
-            className="flex h-full min-h-0 flex-col overflow-hidden rounded-[var(--product-panel-radius)] border border-border bg-secondary/50 min-[768px]:ml-1"
-          >
-            {session?.kind === "closed" ? (
-              <BrowserReplay
-                key={session.sessionId}
-                sessionId={session.sessionId}
-                mode="playback"
-                header={browserHeader}
-                selectedPageId={
-                  search.replay?.sessionId === session.sessionId ? search.replay.pageId : null
-                }
-                onSelectPage={(pageId) => {
-                  void navigate({
-                    to: productRoutes[kind],
-                    search: {
-                      ...search,
-                      session: session.sessionId,
-                      replay:
-                        pageId === null ? undefined : { sessionId: session.sessionId, pageId },
-                    },
-                  });
-                }}
-              />
-            ) : (
-              <>
-                {browserHeader}
-                {liveView?.url ? (
-                  <>
-                    <iframe
-                      key={session?.sessionId}
-                      src={liveView.url}
-                      className="min-h-0 w-full flex-1 border-0 bg-white"
-                      title="Scout's live browser"
-                      sandbox="allow-same-origin allow-scripts"
-                      referrerPolicy="no-referrer"
-                    />
-                    <a
-                      className="flex min-h-11 items-center justify-center gap-1.5 p-2.5 text-xs text-muted-foreground hover:text-primary"
-                      href={liveView.url}
-                      target="_blank"
-                      rel="noreferrer"
+                  {(thread.status === "running" || managed?.state.kind === "checking") && (
+                    <p
+                      role="status"
+                      className="flex items-center gap-2.5 text-sm text-muted-foreground"
                     >
-                      Open browser <ArrowUpRightIcon size={14} aria-hidden="true" />
-                    </a>
-                  </>
-                ) : (
-                  <div className="flex flex-1 flex-col items-center justify-center gap-6 p-7 text-center">
-                    {kind === "play" ? (
-                      <div className="grid size-32 place-items-center rounded-full bg-play-sand/80">
-                        <ScoutPiece className="-rotate-6" />
-                      </div>
-                    ) : (
-                      <MonitorIcon
-                        size={32}
-                        strokeWidth={1.25}
-                        className="text-muted-foreground"
-                        aria-hidden="true"
-                      />
-                    )}
-                    <p className="max-w-[270px] text-sm text-muted-foreground">
-                      {session?.kind === "closing"
-                        ? "Closing the browser…"
-                        : "Scout hasn’t opened a browser yet."}
+                      <LoaderCircleIcon size={15} className="animate-spin" aria-hidden="true" />
+                      {managed?.state.kind === "checking"
+                        ? "Checking…"
+                        : (phaseLabel ?? <span className="sr-only">Scout is working</span>)}
                     </p>
-                  </div>
-                )}
-              </>
-            )}
-          </section>
-        )
-      }
-    />
+                  )}
+                </MessageScrollerContent>
+              </MessageScrollerViewport>
+              <MessageScrollerButton className="size-11" />
+            </MessageScroller>
+          </MessageScrollerProvider>
+        </div>
+        {thread.canControl ? (
+          showingWalkthrough && thread.status === "finished" ? (
+            <Button asChild variant="outline" size="sm" className="self-end">
+              <Link
+                to="/review"
+                search={{ ...search, view: "chat" }}
+                resetScroll={false}
+                onClick={() => setMobilePane("main")}
+              >
+                Ask a follow-up
+              </Link>
+            </Button>
+          ) : (
+            <ConversationComposer
+              value={draft}
+              onChange={setDraft}
+              onSubmit={(event) => {
+                void send(event);
+              }}
+              disabled={request.kind === "pending"}
+              canSend={canSend}
+              onStop={
+                canStop
+                  ? () => {
+                      void stop();
+                    }
+                  : null
+              }
+              placeholder="Message Scout…"
+            >
+              <span role="status">
+                {scout?.status !== "active"
+                  ? "This Scout is unavailable."
+                  : managedId
+                    ? managed?.busy
+                      ? "This Scout is busy in another chat."
+                      : thread.status === "stopping"
+                        ? "Stopping Scout…"
+                        : null
+                    : activityNotice(activity, threadId)}
+              </span>
+            </ConversationComposer>
+          )
+        ) : (
+          <Link
+            to={productRoutes[kind]}
+            search={{}}
+            className={cn(productButtonVariants({ variant: "play" }), "self-center my-3")}
+          >
+            {kind === "play" ? "Play with Scout" : "Review with Scout"} <ArrowRightIcon size={16} />
+          </Link>
+        )}
+      </section>
+    </div>
   );
 }

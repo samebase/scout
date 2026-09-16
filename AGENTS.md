@@ -108,6 +108,11 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
 
 ## Code guardrails
 
+- Use TanStack Router `Link` and `navigate` for internal navigation. When switching a selected
+  task or site, keep its surrounding layout and navigation mounted; put pending states inside
+  the content pane and use `resetScroll={false}` for sibling links. Navigation tests must include
+  a delayed query response and verify that the sidebar retains its DOM, width, and scroll position.
+
 - Write agent prompts and tool guidance as indented `outdent` multiline templates, with readable
   source lines. Separate topics with blank lines; use short sections and lists for longer prompts.
   Keep inserted data intact; do not dedent or normalize the completed prompt.

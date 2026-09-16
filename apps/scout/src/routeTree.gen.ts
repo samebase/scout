@@ -18,11 +18,9 @@ import { Route as PlayRouteImport } from './routes/play'
 import { Route as ReviewRouteImport } from './routes/review'
 import { Route as ScoutsRouteImport } from './routes/scouts'
 import { Route as SettingsRouteImport } from './routes/settings'
-import { Route as SitesRouteImport } from './routes/sites'
 import { Route as HandoffHandoffIdRouteImport } from './routes/handoff.$handoffId'
 import { Route as ScoutsIndexRouteImport } from './routes/scouts.index'
 import { Route as ScoutsSlugRouteImport } from './routes/scouts.$slug'
-import { Route as SitesIndexRouteImport } from './routes/sites.index'
 import { Route as SitesSiteRouteImport } from './routes/sites.$site'
 
 const IndexRoute = IndexRouteImport.update({
@@ -70,11 +68,6 @@ const SettingsRoute = SettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SitesRoute = SitesRouteImport.update({
-  id: '/sites',
-  path: '/sites',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const HandoffHandoffIdRoute = HandoffHandoffIdRouteImport.update({
   id: '/handoff/$handoffId',
   path: '/handoff/$handoffId',
@@ -90,15 +83,10 @@ const ScoutsSlugRoute = ScoutsSlugRouteImport.update({
   path: '/$slug',
   getParentRoute: () => ScoutsRoute,
 } as any)
-const SitesIndexRoute = SitesIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => SitesRoute,
-} as any)
 const SitesSiteRoute = SitesSiteRouteImport.update({
-  id: '/$site',
-  path: '/$site',
-  getParentRoute: () => SitesRoute,
+  id: '/sites/$site',
+  path: '/sites/$site',
+  getParentRoute: () => rootRouteImport,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -111,12 +99,10 @@ export interface FileRoutesByFullPath {
   '/review': typeof ReviewRoute
   '/scouts': typeof ScoutsRouteWithChildren
   '/settings': typeof SettingsRoute
-  '/sites': typeof SitesRouteWithChildren
   '/handoff/$handoffId': typeof HandoffHandoffIdRoute
   '/scouts/$slug': typeof ScoutsSlugRoute
   '/sites/$site': typeof SitesSiteRoute
   '/scouts/': typeof ScoutsIndexRoute
-  '/sites/': typeof SitesIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -131,7 +117,6 @@ export interface FileRoutesByTo {
   '/scouts/$slug': typeof ScoutsSlugRoute
   '/sites/$site': typeof SitesSiteRoute
   '/scouts': typeof ScoutsIndexRoute
-  '/sites': typeof SitesIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -144,12 +129,10 @@ export interface FileRoutesById {
   '/review': typeof ReviewRoute
   '/scouts': typeof ScoutsRouteWithChildren
   '/settings': typeof SettingsRoute
-  '/sites': typeof SitesRouteWithChildren
   '/handoff/$handoffId': typeof HandoffHandoffIdRoute
   '/scouts/$slug': typeof ScoutsSlugRoute
   '/sites/$site': typeof SitesSiteRoute
   '/scouts/': typeof ScoutsIndexRoute
-  '/sites/': typeof SitesIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -163,12 +146,10 @@ export interface FileRouteTypes {
     | '/review'
     | '/scouts'
     | '/settings'
-    | '/sites'
     | '/handoff/$handoffId'
     | '/scouts/$slug'
     | '/sites/$site'
     | '/scouts/'
-    | '/sites/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -183,7 +164,6 @@ export interface FileRouteTypes {
     | '/scouts/$slug'
     | '/sites/$site'
     | '/scouts'
-    | '/sites'
   id:
     | '__root__'
     | '/'
@@ -195,12 +175,10 @@ export interface FileRouteTypes {
     | '/review'
     | '/scouts'
     | '/settings'
-    | '/sites'
     | '/handoff/$handoffId'
     | '/scouts/$slug'
     | '/sites/$site'
     | '/scouts/'
-    | '/sites/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -213,8 +191,8 @@ export interface RootRouteChildren {
   ReviewRoute: typeof ReviewRoute
   ScoutsRoute: typeof ScoutsRouteWithChildren
   SettingsRoute: typeof SettingsRoute
-  SitesRoute: typeof SitesRouteWithChildren
   HandoffHandoffIdRoute: typeof HandoffHandoffIdRoute
+  SitesSiteRoute: typeof SitesSiteRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -282,13 +260,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/sites': {
-      id: '/sites'
-      path: '/sites'
-      fullPath: '/sites'
-      preLoaderRoute: typeof SitesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/handoff/$handoffId': {
       id: '/handoff/$handoffId'
       path: '/handoff/$handoffId'
@@ -310,19 +281,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ScoutsSlugRouteImport
       parentRoute: typeof ScoutsRoute
     }
-    '/sites/': {
-      id: '/sites/'
-      path: '/'
-      fullPath: '/sites/'
-      preLoaderRoute: typeof SitesIndexRouteImport
-      parentRoute: typeof SitesRoute
-    }
     '/sites/$site': {
       id: '/sites/$site'
-      path: '/$site'
+      path: '/sites/$site'
       fullPath: '/sites/$site'
       preLoaderRoute: typeof SitesSiteRouteImport
-      parentRoute: typeof SitesRoute
+      parentRoute: typeof rootRouteImport
     }
   }
 }
@@ -340,18 +304,6 @@ const ScoutsRouteChildren: ScoutsRouteChildren = {
 const ScoutsRouteWithChildren =
   ScoutsRoute._addFileChildren(ScoutsRouteChildren)
 
-interface SitesRouteChildren {
-  SitesSiteRoute: typeof SitesSiteRoute
-  SitesIndexRoute: typeof SitesIndexRoute
-}
-
-const SitesRouteChildren: SitesRouteChildren = {
-  SitesSiteRoute: SitesSiteRoute,
-  SitesIndexRoute: SitesIndexRoute,
-}
-
-const SitesRouteWithChildren = SitesRoute._addFileChildren(SitesRouteChildren)
-
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AccountDeletionRoute: AccountDeletionRoute,
@@ -362,8 +314,8 @@ const rootRouteChildren: RootRouteChildren = {
   ReviewRoute: ReviewRoute,
   ScoutsRoute: ScoutsRouteWithChildren,
   SettingsRoute: SettingsRoute,
-  SitesRoute: SitesRouteWithChildren,
   HandoffHandoffIdRoute: HandoffHandoffIdRoute,
+  SitesSiteRoute: SitesSiteRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

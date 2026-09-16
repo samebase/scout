@@ -197,6 +197,12 @@ export const finish = internalMutation({
       throw new Error("Authentication cleanup is incomplete");
     const session = await ctx.db.get("authSessions", sessionId);
     if (session && session.userId !== userId) throw new Error("Invalid account cleanup session");
+    const listings = await ctx.db
+      .query("siteUserListings")
+      .withIndex("by_user_id_and_hostname", (q) => q.eq("userId", userId))
+      .take(BATCH_SIZE);
+    for (const listing of listings) await ctx.db.delete(listing._id);
+    if (listings.length === BATCH_SIZE) return false;
     if (!(await deleteSessionChildren(ctx, sessionId))) return false;
     if (session) await ctx.db.delete(session._id);
     await ctx.db.replace("users", userId, { state: "deleted", deletedAt: Date.now() });

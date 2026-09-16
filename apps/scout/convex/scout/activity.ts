@@ -4,16 +4,15 @@ import { v } from "convex/values";
 import { components } from "../_generated/api";
 import type { Doc } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
-import { publicQuery } from "../functions";
+import { publicQuery, query } from "../functions";
 import { requireViewerPermission } from "../access";
 import { siteHostnameSchema } from "../../shared/site";
 import { omitNullish } from "../../shared/omitNullish";
 import { canAccess } from "../../shared/accessModel";
-import { chatPermission, isPublicChat, visibleChat } from "./chatAccess";
+import { chatPermission, visibleChat } from "./chatAccess";
 import { availabilityValidator, scoutReservation } from "./availability";
 import type { ViewerAccess } from "../access";
 import { getInitialCheck } from "../agentsApi/requestChecks";
-import { taskScreenshots } from "../agentsApi/screenshotRecords";
 import { walkthroughContent } from "../agentsApi/screenshotModel";
 import { chatPurposeValidator, chatVisibilityValidator, chatRuntimeValidator } from "./chatModel";
 import { scoutAgent } from "./agent";
@@ -278,13 +277,13 @@ export const list = publicQuery({
         ? site === null
           ? ctx.db
               .query("scoutChats")
-              .withIndex("by_visibility_and_purpose_kind_and_created_at", (q) =>
-                q.eq("visibility", "public").eq("purpose.kind", "review"),
+              .withIndex("by_public_site_eligible_and_created_at", (q) =>
+                q.eq("publicSiteEligible", true),
               )
           : ctx.db
               .query("scoutChats")
-              .withIndex("by_visibility_and_purpose_kind_and_primary_site_and_created_at", (q) =>
-                q.eq("visibility", "public").eq("purpose.kind", "review").eq("primarySite", site),
+              .withIndex("by_public_site_eligible_and_primary_site_and_created_at", (q) =>
+                q.eq("publicSiteEligible", true).eq("primarySite", site),
               )
         : site === null
           ? ctx.db
@@ -310,45 +309,33 @@ export const list = publicQuery({
         MAX_FEED_BYTES,
       ),
     });
-    const page = await Promise.all(
-      result.page.map(async (chat) =>
-        args.scope === "public" && !(await isPublicChat(ctx, chat)) ? null : summary(ctx, chat),
-      ),
-    );
-    return { ...result, page: page.filter((chat) => chat !== null) };
+    const page = await Promise.all(result.page.map((chat) => summary(ctx, chat)));
+    return { ...result, page };
   },
 });
 
-export const preview = publicQuery({
-  access: "access_public",
-  args: { threadId: v.string() },
-  returns: v.union(
-    v.object({
-      screenshot: v.union(
-        v.object({ id: v.id("agentsApiScreenshots"), note: v.string() }),
-        v.null(),
-      ),
-      walkthroughSummary: v.union(v.string(), v.null()),
-    }),
-    v.null(),
-  ),
-  handler: async (ctx, args) => {
-    const chat = await visibleChat(ctx, args.threadId, ctx.viewer);
-    if (!chat || chat.runtime?.kind !== "agents_api") return null;
-    const [session, captures] = await Promise.all([
-      ctx.db.get(chat.runtime.sessionId),
-      taskScreenshots(ctx, chat.runtime.sessionId),
-    ]);
-    const ready = captures.filter((capture) => capture.state.kind === "ready");
-    const selected = session?.walkthrough?.sections
-      .flatMap((section) => section.captureIds)
-      .map((id) => ready.find((capture) => capture._id === id))
-      .find((capture) => capture !== undefined);
-    const screenshot = selected ?? ready.at(-1);
-    return {
-      screenshot: screenshot ? { id: screenshot._id, note: screenshot.note } : null,
-      walkthroughSummary: session?.walkthrough?.summary ?? null,
-    };
+export const unassigned = query({
+  access: "access_account",
+  args: { paginationOpts: paginationOptsValidator },
+  returns: paginationResultValidator(activityValidator),
+  handler: async (ctx, { paginationOpts }) => {
+    const result = await ctx.db
+      .query("scoutChats")
+      .withIndex("by_user_id_and_purpose_kind_and_primary_site_and_created_at", (q) =>
+        q.eq("userId", ctx.viewer.userId).eq("purpose.kind", "review").eq("primarySite", undefined),
+      )
+      .order("desc")
+      .paginate({
+        ...paginationOpts,
+        numItems: Math.min(paginationOpts.numItems, MAX_FEED_ROWS),
+        maximumRowsRead: Math.min(paginationOpts.maximumRowsRead ?? MAX_FEED_ROWS, MAX_FEED_ROWS),
+        maximumBytesRead: Math.min(
+          paginationOpts.maximumBytesRead ?? MAX_FEED_BYTES,
+          MAX_FEED_BYTES,
+        ),
+      });
+    const page = await Promise.all(result.page.map((chat) => summary(ctx, chat)));
+    return { ...result, page };
   },
 });
 

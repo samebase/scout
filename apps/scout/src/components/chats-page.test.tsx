@@ -557,14 +557,14 @@ describe("Chat workspace", () => {
   test("shows the public landing at the root without redirecting to sign-in", async () => {
     remote.authenticated = false;
     remote.queries.set("accounts:currentViewerAccess", { kind: "anonymous" });
-    remote.queries.set("scout/activity:list", { results: [], status: "Exhausted" });
+    remote.queries.set("scout/sites:list", { results: [], status: "Exhausted" });
     const router = await openChats("/");
 
     expect(await screen.findByRole("heading", { name: "Send a Scout instead." })).toBeTruthy();
     expect(router.state.location.pathname).toBe("/");
     expect(screen.queryByRole("link", { name: "Play a game" })).toBeNull();
     expect(screen.queryByLabelText("Password")).toBeNull();
-    expect(remote.queryCalls).toHaveBeenCalledWith("scout/activity:list", {
+    expect(remote.queryCalls).toHaveBeenCalledWith("scout/sites:list", {
       site: null,
       scope: "public",
     });
@@ -574,7 +574,7 @@ describe("Chat workspace", () => {
     await waitFor(() =>
       expect(router.state.location.search).toMatchObject({ site: "samebase.com" }),
     );
-    expect(remote.queryCalls).toHaveBeenCalledWith("scout/activity:list", {
+    expect(remote.queryCalls).toHaveBeenCalledWith("scout/sites:list", {
       site: "samebase.com",
       scope: "public",
     });
@@ -611,7 +611,7 @@ describe("Chat workspace", () => {
       within(navigation)
         .getAllByRole("link")
         .map((link) => link.textContent),
-    ).toEqual(["Reviews", "Scouts", "Agents", "Lab", "Sites", "Members"]);
+    ).toEqual(["Reviews", "Scouts", "Agents", "Lab", "Members"]);
     const history = screen.getByRole("navigation", { name: "Chats" });
     expect(within(history).getAllByRole("list")).toHaveLength(1);
     expect(within(history).getByRole("link").getAttribute("href")).toBe("/chats?thread=thread-1");

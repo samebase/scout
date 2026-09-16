@@ -3,6 +3,9 @@ import { internalMutation } from "../_generated/server";
 import { mutation } from "../functions";
 import { requireSessionPermission } from "../agentsApi/access";
 import { siteHostnameSchema } from "../../shared/site";
+import { syncChatSite } from "./siteListings";
+import { ensureSiteResearch } from "../agentsApi/siteResearchRecords";
+import { getInitialCheck } from "../agentsApi/requestChecks";
 
 export const set = mutation({
   access: "access_review",
@@ -16,6 +19,7 @@ export const set = mutation({
     if (!chat || chat.userId !== ctx.viewer.userId || chat.purpose.kind !== "review")
       throw new Error("Review not found");
     await ctx.db.patch(chat._id, { primarySite: siteHostnameSchema.parse(args.site) });
+    await syncChatSite(ctx, chat);
     return null;
   },
 });
@@ -37,8 +41,14 @@ export const identify = internalMutation({
     )
       throw new Error("Review not found");
     const site = siteHostnameSchema.parse(args.site);
-    if (chat.primarySite) return { primarySite: chat.primarySite };
-    await ctx.db.patch(chat._id, { primarySite: site });
-    return { primarySite: site };
+    const primarySite = chat.primarySite ?? site;
+    if (!chat.primarySite) {
+      await ctx.db.patch(chat._id, { primarySite });
+      await syncChatSite(ctx, chat);
+    }
+    const check = await getInitialCheck(ctx, session._id);
+    if (check?.state.kind === "completed" && check.state.result.decision.kind === "approved")
+      await ensureSiteResearch(ctx, primarySite, session.userId);
+    return { primarySite };
   },
 });

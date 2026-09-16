@@ -2,7 +2,7 @@ import { authTables } from "@convex-dev/auth/server";
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import { requestCheckRecord } from "./agentsApi/requestCheckModel";
-import { siteResearchRecord } from "./agentsApi/siteResearchModel";
+import { siteProfile, siteResearchRecord } from "./agentsApi/siteResearchModel";
 import { screenshotRecord, walkthroughContent } from "./agentsApi/screenshotModel";
 import { vWorkflowId } from "@convex-dev/workflow";
 import {
@@ -30,6 +30,7 @@ import {
   scoutTurnStateValidator,
 } from "./scout/models";
 import { workspaceEntryValidator } from "./workspaceModel";
+import { sitePreviewState } from "./scout/sitePreviewModel";
 import {
   browserHandle,
   callResult,
@@ -71,6 +72,8 @@ const scoutTurnFields = {
   startedAt: v.number(),
   state: scoutTurnStateValidator,
 };
+
+const siteTask = v.object({ chatId: v.id("scoutChats"), createdAt: v.number() });
 
 export default defineSchema({
   ...authTables,
@@ -215,18 +218,17 @@ export default defineSchema({
     purpose: chatPurposeValidator,
     visibility: chatVisibilityValidator,
     primarySite: v.optional(v.string()),
+    // Absent until the manual site-directory backfill processes existing chats.
+    publicSiteEligible: v.optional(v.boolean()),
+    // Absent until syncChatSite has included this chat in the directory counters.
+    siteCounted: v.optional(v.literal(true)),
   })
     .index("by_thread_id", ["threadId"])
     .index("by_user_id_and_created_at", ["userId", "createdAt"])
-    .index("by_visibility_and_purpose_kind_and_created_at", [
-      "visibility",
-      "purpose.kind",
-      "createdAt",
-    ])
+    .index("by_public_site_eligible_and_created_at", ["publicSiteEligible", "createdAt"])
     .index("by_user_id_and_purpose_kind_and_created_at", ["userId", "purpose.kind", "createdAt"])
-    .index("by_visibility_and_purpose_kind_and_primary_site_and_created_at", [
-      "visibility",
-      "purpose.kind",
+    .index("by_public_site_eligible_and_primary_site_and_created_at", [
+      "publicSiteEligible",
       "primarySite",
       "createdAt",
     ])
@@ -235,6 +237,36 @@ export default defineSchema({
       "purpose.kind",
       "primarySite",
       "createdAt",
+    ]),
+  sites: defineTable({
+    hostname: v.string(),
+    latestPublicTask: v.union(siteTask, v.null()),
+    taskCount: v.number(),
+    publicTaskCount: v.number(),
+    preview: v.optional(sitePreviewState),
+    profile: v.optional(siteProfile),
+    researchId: v.optional(v.id("agentsApiSiteResearch")),
+  })
+    .index("by_hostname", ["hostname"])
+    .index("by_hostname_and_latest_public_task_created_at", [
+      "hostname",
+      "latestPublicTask.createdAt",
+    ])
+    .index("by_latest_public_task_created_at_and_hostname", [
+      "latestPublicTask.createdAt",
+      "hostname",
+    ]),
+  siteUserListings: defineTable({
+    userId: v.id("users"),
+    hostname: v.string(),
+    latestTask: siteTask,
+    taskCount: v.number(),
+  })
+    .index("by_user_id_and_hostname", ["userId", "hostname"])
+    .index("by_user_id_and_latest_task_created_at_and_hostname", [
+      "userId",
+      "latestTask.createdAt",
+      "hostname",
     ]),
   scoutWorkspaces: defineTable(
     v.union(

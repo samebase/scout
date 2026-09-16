@@ -6,6 +6,7 @@ import schema from "../schema";
 import { estimateAgentsApiCost } from "./cost";
 import { handoffEvidenceValidator } from "./handoffEvidenceModel";
 import { MAX_SESSION_CHECKS, requestCheckFinishedState, handoffContext } from "./requestCheckModel";
+import { syncChatSite } from "../scout/siteListings";
 
 export function getInitialCheck(ctx: Pick<QueryCtx, "db">, sessionId: Id<"agentsApiSessions">) {
   return ctx.db
@@ -162,6 +163,13 @@ export const finish = internalMutation({
       await ctx.db.patch(checkId, { state: { ...state, result: state.result } });
     } else {
       await ctx.db.patch(checkId, { state: { ...state, result: state.result } });
+    }
+    if (check.kind === "initial") {
+      const chat = await ctx.db
+        .query("scoutChats")
+        .withIndex("by_thread_id", (q) => q.eq("threadId", check.sessionId))
+        .unique();
+      if (chat) await syncChatSite(ctx, chat);
     }
     if (!matchesSession(check, session)) {
       if (check.kind === "initial" && session.state.kind === "stopped" && !session.browser)

@@ -24,7 +24,7 @@ export function SiteResearchView({
             <h2 className="text-lg font-semibold">Site research</h2>
             {session.canControl &&
               session.state.kind === "starting" &&
-              research?.state.kind === "running" && (
+              (research?.state.kind === "running" || research?.state.kind === "waiting") && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -53,8 +53,23 @@ export function SiteResearchView({
               {session.state.kind === "stopped" ? "Stopping…" : "Gathering site information…"}
             </p>
           )}
+          {research?.state.kind === "waiting" && (
+            <p role="status" className="text-sm text-muted-foreground">
+              {session.state.kind === "stopped" ? "Stopping…" : "Waiting for site research…"}
+            </p>
+          )}
           {research?.state.kind === "completed" && (
             <>
+              {research.state.source?.reused && (
+                <p className="text-sm text-muted-foreground">
+                  Reused research from{" "}
+                  <time dateTime={new Date(research.state.source.researchedAt).toISOString()}>
+                    {new Date(research.state.source.researchedAt).toLocaleDateString(undefined, {
+                      dateStyle: "medium",
+                    })}
+                  </time>
+                </p>
+              )}
               <div className="space-y-4 break-words text-sm leading-6 [&_h1]:font-semibold [&_h2]:font-semibold [&_li]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5">
                 <Markdown
                   skipHtml
@@ -120,7 +135,13 @@ export function SiteResearchView({
   );
 }
 
-export function SiteResearchInspector({ research }: { research: SiteResearch | null | undefined }) {
+export function SiteResearchInspector({
+  research,
+  sessionId,
+}: {
+  research: SiteResearch | null | undefined;
+  sessionId: Session["_id"];
+}) {
   if (!research) return null;
   return (
     <PaneFrame
@@ -130,7 +151,7 @@ export function SiteResearchInspector({ research }: { research: SiteResearch | n
           <dl className="grid gap-y-1 break-words [&_dd]:mb-2">
             <dt className="text-muted-foreground">Model</dt>
             <dd>{research.model}</dd>
-            {research.state.kind !== "running" && (
+            {research.state.kind !== "running" && research.state.kind !== "waiting" && (
               <>
                 <dt className="text-muted-foreground">Duration</dt>
                 <dd>{((research.state.finishedAt - research._creationTime) / 1000).toFixed(1)}s</dd>
@@ -152,7 +173,7 @@ export function SiteResearchInspector({ research }: { research: SiteResearch | n
               <Link
                 to="/agents"
                 search={{
-                  session: research.sessionId,
+                  session: sessionId,
                   step: "site_research",
                   view: "workspace",
                   file: research.requestPath,
@@ -166,7 +187,7 @@ export function SiteResearchInspector({ research }: { research: SiteResearch | n
               <Link
                 to="/agents"
                 search={{
-                  session: research.sessionId,
+                  session: sessionId,
                   step: "site_research",
                   view: "workspace",
                   file: research.responsePath,
@@ -179,7 +200,7 @@ export function SiteResearchInspector({ research }: { research: SiteResearch | n
             {research.state.kind === "completed" && (
               <Link
                 to="/agents"
-                search={{ session: research.sessionId, step: "site_research" }}
+                search={{ session: sessionId, step: "site_research" }}
                 className="underline"
               >
                 Brief

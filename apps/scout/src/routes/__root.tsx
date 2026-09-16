@@ -42,7 +42,8 @@ function RootComponent() {
     pathname === "/play" ||
     pathname.startsWith("/play/") ||
     pathname === "/review" ||
-    pathname.startsWith("/review/");
+    pathname.startsWith("/review/") ||
+    pathname.startsWith("/sites/");
   return (
     <RootDocument>
       <ScoutSidebarProvider>
