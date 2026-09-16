@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-15T13:52:55Z
+- **Last updated:** 2026-09-16T10:24:11Z
 
 ## Log
 
@@ -1283,10 +1283,19 @@ Admins inspect research beside Chat, with timing and reported credits; the task 
 available from every step
 (`apps/scout/convex/agentsApi/siteResearch.ts`, `apps/scout/src/agents-api/site-research.tsx`).
 
-### 2026-09-15 - working tree
+### 2026-09-15 - dc8b381
 
 Scout can save screenshots during a review and assemble them into an illustrated walkthrough.
 Convex records each capture's task, page, timing, and note; original PNGs stay in the existing
 R2 bucket and follow the task's public/private access. Review and Agents share a viewer with
 explanations, Previous/Next, and Expand, while Chat, Replay, and Workspace remain available
 (`apps/scout/convex/agentsApi/walkthrough.ts`, `apps/scout/src/components/task-walkthrough.tsx`).
+
+### 2026-09-16 - working tree
+
+The landing page groups reviews beside a large site screenshot, keeps the composer, and
+expands older reviews inline. New walkthroughs save passed, failed, or untested checks with
+explanations; interrupted tasks keep their status beside any saved results. Public reads require
+an approved request check, and the feed uses bounded pagination over existing site indexes.
+OpenAI HTTP requests now allow three retries for transient failures
+(`apps/scout/convex/scout/activity.ts`, `apps/scout/convex/agentsApi/client.ts`).

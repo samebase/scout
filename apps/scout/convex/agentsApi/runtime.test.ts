@@ -326,7 +326,11 @@ it("cancels and releases the browser even when recovering history fails", async 
   const { backend, provider, owner, sessionId, session } = await setup();
   await owner.mutation(api.agentsApi.sessions.stop, { sessionId });
   provider.beforeItems.mockRejectedValue(new Error("History unavailable"));
-  await expect(backend.action(internal.agentsApi.runtime.cleanup, { sessionId })).rejects.toThrow();
+  const cleanup = expect(
+    backend.action(internal.agentsApi.runtime.cleanup, { sessionId }),
+  ).rejects.toThrow();
+  await vi.advanceTimersByTimeAsync(10_000);
+  await cleanup;
   expect(provider.events).toContainEqual({ events: [{ type: "agent.session.input.cancel" }] });
   expect(await session()).toMatchObject({
     active: false,
@@ -706,11 +710,15 @@ it("keeps delayed assistant preambles ahead of tool calls by waiting for the pro
 
 it("closes the browser even if OpenAI cancellation fails, retaining the Scout lease", async () => {
   const { backend, sessionId, provider, session } = await setup();
-  provider.beforeRetrieve.mockRejectedValueOnce(new Error("Cancellation unavailable"));
+  provider.beforeRetrieve.mockRejectedValue(new Error("Cancellation unavailable"));
   const run = () => backend.action(internal.agentsApi.runtime.cleanup, { sessionId });
-  await expect(run()).rejects.toThrow("Connection error.");
+  const cleanup = expect(run()).rejects.toThrow("Connection error.");
+  await vi.advanceTimersByTimeAsync(10_000);
+  await cleanup;
+  expect(provider.beforeRetrieve).toHaveBeenCalledTimes(4);
   expect(closeFirecrawlBrowserSession).toHaveBeenCalledOnce();
   expect(await session()).toMatchObject({ active: true, browser: null });
+  provider.beforeRetrieve.mockResolvedValue(undefined);
   await run();
   expect((await session()).active).toBe(false);
   expect(closeFirecrawlBrowserSession).toHaveBeenCalledOnce();
@@ -725,7 +733,7 @@ it("retries failed cleanup only on Stop, deduplicates pending/running jobs, and 
   await backend.mutation(internal.agentsApi.sessions.scheduleCleanup, { sessionId });
   const firstJobId = (await session()).cleanupJobId;
   if (!firstJobId) throw new Error("Cleanup was not scheduled");
-  provider.beforeRetrieve.mockRejectedValueOnce(new Error("Cancellation unavailable"));
+  provider.beforeRetrieve.mockRejectedValue(new Error("Cancellation unavailable"));
   const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
   try {
     await backend.finishAllScheduledFunctions(vi.runAllTimers);
@@ -741,7 +749,7 @@ it("retries failed cleanup only on Stop, deduplicates pending/running jobs, and 
   expect(retryJobId).not.toBe(firstJobId);
   await owner.mutation(api.agentsApi.sessions.stop, { sessionId });
   expect((await session()).cleanupJobId).toBe(retryJobId);
-  provider.beforeRetrieve.mockImplementationOnce(async () => {
+  provider.beforeRetrieve.mockResolvedValue(undefined).mockImplementationOnce(async () => {
     expect((await backend.run((ctx) => ctx.db.system.get(retryJobId)))?.state.kind).toBe(
       "inProgress",
     );
@@ -756,7 +764,7 @@ it("retries failed cleanup only on Stop, deduplicates pending/running jobs, and 
   expect((await backend.run((ctx) => ctx.db.system.get(retryJobId)))?.state.kind).toBe("success");
   await owner.mutation(api.agentsApi.sessions.send, { sessionId, message: "Next task" });
   expect((await session()).cleanupJobId).toBeUndefined();
-  expect(provider.beforeRetrieve).toHaveBeenCalledTimes(3);
+  expect(provider.beforeRetrieve).toHaveBeenCalledTimes(6);
   expect(closeFirecrawlBrowserSession).toHaveBeenCalledOnce();
 });
 

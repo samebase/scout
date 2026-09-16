@@ -1,4 +1,15 @@
 import { v } from "convex/values";
+import { reviewChecksSchema } from "../../shared/reviewChecks";
+
+export const reviewChecksValidator = v.array(
+  v.object({
+    label: v.string(),
+    result: v.union(
+      ...reviewChecksSchema.element.shape.result.options.map((result) => v.literal(result)),
+    ),
+    explanation: v.string(),
+  }),
+);
 
 export const MAX_TASK_SCREENSHOTS = 20;
 export const MAX_SCREENSHOT_NOTE_LENGTH = 600;
@@ -37,6 +48,7 @@ export const screenshotRecord = v.object({
 
 export const walkthroughContent = v.object({
   summary: v.string(),
+  checks: v.optional(reviewChecksValidator),
   sections: v.array(
     v.object({
       heading: v.string(),

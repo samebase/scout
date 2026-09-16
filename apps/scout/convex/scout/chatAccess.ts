@@ -10,9 +10,7 @@ export async function isPublicChat(ctx: Pick<QueryCtx, "db">, chat: Doc<"scoutCh
   if (chat.visibility !== "public") return false;
   if (chat.runtime?.kind !== "agents_api") return true;
   const check = await getInitialCheck(ctx, chat.runtime.sessionId);
-  return (
-    !check || (check.state.kind === "completed" && check.state.result.decision.kind === "approved")
-  );
+  return check?.state.kind === "completed" && check.state.result.decision.kind === "approved";
 }
 
 export function chatPermission(purpose: Doc<"scoutChats">["purpose"]) {

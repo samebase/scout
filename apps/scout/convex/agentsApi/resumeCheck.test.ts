@@ -389,18 +389,28 @@ it("saves capture failure without an OpenAI call and permits a manual retry", as
 });
 
 it.each([
-  { name: "invalid decision", output: () => response({ decision: { kind: "maybe" } }) },
+  {
+    name: "invalid decision",
+    attempts: 1,
+    output: () => response({ decision: { kind: "maybe" } }),
+  },
   {
     name: "provider failure",
-    output: () => Response.json({ error: { message: "Unavailable" } }, { status: 503 }),
+    attempts: 4,
+    output: () =>
+      Response.json(
+        { error: { message: "Unavailable" } },
+        { status: 503, headers: { "retry-after-ms": "1" } },
+      ),
   },
 ])(
-  "saves $name with its call and restores the same handoff without retrying",
-  async ({ output }) => {
+  "saves $name and restores the same handoff after $attempts HTTP attempts",
+  async ({ output, attempts }) => {
     const t = await setup();
     const request = vi.fn<typeof fetch>(async () => output());
     vi.stubGlobal("fetch", request);
     const checkId = await t.resume();
+    vi.useRealTimers();
     expect(await t.run(checkId)).toBe(false);
     expect(await t.inspect(checkId)).toMatchObject({
       evidence,
@@ -411,7 +421,7 @@ it.each([
       browser,
       state: { kind: "waiting", ...handoff },
     });
-    expect(request).toHaveBeenCalledTimes(1);
+    expect(request).toHaveBeenCalledTimes(attempts);
     expect(closeBrowser).not.toHaveBeenCalled();
   },
 );

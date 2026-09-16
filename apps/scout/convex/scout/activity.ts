@@ -7,11 +7,14 @@ import type { QueryCtx } from "../_generated/server";
 import { publicQuery } from "../functions";
 import { requireViewerPermission } from "../access";
 import { siteHostnameSchema } from "../../shared/site";
+import { omitNullish } from "../../shared/omitNullish";
 import { canAccess } from "../../shared/accessModel";
-import { chatPermission, visibleChat, isPublicChat } from "./chatAccess";
+import { chatPermission, isPublicChat, visibleChat } from "./chatAccess";
 import { availabilityValidator, scoutReservation } from "./availability";
 import type { ViewerAccess } from "../access";
 import { getInitialCheck } from "../agentsApi/requestChecks";
+import { taskScreenshots } from "../agentsApi/screenshotRecords";
+import { walkthroughContent } from "../agentsApi/screenshotModel";
 import { chatPurposeValidator, chatVisibilityValidator, chatRuntimeValidator } from "./chatModel";
 import { scoutAgent } from "./agent";
 import { MAX_BROWSER_SESSIONS_PER_THREAD } from "./browserSessions";
@@ -57,7 +60,11 @@ const activityValidator = v.object({
   scout: scoutValidator,
   status: statusValidator,
   latestSession: v.union(sessionValidator, v.null()),
+  walkthrough: v.union(walkthroughContent.pick("summary", "checks"), v.null()),
 });
+
+const MAX_FEED_ROWS = 24;
+const MAX_FEED_BYTES = 256 * 1024;
 
 export const currentActivityValidator = v.union(
   v.object({ kind: v.literal("private") }),
@@ -108,6 +115,7 @@ export async function currentScoutActivity(
           status: managedStatus(session),
           scout: { _id: scout._id, displayName: scout.displayName, status: scout.status },
           latestSession: null,
+          walkthrough: null,
         };
     return {
       kind: "visible",
@@ -220,6 +228,12 @@ async function summary(ctx: QueryCtx, chat: Doc<"scoutChats">) {
             kind: browser.lifecycle.kind,
           }
         : null,
+      walkthrough: managed.walkthrough
+        ? {
+            summary: managed.walkthrough.summary,
+            ...omitNullish({ checks: managed.walkthrough.checks }),
+          }
+        : null,
     };
   }
   const [thread, scout, status, session] = await Promise.all([
@@ -243,6 +257,7 @@ async function summary(ctx: QueryCtx, chat: Doc<"scoutChats">) {
     status,
     scout: { _id: scout._id, displayName: scout.displayName, status: scout.status },
     latestSession: session ? sessionSummary(session) : null,
+    walkthrough: null,
   };
 }
 
@@ -282,13 +297,58 @@ export const list = publicQuery({
               .withIndex("by_user_id_and_purpose_kind_and_primary_site_and_created_at", (q) =>
                 q.eq("userId", userId).eq("purpose.kind", "review").eq("primarySite", site),
               );
-    const result = await rows.order("desc").paginate(args.paginationOpts);
+    // Bound both initial and reactive pages without discarding native cursor/split options.
+    const result = await rows.order("desc").paginate({
+      ...args.paginationOpts,
+      numItems: Math.min(args.paginationOpts.numItems, MAX_FEED_ROWS),
+      maximumRowsRead: Math.min(
+        args.paginationOpts.maximumRowsRead ?? MAX_FEED_ROWS,
+        MAX_FEED_ROWS,
+      ),
+      maximumBytesRead: Math.min(
+        args.paginationOpts.maximumBytesRead ?? MAX_FEED_BYTES,
+        MAX_FEED_BYTES,
+      ),
+    });
     const page = await Promise.all(
       result.page.map(async (chat) =>
         args.scope === "public" && !(await isPublicChat(ctx, chat)) ? null : summary(ctx, chat),
       ),
     );
     return { ...result, page: page.filter((chat) => chat !== null) };
+  },
+});
+
+export const preview = publicQuery({
+  access: "access_public",
+  args: { threadId: v.string() },
+  returns: v.union(
+    v.object({
+      screenshot: v.union(
+        v.object({ id: v.id("agentsApiScreenshots"), note: v.string() }),
+        v.null(),
+      ),
+      walkthroughSummary: v.union(v.string(), v.null()),
+    }),
+    v.null(),
+  ),
+  handler: async (ctx, args) => {
+    const chat = await visibleChat(ctx, args.threadId, ctx.viewer);
+    if (!chat || chat.runtime?.kind !== "agents_api") return null;
+    const [session, captures] = await Promise.all([
+      ctx.db.get(chat.runtime.sessionId),
+      taskScreenshots(ctx, chat.runtime.sessionId),
+    ]);
+    const ready = captures.filter((capture) => capture.state.kind === "ready");
+    const selected = session?.walkthrough?.sections
+      .flatMap((section) => section.captureIds)
+      .map((id) => ready.find((capture) => capture._id === id))
+      .find((capture) => capture !== undefined);
+    const screenshot = selected ?? ready.at(-1);
+    return {
+      screenshot: screenshot ? { id: screenshot._id, note: screenshot.note } : null,
+      walkthroughSummary: session?.walkthrough?.summary ?? null,
+    };
   },
 });
 

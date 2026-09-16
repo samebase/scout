@@ -164,6 +164,46 @@ async function setup(visibility: Doc<"scoutChats">["visibility"]) {
   };
 }
 
+it("uses the first walkthrough image for a feed preview and hides private previews", async () => {
+  const t = await setup("public");
+  const first = await t.reserve("first", "browser-1");
+  await t.finish(first);
+  const second = await t.reserve("second", "browser-1");
+  await t.finish(second);
+  await t.reserve("still-pending", "browser-1");
+  expect(await t.backend.query(api.scout.activity.preview, { threadId: t.sessionId })).toEqual({
+    screenshot: { id: second, note },
+    walkthroughSummary: null,
+  });
+  await t.backend.run((ctx) =>
+    ctx.db.patch(t.sessionId, {
+      walkthrough: {
+        summary: "The calculator returned the expected result.",
+        sections: [
+          {
+            heading: "Result",
+            explanation: "The calculated total is correct.",
+            captureIds: [first, second],
+          },
+        ],
+      },
+    }),
+  );
+  const expected = {
+    screenshot: { id: first, note },
+    walkthroughSummary: "The calculator returned the expected result.",
+  };
+  expect(await t.backend.query(api.scout.activity.preview, { threadId: t.sessionId })).toEqual(
+    expected,
+  );
+  await t.backend.run((ctx) => ctx.db.patch(t.chatId, { visibility: "private" }));
+  expect(await t.backend.query(api.scout.activity.preview, { threadId: t.sessionId })).toBeNull();
+  expect(await t.other.query(api.scout.activity.preview, { threadId: t.sessionId })).toBeNull();
+  expect(await t.owner.query(api.scout.activity.preview, { threadId: t.sessionId })).toEqual(
+    expected,
+  );
+});
+
 it("lets a private task's owner and admin read metadata and sign its image", async () => {
   const t = await setup("private");
   const captureId = await t.reserve("capture-1", "browser-1");
@@ -395,7 +435,13 @@ it("rejects invalid walkthrough references atomically and keeps the previous rep
     explanation: "The calculator returns the correct sum.",
     captureIds: [ready],
   };
-  const report = { summary: "Calculator walkthrough", sections: [section] };
+  const report = {
+    summary: "Calculator walkthrough",
+    checks: [
+      { label: "Add two numbers", result: "passed" as const, explanation: "The sum was correct." },
+    ],
+    sections: [section],
+  };
   expect(
     await t.backend.mutation(internal.agentsApi.walkthrough.save, {
       sessionId: t.sessionId,
@@ -407,6 +453,7 @@ it("rejects invalid walkthrough references atomically and keeps the previous rep
       t.backend.mutation(internal.agentsApi.walkthrough.save, {
         sessionId: t.sessionId,
         summary: "Replacement",
+        checks: report.checks,
         sections: [section, { ...section, captureIds: [invalid] }],
       }),
     ).rejects.toThrow(/Invalid screenshot ID|Use only completed screenshots from this task/);
@@ -419,6 +466,14 @@ it("rejects invalid walkthrough references atomically and keeps the previous rep
       sections: [{ ...section, captureIds: [ready, ready] }],
     }),
   ).rejects.toThrow("Do not repeat a screenshot within a section");
+  await expect(
+    t.backend.mutation(internal.agentsApi.walkthrough.save, {
+      sessionId: t.sessionId,
+      ...report,
+      checks: [],
+    }),
+  ).rejects.toThrow();
+  expect((await t.backend.run((ctx) => ctx.db.get(t.sessionId)))?.walkthrough).toEqual(report);
 });
 
 it("retains report references and renewable image access after browser closure and task completion", async () => {
@@ -430,6 +485,14 @@ it("retains report references and renewable image access after browser closure a
   await t.close("browser-1");
   const report = {
     summary: "The calculator works.",
+    checks: [
+      { label: "Add two numbers", result: "passed" as const, explanation: "The sum was correct." },
+      {
+        label: "Export the result",
+        result: "untested" as const,
+        explanation: "Export requires a paid plan.",
+      },
+    ],
     sections: [
       {
         heading: "Result",

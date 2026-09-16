@@ -8,9 +8,9 @@ export function ProductHome({ search }: { search: ReviewFeedSearch }) {
     <ProductShell product="review">
       <main
         id="main-content"
-        className="mx-auto max-w-[1120px] px-9 pt-14 pb-16 max-[640px]:px-5 max-[640px]:pt-8"
+        className="mx-auto max-w-[1160px] px-8 pt-12 pb-16 max-[640px]:px-4 max-[640px]:pt-8"
       >
-        <div className="mx-auto mb-14 max-w-[660px]">
+        <div className="mx-auto mb-10 max-w-[660px]">
           <ConversationLobby kind="review" />
         </div>
         <ActivityFeed search={search} />

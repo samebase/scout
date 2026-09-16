@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { Button } from "#components/ui/button";
+import { ReviewChecks, ReviewCheckSummary } from "#components/review-checks";
 import {
   Dialog,
   DialogContent,
@@ -100,9 +101,10 @@ function SessionWalkthrough({ sessionId }: { sessionId: Id<"agentsApiSessions"> 
             className="min-w-0 space-y-5 @2xl/walkthrough:min-h-0 @2xl/walkthrough:overflow-auto @2xl/walkthrough:pr-1"
           >
             <header className="space-y-2">
-              <p className="text-xs font-medium text-muted-foreground">
-                {walkthrough ? "Walkthrough" : "Captured so far"}
-              </p>
+              {!walkthrough && (
+                <p className="text-xs font-medium text-muted-foreground">Captured so far</p>
+              )}
+              {walkthrough?.checks && <ReviewCheckSummary checks={walkthrough.checks} />}
               {walkthrough && index === 0 && (
                 <p className="text-sm leading-relaxed whitespace-pre-wrap wrap-anywhere">
                   {walkthrough.summary}
@@ -115,6 +117,7 @@ function SessionWalkthrough({ sessionId }: { sessionId: Id<"agentsApiSessions"> 
                 {step.explanation}
               </p>
             </div>
+            {walkthrough?.checks && <ReviewChecks checks={walkthrough.checks} />}
           </div>
           {step.capture ? (
             <CaptureImage
