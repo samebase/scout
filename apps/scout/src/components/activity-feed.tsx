@@ -1,7 +1,7 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useAction, usePaginatedQuery, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
-import { ArrowRightIcon, ChevronDownIcon, SearchIcon, XIcon } from "lucide-react";
+import { ArrowRightIcon, SearchIcon, XIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { z } from "zod";
 import { Button } from "#components/ui/button";
@@ -198,7 +198,7 @@ function SiteCard({
         </Link>
       </header>
       <div className="min-w-0 px-4 min-[760px]:px-5">
-        {tasks.results.map((activity) => (
+        {tasks.results.slice(0, 2).map((activity) => (
           <ReviewRow key={activity.threadId} activity={activity} />
         ))}
         {tasks.status === "LoadingFirstPage" && (
@@ -211,17 +211,16 @@ function SiteCard({
             {scope === "mine" ? "You haven't reviewed this site yet." : "No public tasks yet."}
           </p>
         )}
-        {(tasks.status === "CanLoadMore" || tasks.status === "LoadingMore") && (
-          <Button
-            variant="ghost"
-            className="w-full rounded-none border-t py-3 text-xs font-normal text-primary"
-            disabled={tasks.status === "LoadingMore"}
-            onClick={() => tasks.loadMore(2)}
-          >
-            {tasks.status === "LoadingMore" ? "Loading…" : "Show more tasks"}
-            <ChevronDownIcon aria-hidden="true" />
-          </Button>
-        )}
+        <Button
+          asChild
+          variant="ghost"
+          className="w-full rounded-none border-t py-3 text-xs font-normal text-primary"
+        >
+          <Link to="/sites/$site" params={{ site: site.hostname }} search={{ scope }}>
+            View all tasks
+            <ArrowRightIcon aria-hidden="true" />
+          </Link>
+        </Button>
       </div>
     </article>
   );

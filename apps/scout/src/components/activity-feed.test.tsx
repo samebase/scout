@@ -202,7 +202,7 @@ async function openFeed(path = "/") {
     component: () => (
       <>
         <h1>{detail.useParams().site}</h1>
-        <SiteTaskList site={detail.useParams().site} scope="public" />
+        <SiteTaskList site={detail.useParams().site} scope={detail.useSearch().scope ?? "public"} />
       </>
     ),
   });
@@ -239,19 +239,27 @@ test("requests six sites initially and two tasks for each site", async () => {
   expect(remote.loadPaperTasks).not.toHaveBeenCalled();
 });
 
-test.each(["chessmerge.com", "papergames.io"])(
-  "Show more tasks loads two tasks only for %s",
-  async (site) => {
-    await openFeed();
+test.each(["public", "mine"])(
+  "View all tasks opens the site's task page and preserves the %s scope",
+  async (scope) => {
+    const router = await openFeed(`/?scope=${scope}`);
     const user = userEvent.setup();
-    const card = within(screen.getByRole("article", { name: site }));
+    const card = within(screen.getByRole("article", { name: "chessmerge.com" }));
+    const link = card.getByRole("link", { name: "View all tasks" });
+    expect(link.getAttribute("href")).toBe(`/sites/chessmerge.com?scope=${scope}`);
+    expect(card.queryByRole("button", { name: "Show more tasks" })).toBeNull();
+    await user.click(link);
 
-    await user.click(card.getByRole("button", { name: "Show more tasks" }));
-
-    const selected = site === "chessmerge.com" ? remote.loadChessTasks : remote.loadPaperTasks;
-    const other = site === "chessmerge.com" ? remote.loadPaperTasks : remote.loadChessTasks;
-    expect(selected).toHaveBeenCalledExactlyOnceWith(2);
-    expect(other).not.toHaveBeenCalled();
+    await waitFor(() => expect(router.state.location.pathname).toBe("/sites/chessmerge.com"));
+    expect(router.state.location.search).toEqual({ scope });
+    expect(await screen.findByRole("region", { name: "Tasks for chessmerge.com" })).toBeTruthy();
+    expect(remote.paginated).toHaveBeenCalledWith(
+      "scout/activity:list",
+      { site: "chessmerge.com", scope },
+      { initialNumItems: 10 },
+    );
+    expect(remote.loadChessTasks).not.toHaveBeenCalled();
+    expect(remote.loadPaperTasks).not.toHaveBeenCalled();
     expect(remote.loadSites).not.toHaveBeenCalled();
   },
 );
