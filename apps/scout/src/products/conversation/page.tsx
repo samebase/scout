@@ -704,7 +704,7 @@ function ConversationSession({
           aria-label={showingWalkthrough ? "Walkthrough with Scout" : "Conversation with Scout"}
           className="flex h-full min-h-0 flex-col gap-3 min-[768px]:pr-1"
         >
-          <header className="shrink-0 space-y-3">
+          <header className="shrink-0 space-y-3 px-3 py-2">
             <div className="flex min-w-0 items-center gap-4">
               {kind === "play" && <ScoutPiece size="brand" className="max-[760px]:hidden" />}
               <h1
