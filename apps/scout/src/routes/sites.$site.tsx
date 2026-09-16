@@ -115,6 +115,7 @@ function SiteLayout() {
                     <li key={site.hostname}>
                       <Link
                         to="/sites/$site"
+                        resetScroll={false}
                         params={{ site: site.hostname }}
                         activeOptions={{ includeSearch: false }}
                         search={{ scope, view: workspace ? "workspace" : "tasks" }}

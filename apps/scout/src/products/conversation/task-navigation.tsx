@@ -14,11 +14,13 @@ export function TaskNavigation({
   site,
   scope,
   current,
+  selectedThreadId,
   view,
 }: {
   site: string;
   scope: "public" | "mine";
   current: Task;
+  selectedThreadId: string;
   view: "walkthrough" | "chat";
 }) {
   const tasks = usePaginatedQuery(
@@ -33,14 +35,20 @@ export function TaskNavigation({
       content={
         <nav aria-label={`Tasks for ${site}`} className="pr-2">
           <ul className="space-y-1">
-            {!currentIsLoaded && <TaskLink task={current} selected view={view} />}
+            {!currentIsLoaded && (
+              <TaskLink
+                task={current}
+                selected={current.threadId === selectedThreadId}
+                view={view}
+              />
+            )}
             {tasks.results.map((task) => (
               <TaskLink
                 key={task.threadId}
                 task={task}
-                selected={task.threadId === current.threadId}
+                selected={task.threadId === selectedThreadId}
                 view={
-                  task.threadId === current.threadId
+                  task.threadId === selectedThreadId
                     ? view
                     : task.walkthrough
                       ? "walkthrough"
@@ -75,6 +83,7 @@ function TaskLink({
     <li>
       <Link
         to="/review"
+        resetScroll={false}
         search={{ thread: task.threadId, view }}
         aria-current={selected ? "page" : undefined}
         onClick={() => setMobilePane("main")}

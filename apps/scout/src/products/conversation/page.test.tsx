@@ -625,9 +625,13 @@ test.each([
   { visibility: "public", scope: "public" },
   { visibility: "private", scope: "mine" },
 ])(
-  "the task sidebar switches between $visibility reviews of the same site",
+  "the task sidebar survives delayed navigation between $visibility reviews",
   async ({ visibility, scope }) => {
     vi.spyOn(window, "innerWidth", "get").mockReturnValue(1280);
+    // happy-dom has no layout measurements; give the real sidebar a desktop viewport.
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
+      new DOMRect(0, 0, 1280, 720),
+    );
     const first = session({
       title: "Test signup",
       purpose: { kind: "review" },
@@ -642,7 +646,7 @@ test.each([
       visibility,
     });
     remote.queries.set("scout/activity:get", first);
-    remote.queries.set("scout/activity:get:second-review", second);
+    remote.queries.set("scout/activity:get:second-review", undefined);
     remote.queries.set("scout/activity:list", {
       results: [first, second],
       status: "Exhausted",
@@ -650,6 +654,16 @@ test.each([
     });
     const router = await openPlay("/review?thread=game-thread&session=old-browser&view=chat");
     const nav = await screen.findByRole("navigation", { name: "Tasks for samebase.com" });
+    const resize = screen.getByRole("separator", { name: "Resize task navigation" });
+    fireEvent.keyDown(resize, { key: "ArrowRight" });
+    const resizedWidth = resize.getAttribute("aria-valuenow");
+    expect(Number(resizedWidth)).toBeGreaterThan(260);
+    const scrollport = nav.closest<HTMLElement>("[data-sidebar-layout-part='pane-scrollport']");
+    if (!scrollport) throw new Error("Task navigation needs a scroll container");
+    scrollport.scrollTop = 180;
+    fireEvent.change(screen.getByLabelText("Message Scout"), {
+      target: { value: "First task draft" },
+    });
     expect(remote.queryCalls).toHaveBeenCalledWith("scout/activity:list", {
       site: "samebase.com",
       scope,
@@ -663,8 +677,26 @@ test.each([
     await waitFor(() =>
       expect(router.state.location.search).toEqual({ thread: "second-review", view: "chat" }),
     );
+    expect(await screen.findByText("Opening task…")).toBeTruthy();
+    expect(screen.getByRole("navigation", { name: "Tasks for samebase.com" })).toBe(nav);
+    expect(scrollport.scrollTop).toBe(180);
+    expect(screen.queryByRole("textbox", { name: "Message Scout" })).toBeNull();
+    expect(
+      within(nav)
+        .getByRole("link", { name: /Test export/ })
+        .getAttribute("aria-current"),
+    ).toBe("page");
+    act(() => {
+      remote.queries.set("scout/activity:get:second-review", second);
+      remote.revision += 1;
+      remote.subscribers.forEach((listener) => listener());
+    });
     expect(await screen.findByRole("heading", { name: "Test export" })).toBeTruthy();
     const nextNav = screen.getByRole("navigation", { name: "Tasks for samebase.com" });
+    expect(nextNav).toBe(nav);
+    expect(scrollport.scrollTop).toBe(180);
+    expect(resize.getAttribute("aria-valuenow")).toBe(resizedWidth);
+    expect(screen.queryByDisplayValue("First task draft")).toBeNull();
     expect(
       within(nextNav)
         .getByRole("link", { name: /Test export/ })
@@ -675,6 +707,14 @@ test.each([
         .getByRole("link", { name: /Test signup/ })
         .getAttribute("aria-current"),
     ).toBeNull();
+    act(() => router.history.back());
+    expect(await screen.findByRole("heading", { name: "Test signup" })).toBeTruthy();
+    expect(screen.getByRole("navigation", { name: "Tasks for samebase.com" })).toBe(nav);
+    expect(screen.getByRole("separator", { name: "Resize task navigation" })).toBe(resize);
+    expect(resize.getAttribute("aria-valuenow")).toBe(resizedWidth);
+    act(() => router.history.forward());
+    expect(await screen.findByRole("heading", { name: "Test export" })).toBeTruthy();
+    expect(screen.getByRole("navigation", { name: "Tasks for samebase.com" })).toBe(nav);
   },
 );
 
