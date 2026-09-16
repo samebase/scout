@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import userEvent from "@testing-library/user-event";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import {
   createMemoryHistory,
   createRootRoute,
@@ -58,6 +58,15 @@ vi.mock("convex/react", () => ({
       getFunctionName(reference) === "scout/activity:get" &&
       args &&
       typeof args === "object" &&
+      "threadId" in args
+    ) {
+      const scopedKey = `scout/activity:get:${String(args.threadId)}`;
+      if (remote.queries.has(scopedKey)) return remote.queries.get(scopedKey);
+    }
+    if (
+      getFunctionName(reference) === "scout/activity:get" &&
+      args &&
+      typeof args === "object" &&
       "threadId" in args &&
       args.threadId === "missing-thread"
     )
@@ -74,8 +83,9 @@ vi.mock("convex/react", () => ({
     if (getFunctionName(reference) === "browserReplay:listPages") return remote.listReplayPages;
     throw new Error("Unexpected action");
   },
-  usePaginatedQuery: (reference: FunctionReference<"query">) => {
+  usePaginatedQuery: (reference: FunctionReference<"query">, args: unknown) => {
     useSyncExternalStore(subscribe, () => remote.revision);
+    remote.queryCalls(getFunctionName(reference), args);
     if (getFunctionName(reference) === "scout/activity:messages")
       return { results: remote.messages, status: "Exhausted" };
     return remote.queries.get(getFunctionName(reference));
@@ -147,6 +157,11 @@ beforeEach(() => {
     { _id: "scout-2", displayName: "Moss", status: "active" },
   ]);
   remote.queries.set("scout/activity:get", session());
+  remote.queries.set("scout/activity:list", {
+    results: [],
+    status: "Exhausted",
+    loadMore: vi.fn(),
+  });
   remote.queries.set("scout/chats:getScoutActivity", { kind: "idle" });
   remote.createThread.mockReset().mockResolvedValue({ threadId: "game-thread" });
   remote.sendMessage.mockReset().mockResolvedValue(null);
@@ -606,6 +621,87 @@ const invitation = "Play with me at https://example.com/room/blue. Wait for me t
 function fillInvite() {
   fireEvent.change(screen.getByLabelText("Message Scout"), { target: { value: invitation } });
 }
+
+test.each([
+  { visibility: "public", scope: "public" },
+  { visibility: "private", scope: "mine" },
+])(
+  "the task sidebar switches between $visibility reviews of the same site",
+  async ({ visibility, scope }) => {
+    vi.spyOn(window, "innerWidth", "get").mockReturnValue(1280);
+    const first = session({
+      title: "Test signup",
+      purpose: { kind: "review" },
+      primarySite: "samebase.com",
+      visibility,
+    });
+    const second = session({
+      threadId: "second-review",
+      title: "Test export",
+      purpose: { kind: "review" },
+      primarySite: "samebase.com",
+      visibility,
+    });
+    remote.queries.set("scout/activity:get", first);
+    remote.queries.set("scout/activity:get:second-review", second);
+    remote.queries.set("scout/activity:list", {
+      results: [first, second],
+      status: "Exhausted",
+      loadMore: vi.fn(),
+    });
+    const router = await openPlay("/review?thread=game-thread&session=old-browser&view=chat");
+    const nav = await screen.findByRole("navigation", { name: "Tasks for samebase.com" });
+    expect(remote.queryCalls).toHaveBeenCalledWith("scout/activity:list", {
+      site: "samebase.com",
+      scope,
+    });
+    expect(
+      within(nav)
+        .getByRole("link", { name: /Test signup/ })
+        .getAttribute("aria-current"),
+    ).toBe("page");
+    await userEvent.setup().click(within(nav).getByRole("link", { name: /Test export/ }));
+    await waitFor(() =>
+      expect(router.state.location.search).toEqual({ thread: "second-review", view: "chat" }),
+    );
+    expect(await screen.findByRole("heading", { name: "Test export" })).toBeTruthy();
+    const nextNav = screen.getByRole("navigation", { name: "Tasks for samebase.com" });
+    expect(
+      within(nextNav)
+        .getByRole("link", { name: /Test export/ })
+        .getAttribute("aria-current"),
+    ).toBe("page");
+    expect(
+      within(nextNav)
+        .getByRole("link", { name: /Test signup/ })
+        .getAttribute("aria-current"),
+    ).toBeNull();
+  },
+);
+
+test("a directly opened older task remains selected even before its list page loads", async () => {
+  remote.queries.set(
+    "scout/activity:get",
+    session({
+      title: "Older review",
+      purpose: { kind: "review" },
+      primarySite: "samebase.com",
+    }),
+  );
+  await openPlay("/review?thread=game-thread");
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "Show tasks" }));
+  const nav = screen.getByRole("navigation", { name: "Tasks for samebase.com" });
+  expect(
+    within(nav)
+      .getByRole("link", { name: /Older review/ })
+      .getAttribute("aria-current"),
+  ).toBe("page");
+  await user.click(within(nav).getByRole("link", { name: /Older review/ }));
+  expect(
+    (await screen.findByRole("button", { name: "Show tasks" })).getAttribute("aria-expanded"),
+  ).toBe("false");
+});
 
 describe("Play invitation", () => {
   test("a Review owner can correct its site and sees save errors", async () => {

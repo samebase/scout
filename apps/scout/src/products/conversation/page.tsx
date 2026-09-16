@@ -25,7 +25,14 @@ import { productRoutes, type ProductKind, type ConversationSearch } from "./mode
 import { gameInviteDisplayText } from "../play/invite";
 import { ReviewSite } from "./review-site";
 import { ConversationComposer } from "./composer";
-import { ConversationSidebar, ConversationLayout, BrowserToggle, BrowserStop } from "./sidebar";
+import {
+  ConversationSidebar,
+  ConversationLayout,
+  BrowserToggle,
+  BrowserStop,
+  TasksToggle,
+} from "./sidebar";
+import { TaskNavigation } from "./task-navigation";
 import {
   MessageScrollerProvider,
   MessageScroller,
@@ -595,16 +602,30 @@ function ConversationSession({
   return (
     <ConversationLayout
       kind={kind}
+      left={
+        kind === "review" && thread.primarySite ? (
+          <TaskNavigation
+            key={`${thread.primarySite}:${thread.visibility}`}
+            site={thread.primarySite}
+            scope={thread.visibility === "private" ? "mine" : "public"}
+            current={thread}
+            view={showingWalkthrough ? "walkthrough" : "chat"}
+          />
+        ) : undefined
+      }
       addressChrome={
         <>
           <div className="mb-5 flex items-center justify-between gap-4 max-[760px]:mb-3">
             {kind === "review" ? (
-              <ReviewSite
-                threadId={thread.threadId}
-                site={thread.primarySite}
-                canEdit={thread.canControl}
-                visibility={thread.visibility}
-              />
+              <div className="flex min-w-0 items-center gap-1">
+                {thread.primarySite && <TasksToggle />}
+                <ReviewSite
+                  threadId={thread.threadId}
+                  site={thread.primarySite}
+                  canEdit={thread.canControl}
+                  visibility={thread.visibility}
+                />
+              </div>
             ) : (
               <Link
                 to={productRoutes[kind]}

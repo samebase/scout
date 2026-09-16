@@ -6,15 +6,15 @@ import {
 import type { SidebarLayoutState } from "@samebase/sidebars/SidebarLayoutState";
 import { SidebarLayout, type SidebarLayoutProps } from "@samebase/sidebars/SidebarLayout";
 import { useState, useSyncExternalStore, type ReactNode } from "react";
-import { MonitorIcon, SquareIcon, XIcon } from "lucide-react";
+import { MonitorIcon, PanelLeftIcon, SquareIcon, XIcon } from "lucide-react";
 import type { ProductKind } from "./model";
 import { omitNullish } from "../../../shared/omitNullish";
 
 export function ConversationSidebar({ children }: { children: ReactNode }) {
   const [state, setState] = useState<SidebarLayoutState>({
-    leftDesktopOpen: false,
-    leftDesktopWidthPx: 0,
-    leftMobileWidthPx: 0,
+    leftDesktopOpen: true,
+    leftDesktopWidthPx: 260,
+    leftMobileWidthPx: 300,
     mobilePane: "main",
     mobileSurface: { kind: "unmerged" },
     rightDesktopOpen: true,
@@ -37,10 +37,12 @@ function subscribeViewport(onChange: () => void) {
 export function ConversationLayout({
   kind,
   addressChrome,
+  left,
   main,
   right,
 }: Pick<SidebarLayoutProps, "addressChrome" | "main"> & {
   kind: ProductKind;
+  left: SidebarLayoutProps["left"];
   right: SidebarLayoutProps["right"];
 }) {
   const isMobile = useSyncExternalStore(
@@ -48,24 +50,44 @@ export function ConversationLayout({
     () => window.innerWidth < 768,
     () => false,
   );
-  if (kind === "review" && isMobile) {
-    return (
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-        <div className="shrink-0">{addressChrome}</div>
-        <div className="min-h-96 shrink-0 basis-[65dvh] grow">{main}</div>
-        {right && <div className="mt-3 h-[60dvh] min-h-96 shrink-0">{right}</div>}
-      </div>
-    );
-  }
+  const stackReview = kind === "review" && isMobile;
 
   return (
     <SidebarLayout
       addressChrome={addressChrome}
-      main={main}
-      {...omitNullish({ right })}
+      main={
+        stackReview ? (
+          <div className="flex h-full min-h-0 flex-col overflow-y-auto">
+            <div className="min-h-96 shrink-0 basis-[65dvh] grow">{main}</div>
+            {right && <div className="mt-3 h-[60dvh] min-h-96 shrink-0">{right}</div>}
+          </div>
+        ) : (
+          main
+        )
+      }
+      {...omitNullish({ left, right: stackReview ? undefined : right })}
       mobileMinResizeBehavior="min_resize_to_slide"
-      resizeHandleLabels={{ left: "Resize chat navigation", right: "Resize Scout’s view" }}
+      resizeHandleLabels={{ left: "Resize task navigation", right: "Resize Scout’s view" }}
     />
+  );
+}
+
+export function TasksToggle() {
+  const { isMobile, mobilePane, leftDesktopOpen } = useSidebarLayoutPresentation();
+  const { setMobilePane, toggleLeftPane } = useSidebarActions();
+  const shown = isMobile ? mobilePane === "left" : leftDesktopOpen;
+  const label = shown ? (isMobile ? "Back to task" : "Hide tasks") : "Show tasks";
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      aria-expanded={shown}
+      className="inline-flex size-11 shrink-0 items-center justify-center rounded-lg hover:bg-secondary"
+      onClick={() => (isMobile ? setMobilePane(shown ? "main" : "left") : toggleLeftPane())}
+    >
+      <PanelLeftIcon size={18} aria-hidden="true" />
+    </button>
   );
 }
 
