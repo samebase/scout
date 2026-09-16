@@ -76,7 +76,7 @@ function SiteLayout() {
   const { setMobilePane } = useSidebarActions();
   const sites = usePaginatedQuery(
     api.scout.sites.list,
-    { scope: canInspect ? "all" : scope, site: null },
+    { scope, site: null },
     { initialNumItems: 20 },
   );
 

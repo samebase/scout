@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
   Outlet,
@@ -21,6 +21,7 @@ const remote = vi.hoisted(() => ({
   execute: vi.fn(),
   manual: vi.fn(),
   query: vi.fn(),
+  paginated: vi.fn(),
   admin: true,
 }));
 vi.mock("../lib/access", async (importOriginal) => ({
@@ -32,10 +33,16 @@ vi.mock("./activity-feed", () => ({
   SiteTaskList: ({ site }: { site: string }) => <p>Tasks for {site}</p>,
 }));
 vi.mock("convex/react", () => ({
-  usePaginatedQuery: () => ({
-    results: [{ hostname: "chessmerge.com" }, { hostname: "papergames.io" }],
-    status: "Exhausted",
-  }),
+  usePaginatedQuery: (
+    _ref: FunctionReference<"query">,
+    args: Omit<FunctionArgs<typeof api.scout.sites.list>, "paginationOpts">,
+  ) => {
+    remote.paginated(args);
+    return {
+      results: [{ hostname: "papergames.io" }, { hostname: "chessmerge.com" }],
+      status: "Exhausted",
+    };
+  },
   useQuery: (
     _ref: FunctionReference<"query">,
     args:
@@ -215,3 +222,23 @@ test("members see tasks and cannot mount the workspace from its URL", async () =
   expect(screen.queryByRole("textbox", { name: "Bash command" })).toBeNull();
   expect(remote.query).not.toHaveBeenCalled();
 });
+
+test.each([
+  { admin: true, scope: "public" },
+  { admin: true, scope: "mine" },
+  { admin: false, scope: "public" },
+  { admin: false, scope: "mine" },
+])(
+  "site navigation keeps directory scope and order: $scope, admin=$admin",
+  async ({ admin, scope }) => {
+    remote.admin = admin;
+    await openPage(`/sites/chessmerge.com?scope=${scope}`);
+    const navigation = await screen.findByRole("navigation", { name: "Sites" });
+    expect(remote.paginated).toHaveBeenLastCalledWith({ scope, site: null });
+    expect(
+      within(navigation)
+        .getAllByRole("link")
+        .map((link) => link.textContent),
+    ).toEqual(["papergames.io", "chessmerge.com"]);
+  },
+);
