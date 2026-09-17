@@ -155,7 +155,7 @@ export function DiscoveryHero({
       <div className="pointer-events-none relative mx-auto max-w-[1160px] px-8 py-8 max-[640px]:px-4 max-[640px]:py-7">
         <h1
           id="discovery-heading"
-          className="font-play-display! text-[64px] leading-[1.02] font-medium tracking-[-0.05em] max-[760px]:text-[52px] max-[640px]:text-[40px]"
+          className="font-display text-[64px] leading-[1.02] font-medium tracking-[-0.05em] max-[760px]:text-[52px] max-[640px]:text-[40px]"
         >
           See what lies
           <br />

@@ -8,6 +8,7 @@ import {
 } from "#components/ui/select";
 import { accountAccessMessage, canAccess, useViewerAccess } from "../../lib/access";
 import { useSidebarActions } from "@samebase/sidebars/SidebarRuntime";
+import { SidebarLayout } from "@samebase/sidebars/SidebarLayout";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useConvexAuth, useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
@@ -20,17 +21,12 @@ import {
 } from "lucide-react";
 import { type FormEvent, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
+import { omitNullish } from "../../../shared/omitNullish";
 import { scoutAvailabilityLabels } from "#components/scout-current-activity";
 import { productRoutes, type ProductKind, type ConversationSearch } from "./model";
 import { gameInviteDisplayText } from "../play/invite";
 import { ConversationComposer } from "./composer";
-import {
-  ConversationSidebar,
-  ConversationLayout,
-  BrowserToggle,
-  BrowserStop,
-  TasksToggle,
-} from "./sidebar";
+import { ConversationSidebar, BrowserToggle, BrowserStop, TasksToggle } from "./sidebar";
 import { TaskNavigation } from "./task-navigation";
 import type { ReviewFeedSearch } from "#lib/reviewFeedSearch";
 import {
@@ -45,12 +41,11 @@ import { AuthPanel } from "../../components/auth-panel";
 import { BrowserReplay } from "../../components/browser-replay";
 import { TaskWalkthrough } from "#components/task-walkthrough";
 import { ToolActivityRow } from "#components/tool-activity";
-import { Button } from "#components/ui/button";
+import { Button, buttonVariants } from "#components/ui/button";
 import { ChatHandoffNotice } from "../../components/chat-handoff-notice";
 import { ProductShell } from "../shell";
 import { ScoutPiece } from "../play/scout-piece";
 import { cn } from "#lib/utils";
-import { productButtonVariants } from "../ui";
 import { playError, playNotice, playRouteMessage, playTextLink } from "./ui";
 
 type ChatThread = NonNullable<FunctionReturnType<typeof api.scout.activity.get>>;
@@ -61,13 +56,13 @@ type RequestState = { kind: "idle" } | { kind: "pending" } | { kind: "failed"; m
 
 export function ConversationError() {
   return (
-    <ProductShell product={null}>
+    <ProductShell>
       <main id="main-content" className={playRouteMessage}>
         <h1 className="text-[30px]">Couldn't open this session</h1>
         <p className="text-muted-foreground">
           The link may be unavailable, or the connection was interrupted.
         </p>
-        <Link to="/" className={productButtonVariants({ variant: "play" })}>
+        <Link to="/" className={buttonVariants({ size: "lg" })}>
           Back to activity
         </Link>
       </main>
@@ -84,12 +79,12 @@ export function ConversationPage({
 }) {
   const { thread } = search;
   return (
-    <ProductShell product={kind}>
+    <ProductShell>
       <main
         id="main-content"
         className={
           thread
-            ? "mx-auto flex h-[calc(100dvh-4rem)] min-h-[540px] max-w-[1456px] flex-col px-1 pt-4 pb-6 max-[760px]:min-h-[460px] max-[760px]:pt-4 max-[760px]:pb-3"
+            ? "flex h-[calc(100dvh-4rem)] min-h-0 flex-col"
             : "grid min-h-[calc(100dvh-4rem)] place-items-center px-5 pt-8 pb-[16vh] max-[760px]:pb-[12vh]"
         }
       >
@@ -191,7 +186,7 @@ export function ConversationLobby({
         <div className={cn("mb-7 flex flex-col", isPlay && "items-center text-center")}>
           {isPlay && (
             <div className="relative mb-8 flex h-[110px] w-[152px] items-center justify-center">
-              <span className="absolute inset-x-0 bottom-0 h-14 -rotate-6 rounded-[50%] bg-play-sand" />
+              <span className="absolute inset-x-0 bottom-0 h-14 -rotate-6 rounded-[50%] bg-muted" />
               <ScoutPiece className="-rotate-6" />
             </div>
           )}
@@ -391,47 +386,55 @@ function SessionLoader({
     (search.view ?? opened?.defaultView) === "walkthrough";
   const available = thread && thread.purpose.kind === kind;
   return (
-    <ConversationLayout
-      kind={kind}
-      left={
-        kind === "review" && navigationThread?.primarySite ? (
-          <TaskNavigation
-            key={`${navigationThread.primarySite}:${filters.scope}`}
-            site={navigationThread.primarySite}
-            search={filters}
-            current={navigationThread}
-            selectedThreadId={threadId}
-            view={showingWalkthrough ? "walkthrough" : "chat"}
-          />
-        ) : undefined
-      }
+    <SidebarLayout
+      resizeHandleLabels={{ left: "Resize task navigation", right: "Resize Scout’s view" }}
+      {...omitNullish({
+        left:
+          kind === "review" && navigationThread?.primarySite ? (
+            <TaskNavigation
+              key={`${navigationThread.primarySite}:${filters.scope}`}
+              site={navigationThread.primarySite}
+              search={filters}
+              current={navigationThread}
+              selectedThreadId={threadId}
+              view={showingWalkthrough ? "walkthrough" : "chat"}
+            />
+          ) : undefined,
+        right: showingWalkthrough ? undefined : available ? (
+          <ConversationBrowser key={threadId} thread={thread} kind={kind} search={search} />
+        ) : (
+          <div aria-busy="true" />
+        ),
+      })}
       addressChrome={
-        <div className="mb-5 flex items-center justify-between gap-4 max-[760px]:mb-3">
+        <header className="flex items-center gap-3 px-3 py-2">
           {navigationThread && (
-            <ConversationBreadcrumb thread={navigationThread} kind={kind} search={filters} />
+            <ConversationNavigation thread={navigationThread} kind={kind} search={filters} />
           )}
-          {available && <ConversationActions key={threadId} thread={thread} kind={kind} />}
-        </div>
+          {available && (
+            <>
+              <ConversationTitle thread={thread} kind={kind} />
+              {kind === "play" && (
+                <ConversationActions key={threadId} thread={thread} kind={kind} />
+              )}
+              <ConversationInspectorLink thread={thread} />
+            </>
+          )}
+        </header>
       }
       main={
         thread === undefined ? (
-          <div className="conversation-content flex h-full min-h-0 flex-col">
-            <div className="conversation-header" />
-            <div className="conversation-body p-3" role="status">
-              Opening task…
-            </div>
+          <div className="p-3" role="status">
+            Opening task…
           </div>
         ) : !available ? (
-          <div className="conversation-content flex h-full min-h-0 flex-col">
-            <div className="conversation-header" />
-            <div className={cn("conversation-body", playRouteMessage)}>
-              <h1 className="text-[30px]">Session unavailable</h1>
-              <p className="text-muted-foreground">This link is private or no longer available.</p>
-              <Link to="/" search={filters} className={productButtonVariants({ variant: "play" })}>
-                Browse activity
-              </Link>
-              {viewer?.kind !== "account" && <AuthPanel />}
-            </div>
+          <div className={playRouteMessage}>
+            <h1 className="text-[30px]">Session unavailable</h1>
+            <p className="text-muted-foreground">This link is private or no longer available.</p>
+            <Link to="/" search={filters} className={buttonVariants({ size: "lg" })}>
+              Browse activity
+            </Link>
+            {viewer?.kind !== "account" && <AuthPanel />}
           </div>
         ) : (
           <ConversationSession
@@ -443,18 +446,61 @@ function SessionLoader({
           />
         )
       }
-      right={
-        showingWalkthrough ? undefined : available ? (
-          <ConversationBrowser key={threadId} thread={thread} kind={kind} search={search} />
-        ) : (
-          <div aria-busy="true" />
-        )
-      }
     />
   );
 }
 
-function ConversationBreadcrumb({
+function ConversationTitle({ thread, kind }: { thread: ChatThread; kind: ProductKind }) {
+  return (
+    <div className="flex min-w-0 flex-1 items-center gap-4">
+      {kind === "play" && <ScoutPiece size="brand" className="max-[760px]:hidden" />}
+      <h1
+        className="line-clamp-2 min-w-0 text-[28px] leading-tight font-semibold tracking-[-0.8px] wrap-anywhere max-[760px]:text-[24px]"
+        title={thread.title ?? undefined}
+      >
+        {thread.title ?? `Chat with ${thread.scout.displayName}`}
+      </h1>
+    </div>
+  );
+}
+
+function ReviewViews({
+  search,
+  showingWalkthrough,
+}: {
+  search: ConversationSearch;
+  showingWalkthrough: boolean;
+}) {
+  const { setMobilePane } = useSidebarActions();
+  return (
+    <nav aria-label="Review views" className="flex min-w-0 items-center gap-1 overflow-x-auto">
+      <Button asChild variant={showingWalkthrough ? "secondary" : "ghost"} size="sm">
+        <Link
+          to="/review"
+          search={{ ...search, view: "walkthrough" }}
+          resetScroll={false}
+          onClick={() => setMobilePane("main")}
+          aria-current={showingWalkthrough ? "page" : undefined}
+        >
+          Walkthrough
+        </Link>
+      </Button>
+      <Button asChild variant={showingWalkthrough ? "ghost" : "secondary"} size="sm">
+        <Link
+          to="/review"
+          search={{ ...search, view: "chat" }}
+          resetScroll={false}
+          onClick={() => setMobilePane("main")}
+          aria-current={!showingWalkthrough ? "page" : undefined}
+        >
+          Chat &amp; replay
+        </Link>
+      </Button>
+    </nav>
+  );
+}
+
+function ConversationNavigation({
   thread,
   kind,
   search,
@@ -463,32 +509,15 @@ function ConversationBreadcrumb({
   kind: ProductKind;
   search: ReviewFeedSearch;
 }) {
+  if (kind === "review" && thread.primarySite) return <TasksToggle />;
   return kind === "review" ? (
-    <div className="flex min-w-0 items-center gap-1">
-      {thread.primarySite && <TasksToggle />}
-      {thread.primarySite ? (
-        <Link
-          to="/sites/$site"
-          params={{ site: thread.primarySite }}
-          search={{
-            ...search,
-            view: "tasks",
-          }}
-          className={cn(playTextLink, "min-h-11 min-w-0 text-muted-foreground")}
-        >
-          <ArrowLeftIcon size={16} className="shrink-0" aria-hidden="true" />
-          <span className="truncate">{thread.primarySite} tasks</span>
-        </Link>
-      ) : (
-        <Link
-          to="/"
-          search={search}
-          className={cn(playTextLink, "min-h-11 whitespace-nowrap text-muted-foreground")}
-        >
-          <ArrowLeftIcon size={16} aria-hidden="true" /> All sites
-        </Link>
-      )}
-    </div>
+    <Link
+      to="/"
+      search={search}
+      className={cn(playTextLink, "min-h-11 shrink-0 whitespace-nowrap text-muted-foreground")}
+    >
+      <ArrowLeftIcon size={16} aria-hidden="true" /> All sites
+    </Link>
   ) : (
     <Link
       to={productRoutes[kind]}
@@ -501,12 +530,33 @@ function ConversationBreadcrumb({
   );
 }
 
-function ConversationActions({ thread, kind }: { thread: ChatThread; kind: ProductKind }) {
+function ConversationInspectorLink({ thread }: { thread: ChatThread }) {
   const viewer = useViewerAccess();
   const canInspect =
     (thread.isOwner || thread.runtime.kind === "agents_api") &&
     viewer?.kind === "account" &&
     canAccess("access_lab", viewer.accessKeys);
+  if (!canInspect) return null;
+  return (
+    <Link
+      to={thread.runtime.kind === "agents_api" ? "/agents" : "/chats"}
+      search={
+        thread.runtime.kind === "agents_api"
+          ? { session: thread.runtime.sessionId }
+          : { thread: thread.threadId }
+      }
+      aria-label="Open in lab"
+      className={cn(playTextLink, "min-h-11 shrink-0 text-muted-foreground")}
+    >
+      <span className="whitespace-nowrap">
+        <span className="max-[760px]:hidden">Open in </span>Lab
+      </span>{" "}
+      <ArrowUpRightIcon size={15} aria-hidden="true" />
+    </Link>
+  );
+}
+
+function ConversationActions({ thread, kind }: { thread: ChatThread; kind: ProductKind }) {
   const { threadId } = thread;
   const managedId = thread.runtime.kind === "agents_api" ? thread.runtime.sessionId : null;
   const managed = useQuery(
@@ -554,7 +604,7 @@ function ConversationActions({ thread, kind }: { thread: ChatThread; kind: Produ
     }
   }
   return (
-    <div className="flex flex-col items-end gap-2">
+    <div className="ml-auto flex shrink-0 flex-col items-end gap-2">
       <div className="flex items-center gap-5 max-[760px]:gap-4">
         {thread.isOwner && thread.purpose.kind !== "general" ? (
           <select
@@ -576,19 +626,6 @@ function ConversationActions({ thread, kind }: { thread: ChatThread; kind: Produ
           <span className="text-xs text-muted-foreground">
             {thread.visibility === "public" ? "Public" : "Private"}
           </span>
-        )}
-        {canInspect && (
-          <Link
-            to={managedId ? "/agents" : "/chats"}
-            search={managedId ? { session: managedId } : { thread: threadId }}
-            aria-label="Open in lab"
-            className={cn(playTextLink, "min-h-11 text-muted-foreground")}
-          >
-            <span className="whitespace-nowrap">
-              <span className="max-[760px]:hidden">Open in </span>Lab
-            </span>{" "}
-            <ArrowUpRightIcon size={15} aria-hidden="true" />
-          </Link>
         )}
         {kind === "play" && <BrowserToggle action="open" />}
         {kind === "play" && canStop && (
@@ -627,7 +664,7 @@ function ConversationBrowser({
     session && session.kind !== "closed" ? { sessionId: session.sessionId } : "skip",
   );
   const browserHeader = (
-    <div className="flex min-h-14 shrink-0 items-center gap-2 border-b border-border px-3 text-[13px]">
+    <div data-sidebar-layout-part="pane-header" className="gap-2 px-3 text-[13px]">
       <MonitorIcon size={16} className="shrink-0" aria-hidden="true" />
       {sessions && sessions.length > 1 && session ? (
         <select
@@ -677,7 +714,7 @@ function ConversationBrowser({
   return (
     <section
       aria-label="Scout's browser"
-      className="flex h-full min-h-0 flex-col overflow-hidden rounded-[var(--product-panel-radius)] border border-border bg-secondary/50 min-[768px]:ml-1"
+      className="flex h-full min-h-0 flex-col overflow-hidden bg-background"
     >
       {session?.kind === "closed" ? (
         <BrowserReplay
@@ -724,7 +761,7 @@ function ConversationBrowser({
           ) : (
             <div className="flex flex-1 flex-col items-center justify-center gap-6 p-7 text-center">
               {kind === "play" ? (
-                <div className="grid size-32 place-items-center rounded-full bg-play-sand/80">
+                <div className="grid size-32 place-items-center rounded-full bg-muted/80">
                   <ScoutPiece className="-rotate-6" />
                 </div>
               ) : (
@@ -790,7 +827,6 @@ function ConversationSession({
   showingWalkthrough: boolean;
 }) {
   const scout = thread.scout;
-  const { setMobilePane } = useSidebarActions();
   const { threadId } = thread;
   const managedId = thread.runtime.kind === "agents_api" ? thread.runtime.sessionId : null;
   const managed = useQuery(
@@ -894,213 +930,164 @@ function ConversationSession({
   }
 
   return (
-    <div className="conversation-content flex h-full min-h-0 flex-col gap-2">
-      <header className="conversation-header shrink-0 space-y-3 px-3 pt-2">
-        <div className="flex min-w-0 items-center gap-4">
-          {kind === "play" && <ScoutPiece size="brand" className="max-[760px]:hidden" />}
-          <h1
-            className="line-clamp-2 min-w-0 text-[28px] leading-tight font-semibold tracking-[-0.8px] wrap-anywhere max-[760px]:text-[24px]"
-            title={thread.title ?? undefined}
-          >
-            {thread.title ?? `Chat with ${scout.displayName}`}
-          </h1>
+    <section
+      aria-label={showingWalkthrough ? "Walkthrough with Scout" : "Conversation with Scout"}
+      className="flex h-full min-h-0 min-w-0 flex-col"
+    >
+      {kind === "review" && (
+        <div data-sidebar-layout-part="pane-header" className="justify-between gap-2 px-3">
+          {managedId && <ReviewViews search={search} showingWalkthrough={showingWalkthrough} />}
+          <ConversationActions thread={thread} kind={kind} />
         </div>
-        {kind === "review" && managedId && (
-          <nav
-            aria-label="Review views"
-            className="flex w-fit items-center gap-1 rounded-lg border bg-card p-1"
-          >
-            <Button asChild variant={showingWalkthrough ? "secondary" : "ghost"} size="sm">
-              <Link
-                to="/review"
-                search={{ ...search, view: "walkthrough" }}
-                resetScroll={false}
-                onClick={() => setMobilePane("main")}
-                aria-current={showingWalkthrough ? "page" : undefined}
+      )}
+      {request.kind === "failed" && (
+        <p role="alert" className={playError}>
+          {request.message}
+        </p>
+      )}
+      {handoff && (
+        <ChatHandoffNotice
+          handoff={handoff}
+          browserClosed={latestSession?.kind === "closed"}
+          canCancel={Boolean(canStop) && request.kind !== "pending"}
+          onCancel={() => {
+            void stop();
+          }}
+        />
+      )}
+      {managed?.state.kind === "waiting" && (
+        <div className={cn(playNotice, "space-y-3")}>
+          <p className="whitespace-pre-wrap">{managed.state.message}</p>
+          {managed.requestCheckMessage && (
+            <p role="alert" className="whitespace-pre-wrap">
+              {managed.requestCheckMessage}
+            </p>
+          )}
+          {managed.handoffEmailFailed && (
+            <p role="alert">The handoff email couldn’t be sent. You can open the browser here.</p>
+          )}
+          <div className="flex items-center gap-4">
+            {managed.interactiveLiveViewUrl && (
+              <a
+                href={managed.interactiveLiveViewUrl}
+                target="_blank"
+                rel="noreferrer"
+                className={playTextLink}
               >
-                Walkthrough
-              </Link>
-            </Button>
-            <Button asChild variant={showingWalkthrough ? "ghost" : "secondary"} size="sm">
-              <Link
-                to="/review"
-                search={{ ...search, view: "chat" }}
-                resetScroll={false}
-                onClick={() => setMobilePane("main")}
-                aria-current={!showingWalkthrough ? "page" : undefined}
-              >
-                Chat &amp; replay
-              </Link>
-            </Button>
-          </nav>
-        )}
-        {request.kind === "failed" && (
-          <p role="alert" className={playError}>
-            {request.message}
-          </p>
-        )}
-        {handoff && (
-          <ChatHandoffNotice
-            handoff={handoff}
-            browserClosed={latestSession?.kind === "closed"}
-            canCancel={Boolean(canStop) && request.kind !== "pending"}
-            onCancel={() => {
-              void stop();
-            }}
-          />
-        )}
-        {managed?.state.kind === "waiting" && (
-          <div className={cn(playNotice, "space-y-3")}>
-            <p className="whitespace-pre-wrap">{managed.state.message}</p>
-            {managed.requestCheckMessage && (
-              <p role="alert" className="whitespace-pre-wrap">
-                {managed.requestCheckMessage}
-              </p>
+                Open browser <ArrowUpRightIcon size={15} aria-hidden="true" />
+              </a>
             )}
-            {managed.handoffEmailFailed && (
-              <p role="alert">The handoff email couldn’t be sent. You can open the browser here.</p>
-            )}
-            <div className="flex items-center gap-4">
-              {managed.interactiveLiveViewUrl && (
-                <a
-                  href={managed.interactiveLiveViewUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className={playTextLink}
-                >
-                  Open browser <ArrowUpRightIcon size={15} aria-hidden="true" />
-                </a>
-              )}
-              <button
-                type="button"
-                disabled={request.kind === "pending"}
-                className={productButtonVariants({ variant: "play" })}
-                onClick={() => void resume()}
+            <button
+              type="button"
+              disabled={request.kind === "pending"}
+              className={buttonVariants({ size: "lg" })}
+              onClick={() => void resume()}
+            >
+              Resume Scout
+            </button>
+          </div>
+        </div>
+      )}
+      {showingWalkthrough && managedId && (
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <TaskWalkthrough sessionId={managedId} />
+        </div>
+      )}
+      <div hidden={showingWalkthrough} className="min-h-0 flex-1 overflow-hidden">
+        <MessageScrollerProvider autoScroll defaultScrollPosition="end">
+          <MessageScroller>
+            <MessageScrollerViewport aria-label="Session messages" className="[mask-image:none]">
+              <MessageScrollerContent
+                className="gap-2 px-4 pt-5 pb-7"
+                role="log"
+                aria-label="Session messages"
+                aria-live="polite"
               >
-                Resume Scout
-              </button>
-            </div>
-          </div>
-        )}
-      </header>
-      <section
-        aria-label={showingWalkthrough ? "Walkthrough with Scout" : "Conversation with Scout"}
-        className="conversation-body flex min-h-0 flex-1 flex-col gap-3 min-[768px]:pr-1"
-      >
-        {showingWalkthrough && managedId && (
-          <div className="min-h-0 flex-1 overflow-hidden rounded-[var(--product-panel-radius)] border border-border bg-card">
-            <TaskWalkthrough sessionId={managedId} />
-          </div>
-        )}
-        <div
-          hidden={showingWalkthrough}
-          className="min-h-0 flex-1 overflow-hidden rounded-[var(--product-panel-radius)] border border-border bg-card"
-        >
-          <MessageScrollerProvider autoScroll defaultScrollPosition="end">
-            <MessageScroller>
-              <MessageScrollerViewport aria-label="Session messages" className="[mask-image:none]">
-                <MessageScrollerContent
-                  className="gap-2 px-4 pt-5 pb-7"
-                  role="log"
-                  aria-label="Session messages"
-                  aria-live="polite"
-                >
-                  {messages.status === "CanLoadMore" && (
-                    <button
-                      type="button"
-                      className={cn(playTextLink, "self-center py-2")}
-                      onClick={() => {
-                        messages.loadMore(50);
-                      }}
+                {messages.status === "CanLoadMore" && (
+                  <button
+                    type="button"
+                    className={cn(playTextLink, "self-center py-2")}
+                    onClick={() => {
+                      messages.loadMore(50);
+                    }}
+                  >
+                    Earlier messages
+                  </button>
+                )}
+                {messages.status === "LoadingFirstPage" && (
+                  <p role="status" className="text-sm text-muted-foreground">
+                    Loading messages…
+                  </p>
+                )}
+                {visibleMessages.map((message) =>
+                  message.kind === "tool" ? (
+                    <MessageScrollerItem
+                      key={message.id}
+                      messageId={message.id}
+                      className="w-full min-w-0"
                     >
-                      Earlier messages
-                    </button>
-                  )}
-                  {messages.status === "LoadingFirstPage" && (
-                    <p role="status" className="text-sm text-muted-foreground">
-                      Loading messages…
-                    </p>
-                  )}
-                  {visibleMessages.map((message) =>
-                    message.kind === "tool" ? (
-                      <MessageScrollerItem
-                        key={message.id}
-                        messageId={message.id}
-                        className="w-full min-w-0"
-                      >
-                        <ToolActivityRow tool={message.tool} />
-                      </MessageScrollerItem>
-                    ) : (
-                      <MessageScrollerItem
-                        key={message.id}
-                        messageId={message.id}
+                      <ToolActivityRow tool={message.tool} />
+                    </MessageScrollerItem>
+                  ) : (
+                    <MessageScrollerItem
+                      key={message.id}
+                      messageId={message.id}
+                      className={cn(
+                        "my-2 min-w-0 max-w-[95%] text-[15px] [overflow-wrap:anywhere]",
+                        message.role === "user" ? "ml-auto" : "mr-auto",
+                      )}
+                    >
+                      {message.role !== "user" && (
+                        <span className="mb-2 block text-xs font-medium text-muted-foreground">
+                          {scout?.displayName ?? "Scout"}
+                        </span>
+                      )}
+                      <p
                         className={cn(
-                          "my-2 min-w-0 max-w-[95%] text-[15px] [overflow-wrap:anywhere]",
-                          message.role === "user" ? "ml-auto" : "mr-auto",
+                          "whitespace-pre-wrap",
+                          message.role === "user" && "rounded-xl bg-secondary px-5 py-3.5",
                         )}
                       >
-                        {message.role !== "user" && (
-                          <span className="mb-2 block text-xs font-medium text-muted-foreground">
-                            {scout?.displayName ?? "Scout"}
-                          </span>
-                        )}
-                        <p
-                          className={cn(
-                            "whitespace-pre-wrap",
-                            message.role === "user" &&
-                              "rounded-[var(--product-message-radius)] bg-secondary px-5 py-3.5",
-                          )}
-                        >
-                          {message.role === "user"
-                            ? gameInviteDisplayText(message.text)
-                            : message.text}
-                        </p>
-                      </MessageScrollerItem>
-                    ),
+                        {message.role === "user"
+                          ? gameInviteDisplayText(message.text)
+                          : message.text}
+                      </p>
+                    </MessageScrollerItem>
+                  ),
+                )}
+                {thread.status === "failed" &&
+                  managed?.state.kind !== "waiting" &&
+                  managed?.state.kind !== "checking" && (
+                    <MessageScrollerItem messageId="turn-status" className="mr-auto max-w-[95%]">
+                      <p className={cn(playNotice, "mb-0 px-3 py-2")} role="alert">
+                        {managed?.requestCheckMessage ?? "Scout couldn't finish this turn."}
+                        {!managed?.requestCheckMessage &&
+                        (managed ? managed.canSend : thread.canControl)
+                          ? " Send a message to try again."
+                          : ""}
+                      </p>
+                    </MessageScrollerItem>
                   )}
-                  {thread.status === "failed" &&
-                    managed?.state.kind !== "waiting" &&
-                    managed?.state.kind !== "checking" && (
-                      <MessageScrollerItem messageId="turn-status" className="mr-auto max-w-[95%]">
-                        <p className={cn(playNotice, "mb-0 px-3 py-2")} role="alert">
-                          {managed?.requestCheckMessage ?? "Scout couldn't finish this turn."}
-                          {!managed?.requestCheckMessage &&
-                          (managed ? managed.canSend : thread.canControl)
-                            ? " Send a message to try again."
-                            : ""}
-                        </p>
-                      </MessageScrollerItem>
-                    )}
-                  {(thread.status === "running" || managed?.state.kind === "checking") && (
-                    <p
-                      role="status"
-                      className="flex items-center gap-2.5 text-sm text-muted-foreground"
-                    >
-                      <LoaderCircleIcon size={15} className="animate-spin" aria-hidden="true" />
-                      {managed?.state.kind === "checking"
-                        ? "Checking…"
-                        : (phaseLabel ?? <span className="sr-only">Scout is working</span>)}
-                    </p>
-                  )}
-                </MessageScrollerContent>
-              </MessageScrollerViewport>
-              <MessageScrollerButton className="size-11" />
-            </MessageScroller>
-          </MessageScrollerProvider>
-        </div>
-        {thread.canControl ? (
-          showingWalkthrough && thread.status === "finished" ? (
-            <Button asChild variant="outline" size="sm" className="self-end">
-              <Link
-                to="/review"
-                search={{ ...search, view: "chat" }}
-                resetScroll={false}
-                onClick={() => setMobilePane("main")}
-              >
-                Ask a follow-up
-              </Link>
-            </Button>
-          ) : (
+                {(thread.status === "running" || managed?.state.kind === "checking") && (
+                  <p
+                    role="status"
+                    className="flex items-center gap-2.5 text-sm text-muted-foreground"
+                  >
+                    <LoaderCircleIcon size={15} className="animate-spin" aria-hidden="true" />
+                    {managed?.state.kind === "checking"
+                      ? "Checking…"
+                      : (phaseLabel ?? <span className="sr-only">Scout is working</span>)}
+                  </p>
+                )}
+              </MessageScrollerContent>
+            </MessageScrollerViewport>
+            <MessageScrollerButton className="size-11" />
+          </MessageScroller>
+        </MessageScrollerProvider>
+      </div>
+      {thread.canControl ? (
+        !showingWalkthrough && (
+          <div className="shrink-0 border-t p-3">
             <ConversationComposer
               value={draft}
               onChange={setDraft}
@@ -1130,17 +1117,17 @@ function ConversationSession({
                     : activityNotice(activity, threadId)}
               </span>
             </ConversationComposer>
-          )
-        ) : (
-          <Link
-            to={productRoutes[kind]}
-            search={{}}
-            className={cn(productButtonVariants({ variant: "play" }), "self-center my-3")}
-          >
-            {kind === "play" ? "Play with Scout" : "Review with Scout"} <ArrowRightIcon size={16} />
-          </Link>
-        )}
-      </section>
-    </div>
+          </div>
+        )
+      ) : (
+        <Link
+          to={productRoutes[kind]}
+          search={{}}
+          className={cn(buttonVariants({ size: "lg" }), "self-center my-3")}
+        >
+          {kind === "play" ? "Play with Scout" : "Review with Scout"} <ArrowRightIcon size={16} />
+        </Link>
+      )}
+    </section>
   );
 }

@@ -11,45 +11,9 @@
   font-display: swap;
   src: url("/fonts/bricolage-grotesque.woff2") format("woff2");
 }
-@font-face {
-  font-family: "DM Sans";
-  font-style: normal;
-  font-weight: 400 700;
-  font-display: swap;
-  src: url("/fonts/dm-sans.woff2") format("woff2");
-}
-@font-face {
-  font-family: "Review Sans";
-  font-style: normal;
-  font-weight: 400 600;
-  font-display: swap;
-  src: url("/fonts/ibm-plex-sans.woff2") format("woff2");
-}
-@font-face {
-  font-family: "Review Mono";
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url("/fonts/ibm-plex-mono.woff2") format("woff2");
-}
 
 @theme inline {
-  --font-play-body: "DM Sans", "Avenir Next", sans-serif;
-  --font-play-display: "Bricolage Grotesque", "Avenir Next", sans-serif;
-  --font-review: "Review Sans", Arial, sans-serif;
-  --font-review-mono: "Review Mono", monospace;
-  --color-play-paper: #fafaf6;
-  --color-play-ink: #253044;
-  --color-play-blue: #3558da;
-  --color-play-muted: #667080;
-  --color-play-cloud: #edf0f9;
-  --color-play-line: #dfe2e4;
-  --color-play-sand: #f5e597;
-  --color-review-ink: #203c36;
-  --color-review-muted: #72817c;
-  --color-review-line: #d8e0dc;
-  --color-review-accent: #28584d;
-  --color-review-paper: #f1f4f2;
+  --font-display: "Bricolage Grotesque", "Avenir Next", sans-serif;
   --font-heading: var(--font-sans);
   --font-sans:
     "Avenir Next", "Segoe UI Variable", "Segoe UI", ui-sans-serif, system-ui, sans-serif,
@@ -312,7 +276,7 @@
 
 .surface-panel {
   border: 1px solid var(--border);
-  border-radius: calc(var(--radius) * 1.4);
+  border-radius: var(--radius-xl);
   background: var(--card);
   box-shadow: 0 16px 45px color-mix(in oklch, var(--foreground) 5%, transparent);
 }
@@ -431,74 +395,14 @@
 }
 
 .play-session-layout [data-sidebar-layout-part="address-chrome"] {
-  border: 0;
   box-shadow: none;
 }
 
-@media (min-width: 768px) {
-  .play-session-layout [data-sidebar-layout-part="carousel"] {
-    display: grid;
-    grid-template-columns:
-      var(--sidebar-layout-left-desktop-width) minmax(0, 1fr)
-      var(--sidebar-layout-right-desktop-width);
-    grid-template-rows: auto minmax(0, 1fr);
-    row-gap: 8px;
-  }
-
-  .play-session-layout [data-sidebar-layout-part="pane"][data-pane-side="main"],
-  .play-session-layout [data-sidebar-layout-part="pane-surface"],
-  .play-session-layout .conversation-content {
-    display: contents;
-  }
-
-  .play-session-layout [data-sidebar-layout-part="pane"][data-pane-side="left"] {
-    grid-column: 1;
-    grid-row: 1 / -1;
-  }
-
-  .play-session-layout .conversation-header {
-    grid-column: 2 / -1;
-    grid-row: 1;
-    position: relative;
-    z-index: 31;
-  }
-
-  .play-session-layout .conversation-body {
-    grid-column: 2;
-    grid-row: 2;
-  }
-
-  .play-session-layout [data-sidebar-layout-part="pane"][data-pane-side="right"] {
-    grid-column: 3;
-    grid-row: 2;
-    border-inline-start-width: 0;
-  }
-
-  .play-session-layout [data-sidebar-layout-part="resize-handle"][data-resize-mode="edge"] {
-    width: 8px;
-  }
-
-  .play-session-layout [data-sidebar-layout-part="resize-handle"][data-resize-mode="edge"]::after {
-    width: 3px;
-    height: 32px;
-    border-radius: 999px;
-    background: var(--border);
-    content: "";
-  }
-
-  .play-session-layout
-    [data-sidebar-layout-part="resize-handle"]:is(:hover, :focus-visible, [data-resizing])::after {
-    background: var(--primary);
-  }
-
-  .play-session-layout [data-sidebar-layout-part="resize-handle"]:focus-visible {
-    outline: none;
-  }
-
-  .play-session-layout [data-sidebar-layout-part="resize-handle"]:focus-visible::after {
-    outline: 2px solid var(--ring);
-    outline-offset: 3px;
-  }
+.play-session-layout [data-sidebar-layout-part="pane-header"] {
+  display: flex;
+  height: auto;
+  min-height: 3.5rem;
+  align-items: center;
 }
 
 .chat-composer {
