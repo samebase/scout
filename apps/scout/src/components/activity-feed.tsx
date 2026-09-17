@@ -128,15 +128,15 @@ function SiteCard({
         <SitePreview site={site} className="sm:w-[clamp(18rem,calc(25vw+8rem),24rem)]" />
       </Link>
       <div className="flex h-60 min-h-0 min-w-0 flex-col px-4 sm:h-auto sm:px-5">
-        <header className="shrink-0 border-b py-1.5 sm:max-lg:py-1">
+        <header className="group relative shrink-0 border-b py-1.5 sm:max-lg:py-1">
           <Link
             to="/sites/$site"
             params={{ site: site.hostname }}
             search={search}
-            className="group block rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <SiteIdentity site={site} heading="h2" />
-          </Link>
+            aria-label={`View tasks for ${site.profile?.name ?? site.hostname}`}
+            className="absolute inset-0 z-10 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+          <SiteIdentity site={site} heading="h2" />
         </header>
         <div className="min-h-0 flex-1">
           {tasks.results.slice(0, 2).map((activity) => (

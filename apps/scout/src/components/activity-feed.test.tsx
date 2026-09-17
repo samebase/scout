@@ -313,7 +313,7 @@ test.each(["public", "mine"])("site heading links preserve the %s scope", async 
   for (const site of ["chessmerge.com", "papergames.io"]) {
     const card = within(screen.getByRole("article", { name: site }));
     const link = card.getByRole("link", {
-      name: site === "chessmerge.com" ? "Chess Merge chessmerge.com" : "papergames.io",
+      name: `View tasks for ${site === "chessmerge.com" ? "Chess Merge" : site}`,
     });
     expect(link.getAttribute("href")).toBe(`/sites/${site}?scope=${scope}`);
     const previewLink = card.getByRole("link", {
@@ -321,14 +321,18 @@ test.each(["public", "mine"])("site heading links preserve the %s scope", async 
     });
     expect(previewLink.getAttribute("href")).toBe(link.getAttribute("href"));
     expect(within(previewLink).getByTestId("site-preview")).toBeTruthy();
+    const website = card.getByRole("link", { name: site });
+    expect(website.getAttribute("href")).toBe(`https://${site}`);
+    expect(website.getAttribute("target")).toBe("_blank");
+    expect(website.closest("a a")).toBeNull();
     expect(
-      within(link).getByRole("heading", {
+      card.getByRole("heading", {
         name: site === "chessmerge.com" ? "Chess Merge" : site,
         level: 2,
       }),
     ).toBeTruthy();
   }
-  await user.click(screen.getByRole("link", { name: "papergames.io" }));
+  await user.click(screen.getByRole("link", { name: "View tasks for papergames.io" }));
   await waitFor(() => expect(router.state.location.pathname).toBe("/sites/papergames.io"));
   expect(router.state.location.search).toEqual({ scope });
   expect(await screen.findByRole("region", { name: "Tasks for papergames.io" })).toBeTruthy();
@@ -364,7 +368,7 @@ test("the site filter is bookmarked, restored by history, and carried through ev
   const card = within(screen.getByRole("article", { name: "chessmerge.com" }));
   for (const name of [
     "View Chess Merge details",
-    "Chess Merge chessmerge.com",
+    "View tasks for Chess Merge",
     "View all 7 tasks",
   ]) {
     const href = card.getByRole("link", { name }).getAttribute("href");

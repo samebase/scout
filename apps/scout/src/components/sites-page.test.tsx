@@ -253,19 +253,19 @@ test("switches sites from the sidebar and clears the previous file and terminal 
   const user = userEvent.setup();
   await screen.findByLabelText("File contents");
   expect(
-    screen.getByRole("link", { name: "Chess Merge chessmerge.com" }).getAttribute("aria-current"),
+    screen.getByRole("link", { name: "View tasks for Chess Merge" }).getAttribute("aria-current"),
   ).toBe("page");
   fireEvent.change(screen.getByRole("textbox", { name: "Bash command" }), {
     target: { value: "old draft" },
   });
-  await user.click(screen.getByRole("link", { name: "Papergames papergames.io" }));
+  await user.click(screen.getByRole("link", { name: "View tasks for Papergames" }));
   await screen.findByRole("heading", { name: "Papergames" });
   expect(router.state.location.search.file).toBeUndefined();
   expect(screen.queryByLabelText("File contents")).toBeNull();
   expect(screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Bash command" }).value).toBe("");
   expect(remote.query).toHaveBeenCalledWith({ target: { kind: "site", site: "papergames.io" } });
   expect(
-    screen.getByRole("link", { name: "Papergames papergames.io" }).getAttribute("aria-current"),
+    screen.getByRole("link", { name: "View tasks for Papergames" }).getAttribute("aria-current"),
   ).toBe("page");
   act(() => router.history.back());
   expect(await screen.findByLabelText("File contents")).toBeTruthy();
@@ -277,7 +277,7 @@ test("opens the mobile site list and returns to the workspace after selecting a 
   const user = userEvent.setup();
   await user.click(await screen.findByRole("button", { name: "Show sites" }));
   expect(await screen.findByRole("button", { name: "Back to site" })).toBeTruthy();
-  await user.click(screen.getByRole("link", { name: "Papergames papergames.io" }));
+  await user.click(screen.getByRole("link", { name: "View tasks for Papergames" }));
   await screen.findByRole("heading", { name: "Papergames" });
   expect(await screen.findByRole("button", { name: "Show sites" })).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Show sites" }));
@@ -308,9 +308,9 @@ test.each([
     expect(remote.paginated).toHaveBeenLastCalledWith({ scope, site: null });
     expect(
       within(navigation)
-        .getAllByRole("link")
-        .map((link) => link.textContent),
-    ).toEqual(["Papergamespapergames.io", "Chess Mergechessmerge.com"]);
+        .getAllByRole("link", { name: /^View tasks for/ })
+        .map((link) => link.getAttribute("aria-label")),
+    ).toEqual(["View tasks for Papergames", "View tasks for Chess Merge"]);
   },
 );
 
@@ -318,12 +318,22 @@ test("shows the product name above the hostname in the heading and sidebar, and 
   await openPage("/sites/chessmerge.com");
   const heading = await screen.findByRole("heading", { name: "Chess Merge", level: 1 });
   expect(heading.nextElementSibling?.textContent).toBe("chessmerge.com");
-  const link = screen.getByRole("link", { name: "Chess Merge chessmerge.com" });
-  const name = within(link).getByText("Chess Merge");
+  const link = screen.getByRole("link", { name: "View tasks for Chess Merge" });
+  const card = link.closest("li");
+  if (!card) throw new Error("Missing site card");
+  const name = within(card).getByText("Chess Merge");
   expect(name.nextElementSibling?.textContent).toBe("chessmerge.com");
-  expect(screen.getByRole("link", { name: "Visit website" }).getAttribute("href")).toBe(
-    "https://www.chessmerge.com/play",
-  );
+  expect(
+    screen
+      .getAllByRole("link", { name: "chessmerge.com" })
+      .map((link) => link.getAttribute("href")),
+  ).toEqual(["https://www.chessmerge.com/play", "https://www.chessmerge.com/play"]);
+  expect(screen.queryByRole("link", { name: "Visit website" })).toBeNull();
+  expect(document.querySelector("a a")).toBeNull();
+  for (const website of screen.getAllByRole("link", { name: "chessmerge.com" })) {
+    expect(website.getAttribute("target")).toBe("_blank");
+    expect(website.getAttribute("rel")).toBe("noreferrer");
+  }
   await userEvent.setup().click(screen.getByRole("button", { name: "Refresh research" }));
   expect(remote.refresh).toHaveBeenCalledExactlyOnceWith({ site: "chessmerge.com" });
   const site = remote.sites.get("chessmerge.com");
@@ -334,9 +344,11 @@ test("shows the product name above the hostname in the heading and sidebar, and 
   updateSite({ ...site, research: { status: "failed", error: "Refresh failed" } });
   expect(screen.getByRole("button", { name: "Retry research" })).toHaveProperty("disabled", false);
   expect(screen.getByRole("heading", { name: "Chess Merge", level: 1 })).toBeTruthy();
-  expect(screen.getByRole("link", { name: "Visit website" }).getAttribute("href")).toBe(
-    "https://www.chessmerge.com/play",
-  );
+  expect(
+    screen
+      .getAllByRole("link", { name: "chessmerge.com" })
+      .map((link) => link.getAttribute("href")),
+  ).toEqual(["https://www.chessmerge.com/play", "https://www.chessmerge.com/play"]);
 });
 
 test.each([
@@ -386,9 +398,11 @@ test("researches a pending site and updates its name, address, and description w
   await openPage("/sites/chessmerge.com");
   const heading = await screen.findByRole("heading", { name: "chessmerge.com", level: 1 });
   expect(heading.nextElementSibling).toBeNull();
-  expect(screen.getByRole("link", { name: "Visit website" }).getAttribute("href")).toBe(
-    "https://chessmerge.com",
-  );
+  expect(
+    screen
+      .getAllByRole("link", { name: "chessmerge.com" })
+      .map((link) => link.getAttribute("href")),
+  ).toEqual(["https://chessmerge.com", "https://chessmerge.com"]);
   let completeRefresh: () => void = () => {
     throw new Error("No research request is pending");
   };
@@ -418,10 +432,12 @@ test("researches a pending site and updates its name, address, and description w
   });
   expect(screen.getByRole("heading", { name: "Chess Merge", level: 1 })).toBeTruthy();
   expect(screen.getByText("Play chess variants with friends in your browser.")).toBeTruthy();
-  expect(screen.getByRole("link", { name: "Chess Merge chessmerge.com" })).toBeTruthy();
-  expect(screen.getByRole("link", { name: "Visit website" }).getAttribute("href")).toBe(
-    "https://www.chessmerge.com/play",
-  );
+  expect(screen.getByRole("link", { name: "View tasks for Chess Merge" })).toBeTruthy();
+  expect(
+    screen
+      .getAllByRole("link", { name: "chessmerge.com" })
+      .map((link) => link.getAttribute("href")),
+  ).toEqual(["https://www.chessmerge.com/play", "https://www.chessmerge.com/play"]);
   expect(screen.getByRole("button", { name: "Refresh research" })).toHaveProperty(
     "disabled",
     false,
@@ -495,9 +511,11 @@ test.each([
     await openPage("/sites/chessmerge.com");
     await screen.findByRole("heading", { name: ready ? "Chess Merge" : "chessmerge.com" });
     expect(screen.queryByRole("button", { name: /research/i })).toBeNull();
-    expect(screen.getByRole("link", { name: "Visit website" }).getAttribute("href")).toBe(
-      ready ? "https://www.chessmerge.com/play" : "https://chessmerge.com",
-    );
+    expect(
+      screen
+        .getAllByRole("link", { name: "chessmerge.com" })
+        .map((link) => link.getAttribute("href")),
+    ).toEqual(Array(2).fill(ready ? "https://www.chessmerge.com/play" : "https://chessmerge.com"));
     expect(remote.refresh).not.toHaveBeenCalled();
   },
 );
@@ -511,7 +529,9 @@ test("site sidebar filters stay editable across views and browser history", asyn
   expect(visibility.textContent).toBe("My reviews");
   expect(remote.paginated).toHaveBeenLastCalledWith({ scope: "mine", site: "chessmerge.com" });
   expect(
-    within(screen.getByRole("navigation", { name: "Sites" })).getAllByRole("link"),
+    within(screen.getByRole("navigation", { name: "Sites" })).getAllByRole("link", {
+      name: /^View tasks for/,
+    }),
   ).toHaveLength(1);
   await user.click(screen.getByRole("link", { name: "Workspace" }));
   await screen.findByRole("textbox", { name: "Bash command" });
@@ -524,7 +544,9 @@ test("site sidebar filters stay editable across views and browser history", asyn
   await user.click(screen.getByRole("button", { name: "Clear site filter" }));
   await waitFor(() => expect(router.state.location.search.site).toBeUndefined());
   expect(
-    within(screen.getByRole("navigation", { name: "Sites" })).getAllByRole("link"),
+    within(screen.getByRole("navigation", { name: "Sites" })).getAllByRole("link", {
+      name: /^View tasks for/,
+    }),
   ).toHaveLength(2);
   expect(router.state.location.search.view).toBe("workspace");
   await user.click(visibility);
@@ -572,7 +594,7 @@ test("the filtered site sidebar retains its DOM, width, and scroll while another
   remote.loadingSites.add("papergames.io");
   await userEvent
     .setup()
-    .click(within(navigation).getByRole("link", { name: "Papergames papergames.io" }));
+    .click(within(navigation).getByRole("link", { name: "View tasks for Papergames" }));
   expect(await screen.findByText("Loading site…")).toBeTruthy();
   expect(router.state.location.pathname).toBe("/sites/papergames.io");
   expect(router.state.location.search).toEqual({

@@ -9,7 +9,7 @@ import {
 import type { SidebarLayoutState } from "@samebase/sidebars/SidebarLayoutState";
 import { useAction, usePaginatedQuery, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
-import { ArrowLeftIcon, ArrowUpRightIcon, PanelLeftIcon, SearchIcon } from "lucide-react";
+import { ArrowLeftIcon, PanelLeftIcon, SearchIcon } from "lucide-react";
 import { useState } from "react";
 import { z } from "zod";
 import { api } from "../../convex/_generated/api";
@@ -137,7 +137,11 @@ function SiteLayout() {
                 )}
                 <ul className="space-y-3">
                   {sites.results.map((site) => (
-                    <li key={site.hostname}>
+                    <li
+                      key={site.hostname}
+                      data-active={site.hostname === parsed.data}
+                      className="group relative overflow-hidden rounded-md border border-transparent bg-card hover:border-muted-foreground/40 data-[active=true]:border-primary data-[active=true]:bg-primary/5 data-[active=true]:font-medium"
+                    >
                       <Link
                         to="/sites/$site"
                         resetScroll={false}
@@ -145,13 +149,13 @@ function SiteLayout() {
                         activeOptions={{ includeSearch: false }}
                         search={{ ...filters, view: workspace ? "workspace" : "tasks" }}
                         onClick={() => setMobilePane("main")}
-                        className="group block overflow-hidden rounded-md border border-transparent bg-card hover:border-muted-foreground/40 focus-visible:outline-2 focus-visible:outline-ring aria-[current=page]:border-primary aria-[current=page]:bg-primary/5 aria-[current=page]:font-medium"
-                      >
-                        <SitePreview site={site} />
-                        <div className="p-2.5">
-                          <SiteIdentity site={site} heading="span" />
-                        </div>
-                      </Link>
+                        aria-label={`View tasks for ${site.profile?.name ?? site.hostname}`}
+                        className="absolute inset-0 z-10 rounded-md focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+                      />
+                      <SitePreview site={site} />
+                      <div className="p-2.5">
+                        <SiteIdentity site={site} heading="span" />
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -184,18 +188,6 @@ function SiteLayout() {
                           <SitePreviewCapture key={`preview:${record.hostname}`} site={record} />
                         </>
                       )}
-                      <a
-                        href={
-                          record.profile === null
-                            ? `https://${record.hostname}`
-                            : record.profile.homepageUrl
-                        }
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex shrink-0 items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-                      >
-                        Visit website <ArrowUpRightIcon className="size-4" aria-hidden="true" />
-                      </a>
                     </div>
                   </div>
                   {record.profile?.overview && (

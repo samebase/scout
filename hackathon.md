@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-17T13:29:36Z
+- **Last updated:** 2026-09-17T16:41:53Z
 
 ## Log
 
@@ -1349,6 +1349,6 @@ and respects reduced motion. A static field keeps the same treatment without Web
 Site search and Public/My reviews now stay in the URL across the homepage, site pages, and tasks.
 The site sidebar has the same controls, so filters remain editable while browsing. Partial site
 names and domains update results after a short pause in typing, without filling browser history.
-Convex matches within bounded pages and retains visibility rules and ordering. The sites sidebar
-can still shrink, with its maximum width capped at 368px
-(`apps/scout/src/components/site-filters.tsx`, `apps/scout/convex/scout/sites.ts`).
+Convex matches within bounded pages and retains visibility rules and ordering. Domains link to the
+website from cards and site pages, while screenshots and product names open the task list. The sidebar
+stops at 368px (`apps/scout/src/components/site-identity.tsx`, `apps/scout/convex/scout/sites.ts`).
