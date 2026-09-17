@@ -367,6 +367,10 @@
   border-bottom-width: 1px;
 }
 
+[data-sidebar-layout-part="pane-header"]:has(> .site-navigation-filters) {
+  height: auto;
+}
+
 [data-sidebar-layout-part="pane-footer"] {
   min-height: 2.5rem;
   border-top-style: solid;

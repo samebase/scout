@@ -6,23 +6,25 @@ import type { FunctionReturnType } from "convex/server";
 import { api } from "../../../convex/_generated/api";
 import { LoadOnScroll } from "#components/load-on-scroll";
 import { cn } from "#lib/utils";
+import type { ReviewFeedSearch } from "#lib/reviewFeedSearch";
 
 type Activity = FunctionReturnType<typeof api.scout.activity.list>["page"][number];
 type Task = Pick<Activity, "threadId" | "title" | "createdAt">;
 
 export function TaskNavigation({
   site,
-  scope,
+  search,
   current,
   selectedThreadId,
   view,
 }: {
   site: string;
-  scope: "public" | "mine";
+  search: ReviewFeedSearch;
   current: Task;
   selectedThreadId: string;
   view: "walkthrough" | "chat";
 }) {
+  const scope = search.scope ?? "public";
   const tasks = usePaginatedQuery(
     api.scout.activity.list,
     { site, scope },
@@ -40,6 +42,7 @@ export function TaskNavigation({
                 task={current}
                 selected={current.threadId === selectedThreadId}
                 view={view}
+                search={search}
               />
             )}
             {tasks.results.map((task) => (
@@ -47,6 +50,7 @@ export function TaskNavigation({
                 key={task.threadId}
                 task={task}
                 selected={task.threadId === selectedThreadId}
+                search={search}
                 view={
                   task.threadId === selectedThreadId
                     ? view
@@ -73,10 +77,12 @@ function TaskLink({
   task,
   selected,
   view,
+  search,
 }: {
   task: Task;
   selected: boolean;
   view: "walkthrough" | "chat";
+  search: ReviewFeedSearch;
 }) {
   const { setMobilePane } = useSidebarActions();
   return (
@@ -84,7 +90,7 @@ function TaskLink({
       <Link
         to="/review"
         resetScroll={false}
-        search={{ thread: task.threadId, view }}
+        search={{ ...search, thread: task.threadId, view }}
         aria-current={selected ? "page" : undefined}
         onClick={() => setMobilePane("main")}
         className={cn(

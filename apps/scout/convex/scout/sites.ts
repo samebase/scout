@@ -1,6 +1,6 @@
 import { paginationOptsValidator, paginationResultValidator } from "convex/server";
 import { v } from "convex/values";
-import { siteHostnameSchema } from "../../shared/site";
+import { siteHostnameSchema, siteSearchSchema } from "../../shared/site";
 import { omitNullish } from "../../shared/omitNullish";
 import type { Doc } from "../_generated/dataModel";
 import { internalMutation, type QueryCtx } from "../_generated/server";
@@ -57,7 +57,10 @@ export const list = publicQuery({
   },
   returns: paginationResultValidator(siteRow.extend({ taskCount: v.number() })),
   handler: async (ctx, args) => {
-    const hostname = args.site === null ? null : siteHostnameSchema.parse(args.site);
+    const search = args.site === null ? "" : siteSearchSchema.parse(args.site);
+    const matches = (site: Doc<"sites">) =>
+      site.hostname.includes(search) ||
+      (site.profile?.name.toLowerCase().includes(search) ?? false);
     const paginationOpts = {
       ...args.paginationOpts,
       numItems: Math.min(args.paginationOpts.numItems, 24),
@@ -66,15 +69,12 @@ export const list = publicQuery({
     };
     if (args.scope === "all") {
       requireViewerPermission(ctx.viewer, "access_lab");
-      const rows =
-        hostname === null
-          ? ctx.db.query("sites").withIndex("by_hostname")
-          : ctx.db.query("sites").withIndex("by_hostname", (q) => q.eq("hostname", hostname));
+      const rows = ctx.db.query("sites").withIndex("by_hostname");
       const page = await rows.order("asc").paginate(paginationOpts);
       return {
         ...page,
         page: await Promise.all(
-          page.page.map(async (site) => ({
+          page.page.filter(matches).map(async (site) => ({
             ...(await presentSite(ctx, site, ctx.viewer)),
             taskCount: site.taskCount,
           })),
@@ -83,50 +83,44 @@ export const list = publicQuery({
     }
     if (args.scope === "mine") {
       const { userId } = requireViewerPermission(ctx.viewer, "access_account");
-      const rows =
-        hostname === null
-          ? ctx.db
-              .query("siteUserListings")
-              .withIndex("by_user_id_and_latest_task_created_at_and_hostname", (q) =>
-                q.eq("userId", userId),
-              )
-          : ctx.db
-              .query("siteUserListings")
-              .withIndex("by_user_id_and_hostname", (q) =>
-                q.eq("userId", userId).eq("hostname", hostname),
-              );
+      const rows = ctx.db
+        .query("siteUserListings")
+        .withIndex("by_user_id_and_latest_task_created_at_and_hostname", (q) =>
+          q.eq("userId", userId),
+        );
       const page = await rows.order("desc").paginate(paginationOpts);
+      const sites = await Promise.all(
+        page.page.map(async ({ hostname, taskCount }) => {
+          const site = await ctx.db
+            .query("sites")
+            .withIndex("by_hostname", (q) => q.eq("hostname", hostname))
+            .unique();
+          if (!site) throw new Error("Site listing has no site");
+          return { site, taskCount };
+        }),
+      );
       return {
         ...page,
         page: await Promise.all(
-          page.page.map(async ({ hostname, taskCount }) => {
-            const site = await ctx.db
-              .query("sites")
-              .withIndex("by_hostname", (q) => q.eq("hostname", hostname))
-              .unique();
-            if (!site) throw new Error("Site listing has no site");
-            return { ...(await presentSite(ctx, site, ctx.viewer)), taskCount };
-          }),
+          sites
+            .filter(({ site }) => matches(site))
+            .map(async ({ site, taskCount }) => ({
+              ...(await presentSite(ctx, site, ctx.viewer)),
+              taskCount,
+            })),
         ),
       };
     }
-    const rows =
-      hostname === null
-        ? ctx.db
-            .query("sites")
-            .withIndex("by_latest_public_task_created_at_and_hostname", (q) =>
-              q.gt("latestPublicTask.createdAt", undefined),
-            )
-        : ctx.db
-            .query("sites")
-            .withIndex("by_hostname_and_latest_public_task_created_at", (q) =>
-              q.eq("hostname", hostname).gt("latestPublicTask.createdAt", undefined),
-            );
+    const rows = ctx.db
+      .query("sites")
+      .withIndex("by_latest_public_task_created_at_and_hostname", (q) =>
+        q.gt("latestPublicTask.createdAt", undefined),
+      );
     const page = await rows.order("desc").paginate(paginationOpts);
     return {
       ...page,
       page: await Promise.all(
-        page.page.map(async (site) => ({
+        page.page.filter(matches).map(async (site) => ({
           ...(await presentSite(ctx, site, ctx.viewer)),
           taskCount: site.publicTaskCount,
         })),

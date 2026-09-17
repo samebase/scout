@@ -21,6 +21,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
 import { api } from "../../convex/_generated/api";
 import { omitNullish } from "../../shared/omitNullish";
 import { Route as SiteRoute } from "../routes/sites.$site";
+import { reviewFeedSearch } from "../lib/reviewFeedSearch";
 
 type Site = NonNullable<FunctionReturnType<typeof api.scout.sites.get>>;
 
@@ -32,6 +33,7 @@ const remote = vi.hoisted(() => ({
   paginated: vi.fn(),
   refresh: vi.fn(),
   sites: new Map<string, Site>(),
+  loadingSites: new Set<string>(),
   subscribers: new Set<() => void>(),
   revision: 0,
   admin: true,
@@ -69,7 +71,12 @@ vi.mock("convex/react", () => ({
     useSyncExternalStore(subscribe, () => remote.revision);
     remote.paginated(args);
     return {
-      results: [...remote.sites.values()],
+      results: [...remote.sites.values()].filter(
+        (site) =>
+          !args.site ||
+          site.hostname.includes(args.site) ||
+          site.profile?.name.toLowerCase().includes(args.site),
+      ),
       status: "Exhausted",
     };
   },
@@ -82,7 +89,8 @@ vi.mock("convex/react", () => ({
   ) => {
     useSyncExternalStore(subscribe, () => remote.revision);
     if (args === "skip") return undefined;
-    if ("site" in args) return remote.sites.get(args.site) ?? null;
+    if ("site" in args)
+      return remote.loadingSites.has(args.site) ? undefined : (remote.sites.get(args.site) ?? null);
     remote.query(args);
     return {
       exists: args.target.kind === "site" && args.target.site !== "missing.example",
@@ -123,6 +131,7 @@ beforeEach(() => {
   remote.signedIn = true;
   remote.revision = 0;
   remote.sites.clear();
+  remote.loadingSites.clear();
   remote.sites.set("papergames.io", {
     hostname: "papergames.io",
     preview: null,
@@ -175,7 +184,15 @@ async function openPage(path: string) {
     }),
   });
   const router = createRouter({
-    routeTree: root.addChildren([detail]),
+    routeTree: root.addChildren([
+      detail,
+      createRoute({
+        getParentRoute: () => root,
+        path: "/",
+        validateSearch: reviewFeedSearch,
+        staticData: { access: "access_public" },
+      }),
+    ]),
     history: createMemoryHistory({ initialEntries: [path] }),
   });
   render(<RouterProvider router={router} />);
@@ -236,19 +253,19 @@ test("switches sites from the sidebar and clears the previous file and terminal 
   const user = userEvent.setup();
   await screen.findByLabelText("File contents");
   expect(
-    screen.getByRole("link", { name: "Chess Merge chessmerge.com" }).getAttribute("aria-current"),
+    screen.getByRole("link", { name: "View tasks for Chess Merge" }).getAttribute("aria-current"),
   ).toBe("page");
   fireEvent.change(screen.getByRole("textbox", { name: "Bash command" }), {
     target: { value: "old draft" },
   });
-  await user.click(screen.getByRole("link", { name: "Papergames papergames.io" }));
+  await user.click(screen.getByRole("link", { name: "View tasks for Papergames" }));
   await screen.findByRole("heading", { name: "Papergames" });
   expect(router.state.location.search.file).toBeUndefined();
   expect(screen.queryByLabelText("File contents")).toBeNull();
   expect(screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Bash command" }).value).toBe("");
   expect(remote.query).toHaveBeenCalledWith({ target: { kind: "site", site: "papergames.io" } });
   expect(
-    screen.getByRole("link", { name: "Papergames papergames.io" }).getAttribute("aria-current"),
+    screen.getByRole("link", { name: "View tasks for Papergames" }).getAttribute("aria-current"),
   ).toBe("page");
   act(() => router.history.back());
   expect(await screen.findByLabelText("File contents")).toBeTruthy();
@@ -260,7 +277,7 @@ test("opens the mobile site list and returns to the workspace after selecting a 
   const user = userEvent.setup();
   await user.click(await screen.findByRole("button", { name: "Show sites" }));
   expect(await screen.findByRole("button", { name: "Back to site" })).toBeTruthy();
-  await user.click(screen.getByRole("link", { name: "Papergames papergames.io" }));
+  await user.click(screen.getByRole("link", { name: "View tasks for Papergames" }));
   await screen.findByRole("heading", { name: "Papergames" });
   expect(await screen.findByRole("button", { name: "Show sites" })).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Show sites" }));
@@ -291,9 +308,9 @@ test.each([
     expect(remote.paginated).toHaveBeenLastCalledWith({ scope, site: null });
     expect(
       within(navigation)
-        .getAllByRole("link")
-        .map((link) => link.textContent),
-    ).toEqual(["Papergamespapergames.io", "Chess Mergechessmerge.com"]);
+        .getAllByRole("link", { name: /^View tasks for/ })
+        .map((link) => link.getAttribute("aria-label")),
+    ).toEqual(["View tasks for Papergames", "View tasks for Chess Merge"]);
   },
 );
 
@@ -301,12 +318,22 @@ test("shows the product name above the hostname in the heading and sidebar, and 
   await openPage("/sites/chessmerge.com");
   const heading = await screen.findByRole("heading", { name: "Chess Merge", level: 1 });
   expect(heading.nextElementSibling?.textContent).toBe("chessmerge.com");
-  const link = screen.getByRole("link", { name: "Chess Merge chessmerge.com" });
-  const name = within(link).getByText("Chess Merge");
+  const link = screen.getByRole("link", { name: "View tasks for Chess Merge" });
+  const card = link.closest("li");
+  if (!card) throw new Error("Missing site card");
+  const name = within(card).getByText("Chess Merge");
   expect(name.nextElementSibling?.textContent).toBe("chessmerge.com");
-  expect(screen.getByRole("link", { name: "Visit website" }).getAttribute("href")).toBe(
-    "https://www.chessmerge.com/play",
-  );
+  expect(
+    screen
+      .getAllByRole("link", { name: "chessmerge.com" })
+      .map((link) => link.getAttribute("href")),
+  ).toEqual(["https://www.chessmerge.com/play", "https://www.chessmerge.com/play"]);
+  expect(screen.queryByRole("link", { name: "Visit website" })).toBeNull();
+  expect(document.querySelector("a a")).toBeNull();
+  for (const website of screen.getAllByRole("link", { name: "chessmerge.com" })) {
+    expect(website.getAttribute("target")).toBe("_blank");
+    expect(website.getAttribute("rel")).toBe("noreferrer");
+  }
   await userEvent.setup().click(screen.getByRole("button", { name: "Refresh research" }));
   expect(remote.refresh).toHaveBeenCalledExactlyOnceWith({ site: "chessmerge.com" });
   const site = remote.sites.get("chessmerge.com");
@@ -317,9 +344,11 @@ test("shows the product name above the hostname in the heading and sidebar, and 
   updateSite({ ...site, research: { status: "failed", error: "Refresh failed" } });
   expect(screen.getByRole("button", { name: "Retry research" })).toHaveProperty("disabled", false);
   expect(screen.getByRole("heading", { name: "Chess Merge", level: 1 })).toBeTruthy();
-  expect(screen.getByRole("link", { name: "Visit website" }).getAttribute("href")).toBe(
-    "https://www.chessmerge.com/play",
-  );
+  expect(
+    screen
+      .getAllByRole("link", { name: "chessmerge.com" })
+      .map((link) => link.getAttribute("href")),
+  ).toEqual(["https://www.chessmerge.com/play", "https://www.chessmerge.com/play"]);
 });
 
 test.each([
@@ -369,9 +398,11 @@ test("researches a pending site and updates its name, address, and description w
   await openPage("/sites/chessmerge.com");
   const heading = await screen.findByRole("heading", { name: "chessmerge.com", level: 1 });
   expect(heading.nextElementSibling).toBeNull();
-  expect(screen.getByRole("link", { name: "Visit website" }).getAttribute("href")).toBe(
-    "https://chessmerge.com",
-  );
+  expect(
+    screen
+      .getAllByRole("link", { name: "chessmerge.com" })
+      .map((link) => link.getAttribute("href")),
+  ).toEqual(["https://chessmerge.com", "https://chessmerge.com"]);
   let completeRefresh: () => void = () => {
     throw new Error("No research request is pending");
   };
@@ -401,10 +432,12 @@ test("researches a pending site and updates its name, address, and description w
   });
   expect(screen.getByRole("heading", { name: "Chess Merge", level: 1 })).toBeTruthy();
   expect(screen.getByText("Play chess variants with friends in your browser.")).toBeTruthy();
-  expect(screen.getByRole("link", { name: "Chess Merge chessmerge.com" })).toBeTruthy();
-  expect(screen.getByRole("link", { name: "Visit website" }).getAttribute("href")).toBe(
-    "https://www.chessmerge.com/play",
-  );
+  expect(screen.getByRole("link", { name: "View tasks for Chess Merge" })).toBeTruthy();
+  expect(
+    screen
+      .getAllByRole("link", { name: "chessmerge.com" })
+      .map((link) => link.getAttribute("href")),
+  ).toEqual(["https://www.chessmerge.com/play", "https://www.chessmerge.com/play"]);
   expect(screen.getByRole("button", { name: "Refresh research" })).toHaveProperty(
     "disabled",
     false,
@@ -478,9 +511,108 @@ test.each([
     await openPage("/sites/chessmerge.com");
     await screen.findByRole("heading", { name: ready ? "Chess Merge" : "chessmerge.com" });
     expect(screen.queryByRole("button", { name: /research/i })).toBeNull();
-    expect(screen.getByRole("link", { name: "Visit website" }).getAttribute("href")).toBe(
-      ready ? "https://www.chessmerge.com/play" : "https://chessmerge.com",
-    );
+    expect(
+      screen
+        .getAllByRole("link", { name: "chessmerge.com" })
+        .map((link) => link.getAttribute("href")),
+    ).toEqual(Array(2).fill(ready ? "https://www.chessmerge.com/play" : "https://chessmerge.com"));
     expect(remote.refresh).not.toHaveBeenCalled();
   },
 );
+
+test("site sidebar filters stay editable across views and browser history", async () => {
+  const router = await openPage("/sites/chessmerge.com?scope=mine&site=chessmerge.com");
+  const user = userEvent.setup();
+  const filter = await screen.findByRole("textbox", { name: "Filter by site" });
+  const visibility = screen.getByRole("combobox", { name: "Review visibility" });
+  expect(filter).toHaveProperty("value", "chessmerge.com");
+  expect(visibility.textContent).toBe("My reviews");
+  expect(remote.paginated).toHaveBeenLastCalledWith({ scope: "mine", site: "chessmerge.com" });
+  expect(
+    within(screen.getByRole("navigation", { name: "Sites" })).getAllByRole("link", {
+      name: /^View tasks for/,
+    }),
+  ).toHaveLength(1);
+  await user.click(screen.getByRole("link", { name: "Workspace" }));
+  await screen.findByRole("textbox", { name: "Bash command" });
+  expect(router.state.location.search).toEqual({
+    scope: "mine",
+    site: "chessmerge.com",
+    view: "workspace",
+  });
+  expect(screen.getByRole("textbox", { name: "Filter by site" })).toBe(filter);
+  await user.click(screen.getByRole("button", { name: "Clear site filter" }));
+  await waitFor(() => expect(router.state.location.search.site).toBeUndefined());
+  expect(
+    within(screen.getByRole("navigation", { name: "Sites" })).getAllByRole("link", {
+      name: /^View tasks for/,
+    }),
+  ).toHaveLength(2);
+  expect(router.state.location.search.view).toBe("workspace");
+  await user.click(visibility);
+  await user.click(screen.getByRole("option", { name: "Public reviews" }));
+  await waitFor(() => expect(router.state.location.search.scope).toBe("public"));
+  await user.type(filter, "not-a-site");
+  await waitFor(() => expect(router.state.location.search.site).toBe("not-a-site"));
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.getByText("No sites match these filters.")).toBeTruthy();
+  await user.clear(filter);
+  await user.type(filter, "Paper");
+  await waitFor(() => expect(router.state.location.search.site).toBe("paper"));
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(remote.paginated).toHaveBeenLastCalledWith({ scope: "public", site: "paper" });
+  act(() => router.history.back());
+  await waitFor(() => expect(filter).toHaveProperty("value", ""));
+  act(() => router.history.forward());
+  await waitFor(() => expect(filter).toHaveProperty("value", "paper"));
+  await user.click(screen.getByRole("link", { name: "All sites" }));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/"));
+  expect(router.state.location.search).toEqual({ site: "paper", scope: "public" });
+});
+
+test("the filtered site sidebar retains its DOM, width, and scroll while another site loads", async () => {
+  vi.spyOn(window, "innerWidth", "get").mockReturnValue(1280);
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
+    new DOMRect(0, 0, 1280, 720),
+  );
+  // The current site can remain open while the user filters the sidebar to another site.
+  const router = await openPage("/sites/chessmerge.com?scope=mine&site=papergames.io");
+  const navigation = await screen.findByRole("navigation", { name: "Sites" });
+  const filter = screen.getByRole("textbox", { name: "Filter by site" });
+  const resize = screen.getByRole("separator", { name: "Resize sites navigation" });
+  fireEvent.keyDown(resize, { key: "ArrowRight", shiftKey: true });
+  fireEvent.keyDown(resize, { key: "ArrowRight", shiftKey: true });
+  expect(resize.getAttribute("aria-valuenow")).toBe("368");
+  fireEvent.keyDown(resize, { key: "ArrowRight" });
+  expect(resize.getAttribute("aria-valuenow")).toBe("368");
+  fireEvent.keyDown(resize, { key: "ArrowLeft" });
+  const width = resize.getAttribute("aria-valuenow");
+  expect(Number(width)).toBeGreaterThan(240);
+  const scroller = navigation.closest<HTMLElement>("[data-sidebar-layout-part='pane-scrollport']");
+  if (!scroller) throw new Error("Missing sidebar scroller");
+  scroller.scrollTop = 120;
+  remote.loadingSites.add("papergames.io");
+  await userEvent
+    .setup()
+    .click(within(navigation).getByRole("link", { name: "View tasks for Papergames" }));
+  expect(await screen.findByText("Loading site…")).toBeTruthy();
+  expect(router.state.location.pathname).toBe("/sites/papergames.io");
+  expect(router.state.location.search).toEqual({
+    site: "papergames.io",
+    scope: "mine",
+    view: "tasks",
+  });
+  expect(screen.getByRole("navigation", { name: "Sites" })).toBe(navigation);
+  expect(screen.getByRole("textbox", { name: "Filter by site" })).toBe(filter);
+  expect(filter).toHaveProperty("value", "papergames.io");
+  expect(scroller.scrollTop).toBe(120);
+  expect(resize.getAttribute("aria-valuenow")).toBe(width);
+  const site = remote.sites.get("papergames.io");
+  if (!site) throw new Error("Missing site fixture");
+  remote.loadingSites.delete(site.hostname);
+  updateSite(site);
+  expect(await screen.findByRole("heading", { name: "Papergames" })).toBeTruthy();
+  expect(screen.getByRole("navigation", { name: "Sites" })).toBe(navigation);
+  expect(scroller.scrollTop).toBe(120);
+  expect(resize.getAttribute("aria-valuenow")).toBe(width);
+});

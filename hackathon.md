@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-17T13:09:11Z
+- **Last updated:** 2026-09-17T16:41:53Z
 
 ## Log
 
@@ -1336,10 +1336,19 @@ from the existing Firecrawl research job (`apps/scout/convex/agentsApi/siteResea
 Directory screenshots keep a 16:10 ratio as cards shrink, with two-line task summaries and
 stacked cards below 640px. Site workspaces use the available pane height.
 
-### 2026-09-17 - working tree
+### 2026-09-17 - v219 - 48acef5
 
 The homepage opens with an animated discovery field and a new headline above the existing
 review composer and site list. TypeGPU draws green and amber contours on the page background,
 extending behind the composer and fading out below it. Motion pauses while typing or offscreen
 and respects reduced motion. A static field keeps the same treatment without WebGPU
 (`apps/scout/src/components/discovery-hero.tsx`).
+
+### 2026-09-17 - v220 - working tree
+
+Site search and Public/My reviews now stay in the URL across the homepage, site pages, and tasks.
+The site sidebar has the same controls, so filters remain editable while browsing. Partial site
+names and domains update results after a short pause in typing, without filling browser history.
+Convex matches within bounded pages and retains visibility rules and ordering. Domains link to the
+website from cards and site pages, while screenshots and product names open the task list. The sidebar
+stops at 368px (`apps/scout/src/components/site-identity.tsx`, `apps/scout/convex/scout/sites.ts`).

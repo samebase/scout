@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { siteHostnameSchema } from "../../shared/site";
+import { siteSearchSchema } from "../../shared/site";
 
 export const reviewFeedSearch = z.object({
-  site: siteHostnameSchema.optional(),
+  site: siteSearchSchema.transform((value) => value || undefined).optional(),
   scope: z.enum(["public", "mine"]).optional(),
 });
 

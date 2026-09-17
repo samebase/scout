@@ -572,7 +572,6 @@ describe("Chat workspace", () => {
     });
     const user = userEvent.setup();
     await user.type(screen.getByRole("textbox", { name: "Filter by site" }), "samebase.com");
-    await user.click(screen.getByRole("button", { name: "Apply site filter" }));
     await waitFor(() =>
       expect(router.state.location.search).toMatchObject({ site: "samebase.com" }),
     );
@@ -582,15 +581,8 @@ describe("Chat workspace", () => {
     });
     await user.click(screen.getByRole("button", { name: "Clear site filter" }));
     await waitFor(() => expect(router.state.location.search.site).toBeUndefined());
-    await act(async () => {
-      router.history.back();
-    });
-    await waitFor(() =>
-      expect(screen.getByRole("textbox", { name: "Filter by site" })).toHaveProperty(
-        "value",
-        "samebase.com",
-      ),
-    );
+    expect(screen.getByRole("textbox", { name: "Filter by site" })).toHaveProperty("value", "");
+    expect(router.history.length).toBe(1);
   });
 
   test("retains the existing lab sign-in form at chats", async () => {

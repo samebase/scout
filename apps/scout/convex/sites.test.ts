@@ -276,7 +276,7 @@ test("site cursors count sites, order by latest eligible activity, and never exp
   ]);
   expect(await t.owner.query(api.scout.sites.get, { site: "other-private.test" })).toBeNull();
   expect((await t.list("public", null, 2, " PRIVATE.TEST ")).page).toEqual([]);
-  expect((await t.list("mine", null, 2, " PRIVATE.TEST ")).page).toEqual([
+  expect((await t.list("mine", null, 24, " PRIVATE.TEST ")).page).toEqual([
     { hostname: "private.test", taskCount: 1, preview: null, profile: null, research: null },
   ]);
   await t.visibility(latest.sessionId, "private");
@@ -296,7 +296,7 @@ test("site cursors count sites, order by latest eligible activity, and never exp
   expect((await t.tasks("public", "second.test", null, 1)).isDone).toBe(true);
 });
 
-test("anonymous exact-site pagination metadata is identical for hidden and absent hostnames", async () => {
+test("anonymous search pagination metadata is identical for hidden and absent hostnames", async () => {
   const t = await setup();
   await t.review("private.test", 1, { visibility: "private" });
   await t.review("pending.test", 2, { decision: "pending" });
@@ -313,7 +313,7 @@ test("anonymous exact-site pagination metadata is identical for hidden and absen
       paginationOpts: { cursor: null, numItems: 1, maximumRowsRead: 1 },
     });
   const absent = await list("absent.test");
-  expect(absent).toMatchObject({ page: [], isDone: true });
+  expect(absent.page).toEqual([]);
   for (const hostname of ["private.test", "pending.test", "rejected.test", "workspace.test"]) {
     expect(await t.admin.query(api.scout.sites.get, { site: hostname })).toEqual({
       hostname,
@@ -470,7 +470,15 @@ test("admin all-sites cursors include workspace-only and private sites in hostna
   expect(second.isDone).toBe(true);
   await expect(t.owner.query(api.scout.sites.list, args)).rejects.toThrow("Not authorized");
   await expect(t.backend.query(api.scout.sites.list, args)).rejects.toThrow("Not authorized");
-  expect((await t.admin.query(api.scout.sites.list, { ...args, site: " C.TEST " })).page).toEqual([
+  const search = await t.admin.query(api.scout.sites.list, { ...args, site: " C.TEST " });
+  expect(search.page).toEqual([]);
+  expect(search.isDone).toBe(false);
+  const matches = await t.admin.query(api.scout.sites.list, {
+    ...args,
+    site: " C.TEST ",
+    paginationOpts: { cursor: search.continueCursor, numItems: 2 },
+  });
+  expect(matches.page).toEqual([
     { hostname: "c.test", taskCount: 0, preview: null, profile: null, research: null },
   ]);
 });
@@ -683,3 +691,50 @@ test.each([undefined, "A public calculator."])(
     });
   },
 );
+
+test("search matches partial names and domains across bounded pages without exposing private sites", async () => {
+  const t = await setup();
+  await t.review("older-app.test", 1);
+  await t.review("pika.style", 2);
+  await t.review("unrelated.test", 3);
+  await t.review("pika-private.test", 4, { userId: t.otherId, visibility: "private" });
+  await t.backend.run(async (ctx) => {
+    const site = await ctx.db
+      .query("sites")
+      .withIndex("by_hostname", (q) => q.eq("hostname", "older-app.test"))
+      .unique();
+    if (!site) throw new Error("Missing site");
+    await ctx.db.patch(site._id, {
+      profile: {
+        name: "Pika Studio",
+        homepageUrl: "https://older-app.test",
+        researchedAt: 10,
+        brief: "Site brief",
+      },
+    });
+  });
+  for (const scope of ["public", "mine"] as const) {
+    const first = await t.list(scope, null, 1, " PIKA ");
+    expect(first.page).toEqual([]);
+    expect(first.isDone).toBe(false);
+    const second = await t.list(scope, first.continueCursor, 1, " PIKA ");
+    const third = await t.list(scope, second.continueCursor, 1, " PIKA ");
+    expect([...second.page, ...third.page].map((site) => site.hostname)).toEqual([
+      "pika.style",
+      "older-app.test",
+    ]);
+    expect((await t.list(scope, null, 24, "studio")).page.map((site) => site.hostname)).toEqual([
+      "older-app.test",
+    ]);
+    expect((await t.list(scope, null, 24, "ika")).page.map((site) => site.hostname)).toEqual([
+      "pika.style",
+      "older-app.test",
+    ]);
+  }
+  const privateMatch = await t.other.query(api.scout.sites.list, {
+    scope: "mine",
+    site: "pika",
+    paginationOpts: { cursor: null, numItems: 24 },
+  });
+  expect(privateMatch.page.map((site) => site.hostname)).toEqual(["pika-private.test"]);
+});
