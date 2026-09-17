@@ -170,6 +170,11 @@ function SiteLayout() {
                       </a>
                     </div>
                   </div>
+                  {record.profile?.overview && (
+                    <p className="mb-5 max-w-3xl text-sm leading-relaxed text-muted-foreground">
+                      {record.profile.overview}
+                    </p>
+                  )}
                   <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b">
                     <nav aria-label="Site views" className="flex gap-6">
                       <Link
@@ -216,7 +221,7 @@ function SiteLayout() {
                     )}
                   </div>
                   {workspace ? (
-                    <div className="min-h-[28rem] flex-1 overflow-hidden rounded-lg border bg-card">
+                    <div className="flex min-h-[28rem] flex-1 flex-col overflow-hidden rounded-lg border bg-card">
                       <ScoutWorkspace
                         key={parsed.data}
                         target={{ kind: "site", site: parsed.data }}

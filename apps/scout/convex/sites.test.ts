@@ -622,54 +622,64 @@ test("account deletion removes all owner listings in batches and keeps retained 
   ]);
 });
 
-test("site metadata exposes the name publicly but keeps research diagnostics for admins", async () => {
-  const t = await setup();
-  await t.review("example.test", 1);
-  await t.backend.run(async (ctx) => {
-    const site = await ctx.db
-      .query("sites")
-      .withIndex("by_hostname", (q) => q.eq("hostname", "example.test"))
-      .unique();
-    if (!site) throw new Error("Missing site");
-    const researchId = await ctx.db.insert("agentsApiSiteResearch", {
-      site: site.hostname,
-      sessionId: null,
-      userId: t.userId,
-      model: "spark-2",
-      maxCredits: 50,
-      jobId: "job-1",
-      requestPath: null,
-      responsePath: null,
-      credits: null,
-      state: { kind: "failed", finishedAt: 20, error: "Provider diagnostic for operators" },
+test.each([undefined, "A public calculator."])(
+  "site details expose overview=%s, lists stay lightweight, and diagnostics stay private",
+  async (overview) => {
+    const t = await setup();
+    await t.review("example.test", 1);
+    await t.backend.run(async (ctx) => {
+      const site = await ctx.db
+        .query("sites")
+        .withIndex("by_hostname", (q) => q.eq("hostname", "example.test"))
+        .unique();
+      if (!site) throw new Error("Missing site");
+      const researchId = await ctx.db.insert("agentsApiSiteResearch", {
+        site: site.hostname,
+        sessionId: null,
+        userId: t.userId,
+        model: "spark-2",
+        maxCredits: 50,
+        jobId: "job-1",
+        requestPath: null,
+        responsePath: null,
+        credits: null,
+        state: { kind: "failed", finishedAt: 20, error: "Provider diagnostic for operators" },
+      });
+      await ctx.db.patch(site._id, {
+        researchId,
+        profile: {
+          name: "Example App",
+          homepageUrl: "https://example.test/",
+          researchedAt: 10,
+          brief: "Public brief",
+          ...omitNullish({ overview }),
+        },
+      });
     });
-    await ctx.db.patch(site._id, {
-      researchId,
-      profile: {
+    for (const viewer of [t.backend, t.owner]) {
+      const site = await viewer.query(api.scout.sites.get, { site: "example.test" });
+      expect(site?.profile).toEqual({
         name: "Example App",
         homepageUrl: "https://example.test/",
         researchedAt: 10,
-        brief: "Public brief",
-      },
+        ...omitNullish({ overview }),
+      });
+      expect(site?.research).toEqual({ status: "failed", error: null });
+      const page = await viewer.query(api.scout.sites.list, {
+        scope: "public",
+        site: null,
+        paginationOpts: { cursor: null, numItems: 6 },
+      });
+      expect(page.page[0].research).toEqual({ status: "failed", error: null });
+      expect(page.page[0].profile).toEqual({
+        name: "Example App",
+        homepageUrl: "https://example.test/",
+        researchedAt: 10,
+      });
+    }
+    expect((await t.admin.query(api.scout.sites.get, { site: "example.test" }))?.research).toEqual({
+      status: "failed",
+      error: "Provider diagnostic for operators",
     });
-  });
-  for (const viewer of [t.backend, t.owner]) {
-    const site = await viewer.query(api.scout.sites.get, { site: "example.test" });
-    expect(site?.profile).toEqual({
-      name: "Example App",
-      homepageUrl: "https://example.test/",
-      researchedAt: 10,
-    });
-    expect(site?.research).toEqual({ status: "failed", error: null });
-    const page = await viewer.query(api.scout.sites.list, {
-      scope: "public",
-      site: null,
-      paginationOpts: { cursor: null, numItems: 6 },
-    });
-    expect(page.page[0].research).toEqual({ status: "failed", error: null });
-  }
-  expect((await t.admin.query(api.scout.sites.get, { site: "example.test" }))?.research).toEqual({
-    status: "failed",
-    error: "Provider diagnostic for operators",
-  });
-});
+  },
+);

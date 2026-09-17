@@ -7,6 +7,8 @@ export const SITE_RESEARCH_TIMEOUT_MS = 180_000;
 export const siteProfile = v.object({
   name: v.string(),
   homepageUrl: v.string(),
+  // Profiles saved before overview persistence still contain only the full brief.
+  overview: v.optional(v.string()),
   brief: v.string(),
   researchedAt: v.number(),
 });

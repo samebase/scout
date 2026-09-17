@@ -1,11 +1,7 @@
 import type { FunctionReturnType } from "convex/server";
-import {
-  CheckCircle2Icon,
-  ChevronRightIcon,
-  CircleAlertIcon,
-  LoaderCircleIcon,
-  WrenchIcon,
-} from "lucide-react";
+import { ChevronRightIcon, CircleAlertIcon, LoaderCircleIcon } from "lucide-react";
+import { ToolActivityRow, ToolValue } from "#components/tool-activity";
+import { toolActivityLinks, type ToolActivity } from "../../shared/toolActivity";
 import { api } from "../../convex/_generated/api";
 import { SCOUT_REASONING_LABELS } from "../../shared/scoutReasoning";
 import { Bubble, BubbleContent } from "#components/ui/bubble";
@@ -68,6 +64,11 @@ export function ScoutRunMessageView({
             part={part}
             role={message.role}
             showText={showText}
+            active={
+              metadata
+                ? metadata.outcome.kind === "pending"
+                : message.status === "pending" || message.status === "streaming"
+            }
           />
         ))}
         {metadata?.outcome.kind === "failed" ? (
@@ -173,10 +174,12 @@ function MessagePart({
   part,
   role,
   showText,
+  active,
 }: {
   part: ScoutMessagePart;
   role: ScoutRunMessage["role"];
   showText: boolean;
+  active: boolean;
 }) {
   if (part.kind === "text") {
     if (!showText || !part.text) return null;
@@ -190,7 +193,7 @@ function MessagePart({
     );
   }
 
-  if (part.kind === "tool") return <ToolActivity tool={part.tool} />;
+  if (part.kind === "tool") return <LabToolActivity tool={part.tool} active={active} />;
   if (part.kind === "step") return null;
 
   if (part.kind === "reasoning") {
@@ -227,68 +230,48 @@ function MessagePart({
   );
 }
 
-function ToolActivity({ tool }: { tool: ScoutToolActivity }) {
-  const isError = tool.error !== undefined;
-  const isComplete = tool.state === "output-available";
+function toolState(tool: ScoutToolActivity, active: boolean): ToolActivity["state"] {
+  if (tool.error !== undefined) return "failed";
+  switch (tool.state) {
+    case "output-available":
+      return "completed";
+    case "output-error":
+      return "failed";
+    case "output-denied":
+      return "interrupted";
+    case "input-streaming":
+    case "input-available":
+    case "approval-requested":
+    case "approval-responded":
+      return active ? "running" : "interrupted";
+  }
+}
 
+function LabToolActivity({ tool, active }: { tool: ScoutToolActivity; active: boolean }) {
   return (
-    <Collapsible
-      className={
-        isError
-          ? "border-destructive/50 bg-destructive/5 rounded-[0.75rem] border px-3 py-2.5"
-          : "rounded-[0.75rem] border bg-muted/35 px-3 py-2.5"
-      }
+    <ToolActivityRow
+      tool={{
+        id: tool.toolCallId,
+        name: tool.name,
+        state: toolState(tool, active),
+        input: tool.input ?? null,
+        output: tool.output ?? null,
+        error: tool.error ?? null,
+        preview: tool.inputPreview?.replace(/\s+/g, " ") ?? null,
+        links: toolActivityLinks(tool.output),
+        captures: [],
+      }}
     >
-      <CollapsibleTrigger className="group/tool flex w-full items-start gap-2 text-left">
-        <Marker className={`items-start${isError ? " text-destructive" : " text-foreground"}`}>
-          <MarkerIcon className="mt-0.5">
-            {isError ? <CircleAlertIcon /> : isComplete ? <CheckCircle2Icon /> : <WrenchIcon />}
-          </MarkerIcon>
-          <MarkerContent className="min-w-0 flex-1">
-            <span className="flex items-baseline justify-between gap-3">
-              <span className="flex min-w-0 items-baseline gap-2">
-                <span className="font-mono text-xs">{tool.name}</span>
-                <RunReference label="Tool call ID" value={tool.toolCallId} />
-                {tool.repairedInputFields.length > 0 ? (
-                  <span className="shrink-0 text-[0.6875rem] font-medium text-amber-700 dark:text-amber-400">
-                    JSON parsed
-                  </span>
-                ) : null}
-              </span>
-              <span
-                className={
-                  isError
-                    ? "text-destructive shrink-0 text-[0.6875rem]"
-                    : "text-muted-foreground shrink-0 text-[0.6875rem]"
-                }
-              >
-                {isError ? "error" : tool.state.replaceAll("-", " ")}
-              </span>
-            </span>
-            {tool.inputPreview ? (
-              <span
-                className={`mt-1 line-clamp-3 whitespace-pre-wrap break-words font-mono text-[0.6875rem] leading-4${isError ? " text-destructive/90" : " text-muted-foreground"}`}
-              >
-                {tool.inputPreview}
-              </span>
-            ) : null}
-          </MarkerContent>
-        </Marker>
-        <ChevronRightIcon className="text-muted-foreground mt-0.5 size-3.5 shrink-0 transition-transform group-data-[state=open]/tool:rotate-90" />
-      </CollapsibleTrigger>
-      <CollapsibleContent className="pt-3">
-        <dl className="grid gap-3 border-t pt-3">
-          {tool.repairedInputFields.length > 0 ? (
-            <ToolValue label="JSON-parsed fields" value={tool.repairedInputFields.join(", ")} />
-          ) : null}
-          {tool.input !== undefined ? <ToolValue label="Input" value={tool.input} /> : null}
-          {tool.output !== undefined ? <ToolValue label="Output" value={tool.output} /> : null}
-          {tool.error !== undefined ? (
-            <ToolValue label="Error" value={tool.error} destructive />
-          ) : null}
-        </dl>
-      </CollapsibleContent>
-    </Collapsible>
+      <div>
+        <dt className="text-[11px] text-muted-foreground">Tool call</dt>
+        <dd>
+          <RunReference label="Tool call ID" value={tool.toolCallId} />
+        </dd>
+      </div>
+      {tool.repairedInputFields.length > 0 && (
+        <ToolValue label="JSON-parsed fields" value={tool.repairedInputFields.join(", ")} />
+      )}
+    </ToolActivityRow>
   );
 }
 
@@ -302,35 +285,6 @@ function RunReference({ label, value }: { label: string; value: string }) {
     >
       #{visibleValue}
     </span>
-  );
-}
-
-function ToolValue({
-  destructive = false,
-  label,
-  value,
-}: {
-  destructive?: boolean;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div>
-      <dt
-        className={
-          destructive
-            ? "text-destructive text-xs font-medium"
-            : "text-muted-foreground text-xs font-medium"
-        }
-      >
-        {label}
-      </dt>
-      <dd
-        className={`mt-1 overflow-x-auto rounded-md bg-background p-2 font-mono text-[0.6875rem] leading-relaxed whitespace-pre-wrap break-words${destructive ? " text-destructive" : ""}`}
-      >
-        {value}
-      </dd>
-    </div>
   );
 }
 

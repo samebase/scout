@@ -1,7 +1,7 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useAction, usePaginatedQuery, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
-import { ArrowRightIcon, SearchIcon, XIcon } from "lucide-react";
+import { ArrowRightIcon, LockIcon, SearchIcon, XIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { z } from "zod";
 import { Button } from "#components/ui/button";
@@ -11,6 +11,7 @@ import { LoadOnScroll } from "#components/load-on-scroll";
 import { SitePreview } from "#components/site-preview";
 import { SiteIdentity } from "#components/site-identity";
 import type { ReviewFeedSearch } from "#lib/reviewFeedSearch";
+import { cn } from "#lib/utils";
 import { siteHostnameSchema } from "../../shared/site";
 import {
   Select,
@@ -126,7 +127,7 @@ function UnassignedTasks() {
     <section aria-label="Tasks without a site" className="mb-5 rounded-lg border bg-card px-5">
       <h2 className="pt-4 text-sm font-medium text-muted-foreground">Tasks without a site</h2>
       {tasks.results.map((activity) => (
-        <ReviewRow key={activity.threadId} activity={activity} />
+        <ReviewRow key={activity.threadId} activity={activity} preview={false} />
       ))}
       {(tasks.status === "CanLoadMore" || tasks.status === "LoadingMore") && (
         <Button
@@ -182,22 +183,19 @@ function SiteCard({
   return (
     <article
       aria-label={site.hostname}
-      className="overflow-hidden rounded-lg border bg-card min-[760px]:grid min-[760px]:grid-cols-[minmax(260px,36%)_minmax(0,1fr)]"
+      className="w-full overflow-hidden rounded-lg border bg-card sm:grid sm:grid-cols-[auto_minmax(0,1fr)] sm:grid-rows-[minmax(0,1fr)]"
     >
       <Link
         to="/sites/$site"
         params={{ site: site.hostname }}
         search={{ scope }}
         aria-label={`View ${site.profile?.name ?? site.hostname} details`}
-        className="relative block min-w-0 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring min-[760px]:border-r"
+        className="relative block min-w-0 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:border-r"
       >
-        <SitePreview
-          site={site}
-          className="min-[760px]:absolute min-[760px]:inset-0 min-[760px]:aspect-auto"
-        />
+        <SitePreview site={site} className="sm:w-[clamp(18rem,calc(25vw+8rem),24rem)]" />
       </Link>
-      <div className="min-w-0 px-4 min-[760px]:px-5">
-        <header className="border-b py-3">
+      <div className="flex h-60 min-h-0 min-w-0 flex-col px-4 sm:h-auto sm:px-5">
+        <header className="shrink-0 border-b py-1.5 sm:max-lg:py-1">
           <Link
             to="/sites/$site"
             params={{ site: site.hostname }}
@@ -207,23 +205,25 @@ function SiteCard({
             <SiteIdentity site={site} heading="h2" />
           </Link>
         </header>
-        {tasks.results.slice(0, 2).map((activity) => (
-          <ReviewRow key={activity.threadId} activity={activity} />
-        ))}
-        {tasks.status === "LoadingFirstPage" && (
-          <p role="status" className="py-6 text-sm text-muted-foreground">
-            Loading tasks…
-          </p>
-        )}
-        {tasks.status === "Exhausted" && !tasks.results.length && (
-          <p className="py-6 text-sm text-muted-foreground">
-            {scope === "mine" ? "You haven't reviewed this site yet." : "No public tasks yet."}
-          </p>
-        )}
+        <div className="min-h-0 flex-1">
+          {tasks.results.slice(0, 2).map((activity) => (
+            <ReviewRow key={activity.threadId} activity={activity} preview />
+          ))}
+          {tasks.status === "LoadingFirstPage" && (
+            <p role="status" className="py-6 text-sm text-muted-foreground">
+              Loading tasks…
+            </p>
+          )}
+          {tasks.status === "Exhausted" && !tasks.results.length && (
+            <p className="py-6 text-sm text-muted-foreground">
+              {scope === "mine" ? "You haven't reviewed this site yet." : "No public tasks yet."}
+            </p>
+          )}
+        </div>
         <Button
           asChild
           variant="ghost"
-          className="w-full rounded-none border-t py-3 text-xs font-normal text-primary"
+          className="h-7 w-full shrink-0 rounded-none border-t py-1 text-xs font-normal text-primary"
         >
           <Link to="/sites/$site" params={{ site: site.hostname }} search={{ scope }}>
             {site.taskCount === 0
@@ -249,7 +249,7 @@ export function SiteTaskList({ site, scope }: { site: string; scope: "public" | 
     <section aria-label={`Tasks for ${site}`} className="min-w-0">
       <div className="rounded-lg border bg-card px-4 sm:px-5">
         {tasks.results.map((activity) => (
-          <ReviewRow key={activity.threadId} activity={activity} />
+          <ReviewRow key={activity.threadId} activity={activity} preview={false} />
         ))}
         {tasks.status === "LoadingFirstPage" && (
           <p role="status" className="py-6 text-sm text-muted-foreground">
@@ -267,7 +267,7 @@ export function SiteTaskList({ site, scope }: { site: string; scope: "public" | 
   );
 }
 
-function ReviewRow({ activity }: { activity: Activity }) {
+function ReviewRow({ activity, preview }: { activity: Activity; preview: boolean }) {
   const checks = activity.walkthrough?.checks;
   const ongoing =
     activity.status === "ready" ||
@@ -280,14 +280,33 @@ function ReviewRow({ activity }: { activity: Activity }) {
     <Link
       to="/review"
       search={{ thread: activity.threadId, view: activity.walkthrough ? "walkthrough" : "chat" }}
-      className="group flex items-center gap-3 border-t py-4 outline-none first:border-t-0 focus-visible:ring-2 focus-visible:ring-ring"
+      className={cn(
+        "group flex items-center gap-3 border-t outline-none first:border-t-0 focus-visible:ring-2 focus-visible:ring-ring",
+        preview ? "py-1 sm:max-lg:py-0.5" : "py-4",
+        preview && !activity.walkthrough && "py-3",
+      )}
     >
       <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1.5">
-          <h3 className="min-w-0 text-sm leading-snug font-medium wrap-anywhere group-hover:underline min-[960px]:text-base">
+        <div
+          className={cn(
+            "flex items-start justify-between gap-x-3 gap-y-1.5",
+            !preview && "flex-wrap",
+          )}
+        >
+          <h3
+            className={cn(
+              "min-w-0 text-sm leading-snug font-medium wrap-anywhere group-hover:underline",
+              preview ? "line-clamp-2 flex-1" : "min-[960px]:text-base",
+            )}
+          >
             {activity.title ?? "New review"}
           </h3>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <div
+            className={cn(
+              "flex flex-wrap items-center gap-x-3 gap-y-1",
+              preview && "max-w-28 shrink-0",
+            )}
+          >
             {checks && !ongoing && <ReviewCheckSummary checks={checks} />}
             {showStatus && (
               <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -297,16 +316,28 @@ function ReviewRow({ activity }: { activity: Activity }) {
                 {activityLabels[activity.status]}
               </span>
             )}
+            {preview && activity.visibility === "private" && (
+              <LockIcon className="size-3 text-muted-foreground" role="img" aria-label="Private" />
+            )}
           </div>
         </div>
-        {activity.walkthrough && (
-          <p className="mt-1.5 line-clamp-2 text-sm leading-relaxed wrap-anywhere text-muted-foreground">
-            {activity.walkthrough.summary}
-          </p>
-        )}
-        {activity.visibility === "private" && (
-          <p className="mt-1 text-xs text-muted-foreground">Private</p>
-        )}
+        <div className={cn(preview && "flex items-baseline gap-2")}>
+          {activity.walkthrough && (
+            <p
+              className={cn(
+                "text-sm wrap-anywhere text-muted-foreground",
+                preview
+                  ? "mt-1 min-w-0 flex-1 line-clamp-2 leading-5 sm:max-lg:hidden"
+                  : "mt-1.5 line-clamp-2 leading-relaxed",
+              )}
+            >
+              {activity.walkthrough.summary}
+            </p>
+          )}
+          {!preview && activity.visibility === "private" && (
+            <p className="mt-1 shrink-0 text-xs text-muted-foreground">Private</p>
+          )}
+        </div>
       </div>
       <ArrowRightIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
     </Link>

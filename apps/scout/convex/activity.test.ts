@@ -512,7 +512,12 @@ test.each([
       paginationOpts: { numItems: 10, cursor: null },
     };
     expect((await t.backend.query(api.scout.activity.messages, args)).page).toEqual([
-      { id: expect.any(String), role: "user", text: "Try this product's onboarding." },
+      {
+        kind: "message",
+        id: expect.any(String),
+        role: "user",
+        text: "Try this product's onboarding.",
+      },
     ]);
 
     await t.backend.mutation(internal.agentsApi.sessions.saveItems, {
@@ -528,7 +533,10 @@ test.each([
     });
     const synced = await t.backend.query(api.scout.activity.messages, args);
     expect(synced.page).toHaveLength(1);
-    expect(synced.page[0]?.text).toBe("Try this product's onboarding.");
+    expect(synced.page[0]).toMatchObject({
+      kind: "message",
+      text: "Try this product's onboarding.",
+    });
     const older = await t.backend.query(api.scout.activity.messages, {
       ...args,
       paginationOpts: { numItems: 10, cursor: synced.continueCursor },
@@ -571,13 +579,21 @@ test("managed Reviews share the feed and expose only conversation text and watch
     paginationOpts: { numItems: 1, cursor: null },
   });
   expect(messages.page).toEqual([
-    { id: expect.any(String), role: "assistant", text: "I opened the site." },
+    { kind: "message", id: expect.any(String), role: "assistant", text: "I opened the site." },
   ]);
-  const earlier = await t.backend.query(api.scout.activity.messages, {
+  let earlier = await t.backend.query(api.scout.activity.messages, {
     threadId: sessionId,
     paginationOpts: { numItems: 1, cursor: messages.continueCursor },
   });
-  expect(earlier.page).toEqual([{ id: expect.any(String), role: "user", text: "Try the site" }]);
+  while (!earlier.isDone && earlier.page.length === 0) {
+    earlier = await t.backend.query(api.scout.activity.messages, {
+      threadId: sessionId,
+      paginationOpts: { numItems: 1, cursor: earlier.continueCursor },
+    });
+  }
+  expect(earlier.page).toEqual([
+    { kind: "message", id: expect.any(String), role: "user", text: "Try the site" },
+  ]);
   const feed = await t.backend.query(api.scout.activity.list, {
     site: null,
     scope: "public",
@@ -1060,7 +1076,7 @@ test("members can start and continue Play, but cannot run Lab chats or another p
   ).rejects.toThrow("Not authorized");
 });
 
-test("public messages expose conversation text without tools or reasoning, in pagination order", async () => {
+test("public messages expose useful tools and conversation text without system messages or reasoning", async () => {
   const t = await setup();
   const { threadId } = await t.chat({ kind: "play", step: null }, "public");
   await t.backend.mutation(components.agent.messages.addMessages, {
@@ -1078,7 +1094,7 @@ test("public messages expose conversation text without tools or reasoning, in pa
               type: "tool-call",
               toolCallId: "browser",
               toolName: "browser_execute",
-              args: { code: "private code" },
+              args: { code: "return await browserState(page);" },
             },
           ],
         },
@@ -1091,7 +1107,7 @@ test("public messages expose conversation text without tools or reasoning, in pa
               type: "tool-result",
               toolCallId: "browser",
               toolName: "browser_execute",
-              output: { type: "text", value: "private browser result" },
+              output: { type: "json", value: { success: true, output: "Opened the page" } },
             },
           ],
         },
@@ -1102,11 +1118,18 @@ test("public messages expose conversation text without tools or reasoning, in pa
     threadId,
     paginationOpts: { cursor: null, numItems: 20 },
   });
-  expect(result.page.map(({ role, text }) => ({ role, text }))).toEqual([
+  expect(
+    result.page.filter((item) => item.kind === "message").map(({ role, text }) => ({ role, text })),
+  ).toEqual([
     { role: "assistant", text: "I'll join now." },
     { role: "user", text: "Join my game" },
   ]);
-  expect(JSON.stringify(result)).not.toMatch(/private|tool|reasoning/);
+  expect(result.page[0]).toMatchObject({
+    kind: "tool",
+    tool: { name: "browser_execute", state: "completed" },
+  });
+  expect(JSON.stringify(result)).toContain("return await browserState(page)");
+  expect(JSON.stringify(result)).not.toMatch(/private|reasoning/);
 });
 
 test("public browser endpoints exclude control credentials and reject private sessions before contacting Firecrawl", async () => {
@@ -1167,4 +1190,456 @@ test("only owners can publish and they can make a game private even after approv
   await expect(
     t.member.mutation(api.scout.chats.setVisibility, { threadId, visibility: "public" }),
   ).rejects.toThrow("Not authorized");
+});
+
+test("Agents tools pair by session and call ID across pages, including actual error results", async () => {
+  const t = await setup();
+  const sessionId = await t.review();
+  await t.backend.mutation(internal.agentsApi.sessions.saveItems, {
+    sessionId,
+    items: [
+      {
+        providerItemId: "call-item",
+        kind: "function_call",
+        text: "browser_execute",
+        complete: true,
+        details: JSON.stringify({
+          type: "function_call",
+          name: "browser_execute",
+          call_id: "call-1",
+          status: "completed",
+          arguments: {
+            code: "await page.getByRole('button', { name: 'Save' }).click();",
+            captureNote: "Saved project",
+          },
+        }),
+      },
+      ...Array.from({ length: 60 }, (_, index) => ({
+        providerItemId: `reasoning-${index}`,
+        kind: "reasoning",
+        text: "hidden reasoning",
+        details: "{}",
+      })),
+      {
+        providerItemId: "output-item",
+        kind: "function_call_output",
+        text: "Tool result",
+        complete: true,
+        details: JSON.stringify({
+          type: "function_call_output",
+          call_id: "call-1",
+          output: "Not the persisted result",
+          status: "completed",
+        }),
+      },
+    ],
+  });
+  await t.backend.run((ctx) =>
+    ctx.db.insert("agentsApiCalls", {
+      sessionId,
+      callId: "call-1",
+      result: {
+        kind: "success",
+        output: JSON.stringify({
+          success: false,
+          error: "Save button is disabled",
+          output: "No project was saved",
+          currentPage: "button Save [disabled]",
+        }),
+      },
+    }),
+  );
+  const first = await t.backend.query(api.scout.activity.messages, {
+    threadId: sessionId,
+    paginationOpts: { cursor: null, numItems: 50 },
+  });
+  expect(first.page).toEqual([]);
+  expect(first.isDone).toBe(false);
+  const second = await t.backend.query(api.scout.activity.messages, {
+    threadId: sessionId,
+    paginationOpts: { cursor: first.continueCursor, numItems: 50 },
+  });
+  expect(second.page).toHaveLength(1);
+  expect(second.page[0]).toMatchObject({
+    kind: "tool",
+    tool: {
+      name: "browser_execute",
+      state: "failed",
+      error: "Save button is disabled",
+      preview: "Saved project",
+      input: expect.stringContaining("getByRole"),
+      output: expect.stringContaining("No project was saved"),
+    },
+  });
+  expect(JSON.stringify(second)).not.toMatch(
+    /hidden reasoning|Not the persisted result|providerItemId/,
+  );
+  const admin = t.backend.withIdentity({ subject: `${t.adminId}|session` });
+  const adminFirst = await admin.query(api.agentsApi.sessions.listItems, {
+    sessionId,
+    paginationOpts: { cursor: null, numItems: 50 },
+  });
+  expect(adminFirst.page.some((item) => item.kind === "function_call_output")).toBe(false);
+  expect(adminFirst.page.every((item) => item.tool === null)).toBe(true);
+  const adminSecond = await admin.query(api.agentsApi.sessions.listItems, {
+    sessionId,
+    paginationOpts: { cursor: adminFirst.continueCursor, numItems: 50 },
+  });
+  expect(adminSecond.page.find((item) => item.kind === "function_call")?.tool).toMatchObject({
+    state: "failed",
+    error: "Save button is disabled",
+  });
+  await expect(
+    t.member.query(api.agentsApi.sessions.listItems, {
+      sessionId,
+      paginationOpts: { cursor: null, numItems: 10 },
+    }),
+  ).rejects.toThrow("Not authorized");
+});
+
+test("call emission completion does not mean tool success and stopped sessions interrupt unmatched calls", async () => {
+  const t = await setup();
+  const sessionId = await t.review("private");
+  await t.backend.mutation(internal.agentsApi.sessions.saveItems, {
+    sessionId,
+    items: [
+      {
+        providerItemId: "call-item",
+        kind: "function_call",
+        text: "bash",
+        complete: true,
+        details: JSON.stringify({
+          type: "function_call",
+          name: "bash",
+          call_id: "call",
+          status: "completed",
+          arguments: { command: "ls /workspace" },
+        }),
+      },
+    ],
+  });
+  const args = { threadId: sessionId, paginationOpts: { cursor: null, numItems: 10 } };
+  expect((await t.member.query(api.scout.activity.messages, args)).page[0]).toMatchObject({
+    kind: "tool",
+    tool: { state: "running", preview: "ls /workspace" },
+  });
+  expect((await t.backend.query(api.scout.activity.messages, args)).page).toEqual([]);
+  expect((await t.other.query(api.scout.activity.messages, args)).page).toEqual([]);
+  await t.backend.mutation(internal.agentsApi.sessions.update, {
+    sessionId,
+    state: { kind: "stopped" },
+  });
+  expect((await t.member.query(api.scout.activity.messages, args)).page[0]).toMatchObject({
+    kind: "tool",
+    tool: { state: "interrupted" },
+  });
+  await t.backend.run((ctx) =>
+    ctx.db.insert("agentsApiCalls", {
+      sessionId,
+      callId: "call",
+      result: { kind: "error", error: "Workspace file not found: /workspace/report.csv" },
+    }),
+  );
+  expect((await t.member.query(api.scout.activity.messages, args)).page[0]).toMatchObject({
+    kind: "tool",
+    tool: { state: "failed", error: "Workspace file not found: /workspace/report.csv" },
+  });
+});
+
+test("Convex tools pair later results by call ID across pagination and do not confuse turn-local IDs", async () => {
+  const t = await setup();
+  const { threadId } = await t.chat({ kind: "play", step: null }, "public");
+  await t.backend.mutation(components.agent.messages.addMessages, {
+    threadId,
+    messages: [
+      { message: { role: "user", content: "Search and inspect the workspace" } },
+      {
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "tool-call",
+              toolCallId: "search",
+              toolName: "web_search",
+              args: { query: "SQLite documentation" },
+            },
+            {
+              type: "tool-call",
+              toolCallId: "shell",
+              toolName: "bash",
+              args: { command: "cat /workspace/report.csv" },
+            },
+          ],
+        },
+      },
+      ...Array.from(
+        { length: 70 },
+        () =>
+          ({
+            message: {
+              role: "assistant",
+              content: [{ type: "reasoning", text: "private reasoning" }],
+            },
+          }) satisfies Parameters<
+            typeof t.backend.mutation<typeof components.agent.messages.addMessages>
+          >[1]["messages"][number],
+      ),
+      {
+        message: {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "shell",
+              toolName: "bash",
+              output: {
+                type: "json",
+                value: { stdout: "", stderr: "report.csv: no such file", exitCode: 1 },
+              },
+            },
+            {
+              type: "tool-result",
+              toolCallId: "search",
+              toolName: "web_search",
+              output: {
+                type: "json",
+                value: {
+                  results: [
+                    {
+                      title: "SQLite docs",
+                      url: "https://sqlite.org/docs.html",
+                      description: "Official documentation",
+                    },
+                  ],
+                },
+              },
+            },
+          ],
+        },
+      },
+      { message: { role: "user", content: "Later turn" } },
+      {
+        message: {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "search",
+              toolName: "web_search",
+              output: { type: "error-text", value: "Wrong turn result" },
+            },
+          ],
+        },
+      },
+    ],
+  });
+  const first = await t.backend.query(api.scout.activity.messages, {
+    threadId,
+    paginationOpts: { cursor: null, numItems: 50 },
+  });
+  const second = await t.backend.query(api.scout.activity.messages, {
+    threadId,
+    paginationOpts: { cursor: first.continueCursor, numItems: 50 },
+  });
+  const tools = second.page.filter((item) => item.kind === "tool").map((item) => item.tool);
+  expect(tools).toHaveLength(2);
+  expect(tools[0]).toMatchObject({
+    name: "bash",
+    state: "failed",
+    error: "Process exited with code 1",
+    input: expect.stringContaining("cat /workspace/report.csv"),
+    output: expect.stringContaining("no such file"),
+  });
+  expect(tools[1]).toMatchObject({
+    name: "web_search",
+    state: "completed",
+    preview: "SQLite documentation",
+    output: expect.stringContaining("Official documentation"),
+    links: [{ label: "SQLite docs", url: "https://sqlite.org/docs.html" }],
+  });
+  expect(JSON.stringify(second)).not.toMatch(/Wrong turn result|private reasoning/);
+});
+
+test("screenshot references must be ready and belong to the current task", async () => {
+  const t = await setup();
+  const sessionId = await t.review();
+  const otherSession = await t.managedReview("other.test");
+  const captureId = await t.backend.run(async (ctx) => {
+    const browserId = await ctx.db.insert("agentsApiBrowserSessions", {
+      agentsSessionId: sessionId,
+      sequence: 0,
+      providerSessionId: "browser",
+      viewport: { width: 100, height: 100 },
+      lifecycle: { kind: "active", openedAtMs: 0 },
+      nextOperationSequence: 1,
+    });
+    const operationId = await ctx.db.insert("agentsApiBrowserOperations", {
+      sessionId: browserId,
+      sequence: 0,
+      toolCallId: "capture",
+      action: { kind: "execute", code: "return browserState(page)" },
+      state: { kind: "prepared", preparedAtMs: 0 },
+      clickCapture: null,
+    });
+    return ctx.db.insert("agentsApiScreenshots", {
+      sessionId,
+      operationId,
+      browserSequence: 0,
+      operationSequence: 0,
+      note: "Saved",
+      state: {
+        kind: "ready",
+        key: "private-storage-key",
+        metadata: {
+          tabId: "tab",
+          url: "https://example.test/project",
+          title: "Project",
+          startedAtMs: 0,
+          completedAtMs: 1,
+          width: 100,
+          height: 100,
+          viewport: { width: 100, height: 100, scrollX: 0, scrollY: 0 },
+        },
+      },
+    });
+  });
+  await t.backend.mutation(internal.agentsApi.sessions.saveItems, {
+    sessionId,
+    items: [
+      {
+        providerItemId: "capture",
+        kind: "function_call",
+        text: "browser_execute",
+        details: JSON.stringify({
+          type: "function_call",
+          name: "browser_execute",
+          call_id: "capture",
+          status: "completed",
+          arguments: { code: "return await browserState(page);" },
+        }),
+      },
+    ],
+  });
+  await t.backend.run((ctx) =>
+    ctx.db.insert("agentsApiCalls", {
+      sessionId,
+      callId: "capture",
+      result: {
+        kind: "success",
+        output: JSON.stringify({ success: true, capture: { kind: "ready", captureId } }),
+      },
+    }),
+  );
+  const args = { threadId: sessionId, paginationOpts: { cursor: null, numItems: 10 } };
+  expect((await t.member.query(api.scout.activity.messages, args)).page[0]).toMatchObject({
+    kind: "tool",
+    tool: { captures: [captureId] },
+  });
+  await t.backend.run((ctx) => ctx.db.patch(captureId, { sessionId: otherSession.sessionId }));
+  expect((await t.member.query(api.scout.activity.messages, args)).page[0]).toMatchObject({
+    kind: "tool",
+    tool: { captures: [] },
+  });
+});
+
+test("hosted MCP, shell and web search tools expose their own results without provider internals", async () => {
+  const t = await setup();
+  const sessionId = await t.review();
+  await t.backend.mutation(internal.agentsApi.sessions.saveItems, {
+    sessionId,
+    items: [
+      {
+        providerItemId: "mcp",
+        kind: "mcp_call",
+        text: "MCP tool",
+        details: JSON.stringify({
+          type: "mcp_call",
+          name: "web_map",
+          arguments: { url: "https://example.test" },
+          output: { links: [{ title: "Docs", url: "https://example.test/docs" }] },
+          error: null,
+          status: "completed",
+          server_label: "private provider config",
+        }),
+      },
+      {
+        providerItemId: "shell",
+        kind: "command_execution",
+        text: "Shell",
+        details: JSON.stringify({
+          type: "command_execution",
+          command: "cat missing.csv",
+          cwd: "/workspace",
+          duration_ms: 20,
+          exit_code: 1,
+          output: "No such file: missing.csv",
+          status: "completed",
+        }),
+      },
+      {
+        providerItemId: "web",
+        kind: "web_search_call",
+        text: "Web search",
+        details: JSON.stringify({
+          type: "web_search_call",
+          action: { type: "search", query: "Product docs", queries: null },
+          status: "completed",
+        }),
+      },
+    ],
+  });
+  const result = await t.backend.query(api.scout.activity.messages, {
+    threadId: sessionId,
+    paginationOpts: { cursor: null, numItems: 10 },
+  });
+  expect(result.page).toMatchObject([
+    {
+      kind: "tool",
+      tool: { name: "web_search_call", state: "completed", preview: "Product docs", output: null },
+    },
+    {
+      kind: "tool",
+      tool: {
+        name: "command_execution",
+        state: "failed",
+        preview: "cat missing.csv",
+        output: expect.stringContaining("No such file"),
+        error: "Process exited with code 1",
+      },
+    },
+    {
+      kind: "tool",
+      tool: {
+        name: "web_map",
+        state: "completed",
+        links: [{ label: "Docs", url: "https://example.test/docs" }],
+      },
+    },
+  ]);
+  expect(JSON.stringify(result)).not.toContain("private provider config");
+});
+
+test("malformed provider tool data fails closed after chat authorization", async () => {
+  const t = await setup();
+  const sessionId = await t.review("private");
+  await t.backend.mutation(internal.agentsApi.sessions.saveItems, {
+    sessionId,
+    items: [
+      {
+        providerItemId: "bad",
+        kind: "function_call",
+        text: "private",
+        details: JSON.stringify({
+          type: "function_call",
+          name: "bash",
+          arguments: { password: "private value" },
+        }),
+      },
+    ],
+  });
+  const args = { threadId: sessionId, paginationOpts: { cursor: null, numItems: 10 } };
+  expect((await t.other.query(api.scout.activity.messages, args)).page).toEqual([]);
+  await expect(t.member.query(api.scout.activity.messages, args)).rejects.toThrow(
+    "Stored tool activity is invalid",
+  );
 });

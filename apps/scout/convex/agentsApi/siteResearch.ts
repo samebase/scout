@@ -251,6 +251,7 @@ export const process = internalAction({
             profile: {
               name: result.name,
               homepageUrl: `https://${research.site}/`,
+              overview: result.overview,
               brief: markdown,
               researchedAt: finishedAt,
             },

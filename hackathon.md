@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-16T21:31:17.448Z
+- **Last updated:** 2026-09-17T12:54:46Z
 
 ## Log
 
@@ -1300,7 +1300,7 @@ an approved request check, and the feed uses bounded pagination over existing si
 OpenAI HTTP requests now allow three retries for transient failures
 (`apps/scout/convex/scout/activity.ts`, `apps/scout/convex/agentsApi/client.ts`).
 
-### 2026-09-16 - working tree
+### 2026-09-16 - 33b2fdf
 
 Sites now connect the browsing experience: start with a site on the homepage, open its task list,
 then inspect a review. The homepage keeps the task composer and loads more sites as you scroll,
@@ -1326,3 +1326,12 @@ navigation, pane widths, and sidebar scroll position while the selected content 
 and view tabs span the main area: Walkthrough pairs explanations with screenshots, while
 Chat & replay pairs the conversation with its recording. Interruption notices sit inside the chat
 (`apps/scout/src/products/conversation/page.tsx`).
+
+### 2026-09-17 - working tree
+
+Member chats, Lab, and Agents share compact tool rows with paired results, links, and saved
+screenshots. Failures and interruptions remain visible. Convex checks chat access and redacts
+member tool details (`apps/scout/convex/scout/activity.ts`). Site pages show a short description
+from the existing Firecrawl research job (`apps/scout/convex/agentsApi/siteResearch.ts`).
+Directory screenshots keep a 16:10 ratio as cards shrink, with two-line task summaries and
+stacked cards below 640px. Site workspaces use the available pane height.
