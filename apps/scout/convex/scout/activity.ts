@@ -18,6 +18,12 @@ import { chatPurposeValidator, chatVisibilityValidator, chatRuntimeValidator } f
 import { scoutAgent } from "./agent";
 import { MAX_BROWSER_SESSIONS_PER_THREAD } from "./browserSessions";
 import { requireFirecrawlLiveViewUrl } from "./lib/firecrawlLiveView";
+import {
+  memberTranscriptItemValidator,
+  type MemberTranscriptItem,
+} from "../../shared/toolActivity";
+import { agentsToolActivity } from "./toolActivityAgents";
+import { convexToolActivities } from "./toolActivityConvex";
 
 const scoutValidator = v.object({
   _id: v.id("scouts"),
@@ -398,43 +404,59 @@ export const get = publicQuery({
 export const messages = publicQuery({
   access: "access_public",
   args: { threadId: v.string(), paginationOpts: paginationOptsValidator },
-  returns: paginationResultValidator(
-    v.object({
-      id: v.string(),
-      role: v.union(v.literal("user"), v.literal("assistant")),
-      text: v.string(),
-    }),
-  ),
+  returns: paginationResultValidator(memberTranscriptItemValidator),
   handler: async (ctx, args) => {
     const chat = await visibleChat(ctx, args.threadId, ctx.viewer);
     if (!chat) return { page: [], isDone: true, continueCursor: "" };
     const managedId = chat.runtime?.kind === "agents_api" ? chat.runtime.sessionId : null;
+    const paginationOpts = {
+      ...args.paginationOpts,
+      numItems: Math.min(args.paginationOpts.numItems, 50),
+      maximumRowsRead: Math.min(args.paginationOpts.maximumRowsRead ?? 100, 100),
+      maximumBytesRead: Math.min(args.paginationOpts.maximumBytesRead ?? 1_000_000, 1_000_000),
+    };
     if (managedId) {
+      const session = await ctx.db.get(managedId);
+      if (!session) throw new Error("Session not found");
       const result = await ctx.db
         .query("agentsApiItems")
         .withIndex("by_session_id_and_sequence", (q) => q.eq("sessionId", managedId))
-        .filter((q) => q.or(q.eq(q.field("kind"), "user"), q.eq(q.field("kind"), "assistant")))
         .order("desc")
-        .paginate(args.paginationOpts);
+        .paginate(paginationOpts);
       if (args.paginationOpts.cursor === null && result.isDone && result.page.length === 0) {
         const check = await getInitialCheck(ctx, managedId);
         return {
           ...result,
-          page: check ? [{ id: check._id, role: "user" as const, text: check.prompt }] : [],
+          page: check
+            ? [
+                {
+                  kind: "message" as const,
+                  id: check._id,
+                  role: "user" as const,
+                  text: check.prompt,
+                },
+              ]
+            : [],
         };
       }
-      return {
-        ...result,
-        page: result.page.flatMap((item) =>
-          (item.kind === "user" || item.kind === "assistant") && item.text.trim()
-            ? [{ id: item._id, role: item.kind, text: item.text } as const]
-            : [],
-        ),
-      };
+      const rows = await Promise.all(
+        result.page.map(async (item): Promise<MemberTranscriptItem[]> => {
+          if ((item.kind === "user" || item.kind === "assistant") && item.text.trim()) {
+            return [{ kind: "message", id: item._id, role: item.kind, text: item.text }];
+          }
+          const tool = await agentsToolActivity(ctx, session, item, "member");
+          return tool ? [{ kind: "tool", id: tool.id, tool }] : [];
+        }),
+      );
+      return { ...result, page: rows.flat() };
     }
-    const result = await listMessages(ctx, components.agent, args);
-    const page = [];
+    const result = await listMessages(ctx, components.agent, { ...args, paginationOpts });
+    const tools = await convexToolActivities(ctx, result.page);
+    const page: MemberTranscriptItem[] = [];
     for (const message of result.page) {
+      for (const tool of (tools.get(message._id) ?? []).toReversed()) {
+        page.push({ kind: "tool", id: tool.id, tool });
+      }
       const content = message.message;
       if (!content || (content.role !== "user" && content.role !== "assistant")) continue;
       const text =
@@ -460,7 +482,7 @@ export const messages = publicQuery({
           if (handoff) continue;
         }
       }
-      page.push({ id: message._id, role: content.role, text });
+      page.push({ kind: "message", id: message._id, role: content.role, text });
     }
     return { ...result, page };
   },

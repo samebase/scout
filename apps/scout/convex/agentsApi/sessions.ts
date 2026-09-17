@@ -26,6 +26,9 @@ import { getInitialCheck, listChecks, summarizeCheck, currentCheckMessage } from
 import { REQUEST_CHECK_MODEL, MAX_SESSION_CHECKS, checkSummary } from "./requestCheckModel";
 import { getResearch, summarizeResearch } from "./siteResearchRecords";
 import { researchSummary } from "./siteResearchModel";
+import { agentsToolActivity, pairedAgentsOutput } from "../scout/toolActivityAgents";
+import { toolActivityValidator } from "../../shared/toolActivity";
+import schema from "../schema";
 
 async function requireSession(ctx: QueryCtx, sessionId: Id<"agentsApiSessions">) {
   const session = await ctx.db.get(sessionId);
@@ -197,13 +200,28 @@ export const get = query({
 export const listItems = query({
   access: "access_lab",
   args: { sessionId: v.id("agentsApiSessions"), paginationOpts: paginationOptsValidator },
+  returns: paginationResultValidator(
+    schema.doc("agentsApiItems").extend({ tool: v.union(toolActivityValidator, v.null()) }),
+  ),
   handler: async (ctx, args) => {
-    await requireSession(ctx, args.sessionId);
-    return await ctx.db
+    const session = await requireSession(ctx, args.sessionId);
+    const result = await ctx.db
       .query("agentsApiItems")
       .withIndex("by_session_id_and_sequence", (q) => q.eq("sessionId", args.sessionId))
       .order("desc")
-      .paginate(args.paginationOpts);
+      .paginate({
+        ...args.paginationOpts,
+        numItems: Math.min(args.paginationOpts.numItems, 50),
+        maximumRowsRead: Math.min(args.paginationOpts.maximumRowsRead ?? 100, 100),
+        maximumBytesRead: Math.min(args.paginationOpts.maximumBytesRead ?? 1_000_000, 1_000_000),
+      });
+    const rows = await Promise.all(
+      result.page.map(async (item) => {
+        if (await pairedAgentsOutput(ctx, item)) return [];
+        return [{ ...item, tool: await agentsToolActivity(ctx, session, item, "admin") }];
+      }),
+    );
+    return { ...result, page: rows.flat() };
   },
 });
 

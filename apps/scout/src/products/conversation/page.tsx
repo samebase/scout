@@ -43,6 +43,7 @@ import {
 import { AuthPanel } from "../../components/auth-panel";
 import { BrowserReplay } from "../../components/browser-replay";
 import { TaskWalkthrough } from "#components/task-walkthrough";
+import { ToolActivityRow } from "#components/tool-activity";
 import { Button } from "#components/ui/button";
 import { ChatHandoffNotice } from "../../components/chat-handoff-notice";
 import { ProductShell } from "../shell";
@@ -973,7 +974,7 @@ function ConversationSession({
             <MessageScroller>
               <MessageScrollerViewport aria-label="Session messages" className="[mask-image:none]">
                 <MessageScrollerContent
-                  className="gap-7 px-4 pt-5 pb-7"
+                  className="gap-2 px-4 pt-5 pb-7"
                   role="log"
                   aria-label="Session messages"
                   aria-live="polite"
@@ -994,33 +995,43 @@ function ConversationSession({
                       Loading messages…
                     </p>
                   )}
-                  {visibleMessages.map((message) => (
-                    <MessageScrollerItem
-                      key={message.id}
-                      messageId={message.id}
-                      className={cn(
-                        "min-w-0 max-w-[95%] text-[15px] [overflow-wrap:anywhere]",
-                        message.role === "user" ? "ml-auto" : "mr-auto",
-                      )}
-                    >
-                      {message.role !== "user" && (
-                        <span className="mb-2 block text-xs font-medium text-muted-foreground">
-                          {scout?.displayName ?? "Scout"}
-                        </span>
-                      )}
-                      <p
+                  {visibleMessages.map((message) =>
+                    message.kind === "tool" ? (
+                      <MessageScrollerItem
+                        key={message.id}
+                        messageId={message.id}
+                        className="w-full min-w-0"
+                      >
+                        <ToolActivityRow tool={message.tool} />
+                      </MessageScrollerItem>
+                    ) : (
+                      <MessageScrollerItem
+                        key={message.id}
+                        messageId={message.id}
                         className={cn(
-                          "whitespace-pre-wrap",
-                          message.role === "user" &&
-                            "rounded-[var(--product-message-radius)] bg-secondary px-5 py-3.5",
+                          "my-2 min-w-0 max-w-[95%] text-[15px] [overflow-wrap:anywhere]",
+                          message.role === "user" ? "ml-auto" : "mr-auto",
                         )}
                       >
-                        {message.role === "user"
-                          ? gameInviteDisplayText(message.text)
-                          : message.text}
-                      </p>
-                    </MessageScrollerItem>
-                  ))}
+                        {message.role !== "user" && (
+                          <span className="mb-2 block text-xs font-medium text-muted-foreground">
+                            {scout?.displayName ?? "Scout"}
+                          </span>
+                        )}
+                        <p
+                          className={cn(
+                            "whitespace-pre-wrap",
+                            message.role === "user" &&
+                              "rounded-[var(--product-message-radius)] bg-secondary px-5 py-3.5",
+                          )}
+                        >
+                          {message.role === "user"
+                            ? gameInviteDisplayText(message.text)
+                            : message.text}
+                        </p>
+                      </MessageScrollerItem>
+                    ),
+                  )}
                   {thread.status === "failed" &&
                     managed?.state.kind !== "waiting" &&
                     managed?.state.kind !== "checking" && (

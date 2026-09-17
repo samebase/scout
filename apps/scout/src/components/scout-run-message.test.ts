@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, test } from "vite-plus/test";
 import { afterEach } from "vite-plus/test";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -108,7 +108,14 @@ describe("Scout transcript metadata", () => {
           stepOrder: 0,
           status: "failed",
           role: "assistant",
-          parts: [],
+          parts: [
+            {
+              type: "tool-browser_execute",
+              toolCallId: "stopped-call",
+              state: "input-available",
+              input: { code: "await page.title()" },
+            },
+          ],
           text: "",
           metadata: {
             turnId,
@@ -122,6 +129,7 @@ describe("Scout transcript metadata", () => {
 
     expect(screen.queryByText(/Generation failed/)).toBeNull();
     expect(screen.getByText(/Stopped · Conrad Scout/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "browser_execute: Interrupted" })).toBeTruthy();
   });
 
   test("counts generation-step boundaries in the message parts", () => {
@@ -201,6 +209,7 @@ describe("Scout tool results", () => {
       }),
     );
 
+    fireEvent.click(screen.getByRole("button", { name: "browser_execute: Failed" }));
     const reference = screen.getByTitle("Tool call ID: tool-call-1234567890");
     expect(reference.textContent).toBe("#34567890");
     expect(reference.getAttribute("data-reference-id")).toBe("tool-call-1234567890");

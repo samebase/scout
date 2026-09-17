@@ -1,6 +1,7 @@
 import { paginationOptsValidator, paginationResultValidator } from "convex/server";
 import { v } from "convex/values";
 import { siteHostnameSchema } from "../../shared/site";
+import { omitNullish } from "../../shared/omitNullish";
 import type { Doc } from "../_generated/dataModel";
 import { internalMutation, type QueryCtx } from "../_generated/server";
 import { canAccess } from "../../shared/accessModel";
@@ -137,11 +138,21 @@ export const list = publicQuery({
 export const get = publicQuery({
   access: "access_public",
   args: { site: v.string() },
-  returns: v.union(siteRow, v.null()),
+  returns: v.union(
+    siteRow.extend({ profile: v.union(siteProfile.omit("brief"), v.null()) }),
+    v.null(),
+  ),
   handler: async (ctx, { site }) => {
     const hostname = siteHostnameSchema.parse(site);
     const row = await accessibleSite(ctx, hostname, ctx.viewer);
-    return row ? presentSite(ctx, row, ctx.viewer) : null;
+    if (!row) return null;
+    const result = await presentSite(ctx, row, ctx.viewer);
+    return {
+      ...result,
+      profile: result.profile
+        ? { ...result.profile, ...omitNullish({ overview: row.profile?.overview }) }
+        : null,
+    };
   },
 });
 

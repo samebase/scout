@@ -102,7 +102,7 @@ export function ScoutWorkspace({
     return <p className="p-4 text-muted-foreground">Site workspace not found.</p>;
 
   return (
-    <section aria-label="Workspace" className="flex h-full min-h-0 min-w-0 flex-col">
+    <section aria-label="Workspace" className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
       {workspace === undefined ? (
         <p className="text-muted-foreground p-4 text-sm">Loading workspace…</p>
       ) : !workspace.configured ? (

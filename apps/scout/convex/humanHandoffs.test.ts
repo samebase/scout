@@ -189,7 +189,9 @@ describe("human handoffs", () => {
       threadId,
       paginationOpts: { cursor: null, numItems: 20 },
     });
-    expect(messages.page.map((message) => message.text)).toEqual(["Test human handoff"]);
+    expect(
+      messages.page.filter((item) => item.kind === "message").map((message) => message.text),
+    ).toEqual(["Test human handoff"]);
     await expect(backend.query(api.humanHandoffs.forSession, { sessionId })).rejects.toThrow(
       "Not authorized",
     );

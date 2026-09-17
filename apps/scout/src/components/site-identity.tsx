@@ -20,7 +20,7 @@ export function SiteIdentity({
             ? "truncate text-sm"
             : "text-2xl leading-tight tracking-tight wrap-anywhere",
           Heading === "h1" && "sm:text-3xl",
-          Heading === "h2" && "group-hover:underline",
+          Heading === "h2" && "truncate group-hover:underline",
         )}
         title={site.profile === null ? site.hostname : site.profile.name}
       >

@@ -10,7 +10,14 @@ const publicUrl = z
 
 export const siteBrief = z.object({
   name: z.string().trim().min(1).max(120),
-  overview: z.string().trim().min(1).max(1_000),
+  overview: z
+    .string()
+    .trim()
+    .min(1)
+    .max(1_000)
+    .describe(
+      "A short product description for visitors: what it does and who it is for, in one or two sentences. No agent instructions, setup steps, or research commentary.",
+    ),
   facts: z
     .array(
       z.object({

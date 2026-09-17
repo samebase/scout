@@ -465,7 +465,9 @@ test("Review uses managed controls and keeps live view, handoff and follow-up me
     interactiveLiveViewUrl: "https://liveview.firecrawl.dev/control",
     handoffEmailFailed: false,
   });
-  remote.messages = [{ id: "message-1", role: "assistant", text: "I opened the site." }];
+  remote.messages = [
+    { kind: "message", id: "message-1", role: "assistant", text: "I opened the site." },
+  ];
   await openPlay("/review?thread=game-thread");
   expect(await screen.findByText("I opened the site.")).toBeTruthy();
   expect(screen.getByTitle("Scout's live browser").getAttribute("src")).toBe(
@@ -566,7 +568,9 @@ test.each(["Finish signing in before resuming.", "Could not capture browser evid
     remote.queries.set("scout/activity:get", review);
     remote.queries.set("agentsApi/sessions:controls", controls);
     remote.queries.set("scout/activity:liveView", { url: "about:blank#watch-only" });
-    remote.messages = [{ id: "message-1", role: "assistant", text: "I opened the site." }];
+    remote.messages = [
+      { kind: "message", id: "message-1", role: "assistant", text: "I opened the site." },
+    ];
     await openPlay("/review?thread=game-thread");
     expect((await screen.findByRole("alert")).textContent).toBe(reason);
     const draft = screen.getByLabelText<HTMLTextAreaElement>("Message Scout");
@@ -1089,8 +1093,13 @@ test("shows persisted activity and assistant commentary while hiding tool payloa
     turnId: "turn-1",
   });
   remote.messages = [
-    { id: "assistant-1", role: "assistant", text: "I'll check the rules before we start." },
-    { id: "user-1", role: "user", text: "Help me learn this game." },
+    {
+      kind: "message",
+      id: "assistant-1",
+      role: "assistant",
+      text: "I'll check the rules before we start.",
+    },
+    { kind: "message", id: "user-1", role: "user", text: "Help me learn this game." },
   ];
   await openPlay("/play?thread=game-thread");
   expect(await screen.findByText("Researching the game")).toBeTruthy();
@@ -1228,6 +1237,54 @@ test("selects older replays without changing the conversation or current handoff
   expect(screen.getByRole<HTMLSelectElement>("combobox", { name: "Browser session" }).value).toBe(
     "older",
   );
+});
+
+test("members can inspect tool results directly in the conversation", async () => {
+  remote.queries.set("accounts:currentViewerAccess", {
+    kind: "account",
+    userId: "member",
+    role: "role_member",
+    isApproved: true,
+    accessKeys: ROLE_ACCESS_GRANTS.role_member,
+  });
+  remote.queries.set(
+    "scout/activity:get",
+    session({
+      purpose: { kind: "review" },
+      visibility: "public",
+      status: "finished",
+      runtime: { kind: "agents_api", sessionId: "managed-1" },
+    }),
+  );
+  remote.messages = [
+    { kind: "message", id: "answer", role: "assistant", text: "The screenshot is saved." },
+    {
+      kind: "tool",
+      id: "capture",
+      tool: {
+        id: "capture",
+        name: "capture_screenshot",
+        state: "completed",
+        input: '{"note":"Editor after export"}',
+        output: "Screenshot saved",
+        error: null,
+        preview: "Editor after export",
+        links: [{ label: "Open screenshot", url: "https://example.com/capture.png" }],
+        captures: [],
+      },
+    },
+    { kind: "message", id: "request", role: "user", text: "Try the export." },
+  ];
+  await openPlay("/review?thread=game-thread&view=chat");
+  expect(screen.queryByRole("link", { name: "Open in lab" })).toBeNull();
+  const messages = screen.getByRole("log", { name: "Session messages" });
+  expect(messages.textContent?.indexOf("Try the export.")).toBeLessThan(
+    messages.textContent?.indexOf("capture_screenshot") ?? 0,
+  );
+  expect(within(messages).getByRole("link", { name: "Open screenshot" })).toBeTruthy();
+  fireEvent.click(within(messages).getByRole("button", { name: "capture_screenshot: Finished" }));
+  expect(within(messages).getByText("Screenshot saved")).toBeTruthy();
+  expect(within(messages).getByText('{"note":"Editor after export"}')).toBeTruthy();
 });
 
 test("follows new browser sessions until the user chooses a session", async () => {

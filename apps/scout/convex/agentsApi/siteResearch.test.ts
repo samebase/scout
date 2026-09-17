@@ -219,6 +219,7 @@ it("persists the site profile and frozen task brief without sharing private requ
   expect(profile).toEqual({
     name: result.data.name,
     homepageUrl: "https://example.com/",
+    overview: result.data.overview,
     brief: expect.stringContaining("# Example Calculator"),
     researchedAt,
   });
@@ -492,6 +493,7 @@ it("refreshes completed research once without changing historical or already wai
   expect(refreshedProfile).toEqual({
     name: "Example Workspace",
     homepageUrl: "https://example.com/",
+    overview: refreshedData.overview,
     brief: expect.stringContaining("A calculator with saved worksheets."),
     researchedAt: Date.now(),
   });
