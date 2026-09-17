@@ -32,18 +32,19 @@ const selectClassName =
 export function ServiceAccountsSection({
   scout,
   accounts,
-  editor,
-  onEdit,
+  management,
 }: {
   scout: Scout;
   accounts: ServiceAccount[] | undefined;
-  editor: AccountEditor;
-  onEdit: (editor: AccountEditor) => void;
+  management: {
+    editor: AccountEditor;
+    onEdit: (editor: AccountEditor) => void;
+  } | null;
 }) {
   const trigger = useRef<HTMLButtonElement | null>(null);
 
   const close = () => {
-    onEdit({ kind: "closed" });
+    management?.onEdit({ kind: "closed" });
     requestAnimationFrame(() => trigger.current?.focus());
   };
 
@@ -56,25 +57,31 @@ export function ServiceAccountsSection({
         >
           Service accounts
         </h2>
-        <Button
-          type="button"
-          size="sm"
-          disabled={scout.status !== "active" || accounts === undefined || editor.kind !== "closed"}
-          onClick={(event) => {
-            trigger.current = event.currentTarget;
-            onEdit({ kind: "create" });
-          }}
-        >
-          <PlusIcon /> Add account
-        </Button>
+        {management && (
+          <Button
+            type="button"
+            size="sm"
+            disabled={
+              scout.status !== "active" ||
+              accounts === undefined ||
+              management.editor.kind !== "closed"
+            }
+            onClick={(event) => {
+              trigger.current = event.currentTarget;
+              management.onEdit({ kind: "create" });
+            }}
+          >
+            <PlusIcon /> Add account
+          </Button>
+        )}
       </div>
 
-      {editor.kind === "closed" ? null : (
+      {management && management.editor.kind !== "closed" && (
         <AccountForm
-          key={editor.kind === "update" ? editor.account._id : "create"}
+          key={management.editor.kind === "update" ? management.editor.account._id : "create"}
           scout={scout}
           accounts={accounts ?? []}
-          account={editor.kind === "update" ? editor.account : null}
+          account={management.editor.kind === "update" ? management.editor.account : null}
           onSaved={close}
           onCancel={close}
         />
@@ -106,19 +113,21 @@ export function ServiceAccountsSection({
                     </p>
                   </div>
                 </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  aria-label={`Edit ${account.serviceName} login`}
-                  disabled={scout.status !== "active" || editor.kind !== "closed"}
-                  onClick={(event) => {
-                    trigger.current = event.currentTarget;
-                    onEdit({ kind: "update", account });
-                  }}
-                >
-                  Edit login
-                </Button>
+                {management && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    aria-label={`Edit ${account.serviceName} login`}
+                    disabled={scout.status !== "active" || management.editor.kind !== "closed"}
+                    onClick={(event) => {
+                      trigger.current = event.currentTarget;
+                      management.onEdit({ kind: "update", account });
+                    }}
+                  >
+                    Edit login
+                  </Button>
+                )}
               </div>
               <dl className="grid min-w-0 gap-4 sm:grid-cols-3">
                 <div className="min-w-0">

@@ -52,8 +52,17 @@ vi.mock("convex/react", () => ({
       case "scout/scouts:get":
         return remote.scout;
       case "scout/serviceAccounts:list":
-        if (!remote.admin) throw new Error("Member queried private accounts");
-        return [];
+        return [
+          {
+            _id: "account-github",
+            scoutId: remote.scout._id,
+            serviceName: "GitHub",
+            serviceDomain: "github.com",
+            identifier: "conrad-scout",
+            authenticationEvidence: { kind: "succeeded", checkedAt: 1 },
+            loginMethod: { kind: "managed_password", credentialHost: "github.com", createdAt: 1 },
+          },
+        ];
       case "scout/scouts:resources":
         if (!remote.admin) throw new Error("Member queried private resources");
         return { agentMail: remote.scout.agentMail, firecrawl: remote.scout.firecrawl };
@@ -112,13 +121,19 @@ async function openPage(path: string) {
   return router;
 }
 
-test("members can browse Scout profiles without loading management panels or private queries", async () => {
+test("members can read Scout accounts but cannot open management panels, including through URLs", async () => {
   remote.admin = false;
   const router = await openPage("/scouts?view=register");
   const user = userEvent.setup();
+  expect(await screen.findByText("GitHub")).toBeTruthy();
   await user.click(await screen.findByRole("link", { name: /Conrad Scout/ }));
-  expect(await screen.findByRole("heading", { name: "Conrad Scout" })).toBeTruthy();
+  expect(await screen.findByRole("heading", { name: "Conrad Scout", level: 1 })).toBeTruthy();
   expect(screen.getByText("conrad@example.test")).toBeTruthy();
+  expect(screen.getByRole("list", { name: "Service accounts" }).textContent).toContain(
+    "conrad-scout",
+  );
+  expect(screen.getByText("github.com")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Edit GitHub login" })).toBeNull();
   await act(() =>
     router.navigate({
       to: "/scouts/$slug",
@@ -131,6 +146,18 @@ test("members can browse Scout profiles without loading management panels or pri
   expect(screen.queryByRole("button", { name: "New chat" })).toBeNull();
   expect(screen.queryByRole("heading", { name: "Runtime resources" })).toBeNull();
   expect(screen.queryByRole("textbox")).toBeNull();
+  await act(() =>
+    router.navigate({
+      to: "/scouts/$slug",
+      params: { slug: "conrad" },
+      search: { account: "account-github" },
+    }),
+  );
+  expect(screen.getByRole("list", { name: "Service accounts" }).textContent).toContain(
+    "conrad-scout",
+  );
+  expect(screen.queryByRole("form")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Edit GitHub login" })).toBeNull();
   expect(remote.action).not.toHaveBeenCalled();
   expect(remote.mutation).not.toHaveBeenCalled();
 });

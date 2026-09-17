@@ -54,7 +54,7 @@ function ScoutsIndexPage() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: "/scouts/" });
   const scouts = useQuery(api.scout.scouts.list);
-  const serviceAccounts = useQuery(api.scout.serviceAccounts.list, canManage ? {} : "skip");
+  const serviceAccounts = useQuery(api.scout.serviceAccounts.list, {});
   const registrationOpen = canManage && search.view === "register";
   const [registrationSubmitting, setRegistrationSubmitting] = useState(false);
   const registrationButton = useRef<HTMLButtonElement>(null);

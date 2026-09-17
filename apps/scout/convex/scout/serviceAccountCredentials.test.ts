@@ -118,7 +118,6 @@ describe("Scout managed-credential persistence", () => {
         serviceDomain: "example.com",
         identifier: "conrad@example.test",
         authenticationEvidence: { kind: "none" },
-        lastObserved: null,
         loginMethod: result.loginMethod,
       },
     ]);

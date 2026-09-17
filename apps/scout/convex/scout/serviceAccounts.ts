@@ -9,7 +9,6 @@ import {
   type QueryCtx,
 } from "../_generated/server";
 import { requirePermission } from "../access";
-import { accountObservationValidator } from "../schema";
 import { canonicalServiceDomain } from "../serviceDomains";
 import {
   scoutServiceAccountAuthenticationEvidenceValidator,
@@ -25,7 +24,6 @@ const MAX_OBSERVED_URL_LENGTH = 2_048;
 
 const serviceAccountPublicValidator = scoutServiceAccountFieldsValidator.extend({
   _id: v.id("scoutServiceAccounts"),
-  lastObserved: v.union(accountObservationValidator, v.null()),
 });
 
 const observedLoginMethodValidator = v.union(
@@ -206,7 +204,6 @@ function projectServiceAccount(account: Doc<"scoutServiceAccounts">) {
     identifier: account.identifier,
     authenticationEvidence: account.authenticationEvidence,
     loginMethod: account.loginMethod,
-    lastObserved: account.lastObserved ?? null,
   };
 }
 
@@ -250,7 +247,7 @@ function loginMethodsMatch(
 }
 
 export const list = query({
-  access: "access_scout_manage",
+  access: "access_scout_view",
   args: {
     scoutId: v.optional(v.id("scouts")),
   },

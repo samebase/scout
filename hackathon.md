@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-17T21:51:30Z
+- **Last updated:** 2026-09-17T22:34:07Z
 
 ## Log
 
@@ -1362,10 +1362,18 @@ The title sits above the panes; site navigation, view tabs, and visibility live 
 Chat keeps the composer and its draft when switching to Walkthrough. Removed the extra outer cards
 and custom layout (`apps/scout/src/products/conversation/`, `apps/scout/src/style.css`).
 
-### 2026-09-17 - v222 - working tree
+### 2026-09-17 - v222 - fdbb220
 
 Task owners can expand cost and usage above the message input without opening Agents.
 Both views share the calculation and breakdown, keeping estimates and Firecrawl credits distinct.
 An owner-authorized Convex query returns only cost data without granting Lab access.
 Agents links to the member review while preserving Chat or Walkthrough
 (`apps/scout/convex/agentsApi/sessions.ts`, `apps/scout/src/components/session-cost.tsx`).
+
+### 2026-09-17 - v223 - working tree
+
+Members can see each Scout's connected services, account identifiers, login methods, and
+authentication status in the existing Scout directory and profile. Convex uses the existing
+view permission for account reads and keeps editing restricted to admins. Account lists omit
+private task references and observed URLs while retaining that evidence in storage
+(`apps/scout/convex/scout/serviceAccounts.ts`, `apps/scout/src/components/scout-service-accounts.tsx`).

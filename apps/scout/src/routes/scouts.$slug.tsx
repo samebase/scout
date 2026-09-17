@@ -42,7 +42,7 @@ function ScoutDetailPage() {
   );
   const serviceAccounts = useQuery(
     api.scout.serviceAccounts.list,
-    canManage && scout ? { scoutId: scout._id } : "skip",
+    scout ? { scoutId: scout._id } : "skip",
   );
 
   if (scout === undefined) {
@@ -195,26 +195,30 @@ function ScoutDetailPage() {
       {canManage && search.account && serviceAccounts !== undefined && !selectedAccount ? (
         <p role="alert">Account not found.</p>
       ) : null}
-      {canManage && (
-        <ServiceAccountsSection
-          scout={scout}
-          accounts={serviceAccounts}
-          editor={editor}
-          onEdit={(next) => {
-            switch (next.kind) {
-              case "closed":
-                void navigate({ search: {} });
-                break;
-              case "create":
-                void navigate({ search: { view: "add-account" } });
-                break;
-              case "update":
-                void navigate({ search: { account: next.account._id } });
-                break;
-            }
-          }}
-        />
-      )}
+      <ServiceAccountsSection
+        scout={scout}
+        accounts={serviceAccounts}
+        management={
+          canManage
+            ? {
+                editor,
+                onEdit: (next) => {
+                  switch (next.kind) {
+                    case "closed":
+                      void navigate({ search: {} });
+                      break;
+                    case "create":
+                      void navigate({ search: { view: "add-account" } });
+                      break;
+                    case "update":
+                      void navigate({ search: { account: next.account._id } });
+                      break;
+                  }
+                },
+              }
+            : null
+        }
+      />
     </>
   );
 }

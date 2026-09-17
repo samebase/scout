@@ -69,10 +69,14 @@ the environment key, deleting the key registry while ciphertext remains, or chan
 metadata fails closed. Rotation is not implemented; recovery requires the original environment key
 and the Convex data backup.
 
-Public queries expose only safe service-account metadata. A new registration has
+Approved members and staff can read service-account metadata through `access_scout_view`.
+Account creation, editing, and credential controls require `access_scout_manage`.
+A new registration has
 `authenticationEvidence.kind` set to `none`. The generated password exists, but the remote account
 may still need to be created or have that password set. Successful account observation updates
 the authentication evidence and `lastObserved`, which identifies the chat and browser session.
+The account list returns authentication status but omits `lastObserved` for all viewers,
+so browsing shared Scout accounts does not disclose private task references or observed URLs.
 
 ## Browser and model boundary
 

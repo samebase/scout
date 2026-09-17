@@ -193,7 +193,6 @@ describe("Profile account login settings", () => {
       const publicAccounts = await admin.query(api.scout.serviceAccounts.list, { scoutId });
       expect(publicAccounts[0]).toMatchObject({
         authenticationEvidence: { kind: "none" },
-        lastObserved: null,
       });
       expect(JSON.stringify(publicAccounts)).not.toContain(credential.ciphertext);
       const stored = await backend.run(async (ctx) => ({
@@ -308,7 +307,12 @@ describe("Profile account login settings", () => {
     const { admin, backend, args } = await context();
     const github = await admin.action(passwordApi, args);
     const otherUserId = await backend.run(
-      async (ctx) => await ctx.db.insert("users", { email: "stranger@example.test" }),
+      async (ctx) =>
+        await ctx.db.insert("users", {
+          email: "member@example.test",
+          emailVerificationTime: Date.now(),
+          isApproved: true,
+        }),
     );
     for (const caller of [
       backend,
