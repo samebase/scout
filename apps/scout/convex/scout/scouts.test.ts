@@ -178,9 +178,7 @@ describe("Scout registry", () => {
     await expect(member.query(api.scout.scouts.resources, { scoutId })).rejects.toThrow(
       "Not authorized",
     );
-    await expect(member.query(api.scout.serviceAccounts.list, { scoutId })).rejects.toThrow(
-      "Not authorized",
-    );
+    await expect(member.query(api.scout.serviceAccounts.list, { scoutId })).resolves.toEqual([]);
     await expect(
       member.action(api.scout.scoutRegistration.register, scoutRegistrationFields),
     ).rejects.toThrow("Not authorized");

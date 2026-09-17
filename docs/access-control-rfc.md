@@ -29,7 +29,7 @@ staff authority comes from Scout's allowlist, matched case-insensitively:
 | Verified account                           | Derived role          | Access                                                                              |
 | ------------------------------------------ | --------------------- | ----------------------------------------------------------------------------------- |
 | Allowlisted email, with any approval value | `role_staff`          | Account controls, Play/Review entry, Lab, Scout management, Members administration. |
-| Other email, `isApproved: true`            | `role_member`         | Account controls and Play/Review entry.                                             |
+| Other email, `isApproved: true`            | `role_member`         | Account controls, Play/Review entry, Scout profiles and service-account viewing.    |
 | Other email, approval false or missing     | `role_pending_access` | Public pages and own account/session controls.                                      |
 
 Public application Convex functions declare named access keys through the shared builders.

@@ -34,7 +34,6 @@ const github: FunctionReturnType<typeof api.scout.serviceAccounts.list>[number] 
   serviceDomain: "github.com",
   identifier: "magda-scout",
   authenticationEvidence: { kind: "none" },
-  lastObserved: null,
   loginMethod: { kind: "managed_password", credentialHost: "github.com", createdAt: 1 },
 };
 
@@ -51,7 +50,11 @@ function AccountEditorView({
 }) {
   const [editor, setEditor] = useState<AccountEditor>({ kind: "closed" });
   return (
-    <ServiceAccountsSection scout={scout} accounts={accounts} editor={editor} onEdit={setEditor} />
+    <ServiceAccountsSection
+      scout={scout}
+      accounts={accounts}
+      management={{ editor, onEdit: setEditor }}
+    />
   );
 }
 

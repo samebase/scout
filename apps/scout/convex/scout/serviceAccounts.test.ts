@@ -210,47 +210,57 @@ describe("Scout service-account inventory", () => {
     },
   );
 
-  it("rejects unauthenticated and non-admin inventory access", async () => {
+  it("rejects unauthenticated and pending-member inventory access", async () => {
     const backend = testBackend();
     await expect(backend.query(api.scout.serviceAccounts.list, {})).rejects.toThrow(
       "Not authorized",
     );
-    const nonAdminId = await insertUser(backend, "person@example.com");
-    const nonAdmin = backend.withIdentity({ subject: `${nonAdminId}|test-session` });
-    await expect(nonAdmin.query(api.scout.serviceAccounts.list, {})).rejects.toThrow(
+    const pendingId = await insertUser(backend, "person@example.com");
+    await backend.run((ctx) => ctx.db.patch(pendingId, { isApproved: false }));
+    const pending = backend.withIdentity({ subject: `${pendingId}|test-session` });
+    await expect(pending.query(api.scout.serviceAccounts.list, {})).rejects.toThrow(
       "Not authorized",
     );
   });
 
-  it("filters accounts by Scout and projects an empty observation", async () => {
-    const { backend, admin } = await authenticatedBackend();
-    const conradId = await insertScout(backend, "conrad");
-    const adaId = await insertScout(backend, "ada");
-    await insertManagedAccount(backend, {
-      scoutId: conradId,
-      serviceName: "Tally",
-      serviceDomain: "tally.so",
-      identifier: "conrad@example.test",
-    });
-    await insertManagedAccount(backend, {
-      scoutId: adaId,
-      serviceName: "GitHub",
-      serviceDomain: "github.com",
-      identifier: "ada-scout",
-    });
-    const conradAccounts = await admin.query(api.scout.serviceAccounts.list, { scoutId: conradId });
-    expect(conradAccounts).toHaveLength(1);
-    expect(conradAccounts[0]).toMatchObject({
-      scoutId: conradId,
-      serviceName: "Tally",
-      lastObserved: null,
-    });
-    const allAccounts = await admin.query(api.scout.serviceAccounts.list, {});
-    expect(allAccounts).toHaveLength(2);
-    expect(new Set(allAccounts.map((account) => account.scoutId))).toEqual(
-      new Set([conradId, adaId]),
-    );
-  });
+  it.each([ADMIN_EMAIL, "member@example.com"])(
+    "lets %s list accounts and filter by Scout",
+    async (email) => {
+      const backend = testBackend();
+      const userId = await insertUser(backend, email);
+      const viewer = backend.withIdentity({ subject: `${userId}|test-session` });
+      const conradId = await insertScout(backend, "conrad");
+      const adaId = await insertScout(backend, "ada");
+      await insertManagedAccount(backend, {
+        scoutId: conradId,
+        serviceName: "Tally",
+        serviceDomain: "tally.so",
+        identifier: "conrad@example.test",
+      });
+      await insertManagedAccount(backend, {
+        scoutId: adaId,
+        serviceName: "GitHub",
+        serviceDomain: "github.com",
+        identifier: "ada-scout",
+      });
+      const conradAccounts = await viewer.query(api.scout.serviceAccounts.list, {
+        scoutId: conradId,
+      });
+      expect(conradAccounts).toHaveLength(1);
+      expect(conradAccounts[0]).toMatchObject({
+        scoutId: conradId,
+        serviceName: "Tally",
+        identifier: "conrad@example.test",
+        authenticationEvidence: { kind: "none" },
+        loginMethod: { kind: "managed_password", credentialHost: "tally.so", createdAt: 1 },
+      });
+      const allAccounts = await viewer.query(api.scout.serviceAccounts.list, {});
+      expect(allAccounts).toHaveLength(2);
+      expect(new Set(allAccounts.map((account) => account.scoutId))).toEqual(
+        new Set([conradId, adaId]),
+      );
+    },
+  );
 
   it("creates and verifies an OAuth account on the observed service without a catalog", async () => {
     const { backend, admin, scoutId, providerAccountId, threadId, sessionId, evidence } =
@@ -273,18 +283,20 @@ describe("Scout service-account inventory", () => {
           identifier: "conrad@example.test",
           authenticationEvidence: { kind: "succeeded", checkedAt: expect.any(Number) },
           loginMethod: { kind: "oauth", providerAccountId },
-          lastObserved: {
-            threadId,
-            sessionId,
-            recordedAt: expect.any(Number),
-            observedUrl: evidence.observedUrl,
-            kind: "agent_report",
-            operationId: expect.any(String),
-            accountAccess: "created",
-          },
         }),
       ]),
     );
+    expect(await backend.run((ctx) => ctx.db.get(result.serviceAccountId))).toMatchObject({
+      lastObserved: {
+        threadId,
+        sessionId,
+        recordedAt: expect.any(Number),
+        observedUrl: evidence.observedUrl,
+        kind: "agent_report",
+        operationId: expect.any(String),
+        accountAccess: "created",
+      },
+    });
     await expect(
       backend.mutation(internal.scout.serviceAccounts.recordAuthenticated, {
         ...evidence,
@@ -486,7 +498,7 @@ describe("Scout service-account inventory", () => {
     },
   );
 
-  it("keeps historical observations readable when recording a new account", async () => {
+  it("keeps observations in storage without exposing private task references to account viewers", async () => {
     const { backend, admin, scoutId, providerAccountId, threadId, sessionId, evidence } =
       await accountContext();
     const lastObserved = {
@@ -502,10 +514,27 @@ describe("Scout service-account inventory", () => {
       await ctx.db.patch(providerAccountId, { lastObserved });
     });
     await backend.mutation(internal.scout.serviceAccounts.recordAuthenticated, evidence);
-    const accounts = await admin.query(api.scout.serviceAccounts.list, { scoutId });
-    expect(accounts.find((account) => account._id === providerAccountId)?.lastObserved).toEqual(
-      lastObserved,
-    );
+    const memberId = await insertUser(backend, "member@example.com");
+    const member = backend.withIdentity({ subject: `${memberId}|test-session` });
+    for (const viewer of [admin, member]) {
+      for (const args of [{}, { scoutId }]) {
+        const accounts = await viewer.query(api.scout.serviceAccounts.list, args);
+        expect(accounts).toHaveLength(2);
+        for (const account of accounts) {
+          expect(Object.keys(account).sort()).toEqual([
+            "_id",
+            "authenticationEvidence",
+            "identifier",
+            "loginMethod",
+            "scoutId",
+            "serviceDomain",
+            "serviceName",
+          ]);
+        }
+      }
+    }
+    const stored = await backend.run((ctx) => ctx.db.get(providerAccountId));
+    expect(stored?.lastObserved).toEqual(lastObserved);
   });
 
   it("does not replace an existing OAuth provider link", async () => {

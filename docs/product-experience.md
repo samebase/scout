@@ -70,8 +70,9 @@ speculative prompt edits.
 - `scoutWorkspaces` distinguishes chat and site workspaces. A site workspace is
   shared knowledge keyed by exact hostname, not a product catalog or a chat subject.
 - Approved members can open Scouts from the main navigation and browse names,
-  emails, and profiles through `access_scout_view`. Registration, provider resources,
-  service accounts, and credential controls remain admin-only. Profiles show
+  emails, profiles, and service accounts through `access_scout_view`. Account lists show
+  service, username or email, login method, and authentication status. Registration,
+  provider resources, account editing, and credential controls remain admin-only. Profiles show
   availability and the task reserving each Scout; members see public tasks and
   their own private tasks. Activity previews appear below the Scout's details.
 - PR #99 adds admin inspection of member-created Reviews in Agents. Its changes
