@@ -560,7 +560,9 @@ describe("Chat workspace", () => {
     remote.queries.set("scout/sites:list", { results: [], status: "Exhausted" });
     const router = await openChats("/");
 
-    expect(await screen.findByRole("heading", { name: "Send a Scout instead." })).toBeTruthy();
+    expect(
+      await screen.findByRole("heading", { name: "See what lies beneath the pitch." }),
+    ).toBeTruthy();
     expect(router.state.location.pathname).toBe("/");
     expect(screen.queryByRole("link", { name: "Play a game" })).toBeNull();
     expect(screen.queryByLabelText("Password")).toBeNull();

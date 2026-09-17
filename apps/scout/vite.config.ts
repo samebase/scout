@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
+import typegpu from "unplugin-typegpu/vite";
 import { defineConfig } from "vite-plus";
 import { resolveWorktreeKind } from "./scripts/run-context-dev.ts";
 
@@ -19,6 +20,7 @@ export default defineConfig(({ command }) => {
       noExternal: ["@samebase/sidebars"],
     },
     plugins: [
+      typegpu(),
       tailwindcss(),
       tanstackStart({
         prerender: {
