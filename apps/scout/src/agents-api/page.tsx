@@ -17,6 +17,7 @@ import {
   MessageSquareIcon,
   SearchIcon,
   ImagesIcon,
+  ArrowUpRightIcon,
 } from "lucide-react";
 import { useMemo, useRef, useState, type FormEvent } from "react";
 import { api } from "../../convex/_generated/api";
@@ -37,7 +38,7 @@ import { RequestCheckView, RequestCheckInspector } from "./request-check";
 import { SiteResearchView, SiteResearchInspector } from "./site-research";
 import { Transcript } from "./transcript";
 import { BrowserPanel } from "./browser";
-import { SessionCost } from "./cost";
+import { SessionCost } from "#components/session-cost";
 import { ScoutWorkspace } from "#components/scout-workspace";
 import { TaskWalkthrough } from "#components/task-walkthrough";
 import type { WorkspaceTarget } from "../../convex/workspaceModel";
@@ -292,6 +293,7 @@ function AgentsWorkspace({ search }: { search: AgentsSearch }) {
 
 function AgentsChrome({ session, search }: { session: Session | null; search: AgentsSearch }) {
   const step = session && selectedStep(session, search);
+  const review = useQuery(api.scout.activity.get, session ? { threadId: session._id } : "skip");
   const checking = step === "request_check" || step === "site_research";
   const navigate = useNavigate({ from: "/agents" });
   const { setMobilePane, toggleLeftPane, toggleRightPane } = useSidebarActions();
@@ -320,6 +322,22 @@ function AgentsChrome({ session, search }: { session: Session | null; search: Ag
         </h1>
         {session && <p className="truncate text-xs text-muted-foreground">{session.scoutName}</p>}
       </div>
+      {review?.purpose.kind === "review" && (
+        <Button asChild variant="ghost" size="sm">
+          <Link
+            to="/review"
+            search={{
+              thread: review.threadId,
+              scope: review.visibility === "public" ? "public" : "mine",
+              view: step === "walkthrough" ? "walkthrough" : "chat",
+            }}
+            aria-label="Open review"
+          >
+            <span className="hidden sm:inline">Open review</span>
+            <ArrowUpRightIcon aria-hidden="true" />
+          </Link>
+        </Button>
+      )}
       {session && (
         <Button
           type="button"

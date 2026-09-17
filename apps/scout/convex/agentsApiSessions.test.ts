@@ -148,6 +148,49 @@ it("lists and inspects a member's private Review without granting session contro
   await expect(member.mutation(api.agentsApi.sessions.stop, { sessionId })).resolves.toBeNull();
 });
 
+it("lets a member read their Review costs without Lab access or other session details", async () => {
+  const { backend, owner: admin, scoutId, sessionId } = await setup();
+  const memberId = await backend.run(async (ctx) => {
+    const userId = await insertTestAccount(ctx, { email: "costs@example.com" });
+    await ctx.db.patch(sessionId, {
+      userId,
+      usage: { inputTokens: 1000, cachedInputTokens: 0, outputTokens: 500 },
+    });
+    await ctx.db.insert("scoutChats", {
+      threadId: sessionId,
+      runtime: { kind: "agents_api", sessionId },
+      userId,
+      scoutId,
+      createdAt: Date.now(),
+      purpose: { kind: "review" },
+      visibility: "public",
+    });
+    return userId;
+  });
+  const member = backend.withIdentity({ subject: memberId });
+  const costs = await member.query(api.agentsApi.sessions.cost, { sessionId });
+  const inspected = await admin.query(api.agentsApi.sessions.get, { sessionId });
+  expect(costs).toEqual({
+    cost: inspected.cost,
+    usage: inspected.usage,
+    checks: inspected.checks.map(({ cost }) => ({ cost })),
+    research: null,
+  });
+  expect(costs.cost.modelEstimateUsd).toBeCloseTo(0.0008);
+  expect(costs.checks).toEqual([{ cost: 0 }]);
+  await expect(member.query(api.agentsApi.sessions.get, { sessionId })).rejects.toThrow(
+    "Not authorized",
+  );
+  await expect(backend.query(api.agentsApi.sessions.cost, { sessionId })).rejects.toThrow();
+  await expect(admin.query(api.agentsApi.sessions.cost, { sessionId })).rejects.toThrow(
+    "Session not found",
+  );
+  await backend.run((ctx) => ctx.db.patch(memberId, { isApproved: false }));
+  await expect(member.query(api.agentsApi.sessions.cost, { sessionId })).rejects.toThrow(
+    "Not authorized",
+  );
+});
+
 it("does not revive a stopped session or dispatch tools after stopping", async () => {
   const { backend, owner, sessionId } = await setup();
   await owner.mutation(api.agentsApi.sessions.stop, { sessionId });

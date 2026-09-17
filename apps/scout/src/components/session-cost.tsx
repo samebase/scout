@@ -1,4 +1,5 @@
-import type { Session } from "./model";
+import type { FunctionReturnType } from "convex/server";
+import type { api } from "../../convex/_generated/api";
 
 const money = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -8,7 +9,11 @@ const money = new Intl.NumberFormat("en-US", {
 });
 const number = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
 
-export function SessionCost({ session }: { session: Session }) {
+export function SessionCost({
+  session,
+}: {
+  session: FunctionReturnType<typeof api.agentsApi.sessions.cost>;
+}) {
   const { cost, usage } = session;
   const checksCost = session.checks.reduce((sum, check) => sum + (check.cost ?? 0), 0);
   const checksComplete = session.checks.every((check) => check.cost !== null);
