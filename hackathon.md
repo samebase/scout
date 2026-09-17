@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-17T21:32:15Z
+- **Last updated:** 2026-09-17T21:51:30Z
 
 ## Log
 
@@ -1353,7 +1353,7 @@ Convex matches within bounded pages and retains visibility rules and ordering. D
 website from cards and site pages, while screenshots and product names open the task list. The sidebar
 stops at 368px (`apps/scout/src/components/site-identity.tsx`, `apps/scout/convex/scout/sites.ts`).
 
-### 2026-09-17 - v221 - working tree
+### 2026-09-17 - v221 - 855775b
 
 Reviews, site pages, Lab, and Agents now share the standard blue theme and its system font,
 backgrounds, and corner sizes, while the homepage hero keeps Bricolage Grotesque. Review uses the
@@ -1361,3 +1361,11 @@ shared sidebars at every screen size, with replay always on the right and matchi
 The title sits above the panes; site navigation, view tabs, and visibility live in their own panes.
 Chat keeps the composer and its draft when switching to Walkthrough. Removed the extra outer cards
 and custom layout (`apps/scout/src/products/conversation/`, `apps/scout/src/style.css`).
+
+### 2026-09-17 - v222 - working tree
+
+Task owners can expand cost and usage above the message input without opening Agents.
+Both views share the calculation and breakdown, keeping estimates and Firecrawl credits distinct.
+An owner-authorized Convex query returns only cost data without granting Lab access.
+Agents links to the member review while preserving Chat or Walkthrough
+(`apps/scout/convex/agentsApi/sessions.ts`, `apps/scout/src/components/session-cost.tsx`).

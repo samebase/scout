@@ -41,6 +41,7 @@ import { AuthPanel } from "../../components/auth-panel";
 import { BrowserReplay } from "../../components/browser-replay";
 import { TaskWalkthrough } from "#components/task-walkthrough";
 import { ToolActivityRow } from "#components/tool-activity";
+import { SessionCost } from "#components/session-cost";
 import { Button, buttonVariants } from "#components/ui/button";
 import { ChatHandoffNotice } from "../../components/chat-handoff-notice";
 import { ProductShell } from "../shell";
@@ -833,6 +834,10 @@ function ConversationSession({
     api.agentsApi.sessions.controls,
     thread.canControl && managedId ? { sessionId: managedId } : "skip",
   );
+  const cost = useQuery(
+    api.agentsApi.sessions.cost,
+    thread.canControl && managedId && !showingWalkthrough ? { sessionId: managedId } : "skip",
+  );
   const activity = useQuery(
     api.scout.chats.getScoutActivity,
     thread.canControl && !managedId ? { threadId } : "skip",
@@ -1088,6 +1093,7 @@ function ConversationSession({
       {thread.canControl ? (
         !showingWalkthrough && (
           <div className="shrink-0 border-t p-3">
+            {cost && <SessionCost session={cost} />}
             <ConversationComposer
               value={draft}
               onChange={setDraft}

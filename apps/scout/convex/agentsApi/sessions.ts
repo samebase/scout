@@ -21,7 +21,7 @@ import type { Infer } from "convex/values";
 import { omitNullish } from "../../shared/omitNullish";
 import { MAX_BROWSER_SESSIONS_PER_THREAD } from "../scout/browserSessions";
 import { browserSessionLifecycleValidator } from "../browserModel";
-import { estimateAgentsApiCost } from "./cost";
+import { agentsApiCostValidator, estimateAgentsApiCost } from "./cost";
 import { getInitialCheck, listChecks, summarizeCheck, currentCheckMessage } from "./requestChecks";
 import { REQUEST_CHECK_MODEL, MAX_SESSION_CHECKS, checkSummary } from "./requestCheckModel";
 import { getResearch, summarizeResearch } from "./siteResearchRecords";
@@ -131,6 +131,64 @@ export const list = query({
   },
 });
 
+async function estimateSessionCost(ctx: QueryCtx, session: Doc<"agentsApiSessions">) {
+  const [browsers, searches] = await Promise.all([
+    ctx.db
+      .query("agentsApiBrowserSessions")
+      .withIndex("by_agents_session_id_and_sequence", (q) => q.eq("agentsSessionId", session._id))
+      .order("asc")
+      .take(MAX_BROWSER_SESSIONS_PER_THREAD),
+    ctx.db
+      .query("agentsApiItems")
+      .withIndex("by_session_id_and_kind", (q) =>
+        q.eq("sessionId", session._id).eq("kind", "web_search_call"),
+      )
+      .take(1_000),
+  ]);
+  return estimateAgentsApiCost({
+    model: session.model,
+    usage: session.usage,
+    webSearchCalls: searches.length < 1_000 ? searches.length : null,
+    browsers: browsers.map(({ lifecycle }) => ({
+      startedAt: lifecycle.openedAtMs,
+      endedAt:
+        lifecycle.kind === "closed"
+          ? lifecycle.openedAtMs +
+            (lifecycle.providerDurationMs ?? lifecycle.closedAtMs - lifecycle.openedAtMs)
+          : null,
+      creditsUsed: lifecycle.kind === "closed" ? lifecycle.creditsBilled : null,
+    })),
+    firecrawlUsdPerCredit: null,
+    now: Date.now(),
+  });
+}
+
+export const cost = query({
+  access: "access_account",
+  args: { sessionId: v.id("agentsApiSessions") },
+  returns: v.object({
+    cost: agentsApiCostValidator,
+    usage: v.union(sessionUsage, v.null()),
+    checks: v.array(checkSummary.pick("cost")),
+    research: v.union(researchSummary.pick("reportedCredits"), v.null()),
+  }),
+  handler: async (ctx, args) => {
+    const session = await owned(ctx, args.sessionId, ctx.viewer.userId);
+    await requireSessionPermission(ctx, session);
+    const [cost, checks, research] = await Promise.all([
+      estimateSessionCost(ctx, session),
+      listChecks(ctx, session._id),
+      getResearch(ctx, session._id),
+    ]);
+    return {
+      cost,
+      usage: session.usage,
+      checks: checks.map((check) => ({ cost: summarizeCheck(check).cost })),
+      research: research ? { reportedCredits: summarizeResearch(research).reportedCredits } : null,
+    };
+  },
+});
+
 export const get = query({
   access: "access_lab",
   args: { sessionId: v.id("agentsApiSessions") },
@@ -140,35 +198,7 @@ export const get = query({
     const { _id, title, scoutId, scoutName, state, active, model, providerId, usage, browser } =
       session;
     const cleanup = session.cleanupJobId ? await ctx.db.system.get(session.cleanupJobId) : null;
-    const [browsers, searches] = await Promise.all([
-      ctx.db
-        .query("agentsApiBrowserSessions")
-        .withIndex("by_agents_session_id_and_sequence", (q) => q.eq("agentsSessionId", session._id))
-        .order("asc")
-        .take(MAX_BROWSER_SESSIONS_PER_THREAD),
-      ctx.db
-        .query("agentsApiItems")
-        .withIndex("by_session_id_and_kind", (q) =>
-          q.eq("sessionId", session._id).eq("kind", "web_search_call"),
-        )
-        .take(1_000),
-    ]);
-    const cost = estimateAgentsApiCost({
-      model,
-      usage,
-      webSearchCalls: searches.length < 1_000 ? searches.length : null,
-      browsers: browsers.map(({ lifecycle }) => ({
-        startedAt: lifecycle.openedAtMs,
-        endedAt:
-          lifecycle.kind === "closed"
-            ? lifecycle.openedAtMs +
-              (lifecycle.providerDurationMs ?? lifecycle.closedAtMs - lifecycle.openedAtMs)
-            : null,
-        creditsUsed: lifecycle.kind === "closed" ? lifecycle.creditsBilled : null,
-      })),
-      firecrawlUsdPerCredit: null,
-      now: Date.now(),
-    });
+    const cost = await estimateSessionCost(ctx, session);
     const checks = await listChecks(ctx, session._id);
     const research = await getResearch(ctx, session._id);
     return {

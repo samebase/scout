@@ -621,7 +621,7 @@ test("Review uses managed controls and keeps live view, handoff and follow-up me
   expect(remote.queryCalls).toHaveBeenCalledWith("humanHandoffs:forSession", "skip");
 });
 
-test("public managed Reviews do not request owner controls or expose the handoff", async () => {
+test("public managed Reviews do not request owner controls, costs, or expose the handoff", async () => {
   remote.authenticated = false;
   remote.queries.set(
     "scout/activity:get",
@@ -639,6 +639,7 @@ test("public managed Reviews do not request owner controls or expose the handoff
   expect(screen.queryByRole("button", { name: "Resume Scout" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Stop Scout" })).toBeNull();
   expect(remote.queryCalls).toHaveBeenCalledWith("agentsApi/sessions:controls", "skip");
+  expect(remote.queryCalls).toHaveBeenCalledWith("agentsApi/sessions:cost", "skip");
 });
 
 test.each(["Finish signing in before resuming.", "Could not capture browser evidence."])(
