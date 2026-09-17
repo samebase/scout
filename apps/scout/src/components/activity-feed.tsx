@@ -1,26 +1,16 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useAction, usePaginatedQuery, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
-import { ArrowRightIcon, LockIcon, SearchIcon, XIcon } from "lucide-react";
+import { ArrowRightIcon, LockIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { z } from "zod";
 import { Button } from "#components/ui/button";
-import { Input } from "#components/ui/input";
+import { SiteFilters } from "#components/site-filters";
 import { ReviewCheckSummary } from "#components/review-checks";
 import { LoadOnScroll } from "#components/load-on-scroll";
 import { SitePreview } from "#components/site-preview";
 import { SiteIdentity } from "#components/site-identity";
 import type { ReviewFeedSearch } from "#lib/reviewFeedSearch";
 import { cn } from "#lib/utils";
-import { siteHostnameSchema } from "../../shared/site";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "#components/ui/select";
 import { api } from "../../convex/_generated/api";
 import { useViewerAccess } from "../lib/access";
 import { BrowserReplayTrack } from "./browser-replay";
@@ -28,7 +18,6 @@ import { ScoutPiece } from "../products/play/scout-piece";
 import { buildReplayTimeline } from "../lib/browserReplayTimeline";
 
 type Activity = FunctionReturnType<typeof api.scout.activity.list>["page"][number];
-const activityScope = z.enum(["public", "mine"]);
 const activityLabels: Record<Activity["status"], string> = {
   ready: "Ready",
   running: "Running",
@@ -42,92 +31,33 @@ const activityLabels: Record<Activity["status"], string> = {
 export function ActivityFeed({ search }: { search: ReviewFeedSearch }) {
   const viewer = useViewerAccess();
   const navigate = useNavigate();
-  const [draft, setDraft] = useState(search.site ?? "");
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    setDraft(search.site ?? "");
-    setError(null);
-  }, [search.site]);
-  const signedIn = viewer?.kind === "account";
-  const scope = signedIn ? (search.scope ?? "public") : "public";
+  const scope = viewer?.kind === "account" ? (search.scope ?? "public") : "public";
+  const filters = { site: search.site, scope };
   return (
     <section aria-label="Reviews">
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        {signedIn && (
-          <Select
-            value={scope}
-            onValueChange={(value) => {
-              void navigate({ to: "/", search: { ...search, scope: activityScope.parse(value) } });
-            }}
-          >
-            <SelectTrigger aria-label="Review visibility" className="min-h-11 min-w-40 bg-card">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent position="popper" align="start">
-              <SelectGroup>
-                <SelectItem value="public">Public reviews</SelectItem>
-                <SelectItem value="mine">My reviews</SelectItem>
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-        )}
-        <form
-          className="ml-auto flex items-center gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const parsed = draft.trim() ? siteHostnameSchema.safeParse(draft) : null;
-            if (parsed && !parsed.success) {
-              setError(parsed.error.issues[0].message);
-              return;
-            }
-            setError(null);
-            void navigate({ to: "/", search: parsed ? { scope, site: parsed.data } : { scope } });
+      <div className="mb-5">
+        <SiteFilters
+          search={filters}
+          layout="toolbar"
+          onChange={(search, options) => {
+            void navigate({ to: "/", search, ...options, resetScroll: false });
           }}
-        >
-          <Input
-            aria-label="Filter by site"
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            placeholder="Filter by site"
-            className="min-h-11 w-52 bg-card max-[400px]:w-44"
-          />
-          <Button type="submit" variant="outline" size="icon" aria-label="Apply site filter">
-            <SearchIcon aria-hidden="true" />
-          </Button>
-          {search.site && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              aria-label="Clear site filter"
-              onClick={() => {
-                void navigate({ to: "/", search: { scope } });
-              }}
-            >
-              <XIcon aria-hidden="true" />
-            </Button>
-          )}
-        </form>
+        />
       </div>
-      {error && (
-        <p role="alert" className="mb-3 text-sm text-destructive">
-          {error}
-        </p>
-      )}
-      {scope === "mine" && !search.site && <UnassignedTasks />}
-      <SiteGroups key={`${scope}:${search.site ?? ""}`} site={search.site ?? null} scope={scope} />
+      {scope === "mine" && !search.site && <UnassignedTasks search={filters} />}
+      <SiteGroups key={`${scope}:${search.site ?? ""}`} search={filters} />
     </section>
   );
 }
 
-function UnassignedTasks() {
+function UnassignedTasks({ search }: { search: ReviewFeedSearch }) {
   const tasks = usePaginatedQuery(api.scout.activity.unassigned, {}, { initialNumItems: 2 });
   if (!tasks.results.length) return null;
   return (
     <section aria-label="Tasks without a site" className="mb-5 rounded-lg border bg-card px-5">
       <h2 className="pt-4 text-sm font-medium text-muted-foreground">Tasks without a site</h2>
       {tasks.results.map((activity) => (
-        <ReviewRow key={activity.threadId} activity={activity} preview={false} />
+        <ReviewRow key={activity.threadId} activity={activity} preview={false} search={search} />
       ))}
       {(tasks.status === "CanLoadMore" || tasks.status === "LoadingMore") && (
         <Button
@@ -143,12 +73,14 @@ function UnassignedTasks() {
   );
 }
 
-function SiteGroups({ site, scope }: { site: string | null; scope: "public" | "mine" }) {
+function SiteGroups({ search }: { search: ReviewFeedSearch }) {
+  const site = search.site ?? null;
+  const scope = search.scope ?? "public";
   const sites = usePaginatedQuery(api.scout.sites.list, { site, scope }, { initialNumItems: 6 });
   return (
     <div className="space-y-5">
       {sites.results.map((site) => (
-        <SiteCard key={site.hostname} site={site} scope={scope} />
+        <SiteCard key={site.hostname} site={site} search={search} />
       ))}
       {sites.status === "LoadingFirstPage" ? (
         <p role="status" className="py-12 text-muted-foreground">
@@ -157,7 +89,7 @@ function SiteGroups({ site, scope }: { site: string | null; scope: "public" | "m
       ) : sites.status === "Exhausted" && !sites.results.length ? (
         <p className="py-12 text-muted-foreground">
           {site
-            ? "No reviews for this site yet."
+            ? "No sites match your search."
             : scope === "mine"
               ? "Your reviews will appear here."
               : "No public reviews yet."}
@@ -170,11 +102,12 @@ function SiteGroups({ site, scope }: { site: string | null; scope: "public" | "m
 
 function SiteCard({
   site,
-  scope,
+  search,
 }: {
   site: FunctionReturnType<typeof api.scout.sites.list>["page"][number];
-  scope: "public" | "mine";
+  search: ReviewFeedSearch;
 }) {
+  const scope = search.scope ?? "public";
   const tasks = usePaginatedQuery(
     api.scout.activity.list,
     { site: site.hostname, scope },
@@ -188,7 +121,7 @@ function SiteCard({
       <Link
         to="/sites/$site"
         params={{ site: site.hostname }}
-        search={{ scope }}
+        search={search}
         aria-label={`View ${site.profile?.name ?? site.hostname} details`}
         className="relative block min-w-0 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:border-r"
       >
@@ -199,7 +132,7 @@ function SiteCard({
           <Link
             to="/sites/$site"
             params={{ site: site.hostname }}
-            search={{ scope }}
+            search={search}
             className="group block rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <SiteIdentity site={site} heading="h2" />
@@ -207,7 +140,7 @@ function SiteCard({
         </header>
         <div className="min-h-0 flex-1">
           {tasks.results.slice(0, 2).map((activity) => (
-            <ReviewRow key={activity.threadId} activity={activity} preview />
+            <ReviewRow key={activity.threadId} activity={activity} preview search={search} />
           ))}
           {tasks.status === "LoadingFirstPage" && (
             <p role="status" className="py-6 text-sm text-muted-foreground">
@@ -225,7 +158,7 @@ function SiteCard({
           variant="ghost"
           className="h-7 w-full shrink-0 rounded-none border-t py-1 text-xs font-normal text-primary"
         >
-          <Link to="/sites/$site" params={{ site: site.hostname }} search={{ scope }}>
+          <Link to="/sites/$site" params={{ site: site.hostname }} search={search}>
             {site.taskCount === 0
               ? "View site details"
               : site.taskCount === 1
@@ -239,7 +172,8 @@ function SiteCard({
   );
 }
 
-export function SiteTaskList({ site, scope }: { site: string; scope: "public" | "mine" }) {
+export function SiteTaskList({ site, search }: { site: string; search: ReviewFeedSearch }) {
+  const scope = search.scope ?? "public";
   const tasks = usePaginatedQuery(
     api.scout.activity.list,
     { site, scope },
@@ -249,7 +183,7 @@ export function SiteTaskList({ site, scope }: { site: string; scope: "public" | 
     <section aria-label={`Tasks for ${site}`} className="min-w-0">
       <div className="rounded-lg border bg-card px-4 sm:px-5">
         {tasks.results.map((activity) => (
-          <ReviewRow key={activity.threadId} activity={activity} preview={false} />
+          <ReviewRow key={activity.threadId} activity={activity} preview={false} search={search} />
         ))}
         {tasks.status === "LoadingFirstPage" && (
           <p role="status" className="py-6 text-sm text-muted-foreground">
@@ -267,7 +201,15 @@ export function SiteTaskList({ site, scope }: { site: string; scope: "public" | 
   );
 }
 
-function ReviewRow({ activity, preview }: { activity: Activity; preview: boolean }) {
+function ReviewRow({
+  activity,
+  preview,
+  search,
+}: {
+  activity: Activity;
+  preview: boolean;
+  search: ReviewFeedSearch;
+}) {
   const checks = activity.walkthrough?.checks;
   const ongoing =
     activity.status === "ready" ||
@@ -279,7 +221,11 @@ function ReviewRow({ activity, preview }: { activity: Activity; preview: boolean
   return (
     <Link
       to="/review"
-      search={{ thread: activity.threadId, view: activity.walkthrough ? "walkthrough" : "chat" }}
+      search={{
+        ...search,
+        thread: activity.threadId,
+        view: activity.walkthrough ? "walkthrough" : "chat",
+      }}
       className={cn(
         "group flex items-center gap-3 border-t outline-none first:border-t-0 focus-visible:ring-2 focus-visible:ring-ring",
         preview ? "py-1 sm:max-lg:py-0.5" : "py-4",

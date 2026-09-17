@@ -50,7 +50,14 @@ vi.mock("convex/react", () => ({
     switch (name) {
       case "scout/sites:list":
         return {
-          results: remote.sites,
+          results:
+            "site" in args && args.site
+              ? remote.sites.filter(
+                  (site) =>
+                    site.hostname.includes(args.site ?? "") ||
+                    site.profile?.name.toLowerCase().includes(args.site ?? ""),
+                )
+              : remote.sites,
           status: "CanLoadMore",
           isLoading: false,
           loadMore: remote.loadSites,
@@ -200,11 +207,11 @@ async function openFeed(path = "/") {
     path: "/sites/$site",
     getParentRoute: () => root,
     staticData: { access: "access_public" },
-    validateSearch: reviewFeedSearch.pick({ scope: true }),
+    validateSearch: reviewFeedSearch,
     component: () => (
       <>
         <h1>{detail.useParams().site}</h1>
-        <SiteTaskList site={detail.useParams().site} scope={detail.useSearch().scope ?? "public"} />
+        <SiteTaskList site={detail.useParams().site} search={detail.useSearch()} />
       </>
     ),
   });
@@ -342,4 +349,52 @@ test("site groups put the researched product name above its hostname", async () 
   expect(
     unnamed.getByRole("heading", { name: "papergames.io", level: 2 }).nextElementSibling,
   ).toBeNull();
+});
+
+test("the site filter is bookmarked, restored by history, and carried through every card link", async () => {
+  const router = await openFeed("/?scope=mine");
+  const user = userEvent.setup();
+  const filter = screen.getByRole("textbox", { name: "Filter by site" });
+  await user.type(filter, "Chess");
+  await waitFor(() =>
+    expect(router.state.location.search).toEqual({ scope: "mine", site: "chess" }),
+  );
+  expect(filter).toHaveProperty("value", "chess");
+  expect(screen.queryByRole("article", { name: "papergames.io" })).toBeNull();
+  const card = within(screen.getByRole("article", { name: "chessmerge.com" }));
+  for (const name of [
+    "View Chess Merge details",
+    "Chess Merge chessmerge.com",
+    "View all 7 tasks",
+  ]) {
+    const href = card.getByRole("link", { name }).getAttribute("href");
+    expect(href).toBeTruthy();
+    const url = new URL(href ?? "", "http://localhost");
+    expect(url.pathname).toBe("/sites/chessmerge.com");
+    expect(url.searchParams.get("site")).toBe("chess");
+    expect(url.searchParams.get("scope")).toBe("mine");
+  }
+  const taskUrl = new URL(
+    card.getByRole("link", { name: /chessmerge.com task 1/ }).getAttribute("href") ?? "",
+    "http://localhost",
+  );
+  expect(taskUrl.searchParams.get("site")).toBe("chess");
+  expect(taskUrl.searchParams.get("scope")).toBe("mine");
+  expect(router.history.length).toBe(1);
+  await user.click(screen.getByRole("link", { name: "View all 7 tasks" }));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/sites/chessmerge.com"));
+  expect(router.state.location.search).toEqual({ scope: "mine", site: "chess" });
+  const detailTask = screen.getByRole("link", { name: /chessmerge.com task 1/ });
+  expect(detailTask.getAttribute("href")).toContain("scope=mine");
+  expect(detailTask.getAttribute("href")).toContain("site=chess");
+  act(() => router.history.back());
+  await waitFor(() =>
+    expect(screen.getByRole("textbox", { name: "Filter by site" })).toHaveProperty(
+      "value",
+      "chess",
+    ),
+  );
+  await user.click(screen.getByRole("button", { name: "Clear site filter" }));
+  await waitFor(() => expect(router.state.location.search).toEqual({ scope: "mine" }));
+  expect(screen.getByRole("textbox", { name: "Filter by site" })).toHaveProperty("value", "");
 });

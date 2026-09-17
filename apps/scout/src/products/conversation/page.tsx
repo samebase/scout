@@ -32,6 +32,7 @@ import {
   TasksToggle,
 } from "./sidebar";
 import { TaskNavigation } from "./task-navigation";
+import type { ReviewFeedSearch } from "#lib/reviewFeedSearch";
 import {
   MessageScrollerProvider,
   MessageScroller,
@@ -377,6 +378,13 @@ function SessionLoader({
   // Keep only the navigation context while the next task loads. Its content and actions
   // always use the current query result, never the previously opened task.
   const navigationThread = thread === undefined ? opened?.thread : thread;
+  const filters: ReviewFeedSearch = {
+    site: search.site,
+    scope:
+      viewer?.kind === "account"
+        ? (search.scope ?? (navigationThread?.visibility === "private" ? "mine" : "public"))
+        : "public",
+  };
   const showingWalkthrough =
     kind === "review" &&
     navigationThread?.runtime.kind === "agents_api" &&
@@ -388,9 +396,9 @@ function SessionLoader({
       left={
         kind === "review" && navigationThread?.primarySite ? (
           <TaskNavigation
-            key={`${navigationThread.primarySite}:${navigationThread.visibility}`}
+            key={`${navigationThread.primarySite}:${filters.scope}`}
             site={navigationThread.primarySite}
-            scope={navigationThread.visibility === "private" ? "mine" : "public"}
+            search={filters}
             current={navigationThread}
             selectedThreadId={threadId}
             view={showingWalkthrough ? "walkthrough" : "chat"}
@@ -399,7 +407,9 @@ function SessionLoader({
       }
       addressChrome={
         <div className="mb-5 flex items-center justify-between gap-4 max-[760px]:mb-3">
-          {navigationThread && <ConversationBreadcrumb thread={navigationThread} kind={kind} />}
+          {navigationThread && (
+            <ConversationBreadcrumb thread={navigationThread} kind={kind} search={filters} />
+          )}
           {available && <ConversationActions key={threadId} thread={thread} kind={kind} />}
         </div>
       }
@@ -417,7 +427,7 @@ function SessionLoader({
             <div className={cn("conversation-body", playRouteMessage)}>
               <h1 className="text-[30px]">Session unavailable</h1>
               <p className="text-muted-foreground">This link is private or no longer available.</p>
-              <Link to="/" className={productButtonVariants({ variant: "play" })}>
+              <Link to="/" search={filters} className={productButtonVariants({ variant: "play" })}>
                 Browse activity
               </Link>
               {viewer?.kind !== "account" && <AuthPanel />}
@@ -444,7 +454,15 @@ function SessionLoader({
   );
 }
 
-function ConversationBreadcrumb({ thread, kind }: { thread: ChatThread; kind: ProductKind }) {
+function ConversationBreadcrumb({
+  thread,
+  kind,
+  search,
+}: {
+  thread: ChatThread;
+  kind: ProductKind;
+  search: ReviewFeedSearch;
+}) {
   return kind === "review" ? (
     <div className="flex min-w-0 items-center gap-1">
       {thread.primarySite && <TasksToggle />}
@@ -453,7 +471,7 @@ function ConversationBreadcrumb({ thread, kind }: { thread: ChatThread; kind: Pr
           to="/sites/$site"
           params={{ site: thread.primarySite }}
           search={{
-            scope: thread.visibility === "private" ? "mine" : "public",
+            ...search,
             view: "tasks",
           }}
           className={cn(playTextLink, "min-h-11 min-w-0 text-muted-foreground")}
@@ -464,7 +482,7 @@ function ConversationBreadcrumb({ thread, kind }: { thread: ChatThread; kind: Pr
       ) : (
         <Link
           to="/"
-          search={{ scope: thread.visibility === "private" ? "mine" : "public" }}
+          search={search}
           className={cn(playTextLink, "min-h-11 whitespace-nowrap text-muted-foreground")}
         >
           <ArrowLeftIcon size={16} aria-hidden="true" /> All sites

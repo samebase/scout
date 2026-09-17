@@ -18,23 +18,17 @@ import { ScoutWorkspace } from "#components/scout-workspace";
 import { SiteTaskList } from "#components/activity-feed";
 import { SitePreview, SitePreviewCapture } from "#components/site-preview";
 import { SiteIdentity } from "#components/site-identity";
+import { SiteFilters } from "#components/site-filters";
 import { LoadOnScroll } from "#components/load-on-scroll";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "#components/ui/select";
 import { chatSearchSchema } from "#lib/chat-search";
+import { reviewFeedSearch } from "#lib/reviewFeedSearch";
 import { canAccess, useViewerAccess } from "#lib/access";
 import { siteHostnameSchema } from "../../shared/site";
 import { ProductShell } from "../products/shell";
 
-const scopeSchema = z.enum(["public", "mine"]);
 const searchSchema = chatSearchSchema.pick({ file: true, terminal: true }).extend({
+  ...reviewFeedSearch.shape,
   view: z.enum(["tasks", "workspace"]).optional(),
-  scope: scopeSchema.optional(),
 });
 
 export const Route = createFileRoute("/sites/$site")({
@@ -57,7 +51,22 @@ function SitePage() {
   });
   return (
     <ProductShell product="review">
-      <SidebarRuntimeProvider controller={{ isHydrated: true, state, setState }}>
+      <SidebarRuntimeProvider
+        controller={{
+          isHydrated: true,
+          state,
+          setState: (update) => {
+            setState((previous) => {
+              const next = update(previous);
+              return {
+                ...next,
+                leftDesktopWidthPx: Math.min(next.leftDesktopWidthPx, 368),
+                leftMobileWidthPx: Math.min(next.leftMobileWidthPx, 368),
+              };
+            });
+          },
+        }}
+      >
         <SiteLayout />
       </SidebarRuntimeProvider>
     </ProductShell>
@@ -73,12 +82,13 @@ function SiteLayout() {
   const signedIn = viewer?.kind === "account";
   const canInspect = signedIn && canAccess("access_lab", viewer.accessKeys);
   const scope = signedIn ? (search.scope ?? "public") : "public";
+  const filters = { scope, site: search.site };
   const workspace = canInspect && search.view === "workspace";
   const record = useQuery(api.scout.sites.get, parsed.success ? { site: parsed.data } : "skip");
   const { setMobilePane } = useSidebarActions();
   const sites = usePaginatedQuery(
     api.scout.sites.list,
-    { scope, site: null },
+    { scope, site: search.site ?? null },
     { initialNumItems: 20 },
   );
 
@@ -92,7 +102,7 @@ function SiteLayout() {
             <SitesToggle />
             <Link
               to="/"
-              search={{ scope }}
+              search={filters}
               className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
             >
               <ArrowLeftIcon className="size-4" aria-hidden="true" />
@@ -103,6 +113,21 @@ function SiteLayout() {
         left={
           <PaneFrame
             scrollRestorationId="site-navigation"
+            header={
+              <div className="site-navigation-filters p-2">
+                <SiteFilters
+                  search={filters}
+                  layout="sidebar"
+                  onChange={(filters, options) => {
+                    void navigate({
+                      search: (previous) => ({ ...previous, ...filters }),
+                      ...options,
+                      resetScroll: false,
+                    });
+                  }}
+                />
+              </div>
+            }
             content={
               <nav aria-label="Sites" className="p-2 text-sm">
                 {sites.status === "LoadingFirstPage" && (
@@ -118,7 +143,7 @@ function SiteLayout() {
                         resetScroll={false}
                         params={{ site: site.hostname }}
                         activeOptions={{ includeSearch: false }}
-                        search={{ scope, view: workspace ? "workspace" : "tasks" }}
+                        search={{ ...filters, view: workspace ? "workspace" : "tasks" }}
                         onClick={() => setMobilePane("main")}
                         className="group block overflow-hidden rounded-md border border-transparent bg-card hover:border-muted-foreground/40 focus-visible:outline-2 focus-visible:outline-ring aria-[current=page]:border-primary aria-[current=page]:bg-primary/5 aria-[current=page]:font-medium"
                       >
@@ -130,6 +155,9 @@ function SiteLayout() {
                     </li>
                   ))}
                 </ul>
+                {sites.status === "Exhausted" && sites.results.length === 0 && (
+                  <p className="p-2 text-muted-foreground">No sites match these filters.</p>
+                )}
                 <LoadOnScroll status={sites.status} onLoad={() => sites.loadMore(20)} />
               </nav>
             }
@@ -180,7 +208,8 @@ function SiteLayout() {
                       <Link
                         to="/sites/$site"
                         params={{ site }}
-                        search={{ scope, view: "tasks" }}
+                        search={{ ...filters, view: "tasks" }}
+                        resetScroll={false}
                         aria-current={!workspace ? "page" : undefined}
                         className={`border-b-2 py-3 text-sm font-medium ${!workspace ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
                       >
@@ -190,7 +219,8 @@ function SiteLayout() {
                         <Link
                           to="/sites/$site"
                           params={{ site }}
-                          search={{ scope, view: "workspace" }}
+                          search={{ ...filters, view: "workspace" }}
+                          resetScroll={false}
                           aria-current={workspace ? "page" : undefined}
                           className={`border-b-2 py-3 text-sm font-medium ${workspace ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
                         >
@@ -198,27 +228,6 @@ function SiteLayout() {
                         </Link>
                       )}
                     </nav>
-                    {!workspace && signedIn && (
-                      <Select
-                        value={scope}
-                        onValueChange={(value) => {
-                          void navigate({
-                            search: { view: "tasks", scope: scopeSchema.parse(value) },
-                          });
-                        }}
-                      >
-                        <SelectTrigger
-                          aria-label="Task visibility"
-                          className="mb-2 min-w-36 bg-card"
-                        >
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent position="popper" align="end">
-                          <SelectItem value="public">Public tasks</SelectItem>
-                          <SelectItem value="mine">My tasks</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    )}
                   </div>
                   {workspace ? (
                     <div className="flex min-h-[28rem] flex-1 flex-col overflow-hidden rounded-lg border bg-card">
@@ -242,7 +251,7 @@ function SiteLayout() {
                       />
                     </div>
                   ) : (
-                    <SiteTaskList key={`${site}:${scope}`} site={parsed.data} scope={scope} />
+                    <SiteTaskList key={`${site}:${scope}`} site={parsed.data} search={filters} />
                   )}
                 </div>
               )

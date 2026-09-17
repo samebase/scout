@@ -82,6 +82,8 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
 - Keep at most one `working tree` entry. On the next meaningful update, replace it with the previous
   pull request's squash-commit short SHA. Do not create log-only commits except when
   finalizing the submission.
+- Include the `v<N>` build version in new entry headings. Use the projected pull request version
+  for a working-tree entry and the shipped version when recording its squash commit.
 
 ## Cross-platform automation
 

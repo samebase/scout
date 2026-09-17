@@ -248,10 +248,6 @@ export default defineSchema({
     researchId: v.optional(v.id("agentsApiSiteResearch")),
   })
     .index("by_hostname", ["hostname"])
-    .index("by_hostname_and_latest_public_task_created_at", [
-      "hostname",
-      "latestPublicTask.createdAt",
-    ])
     .index("by_latest_public_task_created_at_and_hostname", [
       "latestPublicTask.createdAt",
       "hostname",

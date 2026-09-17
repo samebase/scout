@@ -628,6 +628,7 @@ function fillInvite() {
 test.each([
   { visibility: "public", scope: "public" },
   { visibility: "private", scope: "mine" },
+  { visibility: "public", scope: "mine" },
 ])(
   "the task sidebar survives delayed navigation between $visibility reviews",
   async ({ visibility, scope }) => {
@@ -656,7 +657,9 @@ test.each([
       status: "Exhausted",
       loadMore: vi.fn(),
     });
-    const router = await openPlay("/review?thread=game-thread&session=old-browser&view=chat");
+    const router = await openPlay(
+      `/review?thread=game-thread&session=old-browser&view=chat&scope=${scope}&site=samebase.com`,
+    );
     const nav = await screen.findByRole("navigation", { name: "Tasks for samebase.com" });
     const resize = screen.getByRole("separator", { name: "Resize task navigation" });
     fireEvent.keyDown(resize, { key: "ArrowRight" });
@@ -679,7 +682,12 @@ test.each([
     ).toBe("page");
     await userEvent.setup().click(within(nav).getByRole("link", { name: /Test export/ }));
     await waitFor(() =>
-      expect(router.state.location.search).toEqual({ thread: "second-review", view: "chat" }),
+      expect(router.state.location.search).toEqual({
+        thread: "second-review",
+        view: "chat",
+        scope,
+        site: "samebase.com",
+      }),
     );
     expect(await screen.findByText("Opening task…")).toBeTruthy();
     expect(screen.getByRole("navigation", { name: "Tasks for samebase.com" })).toBe(nav);
@@ -700,6 +708,10 @@ test.each([
     expect(nextNav).toBe(nav);
     expect(scrollport.scrollTop).toBe(180);
     expect(resize.getAttribute("aria-valuenow")).toBe(resizedWidth);
+    const siteLink = screen.getByRole("link", { name: "samebase.com tasks" });
+    const siteUrl = new URL(siteLink.getAttribute("href") ?? "", "http://localhost");
+    expect(siteUrl.searchParams.get("site")).toBe("samebase.com");
+    expect(siteUrl.searchParams.get("scope")).toBe(scope);
     expect(screen.queryByDisplayValue("First task draft")).toBeNull();
     expect(
       within(nextNav)
