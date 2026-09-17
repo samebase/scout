@@ -52,7 +52,7 @@ export function ActivityFeed({ search }: { search: ReviewFeedSearch }) {
   const scope = signedIn ? (search.scope ?? "public") : "public";
   return (
     <section aria-label="Reviews">
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-t pt-5">
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         {signedIn && (
           <Select
             value={scope}

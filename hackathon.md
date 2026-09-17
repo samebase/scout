@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-17T12:54:46Z
+- **Last updated:** 2026-09-17T13:09:11Z
 
 ## Log
 
@@ -1327,7 +1327,7 @@ and view tabs span the main area: Walkthrough pairs explanations with screenshot
 Chat & replay pairs the conversation with its recording. Interruption notices sit inside the chat
 (`apps/scout/src/products/conversation/page.tsx`).
 
-### 2026-09-17 - working tree
+### 2026-09-17 - 744ccf8
 
 Member chats, Lab, and Agents share compact tool rows with paired results, links, and saved
 screenshots. Failures and interruptions remain visible. Convex checks chat access and redacts
@@ -1335,3 +1335,11 @@ member tool details (`apps/scout/convex/scout/activity.ts`). Site pages show a s
 from the existing Firecrawl research job (`apps/scout/convex/agentsApi/siteResearch.ts`).
 Directory screenshots keep a 16:10 ratio as cards shrink, with two-line task summaries and
 stacked cards below 640px. Site workspaces use the available pane height.
+
+### 2026-09-17 - working tree
+
+The homepage opens with an animated discovery field and a new headline above the existing
+review composer and site list. TypeGPU draws green and amber contours on the page background,
+extending behind the composer and fading out below it. Motion pauses while typing or offscreen
+and respects reduced motion. A static field keeps the same treatment without WebGPU
+(`apps/scout/src/components/discovery-hero.tsx`).

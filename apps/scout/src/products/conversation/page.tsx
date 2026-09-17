@@ -97,7 +97,7 @@ export function ConversationPage({
             <SessionLoader threadId={thread} kind={kind} search={search} />
           </ConversationSidebar>
         ) : (
-          <ConversationLobby key={kind} kind={kind} />
+          <ConversationLobby key={kind} kind={kind} showIntroduction />
         )}
       </main>
     </ProductShell>
@@ -119,7 +119,13 @@ function ConversationUnavailable({ kind }: { kind: ProductKind }) {
   );
 }
 
-export function ConversationLobby({ kind }: { kind: ProductKind }) {
+export function ConversationLobby({
+  kind,
+  showIntroduction,
+}: {
+  kind: ProductKind;
+  showIntroduction: boolean;
+}) {
   const isPlay = kind === "play";
   const viewer = useViewerAccess();
   const canRun =
@@ -180,45 +186,47 @@ export function ConversationLobby({ kind }: { kind: ProductKind }) {
 
   return (
     <div className="w-full max-w-[660px]">
-      <div className={cn("mb-7 flex flex-col", isPlay && "items-center text-center")}>
-        {isPlay && (
-          <div className="relative mb-8 flex h-[110px] w-[152px] items-center justify-center">
-            <span className="absolute inset-x-0 bottom-0 h-14 -rotate-6 rounded-[50%] bg-play-sand" />
-            <ScoutPiece className="-rotate-6" />
-          </div>
-        )}
-        {!isPlay && (
-          <p className="mb-3 text-base text-muted-foreground">
-            Tired of reviewing hackathon submissions?
-          </p>
-        )}
-        <h1
-          className={
-            isPlay
-              ? "text-[52px] leading-[1.08] font-semibold tracking-[-2px] max-[760px]:text-[40px]"
-              : "text-[40px] leading-[1.2] font-medium tracking-[-1px] max-[760px]:text-[32px]"
-          }
-        >
-          {isPlay ? (
-            "What are we playing?"
-          ) : (
-            <>
-              Send a Scout instead. <span aria-hidden="true">😉</span>
-            </>
+      {showIntroduction && (
+        <div className={cn("mb-7 flex flex-col", isPlay && "items-center text-center")}>
+          {isPlay && (
+            <div className="relative mb-8 flex h-[110px] w-[152px] items-center justify-center">
+              <span className="absolute inset-x-0 bottom-0 h-14 -rotate-6 rounded-[50%] bg-play-sand" />
+              <ScoutPiece className="-rotate-6" />
+            </div>
           )}
-        </h1>
-        {isPlay && (
-          <p className="mt-4 text-base text-muted-foreground">
-            Bring a game, or find one together.
-          </p>
-        )}
-        {!isPlay && (
-          <p className="mt-4 max-w-[580px] text-base text-muted-foreground">
-            Scout creates its own accounts, logs in, and tests the site. You get its findings,
-            screenshots, and a video replay.
-          </p>
-        )}
-      </div>
+          {!isPlay && (
+            <p className="mb-3 text-base text-muted-foreground">
+              Tired of reviewing hackathon submissions?
+            </p>
+          )}
+          <h1
+            className={
+              isPlay
+                ? "text-[52px] leading-[1.08] font-semibold tracking-[-2px] max-[760px]:text-[40px]"
+                : "text-[40px] leading-[1.2] font-medium tracking-[-1px] max-[760px]:text-[32px]"
+            }
+          >
+            {isPlay ? (
+              "What are we playing?"
+            ) : (
+              <>
+                Send a Scout instead. <span aria-hidden="true">😉</span>
+              </>
+            )}
+          </h1>
+          {isPlay && (
+            <p className="mt-4 text-base text-muted-foreground">
+              Bring a game, or find one together.
+            </p>
+          )}
+          {!isPlay && (
+            <p className="mt-4 max-w-[580px] text-base text-muted-foreground">
+              Scout creates its own accounts, logs in, and tests the site. You get its findings,
+              screenshots, and a video replay.
+            </p>
+          )}
+        </div>
+      )}
       <section aria-label={isPlay ? "Start playing" : "Start a review"}>
         {signingIn && !isAuthenticated ? (
           <div className="mx-auto max-w-[400px]">
