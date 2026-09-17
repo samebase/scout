@@ -322,7 +322,8 @@ test("shows the product name above the hostname in the heading and sidebar, and 
   const card = link.closest("li");
   if (!card) throw new Error("Missing site card");
   const name = within(card).getByText("Chess Merge");
-  expect(name.nextElementSibling?.textContent).toBe("chessmerge.com");
+  const hostname = within(card).getByRole("link", { name: "chessmerge.com" });
+  expect(name.compareDocumentPosition(hostname)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   expect(
     screen
       .getAllByRole("link", { name: "chessmerge.com" })

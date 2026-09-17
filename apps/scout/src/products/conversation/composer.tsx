@@ -23,7 +23,7 @@ export function ConversationComposer({
   return (
     <form
       onSubmit={onSubmit}
-      className="rounded-[var(--product-panel-radius)] border border-border bg-white p-3 shadow-[0_6px_24px_#25304406] focus-within:border-primary/60"
+      className="rounded-xl border border-border bg-card p-3 shadow-sm focus-within:border-primary/60"
     >
       <label className="sr-only" htmlFor="conversation-message">
         Message Scout
@@ -52,7 +52,7 @@ export function ConversationComposer({
           title={onStop ? "Stop Scout" : "Send message"}
           onClick={onStop ?? undefined}
           disabled={disabled || (!onStop && (!canSend || !value.trim()))}
-          className="grid size-11 shrink-0 place-items-center rounded-[var(--product-control-radius)] bg-primary text-white transition-colors hover:bg-primary/90"
+          className="grid size-11 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground transition-colors hover:bg-primary/90"
         >
           {onStop ? (
             <SquareIcon size={18} fill="currentColor" aria-hidden="true" />

@@ -4,11 +4,8 @@ import {
   useSidebarLayoutPresentation,
 } from "@samebase/sidebars/SidebarRuntime";
 import type { SidebarLayoutState } from "@samebase/sidebars/SidebarLayoutState";
-import { SidebarLayout, type SidebarLayoutProps } from "@samebase/sidebars/SidebarLayout";
-import { useState, useSyncExternalStore, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { MonitorIcon, PanelLeftIcon, SquareIcon, XIcon } from "lucide-react";
-import type { ProductKind } from "./model";
-import { omitNullish } from "../../../shared/omitNullish";
 
 export function ConversationSidebar({ children }: { children: ReactNode }) {
   const [state, setState] = useState<SidebarLayoutState>({
@@ -26,49 +23,6 @@ export function ConversationSidebar({ children }: { children: ReactNode }) {
     <SidebarRuntimeProvider controller={{ isHydrated: true, state, setState }}>
       <div className="play-session-layout flex min-h-0 flex-1 flex-col">{children}</div>
     </SidebarRuntimeProvider>
-  );
-}
-
-function subscribeViewport(onChange: () => void) {
-  window.addEventListener("resize", onChange);
-  return () => window.removeEventListener("resize", onChange);
-}
-
-export function ConversationLayout({
-  kind,
-  addressChrome,
-  left,
-  main,
-  right,
-}: Pick<SidebarLayoutProps, "addressChrome" | "main"> & {
-  kind: ProductKind;
-  left: SidebarLayoutProps["left"];
-  right: SidebarLayoutProps["right"];
-}) {
-  const isMobile = useSyncExternalStore(
-    subscribeViewport,
-    () => window.innerWidth < 768,
-    () => false,
-  );
-  const stackReview = kind === "review" && isMobile;
-
-  return (
-    <SidebarLayout
-      addressChrome={addressChrome}
-      main={
-        stackReview ? (
-          <div className="flex h-full min-h-0 flex-col overflow-y-auto">
-            <div className="min-h-96 shrink-0 basis-[65dvh] grow">{main}</div>
-            {right && <div className="mt-3 h-[60dvh] min-h-96 shrink-0">{right}</div>}
-          </div>
-        ) : (
-          main
-        )
-      }
-      {...omitNullish({ left, right: stackReview ? undefined : right })}
-      mobileMinResizeBehavior="min_resize_to_slide"
-      resizeHandleLabels={{ left: "Resize task navigation", right: "Resize Scout’s view" }}
-    />
   );
 }
 

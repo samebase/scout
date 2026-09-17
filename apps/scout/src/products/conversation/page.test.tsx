@@ -337,11 +337,42 @@ test("a report arriving during a running Review keeps the reader in Chat and pre
   fireEvent.click(screen.getByRole("link", { name: "Walkthrough" }));
   expect(await screen.findByRole("heading", { name: "Start again" })).toBeTruthy();
   expect(screen.queryByRole("textbox", { name: "Message Scout" })).toBeNull();
-  fireEvent.click(screen.getByRole("link", { name: "Ask a follow-up" }));
+  fireEvent.click(screen.getByRole("link", { name: "Chat & replay" }));
   expect(await screen.findByRole("region", { name: "Conversation with Scout" })).toBeTruthy();
   expect(screen.getByDisplayValue("Keep this thought")).toBeTruthy();
   expect(remote.sendManaged).not.toHaveBeenCalled();
 });
+
+test.each(["finished", "failed", "running", "stopped"])(
+  "a %s Review keeps its composer in Chat and preserves the draft across Walkthrough",
+  async (status) => {
+    remote.queries.set(
+      "scout/activity:get",
+      session({
+        purpose: { kind: "review" },
+        status,
+        hasWalkthrough: true,
+        runtime: { kind: "agents_api", sessionId: "managed-1" },
+      }),
+    );
+    remote.queries.set("agentsApi/walkthrough:get", { walkthrough: null, captures: [] });
+    const router = await openPlay("/review?thread=game-thread&view=chat");
+    fireEvent.change(await screen.findByRole("textbox", { name: "Message Scout" }), {
+      target: { value: "Keep this follow-up" },
+    });
+
+    fireEvent.click(screen.getByRole("link", { name: "Walkthrough" }));
+    await screen.findByRole("region", { name: "Walkthrough with Scout" });
+    expect(screen.queryByRole("textbox", { name: "Message Scout" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Send message" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("link", { name: "Chat & replay" }));
+    await screen.findByRole("region", { name: "Conversation with Scout" });
+    expect(router.state.location.search.view).toBe("chat");
+    expect(screen.getByDisplayValue("Keep this follow-up")).toBeTruthy();
+    expect(remote.sendManaged).not.toHaveBeenCalled();
+  },
+);
 
 test("a direct walkthrough link shows an older task's empty state without forcing a report", async () => {
   remote.queries.set(
@@ -392,7 +423,7 @@ test("desktop Chat always shows its replay and Walkthrough occupies the full lay
   }
 });
 
-test("mobile Review keeps replay in Chat without pane toggles", async () => {
+test("mobile Review keeps replay in the right sidebar without pane toggles", async () => {
   remote.queries.set(
     "scout/activity:get",
     session({
@@ -419,9 +450,77 @@ test("mobile Review keeps replay in Chat without pane toggles", async () => {
     expect(screen.queryByRole("region", { name: "Scout's browser" }) !== null).toBe(
       view === "chat",
     );
+    if (view === "chat") {
+      const chat = screen.getByRole("region", { name: "Conversation with Scout" });
+      const browser = screen.getByRole("region", { name: "Scout's browser" });
+      expect(chat.closest("[data-pane-side]")?.getAttribute("data-pane-side")).toBe("main");
+      expect(browser.closest("[data-pane-side]")?.getAttribute("data-pane-side")).toBe("right");
+    }
     expect(
       screen.queryByRole("button", { name: /Show replay|Hide replay|Back to chat/ }),
     ).toBeNull();
+  }
+});
+
+test("resizing Review keeps its title, pane controls, chat draft, and replay mounted", async () => {
+  remote.queries.set(
+    "scout/activity:get",
+    session({
+      purpose: { kind: "review" },
+      title: "Review Pika",
+      primarySite: "pika.style",
+      status: "finished",
+      runtime: { kind: "agents_api", sessionId: "managed-1" },
+      sessions: [{ engine: "agents_api", sessionId: "browser-1", kind: "closed", createdAt: 1000 }],
+    }),
+  );
+  remote.queries.set("agentsApi/sessions:controls", {
+    state: { kind: "idle" },
+    canSend: true,
+    canStop: false,
+  });
+  await openPlay("/review?thread=game-thread&view=chat");
+  const chat = await screen.findByRole("region", { name: "Conversation with Scout" });
+  const browser = screen.getByRole("region", { name: "Scout's browser" });
+  const composer = screen.getByRole("textbox", { name: "Message Scout" });
+  const heading = screen.getByRole("heading", { name: "Review Pika" });
+  const views = screen.getByRole("navigation", { name: "Review views" });
+  const visibility = screen.getByRole("combobox", { name: "Chat visibility" });
+  const header = heading.closest('[data-sidebar-layout-part="address-chrome"]');
+  expect(header).not.toBeNull();
+  expect(views.closest("[data-pane-side]")?.getAttribute("data-pane-side")).toBe("main");
+  expect(visibility.closest("[data-pane-side]")?.getAttribute("data-pane-side")).toBe("main");
+  expect(
+    screen
+      .getByRole("link", { name: "Open in lab" })
+      .closest('[data-sidebar-layout-part="address-chrome"]'),
+  ).toBe(header);
+  expect(
+    screen
+      .getByRole("button", { name: "Show tasks" })
+      .closest('[data-sidebar-layout-part="address-chrome"]'),
+  ).toBe(header);
+  expect(
+    screen
+      .getByRole("link", { name: "pika.style tasks" })
+      .closest("[data-pane-side]")
+      ?.getAttribute("data-pane-side"),
+  ).toBe("left");
+  expect(heading.closest("[data-pane-side]")).toBeNull();
+  fireEvent.change(composer, { target: { value: "Keep this draft" } });
+  await waitFor(() => expect(remote.listReplayPages).toHaveBeenCalledTimes(1));
+
+  for (const width of [1440, 771, 767, 390]) {
+    vi.spyOn(window, "innerWidth", "get").mockReturnValue(width);
+    fireEvent(window, new Event("resize"));
+    expect(screen.getByRole("region", { name: "Conversation with Scout" })).toBe(chat);
+    expect(screen.getByRole("region", { name: "Scout's browser" })).toBe(browser);
+    expect(screen.getByRole("heading", { name: "Review Pika" })).toBe(heading);
+    expect(screen.getByRole("navigation", { name: "Review views" })).toBe(views);
+    expect(screen.getByRole("combobox", { name: "Chat visibility" })).toBe(visibility);
+    expect(browser.closest("[data-pane-side]")?.getAttribute("data-pane-side")).toBe("right");
+    expect(screen.getByDisplayValue("Keep this draft")).toBe(composer);
+    expect(remote.listReplayPages).toHaveBeenCalledTimes(1);
   }
 });
 

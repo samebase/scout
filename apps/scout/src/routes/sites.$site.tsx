@@ -50,7 +50,7 @@ function SitePage() {
     rightMobileWidthPx: 0,
   });
   return (
-    <ProductShell product="review">
+    <ProductShell>
       <SidebarRuntimeProvider
         controller={{
           isHydrated: true,

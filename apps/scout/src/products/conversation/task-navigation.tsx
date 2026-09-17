@@ -1,6 +1,7 @@
 import { PaneFrame } from "@samebase/sidebars/PaneFrame";
 import { useSidebarActions } from "@samebase/sidebars/SidebarRuntime";
 import { Link } from "@tanstack/react-router";
+import { ArrowLeftIcon } from "lucide-react";
 import { usePaginatedQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { api } from "../../../convex/_generated/api";
@@ -34,8 +35,20 @@ export function TaskNavigation({
   return (
     <PaneFrame
       scrollRestorationId={`tasks-${site}-${scope}`}
+      header={
+        <Link
+          to="/sites/$site"
+          params={{ site }}
+          search={{ ...search, view: "tasks" }}
+          resetScroll={false}
+          className="flex min-w-0 flex-1 items-center gap-2 self-stretch px-3 text-xs font-semibold text-muted-foreground hover:text-primary"
+        >
+          <ArrowLeftIcon size={16} className="shrink-0" aria-hidden="true" />
+          <span className="truncate">{site} tasks</span>
+        </Link>
+      }
       content={
-        <nav aria-label={`Tasks for ${site}`} className="pr-2">
+        <nav aria-label={`Tasks for ${site}`} className="p-3">
           <ul className="space-y-1">
             {!currentIsLoaded && (
               <TaskLink

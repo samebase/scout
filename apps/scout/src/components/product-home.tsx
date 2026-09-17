@@ -8,7 +8,7 @@ import { DiscoveryHero } from "./discovery-hero";
 export function ProductHome({ search }: { search: ReviewFeedSearch }) {
   const [composing, setComposing] = useState(false);
   return (
-    <ProductShell product="review">
+    <ProductShell>
       <main id="main-content">
         <DiscoveryHero composing={composing}>
           <div

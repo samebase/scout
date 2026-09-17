@@ -128,7 +128,7 @@ function SiteCard({
         <SitePreview site={site} className="sm:w-[clamp(18rem,calc(25vw+8rem),24rem)]" />
       </Link>
       <div className="flex h-60 min-h-0 min-w-0 flex-col px-4 sm:h-auto sm:px-5">
-        <header className="group relative shrink-0 border-b py-1.5 sm:max-lg:py-1">
+        <header className="relative shrink-0 border-b py-1.5 sm:max-lg:py-1">
           <Link
             to="/sites/$site"
             params={{ site: site.hostname }}
