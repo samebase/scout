@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AccountDeletionRouteImport } from './routes/account-deletion'
 import { Route as AgentsRouteImport } from './routes/agents'
+import { Route as CreditHistoryRouteImport } from './routes/credit-history'
 import { Route as MembersRouteImport } from './routes/members'
 import { Route as PlayRouteImport } from './routes/play'
 import { Route as PrivacyRouteImport } from './routes/privacy'
@@ -36,6 +37,11 @@ const AccountDeletionRoute = AccountDeletionRouteImport.update({
 const AgentsRoute = AgentsRouteImport.update({
   id: '/agents',
   path: '/agents',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CreditHistoryRoute = CreditHistoryRouteImport.update({
+  id: '/credit-history',
+  path: '/credit-history',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MembersRoute = MembersRouteImport.update({
@@ -93,6 +99,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/account-deletion': typeof AccountDeletionRoute
   '/agents': typeof AgentsRoute
+  '/credit-history': typeof CreditHistoryRoute
   '/members': typeof MembersRoute
   '/play': typeof PlayRoute
   '/privacy': typeof PrivacyRoute
@@ -108,6 +115,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/account-deletion': typeof AccountDeletionRoute
   '/agents': typeof AgentsRoute
+  '/credit-history': typeof CreditHistoryRoute
   '/members': typeof MembersRoute
   '/play': typeof PlayRoute
   '/privacy': typeof PrivacyRoute
@@ -123,6 +131,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/account-deletion': typeof AccountDeletionRoute
   '/agents': typeof AgentsRoute
+  '/credit-history': typeof CreditHistoryRoute
   '/members': typeof MembersRoute
   '/play': typeof PlayRoute
   '/privacy': typeof PrivacyRoute
@@ -140,6 +149,7 @@ export interface FileRouteTypes {
     | '/'
     | '/account-deletion'
     | '/agents'
+    | '/credit-history'
     | '/members'
     | '/play'
     | '/privacy'
@@ -155,6 +165,7 @@ export interface FileRouteTypes {
     | '/'
     | '/account-deletion'
     | '/agents'
+    | '/credit-history'
     | '/members'
     | '/play'
     | '/privacy'
@@ -169,6 +180,7 @@ export interface FileRouteTypes {
     | '/'
     | '/account-deletion'
     | '/agents'
+    | '/credit-history'
     | '/members'
     | '/play'
     | '/privacy'
@@ -185,6 +197,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AccountDeletionRoute: typeof AccountDeletionRoute
   AgentsRoute: typeof AgentsRoute
+  CreditHistoryRoute: typeof CreditHistoryRoute
   MembersRoute: typeof MembersRoute
   PlayRoute: typeof PlayRoute
   PrivacyRoute: typeof PrivacyRoute
@@ -216,6 +229,13 @@ declare module '@tanstack/react-router' {
       path: '/agents'
       fullPath: '/agents'
       preLoaderRoute: typeof AgentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/credit-history': {
+      id: '/credit-history'
+      path: '/credit-history'
+      fullPath: '/credit-history'
+      preLoaderRoute: typeof CreditHistoryRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/members': {
@@ -308,6 +328,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AccountDeletionRoute: AccountDeletionRoute,
   AgentsRoute: AgentsRoute,
+  CreditHistoryRoute: CreditHistoryRoute,
   MembersRoute: MembersRoute,
   PlayRoute: PlayRoute,
   PrivacyRoute: PrivacyRoute,

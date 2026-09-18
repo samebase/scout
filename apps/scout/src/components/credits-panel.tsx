@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { useAction, useMutation, usePaginatedQuery, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { useEffect, useState } from "react";
 import { api } from "../../convex/_generated/api";
@@ -8,15 +8,7 @@ import { Button } from "./ui/button";
 
 const wholeCredits = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 const credits = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
-const historyCredits = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
 const dollars = new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" });
-
-function formatCreditChange(amount: number) {
-  if (amount !== 0 && Math.abs(amount) < 0.01) {
-    return `${amount < 0 ? "-" : "+"}<${historyCredits.format(0.01)}`;
-  }
-  return `${amount > 0 ? "+" : ""}${historyCredits.format(amount)}`;
-}
 
 const purchaseMessages = {
   pending: "Waiting for payment confirmation. Your balance will update here.",
@@ -26,33 +18,6 @@ const purchaseMessages = {
   needs_review: "Your payment needs review. Contact an admin with this page’s link.",
   checkout_failed: "Checkout could not be opened. Try buying credits again.",
 } satisfies Record<NonNullable<FunctionReturnType<typeof api.creditPurchases.status>>, string>;
-
-type CreditDetail = FunctionReturnType<typeof api.credits.history>["page"][number]["detail"];
-
-function entryLabel(detail: CreditDetail) {
-  switch (detail.kind) {
-    case "signup":
-      return "Signup credits";
-    case "usage":
-      return {
-        model: "AI usage",
-        request_check: "Request check",
-        research: "Research",
-        browser: "Browser use",
-        web_search: "Web search",
-      }[detail.usageKind];
-    case "purchase":
-      return "Credit purchase";
-    case "refund":
-      return "Purchase refunded";
-    case "adjustment":
-      return detail.reason;
-    default: {
-      const unhandled: never = detail;
-      return unhandled;
-    }
-  }
-}
 
 export function CreditBalanceLink() {
   const balance = useQuery(api.credits.balance, {});
@@ -70,7 +35,7 @@ export function CreditBalanceLink() {
     <Link
       to="/settings"
       className="hidden shrink-0 rounded-lg px-2 py-1 text-xs font-medium tabular-nums text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:inline"
-      aria-label={`${amount} credits. View credit history in settings.`}
+      aria-label={`${amount} credits. Manage credits in settings.`}
     >
       {amount} credits
     </Link>
@@ -82,11 +47,6 @@ export function CreditsPanel({ purchaseId }: { purchaseId: string | undefined })
   const balance = useQuery(api.credits.balance, {});
   const offer = useQuery(api.credits.offer, {});
   const purchase = useQuery(api.creditPurchases.status, purchaseId ? { purchaseId } : "skip");
-  const { results, status, loadMore } = usePaginatedQuery(
-    api.credits.history,
-    {},
-    { initialNumItems: 10 },
-  );
   const ensureWallet = useMutation(api.credits.ensureWallet);
   const createCheckout = useAction(api.polar.checkout);
   const [walletError, setWalletError] = useState(false);
@@ -119,9 +79,14 @@ export function CreditsPanel({ purchaseId }: { purchaseId: string | undefined })
 
   return (
     <section className="surface-panel mt-8 p-5 sm:p-6" aria-labelledby="credits-heading">
-      <h2 id="credits-heading" className="text-base font-semibold">
-        Credits
-      </h2>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 id="credits-heading" className="text-base font-semibold">
+          Credits
+        </h2>
+        <Link to="/credit-history" className="text-sm underline">
+          View credit history
+        </Link>
+      </div>
       {walletError && balance === null ? (
         <p role="alert" className="mt-3 text-sm text-destructive">
           Could not load your credits. Refresh to try again.
@@ -181,45 +146,6 @@ export function CreditsPanel({ purchaseId }: { purchaseId: string | undefined })
               Could not open checkout. Try again.
             </p>
           )}
-
-          <div className="mt-8 border-t border-border pt-5">
-            <h3 className="text-sm font-semibold">Credit history</h3>
-            {status === "LoadingFirstPage" ? (
-              <p className="mt-3 text-sm text-muted-foreground">Loading history…</p>
-            ) : results.length === 0 ? (
-              <p className="mt-3 text-sm text-muted-foreground">No credit activity yet.</p>
-            ) : (
-              <ul className="mt-2 divide-y divide-border" aria-label="Credit history">
-                {results.map((entry) => (
-                  <li
-                    key={entry._id}
-                    className="flex items-center justify-between gap-4 py-3 text-sm"
-                  >
-                    <div>
-                      <p>{entryLabel(entry.detail)}</p>
-                      <time
-                        dateTime={new Date(entry._creationTime).toISOString()}
-                        className="mt-0.5 block text-xs text-muted-foreground"
-                      >
-                        {new Date(entry._creationTime).toLocaleString()}
-                      </time>
-                    </div>
-                    <span className="shrink-0 tabular-nums">
-                      {formatCreditChange(entry.amountUnits / offer.unitsPerCredit)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {status === "CanLoadMore" && (
-              <Button className="mt-3" variant="outline" onClick={() => loadMore(10)}>
-                More history
-              </Button>
-            )}
-            {status === "LoadingMore" && (
-              <p className="mt-3 text-sm text-muted-foreground">Loading more history…</p>
-            )}
-          </div>
         </>
       )}
     </section>

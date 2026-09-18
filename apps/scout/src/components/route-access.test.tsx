@@ -15,6 +15,7 @@ import { readAccessKeysForRole, type ViewerRole } from "../../shared/accessModel
 import { RouteAccessOutlet } from "./route-access";
 import { AppNavigation } from "./app-navigation";
 import { Route as SettingsRoute } from "../routes/settings";
+import { Route as CreditHistoryRoute } from "../routes/credit-history";
 import { Route as ScoutsRoute } from "../routes/scouts";
 import { Route as PrivacyRoute } from "../routes/privacy";
 import { Route as TermsRoute } from "../routes/terms";
@@ -108,6 +109,12 @@ async function open(path: string) {
     routeTree: root.addChildren([
       lab,
       settings,
+      createRoute({
+        getParentRoute: () => root,
+        path: "/credit-history",
+        staticData: CreditHistoryRoute.options.staticData,
+        ...omitNullish({ component: CreditHistoryRoute.options.component }),
+      }),
       review,
       createRoute({
         getParentRoute: () => root,
@@ -194,6 +201,30 @@ test("pending accounts retain account controls", async () => {
   expect(await screen.findByRole("heading", { name: "Your session" })).toBeTruthy();
   expect(screen.queryByRole("link", { name: "Members" })).toBeNull();
   expect(screen.getByRole("link", { name: "Reviews" })).toBeTruthy();
+});
+
+test("account controls stay above credits and history opens on its own page", async () => {
+  setViewer("role_member");
+  await open("/settings");
+  const user = userEvent.setup();
+  const session = await screen.findByRole("region", { name: "Your session" });
+  const credits = screen.getByRole("region", { name: "Credits" });
+  expect(session.compareDocumentPosition(credits) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Sign out" })).toBeTruthy();
+  expect(screen.queryByRole("list", { name: "Credit history" })).toBeNull();
+  await user.click(screen.getByRole("link", { name: "View credit history" }));
+  expect(await screen.findByRole("heading", { level: 1, name: "Credit history" })).toBeTruthy();
+  expect(screen.getByText("Loading history…")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Sign out" })).toBeNull();
+  await user.click(screen.getByRole("link", { name: "Back to Settings" }));
+  expect(await screen.findByRole("button", { name: "Sign out" })).toBeTruthy();
+});
+
+test("guests must sign in before opening credit history", async () => {
+  remote.authenticated = false;
+  await open("/credit-history");
+  expect(await screen.findByRole("heading", { name: "Sign in to Scout" })).toBeTruthy();
+  expect(screen.queryByRole("heading", { name: "Credit history" })).toBeNull();
 });
 
 test("staff keep Agents and settings admin access without approval", async () => {

@@ -1,16 +1,26 @@
 // @vitest-environment happy-dom
 
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import {
+  cleanup,
+  fireEvent,
+  render as renderUI,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import {
+  RouterContextProvider,
   RouterProvider,
   createMemoryHistory,
   createRootRoute,
   createRoute,
   createRouter,
 } from "@tanstack/react-router";
+import type { ReactElement } from "react";
 import { getFunctionName, type FunctionReference, type FunctionReturnType } from "convex/server";
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
 import { CreditBalanceLink, CreditsPanel } from "./credits-panel";
+import { CreditHistoryPage } from "./credit-history-page";
 import type { api } from "../../convex/_generated/api";
 
 const remote = vi.hoisted(() => {
@@ -99,8 +109,34 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-test("shows a compact balance and ledger history without reserved credits", () => {
+function render(ui: ReactElement) {
+  const root = createRootRoute({ staticData: { access: "access_public" } });
+  const router = createRouter({
+    routeTree: root,
+    history: createMemoryHistory({ initialEntries: ["/settings"] }),
+  });
+  return renderUI(ui, {
+    wrapper: ({ children }) => (
+      <RouterContextProvider router={router}>{children}</RouterContextProvider>
+    ),
+  });
+}
+
+test("shows a compact balance with a link to history without loading the ledger", () => {
   remote.balanceUnits = 456_789;
+  render(<CreditsPanel purchaseId={undefined} />);
+
+  expect(screen.getByText("45.7")).toBeTruthy();
+  expect(screen.queryByText(/reserved|ongoing work/i)).toBeNull();
+  expect(screen.queryByText("Add credits before starting new work.")).toBeNull();
+  expect(screen.getByRole("link", { name: "View credit history" }).getAttribute("href")).toBe(
+    "/credit-history",
+  );
+  expect(screen.queryByRole("list", { name: "Credit history" })).toBeNull();
+  expect(remote.history).not.toHaveBeenCalled();
+});
+
+test("shows ledger history on its own page and loads more entries", () => {
   remote.historyStatus = "CanLoadMore";
   remote.history.mockReturnValue([
     {
@@ -117,11 +153,7 @@ test("shows a compact balance and ledger history without reserved credits", () =
     },
   ]);
 
-  render(<CreditsPanel purchaseId={undefined} />);
-
-  expect(screen.getByText("45.7")).toBeTruthy();
-  expect(screen.queryByText(/reserved|ongoing work/i)).toBeNull();
-  expect(screen.queryByText("Add credits before starting new work.")).toBeNull();
+  render(<CreditHistoryPage />);
   const history = screen.getByRole("list", { name: "Credit history" });
   expect(within(history).getByText("AI usage")).toBeTruthy();
   expect(within(history).getByText("-5")).toBeTruthy();
@@ -165,7 +197,7 @@ test.each([
       detail: { kind: "adjustment", reason: "Balance adjustment" },
     },
   ]);
-  render(<CreditsPanel purchaseId={undefined} />);
+  render(<CreditHistoryPage />);
 
   const history = screen.getByRole("list", { name: "Credit history" });
   expect(within(history).getByText(displayed)).toBeTruthy();
@@ -304,9 +336,9 @@ test.each([
     history: createMemoryHistory({ initialEntries: ["/"] }),
   });
 
-  render(<RouterProvider router={router} />);
+  renderUI(<RouterProvider router={router} />);
   const balance = await screen.findByRole("link", {
-    name: `${displayed} credits. View credit history in settings.`,
+    name: `${displayed} credits. Manage credits in settings.`,
   });
   expect(balance.textContent).toBe(`${displayed} credits`);
   expect(balance.getAttribute("href")).toBe("/settings");
