@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-18T19:09:18Z
+- **Last updated:** 2026-09-18T21:05:02Z
 
 ## Log
 
@@ -1455,10 +1455,17 @@ until it is restored (`apps/scout/src/components/browser-replay-header.tsx`,
 Site cards use even 12px content padding, leaving room above the title and below the task link.
 Removed the compressed header and footer sizing (`apps/scout/src/components/activity-feed.tsx`).
 
-### 2026-09-18 - working tree - v235
+### 2026-09-18 - 570fe3f - v235
 
 Task owners see the actual API failure, with saved diagnostics and stack details available in the task.
 HTTP and stream errors log their API method, path, request ID, and tool-call identity without payloads.
 Members can choose Luna through Convex or Agents API; Convex remembers their last engine and Scout.
 Tool-result retries reuse a stable key and saved result; rejected messages remain visibly unsent (`apps/scout/convex/tasks/`,
 `apps/scout/src/products/conversation/page.tsx`, `apps/scout/src/tasks/page.tsx`).
+
+### 2026-09-18 - working tree - v236
+
+The review composer keeps its three pickers on one row on narrow phones using first names,
+globe/lock visibility icons, and tighter spacing while retaining 44px touch targets.
+Menus retain full labels (`apps/scout/src/products/conversation/composer.tsx`,
+`apps/scout/src/products/conversation/page.tsx`).
