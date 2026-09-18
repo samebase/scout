@@ -457,6 +457,44 @@ it("charges only the current turn when a late correction changes an older free t
   }));
   expect(settled.reservation?.state.kind).toBe("released");
   expect(settled.session?.chargedModelMicrodollars).toBe(29);
+
+  t.provider.usage.mockReturnValue({
+    input_tokens: 280,
+    output_tokens: 60,
+    total_tokens: 340,
+    input_tokens_details: { cached_tokens: 224 },
+    output_tokens_details: { reasoning_tokens: 0 },
+  });
+  await t.backend.action(internal.tasks.agentsApi.refreshUsage, {
+    sessionId: t.sessionId,
+    workflowId: null,
+    attempt: 2,
+  });
+  await t.backend.action(internal.tasks.runtime.settleCredits, {
+    sessionId: t.sessionId,
+    reservationId,
+    attempt: 3,
+  });
+  const refreshed = await t.backend.run(async (ctx) => ({
+    session: await ctx.db.get(t.sessionId),
+    wallet: await ctx.db
+      .query("creditWallets")
+      .withIndex("by_user_id", (q) => q.eq("userId", t.userId))
+      .unique(),
+    charges: await ctx.db
+      .query("creditEntries")
+      .withIndex("by_user_id", (q) => q.eq("userId", t.userId))
+      .collect(),
+  }));
+  expect(refreshed.session).toMatchObject({
+    usage: { inputTokens: 280, cachedInputTokens: 224, outputTokens: 60 },
+    modelUsageIncomplete: false,
+    chargedModelMicrodollars: 29,
+  });
+  expect(refreshed.wallet).toMatchObject({ balanceUnits: 500_000 - 29, reservedUnits: 0 });
+  expect(refreshed.charges.filter((entry) => entry.detail.kind === "session_model")).toHaveLength(
+    1,
+  );
 });
 
 it("keeps a subagent turn's credit hold for review rather than guessing its usage", async () => {
@@ -976,7 +1014,12 @@ it("refreshes ended-session history and cost without restarting the agent or cha
 it("fetches late usage after completion and replaces revised cumulative totals", async () => {
   const { backend, sessionId, provider, advance, session, owner } = await setup();
   provider.status.mockReturnValue("idle");
-  provider.turn.mockReturnValue({ id: "completed-turn", status: "completed" });
+  provider.turn.mockReturnValue({
+    id: "completed-turn",
+    status: "completed",
+    subagent_id: null,
+    usage: null,
+  });
   provider.usage
     .mockReturnValueOnce(null)
     .mockReturnValueOnce(null)
@@ -1020,7 +1063,12 @@ it("bounds missing-usage checks and leaves an inspectable failure without erasin
   const errors = vi.spyOn(console, "error").mockImplementation(() => {});
   const { backend, sessionId, provider, advance, session } = await setup();
   provider.status.mockReturnValue("idle");
-  provider.turn.mockReturnValue({ id: "completed-turn", status: "completed" });
+  provider.turn.mockReturnValue({
+    id: "completed-turn",
+    status: "completed",
+    subagent_id: null,
+    usage: null,
+  });
   provider.usage.mockReturnValueOnce({
     input_tokens: 100,
     output_tokens: 20,
