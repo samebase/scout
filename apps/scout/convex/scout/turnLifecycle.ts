@@ -2,28 +2,8 @@ import { vResultValidator, vWorkflowId } from "@convex-dev/workflow";
 import { v } from "convex/values";
 import { internal } from "../_generated/api";
 import { internalMutation } from "../_generated/server";
-import { scoutModelValidator } from "./models";
 import { finishStoppingTurn, recordBrowserCleanupFailure } from "./turns";
 import { scoutTurnWorkflow } from "./turnWorkflow";
-
-export const run = scoutTurnWorkflow
-  .define({
-    args: {
-      threadId: v.string(),
-      userId: v.id("users"),
-      promptMessageId: v.string(),
-      model: scoutModelValidator,
-    },
-    returns: v.null(),
-  })
-  .handler(async (step, args): Promise<null> => {
-    while (true) {
-      const result = await step.runAction(internal.scout.generation.runSlice, args, {
-        retry: false,
-      });
-      if (result.kind === "completed") return null;
-    }
-  });
 
 export const onComplete = internalMutation({
   args: {

@@ -21,9 +21,9 @@ import {
   DialogTrigger,
 } from "#components/ui/dialog";
 
-type Walkthrough = NonNullable<FunctionReturnType<typeof api.agentsApi.walkthrough.get>>;
+type Walkthrough = NonNullable<FunctionReturnType<typeof api.tasks.walkthrough.get>>;
 type Capture = Walkthrough["captures"][number];
-type ImageUrl = NonNullable<FunctionReturnType<typeof api.agentsApi.screenshots.imageUrl>>;
+type ImageUrl = NonNullable<FunctionReturnType<typeof api.tasks.screenshots.imageUrl>>;
 type ImageState =
   | { kind: "loading" }
   | { kind: "ready"; image: ImageUrl }
@@ -34,7 +34,7 @@ export function TaskWalkthrough({ sessionId }: { sessionId: Id<"agentsApiSession
 }
 
 function SessionWalkthrough({ sessionId }: { sessionId: Id<"agentsApiSessions"> }) {
-  const result = useQuery(api.agentsApi.walkthrough.get, { sessionId });
+  const result = useQuery(api.tasks.walkthrough.get, { sessionId });
   const imageUrls = useScreenshotUrls();
   const [selection, setSelection] = useState(0);
   const [loadedCaptureId, setLoadedCaptureId] = useState<Capture["id"] | null>(null);
@@ -168,7 +168,7 @@ function SessionWalkthrough({ sessionId }: { sessionId: Id<"agentsApiSessions"> 
 }
 
 function useScreenshotUrls() {
-  const imageUrl = useAction(api.agentsApi.screenshots.imageUrl);
+  const imageUrl = useAction(api.tasks.screenshots.imageUrl);
   return useMemo(() => {
     const urls = new Map<Capture["id"], ImageUrl>();
     const requests = new Map<Capture["id"], Promise<ImageUrl | null>>();

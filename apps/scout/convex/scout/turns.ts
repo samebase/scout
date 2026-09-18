@@ -1,23 +1,12 @@
 import { v } from "convex/values";
-import { requireRunnableThread } from "./chatAccess";
 import { components, internal } from "../_generated/api";
-import type { Doc, Id } from "../_generated/dataModel";
-import { internalMutation, internalQuery, type MutationCtx } from "../_generated/server";
-import {
-  failHumanHandoffForTurn,
-  signalHumanHandoffScoutPaused,
-  stopHumanHandoffForTurn,
-} from "../humanHandoffsModel";
+import type { Doc } from "../_generated/dataModel";
+import { internalMutation, type MutationCtx } from "../_generated/server";
+import { failHumanHandoffForTurn, stopHumanHandoffForTurn } from "../humanHandoffsModel";
 import { omitNullish } from "../../shared/omitNullish";
-import { scoutAgent } from "./agent";
-import { browserReadyForTransfer } from "./chatAccess";
 import { failPendingModelCall } from "./modelCalls";
-import { scoutModelSelection, scoutTokenUsageValidator } from "./models";
-import type { ScoutModelSelection, ScoutTokenUsage } from "./models";
+import type { ScoutTokenUsage } from "./models";
 import { scoutTurnWorkflow } from "./turnWorkflow";
-
-export const TURN_START_TIMEOUT_MS = 5 * 60 * 1_000;
-export const TURN_RUN_TIMEOUT_MS = 11 * 60 * 1_000;
 export const EXPIRED_TURN_FAILURE = "Scout stopped before completing this turn";
 const BROWSER_CLEANUP_FALLBACK_MS = 5 * 60 * 1_000;
 const MAX_STOP_CLEANUP_FAILURE_LENGTH = 2_000;
@@ -80,14 +69,13 @@ async function failPendingTurn(
     await failPendingAgentResponse(ctx, turn, failure);
     return;
   }
-  const handoffOwnsBrowserCleanup = await failHumanHandoffForTurn(ctx, turn._id);
+  await failHumanHandoffForTurn(ctx, turn._id);
   const session = await ctx.db
     .query("scoutBrowserSessions")
     .withIndex("by_thread_id_and_sequence", (query) => query.eq("threadId", turn.threadId))
     .order("desc")
     .first();
   const cleanupSession =
-    !handoffOwnsBrowserCleanup &&
     session?.scoutId === turn.scoutId &&
     (session.lifecycle.kind === "active" || session.lifecycle.kind === "closing")
       ? session
@@ -134,60 +122,7 @@ async function failPendingTurn(
   }
 }
 
-type TurnReplacement = ScoutModelSelection & { prompt: string };
-
-export async function enqueueTurn(
-  ctx: MutationCtx,
-  args: ScoutModelSelection & {
-    threadId: string;
-    userId: Id<"users">;
-    scoutId: Id<"scouts">;
-    prompt: string;
-  },
-) {
-  const chat = await requireRunnableThread(ctx, args.threadId);
-  if (chat.userId !== args.userId || chat.scoutId !== args.scoutId)
-    throw new Error("Chat not found");
-  const { messageId, message } = await scoutAgent.saveMessage(ctx, {
-    threadId: args.threadId,
-    userId: args.userId,
-    prompt: args.prompt,
-    skipEmbeddings: true,
-  });
-  const leaseExpiresAt = Date.now() + TURN_START_TIMEOUT_MS;
-  const turnId = await ctx.db.insert("scoutTurns", {
-    threadId: args.threadId,
-    order: message.order,
-    promptMessageId: messageId,
-    scoutId: args.scoutId,
-    ...scoutModelSelection(args),
-    startedAt: Date.now(),
-    state: { kind: "pending", leaseExpiresAt, completedSteps: 0, usage: {} },
-  });
-  await scoutTurnWorkflow.start(
-    ctx,
-    internal.scout.turnLifecycle.run,
-    {
-      threadId: args.threadId,
-      userId: args.userId,
-      promptMessageId: messageId,
-      model: args.model,
-    },
-    {
-      startAsync: true,
-      onComplete: internal.scout.turnLifecycle.onComplete,
-      context: { turnId },
-    },
-  );
-  await ctx.scheduler.runAt(leaseExpiresAt, internal.scout.turns.expire, { turnId });
-  return turnId;
-}
-
-export async function stopTurn(
-  ctx: MutationCtx,
-  turn: Doc<"scoutTurns">,
-  replacement?: TurnReplacement,
-) {
+export async function stopTurn(ctx: MutationCtx, turn: Doc<"scoutTurns">) {
   if (turn.state.kind !== "pending" && turn.state.kind !== "completed") return false;
   await stopHumanHandoffForTurn(ctx, turn._id);
   const stopRequestedAt = Date.now();
@@ -197,7 +132,6 @@ export async function stopTurn(
       kind: "stopping",
       stopRequestedAt,
       generationFinished: turn.state.kind === "completed",
-      ...omitNullish({ replacement }),
       usage,
       ...omitNullish({
         firecrawlCredits: turn.state.firecrawlCredits,
@@ -212,53 +146,6 @@ export async function stopTurn(
   return true;
 }
 
-async function browserNeededByReplacement(
-  ctx: MutationCtx,
-  turn: Doc<"scoutTurns">,
-  session: Doc<"scoutBrowserSessions"> | null,
-) {
-  if (
-    turn.state.kind !== "stopping" ||
-    !turn.state.replacement ||
-    turn.state.cleanupFailure ||
-    session?.lifecycle.kind !== "active" ||
-    session.threadId !== turn.threadId ||
-    session.scoutId !== turn.scoutId
-  ) {
-    return false;
-  }
-  const handoff = await ctx.db
-    .query("scoutHumanHandoffs")
-    .withIndex("by_session_id", (q) => q.eq("sessionId", session._id))
-    .unique();
-  if (handoff) return false;
-  return await browserReadyForTransfer(ctx, session._id);
-}
-
-export const beginBrowserCleanup = internalMutation({
-  args: { turnId: v.id("scoutTurns"), sessionId: v.id("scoutBrowserSessions") },
-  returns: v.union(v.literal("preserve"), v.literal("close")),
-  handler: async (ctx, args) => {
-    const turn = await ctx.db.get("scoutTurns", args.turnId);
-    const session = await ctx.db.get("scoutBrowserSessions", args.sessionId);
-    if (
-      !turn ||
-      !session ||
-      turn.threadId !== session.threadId ||
-      turn.scoutId !== session.scoutId
-    ) {
-      throw new Error("Browser cleanup does not match the Scout turn");
-    }
-    if (await browserNeededByReplacement(ctx, turn, session)) return "preserve";
-    if (session.lifecycle.kind === "active") {
-      await ctx.db.patch(session._id, {
-        lifecycle: { ...session.lifecycle, kind: "closing", closingAtMs: Date.now() },
-      });
-    }
-    return "close";
-  },
-});
-
 export async function finalizeStoppingTurn(ctx: MutationCtx, turnId: Doc<"scoutTurns">["_id"]) {
   const turn = await ctx.db.get("scoutTurns", turnId);
   if (!turn || turn.state.kind !== "stopping" || !turn.state.generationFinished) return;
@@ -267,28 +154,7 @@ export async function finalizeStoppingTurn(ctx: MutationCtx, turnId: Doc<"scoutT
     .withIndex("by_thread_id_and_sequence", (query) => query.eq("threadId", turn.threadId))
     .order("desc")
     .first();
-  if (session?.lifecycle.kind === "closing") return;
-  if (
-    session?.lifecycle.kind === "active" &&
-    !(await browserNeededByReplacement(ctx, turn, session))
-  )
-    return;
-  if (turn.state.replacement) {
-    await ctx.db.patch(turn._id, {
-      state: {
-        kind: "replacing",
-        stoppedAt: Date.now(),
-        replacement: turn.state.replacement,
-        usage: turn.state.usage,
-        ...omitNullish({
-          firecrawlCredits: turn.state.firecrawlCredits,
-          firecrawlDurationMs: turn.state.firecrawlDurationMs,
-        }),
-      },
-    });
-    await ctx.scheduler.runAfter(0, internal.scout.turns.dispatchReplacement, { turnId: turn._id });
-    return;
-  }
+  if (session && session.lifecycle.kind !== "closed") return;
   await ctx.db.patch(turn._id, {
     state: {
       kind: "stopped",
@@ -310,18 +176,7 @@ export async function continueStoppingTurn(ctx: MutationCtx, turnId: Doc<"scoutT
     .withIndex("by_thread_id_and_sequence", (query) => query.eq("threadId", turn.threadId))
     .order("desc")
     .first();
-  if (await browserNeededByReplacement(ctx, turn, session)) {
-    await finalizeStoppingTurn(ctx, turn._id);
-    return;
-  }
   if (session?.lifecycle.kind === "active" || session?.lifecycle.kind === "closing") {
-    if (session.lifecycle.kind === "closing") {
-      const handoff = await ctx.db
-        .query("scoutHumanHandoffs")
-        .withIndex("by_session_id", (q) => q.eq("sessionId", session._id))
-        .unique();
-      if (handoff) return;
-    }
     const { cleanupFailure: _cleanupFailure, ...state } = turn.state;
     await ctx.db.patch(turn._id, { state });
     await ctx.db.patch(session._id, {
@@ -397,131 +252,6 @@ export const finalizeStopping = internalMutation({
   },
 });
 
-export const dispatchReplacement = internalMutation({
-  args: { turnId: v.id("scoutTurns") },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    const turn = await ctx.db.get("scoutTurns", args.turnId);
-    if (!turn || turn.state.kind !== "replacing") return null;
-    const binding = await ctx.db
-      .query("scoutChats")
-      .withIndex("by_thread_id", (query) => query.eq("threadId", turn.threadId))
-      .unique();
-    if (!binding || binding.scoutId !== turn.scoutId) {
-      throw new Error("Stopped turn is missing its Scout chat binding");
-    }
-    await enqueueTurn(ctx, {
-      threadId: turn.threadId,
-      userId: binding.userId,
-      scoutId: turn.scoutId,
-      ...turn.state.replacement,
-    });
-    await ctx.db.patch(turn._id, {
-      state: {
-        kind: "stopped",
-        stoppedAt: turn.state.stoppedAt,
-        usage: turn.state.usage,
-        ...omitNullish({
-          firecrawlCredits: turn.state.firecrawlCredits,
-          firecrawlDurationMs: turn.state.firecrawlDurationMs,
-        }),
-      },
-    });
-    return null;
-  },
-});
-
-export const assertPending = internalQuery({
-  args: { turnId: v.id("scoutTurns") },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    const turn = await ctx.db.get("scoutTurns", args.turnId);
-    if (!turn || turn.state.kind !== "pending") {
-      throw new Error("Scout turn is no longer running");
-    }
-    await requireRunnableThread(ctx, turn.threadId);
-    return null;
-  },
-});
-
-export const start = internalMutation({
-  args: { promptMessageId: v.string() },
-  returns: v.union(
-    v.object({
-      completedSteps: v.number(),
-      usage: scoutTokenUsageValidator,
-    }),
-    v.null(),
-  ),
-  handler: async (ctx, args) => {
-    const turn = await ctx.db
-      .query("scoutTurns")
-      .withIndex("by_prompt_message_id", (query) =>
-        query.eq("promptMessageId", args.promptMessageId),
-      )
-      .unique();
-    if (!turn || turn.state.kind !== "pending") return null;
-
-    const now = Date.now();
-    if (turn.state.leaseExpiresAt <= now) {
-      await failPendingTurn(ctx, turn, EXPIRED_TURN_FAILURE);
-      return null;
-    }
-
-    const leaseExpiresAt = now + TURN_RUN_TIMEOUT_MS;
-    await ctx.db.patch("scoutTurns", turn._id, {
-      state: { ...turn.state, leaseExpiresAt },
-    });
-    await ctx.scheduler.runAt(leaseExpiresAt, internal.scout.turns.expire, {
-      turnId: turn._id,
-    });
-    return { completedSteps: turn.state.completedSteps, usage: turn.state.usage };
-  },
-});
-
-export const continueAfterSlice = internalMutation({
-  args: {
-    promptMessageId: v.string(),
-    previousCompletedSteps: v.number(),
-    completedSteps: v.number(),
-    usage: scoutTokenUsageValidator,
-  },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    const turn = await ctx.db
-      .query("scoutTurns")
-      .withIndex("by_prompt_message_id", (query) =>
-        query.eq("promptMessageId", args.promptMessageId),
-      )
-      .unique();
-    if (!turn || turn.state.kind !== "pending") {
-      throw new Error("Active Scout turn not found");
-    }
-    if (turn.state.leaseExpiresAt <= Date.now()) {
-      throw new Error("Scout turn expired before the next generation slice");
-    }
-    if (turn.state.completedSteps !== args.previousCompletedSteps) {
-      throw new Error("Scout turn progress changed during generation");
-    }
-    if (args.completedSteps <= args.previousCompletedSteps) {
-      throw new Error("Scout turn made no generation progress");
-    }
-    const leaseExpiresAt = Date.now() + TURN_RUN_TIMEOUT_MS;
-    await ctx.db.patch(turn._id, {
-      state: {
-        ...turn.state,
-        leaseExpiresAt,
-        completedSteps: args.completedSteps,
-        usage: args.usage,
-      },
-    });
-    await ctx.scheduler.runAt(leaseExpiresAt, internal.scout.turns.expire, {
-      turnId: turn._id,
-    });
-    return null;
-  },
-});
-
 export const expire = internalMutation({
   args: { turnId: v.id("scoutTurns") },
   returns: v.null(),
@@ -531,106 +261,6 @@ export const expire = internalMutation({
       return null;
     }
     await failPendingTurn(ctx, turn, EXPIRED_TURN_FAILURE);
-    return null;
-  },
-});
-
-export const complete = internalMutation({
-  args: {
-    promptMessageId: v.string(),
-    usage: scoutTokenUsageValidator,
-  },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    const turn = await ctx.db
-      .query("scoutTurns")
-      .withIndex("by_prompt_message_id", (query) =>
-        query.eq("promptMessageId", args.promptMessageId),
-      )
-      .unique();
-    if (!turn) throw new Error("Scout turn not found");
-    if (turn.state.kind !== "pending") return null;
-    await failHumanHandoffForTurn(ctx, turn._id);
-    await ctx.db.patch("scoutTurns", turn._id, {
-      state: {
-        kind: "completed",
-        completedAt: Date.now(),
-        usage: args.usage,
-        ...omitNullish({
-          firecrawlCredits: turn.state.firecrawlCredits,
-          firecrawlDurationMs: turn.state.firecrawlDurationMs,
-        }),
-      },
-    });
-    return null;
-  },
-});
-
-export const completeHumanHandoffPause = internalMutation({
-  args: {
-    promptMessageId: v.string(),
-    usage: scoutTokenUsageValidator,
-  },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    const turn = await ctx.db
-      .query("scoutTurns")
-      .withIndex("by_prompt_message_id", (query) =>
-        query.eq("promptMessageId", args.promptMessageId),
-      )
-      .unique();
-    if (!turn) throw new Error("Scout turn not found");
-    if (turn.state.kind !== "pending") return null;
-    const handoff = await ctx.db
-      .query("scoutHumanHandoffs")
-      .withIndex("by_turn_id", (query) => query.eq("turnId", turn._id))
-      .unique();
-    const session = handoff ? await ctx.db.get("scoutBrowserSessions", handoff.sessionId) : null;
-    if (
-      !session ||
-      session.lifecycle.kind !== "active" ||
-      session.threadId !== turn.threadId ||
-      session.scoutId !== turn.scoutId ||
-      !handoff ||
-      (handoff.status !== "available" &&
-        handoff.status !== "active" &&
-        handoff.status !== "continued")
-    ) {
-      throw new Error("Active human handoff not found");
-    }
-    await ctx.db.patch("scoutTurns", turn._id, {
-      state: {
-        kind: "completed",
-        completedAt: Date.now(),
-        usage: args.usage,
-        ...omitNullish({
-          firecrawlCredits: turn.state.firecrawlCredits,
-          firecrawlDurationMs: turn.state.firecrawlDurationMs,
-        }),
-      },
-    });
-    await signalHumanHandoffScoutPaused(ctx, handoff);
-    return null;
-  },
-});
-
-export const fail = internalMutation({
-  args: {
-    promptMessageId: v.string(),
-    failure: v.string(),
-    usage: v.optional(scoutTokenUsageValidator),
-  },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    const turn = await ctx.db
-      .query("scoutTurns")
-      .withIndex("by_prompt_message_id", (query) =>
-        query.eq("promptMessageId", args.promptMessageId),
-      )
-      .unique();
-    if (!turn) throw new Error("Scout turn not found");
-    if (turn.state.kind !== "pending") return null;
-    await failPendingTurn(ctx, turn, args.failure, args.usage);
     return null;
   },
 });

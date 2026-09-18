@@ -36,13 +36,13 @@ async function setup() {
   const other = backend.withIdentity({ subject: otherId });
   const admin = backend.withIdentity({ subject: adminId });
   async function decide(checkId: Id<"agentsApiRequestChecks">, approved: boolean) {
-    await backend.mutation(internal.agentsApi.requestChecks.start, {
+    await backend.mutation(internal.tasks.requestChecks.start, {
       checkId,
       startedAt: 1,
       request: "{}",
       evidence: null,
     });
-    return backend.mutation(internal.agentsApi.requestChecks.finish, {
+    return backend.mutation(internal.tasks.requestChecks.finish, {
       checkId,
       state: {
         kind: "completed",
@@ -400,15 +400,15 @@ test("deleting or changing the purpose of the last contributing task removes bot
 test("a stopped session's completed initial check still synchronizes public admission before finish returns false", async () => {
   const t = await setup();
   const task = await t.review("site.test", 1, { decision: "pending" });
-  await t.backend.mutation(internal.agentsApi.requestChecks.start, {
+  await t.backend.mutation(internal.tasks.requestChecks.start, {
     checkId: task.checkId,
     request: "{}",
     startedAt: 1,
     evidence: null,
   });
-  await t.owner.mutation(api.agentsApi.sessions.stop, { sessionId: task.sessionId });
+  await t.owner.mutation(api.tasks.sessions.stop, { sessionId: task.sessionId });
   expect(
-    await t.backend.mutation(internal.agentsApi.requestChecks.finish, {
+    await t.backend.mutation(internal.tasks.requestChecks.finish, {
       checkId: task.checkId,
       state: {
         kind: "completed",
@@ -488,7 +488,7 @@ test("unassigned task pagination includes only the owner's review tasks without 
   const pending = await t.review(null, 1, { decision: "pending" });
   const rejected = await t.review(null, 2, { decision: "rejected" });
   const failed = await t.review(null, 3, { decision: "pending", visibility: "private" });
-  await t.backend.mutation(internal.agentsApi.requestChecks.finish, {
+  await t.backend.mutation(internal.tasks.requestChecks.finish, {
     checkId: failed.checkId,
     state: { kind: "failed", finishedAt: 4, call: null, error: "Research failed" },
   });

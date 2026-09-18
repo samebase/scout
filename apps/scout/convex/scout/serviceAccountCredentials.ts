@@ -122,7 +122,7 @@ export async function requireAgentsApiAccountScope(
   args: typeof agentsApiAccountScopeValidator.type,
 ): Promise<{ scout: Doc<"scouts">; url: URL }> {
   const { session, scout }: { session: Doc<"agentsApiSessions">; scout: Doc<"scouts"> } =
-    await ctx.runQuery(internal.agentsApi.sessions.runtime, { sessionId: args.sessionId });
+    await ctx.runQuery(internal.tasks.sessions.runtime, { sessionId: args.sessionId });
   if (session.state.kind !== "running" || !session.browser) {
     throw new Error("Running Agents API browser session not found");
   }

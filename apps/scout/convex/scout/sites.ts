@@ -10,7 +10,7 @@ import { publicQuery } from "../functions";
 import { accessibleSite, ensureSite, syncChatSite } from "./siteListings";
 import { previewMetadata, sitePreviewMetadata } from "./sitePreviewModel";
 
-import { siteProfile, researchSummary } from "../agentsApi/siteResearchModel";
+import { siteProfile, researchSummary } from "../tasks/siteResearchModel";
 
 const siteRow = v.object({
   hostname: v.string(),

@@ -43,15 +43,12 @@ import { TaskWalkthrough } from "#components/task-walkthrough";
 import { ToolActivityRow } from "#components/tool-activity";
 import { SessionCost } from "#components/session-cost";
 import { Button, buttonVariants } from "#components/ui/button";
-import { ChatHandoffNotice } from "../../components/chat-handoff-notice";
 import { ProductShell } from "../shell";
 import { ScoutPiece } from "../play/scout-piece";
 import { cn } from "#lib/utils";
 import { playError, playNotice, playRouteMessage, playTextLink } from "./ui";
 
 type ChatThread = NonNullable<FunctionReturnType<typeof api.scout.activity.get>>;
-type Activity = FunctionReturnType<typeof api.scout.chats.getScoutActivity>;
-type ThreadActivity = Extract<Activity, { threadId: string }>;
 const visibilitySchema = z.enum(["public", "private"]);
 type RequestState = { kind: "idle" } | { kind: "pending" } | { kind: "failed"; message: string };
 
@@ -364,7 +361,7 @@ function SessionLoader({
         opened?.thread.threadId === threadId
           ? opened.defaultView
           : kind === "review" &&
-              thread.runtime.kind === "agents_api" &&
+              thread.runtime.kind === "task" &&
               thread.status === "finished" &&
               thread.hasWalkthrough
             ? "walkthrough"
@@ -383,7 +380,7 @@ function SessionLoader({
   };
   const showingWalkthrough =
     kind === "review" &&
-    navigationThread?.runtime.kind === "agents_api" &&
+    navigationThread?.runtime.kind === "task" &&
     (search.view ?? opened?.defaultView) === "walkthrough";
   const available = thread && thread.purpose.kind === kind;
   return (
@@ -533,24 +530,21 @@ function ConversationNavigation({
 
 function ConversationInspectorLink({ thread }: { thread: ChatThread }) {
   const viewer = useViewerAccess();
-  const canInspect =
-    (thread.isOwner || thread.runtime.kind === "agents_api") &&
-    viewer?.kind === "account" &&
-    canAccess("access_lab", viewer.accessKeys);
-  if (!canInspect) return null;
+  if (
+    thread.runtime.kind !== "task" ||
+    viewer?.kind !== "account" ||
+    !canAccess("access_lab", viewer.accessKeys)
+  )
+    return null;
   return (
     <Link
-      to={thread.runtime.kind === "agents_api" ? "/agents" : "/chats"}
-      search={
-        thread.runtime.kind === "agents_api"
-          ? { session: thread.runtime.sessionId }
-          : { thread: thread.threadId }
-      }
-      aria-label="Open in lab"
+      to="/agents"
+      search={{ session: thread.runtime.sessionId }}
+      aria-label="Open in Agents"
       className={cn(playTextLink, "min-h-11 shrink-0 text-muted-foreground")}
     >
       <span className="whitespace-nowrap">
-        <span className="max-[760px]:hidden">Open in </span>Lab
+        <span className="max-[760px]:hidden">Open in </span>Agents
       </span>{" "}
       <ArrowUpRightIcon size={15} aria-hidden="true" />
     </Link>
@@ -559,22 +553,14 @@ function ConversationInspectorLink({ thread }: { thread: ChatThread }) {
 
 function ConversationActions({ thread, kind }: { thread: ChatThread; kind: ProductKind }) {
   const { threadId } = thread;
-  const managedId = thread.runtime.kind === "agents_api" ? thread.runtime.sessionId : null;
+  const managedId = thread.runtime.kind === "task" ? thread.runtime.sessionId : null;
   const managed = useQuery(
-    api.agentsApi.sessions.controls,
+    api.tasks.sessions.controls,
     kind === "play" && thread.canControl && managedId ? { sessionId: managedId } : "skip",
   );
-  const activity = useQuery(
-    api.scout.chats.getScoutActivity,
-    kind === "play" && thread.canControl && !managedId ? { threadId } : "skip",
-  );
-  const ownActivity = activityForThread(activity, threadId);
-  const canStop = managedId
-    ? managed?.canStop === true
-    : ownActivity !== undefined && (ownActivity.kind !== "stopping" || ownActivity.retryable);
+  const canStop = managed?.canStop === true;
   const setVisibility = useMutation(api.scout.chats.setVisibility);
-  const stopScout = useMutation(api.scout.chats.stop);
-  const stopManaged = useMutation(api.agentsApi.sessions.stop);
+  const stopManaged = useMutation(api.tasks.sessions.stop);
   const [request, setRequest] = useState<RequestState>({ kind: "idle" });
   const pending = useRef(false);
   async function changeVisibility(visibility: ChatThread["visibility"]) {
@@ -591,12 +577,11 @@ function ConversationActions({ thread, kind }: { thread: ChatThread; kind: Produ
     }
   }
   async function stop() {
-    if (pending.current) return;
+    if (!managedId || pending.current) return;
     pending.current = true;
     setRequest({ kind: "pending" });
     try {
-      if (managedId) await stopManaged({ sessionId: managedId });
-      else await stopScout({ threadId });
+      await stopManaged({ sessionId: managedId });
       setRequest({ kind: "idle" });
     } catch {
       setRequest({ kind: "failed", message: "Couldn't stop. Try again." });
@@ -607,7 +592,7 @@ function ConversationActions({ thread, kind }: { thread: ChatThread; kind: Produ
   return (
     <div className="ml-auto flex shrink-0 flex-col items-end gap-2">
       <div className="flex items-center gap-5 max-[760px]:gap-4">
-        {thread.isOwner && thread.purpose.kind !== "general" ? (
+        {thread.isOwner && managedId && thread.purpose.kind !== "general" ? (
           <select
             aria-label="Chat visibility"
             title="Public shares the chat and browser with anyone."
@@ -786,36 +771,6 @@ function ConversationBrowser({
   );
 }
 
-function activityForThread(
-  activity: Activity | undefined,
-  threadId: string,
-): ThreadActivity | undefined {
-  if (!activity) return undefined;
-  switch (activity.kind) {
-    case "running":
-    case "stopping":
-    case "handoff":
-      return activity.threadId === threadId ? activity : undefined;
-    case "busy":
-    case "idle":
-      return undefined;
-  }
-}
-
-function activityNotice(activity: Activity | undefined, threadId: string) {
-  if (!activity) return "Connecting...";
-  if (activity.kind === "idle") return null;
-  const selectedActivity = activityForThread(activity, threadId);
-  if (!selectedActivity) return "Busy in another session";
-  switch (selectedActivity.kind) {
-    case "running":
-    case "handoff":
-      return null;
-    case "stopping":
-      return selectedActivity.retryable ? "Couldn't stop. Try again." : "Stopping Scout...";
-  }
-}
-
 function ConversationSession({
   thread,
   kind,
@@ -829,48 +784,31 @@ function ConversationSession({
 }) {
   const scout = thread.scout;
   const { threadId } = thread;
-  const managedId = thread.runtime.kind === "agents_api" ? thread.runtime.sessionId : null;
+  const managedId = thread.runtime.kind === "task" ? thread.runtime.sessionId : null;
   const managed = useQuery(
-    api.agentsApi.sessions.controls,
+    api.tasks.sessions.controls,
     thread.canControl && managedId ? { sessionId: managedId } : "skip",
   );
   const cost = useQuery(
-    api.agentsApi.sessions.cost,
+    api.tasks.sessions.cost,
     thread.canControl && managedId && !showingWalkthrough ? { sessionId: managedId } : "skip",
-  );
-  const activity = useQuery(
-    api.scout.chats.getScoutActivity,
-    thread.canControl && !managedId ? { threadId } : "skip",
-  );
-  const sessions = thread.sessions;
-  const latestSession = sessions?.at(-1);
-  const handoff = useQuery(
-    api.humanHandoffs.forSession,
-    thread.canControl && latestSession?.engine === "convex_agent"
-      ? { sessionId: latestSession.sessionId }
-      : "skip",
   );
   const messages = usePaginatedQuery(
     api.scout.activity.messages,
     { threadId },
     { initialNumItems: 50 },
   );
-  const sendMessage = useMutation(api.scout.chats.sendMessage);
-  const stopScout = useMutation(api.scout.chats.stop);
-  const sendManaged = useMutation(api.agentsApi.sessions.send);
-  const stopManaged = useMutation(api.agentsApi.sessions.stop);
-  const resumeManaged = useMutation(api.agentsApi.sessions.resume);
+  const sendManaged = useMutation(api.tasks.sessions.send);
+  const stopManaged = useMutation(api.tasks.sessions.stop);
+  const resumeManaged = useMutation(api.tasks.sessions.resume);
   const [draft, setDraft] = useState("");
   const [request, setRequest] = useState<RequestState>({ kind: "idle" });
   const pending = useRef(false);
-  const ownActivity = activityForThread(activity, threadId);
-  const canStop = managedId
-    ? managed?.canStop === true
-    : ownActivity !== undefined && (ownActivity.kind !== "stopping" || ownActivity.retryable);
+  const canStop = managed?.canStop === true;
   const canSend =
     thread.canControl &&
     scout.status === "active" &&
-    (managedId ? managed?.canSend === true : activity?.kind === "idle") &&
+    managed?.canSend === true &&
     request.kind !== "pending";
   const visibleMessages = messages.results.toReversed();
   const phase = thread.purpose.kind === "play" ? thread.purpose.step : null;
@@ -881,12 +819,11 @@ function ConversationSession({
     : null;
 
   async function stop() {
-    if (pending.current) return;
+    if (!managedId || pending.current) return;
     pending.current = true;
     setRequest({ kind: "pending" });
     try {
-      if (managedId) await stopManaged({ sessionId: managedId });
-      else await stopScout({ threadId });
+      await stopManaged({ sessionId: managedId });
       setRequest({ kind: "idle" });
     } catch {
       setRequest({ kind: "failed", message: "Couldn't stop Scout. Try again." });
@@ -898,12 +835,11 @@ function ConversationSession({
   async function send(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const prompt = draft.trim();
-    if (!prompt || !canSend || pending.current) return;
+    if (!managedId || !prompt || !canSend || pending.current) return;
     pending.current = true;
     setRequest({ kind: "pending" });
     try {
-      if (managedId) await sendManaged({ sessionId: managedId, message: prompt });
-      else await sendMessage({ threadId, prompt });
+      await sendManaged({ sessionId: managedId, message: prompt });
       setDraft("");
       setRequest({ kind: "idle" });
     } catch {
@@ -949,16 +885,6 @@ function ConversationSession({
         <p role="alert" className={playError}>
           {request.message}
         </p>
-      )}
-      {handoff && (
-        <ChatHandoffNotice
-          handoff={handoff}
-          browserClosed={latestSession?.kind === "closed"}
-          canCancel={Boolean(canStop) && request.kind !== "pending"}
-          onCancel={() => {
-            void stop();
-          }}
-        />
       )}
       {managed?.state.kind === "waiting" && (
         <div className={cn(playNotice, "space-y-3")}>
@@ -1090,7 +1016,7 @@ function ConversationSession({
           </MessageScroller>
         </MessageScrollerProvider>
       </div>
-      {thread.canControl ? (
+      {thread.canControl && managedId ? (
         !showingWalkthrough && (
           <div className="shrink-0 border-t p-3">
             {cost && <SessionCost session={cost} />}
@@ -1114,13 +1040,11 @@ function ConversationSession({
               <span role="status">
                 {scout?.status !== "active"
                   ? "This Scout is unavailable."
-                  : managedId
-                    ? managed?.busy
-                      ? "This Scout is busy in another chat."
-                      : thread.status === "stopping"
-                        ? "Stopping Scout…"
-                        : null
-                    : activityNotice(activity, threadId)}
+                  : managed?.busy
+                    ? "This Scout is busy in another chat."
+                    : thread.status === "stopping"
+                      ? "Stopping Scout…"
+                      : null}
               </span>
             </ConversationComposer>
           </div>

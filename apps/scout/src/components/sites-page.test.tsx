@@ -112,7 +112,7 @@ vi.mock("convex/react", () => ({
   },
   useAction: (ref: FunctionReference<"action">) => {
     switch (getFunctionName(ref)) {
-      case "agentsApi/siteResearch:refresh":
+      case "tasks/siteResearch:refresh":
         return remote.refresh;
       case "scout/workspaceTools:readFile":
         return remote.read;

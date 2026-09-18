@@ -1,11 +1,11 @@
 import { v } from "convex/values";
 import { internalMutation } from "../_generated/server";
 import { mutation } from "../functions";
-import { requireSessionPermission } from "../agentsApi/access";
+import { requireSessionPermission } from "../tasks/access";
 import { siteHostnameSchema } from "../../shared/site";
 import { syncChatSite } from "./siteListings";
-import { ensureSiteResearch } from "../agentsApi/siteResearchRecords";
-import { getInitialCheck } from "../agentsApi/requestChecks";
+import { ensureSiteResearch } from "../tasks/siteResearchRecords";
+import { getInitialCheck } from "../tasks/requestChecks";
 
 export const set = mutation({
   access: "access_review",

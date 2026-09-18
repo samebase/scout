@@ -111,14 +111,15 @@ test("member queries, mutations, and actions enforce admin permissions", async (
     member.mutation(api.accounts.setApproval, { userId: memberId, isApproved: true }),
   ).rejects.toThrow("Not authorized");
   await expect(
-    member.query(api.scout.chats.listThreads, { paginationOpts: { numItems: 10, cursor: null } }),
+    member.query(api.tasks.sessions.list, { paginationOpts: { numItems: 10, cursor: null } }),
   ).rejects.toThrow("Not authorized");
   await expect(
-    member.action(api.scout.manual.executeTool, {
-      threadId: "known-thread",
-      toolName: "web_search",
-      input: "{}",
-      operationId: "test-operation",
+    member.action(api.scout.scoutRegistration.register, {
+      displayName: "Unauthorized Scout",
+      websiteIdentity: { firstName: "Unauthorized", lastName: "Scout" },
+      slug: "unauthorized",
+      agentMail: { inboxId: "unauthorized", address: "unauthorized@example.test" },
+      firecrawl: { profileName: "unauthorized" },
     }),
   ).rejects.toThrow("Not authorized");
 });

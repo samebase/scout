@@ -26,7 +26,7 @@ export function ScoutWorkspace({
   terminalOpen,
   onToggleTerminal,
 }: {
-  target: WorkspaceTarget;
+  target: Exclude<WorkspaceTarget, { kind: "chat" }>;
   disabled: boolean;
   selectedPath: string | null;
   onSelectPath: (path: string) => void;
@@ -34,7 +34,6 @@ export function ScoutWorkspace({
   onToggleTerminal: () => void;
 }) {
   const workspace = useQuery(api.scout.workspaces.list, { target });
-  const executeTool = useAction(api.scout.manual.executeTool);
   const executeSiteCommand = useAction(api.scout.workspaceTools.executeSiteCommand);
   const [command, setCommand] = useState("");
   const [history, setHistory] = useState<CommandRecord[]>([]);
@@ -54,7 +53,7 @@ export function ScoutWorkspace({
       running.current ||
       disabled ||
       !workspace?.configured ||
-      target.kind === "agent_session"
+      target.kind !== "site"
     )
       return;
     running.current = true;
@@ -64,27 +63,8 @@ export function ScoutWorkspace({
     setHistory((records) => [...records.slice(-49), { id, command: submitted, kind: "running" }]);
     let record: CommandRecord;
     try {
-      if (target.kind === "site") {
-        const result = await executeSiteCommand({ site: target.site, command: submitted });
-        record = { id, command: submitted, kind: "completed", result };
-      } else {
-        const response = await executeTool({
-          threadId: target.threadId,
-          toolName: "bash",
-          input: JSON.stringify({ command: submitted }),
-          operationId: id,
-        });
-        if (response.outcome.kind === "error") {
-          record = { id, command: submitted, kind: "failed", error: response.outcome.error };
-        } else {
-          record = {
-            id,
-            command: submitted,
-            kind: "completed",
-            result: bashResultSchema.parse(JSON.parse(response.outcome.output)),
-          };
-        }
-      }
+      const result = await executeSiteCommand({ site: target.site, command: submitted });
+      record = { id, command: submitted, kind: "completed", result };
     } catch (error) {
       record = {
         id,
@@ -142,7 +122,7 @@ export function ScoutWorkspace({
           )}
         </div>
       </div>
-      {target.kind !== "agent_session" && (
+      {target.kind === "site" && (
         <details open={terminalOpen} className="shrink-0 border-t">
           <summary
             className="cursor-pointer px-3 py-2 text-xs font-medium"

@@ -8,7 +8,7 @@ import { action, publicAction } from "../functions";
 import { getRuntimeEnv } from "../runtimeEnv";
 import { workspaceStorage } from "../workspaceStorage";
 import { siteHostnameSchema } from "../../shared/site";
-import { researchSite } from "../agentsApi/siteResearchSources";
+import { researchSite } from "../tasks/siteResearchSources";
 import { createFirecrawlClient } from "./lib/firecrawl";
 import { downloadFirecrawlScreenshot } from "./lib/firecrawlScreenshot";
 import { diagnosticMessage } from "./lib/redaction";

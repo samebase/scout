@@ -78,13 +78,13 @@ async function setup() {
         .unique(),
     );
     if (!check) throw new Error("Expected an initial check");
-    await backend.mutation(internal.agentsApi.requestChecks.start, {
+    await backend.mutation(internal.tasks.requestChecks.start, {
       checkId: check._id,
       startedAt: Date.now(),
       request: "{}",
       evidence: null,
     });
-    await backend.mutation(internal.agentsApi.requestChecks.finish, {
+    await backend.mutation(internal.tasks.requestChecks.finish, {
       checkId: check._id,
       state: {
         kind: "completed",
@@ -97,7 +97,7 @@ async function setup() {
         },
       },
     });
-    await backend.mutation(internal.agentsApi.sessions.update, {
+    await backend.mutation(internal.tasks.sessions.update, {
       sessionId,
       providerId: "provider-review",
       state: { kind: "running" },
@@ -450,7 +450,7 @@ test("review site assignment preserves the subject across navigation and owner c
     t.backend.mutation(internal.scout.reviewSites.identify, { sessionId, site });
   expect(await identify(" SAMEBASE.COM ")).toEqual({ primarySite: "samebase.com" });
   expect(await identify("github.com")).toEqual({ primarySite: "samebase.com" });
-  await t.backend.mutation(internal.agentsApi.sessions.update, {
+  await t.backend.mutation(internal.tasks.sessions.update, {
     sessionId,
     browser: {
       providerSessionId: "browser",
@@ -490,7 +490,7 @@ test("review site assignment preserves the subject across navigation and owner c
   await expect(
     t.member.mutation(api.scout.reviewSites.set, { threadId: game.threadId, site: "game.test" }),
   ).rejects.toThrow("Review not found");
-  await t.backend.mutation(internal.agentsApi.sessions.update, {
+  await t.backend.mutation(internal.tasks.sessions.update, {
     sessionId,
     state: { kind: "stopped" },
   });
@@ -506,7 +506,7 @@ test.each([
   async (state) => {
     const t = await setup();
     const sessionId = await t.review();
-    await t.backend.mutation(internal.agentsApi.sessions.update, { sessionId, state });
+    await t.backend.mutation(internal.tasks.sessions.update, { sessionId, state });
     const args = {
       threadId: sessionId,
       paginationOpts: { numItems: 10, cursor: null },
@@ -520,7 +520,7 @@ test.each([
       },
     ]);
 
-    await t.backend.mutation(internal.agentsApi.sessions.saveItems, {
+    await t.backend.mutation(internal.tasks.sessions.saveItems, {
       sessionId,
       items: [
         {
@@ -550,7 +550,7 @@ test("managed Reviews share the feed and expose only conversation text and watch
   const oldReview = await t.chat({ kind: "review" }, "public");
   vi.advanceTimersByTime(1);
   const sessionId = await t.review();
-  await t.backend.mutation(internal.agentsApi.sessions.saveItems, {
+  await t.backend.mutation(internal.tasks.sessions.saveItems, {
     sessionId,
     items: [
       {
@@ -606,7 +606,7 @@ test("managed Reviews share the feed and expose only conversation text and watch
     paginationOpts: { numItems: 1, cursor: feed.continueCursor },
   });
   expect(next.page.map((item) => item.threadId)).toEqual([oldReview.threadId]);
-  await t.backend.mutation(internal.agentsApi.browsers.open, {
+  await t.backend.mutation(internal.tasks.browsers.open, {
     sessionId,
     browser: {
       providerSessionId: "private-provider-id",
@@ -620,7 +620,7 @@ test("managed Reviews share the feed and expose only conversation text and watch
   expect(view).toMatchObject({
     isOwner: false,
     canControl: false,
-    runtime: { kind: "agents_api", sessionId },
+    runtime: { kind: "task", sessionId },
   });
   expect(JSON.stringify(view)).not.toMatch(/private|cdp|inbox|profile/);
   const browser = view?.sessions[0];
@@ -629,18 +629,18 @@ test("managed Reviews share the feed and expose only conversation text and watch
     await t.backend.query(api.scout.activity.liveView, { sessionId: browser.sessionId }),
   ).toEqual({ url: "https://liveview.firecrawl.dev/watch-only" });
   expect(
-    await t.backend.query(internal.agentsApi.browsers.replayData, { sessionId: browser.sessionId }),
+    await t.backend.query(internal.tasks.browsers.replayData, { sessionId: browser.sessionId }),
   ).not.toBeNull();
-  await expect(t.other.query(api.agentsApi.sessions.controls, { sessionId })).rejects.toThrow(
+  await expect(t.other.query(api.tasks.sessions.controls, { sessionId })).rejects.toThrow(
     "Session not found",
   );
   await expect(
-    t.other.mutation(api.agentsApi.sessions.send, { sessionId, message: "Take over" }),
+    t.other.mutation(api.tasks.sessions.send, { sessionId, message: "Take over" }),
   ).rejects.toThrow("Session not found");
   await expect(
-    t.other.mutation(api.agentsApi.sessions.resume, { sessionId, callId: "call", turnId: "turn" }),
+    t.other.mutation(api.tasks.sessions.resume, { sessionId, callId: "call", turnId: "turn" }),
   ).rejects.toThrow("Session not found");
-  await expect(t.other.mutation(api.agentsApi.sessions.stop, { sessionId })).rejects.toThrow(
+  await expect(t.other.mutation(api.tasks.sessions.stop, { sessionId })).rejects.toThrow(
     "Session not found",
   );
   await t.member.mutation(api.scout.chats.setVisibility, {
@@ -651,7 +651,7 @@ test("managed Reviews share the feed and expose only conversation text and watch
     await t.backend.query(api.scout.activity.liveView, { sessionId: browser.sessionId }),
   ).toBeNull();
   expect(
-    await t.backend.query(internal.agentsApi.browsers.replayData, { sessionId: browser.sessionId }),
+    await t.backend.query(internal.tasks.browsers.replayData, { sessionId: browser.sessionId }),
   ).toBeNull();
   expect(
     await t.backend.query(api.scout.activity.messages, {
@@ -660,19 +660,19 @@ test("managed Reviews share the feed and expose only conversation text and watch
     }),
   ).toMatchObject({ page: [] });
   expect(
-    await t.member.query(internal.agentsApi.browsers.replayData, { sessionId: browser.sessionId }),
+    await t.member.query(internal.tasks.browsers.replayData, { sessionId: browser.sessionId }),
   ).not.toBeNull();
 });
 
 test("Review owners can resume handoffs, stop, and send follow-ups while Lab remains private", async () => {
   const t = await setup();
   const sessionId = await t.review("private");
-  await t.backend.mutation(internal.agentsApi.sessions.update, {
+  await t.backend.mutation(internal.tasks.sessions.update, {
     sessionId,
     state: { kind: "running" },
     providerId: "provider",
   });
-  await t.backend.mutation(internal.agentsApi.browsers.open, {
+  await t.backend.mutation(internal.tasks.browsers.open, {
     sessionId,
     browser: {
       providerSessionId: "provider-browser",
@@ -682,18 +682,18 @@ test("Review owners can resume handoffs, stop, and send follow-ups while Lab rem
       currentUrl: null,
     },
   });
-  await t.backend.mutation(internal.agentsApi.sessions.enterHandoff, {
+  await t.backend.mutation(internal.tasks.sessions.enterHandoff, {
     sessionId,
     message: "Complete verification",
     callId: "handoff",
     turnId: "turn",
   });
-  const controls = await t.member.query(api.agentsApi.sessions.controls, { sessionId });
+  const controls = await t.member.query(api.tasks.sessions.controls, { sessionId });
   expect(controls).toMatchObject({
     state: { kind: "waiting" },
     interactiveLiveViewUrl: "https://liveview.firecrawl.dev/private-control",
   });
-  const delivery = await t.backend.query(internal.agentsApi.sessions.handoffNotification, {
+  const delivery = await t.backend.query(internal.tasks.sessions.handoffNotification, {
     sessionId,
     callId: "handoff",
   });
@@ -704,7 +704,7 @@ test("Review owners can resume handoffs, stop, and send follow-ups while Lab rem
     async () => new Response(JSON.stringify({ message_id: "email", thread_id: "email-thread" })),
   );
   vi.stubGlobal("fetch", sendMail);
-  await t.backend.action(internal.agentsApi.handoff.notify, { sessionId, callId: "handoff" });
+  await t.backend.action(internal.tasks.handoff.notify, { sessionId, callId: "handoff" });
   expect(sendMail).toHaveBeenCalledWith(
     expect.any(String),
     expect.objectContaining({
@@ -717,36 +717,36 @@ test("Review owners can resume handoffs, stop, and send follow-ups while Lab rem
       body: expect.stringContaining('"to":["player@example.test"]'),
     }),
   );
-  await t.member.mutation(api.agentsApi.sessions.resume, {
+  await t.member.mutation(api.tasks.sessions.resume, {
     sessionId,
     callId: "handoff",
     turnId: "turn",
   });
-  expect(await t.member.query(api.agentsApi.sessions.controls, { sessionId })).toMatchObject({
+  expect(await t.member.query(api.tasks.sessions.controls, { sessionId })).toMatchObject({
     state: { kind: "checking" },
     canSend: false,
     canStop: true,
     interactiveLiveViewUrl: null,
   });
   expect(
-    await t.backend.query(internal.agentsApi.sessions.handoffNotification, {
+    await t.backend.query(internal.tasks.sessions.handoffNotification, {
       sessionId,
       callId: "handoff",
     }),
   ).toBeNull();
-  await t.backend.action(internal.agentsApi.handoff.notify, { sessionId, callId: "handoff" });
+  await t.backend.action(internal.tasks.handoff.notify, { sessionId, callId: "handoff" });
   expect(sendMail).toHaveBeenCalledTimes(1);
-  await t.member.mutation(api.agentsApi.sessions.stop, { sessionId });
+  await t.member.mutation(api.tasks.sessions.stop, { sessionId });
   expect(await t.member.query(api.scout.activity.get, { threadId: sessionId })).toMatchObject({
     status: "stopping",
   });
-  await t.backend.mutation(internal.agentsApi.sessions.update, { sessionId, active: false });
-  await t.backend.mutation(internal.agentsApi.browsers.close, {
+  await t.backend.mutation(internal.tasks.sessions.update, { sessionId, active: false });
+  await t.backend.mutation(internal.tasks.browsers.close, {
     providerSessionId: "provider-browser",
     providerDurationMs: null,
     creditsBilled: null,
   });
-  await t.member.mutation(api.agentsApi.sessions.send, {
+  await t.member.mutation(api.tasks.sessions.send, {
     sessionId,
     message: "Check another page",
   });
@@ -754,7 +754,7 @@ test("Review owners can resume handoffs, stop, and send follow-ups while Lab rem
     status: "running",
   });
   await expect(
-    t.member.query(api.agentsApi.sessions.listItems, {
+    t.member.query(api.tasks.sessions.listItems, {
       sessionId,
       paginationOpts: { numItems: 20, cursor: null },
     }),
@@ -822,7 +822,7 @@ test("paginates reviews by site without leaking private conversations or includi
   await t.backend.run((ctx) => ctx.db.patch(first.chatId, { visibility: "private" }));
   expect(await t.backend.query(api.scout.activity.get, { threadId: first.threadId })).toBeNull();
   expect(await t.member.query(api.scout.activity.get, { threadId: first.threadId })).toMatchObject({
-    canControl: true,
+    canControl: false,
   });
 });
 
@@ -841,14 +841,14 @@ test("Review starts an Agents API session for a member without Lab permission", 
     ctx.db.normalizeId("agentsApiSessions", threadId),
   );
   if (!sessionId) throw new Error("Expected a managed session");
-  expect(await t.backend.query(internal.agentsApi.sessions.runtime, { sessionId })).toMatchObject({
+  expect(await t.backend.query(internal.tasks.sessions.runtime, { sessionId })).toMatchObject({
     purpose: { kind: "review" },
     session: { model: "gpt-5.6-luna", active: true },
   });
-  await expect(t.member.query(api.agentsApi.sessions.get, { sessionId })).rejects.toThrow(
+  await expect(t.member.query(api.tasks.sessions.get, { sessionId })).rejects.toThrow(
     "Not authorized",
   );
-  expect(await t.member.query(api.agentsApi.sessions.controls, { sessionId })).toMatchObject({
+  expect(await t.member.query(api.tasks.sessions.controls, { sessionId })).toMatchObject({
     canStop: true,
     canSend: false,
   });
@@ -865,9 +865,9 @@ test("Review starts an Agents API session for a member without Lab permission", 
       prompt: "Play with me",
       visibility: "private",
     }),
-  ).rejects.toThrow("busy");
+  ).rejects.toThrow("already working");
   await t.backend.run((ctx) => ctx.db.patch(t.memberId, { isApproved: false }));
-  await expect(t.backend.query(internal.agentsApi.sessions.runtime, { sessionId })).rejects.toThrow(
+  await expect(t.backend.query(internal.tasks.sessions.runtime, { sessionId })).rejects.toThrow(
     "Not authorized",
   );
   await expect(
@@ -880,35 +880,12 @@ test("Review starts an Agents API session for a member without Lab permission", 
   ).rejects.toThrow("Not authorized");
 });
 
-test("managed Reviews stay in the Agents inspector without breaking the Convex Lab list", async () => {
-  const t = await setup();
-  const admin = t.backend.withIdentity({ subject: t.adminId });
-  const existing = await t.chat({ kind: "general" }, "private", t.adminId);
-  await admin.mutation(api.scout.chats.startProductChat, {
-    kind: "review",
-    scoutId: t.scoutId,
-    prompt: "Try a site",
-    visibility: "private",
-  });
-  const chats = await admin.query(api.scout.chats.listThreads, {
-    paginationOpts: { numItems: 10, cursor: null },
-  });
-  expect(chats.page.map(({ threadId }) => threadId)).toEqual([existing.threadId]);
-  expect(
-    (
-      await admin.query(api.agentsApi.sessions.list, {
-        paginationOpts: { numItems: 10, cursor: null },
-      })
-    ).page,
-  ).toHaveLength(1);
-});
-
 test.each(["approved", "rejected"] as const)(
   "uses only the %s initial decision for public admission, even when Resume disagrees",
   async (initialDecision) => {
     const t = await setup();
     const sessionId = await t.review();
-    await t.backend.mutation(internal.agentsApi.sessions.saveItems, {
+    await t.backend.mutation(internal.tasks.sessions.saveItems, {
       sessionId,
       items: [
         {
@@ -1002,79 +979,6 @@ test.each(["approved", "rejected"] as const)(
     }
   },
 );
-
-test("members can start and continue Play, but cannot run Lab chats or another player's chat", async () => {
-  const t = await setup();
-  const { threadId } = await t.member.mutation(api.scout.chats.startProductChat, {
-    kind: "play",
-    scoutId: t.scoutId,
-    prompt: "Play one game with me.",
-    visibility: "public",
-  });
-  const turn = await t.backend.run((ctx) => ctx.db.query("scoutTurns").first());
-  if (!turn) throw new Error("Expected the first turn");
-  expect(turn.state.kind).toBe("pending");
-  expect(turn).toMatchObject({ model: "openai/gpt-5.6-luna", reasoningEffort: "max" });
-  expect(await t.backend.query(api.scout.activity.get, { threadId })).toMatchObject({
-    status: "running",
-    purpose: { kind: "play", step: null },
-    visibility: "public",
-  });
-  expect(await t.backend.query(api.scout.activity.players)).toEqual([
-    {
-      _id: t.scoutId,
-      displayName: "Play Scout",
-      status: "active",
-      busy: true,
-      availability: "working",
-    },
-  ]);
-  await expect(
-    t.other.mutation(api.scout.chats.startProductChat, {
-      kind: "play",
-      scoutId: t.scoutId,
-      prompt: "Play with me too",
-      visibility: "public",
-    }),
-  ).rejects.toThrow("busy");
-  expect(await t.backend.run((ctx) => ctx.db.query("scoutChats").collect())).toHaveLength(1);
-  await expect(t.other.mutation(api.scout.chats.stop, { threadId })).rejects.toThrow(
-    "Thread not found",
-  );
-  await expect(
-    t.other.mutation(api.scout.chats.sendMessage, { threadId, prompt: "Take over" }),
-  ).rejects.toThrow("Thread not found");
-  await t.backend.mutation(internal.scout.turns.complete, {
-    promptMessageId: turn.promptMessageId,
-    usage: {},
-  });
-  await t.member.mutation(api.scout.chats.sendMessage, { threadId, prompt: "Another game?" });
-  expect(await t.member.query(api.scout.chats.getScoutActivity, { threadId })).toMatchObject({
-    kind: "running",
-  });
-  const general = await t.chat({ kind: "general" }, "private");
-  await expect(
-    t.member.mutation(api.scout.chats.sendMessage, {
-      threadId: general.threadId,
-      prompt: "Run Lab tools",
-    }),
-  ).rejects.toThrow("Not authorized");
-  await t.backend.run((ctx) => ctx.db.patch(t.memberId, { isApproved: false }));
-  expect(await t.member.query(api.scout.activity.get, { threadId })).toMatchObject({
-    canControl: false,
-  });
-  await expect(
-    t.member.mutation(api.scout.chats.sendMessage, { threadId, prompt: "Continue" }),
-  ).rejects.toThrow("Not authorized");
-  await expect(
-    t.member.mutation(api.scout.chats.startProductChat, {
-      kind: "play",
-      scoutId: t.scoutId,
-      prompt: "New game",
-      visibility: "private",
-    }),
-  ).rejects.toThrow("Not authorized");
-});
 
 test("public messages expose useful tools and conversation text without system messages or reasoning", async () => {
   const t = await setup();
@@ -1195,7 +1099,7 @@ test("only owners can publish and they can make a game private even after approv
 test("Agents tools pair by session and call ID across pages, including actual error results", async () => {
   const t = await setup();
   const sessionId = await t.review();
-  await t.backend.mutation(internal.agentsApi.sessions.saveItems, {
+  await t.backend.mutation(internal.tasks.sessions.saveItems, {
     sessionId,
     items: [
       {
@@ -1275,13 +1179,13 @@ test("Agents tools pair by session and call ID across pages, including actual er
     /hidden reasoning|Not the persisted result|providerItemId/,
   );
   const admin = t.backend.withIdentity({ subject: `${t.adminId}|session` });
-  const adminFirst = await admin.query(api.agentsApi.sessions.listItems, {
+  const adminFirst = await admin.query(api.tasks.sessions.listItems, {
     sessionId,
     paginationOpts: { cursor: null, numItems: 50 },
   });
   expect(adminFirst.page.some((item) => item.kind === "function_call_output")).toBe(false);
   expect(adminFirst.page.every((item) => item.tool === null)).toBe(true);
-  const adminSecond = await admin.query(api.agentsApi.sessions.listItems, {
+  const adminSecond = await admin.query(api.tasks.sessions.listItems, {
     sessionId,
     paginationOpts: { cursor: adminFirst.continueCursor, numItems: 50 },
   });
@@ -1290,7 +1194,7 @@ test("Agents tools pair by session and call ID across pages, including actual er
     error: "Save button is disabled",
   });
   await expect(
-    t.member.query(api.agentsApi.sessions.listItems, {
+    t.member.query(api.tasks.sessions.listItems, {
       sessionId,
       paginationOpts: { cursor: null, numItems: 10 },
     }),
@@ -1300,7 +1204,7 @@ test("Agents tools pair by session and call ID across pages, including actual er
 test("call emission completion does not mean tool success and stopped sessions interrupt unmatched calls", async () => {
   const t = await setup();
   const sessionId = await t.review("private");
-  await t.backend.mutation(internal.agentsApi.sessions.saveItems, {
+  await t.backend.mutation(internal.tasks.sessions.saveItems, {
     sessionId,
     items: [
       {
@@ -1325,7 +1229,7 @@ test("call emission completion does not mean tool success and stopped sessions i
   });
   expect((await t.backend.query(api.scout.activity.messages, args)).page).toEqual([]);
   expect((await t.other.query(api.scout.activity.messages, args)).page).toEqual([]);
-  await t.backend.mutation(internal.agentsApi.sessions.update, {
+  await t.backend.mutation(internal.tasks.sessions.update, {
     sessionId,
     state: { kind: "stopped" },
   });
@@ -1503,7 +1407,7 @@ test("screenshot references must be ready and belong to the current task", async
       },
     });
   });
-  await t.backend.mutation(internal.agentsApi.sessions.saveItems, {
+  await t.backend.mutation(internal.tasks.sessions.saveItems, {
     sessionId,
     items: [
       {
@@ -1545,7 +1449,7 @@ test("screenshot references must be ready and belong to the current task", async
 test("hosted MCP, shell and web search tools expose their own results without provider internals", async () => {
   const t = await setup();
   const sessionId = await t.review();
-  await t.backend.mutation(internal.agentsApi.sessions.saveItems, {
+  await t.backend.mutation(internal.tasks.sessions.saveItems, {
     sessionId,
     items: [
       {
@@ -1622,7 +1526,7 @@ test("hosted MCP, shell and web search tools expose their own results without pr
 test("malformed provider tool data fails closed after chat authorization", async () => {
   const t = await setup();
   const sessionId = await t.review("private");
-  await t.backend.mutation(internal.agentsApi.sessions.saveItems, {
+  await t.backend.mutation(internal.tasks.sessions.saveItems, {
     sessionId,
     items: [
       {

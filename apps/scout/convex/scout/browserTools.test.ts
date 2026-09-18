@@ -11,7 +11,7 @@ import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { createBrowserHarness, selectAgentMailTools } from "./browserTools";
 import type { BrowserScreenshot, PlaywrightBrowser } from "./playwrightBrowser";
-import { MAX_SCREENSHOT_NOTE_LENGTH } from "../agentsApi/screenshotModel";
+import { MAX_SCREENSHOT_NOTE_LENGTH } from "../tasks/screenshotModel";
 
 const firstTab = {
   tabId: "t1",

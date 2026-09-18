@@ -5,7 +5,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { omitNullish } from "../../shared/omitNullish";
 import { browserTargetSchema } from "./browserTarget";
 import { connectPlaywrightBrowser } from "./playwrightBrowser";
-import { MAX_SCREENSHOT_BYTES } from "../agentsApi/screenshotModel";
+import { MAX_SCREENSHOT_BYTES } from "../tasks/screenshotModel";
 
 function pngHeader(width = 2560, height = 1600, byteLength = 33) {
   const bytes = Buffer.alloc(byteLength);

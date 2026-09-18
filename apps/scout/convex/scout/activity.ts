@@ -1,4 +1,4 @@
-import { listMessages } from "@convex-dev/agent";
+import { getThreadMetadata, listMessages } from "@convex-dev/agent";
 import { paginationOptsValidator, paginationResultValidator } from "convex/server";
 import { v } from "convex/values";
 import { components } from "../_generated/api";
@@ -12,10 +12,9 @@ import { canAccess } from "../../shared/accessModel";
 import { chatPermission, visibleChat } from "./chatAccess";
 import { availabilityValidator, scoutReservation } from "./availability";
 import type { ViewerAccess } from "../access";
-import { getInitialCheck } from "../agentsApi/requestChecks";
-import { walkthroughContent } from "../agentsApi/screenshotModel";
-import { chatPurposeValidator, chatVisibilityValidator, chatRuntimeValidator } from "./chatModel";
-import { scoutAgent } from "./agent";
+import { getInitialCheck } from "../tasks/requestChecks";
+import { walkthroughContent } from "../tasks/screenshotModel";
+import { chatPurposeValidator, chatVisibilityValidator } from "./chatModel";
 import { MAX_BROWSER_SESSIONS_PER_THREAD } from "./browserSessions";
 import { requireFirecrawlLiveViewUrl } from "./lib/firecrawlLiveView";
 import {
@@ -81,7 +80,6 @@ export const currentActivityValidator = v.union(
         to: v.literal("/agents"),
         search: v.object({ session: v.id("agentsApiSessions") }),
       }),
-      v.object({ to: v.literal("/chats"), search: v.object({ thread: v.string() }) }),
       v.object({ to: v.literal("/review"), search: v.object({ thread: v.string() }) }),
       v.object({ to: v.literal("/play"), search: v.object({ thread: v.string() }) }),
     ),
@@ -131,18 +129,12 @@ export async function currentScoutActivity(
     };
   }
 
-  // Lab conversations only allow their owner to read the transcript.
-  if (!visible || !chat) return { kind: "private" };
+  if (!visible || !chat || chat.purpose.kind === "general") return { kind: "private" };
   return {
     kind: "visible",
     activity: await summary(ctx, chat),
     destination: {
-      to:
-        chat.purpose.kind === "general"
-          ? "/chats"
-          : chat.purpose.kind === "play"
-            ? "/play"
-            : "/review",
+      to: chat.purpose.kind === "play" ? "/play" : "/review",
       search: { thread: threadId },
     },
   };
@@ -242,7 +234,7 @@ async function summary(ctx: QueryCtx, chat: Doc<"scoutChats">) {
     };
   }
   const [thread, scout, status, session] = await Promise.all([
-    scoutAgent.getThreadMetadata(ctx, { threadId: chat.threadId }),
+    getThreadMetadata(ctx, components.agent, { threadId: chat.threadId }),
     ctx.db.get(chat.scoutId),
     activityStatus(ctx, chat.threadId),
     ctx.db
@@ -353,7 +345,10 @@ export const get = publicQuery({
       isOwner: v.boolean(),
       canControl: v.boolean(),
       sessions: v.array(sessionValidator),
-      runtime: chatRuntimeValidator,
+      runtime: v.union(
+        v.object({ kind: v.literal("task"), sessionId: v.id("agentsApiSessions") }),
+        v.object({ kind: v.literal("convex_agent") }),
+      ),
       hasWalkthrough: v.boolean(),
     }),
     v.null(),
@@ -389,12 +384,13 @@ export const get = publicQuery({
       ...(await summary(ctx, chat)),
       isOwner,
       canControl:
+        managedId !== null &&
         ctx.viewer.kind === "account" &&
         isOwner &&
         canAccess(chatPermission(chat.purpose), ctx.viewer.accessKeys),
       sessions,
       runtime: managedId
-        ? { kind: "agents_api" as const, sessionId: managedId }
+        ? { kind: "task" as const, sessionId: managedId }
         : { kind: "convex_agent" as const },
       hasWalkthrough: managedId ? Boolean((await ctx.db.get(managedId))?.walkthrough) : false,
     };

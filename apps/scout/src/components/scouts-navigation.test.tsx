@@ -74,6 +74,8 @@ vi.mock("convex/react", () => ({
 
 afterEach(() => {
   remote.admin = true;
+  remote.scout.status = "active";
+  remote.scout.availability = "available";
   cleanup();
   vi.clearAllMocks();
   window.localStorage.clear();
@@ -143,7 +145,7 @@ test("members can read Scout accounts but cannot open management panels, includi
   );
   expect(screen.queryByRole("button", { name: "Register scout" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Add account" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "New chat" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "New task" })).toBeNull();
   expect(screen.queryByRole("heading", { name: "Runtime resources" })).toBeNull();
   expect(screen.queryByRole("textbox")).toBeNull();
   await act(() =>
@@ -161,6 +163,33 @@ test("members can read Scout accounts but cannot open management panels, includi
   expect(remote.action).not.toHaveBeenCalled();
   expect(remote.mutation).not.toHaveBeenCalled();
 });
+
+test("a Scout's new task opens the shared composer with that Scout selected", async () => {
+  await openPage("/scouts/conrad");
+  expect((await screen.findByRole("link", { name: "New task" })).getAttribute("href")).toBe(
+    "/agents?scout=scout-1",
+  );
+  expect(remote.mutation).not.toHaveBeenCalled();
+});
+
+test.each([
+  { status: "disabled", availability: "available" },
+  { status: "active", availability: "working" },
+])(
+  "a $status Scout with $availability availability cannot start a task",
+  async ({ status, availability }) => {
+    remote.scout.status = status;
+    remote.scout.availability = availability;
+    await openPage("/scouts/conrad");
+
+    expect(await screen.findByRole("button", { name: "New task" })).toHaveProperty(
+      "disabled",
+      true,
+    );
+    expect(screen.queryByRole("link", { name: "New task" })).toBeNull();
+    expect(remote.mutation).not.toHaveBeenCalled();
+  },
+);
 
 test.each([
   { path: "/scouts", button: "Register scout", field: "First name", view: "register" },

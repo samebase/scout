@@ -8,15 +8,13 @@ import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
 import type { api } from "../../convex/_generated/api";
 import { TaskWalkthrough } from "./task-walkthrough";
 
-type Result = FunctionReturnType<typeof api.agentsApi.walkthrough.get>;
+type Result = FunctionReturnType<typeof api.tasks.walkthrough.get>;
 type Capture = NonNullable<Result>["captures"][number];
-type ImageResult = FunctionReturnType<typeof api.agentsApi.screenshots.imageUrl>;
+type ImageResult = FunctionReturnType<typeof api.tasks.screenshots.imageUrl>;
 // @ts-expect-error The mocked Convex transport uses this stable string in place of a database-generated session ID.
-const firstSession: FunctionArgs<typeof api.agentsApi.walkthrough.get>["sessionId"] =
-  "session-first";
+const firstSession: FunctionArgs<typeof api.tasks.walkthrough.get>["sessionId"] = "session-first";
 // @ts-expect-error The mocked Convex transport uses this stable string in place of a database-generated session ID.
-const secondSession: FunctionArgs<typeof api.agentsApi.walkthrough.get>["sessionId"] =
-  "session-second";
+const secondSession: FunctionArgs<typeof api.tasks.walkthrough.get>["sessionId"] = "session-second";
 // @ts-expect-error The mocked Convex transport uses this stable string in place of a database-generated screenshot ID.
 const firstId: Capture["id"] = "capture-first";
 // @ts-expect-error The mocked Convex transport uses this stable string in place of a database-generated screenshot ID.
@@ -29,15 +27,13 @@ const remote = vi.hoisted(() => ({
   listeners: new Set<() => void>(),
   revision: 0,
   imageUrl:
-    vi.fn<
-      (args: FunctionArgs<typeof api.agentsApi.screenshots.imageUrl>) => Promise<ImageResult>
-    >(),
+    vi.fn<(args: FunctionArgs<typeof api.tasks.screenshots.imageUrl>) => Promise<ImageResult>>(),
 }));
 
 vi.mock("convex/react", () => ({
   useQuery: (
     _reference: unknown,
-    { sessionId }: FunctionArgs<typeof api.agentsApi.walkthrough.get>,
+    { sessionId }: FunctionArgs<typeof api.tasks.walkthrough.get>,
   ) => {
     useSyncExternalStore(
       (listener) => {

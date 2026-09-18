@@ -12,13 +12,11 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AccountDeletionRouteImport } from './routes/account-deletion'
 import { Route as AgentsRouteImport } from './routes/agents'
-import { Route as ChatsRouteImport } from './routes/chats'
 import { Route as MembersRouteImport } from './routes/members'
 import { Route as PlayRouteImport } from './routes/play'
 import { Route as ReviewRouteImport } from './routes/review'
 import { Route as ScoutsRouteImport } from './routes/scouts'
 import { Route as SettingsRouteImport } from './routes/settings'
-import { Route as HandoffHandoffIdRouteImport } from './routes/handoff.$handoffId'
 import { Route as ScoutsIndexRouteImport } from './routes/scouts.index'
 import { Route as ScoutsSlugRouteImport } from './routes/scouts.$slug'
 import { Route as SitesSiteRouteImport } from './routes/sites.$site'
@@ -36,11 +34,6 @@ const AccountDeletionRoute = AccountDeletionRouteImport.update({
 const AgentsRoute = AgentsRouteImport.update({
   id: '/agents',
   path: '/agents',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ChatsRoute = ChatsRouteImport.update({
-  id: '/chats',
-  path: '/chats',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MembersRoute = MembersRouteImport.update({
@@ -68,11 +61,6 @@ const SettingsRoute = SettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
-const HandoffHandoffIdRoute = HandoffHandoffIdRouteImport.update({
-  id: '/handoff/$handoffId',
-  path: '/handoff/$handoffId',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ScoutsIndexRoute = ScoutsIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -93,13 +81,11 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/account-deletion': typeof AccountDeletionRoute
   '/agents': typeof AgentsRoute
-  '/chats': typeof ChatsRoute
   '/members': typeof MembersRoute
   '/play': typeof PlayRoute
   '/review': typeof ReviewRoute
   '/scouts': typeof ScoutsRouteWithChildren
   '/settings': typeof SettingsRoute
-  '/handoff/$handoffId': typeof HandoffHandoffIdRoute
   '/scouts/$slug': typeof ScoutsSlugRoute
   '/sites/$site': typeof SitesSiteRoute
   '/scouts/': typeof ScoutsIndexRoute
@@ -108,12 +94,10 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/account-deletion': typeof AccountDeletionRoute
   '/agents': typeof AgentsRoute
-  '/chats': typeof ChatsRoute
   '/members': typeof MembersRoute
   '/play': typeof PlayRoute
   '/review': typeof ReviewRoute
   '/settings': typeof SettingsRoute
-  '/handoff/$handoffId': typeof HandoffHandoffIdRoute
   '/scouts/$slug': typeof ScoutsSlugRoute
   '/sites/$site': typeof SitesSiteRoute
   '/scouts': typeof ScoutsIndexRoute
@@ -123,13 +107,11 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/account-deletion': typeof AccountDeletionRoute
   '/agents': typeof AgentsRoute
-  '/chats': typeof ChatsRoute
   '/members': typeof MembersRoute
   '/play': typeof PlayRoute
   '/review': typeof ReviewRoute
   '/scouts': typeof ScoutsRouteWithChildren
   '/settings': typeof SettingsRoute
-  '/handoff/$handoffId': typeof HandoffHandoffIdRoute
   '/scouts/$slug': typeof ScoutsSlugRoute
   '/sites/$site': typeof SitesSiteRoute
   '/scouts/': typeof ScoutsIndexRoute
@@ -140,13 +122,11 @@ export interface FileRouteTypes {
     | '/'
     | '/account-deletion'
     | '/agents'
-    | '/chats'
     | '/members'
     | '/play'
     | '/review'
     | '/scouts'
     | '/settings'
-    | '/handoff/$handoffId'
     | '/scouts/$slug'
     | '/sites/$site'
     | '/scouts/'
@@ -155,12 +135,10 @@ export interface FileRouteTypes {
     | '/'
     | '/account-deletion'
     | '/agents'
-    | '/chats'
     | '/members'
     | '/play'
     | '/review'
     | '/settings'
-    | '/handoff/$handoffId'
     | '/scouts/$slug'
     | '/sites/$site'
     | '/scouts'
@@ -169,13 +147,11 @@ export interface FileRouteTypes {
     | '/'
     | '/account-deletion'
     | '/agents'
-    | '/chats'
     | '/members'
     | '/play'
     | '/review'
     | '/scouts'
     | '/settings'
-    | '/handoff/$handoffId'
     | '/scouts/$slug'
     | '/sites/$site'
     | '/scouts/'
@@ -185,13 +161,11 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AccountDeletionRoute: typeof AccountDeletionRoute
   AgentsRoute: typeof AgentsRoute
-  ChatsRoute: typeof ChatsRoute
   MembersRoute: typeof MembersRoute
   PlayRoute: typeof PlayRoute
   ReviewRoute: typeof ReviewRoute
   ScoutsRoute: typeof ScoutsRouteWithChildren
   SettingsRoute: typeof SettingsRoute
-  HandoffHandoffIdRoute: typeof HandoffHandoffIdRoute
   SitesSiteRoute: typeof SitesSiteRoute
 }
 
@@ -216,13 +190,6 @@ declare module '@tanstack/react-router' {
       path: '/agents'
       fullPath: '/agents'
       preLoaderRoute: typeof AgentsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/chats': {
-      id: '/chats'
-      path: '/chats'
-      fullPath: '/chats'
-      preLoaderRoute: typeof ChatsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/members': {
@@ -258,13 +225,6 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/handoff/$handoffId': {
-      id: '/handoff/$handoffId'
-      path: '/handoff/$handoffId'
-      fullPath: '/handoff/$handoffId'
-      preLoaderRoute: typeof HandoffHandoffIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/scouts/': {
@@ -308,13 +268,11 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AccountDeletionRoute: AccountDeletionRoute,
   AgentsRoute: AgentsRoute,
-  ChatsRoute: ChatsRoute,
   MembersRoute: MembersRoute,
   PlayRoute: PlayRoute,
   ReviewRoute: ReviewRoute,
   ScoutsRoute: ScoutsRouteWithChildren,
   SettingsRoute: SettingsRoute,
-  HandoffHandoffIdRoute: HandoffHandoffIdRoute,
   SitesSiteRoute: SitesSiteRoute,
 }
 export const routeTree = rootRouteImport
