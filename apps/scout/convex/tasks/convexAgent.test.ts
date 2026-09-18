@@ -162,6 +162,47 @@ async function setup() {
   };
 }
 
+it("does not treat compaction usage as the current generation's usage", async () => {
+  vi.stubEnv("CREDITS_ENABLED", "true");
+  const task = await setup();
+  const session = await task.session();
+  if (!session) throw new Error("Task session is missing");
+  await task.backend.mutation(internal.credits.grantOnSignIn, { userId: session.userId });
+  const reservationId = await task.backend.mutation(internal.credits.reserveSessionAi, {
+    sessionId: task.sessionId,
+    sourceKey: "workflow:compaction",
+  });
+  await task.backend.run(async (ctx) => {
+    await ctx.db.patch(task.sessionId, {
+      creditAdmissionReservationId: reservationId,
+      creditModelWorkStarted: true,
+      creditAdmissionTurnUsageRecorded: false,
+    });
+  });
+  const usage = {
+    inputTokens: 100,
+    outputTokens: 20,
+    cachedInputTokens: 80,
+    reasoningTokens: 0,
+    costUsd: 0.001,
+  };
+  await task.backend.mutation(internal.tasks.convexAgentRecords.saveContext, {
+    sessionId: task.sessionId,
+    summary: "Earlier work",
+    coveredThrough: { messageId: "earlier", order: 1, stepOrder: 0 },
+    previousBoundary: null,
+    usage,
+  });
+  expect((await task.session())?.creditAdmissionTurnUsageRecorded).toBe(false);
+
+  await task.backend.mutation(internal.tasks.convexAgentRecords.recordUsage, {
+    sessionId: task.sessionId,
+    reservationId,
+    usage,
+  });
+  expect((await task.session())?.creditAdmissionTurnUsageRecorded).toBe(true);
+});
+
 it("runs one model step, executes the shared tool separately, and projects stable common items", async () => {
   const task = await setup();
   provider.stream.mockResolvedValueOnce(

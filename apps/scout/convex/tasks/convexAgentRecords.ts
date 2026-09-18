@@ -52,10 +52,19 @@ async function appendSessionUsage(
 }
 
 export const recordUsage = internalMutation({
-  args: { sessionId: v.id("agentsApiSessions"), usage: v.union(convexUsage, v.null()) },
+  args: {
+    sessionId: v.id("agentsApiSessions"),
+    reservationId: v.union(v.id("creditReservations"), v.null()),
+    usage: v.union(convexUsage, v.null()),
+  },
   returns: v.null(),
   handler: async (ctx, args) => {
     await appendSessionUsage(ctx, args.sessionId, args.usage);
+    if (args.usage && args.reservationId) {
+      const session = await ctx.db.get(args.sessionId);
+      if (session?.creditAdmissionReservationId === args.reservationId)
+        await ctx.db.patch(args.sessionId, { creditAdmissionTurnUsageRecorded: true });
+    }
     return null;
   },
 });

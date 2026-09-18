@@ -16,9 +16,23 @@ import { omitNullish } from "../../shared/omitNullish";
 import { command } from "./model";
 import { functionDefinitions, handoffInput, runtimeTools } from "./tools";
 import { itemIsComplete, presentItem } from "./output";
-import { readAgentsApiUsage } from "./cost";
+import { estimateAgentsApiCost, readAgentsApiUsage } from "./cost";
 import { SessionOutput } from "./events";
 import { closeBrowser, taskInstructions, executeTaskTool } from "./execution";
+
+async function latestRootTurn(api: OpenAI, providerId: string) {
+  let scanned = 0;
+  let subagentSeen = false;
+  for await (const turn of api.beta.agents.sessions.turns.list(providerId, {
+    order: "desc",
+    limit: 50,
+  })) {
+    if (++scanned > 1_000) throw new Error("Agent session has too many turns to settle credits");
+    if (turn.subagent_id === null) return { turn, subagentSeen };
+    subagentSeen = true;
+  }
+  return { turn: null, subagentSeen };
+}
 
 export async function begin(
   ctx: ActionCtx,
@@ -60,11 +74,7 @@ export async function begin(
     }
     case "send": {
       if (!session.providerId) throw new Error("OpenAI session is not available");
-      const turns = await api.beta.agents.sessions.turns.list(session.providerId, {
-        order: "desc",
-        limit: 1,
-      });
-      const previousTurn = turns.data[0];
+      const { turn: previousTurn } = await latestRootTurn(api, session.providerId);
       if (previousTurn)
         await ctx.runMutation(internal.tasks.sessions.update, {
           sessionId: session._id,
@@ -348,6 +358,44 @@ export async function refreshExecution(
   return null;
 }
 
+export async function reportedModelCost(session: Doc<"agentsApiSessions">) {
+  if (!session.providerId) return null;
+  let latestRootId: string | null = null;
+  let totalUsd = 0;
+  let scanned = 0;
+  for await (const turn of client().beta.agents.sessions.turns.list(session.providerId, {
+    order: "desc",
+    limit: 50,
+  })) {
+    if (++scanned > 1_000) throw new Error("Agent session has too many turns to settle credits");
+    // Root usage may include subagent usage. Charging both could double bill it.
+    if (turn.subagent_id !== null) return null;
+    if (latestRootId === null) {
+      latestRootId = turn.id;
+      if (
+        turn.id === session.previousTurnId ||
+        (turn.status !== "completed" && turn.status !== "failed" && turn.status !== "cancelled")
+      )
+        return null;
+    }
+    if (!turn.usage) return null;
+    const usage = readAgentsApiUsage(turn.usage);
+    if (!usage) return null;
+    const cost = estimateAgentsApiCost({
+      model: session.model,
+      modelUsageIncomplete: false,
+      usage,
+      webSearchCalls: 0,
+      browsers: [],
+      firecrawlUsdPerCredit: null,
+      now: 0,
+    }).modelEstimateUsd;
+    if (cost === null) return null;
+    totalUsd += cost;
+  }
+  return latestRootId === null ? null : totalUsd;
+}
+
 export async function advance(
   ctx: ActionCtx,
   args: { sessionId: Id<"agentsApiSessions"> },
@@ -369,11 +417,7 @@ export async function advance(
     });
   if (remote.status === "failed") throw new Error(remote.error ?? "OpenAI session failed");
   if (remote.status === "idle") {
-    const turns = await api.beta.agents.sessions.turns.list(providerId, {
-      order: "desc",
-      limit: 1,
-    });
-    const turn = turns.data[0];
+    const { turn } = await latestRootTurn(api, providerId);
     // A posted follow-up can be acknowledged before its turn appears.
     if (turn?.id === session.previousTurnId) return true;
     if (

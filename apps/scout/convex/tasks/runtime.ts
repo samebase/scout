@@ -12,45 +12,100 @@ import { closeBrowser } from "./execution";
 import { endResearch } from "./siteResearch";
 import { recordTaskCreditUsage, releaseTaskCreditHold } from "./creditUsage";
 import { insufficientCredits } from "../creditLedger";
+import { costMicrodollars } from "../creditPolicy";
 
 async function finishCreditSettlement(
   ctx: ActionCtx,
   sessionId: Id<"agentsApiSessions">,
+  reservationId: Id<"creditReservations">,
   attempt: number,
 ) {
-  await recordTaskCreditUsage(ctx, sessionId);
-  const usage = await ctx.runQuery(internal.tasks.sessions.creditUsage, { sessionId });
-  if (!usage.admissionReservationId) return;
-  const session = await ctx.runQuery(internal.tasks.sessions.cleanupResources, { sessionId });
+  const reservation = await ctx.runQuery(internal.credits.operation, { reservationId });
   if (
-    (session.engine === "agents_api" && !session.providerId) ||
-    (usage.modelCostUsd !== null && !usage.modelUsageIncomplete)
+    !reservation ||
+    reservation.sessionId !== sessionId ||
+    reservation.source.kind !== "admission_hold"
+  )
+    throw new Error("Credit admission hold is missing or belongs to another task");
+  if (reservation.state.kind === "released" || reservation.state.kind === "settled") return;
+  const session = await ctx.runQuery(internal.tasks.sessions.cleanupResources, { sessionId });
+  if (session.creditAdmissionReservationId !== reservationId) {
+    await ctx.runMutation(internal.credits.unresolved, {
+      reservationId,
+      reason: "Credit admission changed before the prior turn was settled",
+    });
+    return;
+  }
+  await recordTaskCreditUsage(ctx, sessionId);
+  if (session.active) return;
+  const usage = await ctx.runQuery(internal.tasks.sessions.creditUsage, { sessionId });
+  if (!session.creditModelWorkStarted) {
+    await releaseTaskCreditHold(ctx, reservationId);
+    return;
+  }
+  if (session.engine === "agents_api") {
+    const modelCostUsd = await agentsApi.reportedModelCost(session);
+    if (modelCostUsd !== null) {
+      if (usage.webSearchCalls === null)
+        throw new Error("Hosted web search usage exceeds the billing limit");
+      await ctx.runMutation(internal.credits.recordSessionUsage, {
+        sessionId,
+        modelCostMicrodollars: costMicrodollars(modelCostUsd),
+        budgetModelCostMicrodollars: costMicrodollars(modelCostUsd),
+        webSearchCalls: usage.webSearchCalls,
+      });
+      await releaseTaskCreditHold(ctx, reservationId);
+      return;
+    }
+  } else if (
+    session.creditAdmissionTurnUsageRecorded === true &&
+    usage.modelCostUsd !== null &&
+    !usage.modelUsageIncomplete
   ) {
-    await releaseTaskCreditHold(ctx, usage.admissionReservationId);
+    await releaseTaskCreditHold(ctx, reservationId);
     return;
   }
   if (attempt < 3) {
     await ctx.scheduler.runAfter(30_000 * attempt, internal.tasks.runtime.settleCredits, {
       sessionId,
+      reservationId,
       attempt: attempt + 1,
     });
     return;
   }
   await ctx.runMutation(internal.credits.unresolved, {
-    reservationId: usage.admissionReservationId,
+    reservationId,
     reason: "AI provider usage remained unavailable after three settlement checks",
   });
   console.error("AI usage unavailable after settlement checks", { sessionId });
 }
 
 export const settleCredits = internalAction({
-  args: { sessionId: v.id("agentsApiSessions"), attempt: v.number() },
+  args: {
+    sessionId: v.id("agentsApiSessions"),
+    reservationId: v.id("creditReservations"),
+    attempt: v.number(),
+  },
   returns: v.null(),
-  handler: async (ctx, { sessionId, attempt }): Promise<null> => {
+  handler: async (ctx, { sessionId, reservationId, attempt }): Promise<null> => {
     const session = await ctx.runQuery(internal.tasks.sessions.cleanupResources, { sessionId });
-    if (!session.creditAdmissionReservationId) return null;
-    if (session.providerId) {
-      try {
+    const reservation = await ctx.runQuery(internal.credits.operation, { reservationId });
+    if (
+      !reservation ||
+      reservation.state.kind === "released" ||
+      reservation.state.kind === "settled"
+    )
+      return null;
+    if (session.creditAdmissionReservationId !== reservationId) {
+      await ctx.runMutation(internal.credits.unresolved, {
+        reservationId,
+        reason: "Credit admission changed before the prior turn was settled",
+      });
+      return null;
+    }
+    if (session.active && session.state.kind !== "waiting") return null;
+    try {
+      if (session.providerId) {
         switch (session.engine) {
           case "agents_api":
             await agentsApi.refreshExecution(ctx, session);
@@ -59,23 +114,23 @@ export const settleCredits = internalAction({
             await convexAgent.refreshExecution(ctx, session);
             break;
         }
-      } catch (error) {
-        if (attempt < 3) {
-          await ctx.scheduler.runAfter(30_000 * attempt, internal.tasks.runtime.settleCredits, {
-            sessionId,
-            attempt: attempt + 1,
-          });
-        } else {
-          await ctx.runMutation(internal.credits.unresolved, {
-            reservationId: session.creditAdmissionReservationId,
-            reason: "AI provider usage could not be retrieved after three settlement checks",
-          });
-        }
-        console.error("AI usage refresh failed", { sessionId, attempt, error });
-        return null;
       }
+      await finishCreditSettlement(ctx, sessionId, reservationId, attempt);
+    } catch (error) {
+      if (attempt < 3) {
+        await ctx.scheduler.runAfter(30_000 * attempt, internal.tasks.runtime.settleCredits, {
+          sessionId,
+          reservationId,
+          attempt: attempt + 1,
+        });
+      } else {
+        await ctx.runMutation(internal.credits.unresolved, {
+          reservationId,
+          reason: "AI provider usage could not be settled after three checks",
+        });
+      }
+      console.error("AI usage settlement failed", { sessionId, attempt, error });
     }
-    await finishCreditSettlement(ctx, sessionId, attempt);
     return null;
   },
 });
@@ -89,6 +144,11 @@ export const begin = internalAction({
     });
     if (session.state.kind !== "stopped" && !(await recordTaskCreditUsage(ctx, args.sessionId)))
       throw insufficientCredits();
+    if (session.state.kind !== "stopped" && session.creditAdmissionReservationId)
+      await ctx.runMutation(internal.tasks.sessions.markModelWorkStarted, {
+        sessionId: args.sessionId,
+        reservationId: session.creditAdmissionReservationId,
+      });
     switch (session.engine) {
       case "agents_api":
         return agentsApi.begin(ctx, args);
@@ -125,7 +185,8 @@ export const refresh = action({
   returns: v.null(),
   handler: async (ctx, args): Promise<null> => {
     const session = await ctx.runQuery(internal.tasks.sessions.cleanupResources, args);
-    if (session.active) throw new Error("The running session is already being refreshed");
+    if (session.active && session.state.kind !== "waiting")
+      throw new Error("The running session is already being refreshed");
     switch (session.engine) {
       case "agents_api":
         await agentsApi.refreshExecution(ctx, session);
@@ -134,7 +195,12 @@ export const refresh = action({
         await convexAgent.refreshExecution(ctx, session);
         break;
     }
-    await finishCreditSettlement(ctx, session._id, 1);
+    if (session.creditAdmissionReservationId && !session.active)
+      await ctx.scheduler.runAfter(0, internal.tasks.runtime.settleCredits, {
+        sessionId: session._id,
+        reservationId: session.creditAdmissionReservationId,
+        attempt: 1,
+      });
     return null;
   },
 });
@@ -171,15 +237,23 @@ export const cleanup = internalAction({
       sessionId: session._id,
       active: false,
     });
-    switch (session.engine) {
-      case "agents_api":
-        await agentsApi.refreshExecution(ctx, session);
-        break;
-      case "convex_agent":
-        await convexAgent.refreshExecution(ctx, session);
-        break;
+    try {
+      switch (session.engine) {
+        case "agents_api":
+          await agentsApi.refreshExecution(ctx, session);
+          break;
+        case "convex_agent":
+          await convexAgent.refreshExecution(ctx, session);
+          break;
+      }
+    } finally {
+      if (session.creditAdmissionReservationId)
+        await ctx.scheduler.runAfter(0, internal.tasks.runtime.settleCredits, {
+          sessionId: session._id,
+          reservationId: session.creditAdmissionReservationId,
+          attempt: 1,
+        });
     }
-    await finishCreditSettlement(ctx, session._id, 1);
     return null;
   },
 });

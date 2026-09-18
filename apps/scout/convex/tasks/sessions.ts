@@ -22,7 +22,7 @@ import type { Infer } from "convex/values";
 import { omitNullish } from "../../shared/omitNullish";
 import { MAX_BROWSER_SESSIONS_PER_THREAD } from "../scout/browserSessions";
 import { browserSessionLifecycleValidator } from "../browserModel";
-import { agentsApiCostValidator, estimateAgentsApiCost, uncachedLunaCost } from "./cost";
+import { agentsApiCostValidator, estimateAgentsApiCost, uncachedLunaBudgetCost } from "./cost";
 import { getInitialCheck, listChecks, summarizeCheck, currentCheckMessage } from "./requestChecks";
 import { REQUEST_CHECK_MODEL, MAX_SESSION_CHECKS, checkSummary } from "./requestCheckModel";
 import { getResearch, summarizeResearch } from "./siteResearchRecords";
@@ -31,7 +31,7 @@ import { agentsToolActivity, pairedAgentsOutput } from "../scout/toolActivityAge
 import { toolActivityValidator } from "../../shared/toolActivity";
 import schema from "../schema";
 import { CREDIT_POLICY, creditsEnabled } from "../creditPolicy";
-import { releaseCreditOperation, reserveCreditOperation } from "../creditLedger";
+import { reserveCreditOperation } from "../creditLedger";
 
 async function requireSession(ctx: QueryCtx, sessionId: Id<"agentsApiSessions">) {
   const session = await ctx.db.get(sessionId);
@@ -96,8 +96,12 @@ async function startWorkflow(
       if (!previous) throw new Error("Previous credit admission hold is missing");
       if (previous.state.kind === "unresolved")
         throw new Error("Previous AI usage needs review before this task can continue");
+      if (previous.state.kind === "pending" && input.kind === "resume") {
+        await ctx.db.patch(sessionId, { workflowId });
+        return;
+      }
       if (previous.state.kind === "pending")
-        await releaseCreditOperation(ctx, previous, "Turn completed; usage recorded separately");
+        throw new Error("Previous AI usage is still being finalized. Try again shortly.");
     }
     const reservationId = await reserveCreditOperation(ctx, {
       sessionId,
@@ -106,7 +110,12 @@ async function startWorkflow(
       maximumCostMicrodollars:
         CREDIT_POLICY.initialAiReserveCredits * CREDIT_POLICY.microdollarsPerCredit,
     });
-    await ctx.db.patch(sessionId, { workflowId, creditAdmissionReservationId: reservationId });
+    await ctx.db.patch(sessionId, {
+      workflowId,
+      creditAdmissionReservationId: reservationId,
+      creditModelWorkStarted: false,
+      creditAdmissionTurnUsageRecorded: false,
+    });
   } else {
     await ctx.db.patch(sessionId, { workflowId });
   }
@@ -219,13 +228,14 @@ export const cost = query({
   },
 });
 
-// Both task engines persist cumulative model usage on the session. The hosted
-// search calls are persisted as items, so this read gives the credit driver one
-// monotonic snapshot without including browser charges settled separately.
+// Convex Agent reports cumulative model usage. Agents API model charges come
+// from individual turns at settlement, since its session total can be revised
+// after an earlier turn finishes. Hosted search calls are persisted as items.
 export const creditUsage = internalQuery({
   args: { sessionId: v.id("agentsApiSessions") },
   returns: v.object({
     modelCostUsd: v.union(v.number(), v.null()),
+    modelBudgetUsd: v.union(v.number(), v.null()),
     modelUsageIncomplete: v.boolean(),
     admissionReservationId: v.union(v.id("creditReservations"), v.null()),
     webSearchCalls: v.union(v.number(), v.null()),
@@ -249,11 +259,14 @@ export const creditUsage = internalQuery({
       now: 0,
     });
     return {
-      modelCostUsd:
+      modelCostUsd: session.engine === "convex_agent" ? cost.modelEstimateUsd : null,
+      modelBudgetUsd:
         cost.modelEstimateUsd ??
-        (session.model === "gpt-5.6-luna" && session.usage
-          ? uncachedLunaCost(session.usage)
-          : null),
+        (session.usage === null
+          ? 0
+          : session.model === "gpt-5.6-luna"
+            ? uncachedLunaBudgetCost(session.usage)
+            : null),
       modelUsageIncomplete: session.modelUsageIncomplete ?? false,
       admissionReservationId: session.creditAdmissionReservationId ?? null,
       webSearchCalls: searches.length > 1_000 ? null : searches.length,
@@ -426,10 +439,19 @@ export const controls = query({
       ? await ctx.db.system.get(session.handoffEmailJobId)
       : null;
     const busy = !session.active && (await scoutReservation(ctx, session.scoutId)) !== null;
+    const admission =
+      creditsEnabled() && !session.active && session.creditAdmissionReservationId
+        ? await ctx.db.get(session.creditAdmissionReservationId)
+        : null;
+    const creditHoldStatus =
+      admission?.state.kind === "pending" || admission?.state.kind === "unresolved"
+        ? admission.state.kind
+        : null;
     return {
       state: session.state,
       requestCheckMessage: await currentCheckMessage(ctx, session),
-      canSend: !session.active && Boolean(session.providerId) && !busy,
+      canSend: !session.active && Boolean(session.providerId) && !busy && !creditHoldStatus,
+      creditHoldStatus,
       canStop:
         session.active && (session.state.kind !== "stopped" || cleanup?.state.kind === "failed"),
       busy,
@@ -597,6 +619,21 @@ export const runtime = internalQuery({
   },
 });
 
+export const markModelWorkStarted = internalMutation({
+  args: {
+    sessionId: v.id("agentsApiSessions"),
+    reservationId: v.id("creditReservations"),
+  },
+  returns: v.null(),
+  handler: async (ctx, { sessionId, reservationId }) => {
+    const session = await ctx.db.get(sessionId);
+    if (!session || session.creditAdmissionReservationId !== reservationId)
+      throw new Error("Credit admission changed while model work started");
+    await ctx.db.patch(sessionId, { creditModelWorkStarted: true });
+    return null;
+  },
+});
+
 export const update = internalMutation({
   args: {
     sessionId: v.id("agentsApiSessions"),
@@ -616,7 +653,8 @@ export const update = internalMutation({
     if (!session) throw new Error("Session not found");
     if (
       refreshWorkflowId !== undefined &&
-      (session.active || (session.workflowId ?? null) !== refreshWorkflowId)
+      ((session.active && session.state.kind !== "waiting") ||
+        (session.workflowId ?? null) !== refreshWorkflowId)
     )
       return null;
     if (session.state.kind === "stopped") delete patch.state;
@@ -652,7 +690,8 @@ export const saveItems = internalMutation({
     if (!session) throw new Error("Session not found");
     if (
       args.refreshWorkflowId !== undefined &&
-      (session.active || (session.workflowId ?? null) !== args.refreshWorkflowId)
+      ((session.active && session.state.kind !== "waiting") ||
+        (session.workflowId ?? null) !== args.refreshWorkflowId)
     )
       return null;
     let sequence = args.sequence ?? session.nextSequence;

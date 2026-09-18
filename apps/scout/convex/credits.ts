@@ -115,6 +115,7 @@ async function sessionHasCredit(
   session: Doc<"agentsApiSessions">,
   wallet: Doc<"creditWallets">,
   balanceUnits: number,
+  projectedModelUnits: number,
 ) {
   const reservation = session.creditAdmissionReservationId
     ? await ctx.db.get(session.creditAdmissionReservationId)
@@ -123,18 +124,23 @@ async function sessionHasCredit(
     reservation?.state.kind === "pending"
       ? Math.max(0, reservation.reservedUnits - reservation.chargedUnits)
       : 0;
-  return wallet.hold.kind === "clear" && balanceUnits > wallet.reservedUnits - ownHold;
+  return (
+    wallet.hold.kind === "clear" &&
+    balanceUnits - projectedModelUnits > wallet.reservedUnits - ownHold
+  );
 }
 
 export const recordSessionUsage = internalMutation({
   args: {
     sessionId: v.id("agentsApiSessions"),
     modelCostMicrodollars: v.number(),
+    budgetModelCostMicrodollars: v.number(),
     webSearchCalls: v.number(),
   },
   returns: v.boolean(),
   handler: async (ctx, args) => {
     const reportedModel = nonnegativeInteger.parse(args.modelCostMicrodollars);
+    const budgetModel = nonnegativeInteger.parse(args.budgetModelCostMicrodollars);
     const reportedSearches = nonnegativeInteger.parse(args.webSearchCalls);
     const session = await ctx.db.get(args.sessionId);
     if (!session) throw new Error("Task session is missing");
@@ -142,15 +148,18 @@ export const recordSessionUsage = internalMutation({
     const previousSearches = nonnegativeInteger.parse(session.chargedWebSearchCalls ?? 0);
     const modelTotal = Math.max(previousModel, reportedModel);
     const searchTotal = Math.max(previousSearches, reportedSearches);
+    const terms = session.creditUsageTerms ?? currentCreditTerms();
+    const projectedModelUnits = nonnegativeInteger.parse(
+      costUnits(Math.max(modelTotal, budgetModel), terms) - costUnits(modelTotal, terms),
+    );
     if (modelTotal === previousModel && searchTotal === previousSearches) {
       const wallet = await walletForUser(ctx, session.userId);
       if (!wallet) throw new Error("Credit wallet is missing");
-      return sessionHasCredit(ctx, session, wallet, wallet.balanceUnits);
+      return sessionHasCredit(ctx, session, wallet, wallet.balanceUnits, projectedModelUnits);
     }
 
     if ((previousModel > 0 || previousSearches > 0) && !session.creditUsageTerms)
       throw new Error("Session credit conversion terms are missing");
-    const terms = session.creditUsageTerms ?? currentCreditTerms();
     const searchRate = positiveInteger.parse(terms.hostedWebSearchMicrodollarsPerCall);
     const modelDeltaUnits = nonnegativeInteger.parse(
       costUnits(modelTotal, terms) - costUnits(previousModel, terms),
@@ -191,7 +200,7 @@ export const recordSessionUsage = internalMutation({
       chargedWebSearchCalls: searchTotal,
       creditUsageTerms: terms,
     });
-    return sessionHasCredit(ctx, session, wallet, finalBalance);
+    return sessionHasCredit(ctx, session, wallet, finalBalance, projectedModelUnits);
   },
 });
 

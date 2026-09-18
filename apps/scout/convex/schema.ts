@@ -135,6 +135,8 @@ export default defineSchema({
     chargedWebSearchCalls: v.optional(v.number()),
     creditUsageTerms: v.optional(creditTermsValidator),
     creditAdmissionReservationId: v.optional(v.id("creditReservations")),
+    creditModelWorkStarted: v.optional(v.boolean()),
+    creditAdmissionTurnUsageRecorded: v.optional(v.boolean()),
     walkthrough: v.optional(walkthroughContent),
   })
     .index("by_user_id", ["userId"])

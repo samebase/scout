@@ -292,6 +292,7 @@ export async function advance(
       usageHandler: async (usageCtx, { usage }) => {
         await usageCtx.runMutation(internal.tasks.convexAgentRecords.recordUsage, {
           sessionId: session._id,
+          reservationId: session.creditAdmissionReservationId ?? null,
           usage: generationUsage(usage),
         });
       },

@@ -60,8 +60,13 @@ const unresolved = makeFunctionReference<
 >("credits:unresolved");
 const recordSessionUsage = makeFunctionReference<
   "mutation",
-  { sessionId: Id<"agentsApiSessions">; modelCostMicrodollars: number; webSearchCalls: number },
-  null
+  {
+    sessionId: Id<"agentsApiSessions">;
+    modelCostMicrodollars: number;
+    budgetModelCostMicrodollars: number;
+    webSearchCalls: number;
+  },
+  boolean
 >("credits:recordSessionUsage");
 const adjustManually = makeFunctionReference<
   "mutation",
@@ -257,17 +262,24 @@ describe("credit wallet", () => {
     await expect(
       backend.mutation(debitCumulative, { reservationId: reserveId, totalCostMicrodollars: 1 }),
     ).rejects.toThrow("admission hold cannot be billed");
-    const first = { sessionId, modelCostMicrodollars: 10_000, webSearchCalls: 2 };
+    const first = {
+      sessionId,
+      modelCostMicrodollars: 10_000,
+      budgetModelCostMicrodollars: 10_000,
+      webSearchCalls: 2,
+    };
     await backend.mutation(recordSessionUsage, first);
     await backend.mutation(recordSessionUsage, first);
     await backend.mutation(recordSessionUsage, {
       sessionId,
       modelCostMicrodollars: 8_000,
+      budgetModelCostMicrodollars: 8_000,
       webSearchCalls: 1,
     });
     await backend.mutation(recordSessionUsage, {
       sessionId,
       modelCostMicrodollars: 12_000,
+      budgetModelCostMicrodollars: 12_000,
       webSearchCalls: 3,
     });
     expect(await owner.query(balance, {})).toMatchObject({
@@ -310,6 +322,7 @@ describe("credit wallet", () => {
       await backend.mutation(recordSessionUsage, {
         sessionId,
         modelCostMicrodollars: 0,
+        budgetModelCostMicrodollars: 0,
         webSearchCalls: 0,
       }),
     ).toBe(true);
@@ -317,10 +330,38 @@ describe("credit wallet", () => {
       await backend.mutation(recordSessionUsage, {
         sessionId,
         modelCostMicrodollars: 50_000,
+        budgetModelCostMicrodollars: 50_000,
         webSearchCalls: 0,
       }),
     ).toBe(false);
     expect(await owner.query(balance, {})).toMatchObject({ balanceUnits: 0 });
+  });
+
+  test("stops another model step when estimated spend exceeds the balance without charging the estimate", async () => {
+    const { backend, owner, sessionId } = await setup();
+    await owner.mutation(ensureWallet, {});
+    const reservationId = await backend.mutation(reserveSessionAi, {
+      sessionId,
+      sourceKey: "run-near-budget",
+    });
+    await backend.run((ctx) =>
+      ctx.db.patch(sessionId, { creditAdmissionReservationId: reservationId }),
+    );
+    expect(
+      await backend.mutation(recordSessionUsage, {
+        sessionId,
+        modelCostMicrodollars: 0,
+        budgetModelCostMicrodollars: 500_001,
+        webSearchCalls: 0,
+      }),
+    ).toBe(false);
+    expect(await owner.query(balance, {})).toMatchObject({
+      balanceUnits: 500_000,
+      reservedUnits: 50_000,
+    });
+    expect((await backend.run((ctx) => ctx.db.get(sessionId)))?.chargedModelMicrodollars).toBe(
+      undefined,
+    );
   });
 
   test("manual adjustments replay safely and a hold blocks new reservations without blocking settlement", async () => {

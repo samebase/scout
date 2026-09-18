@@ -8,7 +8,9 @@ import { z } from "zod";
 const lunaRates = { input: 0.2, cachedInput: 0.02, output: 1.2 };
 const webSearchUsdPerCall = 10 / 1_000;
 
-export function uncachedLunaCost(usage: AgentsApiUsage) {
+// Missing cache details must not make an active task look cheaper for admission.
+// This upper bound only controls whether the next model step may run; it is never billed.
+export function uncachedLunaBudgetCost(usage: AgentsApiUsage) {
   return (usage.inputTokens * lunaRates.input + usage.outputTokens * lunaRates.output) / 1_000_000;
 }
 

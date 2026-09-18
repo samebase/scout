@@ -87,6 +87,7 @@ export const onComplete = internalMutation({
     ) {
       await ctx.scheduler.runAfter(0, internal.tasks.runtime.settleCredits, {
         sessionId: session._id,
+        reservationId: session.creditAdmissionReservationId,
         attempt: 1,
       });
     }

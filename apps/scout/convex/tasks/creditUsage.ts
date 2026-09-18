@@ -12,9 +12,12 @@ export async function recordTaskCreditUsage(
   if (!usage.admissionReservationId) return true;
   if (usage.webSearchCalls === null)
     throw new Error("Hosted web search usage exceeds the billing limit");
+  if (usage.modelBudgetUsd === null)
+    throw new Error("AI model usage cannot be priced for the task budget");
   const canContinue = await ctx.runMutation(internal.credits.recordSessionUsage, {
     sessionId,
     modelCostMicrodollars: costMicrodollars(usage.modelCostUsd ?? 0),
+    budgetModelCostMicrodollars: costMicrodollars(usage.modelBudgetUsd),
     webSearchCalls: usage.webSearchCalls,
   });
   if (expectModelUsage && (usage.modelUsageIncomplete || usage.modelCostUsd === null)) {

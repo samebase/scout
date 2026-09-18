@@ -1053,6 +1053,16 @@ function ConversationSession({
         !showingWalkthrough && (
           <div className="shrink-0 border-t p-3">
             {cost && <SessionCost session={cost} />}
+            {managed?.creditHoldStatus === "pending" && (
+              <p className="px-3 text-sm text-muted-foreground">
+                Finishing this turn’s credit usage. You can send another message shortly.
+              </p>
+            )}
+            {managed?.creditHoldStatus === "unresolved" && (
+              <p className="px-3 text-sm text-muted-foreground">
+                This turn’s credit usage needs review before you can continue.
+              </p>
+            )}
             <ConversationComposer
               autoFocus={false}
               context={null}
