@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-18T15:52:23Z
+- **Last updated:** 2026-09-18T16:02:03Z
 
 ## Log
 
@@ -1398,9 +1398,16 @@ Site cards leave a description-line gap between task previews and grow on phones
 content needs more room. The review scope and site search controls fill their rows when stacked
 (`apps/scout/src/components/activity-feed.tsx`, `apps/scout/src/components/site-filters.tsx`).
 
-### 2026-09-18 - working tree - v227
+### 2026-09-18 - daefde5 - v227
 
 Finished chats fetch model usage again through bounded Convex scheduled actions so late
 accounting can fill in missing estimates. Older refreshes cannot overwrite a newer turn.
 Member chats and Agents show “Usage pending” while token counts are unavailable
 (`apps/scout/convex/tasks/agentsApi.ts`, `apps/scout/src/components/session-cost.tsx`).
+
+### 2026-09-18 - working tree - v228
+
+Site pages open the shared task composer with a removable site selection carried in the URL.
+Convex checks site access and attaches the task before research, while public visibility still
+waits for request approval (`apps/scout/convex/scout/chats.ts`,
+`apps/scout/src/components/product-home.tsx`).

@@ -9,11 +9,11 @@ import {
 import type { SidebarLayoutState } from "@samebase/sidebars/SidebarLayoutState";
 import { useAction, usePaginatedQuery, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
-import { ArrowLeftIcon, PanelLeftIcon, SearchIcon } from "lucide-react";
+import { ArrowLeftIcon, PanelLeftIcon, PlusIcon, SearchIcon } from "lucide-react";
 import { useState } from "react";
 import { z } from "zod";
 import { api } from "../../convex/_generated/api";
-import { Button } from "#components/ui/button";
+import { Button, buttonVariants } from "#components/ui/button";
 import { ScoutWorkspace } from "#components/scout-workspace";
 import { SiteTaskList } from "#components/activity-feed";
 import { SitePreview, SitePreviewCapture } from "#components/site-preview";
@@ -189,6 +189,14 @@ function SiteLayout() {
                           <SitePreviewCapture key={`preview:${record.hostname}`} site={record} />
                         </>
                       )}
+                      <Link
+                        to="/"
+                        search={{ ...filters, taskSite: record.hostname }}
+                        className={buttonVariants()}
+                      >
+                        <PlusIcon aria-hidden="true" />
+                        New task
+                      </Link>
                     </div>
                   </div>
                   {record.profile?.overview && (

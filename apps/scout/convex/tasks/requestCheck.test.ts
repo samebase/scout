@@ -52,7 +52,7 @@ async function setup() {
   const { threadId } = await member.mutation(api.scout.chats.startProductChat, {
     scoutId,
     prompt,
-    kind: "review",
+    product: { kind: "review" },
     visibility: "public",
   });
   const saved = await backend.run((ctx) => ctx.db.query("agentsApiSessions").unique());

@@ -9,6 +9,8 @@ export function ConversationComposer({
   canSend,
   onStop,
   placeholder,
+  context,
+  autoFocus,
   children,
 }: {
   value: string;
@@ -18,6 +20,8 @@ export function ConversationComposer({
   canSend: boolean;
   onStop: (() => void) | null;
   placeholder: string;
+  context: ReactNode;
+  autoFocus: boolean;
   children: ReactNode;
 }) {
   return (
@@ -25,11 +29,13 @@ export function ConversationComposer({
       onSubmit={onSubmit}
       className="rounded-xl border border-border bg-card p-3 shadow-sm focus-within:border-primary/60"
     >
+      {context}
       <label className="sr-only" htmlFor="conversation-message">
         Message Scout
       </label>
       <textarea
         id="conversation-message"
+        autoFocus={autoFocus}
         className="block max-h-[200px] min-h-[72px] w-full resize-none rounded-xl bg-transparent px-3 py-2 text-base leading-relaxed text-foreground placeholder:text-muted-foreground focus-visible:outline-none! [field-sizing:content]"
         value={value}
         onChange={(event) => onChange(event.target.value)}

@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { api } from "../../../convex/_generated/api";
 import { reviewFeedSearch } from "#lib/reviewFeedSearch";
 
-export type ProductKind = FunctionArgs<typeof api.scout.chats.startProductChat>["kind"];
+export type ProductKind = FunctionArgs<typeof api.scout.chats.startProductChat>["product"]["kind"];
 
 export const productRoutes = { play: "/play", review: "/review" } as const;
 

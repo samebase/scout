@@ -1,18 +1,24 @@
 import { v } from "convex/values";
+import { outdent } from "outdent";
 import { internalMutation } from "../_generated/server";
 import { mutation } from "../functions";
 import { requireViewerPermission } from "../access";
 import { startSession } from "../tasks/sessions";
 import { requireSessionPermission } from "../tasks/access";
 import { chatPermission, requireRunnableThread } from "./chatAccess";
-import { chatPurposeValidator, chatVisibilityValidator, productKindValidator } from "./chatModel";
+import { chatPurposeValidator, chatVisibilityValidator } from "./chatModel";
 import { playStepValidator } from "./play";
-import { syncChatSite } from "./siteListings";
+import { accessibleSite, syncChatSite } from "./siteListings";
+import { siteHostnameSchema } from "../../shared/site";
+import { omitNullish } from "../../shared/omitNullish";
 
 export const startProductChat = mutation({
   access: "access_account",
   args: {
-    kind: productKindValidator,
+    product: v.union(
+      v.object({ kind: v.literal("review"), site: v.optional(v.string()) }),
+      v.object({ kind: v.literal("play") }),
+    ),
     scoutId: v.id("scouts"),
     prompt: v.string(),
     visibility: chatVisibilityValidator,
@@ -20,16 +26,31 @@ export const startProductChat = mutation({
   returns: v.object({ threadId: v.string() }),
   handler: async (ctx, args) => {
     const purpose: typeof chatPurposeValidator.type =
-      args.kind === "play" ? { kind: "play", step: null } : { kind: "review" };
+      args.product.kind === "play" ? { kind: "play", step: null } : { kind: "review" };
     requireViewerPermission(ctx.viewer, chatPermission(purpose));
     const userId = ctx.viewer.userId;
+    const primarySite =
+      args.product.kind === "review" && args.product.site !== undefined
+        ? siteHostnameSchema.parse(args.product.site)
+        : null;
+    if (primarySite) {
+      if (!(await accessibleSite(ctx, primarySite, ctx.viewer))) throw new Error("Site not found");
+      if (!args.prompt.trim()) throw new Error("Enter a task for this site");
+    }
+    const prompt = primarySite
+      ? outdent`
+          Use https://${primarySite}/ as the main site for this task.
+
+          ${args.prompt}
+        `
+      : args.prompt;
     const sessionId = await startSession(ctx, {
       userId,
       scoutId: args.scoutId,
-      prompt: args.prompt,
+      prompt,
       engine: "agents_api",
     });
-    await ctx.db.insert("scoutChats", {
+    const chatId = await ctx.db.insert("scoutChats", {
       runtime: { kind: "agents_api", sessionId },
       threadId: sessionId,
       userId,
@@ -38,7 +59,13 @@ export const startProductChat = mutation({
       purpose,
       visibility: args.visibility,
       publicSiteEligible: false,
+      ...omitNullish({ primarySite }),
     });
+    if (primarySite) {
+      const chat = await ctx.db.get(chatId);
+      if (!chat) throw new Error("Created task not found");
+      await syncChatSite(ctx, chat);
+    }
     return { threadId: sessionId };
   },
 });

@@ -15,7 +15,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/tes
 import { Route as ReviewRoute } from "../../routes/review";
 import { Route as PlayRoute } from "../../routes/play";
 import { Route as SiteRoute } from "../../routes/sites.$site";
-import { reviewFeedSearch } from "../../lib/reviewFeedSearch";
+import { Route as HomeRoute } from "../../routes/index";
+import { homeSearch } from "../../lib/homeSearch";
 import { api } from "../../../convex/_generated/api";
 import { ROLE_ACCESS_GRANTS } from "../../../shared/accessModel";
 import { omitNullish } from "../../../shared/omitNullish";
@@ -152,6 +153,9 @@ beforeEach(() => {
     status: "Exhausted",
     loadMore: vi.fn(),
   });
+  for (const query of ["scout/sites:list", "scout/activity:unassigned"]) {
+    remote.queries.set(query, { results: [], status: "Exhausted", loadMore: vi.fn() });
+  }
   remote.queries.set("tasks/sessions:controls", {
     state: { kind: "idle" },
     canSend: true,
@@ -198,7 +202,10 @@ async function openPlay(path = "/play") {
     getParentRoute: () => root,
     path: "/",
     staticData: { access: "access_public" },
-    validateSearch: reviewFeedSearch,
+    ...omitNullish({
+      component: HomeRoute.options.component,
+      validateSearch: HomeRoute.options.validateSearch,
+    }),
   });
   const site = createRoute({
     getParentRoute: () => root,
@@ -214,6 +221,105 @@ async function openPlay(path = "/play") {
   await router.load();
   return router;
 }
+
+test("a site link opens the shared composer without submitting and sends the selected site", async () => {
+  const router = await openPlay("/?taskSite=EXAMPLE.COM&scope=mine&site=another");
+  const input = await screen.findByRole<HTMLTextAreaElement>("textbox", { name: "Message Scout" });
+  expect(input.value).toBe("");
+  expect(input.placeholder).toBe("What should Scout do on this site?");
+  expect(document.activeElement).toBe(input);
+  expect(screen.getByRole("button", { name: "Remove example.com from task" })).toBeTruthy();
+  expect(remote.createThread).not.toHaveBeenCalled();
+  expect(screen.getByRole<HTMLButtonElement>("button", { name: "Send message" }).disabled).toBe(
+    true,
+  );
+  expect(remote.queryCalls).toHaveBeenCalledWith("scout/sites:list", {
+    scope: "mine",
+    site: "another",
+  });
+
+  fireEvent.change(input, { target: { value: "Check the sign-up flow." } });
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("combobox", { name: "Your Scout" }));
+  await user.click(screen.getByRole("option", { name: "Moss" }));
+  await user.click(screen.getByRole("combobox", { name: "Visibility" }));
+  await user.click(screen.getByRole("option", { name: "Private" }));
+  await user.click(screen.getByRole("button", { name: "Send message" }));
+  await waitFor(() => expect(router.state.location.search).toEqual({ thread: "game-thread" }));
+  expect(router.state.location.pathname).toBe("/review");
+  expect(remote.createThread).toHaveBeenCalledExactlyOnceWith({
+    product: { kind: "review", site: "example.com" },
+    scoutId: "scout-2",
+    prompt: "Check the sign-up flow.",
+    visibility: "private",
+  });
+  act(() => router.history.back());
+  expect(await screen.findByRole("button", { name: "Remove example.com from task" })).toBeTruthy();
+  expect(remote.createThread).toHaveBeenCalledTimes(1);
+});
+
+test("site selection survives feed filters and removal keeps the draft without adding history", async () => {
+  const router = await openPlay("/?taskSite=example.com");
+  const input = await screen.findByRole<HTMLTextAreaElement>("textbox", { name: "Message Scout" });
+  fireEvent.change(input, { target: { value: "Check the sign-up flow." } });
+  fireEvent.change(screen.getByRole("textbox", { name: "Filter by site" }), {
+    target: { value: "another" },
+  });
+  await waitFor(() =>
+    expect(router.state.location.search).toEqual({
+      taskSite: "example.com",
+      site: "another",
+      scope: "public",
+    }),
+  );
+  expect(screen.getByRole("textbox", { name: "Message Scout" })).toBe(input);
+  const historyLength = router.history.length;
+  await userEvent
+    .setup()
+    .click(screen.getByRole("button", { name: "Remove example.com from task" }));
+  await waitFor(() =>
+    expect(router.state.location.search).toEqual({ site: "another", scope: "public" }),
+  );
+  expect(router.history.length).toBe(historyLength);
+  expect(input.value).toBe("Check the sign-up flow.");
+  expect(input.placeholder).toBe("Paste a product link and describe what to review.");
+  await userEvent.setup().click(screen.getByRole("button", { name: "Send message" }));
+  await waitFor(() =>
+    expect(remote.createThread).toHaveBeenCalledExactlyOnceWith({
+      product: { kind: "review" },
+      scoutId: "scout-1",
+      prompt: "Check the sign-up flow.",
+      visibility: "public",
+    }),
+  );
+});
+
+test("sign-in and failed submission retain the selected site and message", async () => {
+  remote.authenticated = false;
+  const router = await openPlay("/?taskSite=example.com");
+  fireEvent.change(await screen.findByRole("textbox", { name: "Message Scout" }), {
+    target: { value: "Check checkout." },
+  });
+  await userEvent.setup().click(screen.getByRole("button", { name: "Send message" }));
+  expect(await screen.findByRole("region", { name: "Account access" })).toBeTruthy();
+  expect(remote.createThread).not.toHaveBeenCalled();
+  act(() => {
+    remote.authenticated = true;
+    remote.revision += 1;
+    remote.subscribers.forEach((listener) => listener());
+  });
+  expect(await screen.findByDisplayValue("Check checkout.")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Remove example.com from task" })).toBeTruthy();
+  remote.createThread.mockRejectedValueOnce(new Error("Offline"));
+  await userEvent.setup().click(screen.getByRole("button", { name: "Send message" }));
+  expect(await screen.findByRole("alert")).toBeTruthy();
+  expect(screen.getByDisplayValue("Check checkout.")).toBeTruthy();
+  expect(router.state.location.search).toEqual({ taskSite: "example.com" });
+});
+
+test("invalid task site parameters fail validation", () => {
+  expect(homeSearch.safeParse({ taskSite: "https://example.com/path" }).success).toBe(false);
+});
 
 test("a completed managed Review opens its walkthrough and pairs replay with Chat", async () => {
   remote.queries.set(
@@ -974,7 +1080,7 @@ describe("Play invitation", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
     await waitFor(() =>
       expect(remote.createThread).toHaveBeenCalledWith({
-        kind: "review",
+        product: { kind: "review" },
         scoutId: "scout-1",
         prompt: "Review example.com",
         visibility: "public",
@@ -1009,7 +1115,7 @@ describe("Play invitation", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
     await waitFor(() =>
       expect(remote.createThread).toHaveBeenCalledWith({
-        kind: "play",
+        product: { kind: "play" },
         scoutId: "scout-1",
         prompt: invitation,
         visibility: "public",
@@ -1114,7 +1220,7 @@ describe("Play invitation", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
     await waitFor(() => expect(router.state.location.search).toEqual({ thread: "game-thread" }));
     expect(remote.createThread).toHaveBeenCalledExactlyOnceWith({
-      kind: "play",
+      product: { kind: "play" },
       scoutId: "scout-2",
       visibility: "private",
       prompt: invitation,
@@ -1169,7 +1275,7 @@ describe("Play invitation", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
     await waitFor(() =>
       expect(remote.createThread).toHaveBeenCalledExactlyOnceWith({
-        kind: "play",
+        product: { kind: "play" },
         scoutId: "scout-1",
         visibility: "private",
         prompt: "Find us a cooperative game for tomorrow.",

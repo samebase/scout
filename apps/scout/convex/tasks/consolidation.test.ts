@@ -87,7 +87,7 @@ async function setup() {
     backend.query(internal.tasks.sessions.cleanupResources, { sessionId });
   const product = async (kind: typeof productKindValidator.type) => {
     const { threadId } = await member.mutation(api.scout.chats.startProductChat, {
-      kind,
+      product: { kind },
       scoutId: ids.scoutId,
       prompt,
       visibility: "private",
@@ -174,7 +174,7 @@ it.each(products)(
   async (kind) => {
     const { backend, member, scoutId } = await setup();
     const visibility: typeof chatVisibilityValidator.type = "private";
-    const args = { kind, scoutId, prompt, visibility, engine: "convex_agent" };
+    const args = { product: { kind }, scoutId, prompt, visibility, engine: "convex_agent" };
     // Passing a variable preserves the extra client field for Convex's runtime validator.
     await expect(member.mutation(api.scout.chats.startProductChat, args)).rejects.toThrow();
     expect(await backend.run((ctx) => ctx.db.query("agentsApiSessions").take(1))).toEqual([]);
@@ -187,7 +187,7 @@ it.each(products)("denies %s creation after membership is revoked", async (kind)
   await backend.run((ctx) => ctx.db.patch(memberId, { isApproved: false }));
   await expect(
     member.mutation(api.scout.chats.startProductChat, {
-      kind,
+      product: { kind },
       scoutId,
       prompt,
       visibility: "private",
