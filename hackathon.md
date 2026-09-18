@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-18T16:02:03Z
+- **Last updated:** 2026-09-18T16:18:12Z
 
 ## Log
 
@@ -1405,9 +1405,16 @@ accounting can fill in missing estimates. Older refreshes cannot overwrite a new
 Member chats and Agents show “Usage pending” while token counts are unavailable
 (`apps/scout/convex/tasks/agentsApi.ts`, `apps/scout/src/components/session-cost.tsx`).
 
-### 2026-09-18 - working tree - v228
+### 2026-09-18 - a333149 - v228
 
 Site pages open the shared task composer with a removable site selection carried in the URL.
 Convex checks site access and attaches the task before research, while public visibility still
 waits for request approval (`apps/scout/convex/scout/chats.ts`,
 `apps/scout/src/components/product-home.tsx`).
+
+### 2026-09-18 - working tree - v229
+
+Mobile walkthroughs let horizontal swipes open the task sidebar from text or screenshots.
+Previous and Next keep the visible screenshot in place as explanations change length,
+and reserve its space while the next image loads
+(`apps/scout/src/components/task-walkthrough.tsx`).

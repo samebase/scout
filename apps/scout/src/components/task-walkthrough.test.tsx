@@ -199,6 +199,63 @@ test("preloads only the next screenshot after the current image loads", async ()
   expect(remote.imageUrl).toHaveBeenCalledTimes(3);
 });
 
+test("keeps the walkthrough scroll position through Next, delayed image loading, and Previous", async () => {
+  let resolveImage: (value: ImageResult) => void = () => {
+    throw new Error("Image request has not started.");
+  };
+  const pending = new Promise<ImageResult>((resolve) => {
+    resolveImage = resolve;
+  });
+  remote.imageUrl.mockImplementation(async ({ screenshotId }) =>
+    screenshotId === secondId
+      ? pending
+      : { url: "https://images.example.com/first.png", expiresAtMs: Date.now() + 60_000 },
+  );
+  render(<TaskWalkthrough sessionId={firstSession} />);
+  await screen.findByRole("img", { name: "A piece in the board" });
+  const scroller = screen.getByRole("region", { name: "Task walkthrough" }).firstElementChild;
+  if (!(scroller instanceof HTMLElement)) throw new Error("Walkthrough scroller is missing");
+  scroller.scrollTop = 240;
+
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  expect(screen.getByText("Loading screenshot…")).toBeTruthy();
+  expect(scroller.scrollTop).toBe(240);
+  await act(async () =>
+    resolveImage({
+      url: "https://images.example.com/second.png",
+      expiresAtMs: Date.now() + 60_000,
+    }),
+  );
+  expect(screen.getByRole("img", { name: "An empty board after undo" })).toBeTruthy();
+  expect(scroller.scrollTop).toBe(240);
+
+  fireEvent.click(screen.getByRole("button", { name: "Previous" }));
+  expect(screen.getByRole("img", { name: "A piece in the board" })).toBeTruthy();
+  expect(scroller.scrollTop).toBe(240);
+});
+
+test("keeps a visible screenshot in place when the next step's explanation changes height", async () => {
+  render(<TaskWalkthrough sessionId={firstSession} />);
+  const image = await screen.findByRole("img", { name: "A piece in the board" });
+  const scroller = screen.getByRole("region", { name: "Task walkthrough" }).firstElementChild;
+  const panel = image.closest("figure")?.parentElement;
+  if (!(scroller instanceof HTMLElement) || !panel) throw new Error("Missing walkthrough layout");
+  vi.spyOn(scroller, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 50, 390, 700));
+  // Happy DOM has no layout. Model the panel before and after each caption change.
+  vi.spyOn(panel, "getBoundingClientRect")
+    .mockReturnValueOnce(new DOMRect(0, -100, 350, 1000))
+    .mockReturnValueOnce(new DOMRect(0, -220, 350, 1000))
+    .mockReturnValueOnce(new DOMRect(0, -100, 350, 1000))
+    .mockReturnValueOnce(new DOMRect(0, 20, 350, 1000));
+  scroller.scrollTop = 360;
+
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  await screen.findByRole("img", { name: "An empty board after undo" });
+  expect(scroller.scrollTop).toBe(240);
+  fireEvent.click(screen.getByRole("button", { name: "Previous" }));
+  expect(scroller.scrollTop).toBe(360);
+});
+
 test("shares an in-flight preload when Next is clicked before its URL arrives", async () => {
   let resolveImage: (value: ImageResult) => void = () => {
     throw new Error("Image request has not started.");

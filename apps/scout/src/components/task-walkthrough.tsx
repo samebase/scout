@@ -7,7 +7,15 @@ import {
   ImageIcon,
   MaximizeIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { Button } from "#components/ui/button";
@@ -41,10 +49,23 @@ function SessionWalkthrough({ sessionId }: { sessionId: Id<"agentsApiSessions"> 
   const [dialogContainer, setDialogContainer] = useState<HTMLElement | null>(null);
   const scroll = useRef<HTMLDivElement>(null);
   const captionScroll = useRef<HTMLDivElement>(null);
+  const screenshotPanel = useRef<HTMLDivElement>(null);
+  const screenshotTop = useRef<number | null>(null);
+
+  useLayoutEffect(() => {
+    if (screenshotTop.current !== null && scroll.current && screenshotPanel.current) {
+      scroll.current.scrollTop +=
+        screenshotPanel.current.getBoundingClientRect().top - screenshotTop.current;
+    }
+    screenshotTop.current = null;
+  }, [selection]);
 
   function select(index: number) {
+    if (scroll.current && screenshotPanel.current && scroll.current.scrollTop > 0) {
+      const top = screenshotPanel.current.getBoundingClientRect().top;
+      if (top < scroll.current.getBoundingClientRect().bottom) screenshotTop.current = top;
+    }
     setSelection(index);
-    if (scroll.current) scroll.current.scrollTop = 0;
     if (captionScroll.current) captionScroll.current.scrollTop = 0;
   }
 
@@ -93,7 +114,7 @@ function SessionWalkthrough({ sessionId }: { sessionId: Id<"agentsApiSessions"> 
     >
       <div
         ref={scroll}
-        className="@container/walkthrough min-h-0 flex-1 overflow-auto overscroll-contain"
+        className="@container/walkthrough min-h-0 flex-1 overflow-auto overscroll-y-contain"
       >
         <div className="mx-auto grid w-full max-w-6xl gap-5 p-4 @2xl/walkthrough:h-full @2xl/walkthrough:min-h-0 @2xl/walkthrough:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] @2xl/walkthrough:grid-rows-[minmax(0,1fr)] @2xl/walkthrough:gap-6 @2xl/walkthrough:p-5">
           <div
@@ -119,20 +140,22 @@ function SessionWalkthrough({ sessionId }: { sessionId: Id<"agentsApiSessions"> 
             </div>
             {walkthrough?.checks && <ReviewChecks checks={walkthrough.checks} />}
           </div>
-          {step.capture ? (
-            <CaptureImage
-              key={step.capture.id}
-              capture={step.capture}
-              heading={step.heading}
-              dialogContainer={dialogContainer}
-              imageUrls={imageUrls}
-              onLoad={setLoadedCaptureId}
-            />
-          ) : (
-            <p className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-              No screenshot for this step.
-            </p>
-          )}
+          <div ref={screenshotPanel} className="min-w-0 @2xl/walkthrough:min-h-0">
+            {step.capture ? (
+              <CaptureImage
+                key={step.capture.id}
+                capture={step.capture}
+                heading={step.heading}
+                dialogContainer={dialogContainer}
+                imageUrls={imageUrls}
+                onLoad={setLoadedCaptureId}
+              />
+            ) : (
+              <p className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                No screenshot for this step.
+              </p>
+            )}
+          </div>
         </div>
       </div>
       <nav
@@ -417,65 +440,66 @@ function OriginalImage({
     );
 
   return (
-    <div className="min-w-0 @2xl/walkthrough:min-h-0">
-      <Dialog open={expanded} onOpenChange={setExpanded}>
-        <figure className="flex min-w-0 flex-col gap-2 @2xl/walkthrough:h-full @2xl/walkthrough:min-h-0">
-          <figcaption className="flex min-w-0 shrink-0 items-center justify-between gap-3">
-            {source ? (
-              <a
-                href={source.href}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex min-w-0 items-center gap-1 rounded text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-                title={source.href}
-              >
-                <span className="truncate">
-                  {source.host}
-                  {source.pathname === "/" ? "" : source.pathname}
-                </span>
-                <ArrowUpRightIcon className="size-3 shrink-0" aria-hidden="true" />
-                <span className="sr-only"> (opens in a new tab)</span>
-              </a>
-            ) : (
-              <span className="truncate text-xs text-muted-foreground">{metadata.title}</span>
-            )}
-            <DialogTrigger asChild>
-              <Button variant="ghost" size="sm" disabled={state.kind !== "ready"}>
-                <MaximizeIcon aria-hidden="true" /> Expand
-              </Button>
-            </DialogTrigger>
-          </figcaption>
-          <div className="overflow-hidden rounded-lg border bg-muted/20 @2xl/walkthrough:flex @2xl/walkthrough:min-h-0 @2xl/walkthrough:flex-1 @2xl/walkthrough:items-center @2xl/walkthrough:justify-center">
-            {image}
-          </div>
-        </figure>
-        <DialogContent
-          container={dialogContainer}
-          className="flex h-[90dvh] max-h-[94dvh] w-[calc(100%-1rem)] max-w-[96vw] flex-col gap-3 p-3 sm:max-w-[96vw] sm:p-5"
+    <Dialog open={expanded} onOpenChange={setExpanded}>
+      <figure className="flex min-w-0 flex-col gap-2 @2xl/walkthrough:h-full @2xl/walkthrough:min-h-0">
+        <figcaption className="flex min-w-0 shrink-0 items-center justify-between gap-3">
+          {source ? (
+            <a
+              href={source.href}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex min-w-0 items-center gap-1 rounded text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              title={source.href}
+            >
+              <span className="truncate">
+                {source.host}
+                {source.pathname === "/" ? "" : source.pathname}
+              </span>
+              <ArrowUpRightIcon className="size-3 shrink-0" aria-hidden="true" />
+              <span className="sr-only"> (opens in a new tab)</span>
+            </a>
+          ) : (
+            <span className="truncate text-xs text-muted-foreground">{metadata.title}</span>
+          )}
+          <DialogTrigger asChild>
+            <Button variant="ghost" size="sm" disabled={state.kind !== "ready"}>
+              <MaximizeIcon aria-hidden="true" /> Expand
+            </Button>
+          </DialogTrigger>
+        </figcaption>
+        <div
+          style={{ aspectRatio: `${metadata.width} / ${metadata.height}` }}
+          className="overflow-hidden rounded-lg border bg-muted/20 @2xl/walkthrough:flex @2xl/walkthrough:aspect-auto! @2xl/walkthrough:min-h-0 @2xl/walkthrough:flex-1 @2xl/walkthrough:items-center @2xl/walkthrough:justify-center"
         >
-          <DialogHeader className="max-h-[min(25dvh,10rem)] shrink-0 overflow-auto overscroll-contain pr-8">
-            <DialogTitle className="wrap-anywhere">{heading}</DialogTitle>
-            <DialogDescription className="whitespace-pre-wrap wrap-anywhere">
-              {note}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-md border bg-muted/20">
-            {state.kind === "ready" ? (
-              <img
-                src={state.image.url}
-                alt={note || heading}
-                width={metadata.width}
-                height={metadata.height}
-                referrerPolicy="no-referrer"
-                onError={refreshAfterError}
-                className="block h-full max-h-[70dvh] w-full max-w-full object-contain"
-              />
-            ) : (
-              image
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
-    </div>
+          {image}
+        </div>
+      </figure>
+      <DialogContent
+        container={dialogContainer}
+        className="flex h-[90dvh] max-h-[94dvh] w-[calc(100%-1rem)] max-w-[96vw] flex-col gap-3 p-3 sm:max-w-[96vw] sm:p-5"
+      >
+        <DialogHeader className="max-h-[min(25dvh,10rem)] shrink-0 overflow-auto overscroll-contain pr-8">
+          <DialogTitle className="wrap-anywhere">{heading}</DialogTitle>
+          <DialogDescription className="whitespace-pre-wrap wrap-anywhere">
+            {note}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-md border bg-muted/20">
+          {state.kind === "ready" ? (
+            <img
+              src={state.image.url}
+              alt={note || heading}
+              width={metadata.width}
+              height={metadata.height}
+              referrerPolicy="no-referrer"
+              onError={refreshAfterError}
+              className="block h-full max-h-[70dvh] w-full max-w-full object-contain"
+            />
+          ) : (
+            image
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
