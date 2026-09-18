@@ -61,7 +61,7 @@ async function setup() {
       },
     });
   const list = () => owner.query(api.tasks.sessions.listBrowsers, { sessionId });
-  return { backend, owner, other, sessionId, open, list };
+  return { backend, owner, other, userId, sessionId, open, list };
 }
 
 it("retains ordered browser history and billed usage across close/reopen without exposing connection secrets", async () => {
@@ -94,6 +94,137 @@ it("retains ordered browser history and billed usage across close/reopen without
     lifecycle: { kind: "closed", providerDurationMs: 60_000, creditsBilled: 2 },
     liveViewUrl: null,
     interactiveLiveViewUrl: null,
+  });
+});
+
+it("reserves an affordable Firecrawl lifetime and settles its reported usage once", async () => {
+  vi.stubEnv("CREDITS_ENABLED", "true");
+  const { backend, owner, userId, sessionId } = await setup();
+  const funding = await backend.mutation(internal.tasks.browsers.reserve, { sessionId });
+  expect(funding.durationSeconds).toBe(15 * 60);
+  expect(await owner.query(api.credits.balance, {})).toMatchObject({
+    balanceUnits: 500_000,
+    reservedUnits: 150_000,
+  });
+  await backend.mutation(internal.tasks.browsers.open, {
+    sessionId,
+    reservationId: funding.reservationId,
+    browser: {
+      providerSessionId: "funded-browser",
+      cdpUrl: "wss://browser.example.test/cdp",
+      liveViewUrl: null,
+      interactiveLiveViewUrl: null,
+      currentUrl: null,
+    },
+  });
+  const close = {
+    providerSessionId: "funded-browser",
+    providerDurationMs: 60_000,
+    creditsBilled: 2,
+  };
+  await backend.mutation(internal.tasks.browsers.close, close);
+  await backend.mutation(internal.tasks.browsers.close, close);
+  expect(await owner.query(api.credits.balance, {})).toMatchObject({
+    balanceUnits: 490_000,
+    reservedUnits: 0,
+  });
+  const entries = await backend.run(async (ctx) =>
+    ctx.db
+      .query("creditEntries")
+      .withIndex("by_user_id", (q) => q.eq("userId", userId))
+      .collect(),
+  );
+  expect(entries.filter((entry) => entry.detail.kind === "usage")).toHaveLength(1);
+});
+
+it("keeps unknown creation billing unresolved and allows a later funded browser", async () => {
+  vi.stubEnv("CREDITS_ENABLED", "true");
+  const { backend, owner, sessionId } = await setup();
+  const first = await backend.mutation(internal.tasks.browsers.reserve, { sessionId });
+  await backend.mutation(internal.tasks.browsers.close, {
+    providerSessionId: "created-without-cdp",
+    reservationId: first.reservationId,
+    providerDurationMs: null,
+    creditsBilled: null,
+  });
+  const unresolved = await backend.run((ctx) => ctx.db.get(first.reservationId));
+  expect(unresolved?.state).toMatchObject({
+    kind: "unresolved",
+    reason: expect.stringContaining("created-without-cdp"),
+  });
+  expect(await owner.query(api.credits.balance, {})).toMatchObject({ reservedUnits: 150_000 });
+
+  const second = await backend.mutation(internal.tasks.browsers.reserve, { sessionId });
+  await backend.mutation(internal.tasks.browsers.open, {
+    sessionId,
+    reservationId: second.reservationId,
+    browser: {
+      providerSessionId: "browser-after-failure",
+      cdpUrl: "wss://browser.example.test/cdp",
+      liveViewUrl: null,
+      interactiveLiveViewUrl: null,
+      currentUrl: null,
+    },
+  });
+  const browsers = await owner.query(api.tasks.sessions.listBrowsers, { sessionId });
+  expect(browsers.map((browser) => browser.sequence)).toEqual([2]);
+  await backend.mutation(internal.tasks.browsers.close, {
+    providerSessionId: "browser-after-failure",
+    providerDurationMs: null,
+    creditsBilled: 1,
+  });
+  const settled = await backend.run((ctx) => ctx.db.get(second.reservationId));
+  expect(settled?.state).toMatchObject({ kind: "settled", costMicrodollars: 5_000 });
+});
+
+it("shortens a browser TTL when only a small wallet balance is available", async () => {
+  vi.stubEnv("CREDITS_ENABLED", "true");
+  const { backend, userId, sessionId } = await setup();
+  await backend.mutation(internal.credits.grantOnSignIn, { userId });
+  await backend.run(async (ctx) => {
+    const wallet = await ctx.db
+      .query("creditWallets")
+      .withIndex("by_user_id", (q) => q.eq("userId", userId))
+      .unique();
+    if (!wallet) throw new Error("Missing wallet");
+    await ctx.db.patch(wallet._id, { balanceUnits: 20_000 });
+  });
+  expect(await backend.mutation(internal.tasks.browsers.reserve, { sessionId })).toMatchObject({
+    durationSeconds: 60,
+  });
+});
+
+it("keeps a failed close inspectable and settles it if provider usage later arrives", async () => {
+  vi.stubEnv("CREDITS_ENABLED", "true");
+  const { backend, sessionId } = await setup();
+  const funding = await backend.mutation(internal.tasks.browsers.reserve, { sessionId });
+  await backend.mutation(internal.tasks.browsers.open, {
+    sessionId,
+    reservationId: funding.reservationId,
+    browser: {
+      providerSessionId: "close-failed",
+      cdpUrl: "wss://browser.example.test/cdp",
+      liveViewUrl: null,
+      interactiveLiveViewUrl: null,
+      currentUrl: null,
+    },
+  });
+  await backend.mutation(internal.tasks.browsers.unresolved, {
+    providerSessionId: "close-failed",
+    reason: "Provider deletion failed",
+  });
+  expect((await backend.run((ctx) => ctx.db.get(funding.reservationId)))?.state).toMatchObject({
+    kind: "unresolved",
+    reason: expect.stringContaining("close-failed"),
+  });
+  await backend.mutation(internal.tasks.browsers.close, {
+    providerSessionId: "close-failed",
+    providerDurationMs: 60_000,
+    creditsBilled: 2,
+  });
+  expect((await backend.run((ctx) => ctx.db.get(funding.reservationId)))?.state).toMatchObject({
+    kind: "settled",
+    costMicrodollars: 10_000,
   });
 });
 

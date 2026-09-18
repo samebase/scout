@@ -68,13 +68,20 @@ export async function taskInstructions(
 
 export async function closeBrowser(ctx: ActionCtx, session: Doc<"agentsApiSessions">) {
   if (!session.browser) return;
-  const result = await closeFirecrawlBrowserSession(
-    createFirecrawlClient(),
-    session.browser.providerSessionId,
-  );
-  if (!result.success) throw new Error(result.error ?? "Firecrawl did not close the browser");
+  const providerSessionId = session.browser.providerSessionId;
+  let result: Awaited<ReturnType<typeof closeFirecrawlBrowserSession>>;
+  try {
+    result = await closeFirecrawlBrowserSession(createFirecrawlClient(), providerSessionId);
+    if (!result.success) throw new Error(result.error ?? "Firecrawl did not close the browser");
+  } catch (error) {
+    await ctx.runMutation(internal.tasks.browsers.unresolved, {
+      providerSessionId,
+      reason: `Browser cleanup failed: ${diagnosticMessage(error)}`,
+    });
+    throw error;
+  }
   await ctx.runMutation(internal.tasks.browsers.close, {
-    providerSessionId: session.browser.providerSessionId,
+    providerSessionId,
     providerDurationMs: result.sessionDurationMs ?? null,
     creditsBilled: result.creditsBilled ?? null,
   });
