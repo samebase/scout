@@ -109,3 +109,92 @@ test("a late credit failure does not replace an explicit stop", async () => {
     (await t.owner.query(api.tasks.sessions.controls, { sessionId: t.sessionId })).state,
   ).toEqual({ kind: "stopped" });
 });
+
+test("workflow completion preserves a recorded provider diagnostic and original admin stack", async () => {
+  const t = await setup();
+  const workflowId = await t.backend.run(async (ctx) => {
+    const id = await workflow.start(
+      ctx,
+      internal.tasks.lifecycle.run,
+      { sessionId: t.sessionId, command: { kind: "observe" } },
+      {
+        startAsync: true,
+        onComplete: internal.tasks.lifecycle.onComplete,
+        context: { sessionId: t.sessionId },
+      },
+    );
+    await ctx.db.patch(t.sessionId, { workflowId: id });
+    return id;
+  });
+  const diagnostic = {
+    category: "transient_service" as const,
+    operation: "advance" as const,
+    occurredAtMs: 123,
+    provider: "openai" as const,
+    httpStatus: 503,
+    requestId: "req-original",
+  };
+  await t.backend.mutation(internal.tasks.failure.record, {
+    sessionId: t.sessionId,
+    workflowId,
+    error: "Provider failure\n    at original call",
+    diagnostic,
+  });
+  await t.backend.mutation(internal.tasks.lifecycle.onComplete, {
+    workflowId,
+    result: { kind: "failed", error: "stringified workflow failure" },
+    context: { sessionId: t.sessionId },
+  });
+  expect((await t.backend.run((ctx) => ctx.db.get(t.sessionId)))?.state).toEqual({
+    kind: "failed",
+    error: "Provider failure\n    at original call",
+    diagnostic,
+  });
+});
+
+test("failure capture cannot replace a newer workflow or an explicit stop", async () => {
+  const t = await setup();
+  const [oldWorkflowId, workflowId] = await t.backend.run(async (ctx) => {
+    const ids = [];
+    for (let i = 0; i < 2; i++)
+      ids.push(
+        await workflow.start(
+          ctx,
+          internal.tasks.lifecycle.run,
+          { sessionId: t.sessionId, command: { kind: "observe" } },
+          {
+            startAsync: true,
+            onComplete: internal.tasks.lifecycle.onComplete,
+            context: { sessionId: t.sessionId },
+          },
+        ),
+      );
+    await ctx.db.patch(t.sessionId, { workflowId: ids[1] });
+    return [ids[0], ids[1]] as const;
+  });
+  const diagnostic = {
+    category: "unknown" as const,
+    operation: "observe" as const,
+    occurredAtMs: 123,
+    provider: "unknown" as const,
+  };
+  await t.backend.mutation(internal.tasks.failure.record, {
+    sessionId: t.sessionId,
+    workflowId: oldWorkflowId,
+    error: "old run failed",
+    diagnostic,
+  });
+  expect((await t.backend.run((ctx) => ctx.db.get(t.sessionId)))?.state).toEqual({
+    kind: "running",
+  });
+  await t.backend.run((ctx) => ctx.db.patch(t.sessionId, { state: { kind: "stopped" } }));
+  await t.backend.mutation(internal.tasks.failure.record, {
+    sessionId: t.sessionId,
+    workflowId,
+    error: "late failure",
+    diagnostic,
+  });
+  expect((await t.backend.run((ctx) => ctx.db.get(t.sessionId)))?.state).toEqual({
+    kind: "stopped",
+  });
+});

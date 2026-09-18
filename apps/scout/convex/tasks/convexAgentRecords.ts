@@ -101,6 +101,7 @@ export const prompt = internalMutation({
       providerId: threadId,
       previousTurnId: messageId,
       state: { kind: "running" },
+      pendingMessage: undefined,
     });
     return messageId;
   },

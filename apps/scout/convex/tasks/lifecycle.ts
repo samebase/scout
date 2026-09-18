@@ -90,7 +90,7 @@ export const onComplete = internalMutation({
       if (session.state.kind !== "stopped") {
         await ctx.db.patch(session._id, {
           state:
-            session.state.kind === "failed" && session.state.creditFailureCode
+            session.state.kind === "failed"
               ? session.state
               : {
                   kind: "failed",

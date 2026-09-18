@@ -27,6 +27,7 @@ const remote = vi.hoisted(() => ({
   queryCalls: vi.fn(),
   start: vi.fn(),
   send: vi.fn(),
+  retryMessage: vi.fn(),
   stop: vi.fn(),
   resume: vi.fn(),
   refresh: vi.fn(),
@@ -71,6 +72,8 @@ vi.mock("convex/react", () => ({
         return remote.start;
       case "tasks/sessions:send":
         return remote.send;
+      case "tasks/sessions:retryMessage":
+        return remote.retryMessage;
       case "tasks/sessions:stop":
         return remote.stop;
       case "tasks/sessions:resume":
@@ -108,6 +111,7 @@ function session(state: Session["state"] = { kind: "idle" }) {
     state,
     active: state.kind === "starting" || state.kind === "running" || state.kind === "waiting",
     canControl: true,
+    pendingMessage: null,
     model: "gpt-5.6-luna",
     providerId: "provider-1",
     engine: "agents_api",
@@ -141,6 +145,7 @@ beforeEach(() => {
   remote.queryCalls.mockReset();
   remote.start.mockReset().mockResolvedValue("session-1");
   remote.send.mockReset().mockResolvedValue(null);
+  remote.retryMessage.mockReset().mockResolvedValue(null);
   remote.stop.mockReset().mockResolvedValue(null);
   remote.resume.mockReset().mockResolvedValue(null);
   remote.refresh.mockReset().mockResolvedValue(null);
@@ -1030,6 +1035,31 @@ test("send failures preserve drafts and IME Enter does not send", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Send message" }));
   await waitFor(() => expect(draft.value).toBe(""));
   expect(remote.send).toHaveBeenLastCalledWith({ sessionId: "session-1", message: "Keep going" });
+});
+
+test("retries an unsent message from the admin view and shows provider diagnostics", async () => {
+  remote.queries.set("tasks/sessions:get", {
+    ...session({
+      kind: "failed",
+      error: "500 Internal error",
+      diagnostic: {
+        category: "transient_service",
+        operation: "send",
+        occurredAtMs: 1,
+        provider: "openai",
+        httpStatus: 500,
+        requestId: "req-debug-test",
+      },
+    }),
+    pendingMessage: { message: "Keep going", workflowId: "workflow-1", status: "queued" },
+  });
+  await open("/agents?session=session-1");
+  expect(await screen.findByText("Your message wasn’t sent.")).toBeTruthy();
+  expect(screen.getByText("Keep going")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Retry message" }));
+  await waitFor(() => expect(remote.retryMessage).toHaveBeenCalledWith({ sessionId: "session-1" }));
+  expect(remote.send).not.toHaveBeenCalled();
+  expect(screen.getByText(/req-debug-test/)).toBeTruthy();
 });
 
 test("stopped sessions block button and keyboard sends until cleanup releases active", async () => {

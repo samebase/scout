@@ -488,3 +488,230 @@ it.each(["active", "closing"] as const)(
     ).resolves.toBeNull();
   },
 );
+
+const retainedFollowup = 'Try again.\n\nKeep  the spacing, "quotes", and café.';
+
+async function queuedFollowup() {
+  const task = await setup();
+  await task.backend.run((ctx) =>
+    ctx.db.patch(task.sessionId, {
+      providerId: "provider-session",
+      active: false,
+      state: { kind: "idle" },
+    }),
+  );
+  await task.owner.mutation(api.tasks.sessions.send, {
+    sessionId: task.sessionId,
+    message: retainedFollowup,
+  });
+  const session = await task.backend.run((ctx) => ctx.db.get(task.sessionId));
+  if (!session?.pendingMessage) throw new Error("Expected a queued follow-up");
+  return { ...task, pendingMessage: session.pendingMessage };
+}
+
+it("retains the exact follow-up through failure and retries it only after cleanup", async () => {
+  const { backend, owner, sessionId, pendingMessage } = await queuedFollowup();
+  expect(pendingMessage).toEqual({
+    message: retainedFollowup,
+    workflowId: pendingMessage.workflowId,
+    status: "queued",
+  });
+  await backend.mutation(internal.tasks.lifecycle.onComplete, {
+    workflowId: pendingMessage.workflowId,
+    context: { sessionId },
+    result: { kind: "failed", error: "History sync failed before POST" },
+  });
+  expect((await owner.query(api.tasks.sessions.controls, { sessionId })).pendingMessage).toEqual(
+    pendingMessage,
+  );
+  await expect(owner.mutation(api.tasks.sessions.retryMessage, { sessionId })).rejects.toThrow(
+    "not been submitted",
+  );
+  await backend.mutation(internal.tasks.sessions.update, { sessionId, active: false });
+  expect((await owner.query(api.tasks.sessions.controls, { sessionId })).canRetryMessage).toBe(
+    true,
+  );
+  await owner.mutation(api.tasks.sessions.retryMessage, { sessionId });
+  const retried = await backend.run((ctx) => ctx.db.get(sessionId));
+  expect(retried).toMatchObject({
+    active: true,
+    state: { kind: "running" },
+    pendingMessage: { message: retainedFollowup, status: "queued" },
+  });
+  expect(retried?.workflowId).not.toBe(pendingMessage.workflowId);
+  expect(retried?.pendingMessage?.workflowId).toBe(retried?.workflowId);
+  expect(retried?.cleanupJobId).toBeUndefined();
+  await expect(owner.mutation(api.tasks.sessions.retryMessage, { sessionId })).rejects.toThrow(
+    "not been submitted",
+  );
+  expect(await backend.run((ctx) => ctx.db.get(sessionId))).toEqual(retried);
+});
+
+it.each(["submitting", "accepted"] as const)(
+  "does not retry a failed follow-up after delivery reached %s",
+  async (status) => {
+    const { backend, owner, sessionId, pendingMessage } = await queuedFollowup();
+    await backend.mutation(internal.tasks.sessions.messageDelivery, {
+      sessionId,
+      workflowId: pendingMessage.workflowId,
+      status: "submitting",
+    });
+    if (status === "accepted")
+      await backend.mutation(internal.tasks.sessions.messageDelivery, {
+        sessionId,
+        workflowId: pendingMessage.workflowId,
+        status,
+      });
+    await backend.mutation(internal.tasks.lifecycle.onComplete, {
+      workflowId: pendingMessage.workflowId,
+      context: { sessionId },
+      result: { kind: "failed", error: "Connection lost" },
+    });
+    await backend.mutation(internal.tasks.sessions.update, { sessionId, active: false });
+    const before = await backend.run((ctx) => ctx.db.get(sessionId));
+    expect((await owner.query(api.tasks.sessions.controls, { sessionId })).canRetryMessage).toBe(
+      false,
+    );
+    await expect(owner.mutation(api.tasks.sessions.retryMessage, { sessionId })).rejects.toThrow(
+      "not been submitted",
+    );
+    expect(await backend.run((ctx) => ctx.db.get(sessionId))).toEqual(before);
+    expect(before?.pendingMessage).toEqual(
+      status === "submitting" ? { ...pendingMessage, status } : undefined,
+    );
+  },
+);
+
+it("rejects retry without a provider while preserving the queued text", async () => {
+  const { backend, owner, sessionId, pendingMessage } = await queuedFollowup();
+  await backend.run((ctx) => ctx.db.patch(sessionId, { active: false, providerId: undefined }));
+  await expect(owner.mutation(api.tasks.sessions.retryMessage, { sessionId })).rejects.toThrow(
+    "not been submitted",
+  );
+  expect((await backend.run((ctx) => ctx.db.get(sessionId)))?.pendingMessage).toEqual(
+    pendingMessage,
+  );
+});
+
+it("requires the owner to retry a queued follow-up", async () => {
+  const { backend, sessionId, pendingMessage } = await queuedFollowup();
+  await backend.mutation(internal.tasks.sessions.update, { sessionId, active: false });
+  const otherId = await backend.run((ctx) =>
+    insertTestAccount(ctx, { email: "nicu@samebase.com" }),
+  );
+  await expect(backend.mutation(api.tasks.sessions.retryMessage, { sessionId })).rejects.toThrow();
+  await expect(
+    backend.withIdentity({ subject: otherId }).mutation(api.tasks.sessions.retryMessage, {
+      sessionId,
+    }),
+  ).rejects.toThrow("Session not found");
+  expect((await backend.run((ctx) => ctx.db.get(sessionId)))?.pendingMessage).toEqual(
+    pendingMessage,
+  );
+});
+
+it("does not retry while another task owns the Scout", async () => {
+  const { backend, owner, scoutId, sessionId, pendingMessage } = await queuedFollowup();
+  await backend.mutation(internal.tasks.sessions.update, { sessionId, active: false });
+  await owner.mutation(api.tasks.sessions.start, {
+    scoutId,
+    prompt: "Another task",
+    engine: "agents_api",
+  });
+  await expect(owner.mutation(api.tasks.sessions.retryMessage, { sessionId })).rejects.toThrow(
+    "already working",
+  );
+  expect(await backend.run((ctx) => ctx.db.get(sessionId))).toMatchObject({
+    active: false,
+    pendingMessage,
+  });
+});
+
+it("rechecks credit admission on retry without consuming the retained follow-up", async () => {
+  const { backend, owner, sessionId, userId, pendingMessage } = await queuedFollowup();
+  await backend.mutation(internal.credits.grantOnSignIn, { userId });
+  await backend.run(async (ctx) => {
+    const wallet = await ctx.db
+      .query("creditWallets")
+      .withIndex("by_user_id", (q) => q.eq("userId", userId))
+      .unique();
+    if (!wallet) throw new Error("Wallet missing");
+    await ctx.db.patch(wallet._id, { balanceUnits: 0 });
+    await ctx.db.patch(sessionId, { active: false });
+  });
+  vi.stubEnv("CREDITS_ENABLED", "true");
+  await expect(owner.mutation(api.tasks.sessions.retryMessage, { sessionId })).rejects.toThrow(
+    "more credits",
+  );
+  expect(await backend.run((ctx) => ctx.db.get(sessionId))).toMatchObject({
+    active: false,
+    workflowId: pendingMessage.workflowId,
+    pendingMessage,
+  });
+});
+
+it("claims submission once and ignores receipts from an older workflow", async () => {
+  const { backend, owner, sessionId, pendingMessage } = await queuedFollowup();
+  await backend.mutation(internal.tasks.sessions.update, { sessionId, active: false });
+  await owner.mutation(api.tasks.sessions.retryMessage, { sessionId });
+  const retried = await backend.run((ctx) => ctx.db.get(sessionId));
+  if (!retried?.workflowId) throw new Error("Expected a retry workflow");
+  for (const status of ["submitting", "accepted"] as const) {
+    expect(
+      await backend.mutation(internal.tasks.sessions.messageDelivery, {
+        sessionId,
+        workflowId: pendingMessage.workflowId,
+        status,
+      }),
+    ).toBe(false);
+    expect(await backend.run((ctx) => ctx.db.get(sessionId))).toEqual(retried);
+  }
+  const submission = { sessionId, workflowId: retried.workflowId, status: "submitting" as const };
+  expect(await backend.mutation(internal.tasks.sessions.messageDelivery, submission)).toBe(true);
+  expect(await backend.mutation(internal.tasks.sessions.messageDelivery, submission)).toBe(false);
+  expect((await backend.run((ctx) => ctx.db.get(sessionId)))?.pendingMessage).toEqual({
+    ...retried.pendingMessage,
+    status: "submitting",
+  });
+});
+
+it.each(["stop", "cleanup"] as const)(
+  "does not submit a queued follow-up after %s",
+  async (transition) => {
+    const { backend, owner, sessionId, pendingMessage } = await queuedFollowup();
+    if (transition === "stop") await owner.mutation(api.tasks.sessions.stop, { sessionId });
+    else await backend.mutation(internal.tasks.sessions.update, { sessionId, active: false });
+    expect(
+      await backend.mutation(internal.tasks.sessions.messageDelivery, {
+        sessionId,
+        workflowId: pendingMessage.workflowId,
+        status: "submitting",
+      }),
+    ).toBe(false);
+    expect((await backend.run((ctx) => ctx.db.get(sessionId)))?.pendingMessage).toEqual(
+      pendingMessage,
+    );
+  },
+);
+
+it("clears an acknowledged message after Stop without reviving the task", async () => {
+  const { backend, owner, sessionId, pendingMessage } = await queuedFollowup();
+  await backend.mutation(internal.tasks.sessions.messageDelivery, {
+    sessionId,
+    workflowId: pendingMessage.workflowId,
+    status: "submitting",
+  });
+  await owner.mutation(api.tasks.sessions.stop, { sessionId });
+  await backend.mutation(internal.tasks.sessions.update, { sessionId, active: false });
+  const receipt = { sessionId, workflowId: pendingMessage.workflowId, status: "accepted" as const };
+  expect(await backend.mutation(internal.tasks.sessions.messageDelivery, receipt)).toBe(true);
+  expect(await backend.run((ctx) => ctx.db.get(sessionId))).toMatchObject({
+    active: false,
+    state: { kind: "stopped" },
+  });
+  expect((await backend.run((ctx) => ctx.db.get(sessionId)))?.pendingMessage).toBeUndefined();
+  expect(await backend.mutation(internal.tasks.sessions.messageDelivery, receipt)).toBe(false);
+  await expect(owner.mutation(api.tasks.sessions.retryMessage, { sessionId })).rejects.toThrow(
+    "not been submitted",
+  );
+});
