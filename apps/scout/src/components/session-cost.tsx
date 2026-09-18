@@ -29,6 +29,8 @@ export function SessionCost({
 }) {
   const { cost, usage } = session;
   const pricing = modelPricingCopy[cost.modelPricingBasis];
+  const modelUsagePending =
+    cost.missing.includes("model_usage") || cost.missing.includes("cached_input_usage");
   const checksCost = session.checks.reduce((sum, check) => sum + (check.cost ?? 0), 0);
   const checksComplete = session.checks.every((check) => check.cost !== null);
   const pricedChecks = session.checks.some((check) => check.cost !== null);
@@ -68,7 +70,11 @@ export function SessionCost({
         )}
         <dt>{pricing.label}</dt>
         <dd className="text-right tabular-nums">
-          {cost.modelEstimateUsd === null ? "Unpriced" : money.format(cost.modelEstimateUsd)}
+          {cost.modelEstimateUsd === null
+            ? modelUsagePending
+              ? "Usage pending"
+              : "Unpriced"
+            : money.format(cost.modelEstimateUsd)}
         </dd>
         <dt>Web search</dt>
         <dd className="text-right tabular-nums">

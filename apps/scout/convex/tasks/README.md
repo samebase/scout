@@ -87,6 +87,14 @@ not apply to this experiment.
 - Refresh retrieves late provider history and usage for an ended session without
   restarting it. A refresh preserves any failure or stopped state.
 
+When an Agents API task becomes inactive, Convex schedules a usage-only read immediately,
+then again after 30 seconds and another two minutes. These bounded checks replace the saved
+cumulative snapshot, including older partial totals, without reserving the Scout or changing
+the transcript. Writes from an older workflow are discarded. Missing usage stays pending;
+after the last check, missing usage records a failed scheduled action. Admins can use Refresh
+in Agents to fetch it again manually. Missing token counts display as “Usage pending”; an
+unknown model rate still displays as “Unpriced”.
+
 Errors remain visible. Interrupted side effects are not automatically replayed.
 Scout credits are not integrated with task execution.
 
