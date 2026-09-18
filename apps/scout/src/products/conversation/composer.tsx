@@ -27,7 +27,7 @@ export function ConversationComposer({
   return (
     <form
       onSubmit={onSubmit}
-      className="rounded-xl border border-border bg-card p-3 shadow-sm focus-within:border-primary/60"
+      className="rounded-xl border border-border bg-card p-2 shadow-sm focus-within:border-primary/60 sm:p-3"
     >
       {context}
       <label className="sr-only" htmlFor="conversation-message">
@@ -36,7 +36,7 @@ export function ConversationComposer({
       <textarea
         id="conversation-message"
         autoFocus={autoFocus}
-        className="block max-h-[200px] min-h-[72px] w-full resize-none rounded-xl bg-transparent px-3 py-2 text-base leading-relaxed text-foreground placeholder:text-muted-foreground focus-visible:outline-none! [field-sizing:content]"
+        className="block max-h-[200px] min-h-[72px] w-full resize-none rounded-xl bg-transparent px-2 py-2 text-base leading-relaxed text-foreground placeholder:text-muted-foreground focus-visible:outline-none! [field-sizing:content] sm:px-3"
         value={value}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={(event) => {
@@ -50,7 +50,7 @@ export function ConversationComposer({
         rows={2}
         disabled={disabled}
       />
-      <div className="mt-2 flex min-h-11 items-center justify-between gap-3 pl-2">
+      <div className="mt-1 flex min-h-11 items-center justify-between gap-1 sm:mt-2 sm:gap-3 sm:pl-2">
         <div className="min-w-0 text-sm text-muted-foreground">{children}</div>
         <button
           type={onStop ? "button" : "submit"}

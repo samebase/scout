@@ -16,7 +16,9 @@ import {
   ArrowLeftIcon,
   ArrowRightIcon,
   ArrowUpRightIcon,
+  GlobeIcon,
   LoaderCircleIcon,
+  LockKeyholeIcon,
   MonitorIcon,
   XIcon,
 } from "lucide-react";
@@ -294,7 +296,7 @@ export function ConversationLobby({
                     : "Paste a product link and describe what to review."
               }
             >
-              <div className="flex min-w-0 flex-wrap items-center gap-x-1">
+              <div className="flex min-w-0 flex-wrap items-center sm:gap-x-1">
                 {loadingScouts ? (
                   "Loading Scouts…"
                 ) : request.kind === "pending" ? (
@@ -311,9 +313,14 @@ export function ConversationLobby({
                     >
                       <SelectTrigger
                         aria-label="Your Scout"
-                        className="min-h-11 max-w-[190px] border-0 shadow-none max-[400px]:max-w-[145px]"
+                        className="min-h-11 max-w-[145px] gap-1 border-0 px-1 text-[13px] shadow-none sm:max-w-[190px] sm:gap-1.5 sm:px-2 sm:text-sm"
                       >
-                        <SelectValue />
+                        <SelectValue>
+                          {selectedScout?.displayName.replace(/\s.*$/, "")}
+                          {selectedScout?.busy
+                            ? ` · ${scoutAvailabilityLabels[selectedScout.availability]}`
+                            : ""}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent position="popper" align="start">
                         {activeScouts.map((scout) => (
@@ -340,7 +347,7 @@ export function ConversationLobby({
                 >
                   <SelectTrigger
                     aria-label="Task engine"
-                    className="min-h-11 shrink-0 border-0 shadow-none"
+                    className="min-h-11 shrink-0 gap-1 border-0 px-1 text-[13px] shadow-none sm:gap-1.5 sm:px-2 sm:text-sm"
                   >
                     <SelectValue />
                   </SelectTrigger>
@@ -359,9 +366,19 @@ export function ConversationLobby({
                 >
                   <SelectTrigger
                     aria-label="Visibility"
-                    className="min-h-11 shrink-0 border-0 shadow-none"
+                    title={visibility === "private" ? "Private" : "Public"}
+                    className="min-h-11 min-w-11 shrink-0 gap-1 border-0 px-1 shadow-none sm:gap-1.5 sm:px-2"
                   >
-                    <SelectValue />
+                    <SelectValue>
+                      {visibility === "private" ? (
+                        <LockKeyholeIcon className="size-4 sm:hidden" aria-hidden="true" />
+                      ) : (
+                        <GlobeIcon className="size-4 sm:hidden" aria-hidden="true" />
+                      )}
+                      <span className="sr-only sm:not-sr-only">
+                        {visibility === "private" ? "Private" : "Public"}
+                      </span>
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent position="popper">
                     <SelectItem value="private">Private</SelectItem>
