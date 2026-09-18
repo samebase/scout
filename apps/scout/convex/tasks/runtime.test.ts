@@ -203,6 +203,59 @@ function reasoning(id: string, status: "in_progress" | "completed"): AgentReason
   return { id, type: "reasoning", status, summary: [], turn_id: "turn-test" };
 }
 
+it("settles a completed task when provider usage arrives after the first check", async () => {
+  vi.stubEnv("CREDITS_ENABLED", "true");
+  const t = await setup();
+  await t.backend.mutation(internal.credits.grantOnSignIn, { userId: t.userId });
+  const reservationId = await t.backend.mutation(internal.credits.reserveSessionAi, {
+    sessionId: t.sessionId,
+    sourceKey: "task:start",
+  });
+  await t.backend.run(async (ctx) => {
+    await ctx.db.patch(t.sessionId, {
+      creditAdmissionReservationId: reservationId,
+      browser: null,
+    });
+  });
+  t.provider.status.mockReturnValue("idle");
+  t.provider.turn.mockReturnValue({ id: "completed-turn", status: "completed" });
+  expect(await t.advance()).toBe(false);
+  expect((await t.session()).state.kind).toBe("idle");
+
+  await t.backend.action(internal.tasks.runtime.settleCredits, {
+    sessionId: t.sessionId,
+    attempt: 1,
+  });
+  const pending = await t.backend.run(async (ctx) => ({
+    reservation: await ctx.db.get(reservationId),
+    jobs: await ctx.db.system.query("_scheduled_functions").collect(),
+  }));
+  expect(pending.reservation?.state.kind).toBe("pending");
+  expect(pending.jobs.filter((job) => job.name === "tasks/runtime:settleCredits")).toHaveLength(1);
+
+  t.provider.usage.mockReturnValue({
+    input_tokens: 100,
+    output_tokens: 20,
+    total_tokens: 120,
+    input_tokens_details: { cached_tokens: 80 },
+    output_tokens_details: { reasoning_tokens: 10 },
+  });
+  await t.backend.action(internal.tasks.runtime.settleCredits, {
+    sessionId: t.sessionId,
+    attempt: 2,
+  });
+  const settled = await t.backend.run(async (ctx) => ({
+    reservation: await ctx.db.get(reservationId),
+    wallet: await ctx.db
+      .query("creditWallets")
+      .withIndex("by_user_id", (q) => q.eq("userId", t.userId))
+      .unique(),
+  }));
+  expect(settled.reservation?.state.kind).toBe("released");
+  expect(settled.wallet?.reservedUnits).toBe(0);
+  expect(settled.wallet?.balanceUnits).toBeLessThan(500_000);
+});
+
 it("executes review site assignment through the real tools without connecting to the browser", async () => {
   const t = await setup();
   await t.backend.run(async (ctx) => {

@@ -2,7 +2,8 @@
 
 import { v } from "convex/values";
 import { internal } from "../_generated/api";
-import { internalAction } from "../_generated/server";
+import type { Id } from "../_generated/dataModel";
+import { internalAction, type ActionCtx } from "../_generated/server";
 import { action } from "../functions";
 import { command } from "./model";
 import * as agentsApi from "./agentsApi";
@@ -11,6 +12,73 @@ import { closeBrowser } from "./execution";
 import { endResearch } from "./siteResearch";
 import { recordTaskCreditUsage, releaseTaskCreditHold } from "./creditUsage";
 import { insufficientCredits } from "../creditLedger";
+
+async function finishCreditSettlement(
+  ctx: ActionCtx,
+  sessionId: Id<"agentsApiSessions">,
+  attempt: number,
+) {
+  await recordTaskCreditUsage(ctx, sessionId);
+  const usage = await ctx.runQuery(internal.tasks.sessions.creditUsage, { sessionId });
+  if (!usage.admissionReservationId) return;
+  const session = await ctx.runQuery(internal.tasks.sessions.cleanupResources, { sessionId });
+  if (
+    (session.engine === "agents_api" && !session.providerId) ||
+    (usage.modelCostUsd !== null && !usage.modelUsageIncomplete)
+  ) {
+    await releaseTaskCreditHold(ctx, usage.admissionReservationId);
+    return;
+  }
+  if (attempt < 3) {
+    await ctx.scheduler.runAfter(30_000 * attempt, internal.tasks.runtime.settleCredits, {
+      sessionId,
+      attempt: attempt + 1,
+    });
+    return;
+  }
+  await ctx.runMutation(internal.credits.unresolved, {
+    reservationId: usage.admissionReservationId,
+    reason: "AI provider usage remained unavailable after three settlement checks",
+  });
+  console.error("AI usage unavailable after settlement checks", { sessionId });
+}
+
+export const settleCredits = internalAction({
+  args: { sessionId: v.id("agentsApiSessions"), attempt: v.number() },
+  returns: v.null(),
+  handler: async (ctx, { sessionId, attempt }): Promise<null> => {
+    const session = await ctx.runQuery(internal.tasks.sessions.cleanupResources, { sessionId });
+    if (!session.creditAdmissionReservationId) return null;
+    if (session.providerId) {
+      try {
+        switch (session.engine) {
+          case "agents_api":
+            await agentsApi.refreshExecution(ctx, session);
+            break;
+          case "convex_agent":
+            await convexAgent.refreshExecution(ctx, session);
+            break;
+        }
+      } catch (error) {
+        if (attempt < 3) {
+          await ctx.scheduler.runAfter(30_000 * attempt, internal.tasks.runtime.settleCredits, {
+            sessionId,
+            attempt: attempt + 1,
+          });
+        } else {
+          await ctx.runMutation(internal.credits.unresolved, {
+            reservationId: session.creditAdmissionReservationId,
+            reason: "AI provider usage could not be retrieved after three settlement checks",
+          });
+        }
+        console.error("AI usage refresh failed", { sessionId, attempt, error });
+        return null;
+      }
+    }
+    await finishCreditSettlement(ctx, sessionId, attempt);
+    return null;
+  },
+});
 
 export const begin = internalAction({
   args: { sessionId: v.id("agentsApiSessions"), command },
@@ -44,14 +112,7 @@ export const advance = internalAction({
         continues = await convexAgent.advance(ctx, args);
         break;
     }
-    const after = await ctx.runQuery(internal.tasks.sessions.cleanupResources, args);
-    const expectModelUsage =
-      Boolean(after.providerId) &&
-      (session.engine === "convex_agent"
-        ? session.state.kind !== "stopped"
-        : after.state.kind === "idle" ||
-          after.state.kind === "failed" ||
-          after.state.kind === "waiting");
+    const expectModelUsage = continues && session.engine === "convex_agent";
     const canContinue = await recordTaskCreditUsage(ctx, args.sessionId, expectModelUsage);
     if (continues && !canContinue) throw insufficientCredits();
     return continues;
@@ -73,8 +134,7 @@ export const refresh = action({
         await convexAgent.refreshExecution(ctx, session);
         break;
     }
-    await recordTaskCreditUsage(ctx, session._id, Boolean(session.providerId));
-    await releaseTaskCreditHold(ctx, session.creditAdmissionReservationId);
+    await finishCreditSettlement(ctx, session._id, 1);
     return null;
   },
 });
@@ -119,8 +179,7 @@ export const cleanup = internalAction({
         await convexAgent.refreshExecution(ctx, session);
         break;
     }
-    await recordTaskCreditUsage(ctx, session._id, Boolean(session.providerId));
-    await releaseTaskCreditHold(ctx, session.creditAdmissionReservationId);
+    await finishCreditSettlement(ctx, session._id, 1);
     return null;
   },
 });

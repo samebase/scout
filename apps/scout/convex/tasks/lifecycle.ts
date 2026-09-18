@@ -3,7 +3,6 @@ import { v } from "convex/values";
 import { components, internal } from "../_generated/api";
 import { internalMutation } from "../_generated/server";
 import { command } from "./model";
-import { releaseCreditOperation } from "../creditLedger";
 
 export const workflow = new WorkflowManager(components.workflow);
 
@@ -84,13 +83,12 @@ export const onComplete = internalMutation({
     if (
       session?.workflowId === args.workflowId &&
       session.creditAdmissionReservationId &&
-      args.result.kind === "success" &&
-      (session.providerId === null || session.state.kind !== "stopped")
+      args.result.kind === "success"
     ) {
-      const reservation = await ctx.db.get(session.creditAdmissionReservationId);
-      if (!reservation) throw new Error("Credit admission hold is missing");
-      if (reservation.state.kind === "pending")
-        await releaseCreditOperation(ctx, reservation, "Turn completed; usage recorded separately");
+      await ctx.scheduler.runAfter(0, internal.tasks.runtime.settleCredits, {
+        sessionId: session._id,
+        attempt: 1,
+      });
     }
     await workflow.cleanup(ctx, args.workflowId);
     return null;
