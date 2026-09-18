@@ -74,7 +74,7 @@ test("shows the reservation consistently and hides another member's private acti
     currentActivity: {
       kind: "visible",
       activity: { title: "Test Samebase signup" },
-      destination: { to: "/review", search: { thread: t.sessionId } },
+      destination: { to: "/tasks/$thread", params: { thread: t.sessionId } },
     },
   });
   expect(await t.admin.query(api.scout.scouts.get, { slug: "conrad" })).toMatchObject({

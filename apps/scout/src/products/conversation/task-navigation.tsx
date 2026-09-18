@@ -101,9 +101,10 @@ function TaskLink({
   return (
     <li>
       <Link
-        to="/review"
+        to="/tasks/$thread"
+        params={{ thread: task.threadId }}
         resetScroll={false}
-        search={{ ...search, thread: task.threadId, view }}
+        search={{ ...search, view }}
         aria-current={selected ? "page" : undefined}
         onClick={() => setMobilePane("main")}
         className={cn(

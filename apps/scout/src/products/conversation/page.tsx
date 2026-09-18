@@ -25,7 +25,7 @@ import { api } from "../../../convex/_generated/api";
 import { omitNullish } from "../../../shared/omitNullish";
 import { creditFailure, creditFailureMessage } from "../../../shared/creditFailure";
 import { scoutAvailabilityLabels } from "#components/scout-current-activity";
-import { productRoutes, type ProductKind, type ConversationSearch } from "./model";
+import { conversationDestination, type ProductKind, type ConversationSearch } from "./model";
 import { gameInviteDisplayText } from "../play/invite";
 import { ConversationComposer } from "./composer";
 import { ConversationSidebar, BrowserToggle, BrowserStop, TasksToggle } from "./sidebar";
@@ -72,29 +72,19 @@ export function ConversationError() {
 
 export function ConversationPage({
   kind,
+  threadId,
   search,
 }: {
   kind: ProductKind;
+  threadId: string;
   search: ConversationSearch;
 }) {
-  const { thread } = search;
   return (
     <ProductShell>
-      <main
-        id="main-content"
-        className={
-          thread
-            ? "flex h-[calc(100dvh-4rem)] min-h-0 flex-col"
-            : "grid min-h-[calc(100dvh-4rem)] place-items-center px-5 pt-8 pb-[16vh] max-[760px]:pb-[12vh]"
-        }
-      >
-        {thread ? (
-          <ConversationSidebar>
-            <SessionLoader threadId={thread} kind={kind} search={search} />
-          </ConversationSidebar>
-        ) : (
-          <ConversationLobby key={kind} kind={kind} showIntroduction siteSelection={null} />
-        )}
+      <main id="main-content" className="flex h-[calc(100dvh-4rem)] min-h-0 flex-col">
+        <ConversationSidebar>
+          <SessionLoader threadId={threadId} kind={kind} search={search} />
+        </ConversationSidebar>
       </main>
     </ProductShell>
   );
@@ -117,11 +107,9 @@ function ConversationUnavailable({ kind }: { kind: ProductKind }) {
 
 export function ConversationLobby({
   kind,
-  showIntroduction,
   siteSelection,
 }: {
   kind: ProductKind;
-  showIntroduction: boolean;
   siteSelection: { hostname: string; onRemove: () => void } | null;
 }) {
   const isPlay = kind === "play";
@@ -172,7 +160,7 @@ export function ConversationLobby({
         prompt,
         visibility,
       });
-      await navigate({ to: productRoutes[kind], search: { thread: threadId } });
+      await navigate(conversationDestination(kind, threadId, {}));
     } catch (error) {
       setRequest({
         kind: "failed",
@@ -189,45 +177,18 @@ export function ConversationLobby({
 
   return (
     <div className="w-full max-w-[660px]">
-      {showIntroduction && (
-        <div className={cn("mb-7 flex flex-col", isPlay && "items-center text-center")}>
-          {isPlay && (
-            <div className="relative mb-8 flex h-[110px] w-[152px] items-center justify-center">
-              <span className="absolute inset-x-0 bottom-0 h-14 -rotate-6 rounded-[50%] bg-muted" />
-              <ScoutPiece className="-rotate-6" />
-            </div>
-          )}
-          {!isPlay && (
-            <p className="mb-3 text-base text-muted-foreground">
-              Tired of reviewing hackathon submissions?
-            </p>
-          )}
-          <h1
-            className={
-              isPlay
-                ? "text-[52px] leading-[1.08] font-semibold tracking-[-2px] max-[760px]:text-[40px]"
-                : "text-[40px] leading-[1.2] font-medium tracking-[-1px] max-[760px]:text-[32px]"
-            }
-          >
-            {isPlay ? (
-              "What are we playing?"
-            ) : (
-              <>
-                Send a Scout instead. <span aria-hidden="true">😉</span>
-              </>
-            )}
+      {isPlay && (
+        <div className="mb-7 flex flex-col items-center text-center">
+          <div className="relative mb-8 flex h-[110px] w-[152px] items-center justify-center">
+            <span className="absolute inset-x-0 bottom-0 h-14 -rotate-6 rounded-[50%] bg-muted" />
+            <ScoutPiece className="-rotate-6" />
+          </div>
+          <h1 className="text-[52px] leading-[1.08] font-semibold tracking-[-2px] max-[760px]:text-[40px]">
+            What are we playing?
           </h1>
-          {isPlay && (
-            <p className="mt-4 text-base text-muted-foreground">
-              Bring a game, or find one together.
-            </p>
-          )}
-          {!isPlay && (
-            <p className="mt-4 max-w-[580px] text-base text-muted-foreground">
-              Scout creates its own accounts, logs in, and tests the site. You get its findings,
-              screenshots, and a video replay.
-            </p>
-          )}
+          <p className="mt-4 text-base text-muted-foreground">
+            Bring a game, or find one together.
+          </p>
         </div>
       )}
       <section aria-label={isPlay ? "Start playing" : "Start a review"}>
@@ -491,9 +452,11 @@ function ConversationTitle({ thread, kind }: { thread: ChatThread; kind: Product
 }
 
 function ReviewViews({
+  threadId,
   search,
   showingWalkthrough,
 }: {
+  threadId: string;
   search: ConversationSearch;
   showingWalkthrough: boolean;
 }) {
@@ -502,7 +465,8 @@ function ReviewViews({
     <nav aria-label="Review views" className="flex min-w-0 items-center gap-1 overflow-x-auto">
       <Button asChild variant={showingWalkthrough ? "secondary" : "ghost"} size="sm">
         <Link
-          to="/review"
+          to="/tasks/$thread"
+          params={{ thread: threadId }}
           search={{ ...search, view: "walkthrough" }}
           resetScroll={false}
           onClick={() => setMobilePane("main")}
@@ -513,7 +477,8 @@ function ReviewViews({
       </Button>
       <Button asChild variant={showingWalkthrough ? "ghost" : "secondary"} size="sm">
         <Link
-          to="/review"
+          to="/tasks/$thread"
+          params={{ thread: threadId }}
           search={{ ...search, view: "chat" }}
           resetScroll={false}
           onClick={() => setMobilePane("main")}
@@ -545,11 +510,7 @@ function ConversationNavigation({
       <ArrowLeftIcon size={16} aria-hidden="true" /> All sites
     </Link>
   ) : (
-    <Link
-      to={productRoutes[kind]}
-      search={{}}
-      className={cn(playTextLink, "min-h-11 text-muted-foreground")}
-    >
+    <Link to="/play" search={{}} className={cn(playTextLink, "min-h-11 text-muted-foreground")}>
       <ArrowLeftIcon size={16} aria-hidden="true" />{" "}
       <span className="whitespace-nowrap">New chat</span>
     </Link>
@@ -689,14 +650,13 @@ function ConversationBrowser({
               (session) => session.sessionId === event.currentTarget.value,
             );
             if (selected)
-              void navigate({
-                to: productRoutes[kind],
-                search: {
+              void navigate(
+                conversationDestination(kind, thread.threadId, {
                   ...search,
                   session: selected.sessionId,
                   replay: undefined,
-                },
-              });
+                }),
+              );
           }}
           className="min-h-11 min-w-0 flex-1 rounded-lg bg-transparent pr-1 font-medium"
         >
@@ -740,14 +700,13 @@ function ConversationBrowser({
             search.replay?.sessionId === session.sessionId ? search.replay.pageId : null
           }
           onSelectPage={(pageId) => {
-            void navigate({
-              to: productRoutes[kind],
-              search: {
+            void navigate(
+              conversationDestination(kind, thread.threadId, {
                 ...search,
                 session: session.sessionId,
                 replay: pageId === null ? undefined : { sessionId: session.sessionId, pageId },
-              },
-            });
+              }),
+            );
           }}
         />
       ) : (
@@ -811,6 +770,7 @@ function ConversationSession({
   showingWalkthrough: boolean;
 }) {
   const scout = thread.scout;
+  const { isAuthenticated } = useConvexAuth();
   const { threadId } = thread;
   const managedId = thread.runtime.kind === "task" ? thread.runtime.sessionId : null;
   const managed = useQuery(
@@ -819,7 +779,7 @@ function ConversationSession({
   );
   const cost = useQuery(
     api.tasks.sessions.cost,
-    thread.canControl && managedId && !showingWalkthrough ? { sessionId: managedId } : "skip",
+    thread.canControl && managedId ? { sessionId: managedId } : "skip",
   );
   const messages = usePaginatedQuery(
     api.scout.activity.messages,
@@ -912,7 +872,13 @@ function ConversationSession({
     >
       {kind === "review" && (
         <div data-sidebar-layout-part="pane-header" className="justify-between gap-2 px-3">
-          {managedId && <ReviewViews search={search} showingWalkthrough={showingWalkthrough} />}
+          {managedId && (
+            <ReviewViews
+              threadId={threadId}
+              search={search}
+              showingWalkthrough={showingWalkthrough}
+            />
+          )}
           <ConversationActions thread={thread} kind={kind} />
         </div>
       )}
@@ -1062,9 +1028,9 @@ function ConversationSession({
         </MessageScrollerProvider>
       </div>
       {thread.canControl && managedId ? (
-        !showingWalkthrough && (
-          <div className="shrink-0 border-t p-3">
-            {cost && <SessionCost session={cost} />}
+        <div className="shrink-0 border-t p-3">
+          {cost && <SessionCost session={cost} />}
+          {!showingWalkthrough && (
             <ConversationComposer
               autoFocus={false}
               context={null}
@@ -1094,16 +1060,20 @@ function ConversationSession({
                       : null}
               </span>
             </ConversationComposer>
-          </div>
-        )
+          )}
+        </div>
       ) : (
-        <Link
-          to={productRoutes[kind]}
-          search={{}}
-          className={cn(buttonVariants({ size: "lg" }), "self-center my-3")}
-        >
-          {kind === "play" ? "Play with Scout" : "Review with Scout"} <ArrowRightIcon size={16} />
-        </Link>
+        !showingWalkthrough && (
+          <p className="shrink-0 border-t p-3 text-sm text-muted-foreground">
+            {thread.runtime.kind === "convex_agent"
+              ? "This older chat is read-only. Its transcript and replay are still available."
+              : !isAuthenticated
+                ? "Sign in with the account that started this chat to continue it."
+                : thread.isOwner
+                  ? "Your account doesn't currently have access to continue this chat."
+                  : "Only the account that started this chat can send follow-up messages."}
+          </p>
+        )
       )}
     </section>
   );

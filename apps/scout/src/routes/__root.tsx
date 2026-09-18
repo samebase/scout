@@ -41,8 +41,7 @@ function RootComponent() {
     pathname === "/" ||
     pathname === "/play" ||
     pathname.startsWith("/play/") ||
-    pathname === "/review" ||
-    pathname.startsWith("/review/") ||
+    pathname.startsWith("/tasks/") ||
     pathname.startsWith("/sites/");
   return (
     <RootDocument>

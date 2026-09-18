@@ -98,7 +98,7 @@ async function open(path: string) {
   });
   const review = createRoute({
     getParentRoute: () => root,
-    path: "/review",
+    path: "/tasks/$thread",
     staticData: { access: "access_public" },
     component: () => <h1>Review contents</h1>,
   });

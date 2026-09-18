@@ -341,9 +341,9 @@ function AgentsChrome({ session, search }: { session: Session | null; search: Ag
       {review?.purpose.kind === "review" && (
         <Button asChild variant="ghost" size="sm">
           <Link
-            to="/review"
+            to="/tasks/$thread"
+            params={{ thread: review.threadId }}
             search={{
-              thread: review.threadId,
               scope: review.visibility === "public" ? "public" : "mine",
               view: step === "walkthrough" ? "walkthrough" : "chat",
             }}

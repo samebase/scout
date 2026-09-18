@@ -40,7 +40,7 @@ claim about playing any game. These references support positioning, not Scout co
   Creating the Agent chat and sending its first message happen in one mutation.
   The user's message is saved as written; Play guidance belongs in the system instructions.
   Failed starts retain the draft. A Scout remains limited to one active chat.
-- `/play?thread=...` and `/review?thread=...` put the text conversation beside Scout's live browser or replay.
+- `/play?thread=...` and `/tasks/$thread` put the text conversation beside Scout's live browser or replay.
   A resizable Samebase sidebar holds the browser and replays. Mobile opens it with a button or swipe
   without discarding the draft or browser; its selector appears when there are multiple sessions.
   Owners retain Stop and human handoff controls. Public spectators can watch without signing in;

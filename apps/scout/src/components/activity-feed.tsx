@@ -225,10 +225,10 @@ function ReviewRow({
     !checks || ongoing || activity.status === "failed" || activity.status === "stopped";
   return (
     <Link
-      to="/review"
+      to="/tasks/$thread"
+      params={{ thread: activity.threadId }}
       search={{
         ...search,
-        thread: activity.threadId,
         view: activity.walkthrough ? "walkthrough" : "chat",
       }}
       className={cn(

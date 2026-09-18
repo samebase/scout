@@ -14,8 +14,10 @@ export const notify = internalAction({
   handler: async (ctx, args) => {
     const delivery = await ctx.runQuery(internal.tasks.sessions.handoffNotification, args);
     if (!delivery) return null;
-    const url = new URL("/review", humanHandoffOrigin(getRuntimeEnv("SITE_URL")));
-    url.searchParams.set("thread", args.sessionId);
+    const url = new URL(
+      `/tasks/${encodeURIComponent(args.sessionId)}`,
+      humanHandoffOrigin(getRuntimeEnv("SITE_URL")),
+    );
     const mail = createAgentMailInboxClient({
       apiKey: requiredAgentMailApiKey(getRuntimeEnv("AGENTMAIL_API_KEY")),
       inboxId: delivery.inboxId,

@@ -23,7 +23,6 @@ export function ProductHome({ search }: { search: z.infer<typeof homeSearch> }) 
           >
             <ConversationLobby
               kind="review"
-              showIntroduction={false}
               siteSelection={
                 search.taskSite
                   ? {

@@ -35,7 +35,7 @@ speculative prompt edits.
 ## Current implementation
 
 - `/` provides the Review composer, Public reviews, and My reviews. Site filters
-  are stored in the URL. `/review?thread=…` opens a conversation. Existing Play
+  are stored in the URL. `/tasks/$thread` opens a conversation. Existing Play
   conversations remain accessible through their URLs and Lab.
 - The main navigation shows Reviews and Scouts for members, plus the existing
   admin tools for staff. Scout selection and visibility use shadcn Select controls.

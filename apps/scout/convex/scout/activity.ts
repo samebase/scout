@@ -80,7 +80,7 @@ export const currentActivityValidator = v.union(
         to: v.literal("/agents"),
         search: v.object({ session: v.id("agentsApiSessions") }),
       }),
-      v.object({ to: v.literal("/review"), search: v.object({ thread: v.string() }) }),
+      v.object({ to: v.literal("/tasks/$thread"), params: v.object({ thread: v.string() }) }),
       v.object({ to: v.literal("/play"), search: v.object({ thread: v.string() }) }),
     ),
   }),
@@ -125,7 +125,9 @@ export async function currentScoutActivity(
       activity: { ...activity, latestSession: visible ? activity.latestSession : null },
       destination: canInspect
         ? { to: "/agents", search: { session: session._id } }
-        : { to: chat?.purpose.kind === "play" ? "/play" : "/review", search: { thread: threadId } },
+        : chat?.purpose.kind === "play"
+          ? { to: "/play", search: { thread: threadId } }
+          : { to: "/tasks/$thread", params: { thread: threadId } },
     };
   }
 
@@ -133,10 +135,10 @@ export async function currentScoutActivity(
   return {
     kind: "visible",
     activity: await summary(ctx, chat),
-    destination: {
-      to: chat.purpose.kind === "play" ? "/play" : "/review",
-      search: { thread: threadId },
-    },
+    destination:
+      chat.purpose.kind === "play"
+        ? { to: "/play", search: { thread: threadId } }
+        : { to: "/tasks/$thread", params: { thread: threadId } },
   };
 }
 

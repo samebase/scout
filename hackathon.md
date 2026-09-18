@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-18T16:40:00Z
+- **Last updated:** 2026-09-18T17:02:14Z
 
 ## Log
 
@@ -1419,10 +1419,18 @@ Previous and Next keep the visible screenshot in place as explanations change le
 and reserve its space while the next image loads
 (`apps/scout/src/components/task-walkthrough.tsx`).
 
-### 2026-09-18 - working tree - v230
+### 2026-09-18 - 17e1cf8 - v230
 
 Verified accounts receive 50 Scout credits. Task checks, site research, browser sessions,
 model use, and hosted search deduct reported usage from a shared wallet. A positive balance
 allows new paid work; work already started can take the balance below zero without reservations.
 Settings shows a rounded balance and charge history; the $5 pack for 200 credits uses Polar checkout
 (`apps/scout/convex/credits.ts`, `apps/scout/convex/tasks/`, `apps/scout/src/components/credits-panel.tsx`).
+
+### 2026-09-18 - working tree - v231
+
+New reviews start on the landing page, including tasks opened from a selected site.
+The `/review` route is deleted; existing tasks open at `/tasks/$thread`.
+Read-only chats explain why replies are unavailable, and owners can inspect cost and usage
+in both Chat and Walkthrough (`apps/scout/src/routes/tasks.$thread.tsx`,
+`apps/scout/src/products/conversation/page.tsx`).
