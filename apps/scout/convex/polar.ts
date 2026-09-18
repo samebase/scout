@@ -42,6 +42,7 @@ export const checkout = action({
             ],
           },
           external_customer_id: purchase.userId,
+          customer_email: ctx.viewer.email,
           metadata: { scout_purchase_id: purchase._id },
           allow_discount_codes: true,
           allow_trial: false,
