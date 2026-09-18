@@ -196,6 +196,7 @@ async function openPlay(path = "/play") {
     ...omitNullish({
       component: ReviewRoute.options.component,
       validateSearch: ReviewRoute.options.validateSearch,
+      beforeLoad: ReviewRoute.options.beforeLoad,
     }),
   });
   const directory = createRoute({
@@ -562,6 +563,70 @@ test("a direct walkthrough link shows an older task's empty state without forcin
   expect(remote.sendManaged).not.toHaveBeenCalled();
 });
 
+test("a finished review keeps costs and usage visible across Walkthrough and Chat", async () => {
+  remote.queries.set(
+    "scout/activity:get",
+    session({ purpose: { kind: "review" }, status: "finished", hasWalkthrough: true }),
+  );
+  const costs: FunctionReturnType<typeof api.tasks.sessions.cost> = {
+    cost: {
+      modelPricingBasis: "provider_reported",
+      modelEstimateUsd: 0.25,
+      webSearchUsd: 0,
+      browserEstimateUsd: null,
+      browserSeconds: 60,
+      reportedBrowserCredits: 2,
+      unreportedBrowserSessions: 0,
+      knownSubtotalUsd: 0.25,
+      totalEstimateUsd: null,
+      missing: ["firecrawl_credit_price"],
+    },
+    usage: { inputTokens: 1200, cachedInputTokens: 200, outputTokens: 300 },
+    checks: [],
+    research: null,
+  };
+  remote.queries.set("tasks/sessions:cost", costs);
+  remote.queries.set("tasks/walkthrough:get", { walkthrough: null, captures: [] });
+  await openPlay("/review?thread=game-thread");
+  await screen.findByRole("region", { name: "Walkthrough with Scout" });
+  const cost = screen.getByText("Cost · $0.25 subtotal");
+  await userEvent.setup().click(cost);
+  expect(cost.closest("details")?.open).toBe(true);
+  expect(screen.getByText("Input tokens").nextElementSibling?.textContent).toBe("1,200");
+  expect(screen.getByText("Firecrawl").nextElementSibling?.textContent).toBe("2 credits");
+  expect(screen.queryByRole("textbox", { name: "Message Scout" })).toBeNull();
+  expect(remote.queryCalls).toHaveBeenCalledWith("tasks/sessions:cost", {
+    sessionId: "managed-1",
+  });
+  await userEvent.setup().click(screen.getByRole("link", { name: "Chat & replay" }));
+  expect(await screen.findByRole("textbox", { name: "Message Scout" })).toBeTruthy();
+  expect(screen.getByText("Cost · $0.25 subtotal")).toBe(cost);
+  expect(cost.closest("details")?.open).toBe(true);
+  expect(screen.queryByRole("link", { name: "Review with Scout" })).toBeNull();
+});
+
+test.each([
+  {
+    isOwner: false,
+    reason: "Only the account that started this chat can send follow-up messages.",
+  },
+  {
+    isOwner: true,
+    reason: "Your account doesn't currently have access to continue this chat.",
+  },
+])("read-only reviews explain access for isOwner=$isOwner", async ({ isOwner, reason }) => {
+  remote.queries.set(
+    "scout/activity:get",
+    session({ purpose: { kind: "review" }, status: "finished", isOwner, canControl: false }),
+  );
+  await openPlay("/review?thread=game-thread");
+  expect(await screen.findByText(reason)).toBeTruthy();
+  expect(screen.queryByRole("textbox", { name: "Message Scout" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "Review with Scout" })).toBeNull();
+  expect(remote.queryCalls).toHaveBeenCalledWith("tasks/sessions:cost", "skip");
+  expect(remote.queryCalls).toHaveBeenCalledWith("tasks/sessions:controls", "skip");
+});
+
 test("desktop Chat always shows its replay and Walkthrough occupies the full layout", async () => {
   vi.spyOn(window, "innerWidth", "get").mockReturnValue(1440);
   remote.queries.set(
@@ -725,6 +790,12 @@ test("legacy threads without shared task IDs do not offer an Agents inspector li
   expect(screen.queryByRole("button", { name: "Stop Scout" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Resume Scout" })).toBeNull();
   expect(screen.queryByRole("combobox", { name: "Chat visibility" })).toBeNull();
+  expect(
+    screen.getByText(
+      "This older chat is read-only. Its transcript and replay are still available.",
+    ),
+  ).toBeTruthy();
+  expect(screen.queryByRole("link", { name: "Review with Scout" })).toBeNull();
   expect(remote.queryCalls).toHaveBeenCalledWith("tasks/sessions:controls", "skip");
   expect(remote.queryCalls).toHaveBeenCalledWith("tasks/sessions:cost", "skip");
 });
@@ -855,6 +926,10 @@ test("public managed Reviews do not request owner controls, costs, or expose the
   expect(screen.queryByLabelText("Message Scout")).toBeNull();
   expect(screen.queryByRole("button", { name: "Resume Scout" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Stop Scout" })).toBeNull();
+  expect(
+    screen.getByText("Sign in with the account that started this chat to continue it."),
+  ).toBeTruthy();
+  expect(screen.queryByRole("link", { name: "Review with Scout" })).toBeNull();
   expect(remote.queryCalls).toHaveBeenCalledWith("tasks/sessions:controls", "skip");
   expect(remote.queryCalls).toHaveBeenCalledWith("tasks/sessions:cost", "skip");
 });
@@ -1138,10 +1213,12 @@ describe("Play invitation", () => {
     expect(await screen.findByRole("button", { name: "Find a game for us" })).toBeTruthy();
   });
 
-  test("Review starts on its own route using the shared chat interface", async () => {
+  test("the empty Review route opens the home composer and preserves feed filters", async () => {
     remote.queries.set("scout/activity:get", session({ purpose: { kind: "review" } }));
-    const router = await openPlay("/review");
-    expect(await screen.findByRole("heading", { name: "Send a Scout instead." })).toBeTruthy();
+    const router = await openPlay("/review?site=example.com&scope=mine");
+    await waitFor(() => expect(router.state.location.pathname).toBe("/"));
+    expect(router.state.location.search).toEqual({ site: "example.com", scope: "mine" });
+    expect(screen.queryByRole("heading", { name: "Send a Scout instead." })).toBeNull();
     expect(screen.queryByRole("button", { name: "Find a game for us" })).toBeNull();
     fireEvent.change(screen.getByLabelText("Message Scout"), {
       target: { value: "Review example.com" },
@@ -1226,7 +1303,10 @@ describe("Play invitation", () => {
     expect(screen.queryByRole("textbox", { name: "Message Scout" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Stop Scout" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Open in Agents" })).toBeNull();
-    expect(screen.getByRole("link", { name: "Play with Scout" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Play with Scout" })).toBeNull();
+    expect(
+      screen.getByText("Sign in with the account that started this chat to continue it."),
+    ).toBeTruthy();
     expect(
       remote.queryCalls.mock.calls.filter(
         ([name, args]) =>
