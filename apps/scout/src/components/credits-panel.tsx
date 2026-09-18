@@ -51,10 +51,11 @@ export function CreditBalanceLink() {
   );
 }
 
-export function CreditsPanel() {
+export function CreditsPanel({ purchaseId }: { purchaseId: string | undefined }) {
   const viewer = useViewerAccess();
   const balance = useQuery(api.credits.balance, {});
   const offer = useQuery(api.credits.offer, {});
+  const purchase = useQuery(api.creditPurchases.status, purchaseId ? { purchaseId } : "skip");
   const { results, status, loadMore } = usePaginatedQuery(
     api.credits.history,
     {},
@@ -101,6 +102,15 @@ export function CreditsPanel() {
         <p className="mt-3 text-sm text-muted-foreground">Loading credits…</p>
       ) : (
         <>
+          {purchaseId && purchase && (
+            <p className="mt-4 text-sm" role="status">
+              {purchase.fulfillment.kind === "manual_refund"
+                ? "Your payment needs review. No credits were added."
+                : purchase.creditedUnits > 0
+                  ? "Payment confirmed. Credits were added to your balance."
+                  : "Waiting for payment confirmation. Your balance will update here."}
+            </p>
+          )}
           <div className="mt-4 flex flex-wrap items-end justify-between gap-4 rounded-xl border border-border bg-muted/40 p-4 sm:p-5">
             <div>
               <p className="text-sm text-muted-foreground">Available balance</p>

@@ -12,18 +12,27 @@ import { getFunctionName, type FunctionReference } from "convex/server";
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
 import { CreditBalanceLink, CreditsPanel } from "./credits-panel";
 
-const remote = vi.hoisted(() => ({
-  availableUnits: 500_000,
-  reservedUnits: 0,
-  walletMissing: false,
-  approved: true,
-  checkoutEnabled: true,
-  history: vi.fn(),
-  historyStatus: "Exhausted",
-  ensureWallet: vi.fn(),
-  createCheckout: vi.fn(),
-  loadMore: vi.fn(),
-}));
+const remote = vi.hoisted(() => {
+  const state: {
+    purchase: null | {
+      creditedUnits: number;
+      fulfillment: { kind: "wallet" | "manual_refund" };
+    };
+  } = { purchase: null };
+  return {
+    ...state,
+    availableUnits: 500_000,
+    reservedUnits: 0,
+    walletMissing: false,
+    approved: true,
+    checkoutEnabled: true,
+    history: vi.fn(),
+    historyStatus: "Exhausted",
+    ensureWallet: vi.fn(),
+    createCheckout: vi.fn(),
+    loadMore: vi.fn(),
+  };
+});
 
 vi.mock("convex/react", () => ({
   useConvexAuth: () => ({ isAuthenticated: true, isLoading: false }),
@@ -49,6 +58,8 @@ vi.mock("convex/react", () => ({
           packPriceCents: 500,
           checkoutEnabled: remote.checkoutEnabled,
         };
+      case "creditPurchases:status":
+        return remote.purchase;
       default:
         throw new Error(`Unexpected query: ${getFunctionName(reference)}`);
     }
@@ -80,6 +91,7 @@ beforeEach(() => {
   remote.walletMissing = false;
   remote.approved = true;
   remote.checkoutEnabled = true;
+  remote.purchase = null;
   remote.historyStatus = "Exhausted";
   remote.history.mockReset().mockReturnValue([]);
   remote.ensureWallet.mockReset().mockResolvedValue(null);
@@ -108,7 +120,7 @@ test("shows available and reserved credits with ledger history", () => {
     },
   ]);
 
-  render(<CreditsPanel />);
+  render(<CreditsPanel purchaseId={undefined} />);
 
   expect(screen.getByText("45")).toBeTruthy();
   expect(screen.getByText(/5 reserved for ongoing work/)).toBeTruthy();
@@ -123,7 +135,7 @@ test("shows available and reserved credits with ledger history", () => {
 
 test("keeps the offer visible but disables checkout when purchases are unavailable", () => {
   remote.checkoutEnabled = false;
-  render(<CreditsPanel />);
+  render(<CreditsPanel purchaseId={undefined} />);
 
   expect(screen.getByRole("button", { name: "Add 200 credits for $5.00" })).toHaveProperty(
     "disabled",
@@ -135,7 +147,7 @@ test("keeps the offer visible but disables checkout when purchases are unavailab
 
 test("requires account approval to buy credits", () => {
   remote.approved = false;
-  render(<CreditsPanel />);
+  render(<CreditsPanel purchaseId={undefined} />);
 
   expect(screen.getByRole("button", { name: /Add 200 credits/ })).toHaveProperty("disabled", true);
   expect(screen.getByText("Account approval is required to buy credits.")).toBeTruthy();
@@ -144,7 +156,7 @@ test("requires account approval to buy credits", () => {
 test("creates a missing wallet and reports setup errors", async () => {
   remote.walletMissing = true;
   remote.ensureWallet.mockRejectedValue(new Error("Wallet unavailable"));
-  render(<CreditsPanel />);
+  render(<CreditsPanel purchaseId={undefined} />);
 
   await waitFor(() => expect(remote.ensureWallet).toHaveBeenCalledWith({}));
   expect(await screen.findByRole("alert")).toHaveProperty(
@@ -155,7 +167,7 @@ test("creates a missing wallet and reports setup errors", async () => {
 
 test("lets a failed checkout be retried", async () => {
   remote.createCheckout.mockRejectedValue(new Error("Polar unavailable"));
-  render(<CreditsPanel />);
+  render(<CreditsPanel purchaseId={undefined} />);
 
   const button = screen.getByRole("button", { name: /Add 200 credits/ });
   fireEvent.click(button);
@@ -165,6 +177,16 @@ test("lets a failed checkout be retried", async () => {
   );
   fireEvent.click(button);
   await waitFor(() => expect(remote.createCheckout).toHaveBeenCalledTimes(2));
+});
+
+test("shows payment confirmation after returning from checkout", () => {
+  remote.purchase = { creditedUnits: 2_000_000, fulfillment: { kind: "wallet" } };
+  render(<CreditsPanel purchaseId="purchase-1" />);
+
+  expect(screen.getByRole("status")).toHaveProperty(
+    "textContent",
+    "Payment confirmed. Credits were added to your balance.",
+  );
 });
 
 test("links the navigation balance to settings", async () => {
