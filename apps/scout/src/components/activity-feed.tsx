@@ -127,7 +127,7 @@ function SiteCard({
       >
         <SitePreview site={site} className="sm:w-[clamp(18rem,calc(25vw+8rem),24rem)]" />
       </Link>
-      <div className="flex h-60 min-h-0 min-w-0 flex-col px-4 sm:h-auto sm:px-5">
+      <div className="flex min-h-60 min-w-0 flex-col px-4 sm:min-h-0 sm:px-5">
         <header className="relative shrink-0 border-b py-1.5 sm:max-lg:py-1">
           <Link
             to="/sites/$site"
@@ -138,7 +138,7 @@ function SiteCard({
           />
           <SiteIdentity site={site} heading="h2" />
         </header>
-        <div className="min-h-0 flex-1">
+        <div className="flex-1 sm:min-h-0">
           {tasks.results.slice(0, 2).map((activity) => (
             <ReviewRow key={activity.threadId} activity={activity} preview search={search} />
           ))}
@@ -229,7 +229,6 @@ function ReviewRow({
       className={cn(
         "group flex items-center gap-3 border-t outline-none first:border-t-0 focus-visible:ring-2 focus-visible:ring-ring",
         preview ? "py-1 sm:max-lg:py-0.5" : "py-4",
-        preview && !activity.walkthrough && "py-3",
       )}
     >
       <div className="min-w-0 flex-1">
@@ -267,7 +266,7 @@ function ReviewRow({
             )}
           </div>
         </div>
-        <div className={cn(preview && "flex items-baseline gap-2")}>
+        <div className={cn(preview && "flex min-h-5 items-baseline gap-2")}>
           {activity.walkthrough && (
             <p
               className={cn(

@@ -44,7 +44,9 @@ export function SiteFilters({
     <div
       className={cn(
         "flex gap-2",
-        layout === "sidebar" ? "flex-col" : "flex-wrap items-start justify-between gap-3",
+        layout === "sidebar"
+          ? "flex-col"
+          : "flex-wrap items-start justify-between gap-3 max-[500px]:flex-col",
       )}
     >
       {signedIn && (
@@ -59,7 +61,10 @@ export function SiteFilters({
         >
           <SelectTrigger
             aria-label="Review visibility"
-            className={cn("min-h-11 bg-card", layout === "sidebar" ? "w-full" : "min-w-40")}
+            className={cn(
+              "min-h-11 bg-card",
+              layout === "sidebar" ? "w-full" : "min-w-40 max-[500px]:w-full",
+            )}
           >
             <SelectValue />
           </SelectTrigger>
@@ -69,7 +74,12 @@ export function SiteFilters({
           </SelectContent>
         </Select>
       )}
-      <div className={cn("relative min-w-0", layout === "toolbar" && "ml-auto w-64 max-w-full")}>
+      <div
+        className={cn(
+          "relative min-w-0",
+          layout === "toolbar" && "ml-auto w-64 max-w-full max-[500px]:ml-0 max-[500px]:w-full",
+        )}
+      >
         <SearchIcon
           aria-hidden="true"
           className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
