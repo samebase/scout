@@ -33,11 +33,18 @@ type Env = {
   readonly AGENTMAIL_API_KEY: string | undefined;
   readonly CLOUDFLARE_EMAIL_ACCOUNT_ID: string | undefined;
   readonly CLOUDFLARE_EMAIL_API_TOKEN: string | undefined;
+  readonly CREDITS_ENABLED: string | undefined;
   readonly DEV_SEED_AUTH_EMAIL: string | undefined;
   readonly DEV_SEED_AUTH_ENABLED: string | undefined;
   readonly DEV_SEED_AUTH_PASSWORD: string | undefined;
   readonly FIRECRAWL_API_KEY: string | undefined;
   readonly OPENAI_API_KEY: string | undefined;
+  readonly POLAR_ACCESS_TOKEN: string | undefined;
+  readonly POLAR_CHECKOUT_ENABLED: string | undefined;
+  readonly POLAR_CREDIT_PRODUCT_ID: string | undefined;
+  readonly POLAR_ORGANIZATION_ID: string | undefined;
+  readonly POLAR_SERVER: string | undefined;
+  readonly POLAR_WEBHOOK_SECRET: string | undefined;
   readonly R2_ACCESS_KEY_ID: string | undefined;
   readonly R2_BUCKET: string | undefined;
   readonly R2_ENDPOINT: string | undefined;

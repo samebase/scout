@@ -1,7 +1,8 @@
 import { ConvexError } from "convex/values";
 import { z } from "zod";
 
-export const INSUFFICIENT_CREDITS_MESSAGE = "Not enough credits to start this operation.";
+export const INSUFFICIENT_CREDITS_MESSAGE =
+  "You need more credits to continue. Check your balance in Settings.";
 
 const creditFailureSchema = z.object({
   code: z.enum(["INSUFFICIENT_CREDITS", "CREDIT_HOLD"]),

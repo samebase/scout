@@ -16,6 +16,7 @@ const productId = "22222222-2222-4222-8222-222222222222";
 const secret = `whsec_${Buffer.alloc(32, 7).toString("base64")}`;
 
 beforeEach(() => {
+  vi.stubEnv("CREDITS_ENABLED", "true");
   vi.stubEnv("POLAR_SERVER", "sandbox");
   vi.stubEnv("POLAR_ACCESS_TOKEN", "sandbox-test-token");
   vi.stubEnv("POLAR_WEBHOOK_SECRET", secret);

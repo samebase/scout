@@ -290,6 +290,39 @@ describe("credit wallet", () => {
     ]);
   });
 
+  test("lets a running task use its own admission hold and stops when its balance is exhausted", async () => {
+    const { backend, owner, userId, sessionId } = await setup();
+    await owner.mutation(ensureWallet, {});
+    const reservationId = await backend.mutation(reserveSessionAi, {
+      sessionId,
+      sourceKey: "run-with-little-credit",
+    });
+    await backend.run((ctx) =>
+      ctx.db.patch(sessionId, { creditAdmissionReservationId: reservationId }),
+    );
+    await backend.mutation(adjustManually, {
+      userId,
+      reference: "reduce-to-reserved-balance",
+      amountUnits: -450_000,
+      reason: "Test remaining admission funds",
+    });
+    expect(
+      await backend.mutation(recordSessionUsage, {
+        sessionId,
+        modelCostMicrodollars: 0,
+        webSearchCalls: 0,
+      }),
+    ).toBe(true);
+    expect(
+      await backend.mutation(recordSessionUsage, {
+        sessionId,
+        modelCostMicrodollars: 50_000,
+        webSearchCalls: 0,
+      }),
+    ).toBe(false);
+    expect(await owner.query(balance, {})).toMatchObject({ balanceUnits: 0 });
+  });
+
   test("manual adjustments replay safely and a hold blocks new reservations without blocking settlement", async () => {
     const { backend, owner, userId, sessionId } = await setup();
     const reservationId = await backend.mutation(reserve, {

@@ -60,6 +60,8 @@ export const creditEntryValidator = v.object({
   balanceAfterUnits: v.number(),
   detail: v.union(
     v.object({ kind: v.literal("signup"), policyVersion: v.string() }),
+    v.object({ kind: v.literal("purchase"), purchaseId: v.id("creditPurchases") }),
+    v.object({ kind: v.literal("refund"), purchaseId: v.id("creditPurchases") }),
     v.object({
       kind: v.literal("usage"),
       reservationId: v.id("creditReservations"),

@@ -134,6 +134,7 @@ export default defineSchema({
     chargedModelMicrodollars: v.optional(v.number()),
     chargedWebSearchCalls: v.optional(v.number()),
     creditUsageTerms: v.optional(creditTermsValidator),
+    creditAdmissionReservationId: v.optional(v.id("creditReservations")),
     walkthrough: v.optional(walkthroughContent),
   })
     .index("by_user_id", ["userId"])

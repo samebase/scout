@@ -10,6 +10,7 @@ import * as convexAgent from "./convexAgent";
 import { closeBrowser } from "./execution";
 import { endResearch } from "./siteResearch";
 import { recordTaskCreditUsage } from "./creditUsage";
+import { insufficientCredits } from "../creditLedger";
 
 export const begin = internalAction({
   args: { sessionId: v.id("agentsApiSessions"), command },
@@ -18,6 +19,8 @@ export const begin = internalAction({
     const session = await ctx.runQuery(internal.tasks.sessions.cleanupResources, {
       sessionId: args.sessionId,
     });
+    if (session.state.kind !== "stopped" && !(await recordTaskCreditUsage(ctx, args.sessionId)))
+      throw insufficientCredits();
     switch (session.engine) {
       case "agents_api":
         return agentsApi.begin(ctx, args);
@@ -41,7 +44,8 @@ export const advance = internalAction({
         continues = await convexAgent.advance(ctx, args);
         break;
     }
-    await recordTaskCreditUsage(ctx, args.sessionId);
+    const canContinue = await recordTaskCreditUsage(ctx, args.sessionId);
+    if (continues && !canContinue) throw insufficientCredits();
     return continues;
   },
 });

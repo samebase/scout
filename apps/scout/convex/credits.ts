@@ -1,6 +1,7 @@
 import { paginationOptsValidator, paginationResultValidator } from "convex/server";
 import { v } from "convex/values";
-import { internalMutation, internalQuery } from "./_generated/server";
+import { internalMutation, internalQuery, type MutationCtx } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
 import { mutation, query } from "./functions";
 import schema from "./schema";
 import {
@@ -22,6 +23,7 @@ import {
   walletForUser,
 } from "./creditLedger";
 import { creditSourceValidator } from "./creditsModel";
+import { checkoutEnabled } from "./polarConfig";
 
 export const grantOnSignIn = internalMutation({
   args: { userId: v.id("users") },
@@ -108,13 +110,29 @@ export const reserveSessionAi = internalMutation({
     }),
 });
 
+async function sessionHasCredit(
+  ctx: MutationCtx,
+  session: Doc<"agentsApiSessions">,
+  wallet: Doc<"creditWallets">,
+  balanceUnits: number,
+) {
+  const reservation = session.creditAdmissionReservationId
+    ? await ctx.db.get(session.creditAdmissionReservationId)
+    : null;
+  const ownHold =
+    reservation?.state.kind === "pending"
+      ? Math.max(0, reservation.reservedUnits - reservation.chargedUnits)
+      : 0;
+  return wallet.hold.kind === "clear" && balanceUnits > wallet.reservedUnits - ownHold;
+}
+
 export const recordSessionUsage = internalMutation({
   args: {
     sessionId: v.id("agentsApiSessions"),
     modelCostMicrodollars: v.number(),
     webSearchCalls: v.number(),
   },
-  returns: v.null(),
+  returns: v.boolean(),
   handler: async (ctx, args) => {
     const reportedModel = nonnegativeInteger.parse(args.modelCostMicrodollars);
     const reportedSearches = nonnegativeInteger.parse(args.webSearchCalls);
@@ -124,7 +142,11 @@ export const recordSessionUsage = internalMutation({
     const previousSearches = nonnegativeInteger.parse(session.chargedWebSearchCalls ?? 0);
     const modelTotal = Math.max(previousModel, reportedModel);
     const searchTotal = Math.max(previousSearches, reportedSearches);
-    if (modelTotal === previousModel && searchTotal === previousSearches) return null;
+    if (modelTotal === previousModel && searchTotal === previousSearches) {
+      const wallet = await walletForUser(ctx, session.userId);
+      if (!wallet) throw new Error("Credit wallet is missing");
+      return sessionHasCredit(ctx, session, wallet, wallet.balanceUnits);
+    }
 
     if ((previousModel > 0 || previousSearches > 0) && !session.creditUsageTerms)
       throw new Error("Session credit conversion terms are missing");
@@ -169,7 +191,7 @@ export const recordSessionUsage = internalMutation({
       chargedWebSearchCalls: searchTotal,
       creditUsageTerms: terms,
     });
-    return null;
+    return sessionHasCredit(ctx, session, wallet, finalBalance);
   },
 });
 
@@ -300,11 +322,17 @@ export const offer = query({
     signupCredits: v.number(),
     initialAiReserveCredits: v.number(),
     usageEnabled: v.boolean(),
+    packCredits: v.number(),
+    packPriceCents: v.number(),
+    checkoutEnabled: v.boolean(),
   }),
   handler: () => ({
     unitsPerCredit: CREDIT_POLICY.unitsPerCredit,
     signupCredits: CREDIT_POLICY.signupCredits,
     initialAiReserveCredits: CREDIT_POLICY.initialAiReserveCredits,
     usageEnabled: creditsEnabled(),
+    packCredits: CREDIT_POLICY.packCredits,
+    packPriceCents: CREDIT_POLICY.packPriceCents,
+    checkoutEnabled: creditsEnabled() && checkoutEnabled(),
   }),
 });

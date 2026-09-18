@@ -5,6 +5,9 @@ export const CREDIT_POLICY = {
   unitsPerCredit: 10_000,
   microdollarsPerCredit: 10_000,
   signupCredits: 50,
+  packCredits: 200,
+  packPriceCents: 500,
+  currency: "usd",
   initialAiReserveCredits: 5,
   hostedWebSearchMicrodollarsPerCall: 10_000,
 } as const;

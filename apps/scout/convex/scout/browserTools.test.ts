@@ -82,7 +82,7 @@ function dependencies(browserRuntime = runtime()) {
       }),
     ),
     connect: vi.fn(async () => browserRuntime),
-    deleteBrowser: vi.fn(async () => ({
+    deleteBrowser: vi.fn<Firecrawl["deleteBrowser"]>(async () => ({
       success: true,
       sessionDurationMs: 1_500,
       creditsBilled: 2,

@@ -22,7 +22,7 @@ import type { Infer } from "convex/values";
 import { omitNullish } from "../../shared/omitNullish";
 import { MAX_BROWSER_SESSIONS_PER_THREAD } from "../scout/browserSessions";
 import { browserSessionLifecycleValidator } from "../browserModel";
-import { agentsApiCostValidator, estimateAgentsApiCost } from "./cost";
+import { agentsApiCostValidator, estimateAgentsApiCost, uncachedLunaCost } from "./cost";
 import { getInitialCheck, listChecks, summarizeCheck, currentCheckMessage } from "./requestChecks";
 import { REQUEST_CHECK_MODEL, MAX_SESSION_CHECKS, checkSummary } from "./requestCheckModel";
 import { getResearch, summarizeResearch } from "./siteResearchRecords";
@@ -30,6 +30,8 @@ import { researchSummary } from "./siteResearchModel";
 import { agentsToolActivity, pairedAgentsOutput } from "../scout/toolActivityAgents";
 import { toolActivityValidator } from "../../shared/toolActivity";
 import schema from "../schema";
+import { CREDIT_POLICY, creditsEnabled } from "../creditPolicy";
+import { releaseCreditOperation, reserveCreditOperation } from "../creditLedger";
 
 async function requireSession(ctx: QueryCtx, sessionId: Id<"agentsApiSessions">) {
   const session = await ctx.db.get(sessionId);
@@ -86,7 +88,25 @@ async function startWorkflow(
       context: { sessionId },
     },
   );
-  await ctx.db.patch(sessionId, { workflowId });
+  if (creditsEnabled()) {
+    const session = await ctx.db.get(sessionId);
+    if (!session) throw new Error("Session not found");
+    if (session.creditAdmissionReservationId) {
+      const previous = await ctx.db.get(session.creditAdmissionReservationId);
+      if (!previous) throw new Error("Previous credit admission hold is missing");
+      await releaseCreditOperation(ctx, previous, "Turn completed; usage recorded separately");
+    }
+    const reservationId = await reserveCreditOperation(ctx, {
+      sessionId,
+      sourceKey: `workflow:${workflowId}`,
+      source: { kind: "admission_hold" },
+      maximumCostMicrodollars:
+        CREDIT_POLICY.initialAiReserveCredits * CREDIT_POLICY.microdollarsPerCredit,
+    });
+    await ctx.db.patch(sessionId, { workflowId, creditAdmissionReservationId: reservationId });
+  } else {
+    await ctx.db.patch(sessionId, { workflowId });
+  }
 }
 
 export const list = query({
@@ -224,7 +244,11 @@ export const creditUsage = internalQuery({
       now: 0,
     });
     return {
-      modelCostUsd: cost.modelEstimateUsd,
+      modelCostUsd:
+        cost.modelEstimateUsd ??
+        (session.model === "gpt-5.6-luna" && session.usage
+          ? uncachedLunaCost(session.usage)
+          : null),
       webSearchCalls: searches.length > 1_000 ? null : searches.length,
     };
   },

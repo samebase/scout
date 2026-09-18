@@ -10,7 +10,44 @@ import { scoutIsWorking } from "./scout/chatAccess";
 
 const modules = import.meta.glob("./**/*.ts");
 beforeEach(() => vi.useFakeTimers());
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
+});
+
+it("reserves credits at task admission and leaves an unfunded follow-up idle", async () => {
+  vi.stubEnv("CREDITS_ENABLED", "true");
+  const { backend, owner, userId, sessionId } = await setup();
+  expect(await owner.query(api.credits.balance, {})).toMatchObject({
+    balanceUnits: 500_000,
+    reservedUnits: 50_000,
+  });
+  const session = await backend.run((ctx) => ctx.db.get(sessionId));
+  if (!session?.creditAdmissionReservationId) throw new Error("Missing admission hold");
+  await backend.mutation(internal.credits.release, {
+    reservationId: session.creditAdmissionReservationId,
+    reason: "Turn completed; usage recorded separately",
+  });
+  await backend.mutation(internal.tasks.sessions.update, {
+    sessionId,
+    active: false,
+    state: { kind: "idle" },
+    providerId: "provider-session",
+  });
+  await backend.mutation(internal.credits.adjustManually, {
+    userId,
+    reference: "exhaust-account-for-admission-test",
+    amountUnits: -500_000,
+    reason: "Test exhausted balance",
+  });
+  await expect(
+    owner.mutation(api.tasks.sessions.send, { sessionId, message: "Continue" }),
+  ).rejects.toThrow("INSUFFICIENT_CREDITS");
+  expect(await backend.run((ctx) => ctx.db.get(sessionId))).toMatchObject({
+    active: false,
+    state: { kind: "idle" },
+  });
+});
 
 async function setup() {
   const backend = convexTest(schema, modules);

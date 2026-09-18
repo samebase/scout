@@ -3,7 +3,7 @@ import { internalMutation, internalQuery } from "./_generated/server";
 import { getRuntimeEnv } from "./runtimeEnv";
 import { query } from "./functions";
 import { requireUserPermission } from "./access";
-import { CREDIT_POLICY, nonnegativeInteger, signedInteger } from "./creditPolicy";
+import { CREDIT_POLICY, creditsEnabled, nonnegativeInteger, signedInteger } from "./creditPolicy";
 import { ensureCreditWallet, walletForUser } from "./creditLedger";
 import { checkoutEnabled, polarConfig } from "./polarConfig";
 import { paidOrderEvidenceValidator } from "./creditPurchasesModel";
@@ -37,7 +37,8 @@ export const begin = internalMutation({
   returns: schema.doc("creditPurchases"),
   handler: async (ctx, { userId }) => {
     await requireUserPermission(ctx, userId, "access_play");
-    if (!checkoutEnabled()) throw new Error("Credit purchases are not available yet");
+    if (!creditsEnabled() || !checkoutEnabled())
+      throw new Error("Credit purchases are not available yet");
     const config = polarConfig();
     await ensureCreditWallet(ctx, userId);
     const id = await ctx.db.insert("creditPurchases", {

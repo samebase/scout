@@ -6,13 +6,15 @@ import type { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { checkoutEnabled, polarConfig, polarWebhookConfig } from "./polarConfig";
 import { polarCheckoutSchema, polarOrderSchema, polarOrderRouteSchema } from "./polarModel";
+import { creditsEnabled } from "./creditPolicy";
 
 export const checkout = action({
   access: "access_play",
   args: {},
   returns: v.object({ url: v.string(), purchaseId: v.id("creditPurchases") }),
   handler: async (ctx): Promise<{ url: string; purchaseId: Id<"creditPurchases"> }> => {
-    if (!checkoutEnabled()) throw new Error("Credit purchases are not available yet");
+    if (!creditsEnabled() || !checkoutEnabled())
+      throw new Error("Credit purchases are not available yet");
     const config = polarConfig();
     const purchase = await ctx.runMutation(internal.creditPurchases.begin, {
       userId: ctx.viewer.userId,

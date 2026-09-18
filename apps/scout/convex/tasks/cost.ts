@@ -8,6 +8,10 @@ import { z } from "zod";
 const lunaRates = { input: 0.2, cachedInput: 0.02, output: 1.2 };
 const webSearchUsdPerCall = 10 / 1_000;
 
+export function uncachedLunaCost(usage: AgentsApiUsage) {
+  return (usage.inputTokens * lunaRates.input + usage.outputTokens * lunaRates.output) / 1_000_000;
+}
+
 export const agentsApiUsageValidator = v.object({
   inputTokens: v.number(),
   outputTokens: v.number(),

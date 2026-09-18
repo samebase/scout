@@ -21,6 +21,10 @@ function entryLabel(detail: CreditDetail) {
       return "Credit purchase";
     case "refund":
       return "Purchase refunded";
+    case "session_model":
+      return "Scout conversation";
+    case "session_web_search":
+      return "Web search";
     case "adjustment":
       return detail.reason;
     default: {
