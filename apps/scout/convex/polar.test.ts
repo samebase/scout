@@ -51,6 +51,7 @@ function paidOrder(purchase: Doc<"creditPurchases">, suffix = "1") {
     billing_reason: "purchase",
     subscription_id: null,
     units: null,
+    subtotal_amount: 500,
     discount_amount: 0,
     applied_balance_amount: 0,
     currency: "usd",
@@ -102,72 +103,111 @@ describe("Polar credit settlement", () => {
     expect(purchases).toHaveLength(1);
   });
 
-  test("creates a sandbox checkout with the stored offer and tax added, without granting credits", async () => {
-    const { owner, userId } = await setup();
-    const requests: Request[] = [];
-    vi.stubGlobal(
-      "fetch",
-      vi.fn<typeof fetch>(async (input, init) => {
-        requests.push(new Request(input, init));
-        return Response.json({
-          id: "sandbox-checkout",
-          url: "https://sandbox.polar.sh/checkout/sandbox-checkout",
-          organization_id: organizationId,
-          product_id: productId,
-          external_customer_id: userId,
-          amount: 500,
-          currency: "usd",
-          discount_amount: 0,
-          is_payment_required: true,
-          units: null,
-          subscription_id: null,
-          allow_discount_codes: false,
-          tax_behavior: "exclusive",
-          product: { is_recurring: false },
-          product_price: { amount_type: "fixed", price_amount: 500, price_currency: "usd" },
-        });
-      }),
-    );
-    const result = await owner.action(api.polar.checkout, {});
-    expect(requests).toHaveLength(1);
-    const [request] = requests;
-    if (!request) throw new Error("Expected a checkout request");
-    expect(request.url).toBe("https://sandbox-api.polar.sh/v1/checkouts/");
-    expect(await request.json()).toMatchObject({
-      products: [productId],
-      prices: {
-        [productId]: [
-          {
-            amount_type: "fixed",
-            price_amount: 500,
-            price_currency: "usd",
+  test.each([0, 250, 500])(
+    "creates a checkout allowing discounts, with %i cents discounted",
+    async (discount) => {
+      const { backend, owner, userId } = await setup();
+      const requests: Request[] = [];
+      vi.stubGlobal(
+        "fetch",
+        vi.fn<typeof fetch>(async (input, init) => {
+          requests.push(new Request(input, init));
+          return Response.json({
+            id: "sandbox-checkout",
+            url: "https://sandbox.polar.sh/checkout/sandbox-checkout",
+            organization_id: organizationId,
+            product_id: productId,
+            external_customer_id: userId,
+            amount: 500,
+            currency: "usd",
+            discount_amount: discount,
+            net_amount: 500 - discount,
+            is_payment_required: discount < 500,
+            units: null,
+            subscription_id: null,
+            allow_discount_codes: true,
             tax_behavior: "exclusive",
-          },
-        ],
-      },
-      external_customer_id: userId,
-      metadata: { scout_purchase_id: result.purchaseId },
-      allow_discount_codes: false,
-      success_url: `https://scout.example.test/settings?purchase=${result.purchaseId}`,
-    });
-    expect(await owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 500_000 });
-    expect(await owner.query(api.creditPurchases.status, { purchaseId: result.purchaseId })).toBe(
-      "pending",
-    );
-  });
+            product: { is_recurring: false },
+            product_price: { amount_type: "fixed", price_amount: 500, price_currency: "usd" },
+          });
+        }),
+      );
+      const result = await owner.action(api.polar.checkout, {});
+      expect(requests).toHaveLength(1);
+      const [request] = requests;
+      if (!request) throw new Error("Expected a checkout request");
+      expect(request.url).toBe("https://sandbox-api.polar.sh/v1/checkouts/");
+      expect(await request.json()).toMatchObject({
+        products: [productId],
+        prices: {
+          [productId]: [
+            {
+              amount_type: "fixed",
+              price_amount: 500,
+              price_currency: "usd",
+              tax_behavior: "exclusive",
+            },
+          ],
+        },
+        external_customer_id: userId,
+        metadata: { scout_purchase_id: result.purchaseId },
+        allow_discount_codes: true,
+        success_url: `https://scout.example.test/settings?purchase=${result.purchaseId}`,
+      });
+      expect(await owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 500_000 });
+      expect(await owner.query(api.credits.offer, {})).toMatchObject({
+        packCredits: 400,
+        packPriceCents: 500,
+        unitsPerCredit: 10_000,
+        signupCredits: 50,
+      });
+      expect(await backend.run((ctx) => ctx.db.get(result.purchaseId))).toMatchObject({
+        terms: { creditUnits: 4_000_000, priceCents: 500 },
+      });
+      expect(await owner.query(api.creditPurchases.status, { purchaseId: result.purchaseId })).toBe(
+        "pending",
+      );
+    },
+  );
 
-  test("a checkout attempt grants nothing; a verified paid webhook grants exactly once", async () => {
-    const { backend, owner, purchase } = await setup();
-    expect(await owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 500_000 });
-    const event = signedEvent("order.paid", paidOrder(purchase));
-    expect((await backend.fetch("/polar/events", event)).status).toBe(200);
-    expect((await backend.fetch("/polar/events", event)).status).toBe(200);
-    expect(await owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 2_500_000 });
-    expect(
-      (await owner.query(api.credits.history, { paginationOpts: { cursor: null, numItems: 10 } }))
-        .page,
-    ).toHaveLength(2);
-  });
+  test.each([0, 250, 500])(
+    "a signed paid webhook with %i cents discounted grants the full pack exactly once",
+    async (discount) => {
+      const { backend, owner, purchase } = await setup();
+      expect(await owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 500_000 });
+      const event = signedEvent("order.paid", {
+        ...paidOrder(purchase),
+        discount_amount: discount,
+        net_amount: 500 - discount,
+      });
+      expect((await backend.fetch("/polar/events", event)).status).toBe(200);
+      expect((await backend.fetch("/polar/events", event)).status).toBe(200);
+      expect(await owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 4_500_000 });
+      expect(await owner.query(api.creditPurchases.status, { purchaseId: purchase._id })).toBe(
+        "paid",
+      );
+      expect(await backend.run((ctx) => ctx.db.get(purchase._id))).toMatchObject({
+        paidProductCents: 500 - discount,
+        creditedUnits: 4_000_000,
+        refundedProductCents: 0,
+      });
+      expect(
+        (await owner.query(api.credits.history, { paginationOpts: { cursor: null, numItems: 10 } }))
+          .page,
+      ).toHaveLength(2);
+      await expect(
+        backend.fetch(
+          "/polar/events",
+          signedEvent("order.refunded", {
+            ...paidOrder(purchase),
+            discount_amount: discount,
+            net_amount: 500 - discount,
+            refunded_amount: 501 - discount,
+          }),
+        ),
+      ).rejects.toThrow("Refund exceeds");
+    },
+  );
 
   test("supports both signing formats and rejects invalid or expired signatures", async () => {
     const { backend, owner, purchase } = await setup();
@@ -186,34 +226,45 @@ describe("Polar credit settlement", () => {
         )
       ).status,
     ).toBe(403);
-    expect(await owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 2_500_000 });
+    expect(await owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 4_500_000 });
   });
 
-  test("partial, duplicate, and out-of-order refunds converge; another purchase grants a new pack", async () => {
-    const { backend, owner, userId, purchase } = await setup();
-    const order = paidOrder(purchase);
-    const apply = (refunded: number) =>
-      backend.mutation(
-        internal.creditPurchases.processOrder,
-        orderEvidence(
-          { ...order, refunded_amount: refunded, refunded_tax_amount: refunded / 5 },
-          "sandbox",
-        ),
+  test.each([500, 250])(
+    "refunds use the %i cents paid, including duplicates and out-of-order events",
+    async (paid) => {
+      const { backend, owner, userId, purchase } = await setup();
+      const order = { ...paidOrder(purchase), discount_amount: 500 - paid, net_amount: paid };
+      const apply = (refunded: number) =>
+        backend.fetch(
+          "/polar/events",
+          signedEvent(refunded > 0 ? "order.refunded" : "order.paid", {
+            ...order,
+            refunded_amount: refunded,
+            refunded_tax_amount: refunded / 5,
+          }),
+        );
+      await apply(paid / 2);
+      await apply(0);
+      await apply(paid / 2);
+      expect(await owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 2_500_000 });
+      expect(await owner.query(api.creditPurchases.status, { purchaseId: purchase._id })).toBe(
+        "partially_refunded",
       );
-    await apply(250);
-    await apply(0);
-    await apply(250);
-    expect(await owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 1_500_000 });
-    await apply(500);
-    await apply(250);
-    expect(await owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 500_000 });
-    const second = await backend.mutation(internal.creditPurchases.begin, { userId });
-    await backend.mutation(
-      internal.creditPurchases.processOrder,
-      orderEvidence(paidOrder(second, "2"), "sandbox"),
-    );
-    expect(await owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 2_500_000 });
-  });
+      await apply(paid);
+      await apply(paid / 2);
+      expect(await owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 500_000 });
+      expect(await owner.query(api.creditPurchases.status, { purchaseId: purchase._id })).toBe(
+        "refunded",
+      );
+      await expect(apply(paid + 5)).rejects.toThrow("Refund exceeds");
+      const second = await backend.mutation(internal.creditPurchases.begin, { userId });
+      await backend.mutation(
+        internal.creditPurchases.processOrder,
+        orderEvidence(paidOrder(second, "2"), "sandbox"),
+      );
+      expect(await owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 4_500_000 });
+    },
+  );
 
   test("checks customer, environment, immutable price, checkout, and order identity", async () => {
     const { backend, owner, purchase, userId } = await setup();
@@ -222,7 +273,11 @@ describe("Polar credit settlement", () => {
       { externalCustomerId: "other-user" },
       { environment: "production" as const },
       { productId: "other-product" },
+      { organizationId: "other-organization" },
+      { currency: "eur" },
       { netAmount: 1 },
+      { subtotalAmount: 501 },
+      { discountAmount: 100 },
       { paid: false },
     ]) {
       await expect(
@@ -230,6 +285,13 @@ describe("Polar credit settlement", () => {
       ).rejects.toThrow("terms");
     }
     await backend.mutation(internal.creditPurchases.processOrder, evidence);
+    await expect(
+      backend.mutation(internal.creditPurchases.processOrder, {
+        ...evidence,
+        netAmount: 250,
+        discountAmount: 250,
+      }),
+    ).rejects.toThrow("Paid product amount cannot change");
     await expect(
       backend.mutation(internal.creditPurchases.processOrder, {
         ...evidence,
@@ -249,17 +311,22 @@ describe("Polar credit settlement", () => {
         purchaseReference: second._id,
       }),
     ).rejects.toThrow("another purchase");
-    expect(await owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 2_500_000 });
+    expect(await owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 4_500_000 });
   });
 
-  test("honors snapshotted pack sizes and exposes an already-spent refund as a deficit", async () => {
+  test("honors an old 200-credit checkout and exposes an already-spent refund as a deficit", async () => {
     const { backend, owner, purchase, userId } = await setup();
     await backend.run((ctx) =>
-      ctx.db.patch(purchase._id, { terms: { ...purchase.terms, creditUnits: 1_000_000 } }),
+      ctx.db.patch(purchase._id, {
+        terms: { ...purchase.terms, policyVersion: "2026-09-10", creditUnits: 2_000_000 },
+      }),
     );
     const order = paidOrder(purchase);
     await backend.mutation(internal.creditPurchases.processOrder, orderEvidence(order, "sandbox"));
-    expect(await owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 1_500_000 });
+    expect(await owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 2_500_000 });
+    await backend.run((ctx) => ctx.db.patch(purchase._id, { paidProductCents: undefined }));
+    await backend.mutation(internal.creditPurchases.processOrder, orderEvidence(order, "sandbox"));
+    expect(await owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 2_500_000 });
     await backend.run(async (ctx) => {
       const wallet = await ctx.db
         .query("creditWallets")
@@ -272,7 +339,7 @@ describe("Polar credit settlement", () => {
       internal.creditPurchases.processOrder,
       orderEvidence({ ...order, refunded_amount: 500 }, "sandbox"),
     );
-    expect(await owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: -1_000_000 });
+    expect(await owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: -2_000_000 });
   });
 
   test("does not fulfill a late payment to a deleted account or its replacement", async () => {

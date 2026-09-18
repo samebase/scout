@@ -1,11 +1,11 @@
 import { z } from "zod";
 
 export const CREDIT_POLICY = {
-  version: "2026-09-10",
+  version: "2026-09-19",
   unitsPerCredit: 10_000,
   microdollarsPerCredit: 10_000,
   signupCredits: 50,
-  packCredits: 200,
+  packCredits: 400,
   packPriceCents: 500,
   currency: "usd",
   hostedWebSearchMicrodollarsPerCall: 10_000,

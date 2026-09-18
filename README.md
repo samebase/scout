@@ -50,6 +50,9 @@ AgentMail inbox to read, send, and reply to email, plus its Firecrawl browser pr
 across multiple services. Inspect tool calls, live browsers, replay, usage, and human handoffs
 in the same task interface.
 
+Settings sells credit packs through Polar. See [credit packs and rollout](./docs/credits.md)
+for pricing, discounts, refunds, and the required dashboard setup.
+
 Each task also has a [Bash workspace](./docs/workspaces.md) with a file tree, text preview, and downloads.
 The agent can run JavaScript and TypeScript with `js-exec`, using standard APIs and no npm.
 The agent shares those files with the user. It runs inside Convex with file bytes in

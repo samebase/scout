@@ -51,7 +51,7 @@ vi.mock("convex/react", () => ({
       case "credits:offer":
         return {
           unitsPerCredit: 10_000,
-          packCredits: 200,
+          packCredits: 400,
           packPriceCents: 500,
           usageEnabled: remote.usageEnabled,
           checkoutEnabled: remote.checkoutEnabled,
@@ -140,7 +140,7 @@ test.each([
 
   expect(screen.getByText(displayed)).toBeTruthy();
   expect(screen.getByText("Add credits before starting new work.")).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Add 200 credits for $5.00" })).toHaveProperty(
+  expect(screen.getByRole("button", { name: "Add 400 credits for $5.00" })).toHaveProperty(
     "disabled",
     false,
   );
@@ -175,7 +175,7 @@ test("keeps the offer visible but disables checkout when purchases are unavailab
   remote.checkoutEnabled = false;
   render(<CreditsPanel purchaseId={undefined} />);
 
-  expect(screen.getByRole("button", { name: "Add 200 credits for $5.00" })).toHaveProperty(
+  expect(screen.getByRole("button", { name: "Add 400 credits for $5.00" })).toHaveProperty(
     "disabled",
     true,
   );
@@ -199,7 +199,7 @@ test("requires account approval to buy credits", () => {
   remote.approved = false;
   render(<CreditsPanel purchaseId={undefined} />);
 
-  expect(screen.getByRole("button", { name: /Add 200 credits/ })).toHaveProperty("disabled", true);
+  expect(screen.getByRole("button", { name: /Add 400 credits/ })).toHaveProperty("disabled", true);
   expect(screen.getByText("Account approval is required to buy credits.")).toBeTruthy();
 });
 
@@ -219,7 +219,7 @@ test("lets a failed checkout be retried", async () => {
   remote.createCheckout.mockRejectedValue(new Error("Polar unavailable"));
   render(<CreditsPanel purchaseId={undefined} />);
 
-  const button = screen.getByRole("button", { name: /Add 200 credits/ });
+  const button = screen.getByRole("button", { name: /Add 400 credits/ });
   fireEvent.click(button);
   expect(await screen.findByRole("alert")).toHaveProperty(
     "textContent",

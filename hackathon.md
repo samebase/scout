@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-18T21:23:07Z
+- **Last updated:** 2026-09-18T22:13:05Z
 
 ## Log
 
@@ -1470,8 +1470,14 @@ globe/lock visibility icons, and tighter spacing while retaining 44px touch targ
 Menus retain full labels (`apps/scout/src/products/conversation/composer.tsx`,
 `apps/scout/src/products/conversation/page.tsx`).
 
-### 2026-09-18 - working tree - v237
+### 2026-09-18 - 7577a17 - v237
 
 Task lists show a globe for public tasks and a lock for private tasks before each title.
 Site previews, site task lists, and the task sidebar use the composer's icons with accessible labels
 (`apps/scout/src/components/activity-feed.tsx`, `apps/scout/src/products/conversation/task-navigation.tsx`).
+
+### 2026-09-18 - working tree - v238
+
+New $5 packs contain 400 credits, while existing balances and older checkout quantities stay intact.
+Polar discount codes can cover part or all of the price; refunds revoke credits in proportion
+to the amount paid after discount (`apps/scout/convex/creditPolicy.ts`, `apps/scout/convex/creditPurchases.ts`).

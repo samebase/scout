@@ -47,6 +47,8 @@ async function setup() {
       environment: "sandbox",
       currency: "usd",
       paid: true,
+      subtotalAmount: 500,
+      discountAmount: 0,
       netAmount: 500,
       refundedProductAmount,
       refundedTaxAmount,

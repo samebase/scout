@@ -23,10 +23,11 @@ test("checkout URL must be an HTTPS Polar host", () => {
     amount: 500,
     currency: "usd",
     discount_amount: 0,
+    net_amount: 500,
     is_payment_required: true,
     units: null,
     subscription_id: null,
-    allow_discount_codes: false,
+    allow_discount_codes: true,
     tax_behavior: "exclusive",
     product: { is_recurring: false },
     product_price: { amount_type: "fixed", price_amount: 500, price_currency: "usd" },
@@ -49,6 +50,7 @@ test("order boundary rejects missing purchase references and negative refunds", 
     billing_reason: "purchase",
     subscription_id: null,
     units: null,
+    subtotal_amount: 500,
     discount_amount: 0,
     applied_balance_amount: 0,
     currency: "usd",
@@ -61,6 +63,8 @@ test("order boundary rejects missing purchase references and negative refunds", 
   expect(polarOrderSchema.parse(order).id).toBe("order");
   expect(() => polarOrderSchema.parse({ ...order, metadata: {} })).toThrow();
   expect(() => polarOrderSchema.parse({ ...order, refunded_amount: -1 })).toThrow();
+  expect(() => polarOrderSchema.parse({ ...order, discount_amount: -1 })).toThrow();
+  expect(() => polarOrderSchema.parse({ ...order, applied_balance_amount: 100 })).toThrow();
   expect(polarOrderRouteSchema.parse({ product_id: "other-product", metadata: {} })).toMatchObject({
     product_id: "other-product",
   });
