@@ -229,7 +229,6 @@ function ReviewRow({
       className={cn(
         "group flex items-center gap-3 border-t outline-none first:border-t-0 focus-visible:ring-2 focus-visible:ring-ring",
         preview ? "py-1 sm:max-lg:py-0.5" : "py-4",
-        preview && !activity.walkthrough && "py-3",
       )}
     >
       <div className="min-w-0 flex-1">
@@ -267,7 +266,7 @@ function ReviewRow({
             )}
           </div>
         </div>
-        <div className={cn(preview && "flex items-baseline gap-2")}>
+        <div className={cn(preview && "flex min-h-5 items-baseline gap-2")}>
           {activity.walkthrough && (
             <p
               className={cn(
