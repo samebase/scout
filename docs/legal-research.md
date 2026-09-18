@@ -186,7 +186,7 @@ constraints or be misled by external content, that stopping does not reverse pri
 and that automated checks do not mean every task is supervised by the operator.
 
 The service has an express as-is warranty disclaimer, exclusions for indirect losses, and
-an aggregate liability cap of the greater of US$100 or Scout fees paid in the preceding
+an aggregate liability cap of the greater of US$10 or Scout fees paid in the preceding
 12 months. That amount is a contractual drafting choice, not a statutory threshold or a
 figure taken from Samebase's existing terms. Business users also indemnify the operator for
 third-party claims caused by their unlawful instructions, unauthorized access, or material

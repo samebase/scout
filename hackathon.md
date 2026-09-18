@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-18T21:49:26Z
+- **Last updated:** 2026-09-18T22:40:08Z
 
 ## Log
 
@@ -1487,7 +1487,7 @@ to the amount paid after discount (`apps/scout/convex/creditPolicy.ts`, `apps/sc
 Credit checkout fills in the signed-in user's Scout email in Polar, while the account ID
 continues to link the purchased credits to the correct balance (`apps/scout/convex/polar.ts`).
 
-### 2026-09-18 - working tree - v238
+### 2026-09-18 - working tree - v240
 
 Added public privacy and terms pages using the Samebase operator, with dated policies covering
 task sharing, AI processing, retained history, user responsibility for authorized actions, and

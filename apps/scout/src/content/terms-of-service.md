@@ -262,7 +262,7 @@ business users, this exclusion also covers business interruption, loss or corrup
 and the cost of substitute services, whether those losses are direct or indirect.
 
 To the maximum extent permitted by law, our total aggregate liability for all claims arising
-out of or relating to Scout or these terms is limited to the greater of **US$100** or **the
+out of or relating to Scout or these terms is limited to the greater of **US$10** or **the
 amount you paid for Scout in the 12 months before the event giving rise to the claim**.
 Payments through an authorized reseller count as payments for Scout. The limit applies
 across all related claims and legal theories, including contract, tort, and negligence,
