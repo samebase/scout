@@ -1487,10 +1487,16 @@ to the amount paid after discount (`apps/scout/convex/creditPolicy.ts`, `apps/sc
 Credit checkout fills in the signed-in user's Scout email in Polar, while the account ID
 continues to link the purchased credits to the correct balance (`apps/scout/convex/polar.ts`).
 
-### 2026-09-18 - working tree - v240
+### 2026-09-18 - 3149b91 - v240
 
 Added public privacy and terms pages using the Samebase operator, with dated policies covering
 task sharing, AI processing, retained history, user responsibility for authorized actions, and
 liability limits. The sticky header keeps the pages accessible throughout Scout and after
 account closure; the account form links agreement to sign-in and signup
 (`apps/scout/src/content/`, `apps/scout/src/components/`, `docs/legal-research.md`).
+
+### 2026-09-18 - working tree - v241
+
+Credit purchases match the saved Scout checkout even when Polar reuses a customer from another app.
+Signed notifications still verify the product and price, and repeated deliveries cannot add credits twice
+(`apps/scout/convex/creditPurchases.ts`, `apps/scout/convex/polarModel.ts`).

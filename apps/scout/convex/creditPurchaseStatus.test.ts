@@ -41,7 +41,6 @@ async function setup() {
       orderId: "order-1",
       checkoutId: "checkout-1",
       customerId: "customer-1",
-      externalCustomerId: userId,
       organizationId: "scout",
       productId: "credit-pack",
       environment: "sandbox",

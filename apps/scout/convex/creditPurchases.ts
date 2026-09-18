@@ -102,7 +102,6 @@ export const processOrder = internalMutation({
     if (!purchase) throw new Error("Order has no Scout purchase");
     const terms = purchase.terms;
     if (
-      order.externalCustomerId !== purchase.userId ||
       order.organizationId !== terms.organizationId ||
       order.productId !== terms.productId ||
       order.environment !== terms.environment ||
@@ -112,7 +111,9 @@ export const processOrder = internalMutation({
       !order.paid
     )
       throw new Error("Order does not match the stored purchase terms");
-    if (purchase.checkoutId !== null && purchase.checkoutId !== order.checkoutId)
+    if (purchase.checkoutId === null)
+      throw new Error("Purchase checkout has not been recorded yet");
+    if (purchase.checkoutId !== order.checkoutId)
       throw new Error("Order belongs to another checkout");
     if (purchase.orderId !== null && purchase.orderId !== order.orderId)
       throw new Error("A purchase cannot grant a second order");

@@ -37,6 +37,10 @@ async function setup() {
   );
   const owner = backend.withIdentity({ subject: `${userId}|session` });
   const purchase = await backend.mutation(internal.creditPurchases.begin, { userId });
+  await backend.mutation(internal.creditPurchases.recordCheckout, {
+    purchaseId: purchase._id,
+    result: { kind: "ready", checkoutId: "checkout-1", url: "https://sandbox.polar.sh/checkout/1" },
+  });
   return { backend, owner, userId, purchase };
 }
 
@@ -58,7 +62,11 @@ function paidOrder(purchase: Doc<"creditPurchases">, suffix = "1") {
     net_amount: 500,
     refunded_amount: 0,
     refunded_tax_amount: 0,
-    customer: { id: "customer-1", external_id: purchase.userId, organization_id: organizationId },
+    customer: {
+      id: "customer-1",
+      external_id: "samebase-existing-user",
+      organization_id: organizationId,
+    },
     product: { id: productId, organization_id: organizationId, is_recurring: false },
   };
 }
@@ -259,6 +267,14 @@ describe("Polar credit settlement", () => {
       );
       await expect(apply(paid + 5)).rejects.toThrow("Refund exceeds");
       const second = await backend.mutation(internal.creditPurchases.begin, { userId });
+      await backend.mutation(internal.creditPurchases.recordCheckout, {
+        purchaseId: second._id,
+        result: {
+          kind: "ready",
+          checkoutId: "checkout-2",
+          url: "https://sandbox.polar.sh/checkout/2",
+        },
+      });
       await backend.mutation(
         internal.creditPurchases.processOrder,
         orderEvidence(paidOrder(second, "2"), "sandbox"),
@@ -267,11 +283,10 @@ describe("Polar credit settlement", () => {
     },
   );
 
-  test("checks customer, environment, immutable price, checkout, and order identity", async () => {
+  test("checks environment, immutable price, checkout, and order identity", async () => {
     const { backend, owner, purchase, userId } = await setup();
     const evidence = orderEvidence(paidOrder(purchase), "sandbox");
     for (const change of [
-      { externalCustomerId: "other-user" },
       { environment: "production" as const },
       { productId: "other-product" },
       { organizationId: "other-organization" },
@@ -306,6 +321,14 @@ describe("Polar credit settlement", () => {
       }),
     ).rejects.toThrow("another checkout");
     const second = await backend.mutation(internal.creditPurchases.begin, { userId });
+    await backend.mutation(internal.creditPurchases.recordCheckout, {
+      purchaseId: second._id,
+      result: {
+        kind: "ready",
+        checkoutId: evidence.checkoutId,
+        url: "https://sandbox.polar.sh/checkout/1",
+      },
+    });
     await expect(
       backend.mutation(internal.creditPurchases.processOrder, {
         ...evidence,
@@ -313,6 +336,46 @@ describe("Polar credit settlement", () => {
       }),
     ).rejects.toThrow("another purchase");
     expect(await owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 4_500_000 });
+  });
+
+  test("matches a discounted order to its checkout when the Polar customer has no external ID", async () => {
+    const { backend, owner, purchase } = await setup();
+    const order = paidOrder(purchase);
+    const event = signedEvent("order.paid", {
+      ...order,
+      customer: { ...order.customer, external_id: null },
+      discount_amount: 500,
+      net_amount: 0,
+    });
+    expect((await backend.fetch("/polar/events", event)).status).toBe(200);
+    expect(await owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 4_500_000 });
+  });
+
+  test("rejects unrecorded checkouts and another user's purchase reference", async () => {
+    const { backend, owner, purchase } = await setup();
+    const otherId = await backend.run((ctx) =>
+      insertTestAccount(ctx, { email: "other@example.test" }),
+    );
+    const otherPurchase = await backend.mutation(internal.creditPurchases.begin, {
+      userId: otherId,
+    });
+    const event = signedEvent("order.paid", {
+      ...paidOrder(purchase),
+      metadata: { scout_purchase_id: otherPurchase._id },
+    });
+    await expect(backend.fetch("/polar/events", event)).rejects.toThrow("has not been recorded");
+    await backend.mutation(internal.creditPurchases.recordCheckout, {
+      purchaseId: otherPurchase._id,
+      result: {
+        kind: "ready",
+        checkoutId: "other-checkout",
+        url: "https://sandbox.polar.sh/checkout/other",
+      },
+    });
+    await expect(backend.fetch("/polar/events", event)).rejects.toThrow("another checkout");
+    expect(await owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 500_000 });
+    const other = backend.withIdentity({ subject: `${otherId}|session` });
+    expect(await other.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 500_000 });
   });
 
   test("honors an old 200-credit checkout and exposes an already-spent refund as a deficit", async () => {
