@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-18T21:05:02Z
+- **Last updated:** 2026-09-18T21:23:07Z
 
 ## Log
 
@@ -1463,9 +1463,15 @@ Members can choose Luna through Convex or Agents API; Convex remembers their las
 Tool-result retries reuse a stable key and saved result; rejected messages remain visibly unsent (`apps/scout/convex/tasks/`,
 `apps/scout/src/products/conversation/page.tsx`, `apps/scout/src/tasks/page.tsx`).
 
-### 2026-09-18 - working tree - v236
+### 2026-09-18 - a774060 - v236
 
 The review composer keeps its three pickers on one row on narrow phones using first names,
 globe/lock visibility icons, and tighter spacing while retaining 44px touch targets.
 Menus retain full labels (`apps/scout/src/products/conversation/composer.tsx`,
 `apps/scout/src/products/conversation/page.tsx`).
+
+### 2026-09-18 - working tree - v237
+
+Task lists show a globe for public tasks and a lock for private tasks before each title.
+Site previews, site task lists, and the task sidebar use the composer's icons with accessible labels
+(`apps/scout/src/components/activity-feed.tsx`, `apps/scout/src/products/conversation/task-navigation.tsx`).
