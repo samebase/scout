@@ -75,8 +75,9 @@ async function setup() {
   return { backend, open, userId };
 }
 
-it("settles a created browser with no CDP URL after compensating deletion", async () => {
-  const { backend, open } = await setup();
+it("charges a created browser with no CDP URL after compensating deletion", async () => {
+  const { backend, open, userId } = await setup();
+  await backend.mutation(internal.credits.grantOnSignIn, { userId });
   const create = vi.spyOn(Firecrawl.prototype, "browser").mockResolvedValue({
     success: true,
     id: "orphan-1",
@@ -86,36 +87,40 @@ it("settles a created browser with no CDP URL after compensating deletion", asyn
     creditsBilled: 2,
   });
   await expect(open()).rejects.toThrow("CDP URL");
-  expect(create).toHaveBeenCalledWith(expect.objectContaining({ ttl: 900, activityTtl: 900 }));
+  expect(create).toHaveBeenCalledWith(expect.objectContaining({ ttl: 3_600, activityTtl: 3_600 }));
   expect(deletion).toHaveBeenCalledWith("orphan-1");
-  const { reservations, browsers, entries } = await backend.run(async (ctx) => ({
-    reservations: await ctx.db.query("creditReservations").take(2),
+  const { browsers, entries, wallet } = await backend.run(async (ctx) => ({
     browsers: await ctx.db.query("agentsApiBrowserSessions").take(1),
     entries: await ctx.db.query("creditEntries").take(3),
+    wallet: await ctx.db.query("creditWallets").unique(),
   }));
-  expect(reservations).toHaveLength(1);
-  expect(reservations[0]?.state).toMatchObject({ kind: "settled", costMicrodollars: 10_000 });
-  expect(browsers).toHaveLength(0);
+  expect(browsers).toMatchObject([
+    { providerSessionId: "orphan-1", lifecycle: { kind: "closed", creditsBilled: 2 } },
+  ]);
   expect(entries.filter((entry) => entry.detail.kind === "usage")).toHaveLength(1);
+  expect(wallet?.balanceUnits).toBe(490_000);
 });
 
-it("holds an unresolved reservation with the provider ID when compensating deletion fails", async () => {
-  const { backend, open } = await setup();
+it("keeps a failed compensating deletion visible without freezing credits", async () => {
+  const { backend, open, userId } = await setup();
+  await backend.mutation(internal.credits.grantOnSignIn, { userId });
   vi.spyOn(Firecrawl.prototype, "browser").mockResolvedValue({ success: true, id: "orphan-2" });
   vi.spyOn(Firecrawl.prototype, "deleteBrowser").mockRejectedValue(new Error("cleanup failed"));
   await expect(open()).rejects.toThrow("cleanup failed");
-  const reservations = await backend.run((ctx) => ctx.db.query("creditReservations").take(2));
-  expect(reservations).toHaveLength(1);
-  expect(reservations[0]?.state).toMatchObject({
-    kind: "unresolved",
-    reason: expect.stringContaining("orphan-2"),
-  });
-  const wallet = await backend.run((ctx) => ctx.db.query("creditWallets").take(1));
-  expect(wallet[0]?.reservedUnits).toBe(150_000);
+  const browsers = await backend.run((ctx) => ctx.db.query("agentsApiBrowserSessions").take(2));
+  expect(browsers).toMatchObject([
+    {
+      providerSessionId: "orphan-2",
+      lifecycle: { kind: "active", cleanupError: expect.stringContaining("cleanup failed") },
+    },
+  ]);
+  const wallet = await backend.run((ctx) => ctx.db.query("creditWallets").unique());
+  expect(wallet?.balanceUnits).toBe(500_000);
 });
 
-it("releases the hold when Firecrawl explicitly rejects creation without a session", async () => {
-  const { backend, open } = await setup();
+it("does not charge a provider rejection without a browser ID", async () => {
+  const { backend, open, userId } = await setup();
+  await backend.mutation(internal.credits.grantOnSignIn, { userId });
   vi.spyOn(Firecrawl.prototype, "browser").mockResolvedValue({
     success: false,
     error: "Browser creation rejected",
@@ -123,13 +128,11 @@ it("releases the hold when Firecrawl explicitly rejects creation without a sessi
   const deletion = vi.spyOn(Firecrawl.prototype, "deleteBrowser");
   await expect(open()).rejects.toThrow("Browser creation rejected");
   expect(deletion).not.toHaveBeenCalled();
-  const reservations = await backend.run((ctx) => ctx.db.query("creditReservations").take(2));
-  expect(reservations[0]?.state).toMatchObject({ kind: "released" });
-  const wallet = await backend.run((ctx) => ctx.db.query("creditWallets").take(1));
-  expect(wallet[0]?.reservedUnits).toBe(0);
+  expect(await backend.run((ctx) => ctx.db.query("agentsApiBrowserSessions").take(1))).toEqual([]);
+  expect(await backend.run((ctx) => ctx.db.query("creditUsageTotals").take(1))).toEqual([]);
 });
 
-it("rejects an unaffordable browser before calling Firecrawl", async () => {
+it("rejects a nonpositive wallet before calling Firecrawl", async () => {
   const { backend, open, userId } = await setup();
   await backend.mutation(internal.credits.grantOnSignIn, { userId });
   await backend.run(async (ctx) => {
@@ -138,11 +141,9 @@ it("rejects an unaffordable browser before calling Firecrawl", async () => {
       .withIndex("by_user_id", (q) => q.eq("userId", userId))
       .unique();
     if (!wallet) throw new Error("Missing wallet");
-    await ctx.db.patch(wallet._id, { balanceUnits: 10_000 });
+    await ctx.db.patch(wallet._id, { balanceUnits: 0 });
   });
   const create = vi.spyOn(Firecrawl.prototype, "browser");
-  await expect(open()).rejects.toThrow("Insufficient credits for a browser session");
+  await expect(open()).rejects.toThrow();
   expect(create).not.toHaveBeenCalled();
-  const reservations = await backend.run((ctx) => ctx.db.query("creditReservations").take(1));
-  expect(reservations).toHaveLength(0);
 });

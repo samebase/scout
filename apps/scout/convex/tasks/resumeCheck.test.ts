@@ -216,22 +216,13 @@ it("queues a check for this handoff and denies duplicate Resume while checking",
   expect(fetch).not.toHaveBeenCalled();
 });
 
-it("reserves and settles a resumed request check using its measured OpenAI usage", async () => {
+it("checks admission and charges a resumed request check using measured OpenAI usage", async () => {
   const t = await setup();
   vi.stubEnv("CREDITS_ENABLED", "true");
   const checkId = await t.resume();
   const request = vi.fn<typeof fetch>(async () => {
-    const reservation = await t.backend.run((ctx) =>
-      ctx.db
-        .query("creditReservations")
-        .withIndex("by_session_id_and_source_key", (q) =>
-          q.eq("sessionId", t.sessionId).eq("sourceKey", `request_check:${checkId}`),
-        )
-        .unique(),
-    );
-    expect(reservation).toMatchObject({
-      source: { kind: "request_check" },
-      state: { kind: "pending" },
+    expect(await t.backend.query(internal.tasks.requestChecks.get, { checkId })).toMatchObject({
+      state: { kind: "running", billable: true },
     });
     return response({ decision: { kind: "approved" } });
   });
@@ -240,16 +231,13 @@ it("reserves and settles a resumed request check using its measured OpenAI usage
   expect(await t.run(checkId)).toBe(true);
   expect(await t.run(checkId)).toBe(false);
   expect(request).toHaveBeenCalledTimes(1);
-  const { reservation, entries } = await t.backend.run(async (ctx) => ({
-    reservation: await ctx.db
-      .query("creditReservations")
-      .withIndex("by_session_id_and_source_key", (q) =>
-        q.eq("sessionId", t.sessionId).eq("sourceKey", `request_check:${checkId}`),
-      )
-      .unique(),
+  const { totals, entries } = await t.backend.run(async (ctx) => ({
+    totals: await ctx.db.query("creditUsageTotals").collect(),
     entries: await ctx.db.query("creditEntries").collect(),
   }));
-  expect(reservation?.state).toMatchObject({ kind: "settled", costMicrodollars: 96 });
+  expect(totals).toMatchObject([
+    { kind: "request_check", sourceKey: `request_check:${checkId}`, totalCostMicrodollars: 96 },
+  ]);
   expect(entries.filter((entry) => entry.detail.kind === "usage")).toHaveLength(1);
 });
 

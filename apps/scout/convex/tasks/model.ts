@@ -34,6 +34,14 @@ export const browserHandle = v.object({
 
 export const sessionUsage = agentsApiUsageValidator;
 
+// Captured in scheduled args so later turns cannot change who or what is billed.
+export const agentsTurnBilling = v.object({
+  userId: v.id("users"),
+  providerId: v.string(),
+  model: v.string(),
+  turnId: v.union(v.string(), v.null()),
+});
+
 export const sessionItem = v.object({
   providerItemId: v.string(),
   kind: v.string(),

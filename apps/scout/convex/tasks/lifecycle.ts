@@ -103,17 +103,6 @@ export const onComplete = internalMutation({
         sessionId: session._id,
       });
     }
-    if (
-      session?.workflowId === args.workflowId &&
-      session.creditAdmissionReservationId &&
-      args.result.kind === "success"
-    ) {
-      await ctx.scheduler.runAfter(0, internal.tasks.runtime.settleCredits, {
-        sessionId: session._id,
-        reservationId: session.creditAdmissionReservationId,
-        attempt: 1,
-      });
-    }
     await workflow.cleanup(ctx, args.workflowId);
     return null;
   },

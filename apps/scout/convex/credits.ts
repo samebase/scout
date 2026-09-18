@@ -1,27 +1,16 @@
 import { paginationOptsValidator, paginationResultValidator } from "convex/server";
 import { v } from "convex/values";
-import { internalMutation, internalQuery, type MutationCtx } from "./_generated/server";
-import type { Doc } from "./_generated/dataModel";
+import { internalMutation } from "./_generated/server";
 import { mutation, query } from "./functions";
 import schema from "./schema";
+import { CREDIT_POLICY, creditsEnabled, signedInteger } from "./creditPolicy";
 import {
-  CREDIT_POLICY,
-  costUnits,
-  creditsEnabled,
-  nonnegativeInteger,
-  positiveInteger,
-  signedInteger,
-} from "./creditPolicy";
-import {
-  debitCumulativeCreditOperation,
+  assertCreditAdmission,
   ensureCreditWallet,
-  markCreditUnresolved,
-  releaseCreditOperation,
-  reserveCreditOperation,
-  settleCreditOperation,
+  recordCreditUsage,
   walletForUser,
 } from "./creditLedger";
-import { creditSourceValidator } from "./creditsModel";
+import { creditUsageInput } from "./creditsModel";
 import { checkoutEnabled } from "./polarConfig";
 
 export const grantOnSignIn = internalMutation({
@@ -49,9 +38,7 @@ export const balance = query({
   returns: v.union(
     v.null(),
     v.object({
-      availableUnits: v.number(),
       balanceUnits: v.number(),
-      reservedUnits: v.number(),
       hold: schema.doc("creditWallets").fields.hold,
     }),
   ),
@@ -59,9 +46,7 @@ export const balance = query({
     const wallet = await walletForUser(ctx, ctx.viewer.userId);
     return wallet
       ? {
-          availableUnits: wallet.balanceUnits - wallet.reservedUnits,
           balanceUnits: wallet.balanceUnits,
-          reservedUnits: wallet.reservedUnits,
           hold: wallet.hold,
         }
       : null;
@@ -80,193 +65,23 @@ export const history = query({
       .paginate(args.paginationOpts),
 });
 
-export const operation = internalQuery({
-  args: { reservationId: v.id("creditReservations") },
-  returns: v.union(schema.doc("creditReservations"), v.null()),
-  handler: (ctx, args) => ctx.db.get(args.reservationId),
-});
-
-export const reserve = internalMutation({
-  args: {
-    sessionId: v.id("agentsApiSessions"),
-    sourceKey: v.string(),
-    source: creditSourceValidator,
-    maximumCostMicrodollars: v.number(),
-  },
-  returns: v.id("creditReservations"),
-  handler: (ctx, args) => reserveCreditOperation(ctx, args),
-});
-
-export const reserveSessionAi = internalMutation({
-  args: { sessionId: v.id("agentsApiSessions"), sourceKey: v.string() },
-  returns: v.id("creditReservations"),
-  handler: (ctx, args) =>
-    reserveCreditOperation(ctx, {
-      ...args,
-      source: { kind: "admission_hold" },
-      maximumCostMicrodollars:
-        CREDIT_POLICY.initialAiReserveCredits * CREDIT_POLICY.microdollarsPerCredit,
-    }),
-});
-
-async function sessionHasCredit(
-  ctx: MutationCtx,
-  session: Doc<"agentsApiSessions">,
-  wallet: Doc<"creditWallets">,
-  balanceUnits: number,
-  projectedModelUnits: number,
-) {
-  const reservation = session.creditAdmissionReservationId
-    ? await ctx.db.get(session.creditAdmissionReservationId)
-    : null;
-  const ownHold =
-    reservation?.state.kind === "pending"
-      ? Math.max(0, reservation.reservedUnits - reservation.chargedUnits)
-      : 0;
-  return (
-    wallet.hold.kind === "clear" &&
-    balanceUnits - projectedModelUnits > wallet.reservedUnits - ownHold
-  );
-}
-
-export const recordSessionUsage = internalMutation({
-  args: {
-    sessionId: v.id("agentsApiSessions"),
-    reservationId: v.id("creditReservations"),
-    modelCostMicrodollars: v.number(),
-    budgetModelCostMicrodollars: v.number(),
-    webSearchCalls: v.number(),
-  },
+export const checkBalance = internalMutation({
+  args: { sessionId: v.id("agentsApiSessions") },
   returns: v.boolean(),
-  handler: async (ctx, args) => {
-    const reportedModel = nonnegativeInteger.parse(args.modelCostMicrodollars);
-    const budgetModel = nonnegativeInteger.parse(args.budgetModelCostMicrodollars);
-    const reportedSearches = nonnegativeInteger.parse(args.webSearchCalls);
-    const session = await ctx.db.get(args.sessionId);
+  handler: async (ctx, { sessionId }) => {
+    if (!creditsEnabled()) return false;
+    const session = await ctx.db.get(sessionId);
     if (!session) throw new Error("Task session is missing");
-    if (session.creditAdmissionReservationId !== args.reservationId)
-      throw new Error("Task billing changed before usage was recorded");
-    const reservation = await ctx.db.get(args.reservationId);
-    if (!reservation || reservation.sessionId !== session._id)
-      throw new Error("Task credit reservation is missing");
-    if (reservation.state.kind === "settled" || reservation.state.kind === "released") return true;
-    const previousModel = nonnegativeInteger.parse(session.chargedModelMicrodollars ?? 0);
-    const previousSearches = nonnegativeInteger.parse(session.chargedWebSearchCalls ?? 0);
-    const modelTotal = Math.max(previousModel, reportedModel);
-    const searchTotal = Math.max(previousSearches, reportedSearches);
-    const terms = reservation.terms;
-    const projectedModelUnits = nonnegativeInteger.parse(
-      costUnits(Math.max(modelTotal, budgetModel), terms) - costUnits(modelTotal, terms),
-    );
-    if (modelTotal === previousModel && searchTotal === previousSearches) {
-      const wallet = await walletForUser(ctx, session.userId);
-      if (!wallet) throw new Error("Credit wallet is missing");
-      return sessionHasCredit(ctx, session, wallet, wallet.balanceUnits, projectedModelUnits);
-    }
-
-    const searchRate = positiveInteger.parse(terms.hostedWebSearchMicrodollarsPerCall);
-    const modelDeltaUnits = nonnegativeInteger.parse(
-      costUnits(modelTotal, terms) - costUnits(previousModel, terms),
-    );
-    const searchDeltaUnits = nonnegativeInteger.parse(
-      costUnits(nonnegativeInteger.parse(searchTotal * searchRate), terms) -
-        costUnits(nonnegativeInteger.parse(previousSearches * searchRate), terms),
-    );
-    const wallet = await walletForUser(ctx, session.userId);
-    if (!wallet) throw new Error("Credit wallet is missing");
-    const modelBalance = signedInteger.parse(wallet.balanceUnits - modelDeltaUnits);
-    const finalBalance = signedInteger.parse(modelBalance - searchDeltaUnits);
-    if (modelDeltaUnits > 0) {
-      await ctx.db.insert("creditEntries", {
-        userId: session.userId,
-        sourceKey: `session:model:${args.reservationId}:${modelTotal}`,
-        amountUnits: -modelDeltaUnits,
-        balanceAfterUnits: modelBalance,
-        detail: {
-          kind: "session_model",
-          sessionId: session._id,
-          totalCostMicrodollars: modelTotal,
-        },
-      });
-    }
-    if (searchDeltaUnits > 0) {
-      await ctx.db.insert("creditEntries", {
-        userId: session.userId,
-        sourceKey: `session:web_search:${args.reservationId}:${searchTotal}`,
-        amountUnits: -searchDeltaUnits,
-        balanceAfterUnits: finalBalance,
-        detail: { kind: "session_web_search", sessionId: session._id, totalCalls: searchTotal },
-      });
-    }
-    await ctx.db.patch(wallet._id, { balanceUnits: finalBalance });
-    await ctx.db.patch(session._id, {
-      chargedModelMicrodollars: modelTotal,
-      chargedWebSearchCalls: searchTotal,
-      creditUsageTerms: terms,
-    });
-    return sessionHasCredit(ctx, session, wallet, finalBalance, projectedModelUnits);
+    await assertCreditAdmission(ctx, session.userId);
+    return true;
   },
 });
 
-export const debitCumulative = internalMutation({
-  args: { reservationId: v.id("creditReservations"), totalCostMicrodollars: v.number() },
+export const recordUsage = internalMutation({
+  args: creditUsageInput.fields,
   returns: v.null(),
   handler: async (ctx, args) => {
-    const reservation = await ctx.db.get(args.reservationId);
-    if (!reservation) throw new Error("Credit reservation is missing");
-    await debitCumulativeCreditOperation(ctx, reservation, args.totalCostMicrodollars);
-    return null;
-  },
-});
-
-export const settle = internalMutation({
-  args: { reservationId: v.id("creditReservations"), costMicrodollars: v.number() },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    const reservation = await ctx.db.get(args.reservationId);
-    if (!reservation) throw new Error("Credit reservation is missing");
-    await settleCreditOperation(ctx, reservation, args.costMicrodollars);
-    return null;
-  },
-});
-
-export const release = internalMutation({
-  args: { reservationId: v.id("creditReservations"), reason: v.string() },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    const reservation = await ctx.db.get(args.reservationId);
-    if (!reservation) throw new Error("Credit reservation is missing");
-    await releaseCreditOperation(ctx, reservation, args.reason);
-    return null;
-  },
-});
-
-export const unresolved = internalMutation({
-  args: { reservationId: v.id("creditReservations"), reason: v.string() },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    const reservation = await ctx.db.get(args.reservationId);
-    if (!reservation) throw new Error("Credit reservation is missing");
-    await markCreditUnresolved(ctx, reservation, args.reason);
-    return null;
-  },
-});
-
-export const resolveManually = internalMutation({
-  args: {
-    reservationId: v.id("creditReservations"),
-    resolution: v.union(
-      v.object({ kind: v.literal("settle"), costMicrodollars: v.number() }),
-      v.object({ kind: v.literal("release"), reason: v.string() }),
-    ),
-  },
-  returns: v.null(),
-  handler: async (ctx, { reservationId, resolution }) => {
-    const reservation = await ctx.db.get(reservationId);
-    if (!reservation) throw new Error("Credit reservation is missing");
-    if (resolution.kind === "settle")
-      await settleCreditOperation(ctx, reservation, resolution.costMicrodollars);
-    else await releaseCreditOperation(ctx, reservation, resolution.reason);
+    await recordCreditUsage(ctx, args);
     return null;
   },
 });
@@ -333,7 +148,6 @@ export const offer = query({
   returns: v.object({
     unitsPerCredit: v.number(),
     signupCredits: v.number(),
-    initialAiReserveCredits: v.number(),
     usageEnabled: v.boolean(),
     packCredits: v.number(),
     packPriceCents: v.number(),
@@ -342,7 +156,6 @@ export const offer = query({
   handler: () => ({
     unitsPerCredit: CREDIT_POLICY.unitsPerCredit,
     signupCredits: CREDIT_POLICY.signupCredits,
-    initialAiReserveCredits: CREDIT_POLICY.initialAiReserveCredits,
     usageEnabled: creditsEnabled(),
     packCredits: CREDIT_POLICY.packCredits,
     packPriceCents: CREDIT_POLICY.packPriceCents,

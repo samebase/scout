@@ -1,52 +1,29 @@
 import { v } from "convex/values";
+
 export const creditFailureCodeValidator = v.union(
   v.literal("INSUFFICIENT_CREDITS"),
   v.literal("CREDIT_HOLD"),
 );
 
-export const creditTermsValidator = v.object({
-  version: v.string(),
-  unitsPerCredit: v.number(),
-  microdollarsPerCredit: v.number(),
-  hostedWebSearchMicrodollarsPerCall: v.number(),
-});
-
-export const creditSourceKindValidator = v.union(
+export const creditUsageKindValidator = v.union(
   v.literal("model"),
   v.literal("request_check"),
   v.literal("research"),
   v.literal("browser"),
   v.literal("web_search"),
-  v.literal("admission_hold"),
 );
-export const creditSourceValidator = v.object({ kind: creditSourceKindValidator });
 
-export const creditReservationValidator = v.object({
+export const creditUsageInput = v.object({
   userId: v.id("users"),
-  sessionId: v.id("agentsApiSessions"),
+  sessionId: v.union(v.id("agentsApiSessions"), v.null()),
   sourceKey: v.string(),
-  source: creditSourceValidator,
-  terms: creditTermsValidator,
-  reservedUnits: v.number(),
-  chargedMicrodollars: v.number(),
-  chargedUnits: v.number(),
-  state: v.union(
-    v.object({ kind: v.literal("pending"), startedAt: v.number() }),
-    v.object({ kind: v.literal("unresolved"), reason: v.string(), updatedAt: v.number() }),
-    v.object({
-      kind: v.literal("settled"),
-      costMicrodollars: v.number(),
-      debitedUnits: v.number(),
-      settledAt: v.number(),
-    }),
-    v.object({ kind: v.literal("released"), reason: v.string(), releasedAt: v.number() }),
-  ),
+  kind: creditUsageKindValidator,
+  totalCostMicrodollars: v.number(),
 });
 
 export const creditWalletValidator = v.object({
   userId: v.id("users"),
   balanceUnits: v.number(),
-  reservedUnits: v.number(),
   hold: v.union(
     v.object({ kind: v.literal("clear") }),
     v.object({ kind: v.literal("held"), reason: v.string() }),
@@ -60,23 +37,14 @@ export const creditEntryValidator = v.object({
   balanceAfterUnits: v.number(),
   detail: v.union(
     v.object({ kind: v.literal("signup"), policyVersion: v.string() }),
-    v.object({ kind: v.literal("purchase"), purchaseId: v.id("creditPurchases") }),
-    v.object({ kind: v.literal("refund"), purchaseId: v.id("creditPurchases") }),
     v.object({
       kind: v.literal("usage"),
-      reservationId: v.id("creditReservations"),
+      usageKind: creditUsageKindValidator,
+      sessionId: v.union(v.id("agentsApiSessions"), v.null()),
       costMicrodollars: v.number(),
     }),
+    v.object({ kind: v.literal("purchase"), purchaseId: v.id("creditPurchases") }),
+    v.object({ kind: v.literal("refund"), purchaseId: v.id("creditPurchases") }),
     v.object({ kind: v.literal("adjustment"), reason: v.string() }),
-    v.object({
-      kind: v.literal("session_model"),
-      sessionId: v.id("agentsApiSessions"),
-      totalCostMicrodollars: v.number(),
-    }),
-    v.object({
-      kind: v.literal("session_web_search"),
-      sessionId: v.id("agentsApiSessions"),
-      totalCalls: v.number(),
-    }),
   ),
 });

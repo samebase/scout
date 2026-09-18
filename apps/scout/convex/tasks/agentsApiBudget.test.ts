@@ -58,16 +58,15 @@ async function setup(status: "requires_action" | "idle") {
     return { userId, sessionId };
   });
   await backend.mutation(internal.credits.grantOnSignIn, { userId });
-  const reservationId = await backend.mutation(internal.credits.reserveSessionAi, {
-    sessionId,
-    sourceKey: "workflow:budget-test",
+  await backend.run(async (ctx) => {
+    await ctx.db.patch(sessionId, { billingEnabled: true });
+    const wallet = await ctx.db
+      .query("creditWallets")
+      .withIndex("by_user_id", (q) => q.eq("userId", userId))
+      .unique();
+    if (!wallet) throw new Error("Missing wallet");
+    await ctx.db.patch(wallet._id, { balanceUnits: -10 });
   });
-  await backend.run((ctx) =>
-    ctx.db.patch(sessionId, {
-      creditAdmissionReservationId: reservationId,
-      creditUsageBaseline: { modelCostUsd: 0, webSearchCalls: 0 },
-    }),
-  );
 
   const inputEvents: unknown[] = [];
   vi.stubGlobal(
@@ -116,7 +115,7 @@ async function setup(status: "requires_action" | "idle") {
   return { backend, sessionId, inputEvents };
 }
 
-it("stops before executing a tool or posting its result when fresh usage exhausts credits", async () => {
+it("stops before continuing provider work when the actual balance is negative", async () => {
   const { backend, sessionId, inputEvents } = await setup("requires_action");
   await expect(backend.action(internal.tasks.runtime.advance, { sessionId })).rejects.toThrow(
     INSUFFICIENT_CREDITS_MESSAGE,
@@ -130,7 +129,7 @@ it("stops before executing a tool or posting its result when fresh usage exhaust
   });
 });
 
-it("still finalizes an idle turn when its fresh usage exceeds the balance", async () => {
+it("still finalizes an idle turn when the actual balance is negative", async () => {
   const { backend, sessionId, inputEvents } = await setup("idle");
   await expect(backend.action(internal.tasks.runtime.advance, { sessionId })).resolves.toBe(false);
   expect(executeTaskTool).not.toHaveBeenCalled();

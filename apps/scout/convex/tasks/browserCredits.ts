@@ -1,119 +1,89 @@
 "use node";
 
-import { SdkError } from "firecrawl";
 import { setTimeout as wait } from "node:timers/promises";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
-import { creditsEnabled } from "../creditPolicy";
 import { closeFirecrawlBrowserSession, createFirecrawlClient } from "../scout/lib/firecrawl";
 import { diagnosticMessage } from "../scout/lib/redaction";
 import { connectPlaywrightBrowser } from "../scout/playwrightBrowser";
 import { omitNullish } from "../../shared/omitNullish";
 
-export function taskBrowserCredits(ctx: ActionCtx, sessionId: Id<"agentsApiSessions">) {
+export function taskBrowserBilling(ctx: ActionCtx, sessionId: Id<"agentsApiSessions">) {
   const firecrawl = createFirecrawlClient();
-  let funding: { reservationId: Id<"creditReservations">; durationSeconds: number } | null = null;
+  let admission: {
+    sessionId: Id<"agentsApiSessions">;
+    billable: boolean;
+    openedAtMs: number;
+  } | null = null;
   let createdProviderId: string | null = null;
-  let creationWasRejected = false;
+  let closed = false;
 
-  async function unresolvedBrowser(providerSessionId: string, error: unknown) {
+  const orphan = () => admission ?? undefined;
+  const clear = () => {
+    admission = null;
+    createdProviderId = null;
+    closed = false;
+  };
+
+  async function recordCleanupFailure(providerSessionId: string, error: unknown) {
     await ctx.runMutation(internal.tasks.browsers.unresolved, {
       providerSessionId,
-      ...omitNullish({ reservationId: funding?.reservationId }),
       reason: diagnosticMessage(error),
+      ...omitNullish({ orphan: orphan() }),
     });
   }
 
   return {
-    reservationId: () => funding?.reservationId,
-    closed: () => {
-      funding = null;
-      createdProviderId = null;
-      creationWasRejected = false;
-    },
+    closed: clear,
     failedOpen: async (error: unknown) => {
-      if (!funding) return;
-      if (createdProviderId) {
-        await unresolvedBrowser(createdProviderId, error);
-      } else if (
-        creationWasRejected ||
-        (error instanceof SdkError &&
-          error.status === 409 &&
-          /another session is currently writing to this profile/i.test(error.message))
-      ) {
-        await ctx.runMutation(internal.credits.release, {
-          reservationId: funding.reservationId,
-          reason: "Firecrawl rejected browser creation before a session was opened",
-        });
-      } else {
-        await ctx.runMutation(internal.credits.unresolved, {
-          reservationId: funding.reservationId,
-          reason: `Firecrawl browser creation returned no session ID: ${diagnosticMessage(error)}`,
-        });
-      }
-      funding = null;
-      createdProviderId = null;
-      creationWasRejected = false;
+      if (createdProviderId && !closed) await recordCleanupFailure(createdProviderId, error);
+      clear();
     },
     dependencies: {
       browser: async (options: Parameters<typeof firecrawl.browser>[0]) => {
-        if (creditsEnabled() && !funding)
-          funding = await ctx.runMutation(internal.tasks.browsers.reserve, { sessionId });
-        const requestedAt = Date.now();
-        const result = await firecrawl.browser(
-          funding
-            ? { ...options, ttl: funding.durationSeconds, activityTtl: funding.durationSeconds }
-            : options,
-        );
+        const billable = await ctx.runMutation(internal.tasks.browsers.admit, { sessionId });
+        admission = { sessionId, billable, openedAtMs: Date.now() };
+        const result = await firecrawl.browser(options);
         createdProviderId = result.id ?? null;
-        creationWasRejected = !result.success && !result.id;
-        if (!result.success && result.id && funding) {
+        if (!result.success && result.id) {
           const stopped = await closeFirecrawlBrowserSession(firecrawl, result.id);
           if (!stopped.success) {
-            await unresolvedBrowser(result.id, stopped.error ?? "Firecrawl cleanup failed");
+            await recordCleanupFailure(result.id, stopped.error ?? "Firecrawl cleanup failed");
             throw new Error(stopped.error ?? "Firecrawl cleanup failed");
           }
           await ctx.runMutation(internal.tasks.browsers.close, {
             providerSessionId: result.id,
-            reservationId: funding.reservationId,
             providerDurationMs: stopped.sessionDurationMs ?? null,
             creditsBilled: stopped.creditsBilled ?? null,
+            orphan: admission,
           });
+          closed = true;
         }
-        if (!result.success || !funding) return result;
-        const providerExpiry = result.expiresAt ? Date.parse(result.expiresAt) : Infinity;
-        const fundedExpiry = requestedAt + funding.durationSeconds * 1_000;
-        return {
-          ...result,
-          expiresAt: new Date(
-            Number.isFinite(providerExpiry) ? Math.min(providerExpiry, fundedExpiry) : fundedExpiry,
-          ).toISOString(),
-        };
+        return result;
       },
       browserExecute: async (...args: Parameters<typeof firecrawl.browserExecute>) =>
         await firecrawl.browserExecute(...args),
       deleteBrowser: async (providerSessionId: string) => {
         try {
           const result = await closeFirecrawlBrowserSession(firecrawl, providerSessionId);
-          if (funding) {
-            if (result.success) {
-              await ctx.runMutation(internal.tasks.browsers.close, {
-                providerSessionId,
-                reservationId: funding.reservationId,
-                providerDurationMs: result.sessionDurationMs ?? null,
-                creditsBilled: result.creditsBilled ?? null,
-              });
-            } else {
-              await unresolvedBrowser(
-                providerSessionId,
-                result.error ?? "Firecrawl cleanup failed",
-              );
-            }
+          if (result.success) {
+            await ctx.runMutation(internal.tasks.browsers.close, {
+              providerSessionId,
+              providerDurationMs: result.sessionDurationMs ?? null,
+              creditsBilled: result.creditsBilled ?? null,
+              ...omitNullish({ orphan: orphan() }),
+            });
+            closed = true;
+          } else {
+            await recordCleanupFailure(
+              providerSessionId,
+              result.error ?? "Firecrawl cleanup failed",
+            );
           }
           return result;
         } catch (error) {
-          if (funding) await unresolvedBrowser(providerSessionId, error);
+          await recordCleanupFailure(providerSessionId, error);
           throw error;
         }
       },

@@ -88,11 +88,16 @@ export const browserOperationStateValidator = v.union(
 );
 
 export const browserSessionLifecycleValidator = v.union(
-  v.object({ kind: v.literal("active"), openedAtMs: v.number() }),
+  v.object({
+    kind: v.literal("active"),
+    openedAtMs: v.number(),
+    cleanupError: v.optional(v.string()),
+  }),
   v.object({
     kind: v.literal("closing"),
     openedAtMs: v.number(),
     closingAtMs: v.number(),
+    cleanupError: v.optional(v.string()),
   }),
   v.object({
     kind: v.literal("closed"),
@@ -114,11 +119,13 @@ export const persistedBrowserSessionLifecycleValidator = v.union(
   v.object({
     kind: v.literal("active"),
     ...activeBrowserSessionConnection,
+    cleanupError: v.optional(v.string()),
   }),
   v.object({
     kind: v.literal("closing"),
     ...activeBrowserSessionConnection,
     closingAtMs: v.number(),
+    cleanupError: v.optional(v.string()),
   }),
   v.object({
     kind: v.literal("closed"),

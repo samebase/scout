@@ -22,7 +22,7 @@ import { saveScreenshot } from "./screenshots";
 import { MAX_TASK_SCREENSHOTS } from "./screenshotModel";
 import { reviewChecksSchema } from "../../shared/reviewChecks";
 import { createPlayTools } from "../scout/play";
-import { taskBrowserCredits } from "./browserCredits";
+import { taskBrowserBilling } from "./browserCredits";
 
 export const handoffInput = z.object({ message: z.string().trim().min(1).max(2_000) });
 const mailNames = new Set([
@@ -52,7 +52,7 @@ export async function runtimeTools(
     await ctx.runMutation(internal.tasks.sessions.update, { sessionId, browser: handle });
   }
 
-  const browserCredits = taskBrowserCredits(ctx, sessionId);
+  const browserBilling = taskBrowserBilling(ctx, sessionId);
   const browser = createBrowserHarness(
     {
       profileName: scout.firecrawl.profileName,
@@ -60,6 +60,9 @@ export async function runtimeTools(
       captureScreenshot: async ({ toolCallId, note, take }) => {
         await beforeDispatch();
         if (!handle) throw new Error("Browser is not open");
+        await ctx.runMutation(internal.tasks.browsers.admitOperation, {
+          providerSessionId: handle.providerSessionId,
+        });
         return await saveScreenshot(ctx, {
           sessionId,
           providerSessionId: handle.providerSessionId,
@@ -80,7 +83,6 @@ export async function runtimeTools(
         await ctx.runMutation(internal.tasks.browsers.open, {
           sessionId,
           browser: handle,
-          ...omitNullish({ reservationId: browserCredits.reservationId() }),
         });
         return { captureOperations: true };
       },
@@ -123,25 +125,24 @@ export async function runtimeTools(
           providerSessionId: handle.providerSessionId,
           providerDurationMs: sessionDurationMs,
           creditsBilled,
-          ...omitNullish({ reservationId: browserCredits.reservationId() }),
         });
         handle = null;
-        browserCredits.closed();
+        browserBilling.closed();
       },
     },
-    browserCredits.dependencies,
+    browserBilling.dependencies,
   );
 
   const createSessionTool = browser.tools.create_new_firecrawl_session;
   const createSessionExecute = createSessionTool.execute;
   if (!createSessionExecute) throw new Error("Browser session creation tool is unavailable");
-  const fundedCreateSessionTool = {
+  const createSessionToolWithBilling = {
     ...createSessionTool,
     execute: async (...args: Parameters<typeof createSessionExecute>) => {
       try {
         return await createSessionExecute(...args);
       } catch (error) {
-        await browserCredits.failedOpen(error);
+        await browserBilling.failedOpen(error);
         throw error;
       }
     },
@@ -156,7 +157,7 @@ export async function runtimeTools(
   let mailClient: Awaited<ReturnType<typeof createMCPClient>> | null = null;
   const tools: ToolSet = {
     ...browser.tools,
-    create_new_firecrawl_session: fundedCreateSessionTool,
+    create_new_firecrawl_session: createSessionToolWithBilling,
     list_screenshots: tool({
       description: outdent`
         List this task's saved screenshots in capture order, with IDs, notes, page URLs,

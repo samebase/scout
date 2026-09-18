@@ -72,7 +72,6 @@ async function setup() {
       state: { kind: "running" },
       nextSequence: 0,
       usage: null,
-      creditUsageBaseline: { modelCostUsd: 0, webSearchCalls: 0 },
       providerId: "session-test",
       browser: {
         providerSessionId: "browser-test",
@@ -111,11 +110,11 @@ async function setup() {
         }),
     ),
     usage: vi.fn<() => TokenUsage | null>(() => null),
-    status: vi.fn<() => "idle" | "requires_action">(() => "requires_action"),
+    status: vi.fn<() => "idle" | "requires_action" | "failed">(() => "requires_action"),
     turn: vi.fn<
       () => {
         id: string;
-        status: "cancelled" | "completed";
+        status: "cancelled" | "completed" | "failed";
         subagent_id: string | null;
         usage: TokenUsage | null;
       }
@@ -142,6 +141,11 @@ async function setup() {
     }
     if (request.method === "GET" && url.pathname.endsWith("/sessions/session-test/turns")) {
       return Response.json({ data: turns(), has_more: false });
+    }
+    if (request.method === "GET" && url.pathname.includes("/sessions/session-test/turns/")) {
+      const turn = turns().find((entry) => entry.id === url.pathname.split("/").at(-1));
+      if (!turn) throw new Error("Provider turn not found");
+      return Response.json(turn);
     }
     if (request.method === "GET" && url.pathname.endsWith("/sessions/session-test/items")) {
       await provider.beforeItems();
@@ -213,474 +217,258 @@ function reasoning(id: string, status: "in_progress" | "completed"): AgentReason
   return { id, type: "reasoning", status, summary: [], turn_id: "turn-test" };
 }
 
-it("settles a completed task when provider usage arrives after the first check", async () => {
-  vi.stubEnv("CREDITS_ENABLED", "true");
-  const t = await setup();
-  await t.backend.mutation(internal.credits.grantOnSignIn, { userId: t.userId });
-  const reservationId = await t.backend.mutation(internal.credits.reserveSessionAi, {
-    sessionId: t.sessionId,
-    sourceKey: "task:start",
-  });
-  await t.backend.run(async (ctx) => {
-    await ctx.db.patch(t.sessionId, {
-      creditAdmissionReservationId: reservationId,
-      creditModelWorkStarted: true,
-      browser: null,
+const paidUsage: TokenUsage = {
+  input_tokens: 80,
+  output_tokens: 20,
+  total_tokens: 100,
+  input_tokens_details: { cached_tokens: 64 },
+  output_tokens_details: { reasoning_tokens: 0 },
+};
+
+it.each(["idle", "failed"] as const)(
+  "captures and bills a failed root turn polled from a %s session without a stream turn event",
+  async (status) => {
+    vi.stubEnv("CREDITS_ENABLED", "true");
+    const t = await setup();
+    await t.backend.mutation(internal.credits.grantOnSignIn, { userId: t.userId });
+    await t.backend.run((ctx) =>
+      ctx.db.patch(t.sessionId, {
+        billingEnabled: true,
+        previousTurnId: "previous-turn",
+        browser: null,
+      }),
+    );
+    t.provider.status.mockReturnValue(status);
+    t.provider.usage.mockReturnValue(paidUsage);
+    t.provider.turn.mockReturnValue({
+      id: "failed-turn",
+      status: "failed",
+      subagent_id: null,
+      usage: paidUsage,
     });
-  });
-  t.provider.status.mockReturnValue("idle");
-  t.provider.turn.mockImplementation(() => ({
-    id: "completed-turn",
-    status: "completed",
-    subagent_id: null,
-    usage: t.provider.usage(),
-  }));
-  expect(await t.advance()).toBe(false);
-  expect((await t.session()).state.kind).toBe("idle");
+    expect((await t.session()).modelTurnId).toBeUndefined();
+    await expect(t.advance()).rejects.toThrow();
+    expect((await t.session()).modelTurnId).toBe("failed-turn");
+    expect(t.provider.stream).not.toHaveBeenCalled();
 
-  await t.backend.action(internal.tasks.runtime.settleCredits, {
-    sessionId: t.sessionId,
-    reservationId,
-    attempt: 1,
-  });
-  const pending = await t.backend.run(async (ctx) => ({
-    reservation: await ctx.db.get(reservationId),
-    jobs: await ctx.db.system.query("_scheduled_functions").collect(),
-  }));
-  expect(pending.reservation?.state.kind).toBe("pending");
-  expect(pending.jobs.filter((job) => job.name === "tasks/runtime:settleCredits")).toHaveLength(1);
+    // The workflow failure callback preserves the error and schedules this cleanup.
+    await t.backend.run((ctx) =>
+      ctx.db.patch(t.sessionId, { state: { kind: "failed", error: "Provider turn failed" } }),
+    );
+    await t.backend.action(internal.tasks.runtime.cleanup, { sessionId: t.sessionId });
+    await t.backend.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await t.session()).toMatchObject({
+      active: false,
+      state: { kind: "failed", error: "Provider turn failed" },
+      modelUsageIncomplete: false,
+    });
+    expect(await t.owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 499_971 });
+    const charges = await t.backend.run((ctx) => ctx.db.query("creditUsageTotals").collect());
+    expect(charges).toHaveLength(1);
+    expect(charges[0]).toMatchObject({
+      sourceKey: "agents:session-test:failed-turn:model",
+      totalCostMicrodollars: 29,
+    });
+  },
+);
 
-  t.provider.usage.mockReturnValue({
-    input_tokens: 100,
-    output_tokens: 20,
-    total_tokens: 120,
-    input_tokens_details: { cached_tokens: 80 },
-    output_tokens_details: { reasoning_tokens: 10 },
-  });
-  await t.backend.action(internal.tasks.runtime.settleCredits, {
-    sessionId: t.sessionId,
-    reservationId,
-    attempt: 2,
-  });
-  const settled = await t.backend.run(async (ctx) => ({
-    reservation: await ctx.db.get(reservationId),
-    wallet: await ctx.db
-      .query("creditWallets")
-      .withIndex("by_user_id", (q) => q.eq("userId", t.userId))
-      .unique(),
-  }));
-  expect(settled.reservation?.state.kind).toBe("released");
-  expect(settled.wallet?.reservedUnits).toBe(0);
-  expect(settled.wallet?.balanceUnits).toBeLessThan(500_000);
+it("reports a failed session without attributing its previous turn to new work", async () => {
+  const t = await setup();
+  await t.backend.run((ctx) =>
+    ctx.db.patch(t.sessionId, { billingEnabled: true, previousTurnId: "previous-turn" }),
+  );
+  t.provider.status.mockReturnValue("failed");
+  await expect(t.advance()).rejects.toThrow("OpenAI session failed");
+  expect((await t.session()).modelTurnId).toBeUndefined();
 });
 
-it("keeps the hold until cached-token details arrive instead of billing all input as uncached", async () => {
-  vi.stubEnv("CREDITS_ENABLED", "true");
-  const t = await setup();
-  await t.backend.mutation(internal.credits.grantOnSignIn, { userId: t.userId });
-  const reservationId = await t.backend.mutation(internal.credits.reserveSessionAi, {
-    sessionId: t.sessionId,
-    sourceKey: "workflow:cache-report",
-  });
-  await t.backend.run(async (ctx) => {
-    await ctx.db.patch(t.sessionId, {
-      active: false,
-      state: { kind: "idle" },
-      usage: { inputTokens: 100, outputTokens: 20, cachedInputTokens: null },
-      creditAdmissionReservationId: reservationId,
-      creditModelWorkStarted: true,
-    });
-  });
-  t.provider.turn.mockImplementation(() => ({
-    id: "current-turn",
-    status: "completed",
-    subagent_id: null,
-    usage: t.provider.usage(),
-  }));
-  await t.backend.action(internal.tasks.runtime.settleCredits, {
-    sessionId: t.sessionId,
-    reservationId,
-    attempt: 1,
-  });
-  const pending = await t.backend.run(async (ctx) => ({
-    session: await ctx.db.get(t.sessionId),
-    reservation: await ctx.db.get(reservationId),
-  }));
-  expect(pending.session?.chargedModelMicrodollars).toBeUndefined();
-  expect(pending.reservation?.state.kind).toBe("pending");
-
-  t.provider.usage.mockReturnValue({
-    input_tokens: 100,
-    output_tokens: 20,
-    total_tokens: 120,
-    input_tokens_details: { cached_tokens: 80 },
-    output_tokens_details: { reasoning_tokens: 10 },
-  });
-  await t.backend.action(internal.tasks.runtime.settleCredits, {
-    sessionId: t.sessionId,
-    reservationId,
-    attempt: 2,
-  });
-  const settled = await t.backend.run(async (ctx) => ({
-    session: await ctx.db.get(t.sessionId),
-    reservation: await ctx.db.get(reservationId),
-  }));
-  expect(settled.session?.chargedModelMicrodollars).toBe(30);
-  expect(settled.reservation?.state.kind).toBe("released");
-});
-
-it("retries invalid turn usage before releasing the AI hold", async () => {
-  vi.stubEnv("CREDITS_ENABLED", "true");
-  const t = await setup();
-  await t.backend.mutation(internal.credits.grantOnSignIn, { userId: t.userId });
-  const reservationId = await t.backend.mutation(internal.credits.reserveSessionAi, {
-    sessionId: t.sessionId,
-    sourceKey: "workflow:turn-history-retry",
-  });
-  await t.backend.run(async (ctx) => {
-    await ctx.db.patch(t.sessionId, {
-      active: false,
-      state: { kind: "idle" },
-      creditAdmissionReservationId: reservationId,
-      creditModelWorkStarted: true,
-    });
-  });
-  const usage: TokenUsage = {
-    input_tokens: 100,
-    output_tokens: 20,
-    total_tokens: 120,
-    input_tokens_details: { cached_tokens: 80 },
-    output_tokens_details: { reasoning_tokens: 0 },
-  };
-  t.turns.mockReturnValueOnce([
-    {
-      id: "current-turn",
+it.each([true, false])(
+  "bills a captured late turn once after a follow-up starts (paid follow-up: %s)",
+  async (nextPaid) => {
+    vi.stubEnv("CREDITS_ENABLED", "true");
+    const t = await setup();
+    await t.backend.mutation(internal.credits.grantOnSignIn, { userId: t.userId });
+    await t.backend.run((ctx) =>
+      ctx.db.patch(t.sessionId, { billingEnabled: true, browser: null }),
+    );
+    t.provider.status.mockReturnValue("idle");
+    t.provider.turn.mockReturnValue({
+      id: "paid-turn",
       status: "completed",
       subagent_id: null,
-      usage: { ...usage, input_tokens_details: { cached_tokens: 101 } },
-    },
-  ]);
-  t.turns.mockReturnValue([{ id: "current-turn", status: "completed", subagent_id: null, usage }]);
-  const log = vi.spyOn(console, "error").mockImplementation(() => {});
-  try {
-    await t.backend.action(internal.tasks.runtime.settleCredits, {
-      sessionId: t.sessionId,
-      reservationId,
-      attempt: 1,
+      usage: null,
     });
-    const pending = await t.backend.run(async (ctx) => ({
-      reservation: await ctx.db.get(reservationId),
-      jobs: await ctx.db.system.query("_scheduled_functions").collect(),
-    }));
-    expect(pending.reservation?.state.kind).toBe("pending");
-    expect(pending.jobs.filter((job) => job.name === "tasks/runtime:settleCredits")).toHaveLength(
-      1,
-    );
-
-    await t.backend.action(internal.tasks.runtime.settleCredits, {
-      sessionId: t.sessionId,
-      reservationId,
-      attempt: 2,
-    });
-    expect((await t.backend.run(async (ctx) => ctx.db.get(reservationId)))?.state.kind).toBe(
-      "released",
-    );
-  } finally {
-    log.mockRestore();
-  }
-});
-
-it("charges only the current turn when a late correction changes an older free turn", async () => {
-  vi.stubEnv("CREDITS_ENABLED", "true");
-  const t = await setup();
-  await t.backend.mutation(internal.credits.grantOnSignIn, { userId: t.userId });
-  const reservationId = await t.backend.mutation(internal.credits.reserveSessionAi, {
-    sessionId: t.sessionId,
-    sourceKey: "workflow:new-turn",
-  });
-  await t.backend.run(async (ctx) => {
-    await ctx.db.patch(t.sessionId, {
-      active: false,
-      state: { kind: "idle" },
-      previousTurnId: "old-turn",
-      usage: { inputTokens: 100, outputTokens: 20, cachedInputTokens: 80 },
-      creditAdmissionReservationId: reservationId,
-      creditModelWorkStarted: true,
-    });
-  });
-  const oldUsage: TokenUsage = {
-    input_tokens: 200,
-    output_tokens: 40,
-    total_tokens: 240,
-    input_tokens_details: { cached_tokens: 160 },
-    output_tokens_details: { reasoning_tokens: 0 },
-  };
-  const newUsage: TokenUsage = {
-    input_tokens: 80,
-    output_tokens: 20,
-    total_tokens: 100,
-    input_tokens_details: { cached_tokens: 64 },
-    output_tokens_details: { reasoning_tokens: 0 },
-  };
-  t.turns.mockReturnValue([
-    { id: "new-turn", status: "completed", subagent_id: null, usage: null },
-    { id: "old-turn", status: "completed", subagent_id: null, usage: oldUsage },
-  ]);
-  t.provider.usage.mockReturnValue({
-    input_tokens: 200,
-    output_tokens: 40,
-    total_tokens: 240,
-    input_tokens_details: { cached_tokens: 160 },
-    output_tokens_details: { reasoning_tokens: 0 },
-  });
-  await t.backend.action(internal.tasks.runtime.settleCredits, {
-    sessionId: t.sessionId,
-    reservationId,
-    attempt: 1,
-  });
-  expect((await t.backend.run(async (ctx) => ctx.db.get(reservationId)))?.state.kind).toBe(
-    "pending",
-  );
-
-  t.turns.mockReturnValue([
-    { id: "new-turn", status: "completed", subagent_id: null, usage: newUsage },
-    { id: "old-turn", status: "completed", subagent_id: null, usage: oldUsage },
-  ]);
-  await t.backend.action(internal.tasks.runtime.settleCredits, {
-    sessionId: t.sessionId,
-    reservationId,
-    attempt: 2,
-  });
-  const settled = await t.backend.run(async (ctx) => ({
-    reservation: await ctx.db.get(reservationId),
-    session: await ctx.db.get(t.sessionId),
-  }));
-  expect(settled.reservation?.state.kind).toBe("released");
-  expect(settled.session?.chargedModelMicrodollars).toBe(29);
-
-  t.provider.usage.mockReturnValue({
-    input_tokens: 280,
-    output_tokens: 60,
-    total_tokens: 340,
-    input_tokens_details: { cached_tokens: 224 },
-    output_tokens_details: { reasoning_tokens: 0 },
-  });
-  await t.backend.action(internal.tasks.agentsApi.refreshUsage, {
-    sessionId: t.sessionId,
-    workflowId: null,
-    attempt: 2,
-  });
-  await t.backend.action(internal.tasks.runtime.settleCredits, {
-    sessionId: t.sessionId,
-    reservationId,
-    attempt: 3,
-  });
-  const refreshed = await t.backend.run(async (ctx) => ({
-    session: await ctx.db.get(t.sessionId),
-    wallet: await ctx.db
-      .query("creditWallets")
-      .withIndex("by_user_id", (q) => q.eq("userId", t.userId))
-      .unique(),
-    charges: await ctx.db
-      .query("creditEntries")
-      .withIndex("by_user_id", (q) => q.eq("userId", t.userId))
-      .collect(),
-  }));
-  expect(refreshed.session).toMatchObject({
-    usage: { inputTokens: 280, cachedInputTokens: 224, outputTokens: 60 },
-    modelUsageIncomplete: false,
-    chargedModelMicrodollars: 29,
-  });
-  expect(refreshed.wallet).toMatchObject({ balanceUnits: 500_000 - 29, reservedUnits: 0 });
-  expect(refreshed.charges.filter((entry) => entry.detail.kind === "session_model")).toHaveLength(
-    1,
-  );
-});
-
-it("keeps a subagent turn's credit hold for review rather than guessing its usage", async () => {
-  vi.stubEnv("CREDITS_ENABLED", "true");
-  const t = await setup();
-  await t.backend.mutation(internal.credits.grantOnSignIn, { userId: t.userId });
-  const reservationId = await t.backend.mutation(internal.credits.reserveSessionAi, {
-    sessionId: t.sessionId,
-    sourceKey: "workflow:root-turn",
-  });
-  await t.backend.run(async (ctx) => {
-    await ctx.db.patch(t.sessionId, {
-      active: false,
-      state: { kind: "idle" },
-      creditAdmissionReservationId: reservationId,
-      creditModelWorkStarted: true,
-    });
-  });
-  const usage: TokenUsage = {
-    input_tokens: 100,
-    output_tokens: 20,
-    total_tokens: 120,
-    input_tokens_details: { cached_tokens: 80 },
-    output_tokens_details: { reasoning_tokens: 0 },
-  };
-  t.provider.usage.mockReturnValue(usage);
-  t.turns.mockReturnValue([
-    { id: "subagent-turn", status: "completed", subagent_id: "subagent", usage },
-    { id: "root-turn", status: "completed", subagent_id: null, usage: null },
-  ]);
-  await t.backend.action(internal.tasks.runtime.settleCredits, {
-    sessionId: t.sessionId,
-    reservationId,
-    attempt: 1,
-  });
-  expect((await t.backend.run(async (ctx) => ctx.db.get(reservationId)))?.state.kind).toBe(
-    "pending",
-  );
-
-  t.turns.mockReturnValue([
-    { id: "subagent-turn", status: "completed", subagent_id: "subagent", usage },
-    { id: "root-turn", status: "completed", subagent_id: null, usage },
-  ]);
-  await t.backend.action(internal.tasks.runtime.settleCredits, {
-    sessionId: t.sessionId,
-    reservationId,
-    attempt: 2,
-  });
-  expect((await t.backend.run(async (ctx) => ctx.db.get(reservationId)))?.state.kind).toBe(
-    "pending",
-  );
-  await t.backend.action(internal.tasks.runtime.settleCredits, {
-    sessionId: t.sessionId,
-    reservationId,
-    attempt: 3,
-  });
-  expect((await t.backend.run(async (ctx) => ctx.db.get(reservationId)))?.state.kind).toBe(
-    "unresolved",
-  );
-});
-
-it("refreshes usage during browser handoff without releasing the current turn's hold", async () => {
-  vi.stubEnv("CREDITS_ENABLED", "true");
-  const t = await setup();
-  await t.backend.mutation(internal.credits.grantOnSignIn, { userId: t.userId });
-  const reservationId = await t.backend.mutation(internal.credits.reserveSessionAi, {
-    sessionId: t.sessionId,
-    sourceKey: "workflow:handoff",
-  });
-  await t.backend.run(async (ctx) => {
-    await ctx.db.patch(t.sessionId, {
-      state: {
-        kind: "waiting",
-        message: "Complete the CAPTCHA",
-        callId: "call-test",
-        turnId: "turn-test",
-      },
-      creditAdmissionReservationId: reservationId,
-      creditModelWorkStarted: true,
-    });
-  });
-  t.provider.usage.mockReturnValue({
-    input_tokens: 100,
-    output_tokens: 20,
-    total_tokens: 120,
-    input_tokens_details: { cached_tokens: 80 },
-    output_tokens_details: { reasoning_tokens: 10 },
-  });
-  await t.backend.action(internal.tasks.runtime.settleCredits, {
-    sessionId: t.sessionId,
-    reservationId,
-    attempt: 1,
-  });
-  const waiting = await t.backend.run(async (ctx) => ({
-    session: await ctx.db.get(t.sessionId),
-    reservation: await ctx.db.get(reservationId),
-  }));
-  expect(waiting.session).toMatchObject({
-    active: true,
-    state: { kind: "waiting" },
-    usage: { inputTokens: 100, outputTokens: 20, cachedInputTokens: 80 },
-  });
-  expect(waiting.session?.chargedModelMicrodollars).toBeUndefined();
-  expect(waiting.session?.browser).not.toBeNull();
-  expect(waiting.reservation?.state.kind).toBe("pending");
-});
-
-it("does not apply a delayed old settlement to a later admission hold", async () => {
-  vi.stubEnv("CREDITS_ENABLED", "true");
-  const t = await setup();
-  await t.backend.mutation(internal.credits.grantOnSignIn, { userId: t.userId });
-  const previousId = await t.backend.mutation(internal.credits.reserveSessionAi, {
-    sessionId: t.sessionId,
-    sourceKey: "workflow:previous",
-  });
-  await t.backend.mutation(internal.credits.release, {
-    reservationId: previousId,
-    reason: "Turn completed; usage recorded separately",
-  });
-  const currentId = await t.backend.mutation(internal.credits.reserveSessionAi, {
-    sessionId: t.sessionId,
-    sourceKey: "workflow:current",
-  });
-  await t.backend.run(async (ctx) => {
-    await ctx.db.patch(t.sessionId, { creditAdmissionReservationId: currentId });
-  });
-  await t.backend.action(internal.tasks.runtime.settleCredits, {
-    sessionId: t.sessionId,
-    reservationId: previousId,
-    attempt: 2,
-  });
-  expect((await t.backend.run(async (ctx) => ctx.db.get(currentId)))?.state.kind).toBe("pending");
-});
-
-it("blocks a new message while usage is pending but reuses the hold for a browser handoff", async () => {
-  vi.stubEnv("CREDITS_ENABLED", "true");
-  const t = await setup();
-  await t.backend.mutation(internal.credits.grantOnSignIn, { userId: t.userId });
-  const reservationId = await t.backend.mutation(internal.credits.reserveSessionAi, {
-    sessionId: t.sessionId,
-    sourceKey: "workflow:paused-turn",
-  });
-  await t.backend.run(async (ctx) => {
-    await ctx.db.patch(t.sessionId, {
-      active: false,
-      state: { kind: "idle" },
-      creditAdmissionReservationId: reservationId,
-    });
-  });
-  await expect(
-    t.owner.mutation(api.tasks.sessions.send, {
-      sessionId: t.sessionId,
-      message: "Follow up",
-    }),
-  ).rejects.toThrow("Previous AI usage is still being finalized");
-  const checkId = await t.backend.run(async (ctx) => {
-    const initialId = await ctx.db.insert("agentsApiRequestChecks", {
-      kind: "initial",
-      sessionId: t.sessionId,
+    expect(await t.advance()).toBe(false);
+    const billing = {
+      userId: t.userId,
+      providerId: "session-test",
       model: "gpt-5.6-luna",
-      prompt: "Check the site",
-      state: { kind: "pending" },
+      turnId: "paid-turn",
+    };
+    const jobs = await t.backend.run((ctx) =>
+      ctx.db.system.query("_scheduled_functions").collect(),
+    );
+    expect(jobs.find((job) => job.name === "tasks/agentsApi:refreshUsage")?.args).toEqual([
+      { sessionId: t.sessionId, workflowId: null, attempt: 0, billing },
+    ]);
+    await t.backend.action(internal.tasks.agentsApi.refreshUsage, {
+      sessionId: t.sessionId,
+      workflowId: null,
+      attempt: 0,
+      billing,
     });
-    await ctx.db.patch(t.sessionId, {
-      active: true,
-      state: {
-        kind: "waiting",
-        message: "Complete the CAPTCHA",
-        callId: "call-test",
-        turnId: "turn-test",
+    vi.stubEnv("CREDITS_ENABLED", nextPaid ? "true" : "false");
+    await t.owner.mutation(api.tasks.sessions.send, {
+      sessionId: t.sessionId,
+      message: "Continue before old usage arrives",
+    });
+    t.turns.mockReturnValue([
+      {
+        id: "new-turn",
+        status: "completed",
+        subagent_id: null,
+        usage: { ...paidUsage, output_tokens: 100_000 },
       },
+      { id: "paid-turn", status: "completed", subagent_id: null, usage: paidUsage },
+      { id: "old-free-turn", status: "completed", subagent_id: null, usage: paidUsage },
+    ]);
+    t.provider.items.push(
+      {
+        id: "old-free-search",
+        type: "web_search_call",
+        turn_id: "old-free-turn",
+        status: "completed",
+        action: null,
+      },
+      {
+        id: "new-search",
+        type: "web_search_call",
+        turn_id: "new-turn",
+        status: "completed",
+        action: null,
+      },
+    );
+    await t.backend.run(async (ctx) => {
+      const wallet = await ctx.db
+        .query("creditWallets")
+        .withIndex("by_user_id", (q) => q.eq("userId", t.userId))
+        .unique();
+      if (!wallet) throw new Error("Missing wallet");
+      await ctx.db.patch(wallet._id, { balanceUnits: 1 });
     });
-    return initialId;
-  });
-  expect(checkId).toBeDefined();
-  await t.owner.mutation(api.tasks.sessions.resume, {
-    sessionId: t.sessionId,
-    callId: "call-test",
-    turnId: "turn-test",
-  });
-  const resumed = await t.session();
-  expect(resumed.creditAdmissionReservationId).toBe(reservationId);
-  expect(resumed.state.kind).toBe("checking");
-  expect((await t.backend.run(async (ctx) => ctx.db.get(reservationId)))?.state.kind).toBe(
-    "pending",
+    for (let i = 0; i < 2; i++)
+      await t.backend.action(internal.tasks.agentsApi.refreshUsage, {
+        sessionId: t.sessionId,
+        workflowId: null,
+        attempt: 2,
+        billing,
+      });
+    expect(await t.owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: -28 });
+    const charges = await t.backend.run((ctx) => ctx.db.query("creditUsageTotals").collect());
+    expect(charges).toHaveLength(1);
+    expect(charges[0]).toMatchObject({ kind: "model", totalCostMicrodollars: 29 });
+    expect(await t.session()).toMatchObject({ active: true, billingEnabled: nextPaid });
+    expect((await t.session()).modelTurnId).toBeUndefined();
+  },
+);
+
+it("leaves missing cached usage visible and prices only searches belonging to the paid turn", async () => {
+  vi.stubEnv("CREDITS_ENABLED", "true");
+  const t = await setup();
+  await t.backend.mutation(internal.credits.grantOnSignIn, { userId: t.userId });
+  await t.backend.run((ctx) =>
+    ctx.db.patch(t.sessionId, {
+      active: false,
+      state: { kind: "idle" },
+      billingEnabled: true,
+      modelTurnId: "paid-turn",
+    }),
   );
+  t.provider.usage.mockReturnValue(paidUsage);
+  t.provider.turn.mockReturnValue({
+    id: "paid-turn",
+    status: "completed",
+    subagent_id: null,
+    // @ts-expect-error The provider can omit cache details despite the SDK's required field.
+    usage: { ...paidUsage, input_tokens_details: null },
+  });
+  t.provider.items.push(
+    {
+      id: "paid-search",
+      type: "web_search_call",
+      turn_id: "paid-turn",
+      status: "completed",
+      action: null,
+    },
+    {
+      id: "late-free-search",
+      type: "web_search_call",
+      turn_id: "old-free-turn",
+      status: "completed",
+      action: null,
+    },
+  );
+  const billing = {
+    userId: t.userId,
+    providerId: "session-test",
+    model: "gpt-5.6-luna",
+    turnId: "paid-turn",
+  };
+  await expect(
+    t.backend.action(internal.tasks.agentsApi.refreshUsage, {
+      sessionId: t.sessionId,
+      workflowId: null,
+      attempt: 2,
+      billing,
+    }),
+  ).rejects.toThrow("usage is still unavailable");
+  expect((await t.session()).modelUsageIncomplete).toBe(true);
+  expect(await t.owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 490_000 });
+  t.provider.turn.mockReturnValue({
+    id: "paid-turn",
+    status: "completed",
+    subagent_id: null,
+    usage: paidUsage,
+  });
+  await t.owner.action(api.tasks.runtime.refresh, { sessionId: t.sessionId });
+  await t.owner.action(api.tasks.runtime.refresh, { sessionId: t.sessionId });
+  expect(await t.owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 489_971 });
+  expect((await t.session()).modelUsageIncomplete).toBe(false);
+});
+
+it("cleanup never guesses that the preceding free turn belongs to failed paid work", async () => {
+  const t = await setup();
+  await t.backend.run((ctx) =>
+    ctx.db.patch(t.sessionId, {
+      billingEnabled: true,
+      modelTurnId: undefined,
+      previousTurnId: "even-older-turn",
+      state: { kind: "failed", error: "Admission failed before submitting input" },
+    }),
+  );
+  t.provider.status.mockReturnValue("idle");
+  t.provider.usage.mockReturnValue(paidUsage);
+  t.provider.turn.mockReturnValue({
+    id: "previous-free-turn",
+    status: "completed",
+    subagent_id: null,
+    usage: paidUsage,
+  });
+  await t.backend.action(internal.tasks.runtime.cleanup, { sessionId: t.sessionId });
+  expect((await t.session()).modelUsageIncomplete).toBe(true);
+  expect(await t.backend.run((ctx) => ctx.db.query("creditUsageTotals").collect())).toEqual([]);
+  expect(t.turns).not.toHaveBeenCalled();
+});
+
+it("never bills an unmarked free turn when credits are enabled later", async () => {
+  const t = await setup();
+  await t.backend.run((ctx) =>
+    ctx.db.patch(t.sessionId, { active: false, modelTurnId: "free-turn" }),
+  );
+  vi.stubEnv("CREDITS_ENABLED", "true");
+  t.provider.usage.mockReturnValue(paidUsage);
+  await t.owner.action(api.tasks.runtime.refresh, { sessionId: t.sessionId });
+  expect(await t.backend.run((ctx) => ctx.db.query("creditUsageTotals").collect())).toEqual([]);
 });
 
 it("executes review site assignment through the real tools without connecting to the browser", async () => {
@@ -703,6 +491,7 @@ it("executes review site assignment through the real tools without connecting to
   t.provider.call.name = "set_review_site";
   t.provider.call.arguments = { site: "samebase.com" };
   expect(await t.advance()).toBe(true);
+  expect(t.turns).not.toHaveBeenCalled();
   expect(await t.savedCall()).toMatchObject({
     result: { kind: "success", output: JSON.stringify({ primarySite: "samebase.com" }) },
   });

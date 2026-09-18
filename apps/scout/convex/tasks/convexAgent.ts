@@ -68,7 +68,8 @@ async function saveUsage(
         }
       : null,
     reportedModelUsd: usage?.costUsd ?? null,
-    modelUsageIncomplete: reported.incomplete || (context !== null && context.usage === null),
+    modelUsageIncomplete:
+      reported.incomplete || usage?.costUsd == null || (context !== null && context.usage === null),
   });
 }
 
@@ -250,6 +251,8 @@ export async function advance(
   const remainingMs = MAX_TURN_MS - (Date.now() - startedAt);
   if (remainingMs <= 0) throw new Error("Convex Agent reached the 45-minute turn limit");
 
+  if (session.billingEnabled)
+    await ctx.runMutation(internal.credits.checkBalance, { sessionId: session._id });
   const resource = await runtimeTools(ctx, session, scout, null, purpose);
   const controller = new AbortController();
   const finished = new AbortController();
@@ -292,7 +295,8 @@ export async function advance(
       usageHandler: async (usageCtx, { usage }) => {
         await usageCtx.runMutation(internal.tasks.convexAgentRecords.recordUsage, {
           sessionId: session._id,
-          reservationId: session.creditAdmissionReservationId ?? null,
+          billingEnabled: session.billingEnabled ?? false,
+          sourceKey: `convex:${session._id}:${promptMessageId}:step:${steps.length}`,
           usage: generationUsage(usage),
         });
       },
@@ -325,11 +329,17 @@ export async function advance(
         maxRetries: 0,
         abortSignal: controller.signal,
       });
-      if (summary.finishReason !== "stop")
-        throw new Error(`Task summarization ended with ${summary.finishReason}`);
       const summaryStep = summary.steps[0];
       if (!summaryStep || summary.steps.length !== 1)
         throw new Error("Task summarization did not produce exactly one model step");
+      await ctx.runMutation(internal.tasks.convexAgentRecords.recordUsage, {
+        sessionId: session._id,
+        billingEnabled: session.billingEnabled ?? false,
+        sourceKey: "convex:" + session._id + ":summary:" + prepared.coveredThrough.messageId,
+        usage: generationUsage(summaryStep.usage),
+      });
+      if (summary.finishReason !== "stop")
+        throw new Error(`Task summarization ended with ${summary.finishReason}`);
       prepared.validateSummary(summary.text);
       await ctx.runMutation(internal.tasks.convexAgentRecords.saveContext, {
         sessionId: session._id,
@@ -438,6 +448,9 @@ export async function advance(
     finished.abort();
     controller.abort();
     await resource.dispose();
+    // Rebuild the display from persisted messages; usage callbacks only bill their own step.
+    const allMessages = await loadMessages(ctx, threadId, null);
+    await saveUsage(ctx, session, allMessages, false);
   }
 }
 

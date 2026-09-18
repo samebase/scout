@@ -1,12 +1,7 @@
 import { authTables } from "@convex-dev/auth/server";
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
-import {
-  creditWalletValidator,
-  creditEntryValidator,
-  creditReservationValidator,
-  creditTermsValidator,
-} from "./creditsModel";
+import { creditWalletValidator, creditEntryValidator, creditUsageInput } from "./creditsModel";
 import { creditPurchaseValidator } from "./creditPurchasesModel";
 import { requestCheckRecord } from "./tasks/requestCheckModel";
 import { convexContextRecord } from "./tasks/convexAgentModel";
@@ -90,9 +85,9 @@ export default defineSchema({
   creditEntries: defineTable(creditEntryValidator)
     .index("by_user_id", ["userId"])
     .index("by_source_key", ["sourceKey"]),
-  creditReservations: defineTable(creditReservationValidator).index(
-    "by_session_id_and_source_key",
-    ["sessionId", "sourceKey"],
+  creditUsageTotals: defineTable(creditUsageInput.extend({ chargedUnits: v.number() })).index(
+    "by_source_key",
+    ["sourceKey"],
   ),
   creditPurchases: defineTable(creditPurchaseValidator)
     .index("by_product_and_environment", ["terms.productId", "terms.environment"])
@@ -131,15 +126,8 @@ export default defineSchema({
     usage: v.union(sessionUsage, v.null()),
     reportedModelUsd: v.optional(v.union(v.number(), v.null())),
     modelUsageIncomplete: v.optional(v.boolean()),
-    chargedModelMicrodollars: v.optional(v.number()),
-    chargedWebSearchCalls: v.optional(v.number()),
-    creditUsageTerms: v.optional(creditTermsValidator),
-    creditUsageBaseline: v.optional(
-      v.object({ modelCostUsd: v.number(), webSearchCalls: v.number() }),
-    ),
-    creditAdmissionReservationId: v.optional(v.id("creditReservations")),
-    creditModelWorkStarted: v.optional(v.boolean()),
-    creditAdmissionTurnUsageRecorded: v.optional(v.boolean()),
+    billingEnabled: v.optional(v.boolean()),
+    modelTurnId: v.optional(v.string()),
     walkthrough: v.optional(walkthroughContent),
   })
     .index("by_user_id", ["userId"])
@@ -160,6 +148,7 @@ export default defineSchema({
   }).index("by_session_id_and_call_id", ["sessionId", "callId"]),
   agentsApiBrowserSessions: defineTable({
     agentsSessionId: v.id("agentsApiSessions"),
+    billable: v.optional(v.boolean()),
     sequence: v.number(),
     providerSessionId: v.string(),
     viewport: browserViewportValidator,

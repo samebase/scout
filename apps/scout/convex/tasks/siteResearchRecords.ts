@@ -11,12 +11,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import { query } from "../functions";
 import schema from "../schema";
 import { creditsEnabled, costMicrodollars } from "../creditPolicy";
-import {
-  markCreditUnresolved,
-  releaseCreditOperation,
-  reserveCreditOperation,
-  settleCreditOperation,
-} from "../creditLedger";
+import { assertCreditAdmission, recordCreditUsage } from "../creditLedger";
 import { getInitialCheck } from "./requestChecks";
 import { requireSessionPermission } from "./access";
 import { siteHostnameSchema } from "../../shared/site";
@@ -67,8 +62,7 @@ const emptyJob = {
   credits: null,
 };
 
-// The initial research rate is $0.005 per provider credit, as in the existing
-// Scout credit estimate. Firecrawl's maxCredits bounds the up-front hold.
+// The initial research rate is $0.005 per provider credit.
 const RESEARCH_USD_PER_PROVIDER_CREDIT = 0.005;
 const researchCost = (providerCredits: number) =>
   costMicrodollars(providerCredits * RESEARCH_USD_PER_PROVIDER_CREDIT);
@@ -81,27 +75,18 @@ async function startSiteResearch(
   userId: Id<"users">,
   sessionId: Id<"agentsApiSessions"> | null,
 ) {
+  const billable = creditsEnabled() && sessionId !== null;
+  if (billable) await assertCreditAdmission(ctx, userId);
   const researchId = await ctx.db.insert("agentsApiSiteResearch", {
     ...emptyJob,
     site: site.hostname,
     sessionId: null,
     userId,
+    billable,
     state: { kind: "running" },
   });
-  const reservationId =
-    creditsEnabled() && sessionId
-      ? await reserveCreditOperation(ctx, {
-          sessionId,
-          sourceKey: researchSourceKey(researchId),
-          source: { kind: "research" },
-          maximumCostMicrodollars: researchCost(SITE_RESEARCH_MAX_CREDITS),
-        })
-      : null;
   await ctx.db.patch(site._id, { researchId });
-  await ctx.scheduler.runAfter(0, internal.tasks.siteResearch.process, {
-    researchId,
-    reservationId,
-  });
+  await ctx.scheduler.runAfter(0, internal.tasks.siteResearch.process, { researchId });
   await ctx.scheduler.runAfter(0, internal.scout.sitePreviews.ensure, { site: site.hostname });
   return researchId;
 }
@@ -218,6 +203,18 @@ export const submitted = internalMutation({
   },
 });
 
+export const admit = internalMutation({
+  args: { researchId: v.id("agentsApiSiteResearch") },
+  returns: v.null(),
+  handler: async (ctx, { researchId }) => {
+    const research = await ctx.db.get(researchId);
+    if (!research || research.sessionId !== null || research.state.kind !== "running")
+      throw new Error("Site research is no longer running");
+    if (research.billable) await assertCreditAdmission(ctx, research.userId);
+    return null;
+  },
+});
+
 export const finish = internalMutation({
   args: {
     researchId: v.id("agentsApiSiteResearch"),
@@ -226,39 +223,20 @@ export const finish = internalMutation({
     responsePath: v.union(v.string(), v.null()),
     credits: v.union(v.number(), v.null()),
     profile: v.union(siteProfile, v.null()),
-    billing: v.optional(
-      v.object({
-        reservationId: v.id("creditReservations"),
-        providerAttempted: v.boolean(),
-      }),
-    ),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
     const research = await ctx.db.get(args.researchId);
     if (!research || (research.state.kind !== "running" && research.state.kind !== "waiting"))
       return null;
-    if (args.billing) {
-      if (research.sessionId !== null) throw new Error("Only shared research can be charged");
-      const reservation = await ctx.db.get(args.billing.reservationId);
-      if (
-        !reservation ||
-        reservation.source.kind !== "research" ||
-        reservation.sourceKey !== researchSourceKey(research._id) ||
-        reservation.userId !== research.userId
-      )
-        throw new Error("Site research credit reservation does not match its job");
-      if (args.credits !== null)
-        await settleCreditOperation(ctx, reservation, researchCost(args.credits));
-      else if (args.billing.providerAttempted)
-        await markCreditUnresolved(
-          ctx,
-          reservation,
-          "Firecrawl did not report research creditsUsed",
-        );
-      else
-        await releaseCreditOperation(ctx, reservation, "Research ended before a provider request");
-    }
+    if (research.sessionId === null && research.billable && args.credits !== null)
+      await recordCreditUsage(ctx, {
+        userId: research.userId,
+        sessionId: null,
+        sourceKey: researchSourceKey(research._id),
+        kind: "research",
+        totalCostMicrodollars: researchCost(args.credits),
+      });
     let state = args.state;
     if (research.sessionId !== null) {
       const session = await ctx.db.get(research.sessionId);

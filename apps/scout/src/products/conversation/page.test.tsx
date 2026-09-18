@@ -337,7 +337,6 @@ test.each(["INSUFFICIENT_CREDITS", "CREDIT_HOLD"] as const)(
       canSend: true,
       canStop: false,
       busy: false,
-      creditHoldStatus: null,
     });
     await openPlay("/play?thread=game-thread");
     expect(screen.getByRole("alert").textContent).toContain(
@@ -360,7 +359,6 @@ test("keeps generic failures generic even when their diagnostic mentions credits
     canSend: true,
     canStop: false,
     busy: false,
-    creditHoldStatus: null,
   });
   await openPlay("/play?thread=game-thread");
   expect(screen.getByRole("alert").textContent).toBe(
@@ -369,32 +367,20 @@ test("keeps generic failures generic even when their diagnostic mentions credits
   expect(screen.queryByRole("link", { name: "View credits" })).toBeNull();
 });
 
-test("explains manual credit review and enables sending after it is resolved", async () => {
+test("sends when controls allow it without credit settlement messages", async () => {
   remote.queries.set("tasks/sessions:controls", {
     state: { kind: "idle" },
-    canSend: false,
+    canSend: true,
     canStop: false,
     busy: false,
-    creditHoldStatus: "unresolved",
   });
   await openPlay("/play?thread=game-thread");
-  expect(screen.getByText(/Contact an admin with this conversation’s link/)).toBeTruthy();
+  expect(screen.queryByText(/Finishing this turn’s credit usage/)).toBeNull();
+  expect(screen.queryByText(/This turn’s credit usage needs review/)).toBeNull();
   fireEvent.change(screen.getByRole("textbox", { name: "Message Scout" }), {
     target: { value: "Continue the game" },
   });
-  expect(screen.getByRole("button", { name: "Send message" })).toHaveProperty("disabled", true);
-  act(() => {
-    remote.queries.set("tasks/sessions:controls", {
-      state: { kind: "idle" },
-      canSend: true,
-      canStop: false,
-      busy: false,
-      creditHoldStatus: null,
-    });
-    remote.revision += 1;
-    remote.subscribers.forEach((listener) => listener());
-  });
-  expect(screen.queryByText(/Contact an admin with this conversation’s link/)).toBeNull();
+  expect(screen.getByRole("button", { name: "Send message" })).toHaveProperty("disabled", false);
   fireEvent.click(screen.getByRole("button", { name: "Send message" }));
   await waitFor(() =>
     expect(remote.sendManaged).toHaveBeenCalledWith({

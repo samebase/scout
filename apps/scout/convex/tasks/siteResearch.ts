@@ -4,11 +4,9 @@ import { v } from "convex/values";
 import { SdkError } from "firecrawl";
 import { internal } from "../_generated/api";
 import type { Doc } from "../_generated/dataModel";
-import type { Id } from "../_generated/dataModel";
 import { internalAction, type ActionCtx } from "../_generated/server";
 import { action } from "../functions";
 import { siteHostnameSchema } from "../../shared/site";
-import { omitNullish } from "../../shared/omitNullish";
 import { saveWorkspaceFile } from "../scout/workspaceTools";
 import { createFirecrawlClient } from "../scout/lib/firecrawl";
 import { diagnosticMessage } from "../scout/lib/redaction";
@@ -20,8 +18,6 @@ export async function endResearch(
   ctx: ActionCtx,
   research: Doc<"agentsApiSiteResearch">,
   state: typeof researchFinishedState.type,
-  reservationId: Id<"creditReservations"> | null = null,
-  providerAttempted = research.jobId !== null,
 ) {
   let credits = research.credits;
   if (research.jobId && credits === null) {
@@ -49,7 +45,6 @@ export async function endResearch(
     responsePath: research.responsePath,
     credits,
     profile: null,
-    ...omitNullish({ billing: reservationId ? { reservationId, providerAttempted } : null }),
   });
 }
 
@@ -182,10 +177,7 @@ export const advance = internalAction({
 
 // The shared job outlives an individual task. Its bounded poll uses the existing research record.
 export const process = internalAction({
-  args: {
-    researchId: v.id("agentsApiSiteResearch"),
-    reservationId: v.union(v.id("creditReservations"), v.null()),
-  },
+  args: { researchId: v.id("agentsApiSiteResearch") },
   returns: v.null(),
   handler: async (ctx, args): Promise<null> => {
     const research = await ctx.runQuery(internal.tasks.siteResearchRecords.job, {
@@ -197,12 +189,14 @@ export const process = internalAction({
     const target = { kind: "site" as const, site: research.site };
     let responsePath = research.responsePath;
     let jobId = research.jobId;
-    let providerAttempted = jobId !== null;
     let observedCredits = research.credits;
     try {
       if (Date.now() - research._creationTime >= SITE_RESEARCH_TIMEOUT_MS)
         throw new Error(`Site research exceeded ${SITE_RESEARCH_TIMEOUT_MS / 1000} seconds`);
       if (!jobId) {
+        await ctx.runMutation(internal.tasks.siteResearchRecords.admit, {
+          researchId: research._id,
+        });
         const request = researchRequest(research.site);
         const requestPath = "/workspace/research/request.json";
         await saveWorkspaceFile(ctx, {
@@ -211,7 +205,6 @@ export const process = internalAction({
           path: requestPath,
           text: JSON.stringify(request, null, 2),
         });
-        providerAttempted = true;
         const job = await createFirecrawlClient().startAgent(request);
         if (!job.success || !job.id)
           throw new Error(job.error ?? "Firecrawl returned no research job");
@@ -244,11 +237,6 @@ export const process = internalAction({
               responsePath,
               credits: response.creditsUsed ?? null,
               profile: null,
-              ...omitNullish({
-                billing: args.reservationId
-                  ? { reservationId: args.reservationId, providerAttempted }
-                  : null,
-              }),
               state: {
                 kind: "failed",
                 finishedAt: Date.now(),
@@ -272,11 +260,6 @@ export const process = internalAction({
             jobId,
             responsePath,
             credits: response.creditsUsed ?? null,
-            ...omitNullish({
-              billing: args.reservationId
-                ? { reservationId: args.reservationId, providerAttempted }
-                : null,
-            }),
             profile: {
               name: result.name,
               homepageUrl: `https://${research.site}/`,
@@ -299,8 +282,6 @@ export const process = internalAction({
           finishedAt: Date.now(),
           error: diagnosticMessage(error),
         },
-        args.reservationId,
-        providerAttempted,
       );
     }
     return null;

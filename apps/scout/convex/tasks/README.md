@@ -96,12 +96,22 @@ in Agents to fetch it again manually. Missing token counts display as “Usage p
 unknown model rate still displays as “Unpriced”.
 
 Errors remain visible. Interrupted side effects are not automatically replayed.
-With credits enabled, unresolved usage keeps the turn’s hold until an admin reviews it.
-Use the member’s conversation link to find the task in Agents, then Refresh after fixing
-the cause or confirming provider usage is available. Refresh retries settlement without
-rerunning the task. If evidence still needs a manual correction, inspect its reservation
-before using `credits:resolveManually` or `credits:adjustManually`; do not release a hold
-as a substitute for recording billable usage.
+With credits enabled, new work requires a positive wallet balance and no account hold.
+Actual usage is charged when reported, even if that makes the balance negative. Missing
+usage does not block follow-ups, stop, or cleanup.
+
+Each start/send captures whether model work is paid; handoff resume retains that choice.
+Agents API billing uses the exact root turn ID and search items with that turn ID. Final
+refresh jobs capture the billing identity independently of the session's current turn, so
+late paid usage still bills after a new paid or free follow-up starts. Cumulative session
+snapshots are display data. Convex Agent bills reported Gateway cost by prompt/step, with
+separate keys for summaries. Repeated reports of the same cumulative cost do not charge
+again. Missing cached-token details or Gateway cost never become an uncached estimate.
+
+Use Refresh in Agents to check the current turn again. If an older turn exhausted its
+three checks after a follow-up started, inspect the failed refresh job and rerun its
+captured arguments once provider usage is available. There is no reservation, settlement
+queue, or automatic reconciliation. Old sessions without a billing flag remain free.
 
 ## Shared-engine verification, September 18, 2026
 

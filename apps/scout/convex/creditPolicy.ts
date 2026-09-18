@@ -8,7 +8,6 @@ export const CREDIT_POLICY = {
   packCredits: 200,
   packPriceCents: 500,
   currency: "usd",
-  initialAiReserveCredits: 5,
   hostedWebSearchMicrodollarsPerCall: 10_000,
 } as const;
 
@@ -58,13 +57,4 @@ export function costUnits(
         denominator,
     ),
   );
-}
-
-export function currentCreditTerms() {
-  return {
-    version: CREDIT_POLICY.version,
-    unitsPerCredit: CREDIT_POLICY.unitsPerCredit,
-    microdollarsPerCredit: CREDIT_POLICY.microdollarsPerCredit,
-    hostedWebSearchMicrodollarsPerCall: CREDIT_POLICY.hostedWebSearchMicrodollarsPerCall,
-  };
 }

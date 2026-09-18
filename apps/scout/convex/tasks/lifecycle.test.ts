@@ -59,10 +59,7 @@ async function setup() {
 
 test("keeps a typed credit failure through the real workflow callback and controls query", async () => {
   const t = await setup();
-  const reservationId = await t.backend.mutation(internal.credits.reserveSessionAi, {
-    sessionId: t.sessionId,
-    sourceKey: "workflow:test",
-  });
+  await t.backend.mutation(internal.credits.grantOnSignIn, { userId: t.userId });
   await t.backend.run(async (ctx) => {
     const wallet = await ctx.db
       .query("creditWallets")
@@ -85,8 +82,7 @@ test("keeps a typed credit failure through the real workflow callback and contro
     );
     await ctx.db.patch(t.sessionId, {
       workflowId,
-      creditAdmissionReservationId: reservationId,
-      creditUsageBaseline: { modelCostUsd: 0, webSearchCalls: 0 },
+      billingEnabled: true,
     });
   });
   await t.backend.finishAllScheduledFunctions(() => {

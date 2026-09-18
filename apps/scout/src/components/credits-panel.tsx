@@ -6,8 +6,17 @@ import { api } from "../../convex/_generated/api";
 import { canAccess, useViewerAccess } from "../lib/access";
 import { Button } from "./ui/button";
 
-const credits = new Intl.NumberFormat(undefined, { maximumFractionDigits: 4 });
+const wholeCredits = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
+const credits = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
+const historyCredits = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
 const dollars = new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" });
+
+function formatCreditChange(amount: number) {
+  if (amount !== 0 && Math.abs(amount) < 0.01) {
+    return `${amount < 0 ? "-" : "+"}<${historyCredits.format(0.01)}`;
+  }
+  return `${amount > 0 ? "+" : ""}${historyCredits.format(amount)}`;
+}
 
 const purchaseMessages = {
   pending: "Waiting for payment confirmation. Your balance will update here.",
@@ -25,15 +34,17 @@ function entryLabel(detail: CreditDetail) {
     case "signup":
       return "Signup credits";
     case "usage":
-      return "AI and web usage";
+      return {
+        model: "AI usage",
+        request_check: "Request check",
+        research: "Research",
+        browser: "Browser use",
+        web_search: "Web search",
+      }[detail.usageKind];
     case "purchase":
       return "Credit purchase";
     case "refund":
       return "Purchase refunded";
-    case "session_model":
-      return "Scout conversation";
-    case "session_web_search":
-      return "Web search";
     case "adjustment":
       return detail.reason;
     default: {
@@ -48,14 +59,20 @@ export function CreditBalanceLink() {
   const offer = useQuery(api.credits.offer, {});
   if (!balance || !offer?.usageEnabled) return null;
 
-  const available = credits.format(balance.availableUnits / offer.unitsPerCredit);
+  const value = balance.balanceUnits / offer.unitsPerCredit;
+  const amount =
+    value >= 0
+      ? wholeCredits.format(Math.floor(value))
+      : value > -0.1
+        ? `-<${credits.format(0.1)}`
+        : credits.format(value);
   return (
     <Link
       to="/settings"
       className="hidden shrink-0 rounded-lg px-2 py-1 text-xs font-medium tabular-nums text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:inline"
-      aria-label={`${available} credits available. View credit history in settings.`}
+      aria-label={`${amount} credits. View credit history in settings.`}
     >
-      {available} credits
+      {amount} credits
     </Link>
   );
 }
@@ -120,15 +137,14 @@ export function CreditsPanel({ purchaseId }: { purchaseId: string | undefined })
           )}
           <div className="mt-4 flex flex-wrap items-end justify-between gap-4 rounded-xl border border-border bg-muted/40 p-4 sm:p-5">
             <div>
-              <p className="text-sm text-muted-foreground">Available balance</p>
+              <p className="text-sm text-muted-foreground">Balance</p>
               <p className="mt-1 text-3xl font-semibold tabular-nums">
-                {credits.format(balance.availableUnits / offer.unitsPerCredit)}{" "}
+                {credits.format(balance.balanceUnits / offer.unitsPerCredit)}{" "}
                 <span className="text-sm font-normal text-muted-foreground">credits</span>
               </p>
-              {balance.reservedUnits > 0 && (
+              {balance.balanceUnits <= 0 && (
                 <p className="mt-1 text-sm text-muted-foreground">
-                  {credits.format(balance.reservedUnits / offer.unitsPerCredit)} reserved for
-                  ongoing work
+                  Add credits before starting new work.
                 </p>
               )}
             </div>
@@ -189,8 +205,7 @@ export function CreditsPanel({ purchaseId }: { purchaseId: string | undefined })
                       </time>
                     </div>
                     <span className="shrink-0 tabular-nums">
-                      {entry.amountUnits > 0 ? "+" : ""}
-                      {credits.format(entry.amountUnits / offer.unitsPerCredit)}
+                      {formatCreditChange(entry.amountUnits / offer.unitsPerCredit)}
                     </span>
                   </li>
                 ))}

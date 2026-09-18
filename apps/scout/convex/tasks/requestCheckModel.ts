@@ -95,7 +95,12 @@ function completedState<T, F extends string>(result: Validator<T, "required", F>
 function checkState<T, F extends string>(result: Validator<T, "required", F>) {
   return v.union(
     v.object({ kind: v.literal("pending") }),
-    v.object({ kind: v.literal("running"), startedAt: v.number(), request: v.string() }),
+    v.object({
+      kind: v.literal("running"),
+      startedAt: v.number(),
+      request: v.string(),
+      billable: v.optional(v.boolean()),
+    }),
     v.object({ kind: v.literal("cancelled") }),
     completedState(result),
     failedState,

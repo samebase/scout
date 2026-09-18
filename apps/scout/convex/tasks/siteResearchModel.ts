@@ -53,7 +53,11 @@ const researchFields = v.object({
 
 export const siteResearchRecord = v.union(
   researchFields.extend({ sessionId: v.id("agentsApiSessions") }),
-  researchFields.extend({ sessionId: v.null(), userId: v.id("users") }),
+  researchFields.extend({
+    sessionId: v.null(),
+    userId: v.id("users"),
+    billable: v.optional(v.boolean()),
+  }),
 );
 
 export const researchSummary = v.object({

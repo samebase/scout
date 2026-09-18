@@ -2,18 +2,13 @@ import { v } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import { internalMutation, internalQuery, type QueryCtx } from "../_generated/server";
 import { costMicrodollars, creditsEnabled } from "../creditPolicy";
-import {
-  markCreditUnresolved,
-  reservationForSource,
-  reserveCreditOperation,
-  settleCreditOperation,
-} from "../creditLedger";
+import { assertCreditAdmission, recordCreditUsage } from "../creditLedger";
 import { query } from "../functions";
 import schema from "../schema";
 import { syncChatSite } from "../scout/siteListings";
 import { estimateAgentsApiCost } from "./cost";
 import { handoffEvidenceValidator } from "./handoffEvidenceModel";
-import { maximumRequestCheckCost, requestCheckCreditSourceKey } from "./requestCheckCredits";
+import { requestCheckCreditSourceKey } from "./requestCheckCredits";
 import { MAX_SESSION_CHECKS, requestCheckFinishedState, handoffContext } from "./requestCheckModel";
 
 export function getInitialCheck(ctx: Pick<QueryCtx, "db">, sessionId: Id<"agentsApiSessions">) {
@@ -145,17 +140,12 @@ export const start = internalMutation({
     } else if (evidence !== null) {
       throw new Error("Initial check cannot contain browser evidence");
     }
-    if (creditsEnabled())
-      await reserveCreditOperation(ctx, {
-        sessionId: check.sessionId,
-        sourceKey: requestCheckCreditSourceKey(checkId),
-        source: { kind: "request_check" },
-        maximumCostMicrodollars: maximumRequestCheckCost(check.model, details.request),
-      });
+    const billable = creditsEnabled();
+    if (billable) await assertCreditAdmission(ctx, session.userId);
     if (check.kind === "resume") {
-      await ctx.db.patch(checkId, { evidence, state: { kind: "running", ...details } });
+      await ctx.db.patch(checkId, { evidence, state: { kind: "running", ...details, billable } });
     } else {
-      await ctx.db.patch(checkId, { state: { kind: "running", ...details } });
+      await ctx.db.patch(checkId, { state: { kind: "running", ...details, billable } });
     }
     return true;
   },
@@ -176,22 +166,16 @@ export const finish = internalMutation({
       throw new Error("Check is not running");
     if (state.kind === "completed" && state.result.kind !== check.kind)
       throw new Error("Check result kind does not match");
-    const reservation = await reservationForSource(
-      ctx,
-      check.sessionId,
-      requestCheckCreditSourceKey(checkId),
-    );
-    if (reservation) {
+    if (check.state.kind === "running" && check.state.billable) {
       const measuredCost = checkCost({ model: check.model, state });
-      if (state.call?.usage && measuredCost !== null) {
-        await settleCreditOperation(ctx, reservation, costMicrodollars(measuredCost));
-      } else {
-        await markCreditUnresolved(
-          ctx,
-          reservation,
-          "Request check dispatch may have incurred a charge, but OpenAI usage was not recorded",
-        );
-      }
+      if (state.call?.usage && measuredCost !== null)
+        await recordCreditUsage(ctx, {
+          userId: session.userId,
+          sessionId: session._id,
+          sourceKey: requestCheckCreditSourceKey(checkId),
+          kind: "request_check",
+          totalCostMicrodollars: costMicrodollars(measuredCost),
+        });
     }
     if (state.kind === "failed") {
       await ctx.db.patch(checkId, { state });

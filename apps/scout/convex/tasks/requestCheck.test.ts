@@ -241,7 +241,7 @@ it.each([
   expect(request).toHaveBeenCalledTimes(attempts);
 });
 
-it("keeps a stop made during the call even when its response approves the request", async () => {
+it("charges measured usage even when the task is stopped during the check", async () => {
   vi.stubEnv("CREDITS_ENABLED", "true");
   const t = await setup();
   vi.stubGlobal(
@@ -257,15 +257,8 @@ it("keeps a stop made during the call even when its response approves the reques
     state: { kind: "stopped" },
     checks: [{ kind: "initial", status: "approved" }],
   });
-  const reservation = await t.backend.run((ctx) =>
-    ctx.db
-      .query("creditReservations")
-      .withIndex("by_session_id_and_source_key", (q) =>
-        q.eq("sessionId", t.sessionId).eq("sourceKey", `request_check:${t.checkId}`),
-      )
-      .unique(),
-  );
-  expect(reservation?.state).toMatchObject({ kind: "settled", costMicrodollars: 96 });
+  const totals = await t.backend.run((ctx) => ctx.db.query("creditUsageTotals").collect());
+  expect(totals).toMatchObject([{ kind: "request_check", totalCostMicrodollars: 96 }]);
 });
 
 it("cancels before dispatch when stopped before the check begins", async () => {
@@ -280,35 +273,15 @@ it("cancels before dispatch when stopped before the check begins", async () => {
     active: false,
     checks: [{ kind: "initial", status: "cancelled", cost: 0 }],
   });
-  expect(
-    await t.backend.run((ctx) =>
-      ctx.db
-        .query("creditReservations")
-        .withIndex("by_session_id_and_source_key", (q) =>
-          q.eq("sessionId", t.sessionId).eq("sourceKey", `request_check:${t.checkId}`),
-        )
-        .unique(),
-    ),
-  ).toBeNull();
+  expect(await t.backend.run((ctx) => ctx.db.query("creditUsageTotals").collect())).toEqual([]);
 });
 
-it("reserves before the OpenAI request, settles measured usage once, and skips duplicate actions", async () => {
+it("checks balance before OpenAI, charges actual usage once, and skips duplicate actions", async () => {
   vi.stubEnv("CREDITS_ENABLED", "true");
   const t = await setup();
   const request = vi.fn<typeof fetch>(async () => {
-    const reservation = await t.backend.run((ctx) =>
-      ctx.db
-        .query("creditReservations")
-        .withIndex("by_session_id_and_source_key", (q) =>
-          q.eq("sessionId", t.sessionId).eq("sourceKey", `request_check:${t.checkId}`),
-        )
-        .unique(),
-    );
-    expect(reservation).toMatchObject({
-      source: { kind: "request_check" },
-      state: { kind: "pending" },
-    });
-    expect(reservation?.reservedUnits).toBeGreaterThan(0);
+    expect(await t.inspectCheck()).toMatchObject({ state: { kind: "running", billable: true } });
+    expect(await t.backend.run((ctx) => ctx.db.query("creditUsageTotals").collect())).toEqual([]);
     expect(await t.check()).toBe(false);
     return response({ title: "Test Example", decision: { kind: "approved" } });
   });
@@ -317,22 +290,17 @@ it("reserves before the OpenAI request, settles measured usage once, and skips d
   expect(await t.check()).toBe(true);
   expect(await t.check()).toBe(false);
   expect(request).toHaveBeenCalledTimes(1);
-  const { reservation, wallet, entries } = await t.backend.run(async (ctx) => ({
-    reservation: await ctx.db
-      .query("creditReservations")
-      .withIndex("by_session_id_and_source_key", (q) =>
-        q.eq("sessionId", t.sessionId).eq("sourceKey", `request_check:${t.checkId}`),
-      )
-      .unique(),
+  const { totals, wallet, entries } = await t.backend.run(async (ctx) => ({
+    totals: await ctx.db.query("creditUsageTotals").collect(),
     wallet: await ctx.db.query("creditWallets").unique(),
     entries: await ctx.db.query("creditEntries").collect(),
   }));
-  expect(reservation?.state).toMatchObject({ kind: "settled", costMicrodollars: 96 });
-  expect(wallet?.balanceUnits).toBe(50 * 10_000 - 96);
+  expect(totals).toMatchObject([{ kind: "request_check", totalCostMicrodollars: 96 }]);
+  expect(wallet?.balanceUnits).toBe(500_000 - 96);
   expect(entries.filter((entry) => entry.detail.kind === "usage")).toHaveLength(1);
 });
 
-it("does not reserve or call OpenAI when the check cannot start", async () => {
+it("does not charge or call OpenAI when the check cannot start", async () => {
   vi.stubEnv("CREDITS_ENABLED", "true");
   const t = await setup();
   vi.stubEnv("OPENAI_API_KEY", "");
@@ -340,19 +308,10 @@ it("does not reserve or call OpenAI when the check cannot start", async () => {
   vi.stubGlobal("fetch", request);
   expect(await t.check()).toBe(false);
   expect(request).not.toHaveBeenCalled();
-  expect(
-    await t.backend.run((ctx) =>
-      ctx.db
-        .query("creditReservations")
-        .withIndex("by_session_id_and_source_key", (q) =>
-          q.eq("sessionId", t.sessionId).eq("sourceKey", `request_check:${t.checkId}`),
-        )
-        .unique(),
-    ),
-  ).toBeNull();
+  expect(await t.backend.run((ctx) => ctx.db.query("creditUsageTotals").collect())).toEqual([]);
 });
 
-it("keeps an uncertain check charge for inspection when OpenAI returns no usage", async () => {
+it("keeps a missing OpenAI usage report visible without locking the wallet", async () => {
   vi.stubEnv("CREDITS_ENABLED", "true");
   const t = await setup();
   vi.stubGlobal(
@@ -362,23 +321,20 @@ it("keeps an uncertain check charge for inspection when OpenAI returns no usage"
     ),
   );
   expect(await t.check()).toBe(true);
-  const { reservation, wallet, entries } = await t.backend.run(async (ctx) => ({
-    reservation: await ctx.db
-      .query("creditReservations")
-      .withIndex("by_session_id_and_source_key", (q) =>
-        q.eq("sessionId", t.sessionId).eq("sourceKey", `request_check:${t.checkId}`),
-      )
-      .unique(),
+  expect((await t.inspectCheck()).state).toMatchObject({
+    kind: "completed",
+    call: { usage: null },
+  });
+  const { totals, wallet } = await t.backend.run(async (ctx) => ({
+    totals: await ctx.db.query("creditUsageTotals").collect(),
     wallet: await ctx.db.query("creditWallets").unique(),
-    entries: await ctx.db.query("creditEntries").collect(),
   }));
-  expect(reservation?.state).toMatchObject({ kind: "unresolved" });
-  expect(wallet?.balanceUnits).toBe(50 * 10_000);
-  expect(wallet?.reservedUnits).toBeGreaterThanOrEqual(reservation?.reservedUnits ?? 1);
-  expect(entries.filter((entry) => entry.detail.kind === "usage")).toHaveLength(0);
+  expect(totals).toEqual([]);
+  expect(wallet?.balanceUnits).toBe(500_000);
+  expect(wallet?.hold.kind).toBe("clear");
 });
 
-it("settles reported usage even when OpenAI returns a failed check", async () => {
+it("charges reported usage even when OpenAI returns a failed check", async () => {
   vi.stubEnv("CREDITS_ENABLED", "true");
   const t = await setup();
   vi.stubGlobal(
@@ -399,45 +355,27 @@ it("settles reported usage even when OpenAI returns a failed check", async () =>
     ),
   );
   expect(await t.check()).toBe(false);
-  const reservation = await t.backend.run((ctx) =>
-    ctx.db
-      .query("creditReservations")
-      .withIndex("by_session_id_and_source_key", (q) =>
-        q.eq("sessionId", t.sessionId).eq("sourceKey", `request_check:${t.checkId}`),
-      )
-      .unique(),
-  );
-  expect(reservation?.state).toMatchObject({ kind: "settled", costMicrodollars: 96 });
+  const totals = await t.backend.run((ctx) => ctx.db.query("creditUsageTotals").collect());
+  expect(totals).toMatchObject([{ kind: "request_check", totalCostMicrodollars: 96 }]);
   expect((await t.inspectCheck()).state).toMatchObject({ kind: "failed" });
 });
 
-it("denies an unfunded check before sending an OpenAI request", async () => {
+it("denies a nonpositive wallet before sending an OpenAI request", async () => {
   vi.stubEnv("CREDITS_ENABLED", "true");
   const t = await setup();
   await t.backend.run(async (ctx) => {
     const session = await ctx.db.get(t.sessionId);
     if (!session) throw new Error("Expected a task session");
     await ensureCreditWallet(ctx, session.userId);
-  });
-  await t.backend.run(async (ctx) => {
     const wallet = await ctx.db.query("creditWallets").unique();
     if (!wallet) throw new Error("Expected a credit wallet");
-    await ctx.db.patch(wallet._id, { balanceUnits: wallet.reservedUnits });
+    await ctx.db.patch(wallet._id, { balanceUnits: 0 });
   });
   const request = vi.fn<typeof fetch>();
   vi.stubGlobal("fetch", request);
   expect(await t.check()).toBe(false);
   expect(request).not.toHaveBeenCalled();
-  expect(
-    await t.backend.run((ctx) =>
-      ctx.db
-        .query("creditReservations")
-        .withIndex("by_session_id_and_source_key", (q) =>
-          q.eq("sessionId", t.sessionId).eq("sourceKey", `request_check:${t.checkId}`),
-        )
-        .unique(),
-    ),
-  ).toBeNull();
+  expect(await t.backend.run((ctx) => ctx.db.query("creditUsageTotals").collect())).toEqual([]);
 });
 
 it("requires a reason for rejections and a useful short title", () => {

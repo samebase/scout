@@ -16,7 +16,7 @@ afterEach(() => {
 });
 
 it.each(["agents_api", "convex_agent"] as const)(
-  "charges only new model and search work when credits are enabled on an old %s task",
+  "captures paid versus free %s turns without waiting for prior usage",
   async (engine) => {
     const { backend, owner, sessionId } = await setup();
     await backend.run((ctx) =>
@@ -25,172 +25,89 @@ it.each(["agents_api", "convex_agent"] as const)(
         active: false,
         state: { kind: "idle" },
         providerId: "old-free-session",
+        modelTurnId: "old-free-turn",
+        modelUsageIncomplete: true,
         usage: { inputTokens: 1_000_000, outputTokens: 0, cachedInputTokens: 0 },
-        ...(engine === "convex_agent" ? { reportedModelUsd: 0.2 } : {}),
       }),
     );
-    await backend.mutation(internal.tasks.sessions.saveItems, {
-      sessionId,
-      items: [{ providerItemId: "old-search", kind: "web_search_call", text: "", details: "{}" }],
-    });
     vi.stubEnv("CREDITS_ENABLED", "true");
     await owner.mutation(api.tasks.sessions.send, { sessionId, message: "Continue" });
-    const paid = await backend.run((ctx) => ctx.db.get(sessionId));
-    if (!paid?.creditAdmissionReservationId) throw new Error("Missing paid turn");
-    expect(await backend.query(internal.tasks.sessions.creditUsage, { sessionId })).toMatchObject({
-      modelBudgetUsd: 0,
-      webSearchCalls: 0,
+    expect(await backend.run((ctx) => ctx.db.get(sessionId))).toMatchObject({
+      billingEnabled: true,
+      modelUsageIncomplete: true,
     });
-    await backend.mutation(internal.tasks.sessions.update, {
-      sessionId,
-      usage: { inputTokens: 1_100_000, outputTokens: 0, cachedInputTokens: 0 },
-      ...(engine === "convex_agent" ? { reportedModelUsd: 0.22 } : {}),
-    });
-    await backend.mutation(internal.tasks.sessions.saveItems, {
-      sessionId,
-      items: [{ providerItemId: "new-search", kind: "web_search_call", text: "", details: "{}" }],
-    });
-    const usage = await backend.query(internal.tasks.sessions.creditUsage, { sessionId });
-    expect(usage.modelBudgetUsd).toBeCloseTo(0.02);
-    expect(usage.webSearchCalls).toBe(1);
-    if (engine === "convex_agent") expect(usage.modelCostUsd).toBeCloseTo(0.02);
-    await backend.mutation(internal.credits.recordSessionUsage, {
-      sessionId,
-      reservationId: paid.creditAdmissionReservationId,
-      modelCostMicrodollars: 20_000,
-      budgetModelCostMicrodollars: 20_000,
-      webSearchCalls: usage.webSearchCalls ?? 0,
-    });
-    expect(await owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 470_000 });
+    expect((await backend.run((ctx) => ctx.db.get(sessionId)))?.modelTurnId).toBeUndefined();
+    expect(await owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 500_000 });
+    await backend.run((ctx) =>
+      ctx.db.patch(sessionId, { active: false, modelTurnId: "paid-turn" }),
+    );
+    vi.stubEnv("CREDITS_ENABLED", "false");
+    await owner.mutation(api.tasks.sessions.send, { sessionId, message: "Free follow-up" });
+    const free = await backend.run((ctx) => ctx.db.get(sessionId));
+    expect(free?.billingEnabled).toBe(false);
+    expect(free?.modelTurnId).toBeUndefined();
   },
 );
 
-it("detaches a completed paid turn when credits are disabled, then starts a fresh paid boundary", async () => {
-  vi.stubEnv("CREDITS_ENABLED", "true");
-  const { backend, owner, sessionId } = await setup();
-  const initial = await backend.run((ctx) => ctx.db.get(sessionId));
-  if (!initial?.creditAdmissionReservationId) throw new Error("Missing admission hold");
-  const previousId = initial.creditAdmissionReservationId;
-  await backend.mutation(internal.credits.recordSessionUsage, {
-    sessionId,
-    reservationId: previousId,
-    modelCostMicrodollars: 10_000,
-    budgetModelCostMicrodollars: 10_000,
-    webSearchCalls: 1,
-  });
-  await backend.mutation(internal.credits.release, {
-    reservationId: previousId,
-    reason: "Turn completed; usage recorded separately",
-  });
-  await backend.mutation(internal.tasks.sessions.update, {
-    sessionId,
-    active: false,
-    state: { kind: "idle" },
-    providerId: "provider-session",
-  });
-  vi.stubEnv("CREDITS_ENABLED", "false");
-  await owner.mutation(api.tasks.sessions.send, { sessionId, message: "Free follow-up" });
-  expect(
-    (await backend.run((ctx) => ctx.db.get(sessionId)))?.creditAdmissionReservationId,
-  ).toBeUndefined();
-  await expect(
-    backend.mutation(internal.credits.recordSessionUsage, {
+it.each([true, false])(
+  "resume retains the original billing choice (%s)",
+  async (billingEnabled) => {
+    const { backend, owner, sessionId } = await setup();
+    if (billingEnabled) {
+      const session = await backend.run((ctx) => ctx.db.get(sessionId));
+      if (!session) throw new Error("Task missing");
+      await backend.mutation(internal.credits.grantOnSignIn, { userId: session.userId });
+    }
+    await backend.run((ctx) =>
+      ctx.db.patch(sessionId, {
+        billingEnabled,
+        modelTurnId: "original-turn",
+        state: { kind: "waiting", message: "Sign in", callId: "call", turnId: "original-turn" },
+        browser: {
+          providerSessionId: "browser",
+          cdpUrl: "wss://browser.test",
+          liveViewUrl: null,
+          interactiveLiveViewUrl: null,
+          currentUrl: null,
+        },
+      }),
+    );
+    vi.stubEnv("CREDITS_ENABLED", billingEnabled ? "false" : "true");
+    await owner.mutation(api.tasks.sessions.resume, {
       sessionId,
-      reservationId: previousId,
-      modelCostMicrodollars: 100_000,
-      budgetModelCostMicrodollars: 100_000,
-      webSearchCalls: 5,
-    }),
-  ).rejects.toThrow("billing changed");
-  await backend.mutation(internal.tasks.sessions.update, {
-    sessionId,
-    active: false,
-    state: { kind: "idle" },
-    usage: { inputTokens: 2_000_000, outputTokens: 0, cachedInputTokens: 0 },
-  });
-  vi.stubEnv("CREDITS_ENABLED", "true");
-  await owner.mutation(api.tasks.sessions.send, { sessionId, message: "Paid follow-up" });
-  const paid = await backend.run((ctx) => ctx.db.get(sessionId));
-  if (!paid?.creditAdmissionReservationId) throw new Error("Missing new admission hold");
-  expect(paid.creditAdmissionReservationId).not.toBe(previousId);
-  expect(paid.chargedModelMicrodollars).toBe(0);
-  expect(paid.chargedWebSearchCalls).toBe(0);
-  expect(await backend.query(internal.tasks.sessions.creditUsage, { sessionId })).toMatchObject({
-    modelBudgetUsd: 0,
-    webSearchCalls: 0,
-  });
-  await backend.mutation(internal.credits.recordSessionUsage, {
-    sessionId,
-    reservationId: paid.creditAdmissionReservationId,
-    modelCostMicrodollars: 10_000,
-    budgetModelCostMicrodollars: 10_000,
-    webSearchCalls: 1,
-  });
-  expect(await owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 460_000 });
-  const entries = await backend.run((ctx) => ctx.db.query("creditEntries").collect());
-  expect(new Set(entries.map((entry) => entry.sourceKey)).size).toBe(entries.length);
-});
+      callId: "call",
+      turnId: "original-turn",
+    });
+    expect(await backend.run((ctx) => ctx.db.get(sessionId))).toMatchObject({
+      billingEnabled,
+      modelTurnId: "original-turn",
+      state: { kind: "checking" },
+    });
+  },
+);
 
-it("reserves credits at task admission and leaves an unfunded follow-up idle", async () => {
+it("rejects new paid work at zero balance without preventing stop or usage reporting", async () => {
+  const { backend, owner, sessionId, userId } = await setup();
+  await backend.mutation(internal.credits.grantOnSignIn, { userId });
+  await backend.run(async (ctx) => {
+    const wallet = await ctx.db
+      .query("creditWallets")
+      .withIndex("by_user_id", (q) => q.eq("userId", userId))
+      .unique();
+    if (!wallet) throw new Error("Wallet missing");
+    await ctx.db.patch(wallet._id, { balanceUnits: 0 });
+    await ctx.db.patch(sessionId, {
+      active: false,
+      providerId: "session-test",
+      modelUsageIncomplete: true,
+    });
+  });
   vi.stubEnv("CREDITS_ENABLED", "true");
-  const { backend, owner, userId, sessionId } = await setup();
-  expect(await owner.query(api.credits.balance, {})).toMatchObject({
-    balanceUnits: 500_000,
-    reservedUnits: 50_000,
-  });
-  const session = await backend.run((ctx) => ctx.db.get(sessionId));
-  if (!session?.creditAdmissionReservationId) throw new Error("Missing admission hold");
-  await backend.mutation(internal.credits.release, {
-    reservationId: session.creditAdmissionReservationId,
-    reason: "Turn completed; usage recorded separately",
-  });
-  await backend.mutation(internal.tasks.sessions.update, {
-    sessionId,
-    active: false,
-    state: { kind: "idle" },
-    providerId: "provider-session",
-  });
-  await backend.mutation(internal.credits.adjustManually, {
-    userId,
-    reference: "exhaust-account-for-admission-test",
-    amountUnits: -500_000,
-    reason: "Test exhausted balance",
-  });
   await expect(
     owner.mutation(api.tasks.sessions.send, { sessionId, message: "Continue" }),
-  ).rejects.toThrow("INSUFFICIENT_CREDITS");
-  expect(await backend.run((ctx) => ctx.db.get(sessionId))).toMatchObject({
-    active: false,
-    state: { kind: "idle" },
-  });
-});
-
-it("keeps an unresolved AI hold until its usage is resolved", async () => {
-  vi.stubEnv("CREDITS_ENABLED", "true");
-  const { backend, owner, sessionId } = await setup();
-  const session = await backend.run((ctx) => ctx.db.get(sessionId));
-  if (!session?.creditAdmissionReservationId) throw new Error("Missing admission hold");
-  const reservationId = session.creditAdmissionReservationId;
-  await backend.mutation(internal.credits.unresolved, {
-    reservationId,
-    reason: "Provider usage missing",
-  });
-  await backend.mutation(internal.tasks.sessions.update, {
-    sessionId,
-    active: false,
-    state: { kind: "idle" },
-    providerId: "provider-session",
-  });
-  await expect(
-    owner.mutation(api.tasks.sessions.send, { sessionId, message: "Continue" }),
-  ).rejects.toThrow("needs review");
-  expect(await owner.query(api.credits.balance, {})).toMatchObject({ reservedUnits: 50_000 });
-  await backend.mutation(internal.credits.resolveManually, {
-    reservationId,
-    resolution: { kind: "settle", costMicrodollars: 0 },
-  });
-  await owner.mutation(api.tasks.sessions.send, { sessionId, message: "Continue" });
-  expect(await owner.query(api.credits.balance, {})).toMatchObject({ reservedUnits: 50_000 });
+  ).rejects.toThrow("more credits");
+  expect((await owner.query(api.tasks.sessions.controls, { sessionId })).canSend).toBe(true);
+  await owner.mutation(api.tasks.sessions.stop, { sessionId });
 });
 
 async function setup() {

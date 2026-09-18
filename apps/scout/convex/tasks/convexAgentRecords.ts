@@ -2,9 +2,10 @@ import { createThread, saveMessage } from "@convex-dev/agent";
 import { v } from "convex/values";
 import { outdent } from "outdent";
 import { components, internal } from "../_generated/api";
-import type { Id } from "../_generated/dataModel";
-import { internalMutation, internalQuery, type MutationCtx } from "../_generated/server";
+import { internalMutation, internalQuery } from "../_generated/server";
 import { callResult } from "./model";
+import { recordCreditUsage } from "../creditLedger";
+import { costMicrodollars } from "../creditPolicy";
 import {
   addUsage,
   convexContextRecord,
@@ -14,57 +15,29 @@ import {
   zeroUsage,
 } from "./convexAgentModel";
 
-async function appendSessionUsage(
-  ctx: MutationCtx,
-  sessionId: Id<"agentsApiSessions">,
-  usage: typeof zeroUsage | null,
-) {
-  const session = await ctx.db.get(sessionId);
-  if (!session) throw new Error("Task not found");
-  if (!usage) {
-    await ctx.db.patch(sessionId, { modelUsageIncomplete: true });
-    return;
-  }
-  if (session.usage === null && session.reportedModelUsd !== undefined) {
-    await ctx.db.patch(sessionId, { modelUsageIncomplete: true });
-    return;
-  }
-  const total = addUsage(
-    {
-      inputTokens: session.usage?.inputTokens ?? 0,
-      outputTokens: session.usage?.outputTokens ?? 0,
-      cachedInputTokens: session.usage?.cachedInputTokens ?? (session.usage ? null : 0),
-      reasoningTokens: 0,
-      costUsd: session.reportedModelUsd === undefined ? 0 : session.reportedModelUsd,
-    },
-    usage,
-  );
-  await ctx.db.patch(sessionId, {
-    usage: total
-      ? {
-          inputTokens: total.inputTokens,
-          outputTokens: total.outputTokens,
-          cachedInputTokens: total.cachedInputTokens,
-        }
-      : null,
-    reportedModelUsd: total?.costUsd ?? null,
-  });
-}
-
 export const recordUsage = internalMutation({
   args: {
     sessionId: v.id("agentsApiSessions"),
-    reservationId: v.union(v.id("creditReservations"), v.null()),
+    billingEnabled: v.boolean(),
+    sourceKey: v.string(),
     usage: v.union(convexUsage, v.null()),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    await appendSessionUsage(ctx, args.sessionId, args.usage);
-    if (args.usage && args.reservationId) {
-      const session = await ctx.db.get(args.sessionId);
-      if (session?.creditAdmissionReservationId === args.reservationId)
-        await ctx.db.patch(args.sessionId, { creditAdmissionTurnUsageRecorded: true });
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) throw new Error("Task not found");
+    if (args.usage?.costUsd == null) {
+      await ctx.db.patch(session._id, { modelUsageIncomplete: true });
+      return null;
     }
+    if (args.billingEnabled)
+      await recordCreditUsage(ctx, {
+        userId: session.userId,
+        sessionId: session._id,
+        sourceKey: args.sourceKey,
+        kind: "model",
+        totalCostMicrodollars: costMicrodollars(args.usage.costUsd),
+      });
     return null;
   },
 });
@@ -104,7 +77,6 @@ export const saveContext = internalMutation({
     const value = { ...args, usage: addUsage(record ? record.usage : zeroUsage, args.usage) };
     if (record) await ctx.db.patch(record._id, value);
     else await ctx.db.insert("taskConvexContexts", value);
-    await appendSessionUsage(ctx, args.sessionId, args.usage);
     return null;
   },
 });
