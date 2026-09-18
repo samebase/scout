@@ -1,6 +1,12 @@
 import { authTables } from "@convex-dev/auth/server";
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import {
+  creditWalletValidator,
+  creditEntryValidator,
+  creditReservationValidator,
+  creditTermsValidator,
+} from "./creditsModel";
 import { requestCheckRecord } from "./tasks/requestCheckModel";
 import { convexContextRecord } from "./tasks/convexAgentModel";
 import { siteProfile, siteResearchRecord } from "./tasks/siteResearchModel";
@@ -79,6 +85,14 @@ const siteTask = v.object({ chatId: v.id("scoutChats"), createdAt: v.number() })
 
 export default defineSchema({
   ...authTables,
+  creditWallets: defineTable(creditWalletValidator).index("by_user_id", ["userId"]),
+  creditEntries: defineTable(creditEntryValidator)
+    .index("by_user_id", ["userId"])
+    .index("by_source_key", ["sourceKey"]),
+  creditReservations: defineTable(creditReservationValidator).index(
+    "by_session_id_and_source_key",
+    ["sessionId", "sourceKey"],
+  ),
   taskConvexContexts: defineTable(convexContextRecord).index("by_session_id", ["sessionId"]),
   agentsApiSiteResearch: defineTable(siteResearchRecord).index("by_session_id", ["sessionId"]),
   agentsApiScreenshots: defineTable(screenshotRecord)
@@ -112,6 +126,9 @@ export default defineSchema({
     usage: v.union(sessionUsage, v.null()),
     reportedModelUsd: v.optional(v.union(v.number(), v.null())),
     modelUsageIncomplete: v.optional(v.boolean()),
+    chargedModelMicrodollars: v.optional(v.number()),
+    chargedWebSearchCalls: v.optional(v.number()),
+    creditUsageTerms: v.optional(creditTermsValidator),
     walkthrough: v.optional(walkthroughContent),
   })
     .index("by_user_id", ["userId"])
