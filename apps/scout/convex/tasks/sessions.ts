@@ -555,6 +555,19 @@ export const update = internalMutation({
     )
       return null;
     if (session.state.kind === "stopped") delete patch.state;
+    if (
+      session.active &&
+      patch.active === false &&
+      (session.engine ?? "agents_api") === "agents_api" &&
+      session.providerId
+    ) {
+      patch.modelUsageIncomplete = true;
+      await ctx.scheduler.runAfter(0, internal.tasks.agentsApi.refreshUsage, {
+        sessionId,
+        workflowId: session.workflowId ?? null,
+        attempt: 0,
+      });
+    }
     await ctx.db.patch(sessionId, patch);
     return null;
   },

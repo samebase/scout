@@ -4,7 +4,9 @@ import OpenAI from "openai";
 import type { Stream } from "openai/core/streaming";
 import type { AgentSessionEvent } from "openai/resources/beta/agents/agents";
 import { setTimeout as delay } from "node:timers/promises";
-import type { Infer } from "convex/values";
+import { type Infer, v } from "convex/values";
+import { vWorkflowId } from "@convex-dev/workflow";
+import { internalAction } from "../_generated/server";
 import { outdent } from "outdent";
 import type { ActionCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
@@ -274,6 +276,54 @@ async function consumeOutput(
   }
 }
 
+export const refreshUsage = internalAction({
+  args: {
+    sessionId: v.id("agentsApiSessions"),
+    workflowId: v.union(vWorkflowId, v.null()),
+    attempt: v.union(v.literal(0), v.literal(1), v.literal(2)),
+  },
+  returns: v.null(),
+  handler: async (ctx, args): Promise<null> => {
+    const session = await ctx.runQuery(internal.tasks.sessions.cleanupResources, {
+      sessionId: args.sessionId,
+    });
+    if (
+      session.active ||
+      (session.workflowId ?? null) !== args.workflowId ||
+      session.engine !== "agents_api" ||
+      !session.providerId
+    )
+      return null;
+
+    const remote = await client().beta.agents.sessions.retrieve(session.providerId);
+    const usage = readAgentsApiUsage(remote.usage);
+    await ctx.runMutation(internal.tasks.sessions.update, {
+      sessionId: session._id,
+      refreshWorkflowId: args.workflowId,
+      ...omitNullish({ usage }),
+      modelUsageIncomplete: args.attempt < 2 || usage === null,
+    });
+
+    // Accounting can arrive after completion, or revise a previous turn's subtotal.
+    // Fetch fresh cumulative snapshots each time; never add snapshots together.
+    if (args.attempt < 2) {
+      await ctx.scheduler.runAfter(
+        args.attempt === 0 ? 30_000 : 120_000,
+        internal.tasks.agentsApi.refreshUsage,
+        {
+          ...args,
+          attempt: args.attempt === 0 ? 1 : 2,
+        },
+      );
+    } else if (usage === null) {
+      throw new Error(
+        "OpenAI usage is still unavailable after three checks. Use Refresh in Agents to check again.",
+      );
+    }
+    return null;
+  },
+});
+
 export async function refreshExecution(
   ctx: ActionCtx,
   session: Doc<"agentsApiSessions">,
@@ -293,6 +343,7 @@ export async function refreshExecution(
       sessionId: session._id,
       refreshWorkflowId: session.workflowId ?? null,
       usage: readAgentsApiUsage(remote.usage),
+      modelUsageIncomplete: false,
     });
   return null;
 }

@@ -1353,8 +1353,36 @@ test("distinguishes a known zero estimate from missing provider usage", async ()
   });
   expect(await screen.findByText("Cost pending")).toBeTruthy();
   await userEvent.setup().click(screen.getByText("Cost pending"));
-  expect(screen.getByText("Unpriced")).toBeTruthy();
+  expect(screen.getByText("Usage pending")).toBeTruthy();
+  expect(screen.queryByText("Unpriced")).toBeNull();
   expect(screen.getByText("Not reported")).toBeTruthy();
+});
+
+test("updates missing model usage to its estimate while keeping unknown rates unpriced", async () => {
+  await open("/agents?session=session-1");
+  await userEvent.setup().click(await screen.findByText("Cost pending"));
+  expect(screen.getByText("Usage pending")).toBeTruthy();
+  const current = session();
+  updateQuery("tasks/sessions:get", {
+    ...current,
+    usage: { inputTokens: 100000, cachedInputTokens: 80000, outputTokens: 10000 },
+    cost: {
+      ...current.cost,
+      modelEstimateUsd: 0.0176,
+      knownSubtotalUsd: 0.0176,
+      totalEstimateUsd: 0.0176,
+      missing: [],
+    },
+  });
+  expect(await screen.findByText("Cost · $0.0176 estimated")).toBeTruthy();
+  expect(screen.getByText("$0.0176")).toBeTruthy();
+  expect(screen.queryByText("Usage pending")).toBeNull();
+  updateQuery("tasks/sessions:get", {
+    ...current,
+    cost: { ...current.cost, missing: ["model_pricing"] },
+  });
+  expect(await screen.findByText("Unpriced")).toBeTruthy();
+  expect(screen.queryByText("Usage pending")).toBeNull();
 });
 
 test("sums all checks once and marks incomplete check pricing as a subtotal", async () => {

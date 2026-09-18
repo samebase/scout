@@ -495,6 +495,7 @@ it("refreshes ended-session history and cost without restarting the agent or cha
     await ctx.db.patch(sessionId, {
       active: false,
       state: { kind: "failed", error: "Browser interrupted" },
+      modelUsageIncomplete: true,
     });
   });
   provider.usage.mockReturnValue({
@@ -510,6 +511,7 @@ it("refreshes ended-session history and cost without restarting the agent or cha
     active: false,
     state: { kind: "failed", error: "Browser interrupted" },
     usage: { inputTokens: 100, cachedInputTokens: 80, outputTokens: 20 },
+    modelUsageIncomplete: false,
   });
   expect(provider.events).toEqual([]);
   expect(execute).not.toHaveBeenCalled();
@@ -523,6 +525,128 @@ it("refreshes ended-session history and cost without restarting the agent or cha
     "Not authorized",
   );
 });
+
+it("fetches late usage after completion and replaces revised cumulative totals", async () => {
+  const { backend, sessionId, provider, advance, session, owner } = await setup();
+  provider.status.mockReturnValue("idle");
+  provider.turn.mockReturnValue({ id: "completed-turn", status: "completed" });
+  provider.usage
+    .mockReturnValueOnce(null)
+    .mockReturnValueOnce(null)
+    .mockReturnValueOnce({
+      input_tokens: 100,
+      output_tokens: 20,
+      total_tokens: 120,
+      input_tokens_details: { cached_tokens: 80 },
+      output_tokens_details: { reasoning_tokens: 0 },
+    })
+    .mockReturnValue({
+      input_tokens: 300,
+      output_tokens: 60,
+      total_tokens: 360,
+      input_tokens_details: { cached_tokens: 240 },
+      output_tokens_details: { reasoning_tokens: 0 },
+    });
+
+  await expect(advance()).resolves.toBe(false);
+  expect(await session()).toMatchObject({
+    active: false,
+    state: { kind: "idle" },
+    usage: null,
+    modelUsageIncomplete: true,
+  });
+  await backend.finishAllScheduledFunctions(vi.runAllTimers);
+  expect(provider.usage).toHaveBeenCalledTimes(4);
+  expect(await session()).toMatchObject({
+    active: false,
+    state: { kind: "idle" },
+    usage: { inputTokens: 300, cachedInputTokens: 240, outputTokens: 60 },
+    modelUsageIncomplete: false,
+  });
+  const { cost } = await owner.query(api.tasks.sessions.cost, { sessionId });
+  expect(cost.modelEstimateUsd).toBeCloseTo(0.0000888);
+  expect(cost.missing).not.toContain("model_usage");
+  expect(provider.events).toEqual([]);
+});
+
+it("bounds missing-usage checks and leaves an inspectable failure without erasing known usage", async () => {
+  const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+  const { backend, sessionId, provider, advance, session } = await setup();
+  provider.status.mockReturnValue("idle");
+  provider.turn.mockReturnValue({ id: "completed-turn", status: "completed" });
+  provider.usage.mockReturnValueOnce({
+    input_tokens: 100,
+    output_tokens: 20,
+    total_tokens: 120,
+    input_tokens_details: { cached_tokens: 80 },
+    output_tokens_details: { reasoning_tokens: 0 },
+  });
+  await advance();
+  await backend.finishAllScheduledFunctions(vi.runAllTimers);
+  expect(provider.usage).toHaveBeenCalledTimes(4);
+  expect(await session()).toMatchObject({
+    active: false,
+    state: { kind: "idle" },
+    usage: { inputTokens: 100, cachedInputTokens: 80, outputTokens: 20 },
+    modelUsageIncomplete: true,
+  });
+  const jobs = await backend.run((ctx) => ctx.db.system.query("_scheduled_functions").take(20));
+  expect(jobs.filter((job) => job.state.kind === "failed")).toHaveLength(1);
+  expect(errors).toHaveBeenCalledWith(
+    "Error when running scheduled function tasks/agentsApi:refreshUsage",
+    expect.objectContaining({
+      message: expect.stringContaining("OpenAI usage is still unavailable after three checks"),
+    }),
+  );
+  expect(jobs.some((job) => job.state.kind === "pending")).toBe(false);
+  // Reapplying the ended state must not start another chain.
+  await backend.mutation(internal.tasks.sessions.update, { sessionId, active: false });
+  await backend.finishAllScheduledFunctions(vi.runAllTimers);
+  expect(provider.usage).toHaveBeenCalledTimes(4);
+  errors.mockRestore();
+});
+
+it.each([true, false])(
+  "discards a late usage response after a newer turn starts (active: %s)",
+  async (active) => {
+    const { backend, sessionId, provider, session, owner } = await setup();
+    await backend.run((ctx) => ctx.db.patch(sessionId, { active: false, state: { kind: "idle" } }));
+    const nextUsage = { inputTokens: 500, cachedInputTokens: 400, outputTokens: 100 };
+    provider.beforeRetrieve.mockImplementationOnce(async () => {
+      await owner.mutation(api.tasks.sessions.send, {
+        sessionId,
+        message: "Follow-up task",
+      });
+      await backend.run((ctx) =>
+        ctx.db.patch(sessionId, {
+          active,
+          usage: nextUsage,
+          modelUsageIncomplete: true,
+        }),
+      );
+    });
+    provider.usage.mockReturnValue({
+      input_tokens: 100,
+      output_tokens: 20,
+      total_tokens: 120,
+      input_tokens_details: { cached_tokens: 80 },
+      output_tokens_details: { reasoning_tokens: 0 },
+    });
+    await backend.action(internal.tasks.agentsApi.refreshUsage, {
+      sessionId,
+      workflowId: null,
+      attempt: 2,
+    });
+    expect(await session()).toMatchObject({ usage: nextUsage, modelUsageIncomplete: true });
+    provider.beforeRetrieve.mockClear();
+    await backend.action(internal.tasks.agentsApi.refreshUsage, {
+      sessionId,
+      workflowId: null,
+      attempt: 2,
+    });
+    expect(provider.beforeRetrieve).not.toHaveBeenCalled();
+  },
+);
 
 it.each([
   { race: "the same workflow reactivates", priorWorkflow: true, newWorkflow: false, active: true },
@@ -821,7 +945,7 @@ it("retries failed cleanup only on Stop, deduplicates pending/running jobs, and 
   expect((await backend.run((ctx) => ctx.db.system.get(retryJobId)))?.state.kind).toBe("success");
   await owner.mutation(api.tasks.sessions.send, { sessionId, message: "Next task" });
   expect((await session()).cleanupJobId).toBeUndefined();
-  expect(provider.beforeRetrieve).toHaveBeenCalledTimes(6);
+  expect(provider.beforeRetrieve).toHaveBeenCalledTimes(9);
   expect(closeFirecrawlBrowserSession).toHaveBeenCalledOnce();
 });
 
