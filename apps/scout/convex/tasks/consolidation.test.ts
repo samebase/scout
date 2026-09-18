@@ -169,16 +169,28 @@ it.each(products)(
   },
 );
 
-it.each(products)(
-  "rejects an injected engine on member %s creation without writing a task",
-  async (kind) => {
+it.each(products.flatMap((kind) => engines.map((engine) => ({ kind, engine }))))(
+  "uses the member's $engine selection for $kind",
+  async ({ kind, engine }) => {
     const { backend, member, scoutId } = await setup();
     const visibility: typeof chatVisibilityValidator.type = "private";
-    const args = { product: { kind }, scoutId, prompt, visibility, engine: "convex_agent" };
-    // Passing a variable preserves the extra client field for Convex's runtime validator.
-    await expect(member.mutation(api.scout.chats.startProductChat, args)).rejects.toThrow();
-    expect(await backend.run((ctx) => ctx.db.query("agentsApiSessions").take(1))).toEqual([]);
-    expect(await backend.run((ctx) => ctx.db.query("scoutChats").take(1))).toEqual([]);
+    const { threadId } = await member.mutation(api.scout.chats.startProductChat, {
+      product: { kind },
+      scoutId,
+      prompt,
+      visibility,
+      engine,
+    });
+    const [session] = await backend.run((ctx) => ctx.db.query("agentsApiSessions").take(1));
+    expect(session).toMatchObject({ _id: threadId, engine });
+    expect(await member.query(api.accounts.taskPreferences, {})).toEqual({
+      lastScoutId: scoutId,
+      lastTaskEngine: engine,
+    });
+    expect(await member.query(api.scout.activity.get, { threadId })).toMatchObject({
+      canControl: true,
+      runtime: { kind: "task", sessionId: threadId },
+    });
   },
 );
 

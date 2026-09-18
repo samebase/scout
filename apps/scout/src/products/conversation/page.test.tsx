@@ -33,6 +33,7 @@ const remote = vi.hoisted(() => ({
   stopManaged: vi.fn(),
   resumeManaged: vi.fn(),
   setVisibility: vi.fn(),
+  savePreferences: vi.fn(),
   signIn: vi.fn(),
   queryCalls: vi.fn(),
   listReplayPages: vi.fn(),
@@ -90,6 +91,10 @@ vi.mock("convex/react", () => ({
   },
   useMutation: (reference: FunctionReference<"mutation">) => {
     switch (getFunctionName(reference)) {
+      case "accounts:setTaskPreferences":
+        return Object.assign(remote.savePreferences, {
+          withOptimisticUpdate: () => remote.savePreferences,
+        });
       case "scout/chats:startProductChat":
         return remote.createThread;
       case "scout/chats:setVisibility":
@@ -139,6 +144,17 @@ beforeEach(() => {
   remote.screenshotUrl.mockReset().mockResolvedValue(null);
   remote.revision = 0;
   remote.queries.clear();
+  remote.queries.set("accounts:taskPreferences", {});
+  remote.savePreferences.mockReset().mockImplementation(async (patch) => {
+    const current = remote.queries.get("accounts:taskPreferences");
+    remote.queries.set("accounts:taskPreferences", {
+      ...(current && typeof current === "object" ? current : {}),
+      ...patch,
+    });
+    remote.revision += 1;
+    remote.subscribers.forEach((notify) => notify());
+    return null;
+  });
   remote.queries.set("accounts:currentViewerAccess", {
     kind: "account",
     userId: "admin",
@@ -265,10 +281,39 @@ test("a site link opens the shared composer without submitting and sends the sel
     scoutId: "scout-2",
     prompt: "Check the sign-up flow.",
     visibility: "private",
+    engine: "agents_api",
   });
   act(() => router.history.back());
   expect(await screen.findByRole("button", { name: "Remove example.com from task" })).toBeTruthy();
   expect(remote.createThread).toHaveBeenCalledTimes(1);
+});
+
+test("the composer restores saved choices and saves picker changes before any task starts", async () => {
+  remote.queries.set("accounts:taskPreferences", {
+    lastScoutId: "scout-2",
+    lastTaskEngine: "convex_agent",
+  });
+  await openPlay();
+  expect(screen.getByRole("combobox", { name: "Your Scout" }).textContent).toContain("Moss");
+  expect(screen.getByRole("combobox", { name: "Task engine" }).textContent).toContain(
+    "Luna - Convex",
+  );
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("combobox", { name: "Task engine" }));
+  await user.click(screen.getByRole("option", { name: "Luna - Agents API" }));
+  await user.click(screen.getByRole("combobox", { name: "Your Scout" }));
+  await user.click(screen.getByRole("option", { name: "Pip" }));
+  expect(remote.savePreferences.mock.calls).toEqual([
+    [{ lastTaskEngine: "agents_api" }],
+    [{ lastScoutId: "scout-1" }],
+  ]);
+  expect(remote.createThread).not.toHaveBeenCalled();
+  cleanup();
+  await openPlay();
+  expect(screen.getByRole("combobox", { name: "Your Scout" }).textContent).toContain("Pip");
+  expect(screen.getByRole("combobox", { name: "Task engine" }).textContent).toContain(
+    "Luna - Agents API",
+  );
 });
 
 test("site selection survives feed filters and removal keeps the draft without adding history", async () => {
@@ -303,6 +348,7 @@ test("site selection survives feed filters and removal keeps the draft without a
       scoutId: "scout-1",
       prompt: "Check the sign-up flow.",
       visibility: "public",
+      engine: "agents_api",
     }),
   );
 });
@@ -1677,6 +1723,7 @@ describe("Play invitation", () => {
         scoutId: "scout-1",
         prompt: "Review example.com",
         visibility: "public",
+        engine: "agents_api",
       }),
     );
     await waitFor(() => expect(router.state.location.pathname).toBe("/tasks/game-thread"));
@@ -1703,6 +1750,8 @@ describe("Play invitation", () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole("combobox", { name: "Visibility" }));
     await user.click(screen.getByRole("option", { name: "Public" }));
+    await user.click(screen.getByRole("combobox", { name: "Task engine" }));
+    await user.click(screen.getByRole("option", { name: "Luna - Convex" }));
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
     await waitFor(() =>
       expect(remote.createThread).toHaveBeenCalledWith({
@@ -1710,6 +1759,7 @@ describe("Play invitation", () => {
         scoutId: "scout-1",
         prompt: invitation,
         visibility: "public",
+        engine: "convex_agent",
       }),
     );
     expect(
@@ -1818,6 +1868,7 @@ describe("Play invitation", () => {
       scoutId: "scout-2",
       visibility: "private",
       prompt: invitation,
+      engine: "agents_api",
     });
     expect(remote.sendManaged).not.toHaveBeenCalled();
     expect(await screen.findByRole("region", { name: "Conversation with Scout" })).toBeTruthy();
@@ -1873,6 +1924,7 @@ describe("Play invitation", () => {
         scoutId: "scout-1",
         visibility: "private",
         prompt: "Find us a cooperative game for tomorrow.",
+        engine: "agents_api",
       }),
     );
   });

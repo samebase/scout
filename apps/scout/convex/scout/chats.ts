@@ -4,6 +4,7 @@ import { internalMutation } from "../_generated/server";
 import { mutation } from "../functions";
 import { requireViewerPermission } from "../access";
 import { startSession } from "../tasks/sessions";
+import { taskEngine } from "../tasks/model";
 import { requireSessionPermission } from "../tasks/access";
 import { chatPermission, requireRunnableThread } from "./chatAccess";
 import { chatPurposeValidator, chatVisibilityValidator } from "./chatModel";
@@ -22,6 +23,7 @@ export const startProductChat = mutation({
     scoutId: v.id("scouts"),
     prompt: v.string(),
     visibility: chatVisibilityValidator,
+    engine: v.optional(taskEngine),
   },
   returns: v.object({ threadId: v.string() }),
   handler: async (ctx, args) => {
@@ -48,7 +50,11 @@ export const startProductChat = mutation({
       userId,
       scoutId: args.scoutId,
       prompt,
-      engine: "agents_api",
+      engine: args.engine ?? "agents_api",
+    });
+    await ctx.db.patch(userId, {
+      lastScoutId: args.scoutId,
+      lastTaskEngine: args.engine ?? "agents_api",
     });
     const chatId = await ctx.db.insert("scoutChats", {
       runtime: { kind: "agents_api", sessionId },

@@ -4,6 +4,33 @@ import { internalQuery } from "./_generated/server";
 import { mutation, publicQuery, query } from "./functions";
 import { readViewerRoleForUser, resolveViewer } from "./access";
 import { accountAccessFields, viewerAccessValidator } from "./accessModel";
+import { taskPreferences as taskPreferencesValidator } from "./schema";
+import { omitNullish } from "../shared/omitNullish";
+
+export const taskPreferences = query({
+  access: "access_account",
+  args: {},
+  returns: taskPreferencesValidator,
+  handler: async (ctx) => {
+    const user = await ctx.db.get(ctx.viewer.userId);
+    if (!user || user.state === "deleted") throw new ConvexError("Account not found");
+    return omitNullish({ lastTaskEngine: user.lastTaskEngine, lastScoutId: user.lastScoutId });
+  },
+});
+
+export const setTaskPreferences = mutation({
+  access: "access_account",
+  args: taskPreferencesValidator.fields,
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    if (args.lastScoutId !== undefined) {
+      const scout = await ctx.db.get(args.lastScoutId);
+      if (!scout || scout.status !== "active") throw new ConvexError("Scout is not available");
+    }
+    await ctx.db.patch(ctx.viewer.userId, omitNullish(args));
+    return null;
+  },
+});
 
 export const currentViewerAccess = publicQuery({
   access: "access_public",

@@ -64,7 +64,13 @@ export const accountObservationValidator = v.union(
   }),
 );
 
+export const taskPreferences = v.object({
+  lastTaskEngine: v.optional(taskEngine),
+  lastScoutId: v.optional(v.id("scouts")),
+});
+
 const userProfile = authTables.users.validator.extend({
+  ...taskPreferences.fields,
   isApproved: v.optional(v.boolean()),
   defaultScoutModelSelection: v.optional(scoutModelSelectionValidator),
 });

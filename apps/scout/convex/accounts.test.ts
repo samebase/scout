@@ -131,3 +131,37 @@ test("approval does not bypass email verification", async () => {
   expect(await member.query(api.accounts.currentViewerAccess, {})).toEqual({ kind: "unavailable" });
   await expect(member.query(api.scout.scouts.list, {})).rejects.toThrow("Not authorized");
 });
+
+test("task preferences belong to the signed-in account and independent changes preserve each other", async () => {
+  const { backend, admin, member, memberId } = await setup();
+  const scoutId = await backend.run((ctx) =>
+    ctx.db.insert("scouts", {
+      displayName: "Scout",
+      websiteIdentity: { firstName: "Test", lastName: "Scout" },
+      slug: "test",
+      status: "active",
+      agentMail: { inboxId: "test", address: "test@example.test" },
+      firecrawl: { profileName: "test" },
+    }),
+  );
+  await expect(backend.query(api.accounts.taskPreferences, {})).rejects.toThrow("Not authorized");
+  await expect(
+    backend.mutation(api.accounts.setTaskPreferences, { lastTaskEngine: "convex_agent" }),
+  ).rejects.toThrow("Not authorized");
+  await member.mutation(api.accounts.setTaskPreferences, { lastTaskEngine: "convex_agent" });
+  await member.mutation(api.accounts.setTaskPreferences, { lastScoutId: scoutId });
+  expect(await member.query(api.accounts.taskPreferences, {})).toEqual({
+    lastTaskEngine: "convex_agent",
+    lastScoutId: scoutId,
+  });
+  expect(await admin.query(api.accounts.taskPreferences, {})).toEqual({});
+  await member.mutation(api.accounts.setTaskPreferences, { lastTaskEngine: "agents_api" });
+  expect(await backend.run((ctx) => ctx.db.get(memberId))).toMatchObject({
+    lastTaskEngine: "agents_api",
+    lastScoutId: scoutId,
+  });
+  await backend.run((ctx) => ctx.db.patch(scoutId, { status: "disabled" }));
+  await expect(
+    member.mutation(api.accounts.setTaskPreferences, { lastScoutId: scoutId }),
+  ).rejects.toThrow("Scout is not available");
+});

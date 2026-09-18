@@ -1459,5 +1459,6 @@ Removed the compressed header and footer sizing (`apps/scout/src/components/acti
 
 Task owners see the actual API failure, with saved diagnostics and stack details available in the task.
 HTTP and stream errors log their API method, path, request ID, and tool-call identity without payloads.
+Members can choose Luna through Convex or Agents API; Convex remembers their last engine and Scout.
 Tool-result retries reuse a stable key and saved result; rejected messages remain visibly unsent (`apps/scout/convex/tasks/`,
 `apps/scout/src/products/conversation/page.tsx`, `apps/scout/src/tasks/page.tsx`).

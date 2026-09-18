@@ -4,7 +4,7 @@ Open `/agents` with admin access. Choose a Scout, an execution engine, and a tas
 Both OpenAI Agents API and the Convex Agent component use `gpt-5.6-luna` with maximum
 reasoning effort. The engine is fixed for the lifetime of a task.
 
-Member Review and Play choose Agents API on the server, and their tasks also appear in `/agents`. Admins can
+Member Review and Play offer Luna through Convex or Agents API, and their tasks also appear in `/agents`. Admins can
 inspect all sessions, including transcripts, cost, live view, and replay. Only the
 owner can send, stop, resume, or control the live browser. The list loads older
 sessions through pagination. `/agents` replaces the separate Lab `/chats` inspector.
