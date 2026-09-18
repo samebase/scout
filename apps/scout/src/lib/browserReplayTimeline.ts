@@ -62,7 +62,7 @@ export type ReplayTimeline = {
 };
 
 type ReplayTabEvidence = {
-  urls: Set<string>;
+  firstUrl: string | null;
   observedAboutBlank: boolean;
   wasActive: boolean;
 };
@@ -90,7 +90,7 @@ function withoutInactiveBootstrapPage(
   if (firstPageTime === undefined || pages.length < 2) return [...pages];
 
   const blankTabs = [...tabEvidence.values()].filter(
-    (evidence) => evidence.observedAboutBlank && evidence.urls.size === 0,
+    (evidence) => evidence.observedAboutBlank && evidence.firstUrl === null,
   );
   if (blankTabs.length !== 1 || blankTabs[0]?.wasActive !== false) return [...pages];
 
@@ -102,6 +102,27 @@ function withoutInactiveBootstrapPage(
 
   const bootstrapPageId = bootstrapCandidates[0]?.pageId;
   return pages.filter((page) => page.pageId !== bootstrapPageId);
+}
+
+function bindUniquePages(
+  candidates: ReadonlyMap<string, string[]>,
+  bindings: Map<string, ReplayTrackBinding>,
+) {
+  const pageCountByTabId = new Map<string, number>();
+  for (const tabIds of candidates.values())
+    for (const tabId of tabIds) pageCountByTabId.set(tabId, (pageCountByTabId.get(tabId) ?? 0) + 1);
+
+  for (const [pageId, tabIds] of candidates) {
+    const tabId = tabIds.length === 1 ? tabIds[0] : undefined;
+    bindings.set(
+      pageId,
+      tabId && pageCountByTabId.get(tabId) === 1
+        ? { kind: "correlated", tabId }
+        : tabIds.length > 0
+          ? { kind: "ambiguous", candidateTabIds: tabIds }
+          : { kind: "unmatched" },
+    );
+  }
 }
 
 export function buildReplayTimeline(
@@ -123,12 +144,12 @@ export function buildReplayTimeline(
       for (const tab of observation.tabs) {
         const existing = tabEvidence.get(tab.tabId);
         if (existing) {
-          if (tab.url && tab.url !== "about:blank") existing.urls.add(tab.url);
+          if (tab.url && tab.url !== "about:blank") existing.firstUrl ??= tab.url;
           existing.observedAboutBlank ||= tab.url === "about:blank";
           existing.wasActive ||= tab.active;
         } else {
           tabEvidence.set(tab.tabId, {
-            urls: new Set(tab.url && tab.url !== "about:blank" ? [tab.url] : []),
+            firstUrl: tab.url && tab.url !== "about:blank" ? tab.url : null,
             observedAboutBlank: tab.url === "about:blank",
             wasActive: tab.active,
           });
@@ -136,40 +157,47 @@ export function buildReplayTimeline(
       }
     }
   }
-  const allOrderedPages = [...pages].sort((left, right) => left.startTimeMs - right.startTimeMs);
+  const allOrderedPages = [...pages].sort(
+    (left, right) =>
+      left.startTimeMs - right.startTimeMs || left.pageId.localeCompare(right.pageId),
+  );
   const orderedPages = withoutInactiveBootstrapPage(allOrderedPages, tabEvidence);
   const firstPageTime = orderedPages[0]?.startTimeMs ?? 0;
   const lastPageTime = Math.max(firstPageTime, ...orderedPages.map((page) => page.endTimeMs));
 
   const bindingByPageId = new Map<string, ReplayTrackBinding>();
   const candidateTabIdsByPageId = new Map<string, string[]>();
-  const candidatePageIdsByTabId = new Map<string, string[]>();
+  // Firecrawl records the tab's first URL. Later navigations cannot identify its video.
   for (const page of orderedPages) {
     const candidateTabIds = [...tabEvidence.entries()]
-      .filter(([, evidence]) => page.pageUrl !== null && evidence.urls.has(page.pageUrl))
+      .filter(([, evidence]) => page.pageUrl !== null && evidence.firstUrl === page.pageUrl)
       .map(([tabId]) => tabId)
       .sort();
     candidateTabIdsByPageId.set(page.pageId, candidateTabIds);
-    for (const tabId of candidateTabIds) {
-      const candidatePageIds = candidatePageIdsByTabId.get(tabId) ?? [];
-      candidatePageIds.push(page.pageId);
-      candidatePageIdsByTabId.set(tabId, candidatePageIds);
-    }
   }
+  bindUniquePages(candidateTabIdsByPageId, bindingByPageId);
+
+  // A redirect can finish before our first observation. Match its origin only when
+  // exactly one unclaimed recording and one unclaimed tab agree; never break ties.
+  const exactCandidateTabIds = new Set([...candidateTabIdsByPageId.values()].flat());
+  const redirectCandidates = new Map<string, string[]>();
   for (const page of orderedPages) {
-    const candidateTabIds = candidateTabIdsByPageId.get(page.pageId) ?? [];
-    const soleTabId = candidateTabIds.length === 1 ? candidateTabIds[0] : undefined;
-    if (soleTabId && candidatePageIdsByTabId.get(soleTabId)?.length === 1) {
-      bindingByPageId.set(page.pageId, { kind: "correlated", tabId: soleTabId });
-    } else if (candidateTabIds.length > 0) {
-      bindingByPageId.set(page.pageId, {
-        kind: "ambiguous",
-        candidateTabIds,
-      });
-    } else {
-      bindingByPageId.set(page.pageId, { kind: "unmatched" });
-    }
+    if (!page.pageUrl || bindingByPageId.get(page.pageId)?.kind !== "unmatched") continue;
+    const origin = new URL(page.pageUrl).origin;
+    redirectCandidates.set(
+      page.pageId,
+      [...tabEvidence.entries()]
+        .filter(
+          ([tabId, evidence]) =>
+            !exactCandidateTabIds.has(tabId) &&
+            evidence.firstUrl !== null &&
+            new URL(evidence.firstUrl).origin === origin,
+        )
+        .map(([tabId]) => tabId)
+        .sort(),
+    );
   }
+  bindUniquePages(redirectCandidates, bindingByPageId);
 
   const pageIdByTabId = new Map<string, string>();
   for (const [pageId, binding] of bindingByPageId) {

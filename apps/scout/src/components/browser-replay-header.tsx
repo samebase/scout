@@ -1,4 +1,4 @@
-import { GlobeIcon, PanelTopIcon, ScanEyeIcon } from "lucide-react";
+import { GlobeIcon, PanelTopIcon } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { replayPageUrlAt, type ReplayTimeline } from "#lib/browserReplayTimeline";
 
@@ -49,7 +49,7 @@ export function BrowserReplayHeader({
               ref={selected ? activeTabRef : undefined}
               type="button"
               aria-pressed={selected}
-              title={label}
+              title={`View ${label} manually. This stops following Scout's recorded active tab.`}
               onClick={() => onSelectPage(page.pageId)}
               className={`flex h-10 min-w-28 max-w-52 shrink-0 items-center gap-2 rounded-t-lg border border-b-0 px-3 text-xs transition-colors focus-visible:z-10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring ${
                 selected
@@ -80,16 +80,15 @@ export function BrowserReplayHeader({
         <button
           type="button"
           onClick={() => onSelectPage(null)}
-          aria-label="Follow activity"
           aria-pressed={following}
-          title="Follow activity"
-          className={`flex size-8 shrink-0 items-center justify-center rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-ring ${
+          title="Automatically switch to Scout's recorded active tab. Select a tab to view it manually."
+          className={`flex h-8 shrink-0 items-center justify-center rounded-full px-2 text-xs font-medium whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-ring ${
             following
               ? "bg-primary/10 text-primary"
               : "text-muted-foreground hover:bg-muted hover:text-foreground"
           }`}
         >
-          <ScanEyeIcon className="size-4" aria-hidden="true" />
+          {following ? "Following Scout" : "Follow Scout"}
         </button>
       </div>
     </div>

@@ -332,7 +332,7 @@ describe("task replay timeline", () => {
     expect(timeline.pages.map((page) => page.pageId)).toEqual(["blank", "pricing"]);
   });
 
-  test("does not bind two recordings to one tab that navigated between both URLs", () => {
+  test("keeps the initial recording bound when a tab later visits another recording's URL", () => {
     const timeline = buildReplayTimeline(
       [
         { pageId: "page-a", pageUrl: "https://a.test/", startTimeMs: 0, endTimeMs: 5_000 },
@@ -361,11 +361,127 @@ describe("task replay timeline", () => {
     );
 
     expect(timeline.pages.map((page) => page.binding)).toEqual([
-      { kind: "ambiguous", candidateTabIds: ["t1"] },
-      { kind: "ambiguous", candidateTabIds: ["t1"] },
+      { kind: "correlated", tabId: "t1" },
+      { kind: "unmatched" },
     ]);
-    expect(timeline.pageIdByTabId.size).toBe(0);
+    expect(timeline.pageIdByTabId.size).toBe(1);
+    expect(activePageIdAt(timeline, 0)).toBe("page-a");
+  });
+
+  test("follows the original tab, an OAuth popup, and a redirected dashboard", () => {
+    const timeline = buildReplayTimeline(
+      [
+        { pageId: "site", pageUrl: "https://app.test/", startTimeMs: 0, endTimeMs: 9_000 },
+        {
+          pageId: "login",
+          pageUrl: "https://login.test/authorize",
+          startTimeMs: 1_000,
+          endTimeMs: 9_000,
+        },
+        {
+          pageId: "dashboard",
+          pageUrl: "https://dashboard.test/",
+          startTimeMs: 4_000,
+          endTimeMs: 9_000,
+        },
+      ],
+      [
+        operation({
+          sequence: 1,
+          beforeMs: 1_000,
+          afterMs: 1_100,
+          beforeTarget: "main",
+          afterTarget: "main",
+          url: "https://app.test/",
+        }),
+        operation({
+          sequence: 2,
+          beforeMs: 2_000,
+          afterMs: 2_100,
+          beforeTarget: "main",
+          afterTarget: "popup",
+          beforeUrl: "https://app.test/",
+          url: "https://login.test/authorize",
+        }),
+        operation({
+          sequence: 3,
+          beforeMs: 3_000,
+          afterMs: 3_100,
+          beforeTarget: "main",
+          afterTarget: "main",
+          beforeUrl: "https://app.test/",
+          url: "https://login.test/authorize",
+        }),
+        operation({
+          sequence: 4,
+          beforeMs: 5_000,
+          afterMs: 5_100,
+          beforeTarget: "main",
+          afterTarget: "cloud",
+          beforeUrl: "https://login.test/authorize",
+          url: "https://dashboard.test/account/home",
+        }),
+      ],
+    );
+    expect(timeline.pages.map((page) => page.binding)).toEqual([
+      { kind: "correlated", tabId: "main" },
+      { kind: "correlated", tabId: "popup" },
+      { kind: "correlated", tabId: "cloud" },
+    ]);
+    expect(activePageIdAt(timeline, 0)).toBe("site");
+    expect(activePageIdAt(timeline, 1_100)).toBe("login");
+    expect(activePageIdAt(timeline, 2_100)).toBe("site");
+    expect(activePageIdAt(timeline, 4_100)).toBe("dashboard");
+    expect(replayPageUrlAt(timeline.pages[0], 2_100)).toBe("https://login.test/authorize");
+  });
+
+  test("keeps redirects ambiguous when multiple tabs first appear on the same site", () => {
+    const timeline = buildReplayTimeline(
+      [
+        { pageId: "a", pageUrl: "https://app.test/", startTimeMs: 0, endTimeMs: 5_000 },
+        { pageId: "b", pageUrl: "https://app.test/", startTimeMs: 0, endTimeMs: 5_000 },
+      ],
+      [
+        operation({
+          sequence: 1,
+          beforeMs: 1_000,
+          afterMs: 1_100,
+          beforeTarget: "a",
+          afterTarget: "b",
+          beforeUrl: "https://app.test/account/a",
+          url: "https://app.test/account/b",
+        }),
+      ],
+    );
+    expect(timeline.pages.every((page) => page.binding.kind === "ambiguous")).toBe(true);
     expect(activePageIdAt(timeline, 0)).toBeNull();
+  });
+
+  test("does not take an exact URL match away from another recording to match a redirect", () => {
+    const timeline = buildReplayTimeline(
+      [
+        {
+          pageId: "exact",
+          pageUrl: "https://app.test/account/a",
+          startTimeMs: 0,
+          endTimeMs: 5_000,
+        },
+        { pageId: "redirect", pageUrl: "https://app.test/", startTimeMs: 0, endTimeMs: 5_000 },
+      ],
+      [
+        operation({
+          sequence: 1,
+          beforeMs: 1_000,
+          afterMs: 1_100,
+          beforeTarget: "a",
+          afterTarget: "b",
+          beforeUrl: "https://app.test/account/a",
+          url: "https://app.test/account/b",
+        }),
+      ],
+    );
+    expect(timeline.pageIdByTabId.get("a")).toBe("exact");
+    expect(timeline.pageIdByTabId.get("b")).toBe("redirect");
   });
 
   test("places an after-observation at the time it was actually captured", () => {

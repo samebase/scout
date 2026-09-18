@@ -425,7 +425,7 @@ function BrowserReplayPlayer({
         ) : activePage === null ? (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-neutral-950/90 px-8 text-center text-sm text-neutral-300">
             {mode === "playback"
-              ? "Choose a recorded tab above."
+              ? "Automatic tab following is unavailable here. Choose a recorded tab above."
               : "The active browser tab could not be matched to a recorded video track."}
           </div>
         ) : null}
@@ -515,7 +515,7 @@ function BrowserReplayPlayer({
               {timeline.transitions.length > 0
                 ? `${timeline.transitions.length} ${timeline.transitions.length === 1 ? "tab change is" : "tab changes are"} shown at the first confirming sample; each marker spans the interval in which the change occurred. `
                 : "No tab change was observed. "}
-              Tracks match automatically when a URL uniquely identifies one observed browser tab.
+              Recordings match tabs by their initial address, including unambiguous redirects.
               {failedPageIds.size > 0
                 ? ` ${failedPageIds.size} ${failedPageIds.size === 1 ? "recording could" : "recordings could"} not be loaded.`
                 : ""}
