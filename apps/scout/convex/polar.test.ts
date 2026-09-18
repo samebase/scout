@@ -150,6 +150,7 @@ describe("Polar credit settlement", () => {
           ],
         },
         external_customer_id: userId,
+        customer_email: "buyer@example.test",
         metadata: { scout_purchase_id: result.purchaseId },
         allow_discount_codes: true,
         success_url: `https://scout.example.test/settings?purchase=${result.purchaseId}`,
