@@ -628,7 +628,7 @@ test("account deletion removes all owner listings in batches and keeps retained 
   ).toEqual([
     { hostname: "shared.test", taskCount: 1, preview: null, profile: null, research: null },
   ]);
-}, 20_000);
+});
 
 test.each([undefined, "A public calculator."])(
   "site details expose overview=%s, lists stay lightweight, and diagnostics stay private",

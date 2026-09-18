@@ -105,8 +105,8 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
   extension scanner.
 - Run `pnpm run check`. It checks formatting, lint, browser TypeScript, Node TypeScript, Convex
   TypeScript, and tests.
-- Run `pnpm run build` before a deploy. The real Cloudflare build path runs the complete check before
-  it builds the app.
+- Run `pnpm run check` before a deploy and `pnpm run build` to verify the build locally.
+  GitHub CI runs checks and tests; Cloudflare Workers Builds builds and deploys without rerunning them.
 
 ## Code guardrails
 

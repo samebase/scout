@@ -5,6 +5,9 @@ This app deploys through Cloudflare Workers Builds. The Cloudflare dashboard run
 `pnpm run deploy:preview` for other branches. A successful production deploy also uploads the same
 frontend build to Convex Static Hosting.
 
+GitHub CI runs formatting, lint, type checks, and tests through `pnpm run check`. Workers Builds
+only builds and deploys the app; it does not rerun the test suite.
+
 Keep the Workers Builds root directory at the repository root. These commands use Vite+
 to run the `samebase-scout` app in `apps/scout/`, where its Convex and Wrangler configuration
 live. The frontend output is `apps/scout/dist/client`.

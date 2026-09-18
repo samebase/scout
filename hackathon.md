@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-18T09:06:15Z
+- **Last updated:** 2026-09-18T09:50:51Z
 
 ## Log
 
@@ -1378,10 +1378,16 @@ view permission for account reads and keeps editing restricted to admins. Accoun
 private task references and observed URLs while retaining that evidence in storage
 (`apps/scout/convex/scout/serviceAccounts.ts`, `apps/scout/src/components/scout-service-accounts.tsx`).
 
-### 2026-09-18 - v224 - working tree
+### 2026-09-18 - v224 - bc8face
 
 Admins can compare Agents API and Convex Agent tasks in one Agents view; member tasks use Agents API.
 Both engines share checks, site research, browser tools, evidence, permissions, and cost display.
 Convex summarizes older messages, limits repeat reads, and keeps completed-step costs visible.
 Play tasks retain activity phases and game guidance; duplicate Lab execution and UI are retired
 (`apps/scout/convex/tasks/`, `apps/scout/src/tasks/`).
+
+### 2026-09-18 - v225 - working tree
+
+Cloudflare Workers Builds now builds and deploys without rerunning checks or tests.
+GitHub CI runs formatting, lint, types, and tests separately; local check and build remain
+separate commands (`.github/workflows/ci.yml`, `apps/scout/package.json`).
