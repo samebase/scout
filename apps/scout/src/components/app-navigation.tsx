@@ -1,4 +1,5 @@
 import { canAccess, useViewerAccess } from "../lib/access";
+import { CreditBalanceLink } from "./credits-panel";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { BotIcon, FocusIcon, SettingsIcon, TelescopeIcon, UsersIcon } from "lucide-react";
 
@@ -59,10 +60,13 @@ export function AppNavigation() {
         </nav>
 
         {viewer?.kind === "account" && (
-          <Link to="/settings" className={`${navigationLinkClass} app-navigation__settings`}>
-            <SettingsIcon aria-hidden="true" />
-            <span className="sr-only sm:not-sr-only">Settings</span>
-          </Link>
+          <>
+            <CreditBalanceLink />
+            <Link to="/settings" className={`${navigationLinkClass} app-navigation__settings`}>
+              <SettingsIcon aria-hidden="true" />
+              <span className="sr-only sm:not-sr-only">Settings</span>
+            </Link>
+          </>
         )}
         {viewer?.kind === "anonymous" && (
           <Link to="/settings" className={navigationLinkClass}>
