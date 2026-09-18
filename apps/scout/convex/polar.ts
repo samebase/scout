@@ -43,7 +43,7 @@ export const checkout = action({
           },
           external_customer_id: purchase.userId,
           metadata: { scout_purchase_id: purchase._id },
-          allow_discount_codes: false,
+          allow_discount_codes: true,
           allow_trial: false,
           currency: "usd",
           success_url: success.toString(),
@@ -55,6 +55,7 @@ export const checkout = action({
         result.product_id !== purchase.terms.productId ||
         result.external_customer_id !== purchase.userId ||
         result.amount !== purchase.terms.priceCents ||
+        result.net_amount + result.discount_amount !== result.amount ||
         result.currency !== purchase.terms.currency ||
         result.product_price.price_amount !== purchase.terms.priceCents
       )
@@ -97,6 +98,8 @@ export function orderEvidence(value: unknown, environment: "sandbox" | "producti
     environment,
     currency: order.currency,
     paid: order.paid,
+    subtotalAmount: order.subtotal_amount,
+    discountAmount: order.discount_amount,
     netAmount: order.net_amount,
     refundedProductAmount: order.refunded_amount,
     refundedTaxAmount: order.refunded_tax_amount,

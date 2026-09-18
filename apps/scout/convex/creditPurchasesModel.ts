@@ -21,6 +21,8 @@ export const creditPurchaseValidator = v.object({
   orderId: v.union(v.string(), v.null()),
   customerId: v.union(v.string(), v.null()),
   paid: v.boolean(),
+  // Older settled purchases paid the full stored price, before discounts were supported.
+  paidProductCents: v.optional(v.number()),
   refundedProductCents: v.number(),
   refundedTaxCents: v.number(),
   creditedUnits: v.number(),
@@ -42,6 +44,8 @@ export const paidOrderEvidenceValidator = v.object({
   environment: polarEnvironmentValidator,
   currency: v.string(),
   paid: v.boolean(),
+  subtotalAmount: v.number(),
+  discountAmount: v.number(),
   netAmount: v.number(),
   refundedProductAmount: v.number(),
   refundedTaxAmount: v.number(),

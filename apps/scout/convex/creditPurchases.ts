@@ -107,7 +107,8 @@ export const processOrder = internalMutation({
       order.productId !== terms.productId ||
       order.environment !== terms.environment ||
       order.currency !== terms.currency ||
-      order.netAmount !== terms.priceCents ||
+      order.subtotalAmount !== terms.priceCents ||
+      order.netAmount + order.discountAmount !== terms.priceCents ||
       !order.paid
     )
       throw new Error("Order does not match the stored purchase terms");
@@ -117,6 +118,8 @@ export const processOrder = internalMutation({
       throw new Error("A purchase cannot grant a second order");
     if (purchase.customerId !== null && purchase.customerId !== order.customerId)
       throw new Error("Purchase customer cannot change");
+    if (purchase.paid && (purchase.paidProductCents ?? terms.priceCents) !== order.netAmount)
+      throw new Error("Paid product amount cannot change");
     const duplicateOrder = await ctx.db
       .query("creditPurchases")
       .withIndex("by_order_id", (q) => q.eq("orderId", order.orderId))
@@ -131,7 +134,7 @@ export const processOrder = internalMutation({
       purchase.refundedTaxCents,
       nonnegativeInteger.parse(order.refundedTaxAmount),
     );
-    if (refundedProductCents > terms.priceCents)
+    if (refundedProductCents > order.netAmount)
       throw new Error("Refund exceeds the purchased product amount");
     const user = await ctx.db.get(purchase.userId);
     const fulfillment =
@@ -146,9 +149,11 @@ export const processOrder = internalMutation({
     const creditedUnits =
       fulfillment.kind === "wallet"
         ? nonnegativeInteger.parse(
-            Math.floor(
-              (terms.creditUnits * (terms.priceCents - refundedProductCents)) / terms.priceCents,
-            ),
+            order.netAmount === 0
+              ? terms.creditUnits
+              : Math.floor(
+                  (terms.creditUnits * (order.netAmount - refundedProductCents)) / order.netAmount,
+                ),
           )
         : 0;
     const delta = creditedUnits - purchase.creditedUnits;
@@ -167,6 +172,7 @@ export const processOrder = internalMutation({
     }
     await ctx.db.patch(purchase._id, {
       paid: true,
+      paidProductCents: order.netAmount,
       orderId: order.orderId,
       customerId: order.customerId,
       checkoutId: order.checkoutId,
@@ -195,7 +201,11 @@ export const status = query({
     const id = ctx.db.normalizeId("creditPurchases", args.purchaseId);
     const purchase = id && (await ctx.db.get(id));
     if (!purchase || purchase.userId !== ctx.viewer.userId) return null;
-    if (purchase.paid && purchase.refundedProductCents === purchase.terms.priceCents)
+    if (
+      purchase.paid &&
+      purchase.refundedProductCents > 0 &&
+      purchase.refundedProductCents === (purchase.paidProductCents ?? purchase.terms.priceCents)
+    )
       return "refunded";
     if (purchase.fulfillment.kind === "manual_refund") return "needs_review";
     if (purchase.paid)
