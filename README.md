@@ -96,7 +96,7 @@ workspace typechecks and tests; root build/deploy commands target Scout.
 | Command                           | Purpose                                              |
 | --------------------------------- | ---------------------------------------------------- |
 | `pnpm run check`                  | Format, lint, type-check, and test                   |
-| `pnpm run build`                  | Run the complete Cloudflare build path               |
+| `pnpm run build`                  | Build for Cloudflare without rerunning checks        |
 | `pnpm run deploy:convex`          | Build and deploy the production app to `convex.site` |
 | `pnpm run deploy:dry-run`         | Validate a production upload without publishing it   |
 | `pnpm run deploy:preview:dry-run` | Validate a preview upload without publishing it      |
@@ -119,7 +119,8 @@ $env:CLOUDFLARE_WORKER_NAME = "my-worker"
 
 Cloudflare Workers Builds keeps its root directory at the repository root and runs
 `pnpm run build` for all branches. Root commands select `samebase-scout` through Vite+; app
-commands run with `apps/scout/` as their working directory. It then uses:
+commands run with `apps/scout/` as their working directory. GitHub CI runs `pnpm run check`
+separately; the Workers build only builds and deploys. It then uses:
 
 | Branch type             | Deploy command            | Convex key                  |
 | ----------------------- | ------------------------- | --------------------------- |

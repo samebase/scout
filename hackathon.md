@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-18T09:06:15Z
+- **Last updated:** 2026-09-18T09:50:51Z
 
 ## Log
 
@@ -1336,7 +1336,7 @@ from the existing Firecrawl research job (`apps/scout/convex/agentsApi/siteResea
 Directory screenshots keep a 16:10 ratio as cards shrink, with two-line task summaries and
 stacked cards below 640px. Site workspaces use the available pane height.
 
-### 2026-09-17 - v219 - 48acef5
+### 2026-09-17 - 48acef5 - v219
 
 The homepage opens with an animated discovery field and a new headline above the existing
 review composer and site list. TypeGPU draws green and amber contours on the page background,
@@ -1344,7 +1344,7 @@ extending behind the composer and fading out below it. Motion pauses while typin
 and respects reduced motion. A static field keeps the same treatment without WebGPU
 (`apps/scout/src/components/discovery-hero.tsx`).
 
-### 2026-09-17 - v220 - 040c2b6
+### 2026-09-17 - 040c2b6 - v220
 
 Site search and Public/My reviews now stay in the URL across the homepage, site pages, and tasks.
 The site sidebar has the same controls, so filters remain editable while browsing. Partial site
@@ -1353,7 +1353,7 @@ Convex matches within bounded pages and retains visibility rules and ordering. D
 website from cards and site pages, while screenshots and product names open the task list. The sidebar
 stops at 368px (`apps/scout/src/components/site-identity.tsx`, `apps/scout/convex/scout/sites.ts`).
 
-### 2026-09-17 - v221 - 855775b
+### 2026-09-17 - 855775b - v221
 
 Reviews, site pages, Lab, and Agents now share the standard blue theme and its system font,
 backgrounds, and corner sizes, while the homepage hero keeps Bricolage Grotesque. Review uses the
@@ -1362,7 +1362,7 @@ The title sits above the panes; site navigation, view tabs, and visibility live 
 Chat keeps the composer and its draft when switching to Walkthrough. Removed the extra outer cards
 and custom layout (`apps/scout/src/products/conversation/`, `apps/scout/src/style.css`).
 
-### 2026-09-17 - v222 - fdbb220
+### 2026-09-17 - fdbb220 - v222
 
 Task owners can expand cost and usage above the message input without opening Agents.
 Both views share the calculation and breakdown, keeping estimates and Firecrawl credits distinct.
@@ -1370,7 +1370,7 @@ An owner-authorized Convex query returns only cost data without granting Lab acc
 Agents links to the member review while preserving Chat or Walkthrough
 (`apps/scout/convex/agentsApi/sessions.ts`, `apps/scout/src/components/session-cost.tsx`).
 
-### 2026-09-17 - v223 - d0fb0e8
+### 2026-09-17 - d0fb0e8 - v223
 
 Members can see each Scout's connected services, account identifiers, login methods, and
 authentication status in the existing Scout directory and profile. Convex uses the existing
@@ -1378,10 +1378,16 @@ view permission for account reads and keeps editing restricted to admins. Accoun
 private task references and observed URLs while retaining that evidence in storage
 (`apps/scout/convex/scout/serviceAccounts.ts`, `apps/scout/src/components/scout-service-accounts.tsx`).
 
-### 2026-09-18 - v224 - working tree
+### 2026-09-18 - bc8face - v224
 
 Admins can compare Agents API and Convex Agent tasks in one Agents view; member tasks use Agents API.
 Both engines share checks, site research, browser tools, evidence, permissions, and cost display.
 Convex summarizes older messages, limits repeat reads, and keeps completed-step costs visible.
 Play tasks retain activity phases and game guidance; duplicate Lab execution and UI are retired
 (`apps/scout/convex/tasks/`, `apps/scout/src/tasks/`).
+
+### 2026-09-18 - working tree - v225
+
+Cloudflare Workers Builds now builds and deploys without rerunning checks or tests.
+GitHub CI runs formatting, lint, types, and tests separately; local check and build remain
+separate commands (`.github/workflows/ci.yml`, `apps/scout/package.json`).

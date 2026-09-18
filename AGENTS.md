@@ -82,8 +82,9 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
 - Keep at most one `working tree` entry. On the next meaningful update, replace it with the previous
   pull request's squash-commit short SHA. Do not create log-only commits except when
   finalizing the submission.
-- Include the `v<N>` build version in new entry headings. Use the projected pull request version
-  for a working-tree entry and the shipped version when recording its squash commit.
+- Format new entry headings as `### YYYY-MM-DD - <short SHA or working tree> - v<N>`.
+  Use the projected pull request version for a working-tree entry and the shipped version
+  when recording its squash commit.
 
 ## Cross-platform automation
 
@@ -105,8 +106,8 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
   extension scanner.
 - Run `pnpm run check`. It checks formatting, lint, browser TypeScript, Node TypeScript, Convex
   TypeScript, and tests.
-- Run `pnpm run build` before a deploy. The real Cloudflare build path runs the complete check before
-  it builds the app.
+- Run `pnpm run check` before a deploy and `pnpm run build` to verify the build locally.
+  GitHub CI runs checks and tests; Cloudflare Workers Builds builds and deploys without rerunning them.
 
 ## Code guardrails
 

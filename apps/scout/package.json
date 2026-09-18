@@ -16,7 +16,7 @@
     "dev:worktree": "node ./scripts/run-worktree-dev.ts",
     "check": "vp check && vp run typecheck && vp test",
     "build": "vp run build:cloudflare",
-    "build:app": "vp run -w check && vp build",
+    "build:app": "vp build",
     "build:cloudflare": "node ./scripts/build-cloudflare.ts",
     "deploy": "node ./scripts/deploy-cloudflare.ts deploy",
     "deploy:convex": "static-hosting deploy --dist ./dist/client --build-command \"pnpm run build:app\"",
