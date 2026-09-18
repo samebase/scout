@@ -97,6 +97,10 @@ async function startWorkflow(
     if (billingEnabled) await assertCreditAdmission(ctx, session.userId);
     await ctx.db.patch(sessionId, { workflowId, billingEnabled, modelTurnId: undefined });
   }
+  if (input.kind === "send")
+    await ctx.db.patch(sessionId, {
+      pendingMessage: { message: input.message, workflowId, status: "queued" },
+    });
 }
 
 export const list = query({
@@ -226,6 +230,7 @@ export const get = query({
       state,
       active,
       canControl,
+      pendingMessage: session.pendingMessage ?? null,
       cleanupError: cleanup?.state.kind === "failed" ? cleanup.state.error : null,
       model,
       providerId,
@@ -373,6 +378,13 @@ export const controls = query({
     const busy = !session.active && (await scoutReservation(ctx, session.scoutId)) !== null;
     return {
       state: session.state,
+      active: session.active,
+      pendingMessage: session.pendingMessage ?? null,
+      canRetryMessage:
+        !session.active &&
+        Boolean(session.providerId) &&
+        !busy &&
+        session.pendingMessage?.status === "queued",
       requestCheckMessage: await currentCheckMessage(ctx, session),
       canSend: !session.active && Boolean(session.providerId) && !busy,
       canStop:
@@ -405,6 +417,51 @@ export const send = mutation({
     });
     await startWorkflow(ctx, session._id, { kind: "send", message });
     return null;
+  },
+});
+
+export const retryMessage = mutation({
+  access: "access_account",
+  args: { sessionId: v.id("agentsApiSessions") },
+  returns: v.null(),
+  handler: async (ctx, args): Promise<null> => {
+    const session = await owned(ctx, args.sessionId, ctx.viewer.userId);
+    await requireSessionPermission(ctx, session);
+    if (session.active || !session.providerId || session.pendingMessage?.status !== "queued")
+      throw new Error("Only a message that has not been submitted can be retried");
+    await requireAvailableScout(ctx, session.scoutId);
+    await ctx.db.patch(session._id, {
+      active: true,
+      state: { kind: "running" },
+      cleanupJobId: undefined,
+    });
+    await startWorkflow(ctx, session._id, {
+      kind: "send",
+      message: session.pendingMessage.message,
+    });
+    return null;
+  },
+});
+
+export const messageDelivery = internalMutation({
+  args: {
+    sessionId: v.id("agentsApiSessions"),
+    workflowId: vWorkflowId,
+    status: v.union(v.literal("submitting"), v.literal("accepted")),
+  },
+  returns: v.boolean(),
+  handler: async (ctx, { sessionId, workflowId, status }) => {
+    const session = await requireSession(ctx, sessionId);
+    const pending = session.pendingMessage;
+    if (session.workflowId !== workflowId || pending?.workflowId !== workflowId) return false;
+    if (status === "submitting") {
+      if (!session.active || session.state.kind === "stopped" || pending.status !== "queued")
+        return false;
+      await ctx.db.patch(sessionId, { pendingMessage: { ...pending, status } });
+    } else {
+      await ctx.db.patch(sessionId, { pendingMessage: undefined });
+    }
+    return true;
   },
 });
 

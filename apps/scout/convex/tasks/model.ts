@@ -1,8 +1,16 @@
 import { v } from "convex/values";
+import { vWorkflowId } from "@convex-dev/workflow";
 import { agentsApiUsageValidator } from "./cost";
 import { creditFailureCodeValidator } from "../creditsModel";
+import { taskFailureDiagnosticValidator } from "../../shared/taskFailure";
 
 export const taskEngine = v.union(v.literal("agents_api"), v.literal("convex_agent"));
+
+export const pendingMessage = v.object({
+  message: v.string(),
+  workflowId: vWorkflowId,
+  status: v.union(v.literal("queued"), v.literal("submitting")),
+});
 
 export const sessionState = v.union(
   v.object({ kind: v.literal("starting") }),
@@ -20,6 +28,7 @@ export const sessionState = v.union(
     kind: v.literal("failed"),
     error: v.string(),
     creditFailureCode: v.optional(creditFailureCodeValidator),
+    diagnostic: v.optional(taskFailureDiagnosticValidator),
   }),
 );
 

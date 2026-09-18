@@ -37,6 +37,7 @@ import {
 import { RequestCheckView, RequestCheckInspector } from "./request-check";
 import { SiteResearchView, SiteResearchInspector } from "./site-research";
 import { Transcript } from "./transcript";
+import { PendingTaskMessage } from "./pending-message";
 import { BrowserPanel } from "./browser";
 import { SessionCost } from "#components/session-cost";
 import { ScoutWorkspace } from "#components/scout-workspace";
@@ -609,6 +610,7 @@ function SessionContent({
 
 function SessionView({ session, walkthrough }: { session: Session; walkthrough: boolean }) {
   const send = useMutation(api.tasks.sessions.send);
+  const retryMessage = useMutation(api.tasks.sessions.retryMessage);
   const stop = useMutation(api.tasks.sessions.stop);
   const resume = useMutation(api.tasks.sessions.resume);
   const refresh = useAction(api.tasks.runtime.refresh);
@@ -627,7 +629,7 @@ function SessionView({ session, walkthrough }: { session: Session; walkthrough: 
     session.cleanupError ?? (session.state.kind === "failed" ? session.state.error : null);
   const pending = request.kind === "pending";
 
-  async function run(operation: "send" | "stop" | "resume" | "refresh") {
+  async function run(operation: "send" | "retry" | "stop" | "resume" | "refresh") {
     if (submitting.current || (operation !== "refresh" && !session.canControl)) return;
     if (operation === "send" && !canSend) return;
     if (operation === "refresh" && session.active) return;
@@ -635,6 +637,9 @@ function SessionView({ session, walkthrough }: { session: Session; walkthrough: 
     setRequest({ kind: "pending" });
     try {
       switch (operation) {
+        case "retry":
+          await retryMessage({ sessionId: session._id });
+          break;
         case "send":
           await send({ sessionId: session._id, message: draft.trim() });
           setDraft("");
@@ -679,6 +684,15 @@ function SessionView({ session, walkthrough }: { session: Session; walkthrough: 
         </div>
       )}
       <div className="shrink-0 space-y-3 border-t p-4">
+        <PendingTaskMessage
+          pendingMessage={session.pendingMessage}
+          active={
+            session.active && session.state.kind !== "failed" && session.state.kind !== "stopped"
+          }
+          canRetry={session.canControl && !session.active && session.hasChat}
+          retrying={pending}
+          onRetry={() => void run("retry")}
+        />
         <div className="flex items-start justify-between gap-3">
           <SessionCost session={session} />
           {!session.active && (
@@ -726,6 +740,24 @@ function SessionView({ session, walkthrough }: { session: Session; walkthrough: 
             <p role="alert" className="text-sm wrap-anywhere text-destructive">
               {error.split(/\r?\n/, 1)[0]}
             </p>
+            {session.state.kind === "failed" && session.state.diagnostic && (
+              <details>
+                <summary className="cursor-pointer text-xs text-muted-foreground">
+                  Failure details
+                </summary>
+                <pre className="mt-2 max-h-48 overflow-auto text-xs whitespace-pre-wrap wrap-anywhere">
+                  {JSON.stringify(
+                    {
+                      taskId: session._id,
+                      providerSessionId: session.providerId,
+                      ...session.state.diagnostic,
+                    },
+                    null,
+                    2,
+                  )}
+                </pre>
+              </details>
+            )}
             {error.trimEnd().includes("\n") && (
               <details>
                 <summary className="w-fit cursor-pointer rounded text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">

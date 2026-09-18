@@ -24,6 +24,8 @@ import { type FormEvent, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import { omitNullish } from "../../../shared/omitNullish";
 import { creditFailure, creditFailureMessage } from "../../../shared/creditFailure";
+import { taskFailureMessage } from "../../../shared/taskFailure";
+import { PendingTaskMessage } from "../../tasks/pending-message";
 import { scoutAvailabilityLabels } from "#components/scout-current-activity";
 import { conversationDestination, type ProductKind, type ConversationSearch } from "./model";
 import { gameInviteDisplayText } from "../play/invite";
@@ -787,12 +789,18 @@ function ConversationSession({
     { initialNumItems: 50 },
   );
   const sendManaged = useMutation(api.tasks.sessions.send);
+  const retryManaged = useMutation(api.tasks.sessions.retryMessage);
   const stopManaged = useMutation(api.tasks.sessions.stop);
   const resumeManaged = useMutation(api.tasks.sessions.resume);
   const [draft, setDraft] = useState("");
   const [request, setRequest] = useState<RequestState>({ kind: "idle" });
   const pending = useRef(false);
   const canStop = managed?.canStop === true;
+  const pendingMessage = managed?.pendingMessage ?? null;
+  const canRetryMessage = managed?.canRetryMessage === true;
+  const sendingMessage =
+    managed?.active === true && managed.state.kind !== "failed" && managed.state.kind !== "stopped";
+  const failure = managed?.state.kind === "failed" ? managed.state : null;
   const failedCreditCode =
     managed?.state.kind === "failed" ? managed.state.creditFailureCode : undefined;
   const canSend =
@@ -865,6 +873,23 @@ function ConversationSession({
     }
   }
 
+  async function retryMessage() {
+    if (!managedId || !canRetryMessage || pending.current) return;
+    pending.current = true;
+    setRequest({ kind: "pending" });
+    try {
+      await retryManaged({ sessionId: managedId });
+      setRequest({ kind: "idle" });
+    } catch (error) {
+      setRequest({
+        kind: "failed",
+        message: creditFailure(error)?.message ?? "Couldn't retry your message. Try again.",
+      });
+    } finally {
+      pending.current = false;
+    }
+  }
+
   return (
     <section
       aria-label={showingWalkthrough ? "Walkthrough with Scout" : "Conversation with Scout"}
@@ -881,11 +906,6 @@ function ConversationSession({
           )}
           <ConversationActions thread={thread} kind={kind} />
         </div>
-      )}
-      {request.kind === "failed" && (
-        <p role="alert" className={playError}>
-          {request.message}
-        </p>
       )}
       {managed?.state.kind === "waiting" && (
         <div className={cn(playNotice, "space-y-3")}>
@@ -987,29 +1007,13 @@ function ConversationSession({
                     </MessageScrollerItem>
                   ),
                 )}
-                {thread.status === "failed" &&
-                  managed?.state.kind !== "waiting" &&
-                  managed?.state.kind !== "checking" && (
-                    <MessageScrollerItem messageId="turn-status" className="mr-auto max-w-[95%]">
-                      <p className={cn(playNotice, "mb-0 px-3 py-2")} role="alert">
-                        {failedCreditCode ? (
-                          <>
-                            {creditFailureMessage(failedCreditCode)}{" "}
-                            <Link to="/settings" className={playTextLink}>
-                              View credits
-                            </Link>
-                          </>
-                        ) : (
-                          (managed?.requestCheckMessage ?? "Scout couldn't finish this turn.")
-                        )}
-                        {!failedCreditCode &&
-                        !managed?.requestCheckMessage &&
-                        (managed ? managed.canSend : thread.canControl)
-                          ? " Send a message to try again."
-                          : ""}
-                      </p>
-                    </MessageScrollerItem>
-                  )}
+                {thread.status === "failed" && !thread.canControl && (
+                  <MessageScrollerItem messageId="turn-status" className="mr-auto max-w-[95%]">
+                    <p className={cn(playNotice, "mb-0 px-3 py-2")} role="alert">
+                      Scout couldn't finish this turn.
+                    </p>
+                  </MessageScrollerItem>
+                )}
                 {(thread.status === "running" || managed?.state.kind === "checking") && (
                   <p
                     role="status"
@@ -1030,6 +1034,63 @@ function ConversationSession({
       {thread.canControl && managedId ? (
         <div className="shrink-0 border-t p-3">
           {cost && <SessionCost session={cost} />}
+          <PendingTaskMessage
+            pendingMessage={pendingMessage}
+            active={sendingMessage}
+            canRetry={canRetryMessage}
+            onRetry={() => void retryMessage()}
+            retrying={request.kind === "pending"}
+          />
+          {failure && (
+            <div role="alert" className={cn(playNotice, "mb-3")}>
+              <p>
+                {failedCreditCode ? (
+                  <>
+                    {creditFailureMessage(failedCreditCode)}{" "}
+                    <Link to="/settings" className={playTextLink}>
+                      View credits
+                    </Link>
+                  </>
+                ) : (
+                  (managed?.requestCheckMessage ?? taskFailureMessage(failure.diagnostic))
+                )}
+              </p>
+              {!pendingMessage &&
+                !failedCreditCode &&
+                !managed?.requestCheckMessage &&
+                managed?.canSend && (
+                  <p className="mt-1">
+                    {showingWalkthrough ? (
+                      <Link
+                        to="/tasks/$thread"
+                        params={{ thread: threadId }}
+                        search={{ ...search, view: "chat" }}
+                        resetScroll={false}
+                        className={playTextLink}
+                      >
+                        Send a follow-up to continue.
+                      </Link>
+                    ) : (
+                      "Send a follow-up to continue."
+                    )}
+                  </p>
+                )}
+              {!failedCreditCode &&
+                !managed?.requestCheckMessage &&
+                !managed?.canSend &&
+                !managed?.active &&
+                !managed?.busy && (
+                  <Link to={kind === "play" ? "/play" : "/"} className={cn(playTextLink, "mt-1")}>
+                    Start a new task
+                  </Link>
+                )}
+            </div>
+          )}
+          {request.kind === "failed" && (
+            <p role="alert" className={playError}>
+              {request.message}
+            </p>
+          )}
           {!showingWalkthrough && (
             <ConversationComposer
               autoFocus={false}

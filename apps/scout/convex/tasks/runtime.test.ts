@@ -16,6 +16,7 @@ import { createBrowserHarness } from "../scout/browserTools";
 import { closeFirecrawlBrowserSession } from "../scout/lib/firecrawl";
 import { ADMIN_EMAIL, insertTestAccount } from "../testing/accounts";
 import { runtimeTools } from "./tools";
+import { workflow } from "./lifecycle";
 
 vi.mock("./tools", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./tools")>()),
@@ -47,6 +48,7 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 async function setup() {
@@ -99,6 +101,7 @@ async function setup() {
     events,
     after,
     beforeRetrieve: vi.fn<() => Promise<void>>(async () => {}),
+    httpFailure: vi.fn<() => Response | null>(() => null),
     beforeItems: vi.fn<() => Promise<void>>(async () => {}),
     onInput: vi.fn<() => void>(),
     stream: vi.fn(
@@ -133,6 +136,8 @@ async function setup() {
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname.endsWith("/sessions/session-test")) {
       await provider.beforeRetrieve();
+      const failure = provider.httpFailure();
+      if (failure) return failure;
       return Response.json({
         status: provider.status(),
         usage: provider.usage(),
@@ -224,6 +229,67 @@ const paidUsage: TokenUsage = {
   input_tokens_details: { cached_tokens: 64 },
   output_tokens_details: { reasoning_tokens: 0 },
 };
+
+it("records HTTP diagnostics with fresh delivery status while redacting the pending message", async () => {
+  const t = await setup();
+  const workflowId = await t.backend.run(async (ctx) => {
+    const id = await workflow.start(
+      ctx,
+      internal.tasks.lifecycle.run,
+      { sessionId: t.sessionId, command: { kind: "observe" } },
+      {
+        startAsync: true,
+        onComplete: internal.tasks.lifecycle.onComplete,
+        context: { sessionId: t.sessionId },
+      },
+    );
+    await ctx.db.patch(t.sessionId, {
+      workflowId: id,
+      pendingMessage: { message: "private pending message", workflowId: id, status: "queued" },
+    });
+    return id;
+  });
+  t.provider.beforeRetrieve.mockImplementation(async () => {
+    await t.backend.run((ctx) =>
+      ctx.db.patch(t.sessionId, {
+        pendingMessage: {
+          message: "private pending message",
+          workflowId,
+          status: "submitting",
+        },
+      }),
+    );
+  });
+  t.provider.httpFailure.mockReturnValue(
+    Response.json(
+      { error: { code: "authentication_error", message: "private response body" } },
+      {
+        status: 401,
+        headers: { "x-request-id": "req-runtime", cookie: "private-cookie" },
+      },
+    ),
+  );
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  await expect(t.advance()).rejects.toThrow("private response body");
+  expect((await t.session()).state).toMatchObject({
+    kind: "failed",
+    error: expect.stringContaining("private response body"),
+    diagnostic: {
+      category: "configuration",
+      operation: "advance",
+      provider: "openai",
+      httpStatus: 401,
+      providerCode: "authentication_error",
+      requestId: "req-runtime",
+    },
+  });
+  const safeLog = JSON.stringify(log.mock.calls);
+  expect(safeLog).toContain('"deliveryStatus":"submitting"');
+  expect(safeLog).toContain('"providerSessionId":"session-test"');
+  expect(safeLog).not.toContain("private pending message");
+  expect(safeLog).not.toContain("private response body");
+  expect(safeLog).not.toContain("private-cookie");
+});
 
 it.each(["idle", "failed"] as const)(
   "captures and bills a failed root turn polled from a %s session without a stream turn event",

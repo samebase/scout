@@ -37,6 +37,7 @@ import { sitePreviewState } from "./scout/sitePreviewModel";
 import {
   browserHandle,
   callResult,
+  pendingMessage,
   sessionItem,
   sessionState,
   sessionUsage,
@@ -118,6 +119,7 @@ export default defineSchema({
     providerId: v.optional(v.string()),
     previousTurnId: v.optional(v.string()),
     workflowId: v.optional(vWorkflowId),
+    pendingMessage: v.optional(pendingMessage),
     cleanupJobId: v.optional(v.id("_scheduled_functions")),
     handoffEmailJobId: v.optional(v.id("_scheduled_functions")),
     itemCursor: v.optional(v.string()),

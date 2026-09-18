@@ -29,6 +29,7 @@ const remote = vi.hoisted(() => ({
   queries: new Map<string, unknown>(),
   createThread: vi.fn(),
   sendManaged: vi.fn(),
+  retryManaged: vi.fn(),
   stopManaged: vi.fn(),
   resumeManaged: vi.fn(),
   setVisibility: vi.fn(),
@@ -95,6 +96,8 @@ vi.mock("convex/react", () => ({
         return remote.setVisibility;
       case "tasks/sessions:send":
         return remote.sendManaged;
+      case "tasks/sessions:retryMessage":
+        return remote.retryManaged;
       case "tasks/sessions:stop":
         return remote.stopManaged;
       case "tasks/sessions:resume":
@@ -158,12 +161,16 @@ beforeEach(() => {
   }
   remote.queries.set("tasks/sessions:controls", {
     state: { kind: "idle" },
+    pendingMessage: null,
+    active: false,
+    canRetryMessage: false,
     canSend: true,
     canStop: false,
     busy: false,
   });
   remote.createThread.mockReset().mockResolvedValue({ threadId: "game-thread" });
   remote.sendManaged.mockReset().mockResolvedValue(null);
+  remote.retryManaged.mockReset().mockResolvedValue(null);
   remote.stopManaged.mockReset().mockResolvedValue(null);
   remote.resumeManaged.mockReset().mockResolvedValue(null);
   remote.setVisibility.mockReset().mockResolvedValue(null);
@@ -346,6 +353,7 @@ test.each(["INSUFFICIENT_CREDITS", "CREDIT_HOLD"] as const)(
     );
     expect(screen.queryByText(/Send a message to try again/)).toBeNull();
     expect(screen.queryByText(/Private provider diagnostic/)).toBeNull();
+    expect(screen.getByRole("alert").closest('[role="log"]')).toBeNull();
     fireEvent.click(screen.getByRole("link", { name: "View credits" }));
     expect(await screen.findByRole("heading", { name: "Credit settings" })).toBeTruthy();
   },
@@ -361,10 +369,381 @@ test("keeps generic failures generic even when their diagnostic mentions credits
     busy: false,
   });
   await openPlay("/play?thread=game-thread");
-  expect(screen.getByRole("alert").textContent).toBe(
-    "Scout couldn't finish this turn. Send a message to try again.",
-  );
+  const failure = screen.getByRole("alert");
+  expect(failure.textContent).toContain("Send a follow-up to continue.");
+  expect(failure.textContent).not.toContain("Untrusted text");
+  expect(failure.closest('[role="log"]')).toBeNull();
+  expect(within(screen.getByRole("log")).queryByRole("alert")).toBeNull();
   expect(screen.queryByRole("link", { name: "View credits" })).toBeNull();
+});
+
+describe("task delivery and failure feedback", () => {
+  beforeEach(() => {
+    remote.queries.set("scout/activity:get", session({ purpose: { kind: "review" } }));
+  });
+
+  test("keeps a queued message visible through failure, reload and explicit retry", async () => {
+    const queued = {
+      state: { kind: "idle" },
+      pendingMessage: { message: "Check checkout.", workflowId: "delivery-1", status: "queued" },
+      active: true,
+      canSend: false,
+      canStop: true,
+      canRetryMessage: false,
+      busy: false,
+    };
+    remote.sendManaged.mockImplementationOnce(async () => {
+      act(() => {
+        remote.queries.set("tasks/sessions:controls", queued);
+        remote.revision++;
+        remote.subscribers.forEach((listener) => listener());
+      });
+    });
+    await openPlay("/tasks/game-thread");
+    fireEvent.change(screen.getByRole("textbox", { name: "Message Scout" }), {
+      target: { value: "Check checkout." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    const pendingMessage = await screen.findByRole("group", { name: "Pending message" });
+    expect(within(pendingMessage).getByText("Check checkout.")).toBeTruthy();
+    expect(within(pendingMessage).getByRole("status").textContent).toBe("Sending…");
+    expect(pendingMessage.closest('[role="log"]')).toBeNull();
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "Message Scout" })).toHaveProperty("value", ""),
+    );
+    const failed = {
+      ...queued,
+      state: { kind: "failed", error: "Private workflow error" },
+      active: false,
+      canSend: true,
+      canStop: false,
+      canRetryMessage: true,
+    };
+    act(() => {
+      remote.queries.set("tasks/sessions:controls", failed);
+      remote.revision++;
+      remote.subscribers.forEach((listener) => listener());
+    });
+    expect(within(pendingMessage).getByRole("alert").textContent).toBe("Your message wasn’t sent.");
+    expect(screen.queryByText("Send a follow-up to continue.")).toBeNull();
+    cleanup();
+    await openPlay("/tasks/game-thread");
+    expect(
+      within(screen.getByRole("group", { name: "Pending message" })).getByText("Check checkout."),
+    ).toBeTruthy();
+    expect(remote.retryManaged).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByRole("textbox", { name: "Message Scout" }), {
+      target: { value: "A separate draft" },
+    });
+    expect(screen.getByRole("button", { name: "Send message" })).toHaveProperty("disabled", false);
+    fireEvent.click(screen.getByRole("button", { name: "Retry message" }));
+    await waitFor(() =>
+      expect(remote.retryManaged).toHaveBeenCalledExactlyOnceWith({ sessionId: "managed-1" }),
+    );
+    expect(remote.sendManaged).toHaveBeenCalledExactlyOnceWith({
+      sessionId: "managed-1",
+      message: "Check checkout.",
+    });
+    expect(screen.getByDisplayValue("A separate draft")).toBeTruthy();
+    act(() => {
+      remote.queries.set("tasks/sessions:controls", queued);
+      remote.revision++;
+      remote.subscribers.forEach((listener) => listener());
+    });
+    expect(screen.queryByRole("button", { name: "Retry message" })).toBeNull();
+    expect(screen.getByText("Sending…")).toBeTruthy();
+    act(() => {
+      remote.queries.set("tasks/sessions:controls", { ...queued, pendingMessage: null });
+      remote.messages = [
+        { kind: "message", id: "accepted-1", role: "user", text: "Check checkout." },
+      ];
+      remote.revision++;
+      remote.subscribers.forEach((listener) => listener());
+    });
+    expect(screen.queryByRole("group", { name: "Pending message" })).toBeNull();
+    expect(screen.getAllByText("Check checkout.")).toHaveLength(1);
+    expect(screen.getByDisplayValue("A separate draft")).toBeTruthy();
+  });
+
+  test.each(["queued", "submitting"])(
+    "%s delivery survives reload and permits an explicit new follow-up",
+    async (status) => {
+      remote.queries.set("tasks/sessions:controls", {
+        state: { kind: "failed", error: "Private delivery error" },
+        pendingMessage: {
+          message: "Original request",
+          workflowId: "delivery-1",
+          status,
+        },
+        active: false,
+        canSend: true,
+        canStop: false,
+        canRetryMessage: status === "queued",
+        busy: false,
+      });
+      for (let visit = 0; visit < 2; visit++) {
+        if (visit > 0) cleanup();
+        await openPlay("/tasks/game-thread");
+        const pendingMessage = screen.getByRole("group", { name: "Pending message" });
+        expect(within(pendingMessage).getByText("Original request")).toBeTruthy();
+        expect(within(pendingMessage).getByRole("alert").textContent).toBe(
+          status === "queued"
+            ? "Your message wasn’t sent."
+            : "We couldn’t confirm whether your message was delivered. Check the conversation before sending it again.",
+        );
+        expect(screen.queryByRole("button", { name: "Retry message" }) !== null).toBe(
+          status === "queued",
+        );
+        expect(remote.sendManaged).not.toHaveBeenCalled();
+        expect(remote.retryManaged).not.toHaveBeenCalled();
+      }
+      fireEvent.change(screen.getByRole("textbox", { name: "Message Scout" }), {
+        target: { value: "Please continue from the last confirmed step." },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+      await waitFor(() =>
+        expect(remote.sendManaged).toHaveBeenCalledExactlyOnceWith({
+          sessionId: "managed-1",
+          message: "Please continue from the last confirmed step.",
+        }),
+      );
+      expect(remote.retryManaged).not.toHaveBeenCalled();
+    },
+  );
+
+  test.each(["queued", "submitting"])(
+    "keeps active %s delivery visible while stopping",
+    async (status) => {
+      const controls = {
+        state: { kind: "idle" },
+        pendingMessage: { message: "Pending text", workflowId: "delivery-1", status },
+        active: true,
+        canSend: false,
+        canStop: true,
+        canRetryMessage: false,
+        busy: false,
+      };
+      remote.queries.set("tasks/sessions:controls", controls);
+      await openPlay("/tasks/game-thread");
+      expect(screen.getByText("Sending…")).toBeTruthy();
+      fireEvent.click(screen.getAllByRole("button", { name: "Stop Scout" })[0]);
+      await waitFor(() =>
+        expect(remote.stopManaged).toHaveBeenCalledExactlyOnceWith({ sessionId: "managed-1" }),
+      );
+      act(() => {
+        remote.queries.set("tasks/sessions:controls", { ...controls, state: { kind: "stopped" } });
+        remote.revision++;
+        remote.subscribers.forEach((listener) => listener());
+      });
+      expect(screen.queryByText("Sending…")).toBeNull();
+      expect(screen.getByText("Pending text")).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "Retry message" })).toBeNull();
+    },
+  );
+
+  test.each([
+    { active: true, busy: false },
+    { active: false, busy: true },
+  ])(
+    "keeps failed delivery visible but cannot retry during cleanup or while busy: %j",
+    async ({ active, busy }) => {
+      remote.queries.set("tasks/sessions:controls", {
+        state: { kind: "failed", error: "Private error" },
+        pendingMessage: { message: "Pending text", workflowId: "delivery-1", status: "queued" },
+        active,
+        canSend: false,
+        canStop: active,
+        canRetryMessage: false,
+        busy,
+      });
+      await openPlay("/tasks/game-thread");
+      expect(screen.queryByText("Sending…")).toBeNull();
+      expect(screen.getByText("Your message wasn’t sent.")).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "Retry message" })).toBeNull();
+      expect(remote.retryManaged).not.toHaveBeenCalled();
+      if (busy) expect(screen.getByText("This Scout is busy in another chat.")).toBeTruthy();
+    },
+  );
+
+  test("a rejected send keeps the draft and shows the error beside the composer", async () => {
+    remote.sendManaged.mockRejectedValueOnce(new Error("Private send failure"));
+    await openPlay("/tasks/game-thread");
+    fireEvent.change(screen.getByRole("textbox", { name: "Message Scout" }), {
+      target: { value: "Keep my original message" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    const error = await screen.findByRole("alert");
+    expect(error.textContent).toBe("Your message wasn't sent. Try again when Scout is ready.");
+    expect(error.closest('[role="log"]')).toBeNull();
+    expect(screen.getByDisplayValue("Keep my original message")).toBeTruthy();
+    expect(screen.queryByRole("group", { name: "Pending message" })).toBeNull();
+    expect(screen.queryByText("Private send failure")).toBeNull();
+  });
+
+  test.each(["chat", "walkthrough"])(
+    "an accepted failure is visible in %s with a normal follow-up",
+    async (view) => {
+      remote.queries.set(
+        "scout/activity:get",
+        session({ status: "failed", purpose: { kind: "review" } }),
+      );
+      remote.queries.set("tasks/walkthrough:get", { walkthrough: null, captures: [] });
+      remote.queries.set("tasks/sessions:controls", {
+        state: {
+          kind: "failed",
+          error: "Private provider diagnostic",
+          diagnostic: {
+            category: "transient_service",
+            operation: "advance",
+            occurredAtMs: 1000,
+            provider: "openai",
+            requestId: "private-request-id",
+          },
+        },
+        pendingMessage: null,
+        active: false,
+        canRetryMessage: false,
+        canSend: true,
+        canStop: false,
+        busy: false,
+      });
+      await openPlay(`/tasks/game-thread?view=${view}`);
+      const failure = screen.getByRole("alert");
+      expect(failure.textContent).toContain("AI service");
+      expect(failure.textContent).toContain("temporarily unavailable");
+      expect(failure.textContent).toContain("Send a follow-up to continue.");
+      expect(failure.closest('[role="log"]')).toBeNull();
+      expect(screen.getAllByRole("alert")).toHaveLength(1);
+      expect(screen.queryByText("Scout couldn't finish this turn.")).toBeNull();
+      expect(document.body.textContent).not.toContain("Private provider diagnostic");
+      expect(document.body.textContent).not.toContain("private-request-id");
+      expect(screen.queryByRole("button", { name: "Retry message" })).toBeNull();
+      if (view === "walkthrough") {
+        fireEvent.click(screen.getByRole("link", { name: "Send a follow-up to continue." }));
+      }
+      const input = await screen.findByRole("textbox", { name: "Message Scout" });
+      fireEvent.change(input, { target: { value: "Continue from the last step." } });
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+      await waitFor(() =>
+        expect(remote.sendManaged).toHaveBeenCalledExactlyOnceWith({
+          sessionId: "managed-1",
+          message: "Continue from the last step.",
+        }),
+      );
+    },
+  );
+
+  test.each([null, { message: "Initial task", workflowId: "delivery-1", status: "queued" }])(
+    "an initial failure without a provider offers a new task instead of a follow-up: %j",
+    async (pendingMessage) => {
+      remote.queries.set(
+        "scout/activity:get",
+        session({ status: "failed", purpose: { kind: "review" } }),
+      );
+      remote.queries.set("tasks/sessions:controls", {
+        state: { kind: "failed", error: "Private startup failure" },
+        pendingMessage,
+        active: false,
+        canSend: false,
+        canStop: false,
+        canRetryMessage: false,
+        busy: false,
+      });
+      await openPlay("/tasks/game-thread");
+      expect(screen.queryByText("Send a follow-up to continue.")).toBeNull();
+      expect(screen.getByRole("link", { name: "Start a new task" }).getAttribute("href")).toBe("/");
+      expect(screen.getByRole("button", { name: "Send message" })).toHaveProperty("disabled", true);
+    },
+  );
+
+  test("pending message and retry stay visible in Walkthrough", async () => {
+    remote.queries.set("tasks/walkthrough:get", { walkthrough: null, captures: [] });
+    remote.queries.set("tasks/sessions:controls", {
+      state: { kind: "stopped" },
+      pendingMessage: {
+        message: "Check the final page",
+        workflowId: "delivery-1",
+        status: "queued",
+      },
+      active: false,
+      canSend: true,
+      canStop: false,
+      canRetryMessage: true,
+      busy: false,
+    });
+    await openPlay("/tasks/game-thread?view=walkthrough");
+    expect(screen.getByRole("region", { name: "Walkthrough with Scout" })).toBeTruthy();
+    expect(screen.getByText("Check the final page")).toBeTruthy();
+    expect(screen.queryByRole("textbox", { name: "Message Scout" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Retry message" }));
+    await waitFor(() =>
+      expect(remote.retryManaged).toHaveBeenCalledExactlyOnceWith({ sessionId: "managed-1" }),
+    );
+    expect(remote.sendManaged).not.toHaveBeenCalled();
+  });
+
+  test("a failed request check keeps its specific message above the composer", async () => {
+    remote.queries.set(
+      "scout/activity:get",
+      session({ status: "failed", purpose: { kind: "review" } }),
+    );
+    remote.queries.set("tasks/sessions:controls", {
+      state: { kind: "failed", error: "Private check diagnostic" },
+      requestCheckMessage: "Could not capture browser evidence.",
+      pendingMessage: null,
+      active: false,
+      canSend: true,
+      canStop: false,
+      canRetryMessage: false,
+      busy: false,
+    });
+    await openPlay("/tasks/game-thread");
+    const failure = screen.getByRole("alert");
+    expect(failure.textContent).toBe("Could not capture browser evidence.");
+    expect(failure.closest('[role="log"]')).toBeNull();
+  });
+
+  test("public viewers see generic failure without owner delivery details", async () => {
+    remote.queries.set(
+      "scout/activity:get",
+      session({
+        status: "failed",
+        purpose: { kind: "review" },
+        visibility: "public",
+        canControl: false,
+        isOwner: false,
+      }),
+    );
+    await openPlay("/tasks/game-thread");
+    expect(screen.getByRole("alert").textContent).toBe("Scout couldn't finish this turn.");
+    expect(screen.queryByRole("group", { name: "Pending message" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Retry message" })).toBeNull();
+    expect(screen.queryByText("Send a follow-up to continue.")).toBeNull();
+    expect(remote.queryCalls).toHaveBeenCalledWith("tasks/sessions:controls", "skip");
+  });
+
+  test("failed retry retains the persisted message and a separate draft", async () => {
+    remote.queries.set("tasks/sessions:controls", {
+      state: { kind: "stopped" },
+      pendingMessage: { message: "Original request", workflowId: "delivery-1", status: "queued" },
+      active: false,
+      canSend: true,
+      canStop: false,
+      canRetryMessage: true,
+      busy: false,
+    });
+    remote.retryManaged.mockRejectedValueOnce(new Error("Private retry error"));
+    await openPlay("/tasks/game-thread");
+    fireEvent.change(screen.getByRole("textbox", { name: "Message Scout" }), {
+      target: { value: "A separate draft" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Retry message" }));
+    expect(await screen.findByText("Couldn't retry your message. Try again.")).toBeTruthy();
+    expect(screen.getByText("Original request")).toBeTruthy();
+    expect(screen.getByDisplayValue("A separate draft")).toBeTruthy();
+    expect(remote.retryManaged).toHaveBeenCalledExactlyOnceWith({ sessionId: "managed-1" });
+    expect(remote.sendManaged).not.toHaveBeenCalled();
+  });
 });
 
 test("sends when controls allow it without credit settlement messages", async () => {
