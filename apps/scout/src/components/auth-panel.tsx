@@ -4,6 +4,7 @@ import { ConvexError } from "convex/values";
 import { AUTH_EMAIL_COOLDOWN } from "../../shared/auth";
 import { Button } from "#components/ui/button";
 import { Input } from "#components/ui/input";
+import { LegalLinks } from "./legal-links";
 
 const PASSWORD_MIN_LENGTH = 8;
 const CODE_LENGTH = 8;
@@ -252,6 +253,7 @@ export function AuthPanel() {
           {error}
         </p>
       ) : null}
+      <LegalLinks />
     </section>
   );
 }

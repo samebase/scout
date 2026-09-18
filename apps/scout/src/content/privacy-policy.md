@@ -1,7 +1,7 @@
 # Privacy policy
 
-> Draft for review, prepared September 18, 2026. Not yet effective. Resolve every
-> `{{PLACEHOLDER}}` and the publication items in `docs/legal-research.md` before publishing.
+> Draft for review, prepared September 18, 2026. Not yet effective.
+> Some details remain to be confirmed.
 
 Effective date: {{EFFECTIVE_DATE}}
 

@@ -15,8 +15,9 @@ inside the repository.
 
 Draft [privacy policy](./apps/scout/src/content/privacy-policy.md) and
 [terms and conditions](./apps/scout/src/content/terms-of-service.md) are available for review.
-They are not published or effective. See [legal research](./docs/legal-research.md) for sources,
-unresolved publication details, and the planned `/privacy` and `/terms` routes.
+The public `/privacy` and `/terms` routes render these Markdown files. The documents remain
+drafts and are not effective. See [legal research](./docs/legal-research.md) for sources and
+the details still needed before adopting the policies.
 
 ## Stack
 

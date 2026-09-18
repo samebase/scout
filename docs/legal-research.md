@@ -7,12 +7,12 @@ country and intended markets before publication.
 
 ## Deliverables and scope
 
-- [Privacy policy draft](../apps/scout/src/content/privacy-policy.md), intended for `/privacy`.
-- [Terms and conditions draft](../apps/scout/src/content/terms-of-service.md), intended for `/terms`.
+- [Privacy policy draft](../apps/scout/src/content/privacy-policy.md), rendered at `/privacy`.
+- [Terms and conditions draft](../apps/scout/src/content/terms-of-service.md), rendered at `/terms`.
 
-The Markdown lives in the app's content directory so the future routes can render the same
-files. Neither page is routed, published, or effective yet. There are no application behavior
-changes in this work.
+The public routes render these Markdown files directly, including their draft notices and
+unresolved placeholders. The documents are not effective. Both routes request `noindex`
+while the text remains a draft.
 
 The drafts describe the current product, including public tasks, shared Scouts, AI providers,
 remote-browser recordings, and account closure that retains history. They cover optional paid
@@ -203,23 +203,24 @@ case-by-case refunds outside statutory rights, no mandatory arbitration, and no 
 monetary liability cap. Local legal review should focus on these choices and the mandatory
 consumer protections.
 
-## Route integration after the text is finalized
+## Route integration and remaining adoption work
 
-1. Render these Markdown sources at public `/privacy` and `/terms` TanStack Router routes.
-   Enable Markdown table support. Add document titles, readable line lengths, heading anchors,
-   and links between the pages.
-   Keep the source files as the single copy of the text and show the approved effective date.
-2. Link both pages from public navigation, Settings, and signup before information is submitted.
-   Keep them readable while signed out, pending approval, or closing an account. The current
-   `RouteAccessOutlet` redirects deleting/deleted accounts except on `/account-deletion`, so
-   simply setting the new routes to `access_public` is not enough for that case.
+The `/privacy` and `/terms` TanStack Router routes are public. They render the Markdown with
+table support, page titles, section anchors prefixed with `legal-`, and links between the
+pages. Wide tables scroll within keyboard-focusable regions. Links are available from the
+homepage footer, Settings, the account form, and the account-deletion page. The access guard
+allows both legal routes during and after account deletion, including while access is loading.
+
+Before adopting the policies:
+
+1. Resolve all placeholders and the decisions above. Show the approved effective date, remove
+   draft notices and route `noindex` metadata, and archive each effective version.
+2. Recheck the text against the production configuration and provider agreements.
 3. Add an unselected agreement control or equally clear affirmative signup action linked to
    the terms, with version/time recorded on the backend. Treat the privacy notice as information;
    collect any optional consent separately. Provide a path for existing accounts as appropriate.
 4. Put concise disclosures at the decision points: public sharing, shared Scout resources,
    remote-browser recording/handoff, and buying or spending credits. Link to the full details.
-5. Verify the Markdown rendering and links, direct navigation and reload, keyboard/mobile access,
-   signed-out and deleted-account access, and signup agreement behavior. If navigation changes
-   affect sibling task/site layouts, follow the repository's delayed-query/sidebar checks.
-6. Remove all draft markers and placeholders only after the corresponding facts and behavior
-   are settled. Archive the effective versions when the terms change.
+5. Verify any new signup agreement behavior. The current routes and plain links do not record
+   agreement or consent. If later navigation changes affect sibling task/site layouts, follow
+   the repository's delayed-query/sidebar checks.

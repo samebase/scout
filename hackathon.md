@@ -1489,7 +1489,8 @@ continues to link the purchased credits to the correct balance (`apps/scout/conv
 
 ### 2026-09-18 - working tree - v238
 
-Documented what Scout stores and shares during AI, browser, and email tasks, including public
-recordings and history retained after account closure. Drafted privacy and terms text using
-the Samebase operator, with research for the remaining publication decisions and legal routes
-(`apps/scout/src/content/`, `docs/legal-research.md`).
+Added public privacy and terms pages from shared Markdown drafts using the Samebase operator.
+The pages explain task sharing, AI processing, and retained history, and stay readable after
+account closure. Linked them from the homepage, signup, Settings, and deletion screens, with
+research for the remaining policy decisions (`apps/scout/src/content/`, `apps/scout/src/routes/`,
+`docs/legal-research.md`).

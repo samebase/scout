@@ -7,6 +7,7 @@ import { api } from "../../convex/_generated/api";
 import { ACCOUNT_DELETION_CONFIRMATION } from "../../shared/accountDeletion";
 import { Button } from "#components/ui/button";
 import { Input } from "#components/ui/input";
+import { LegalLinks } from "#components/legal-links";
 
 export const Route = createFileRoute("/account-deletion")({
   staticData: { access: "access_public" },
@@ -165,6 +166,9 @@ function AccountDeletionPage() {
           </p>
         )}
       </section>
+      <footer className="mt-8">
+        <LegalLinks />
+      </footer>
     </main>
   );
 }
