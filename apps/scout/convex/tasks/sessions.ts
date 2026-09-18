@@ -447,21 +447,27 @@ export const messageDelivery = internalMutation({
   args: {
     sessionId: v.id("agentsApiSessions"),
     workflowId: vWorkflowId,
-    status: v.union(v.literal("submitting"), v.literal("accepted")),
+    status: v.union(v.literal("submitting"), v.literal("accepted"), v.literal("rejected")),
   },
   returns: v.boolean(),
-  handler: async (ctx, { sessionId, workflowId, status }) => {
+  handler: async (ctx, { sessionId, workflowId, status }): Promise<boolean> => {
     const session = await requireSession(ctx, sessionId);
     const pending = session.pendingMessage;
     if (session.workflowId !== workflowId || pending?.workflowId !== workflowId) return false;
-    if (status === "submitting") {
-      if (!session.active || session.state.kind === "stopped" || pending.status !== "queued")
-        return false;
-      await ctx.db.patch(sessionId, { pendingMessage: { ...pending, status } });
-    } else {
-      await ctx.db.patch(sessionId, { pendingMessage: undefined });
+    switch (status) {
+      case "submitting":
+        if (!session.active || session.state.kind === "stopped" || pending.status !== "queued")
+          return false;
+        await ctx.db.patch(sessionId, { pendingMessage: { ...pending, status } });
+        return true;
+      case "rejected":
+        if (pending.status !== "submitting") return false;
+        await ctx.db.patch(sessionId, { pendingMessage: { ...pending, status: "queued" } });
+        return true;
+      case "accepted":
+        await ctx.db.patch(sessionId, { pendingMessage: undefined });
+        return true;
     }
-    return true;
   },
 });
 

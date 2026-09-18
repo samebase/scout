@@ -28,7 +28,13 @@ export function diagnoseTaskFailure(
         ? "convex_gateway"
         : "unknown";
   if (!(error instanceof APIError) && !APICallError.isInstance(error))
-    return { category: "unknown", operation, occurredAtMs, provider };
+    return {
+      category: "unknown",
+      operation,
+      occurredAtMs,
+      provider,
+      message: error instanceof Error ? error.message : String(error),
+    };
 
   const status = error instanceof APIError ? error.status : error.statusCode;
   const code = error instanceof APIError ? boundedIdentifier(error.code) : undefined;
@@ -59,6 +65,7 @@ export function diagnoseTaskFailure(
     operation,
     occurredAtMs,
     provider,
+    message: error.message,
     ...omitNullish({
       httpStatus:
         status !== undefined && Number.isInteger(status) && status >= 100 && status <= 599

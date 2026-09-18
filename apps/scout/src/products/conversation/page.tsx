@@ -24,10 +24,14 @@ import { type FormEvent, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import { omitNullish } from "../../../shared/omitNullish";
 import { creditFailure, creditFailureMessage } from "../../../shared/creditFailure";
-import { taskFailureMessage } from "../../../shared/taskFailure";
 import { PendingTaskMessage } from "../../tasks/pending-message";
 import { scoutAvailabilityLabels } from "#components/scout-current-activity";
-import { conversationDestination, type ProductKind, type ConversationSearch } from "./model";
+import {
+  conversationDestination,
+  engineOptions,
+  type ProductKind,
+  type ConversationSearch,
+} from "./model";
 import { gameInviteDisplayText } from "../play/invite";
 import { ConversationComposer } from "./composer";
 import { ConversationSidebar, BrowserToggle, BrowserStop, TasksToggle } from "./sidebar";
@@ -121,10 +125,22 @@ export function ConversationLobby({
     canAccess(isPlay ? "access_play" : "access_review", viewer.accessKeys);
   const { isAuthenticated, isLoading } = useConvexAuth();
   const scouts = useQuery(api.scout.activity.players);
+  const savedPreferences = useQuery(api.accounts.taskPreferences, canRun ? {} : "skip");
+  const savePreferences = useMutation(api.accounts.setTaskPreferences).withOptimisticUpdate(
+    (store, patch) => {
+      const saved = store.getQuery(api.accounts.taskPreferences, {});
+      if (saved !== undefined)
+        store.setQuery(api.accounts.taskPreferences, {}, { ...saved, ...patch });
+    },
+  );
   const startChat = useMutation(api.scout.chats.startProductChat);
   const navigate = useNavigate();
   const [draft, setDraft] = useState("");
-  const [selectedScoutId, setSelectedScoutId] = useState("");
+  const [guestPreferences, setGuestPreferences] = useState<
+    FunctionReturnType<typeof api.accounts.taskPreferences>
+  >({});
+  const preferences = canRun ? savedPreferences : guestPreferences;
+  const engine = preferences?.lastTaskEngine ?? "agents_api";
   const [signingIn, setSigningIn] = useState(false);
   const [request, setRequest] = useState<RequestState>({ kind: "idle" });
   const [visibility, setVisibility] = useState<ChatThread["visibility"]>(
@@ -133,11 +149,28 @@ export function ConversationLobby({
   const submitting = useRef(false);
   const activeScouts = scouts?.filter((scout) => scout.status === "active") ?? [];
   const selectedScout =
-    activeScouts.find((scout) => scout._id === selectedScoutId) ??
+    activeScouts.find((scout) => scout._id === preferences?.lastScoutId) ??
     activeScouts.find((scout) => !scout.busy) ??
     activeScouts[0];
-  const loadingScouts = isLoading || scouts === undefined;
+  const loadingScouts =
+    isLoading || scouts === undefined || (canRun && savedPreferences === undefined);
   const noScouts = isAuthenticated && scouts !== undefined && activeScouts.length === 0;
+
+  async function updatePreferences(patch: FunctionReturnType<typeof api.accounts.taskPreferences>) {
+    if (!canRun) {
+      setGuestPreferences((current) => ({ ...current, ...patch }));
+      return;
+    }
+    setRequest({ kind: "idle" });
+    try {
+      await savePreferences(patch);
+    } catch (error) {
+      setRequest({
+        kind: "failed",
+        message: `Couldn't save your selection: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
+  }
 
   async function inviteScout(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -149,7 +182,7 @@ export function ConversationLobby({
       setSigningIn(true);
       return;
     }
-    if (!canRun || !selectedScout) return;
+    if (!canRun || !selectedScout || loadingScouts) return;
     submitting.current = true;
     setRequest({ kind: "pending" });
     try {
@@ -161,6 +194,7 @@ export function ConversationLobby({
         scoutId: selectedScout._id,
         prompt,
         visibility,
+        engine,
       });
       await navigate(conversationDestination(kind, threadId, {}));
     } catch (error) {
@@ -268,7 +302,13 @@ export function ConversationLobby({
                 ) : activeScouts.length > 0 ? (
                   <div className="flex min-w-0 items-center gap-1">
                     {isPlay && <ScoutPiece size="brand" className="scale-75" />}
-                    <Select value={selectedScout?._id ?? ""} onValueChange={setSelectedScoutId}>
+                    <Select
+                      value={selectedScout?._id ?? ""}
+                      onValueChange={(value) => {
+                        const scout = activeScouts.find((scout) => scout._id === value);
+                        if (scout) void updatePreferences({ lastScoutId: scout._id });
+                      }}
+                    >
                       <SelectTrigger
                         aria-label="Your Scout"
                         className="min-h-11 max-w-[190px] border-0 shadow-none max-[400px]:max-w-[145px]"
@@ -290,6 +330,28 @@ export function ConversationLobby({
                 ) : (
                   "Scout Review"
                 )}
+                <Select
+                  value={engine}
+                  disabled={request.kind === "pending" || loadingScouts}
+                  onValueChange={(value) => {
+                    const option = engineOptions.find((option) => option.value === value);
+                    if (option) void updatePreferences({ lastTaskEngine: option.value });
+                  }}
+                >
+                  <SelectTrigger
+                    aria-label="Task engine"
+                    className="min-h-11 shrink-0 border-0 shadow-none"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent position="popper">
+                    {engineOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <Select
                   value={visibility}
                   disabled={request.kind === "pending"}
@@ -1043,7 +1105,7 @@ function ConversationSession({
           />
           {failure && (
             <div role="alert" className={cn(playNotice, "mb-3")}>
-              <p>
+              <p className="whitespace-pre-wrap wrap-anywhere">
                 {failedCreditCode ? (
                   <>
                     {creditFailureMessage(failedCreditCode)}{" "}
@@ -1052,9 +1114,25 @@ function ConversationSession({
                     </Link>
                   </>
                 ) : (
-                  (managed?.requestCheckMessage ?? taskFailureMessage(failure.diagnostic))
+                  (managed?.requestCheckMessage ??
+                  failure.diagnostic?.message ??
+                  failure.error.split(/\r?\n/, 1)[0])
                 )}
               </p>
+              {!failedCreditCode &&
+                !managed?.requestCheckMessage &&
+                (failure.diagnostic || failure.error.trimEnd().includes("\n")) && (
+                  <details className="mt-2">
+                    <summary className="w-fit cursor-pointer rounded text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                      Details
+                    </summary>
+                    <pre className="mt-2 max-h-48 overflow-auto rounded-lg border bg-muted/40 p-3 text-xs whitespace-pre-wrap wrap-anywhere select-text">
+                      {failure.diagnostic
+                        ? JSON.stringify({ ...failure.diagnostic, error: failure.error }, null, 2)
+                        : failure.error}
+                    </pre>
+                  </details>
+                )}
               {!pendingMessage &&
                 !failedCreditCode &&
                 !managed?.requestCheckMessage &&

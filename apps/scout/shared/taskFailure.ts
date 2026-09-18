@@ -20,19 +20,7 @@ export const taskFailureDiagnosticValidator = v.object({
   httpStatus: v.optional(v.number()),
   providerCode: v.optional(v.string()),
   requestId: v.optional(v.string()),
+  message: v.optional(v.string()),
 });
 
 export type TaskFailureDiagnostic = Infer<typeof taskFailureDiagnosticValidator>;
-
-export function taskFailureMessage(diagnostic: TaskFailureDiagnostic | undefined): string {
-  switch (diagnostic?.category ?? "unknown") {
-    case "transient_service":
-      return "The AI service is temporarily unavailable. Try again later.";
-    case "rate_limit":
-      return "The AI service is busy. Try again later.";
-    case "configuration":
-      return "The AI service needs attention. Contact support.";
-    case "unknown":
-      return "This task stopped unexpectedly. Try again or contact support.";
-  }
-}

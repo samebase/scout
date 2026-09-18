@@ -1047,7 +1047,9 @@ test("retries an unsent message from the admin view and shows provider diagnosti
         operation: "send",
         occurredAtMs: 1,
         provider: "openai",
+        message: "500 Failed to submit message: upstream connection reset.",
         httpStatus: 500,
+        providerCode: "server_error",
         requestId: "req-debug-test",
       },
     }),
@@ -1056,10 +1058,75 @@ test("retries an unsent message from the admin view and shows provider diagnosti
   await open("/agents?session=session-1");
   expect(await screen.findByText("Your message wasn’t sent.")).toBeTruthy();
   expect(screen.getByText("Keep going")).toBeTruthy();
+  expect(
+    screen.getByText("500 Failed to submit message: upstream connection reset.").closest("details"),
+  ).toBeNull();
+  const details = screen.getByText("Failure details").closest("details");
+  expect(details?.open).toBe(false);
+  await userEvent.setup().click(screen.getByText("Failure details"));
+  expect(details?.open).toBe(true);
+  expect(details?.querySelector("pre")?.textContent).toContain('"httpStatus": 500');
+  expect(details?.querySelector("pre")?.textContent).toContain('"providerCode": "server_error"');
+  expect(details?.querySelector("pre")?.textContent).toContain('"error": "500 Internal error"');
   fireEvent.click(screen.getByRole("button", { name: "Retry message" }));
   await waitFor(() => expect(remote.retryMessage).toHaveBeenCalledWith({ sessionId: "session-1" }));
   expect(remote.send).not.toHaveBeenCalled();
   expect(screen.getByText(/req-debug-test/)).toBeTruthy();
+});
+
+test("admins inspecting another member's task see the actual API error without owner controls", async () => {
+  remote.queries.set("tasks/sessions:get", {
+    ...session({
+      kind: "failed",
+      error: "Error: provider call failed\n    at advance (runtime.ts:20:1)",
+      diagnostic: {
+        category: "configuration",
+        operation: "advance",
+        occurredAtMs: 1,
+        provider: "openai",
+        message: "400 Unknown model: requested-model.",
+        httpStatus: 400,
+        providerCode: "model_not_found",
+        requestId: "req-member-error",
+      },
+    }),
+    canControl: false,
+  });
+  await open("/agents?session=session-1");
+  expect((await screen.findByRole("alert")).textContent).toBe(
+    "400 Unknown model: requested-model.",
+  );
+  expect(screen.getByRole("alert").closest("details")).toBeNull();
+  const details = screen.getByText("Failure details").closest("details");
+  expect(details?.open).toBe(false);
+  expect(details?.querySelector("pre")?.textContent).toContain("req-member-error");
+  expect(details?.querySelector("pre")?.textContent).toContain("runtime.ts:20:1");
+  expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Retry message" })).toBeNull();
+});
+
+test("older diagnostic metadata does not replace the persisted API error with generic copy", async () => {
+  remote.queries.set(
+    "tasks/sessions:get",
+    session({
+      kind: "failed",
+      error: "Error: 429 quota exhausted\n    at advance (runtime.ts:20:1)",
+      diagnostic: {
+        category: "rate_limit",
+        operation: "advance",
+        occurredAtMs: 1,
+        provider: "openai",
+        httpStatus: 429,
+        providerCode: "insufficient_quota",
+      },
+    }),
+  );
+  await open("/agents?session=session-1");
+  expect((await screen.findByRole("alert")).textContent).toBe("Error: 429 quota exhausted");
+  const details = screen.getByText("Failure details").closest("details");
+  expect(details?.open).toBe(false);
+  expect(details?.querySelector("pre")?.textContent).toContain("insufficient_quota");
+  expect(details?.querySelector("pre")?.textContent).toContain("runtime.ts:20:1");
 });
 
 test("stopped sessions block button and keyboard sends until cleanup releases active", async () => {

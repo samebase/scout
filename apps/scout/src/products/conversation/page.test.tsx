@@ -33,6 +33,7 @@ const remote = vi.hoisted(() => ({
   stopManaged: vi.fn(),
   resumeManaged: vi.fn(),
   setVisibility: vi.fn(),
+  savePreferences: vi.fn(),
   signIn: vi.fn(),
   queryCalls: vi.fn(),
   listReplayPages: vi.fn(),
@@ -90,6 +91,10 @@ vi.mock("convex/react", () => ({
   },
   useMutation: (reference: FunctionReference<"mutation">) => {
     switch (getFunctionName(reference)) {
+      case "accounts:setTaskPreferences":
+        return Object.assign(remote.savePreferences, {
+          withOptimisticUpdate: () => remote.savePreferences,
+        });
       case "scout/chats:startProductChat":
         return remote.createThread;
       case "scout/chats:setVisibility":
@@ -139,6 +144,17 @@ beforeEach(() => {
   remote.screenshotUrl.mockReset().mockResolvedValue(null);
   remote.revision = 0;
   remote.queries.clear();
+  remote.queries.set("accounts:taskPreferences", {});
+  remote.savePreferences.mockReset().mockImplementation(async (patch) => {
+    const current = remote.queries.get("accounts:taskPreferences");
+    remote.queries.set("accounts:taskPreferences", {
+      ...(current && typeof current === "object" ? current : {}),
+      ...patch,
+    });
+    remote.revision += 1;
+    remote.subscribers.forEach((notify) => notify());
+    return null;
+  });
   remote.queries.set("accounts:currentViewerAccess", {
     kind: "account",
     userId: "admin",
@@ -265,10 +281,39 @@ test("a site link opens the shared composer without submitting and sends the sel
     scoutId: "scout-2",
     prompt: "Check the sign-up flow.",
     visibility: "private",
+    engine: "agents_api",
   });
   act(() => router.history.back());
   expect(await screen.findByRole("button", { name: "Remove example.com from task" })).toBeTruthy();
   expect(remote.createThread).toHaveBeenCalledTimes(1);
+});
+
+test("the composer restores saved choices and saves picker changes before any task starts", async () => {
+  remote.queries.set("accounts:taskPreferences", {
+    lastScoutId: "scout-2",
+    lastTaskEngine: "convex_agent",
+  });
+  await openPlay();
+  expect(screen.getByRole("combobox", { name: "Your Scout" }).textContent).toContain("Moss");
+  expect(screen.getByRole("combobox", { name: "Task engine" }).textContent).toContain(
+    "Luna - Convex",
+  );
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("combobox", { name: "Task engine" }));
+  await user.click(screen.getByRole("option", { name: "Luna - Agents API" }));
+  await user.click(screen.getByRole("combobox", { name: "Your Scout" }));
+  await user.click(screen.getByRole("option", { name: "Pip" }));
+  expect(remote.savePreferences.mock.calls).toEqual([
+    [{ lastTaskEngine: "agents_api" }],
+    [{ lastScoutId: "scout-1" }],
+  ]);
+  expect(remote.createThread).not.toHaveBeenCalled();
+  cleanup();
+  await openPlay();
+  expect(screen.getByRole("combobox", { name: "Your Scout" }).textContent).toContain("Pip");
+  expect(screen.getByRole("combobox", { name: "Task engine" }).textContent).toContain(
+    "Luna - Agents API",
+  );
 });
 
 test("site selection survives feed filters and removal keeps the draft without adding history", async () => {
@@ -303,6 +348,7 @@ test("site selection survives feed filters and removal keeps the draft without a
       scoutId: "scout-1",
       prompt: "Check the sign-up flow.",
       visibility: "public",
+      engine: "agents_api",
     }),
   );
 });
@@ -359,7 +405,7 @@ test.each(["INSUFFICIENT_CREDITS", "CREDIT_HOLD"] as const)(
   },
 );
 
-test("keeps generic failures generic even when their diagnostic mentions credits", async () => {
+test("shows the persisted error without treating embedded text as a credit failure", async () => {
   remote.queries.set("scout/activity:get", session({ status: "failed" }));
   remote.queries.set("tasks/sessions:controls", {
     state: { kind: "failed", error: 'Untrusted text: {"code":"INSUFFICIENT_CREDITS"}' },
@@ -371,7 +417,7 @@ test("keeps generic failures generic even when their diagnostic mentions credits
   await openPlay("/play?thread=game-thread");
   const failure = screen.getByRole("alert");
   expect(failure.textContent).toContain("Send a follow-up to continue.");
-  expect(failure.textContent).not.toContain("Untrusted text");
+  expect(failure.textContent).toContain('Untrusted text: {"code":"INSUFFICIENT_CREDITS"}');
   expect(failure.closest('[role="log"]')).toBeNull();
   expect(within(screen.getByRole("log")).queryByRole("alert")).toBeNull();
   expect(screen.queryByRole("link", { name: "View credits" })).toBeNull();
@@ -581,8 +627,9 @@ describe("task delivery and failure feedback", () => {
   });
 
   test.each(["chat", "walkthrough"])(
-    "an accepted failure is visible in %s with a normal follow-up",
+    "an accepted API failure shows its actual message in %s with diagnostic details and a normal follow-up",
     async (view) => {
+      const apiMessage = "500 upstream request failed: browser tool exceeded the service timeout.";
       remote.queries.set(
         "scout/activity:get",
         session({ status: "failed", purpose: { kind: "review" } }),
@@ -591,13 +638,16 @@ describe("task delivery and failure feedback", () => {
       remote.queries.set("tasks/sessions:controls", {
         state: {
           kind: "failed",
-          error: "Private provider diagnostic",
+          error: "Error: provider request failed\n    at advance (runtime.ts:20:1)",
           diagnostic: {
             category: "transient_service",
             operation: "advance",
             occurredAtMs: 1000,
             provider: "openai",
-            requestId: "private-request-id",
+            message: apiMessage,
+            httpStatus: 500,
+            providerCode: "server_error",
+            requestId: "req-api-error",
           },
         },
         pendingMessage: null,
@@ -609,14 +659,23 @@ describe("task delivery and failure feedback", () => {
       });
       await openPlay(`/tasks/game-thread?view=${view}`);
       const failure = screen.getByRole("alert");
-      expect(failure.textContent).toContain("AI service");
-      expect(failure.textContent).toContain("temporarily unavailable");
+      const message = within(failure).getByText(apiMessage);
+      expect(message.closest("details")).toBeNull();
+      expect(screen.queryByText(/AI service is temporarily unavailable/)).toBeNull();
       expect(failure.textContent).toContain("Send a follow-up to continue.");
       expect(failure.closest('[role="log"]')).toBeNull();
       expect(screen.getAllByRole("alert")).toHaveLength(1);
       expect(screen.queryByText("Scout couldn't finish this turn.")).toBeNull();
-      expect(document.body.textContent).not.toContain("Private provider diagnostic");
-      expect(document.body.textContent).not.toContain("private-request-id");
+      const details = within(failure).getByText("Details").closest("details");
+      expect(details?.open).toBe(false);
+      await userEvent.setup().click(within(failure).getByText("Details"));
+      expect(details?.open).toBe(true);
+      const diagnostic = details?.querySelector("pre")?.textContent;
+      expect(diagnostic).toContain('"httpStatus": 500');
+      expect(diagnostic).toContain('"providerCode": "server_error"');
+      expect(diagnostic).toContain('"requestId": "req-api-error"');
+      expect(diagnostic).toContain('"operation": "advance"');
+      expect(diagnostic).toContain("runtime.ts:20:1");
       expect(screen.queryByRole("button", { name: "Retry message" })).toBeNull();
       if (view === "walkthrough") {
         fireEvent.click(screen.getByRole("link", { name: "Send a follow-up to continue." }));
@@ -630,6 +689,39 @@ describe("task delivery and failure feedback", () => {
           message: "Continue from the last step.",
         }),
       );
+    },
+  );
+
+  test.each([
+    undefined,
+    {
+      category: "transient_service",
+      operation: "advance",
+      occurredAtMs: 1000,
+      provider: "openai",
+      httpStatus: 502,
+    },
+  ])(
+    "older failures show the persisted error with the stack in Details: %j",
+    async (diagnostic) => {
+      const error = "Error: 502 Bad gateway\n    at advance (runtime.ts:20:1)";
+      remote.queries.set("tasks/sessions:controls", {
+        state: { kind: "failed", error, ...omitNullish({ diagnostic }) },
+        pendingMessage: null,
+        active: false,
+        canSend: true,
+        canStop: false,
+        canRetryMessage: false,
+        busy: false,
+      });
+      await openPlay("/tasks/game-thread");
+      const failure = screen.getByRole("alert");
+      expect(within(failure).getByText("Error: 502 Bad gateway").closest("details")).toBeNull();
+      expect(failure.closest('[role="log"]')).toBeNull();
+      const details = within(failure).getByText("Details").closest("details");
+      expect(details?.open).toBe(false);
+      expect(details?.querySelector("pre")?.textContent).toContain("runtime.ts:20:1");
+      expect(screen.queryByText(/AI service is temporarily unavailable/)).toBeNull();
     },
   );
 
@@ -704,6 +796,26 @@ describe("task delivery and failure feedback", () => {
   });
 
   test("public viewers see generic failure without owner delivery details", async () => {
+    remote.queries.set("tasks/sessions:controls", {
+      state: {
+        kind: "failed",
+        error: "Owner-only persisted error",
+        diagnostic: {
+          category: "configuration",
+          operation: "advance",
+          occurredAtMs: 1000,
+          provider: "openai",
+          message: "Owner-only API message",
+          requestId: "owner-only-request-id",
+        },
+      },
+      pendingMessage: null,
+      active: false,
+      canSend: true,
+      canStop: false,
+      canRetryMessage: false,
+      busy: false,
+    });
     remote.queries.set(
       "scout/activity:get",
       session({
@@ -719,6 +831,9 @@ describe("task delivery and failure feedback", () => {
     expect(screen.queryByRole("group", { name: "Pending message" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Retry message" })).toBeNull();
     expect(screen.queryByText("Send a follow-up to continue.")).toBeNull();
+    expect(document.body.textContent).not.toContain("Owner-only");
+    expect(document.body.textContent).not.toContain("owner-only-request-id");
+    expect(screen.queryByText("Details")).toBeNull();
     expect(remote.queryCalls).toHaveBeenCalledWith("tasks/sessions:controls", "skip");
   });
 
@@ -1608,6 +1723,7 @@ describe("Play invitation", () => {
         scoutId: "scout-1",
         prompt: "Review example.com",
         visibility: "public",
+        engine: "agents_api",
       }),
     );
     await waitFor(() => expect(router.state.location.pathname).toBe("/tasks/game-thread"));
@@ -1634,6 +1750,8 @@ describe("Play invitation", () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole("combobox", { name: "Visibility" }));
     await user.click(screen.getByRole("option", { name: "Public" }));
+    await user.click(screen.getByRole("combobox", { name: "Task engine" }));
+    await user.click(screen.getByRole("option", { name: "Luna - Convex" }));
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
     await waitFor(() =>
       expect(remote.createThread).toHaveBeenCalledWith({
@@ -1641,6 +1759,7 @@ describe("Play invitation", () => {
         scoutId: "scout-1",
         prompt: invitation,
         visibility: "public",
+        engine: "convex_agent",
       }),
     );
     expect(
@@ -1749,6 +1868,7 @@ describe("Play invitation", () => {
       scoutId: "scout-2",
       visibility: "private",
       prompt: invitation,
+      engine: "agents_api",
     });
     expect(remote.sendManaged).not.toHaveBeenCalled();
     expect(await screen.findByRole("region", { name: "Conversation with Scout" })).toBeTruthy();
@@ -1804,6 +1924,7 @@ describe("Play invitation", () => {
         scoutId: "scout-1",
         visibility: "private",
         prompt: "Find us a cooperative game for tomorrow.",
+        engine: "agents_api",
       }),
     );
   });

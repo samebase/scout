@@ -1,7 +1,6 @@
 import { APICallError } from "ai";
 import { APIConnectionError, APIError } from "openai";
 import { afterEach, expect, it, vi } from "vite-plus/test";
-import { taskFailureMessage } from "../../shared/taskFailure";
 import { diagnoseTaskFailure, logTaskFailure } from "./providerFailure";
 
 afterEach(() => vi.restoreAllMocks());
@@ -9,8 +8,8 @@ afterEach(() => vi.restoreAllMocks());
 function openaiError(status: number, code: string, requestId = "req-safe") {
   return new APIError(
     status,
-    { code, message: "private provider body" },
-    "private provider body",
+    { code, message: "An internal error occurred." },
+    "An internal error occurred.",
     new Headers({ "x-request-id": requestId, cookie: "secret-cookie" }),
   );
 }
@@ -34,12 +33,13 @@ it.each([
     httpStatus: status,
     providerCode: code,
     requestId: "req-safe",
+    message: `${status} An internal error occurred.`,
   });
 });
 
-it("extracts AI SDK status and request ID without reading bodies or headers into the diagnostic", () => {
+it("preserves AI SDK errors without copying request bodies or response headers", () => {
   const error = new APICallError({
-    message: "private provider body",
+    message: "Model request failed",
     url: "https://private.example.test/private?prompt=secret",
     requestBodyValues: { prompt: "secret prompt" },
     statusCode: 503,
@@ -53,12 +53,13 @@ it("extracts AI SDK status and request ID without reading bodies or headers into
     provider: "convex_gateway",
     httpStatus: 503,
     requestId: "req-gateway",
+    message: "Model request failed",
   });
 });
 
-it("leaves local errors unattributed and keeps logs and user copy free of provider data", () => {
+it("preserves local errors without attributing them to a provider outage", () => {
   const diagnostic = diagnoseTaskFailure(
-    new Error("private tool input"),
+    new Error("Browser session has closed"),
     "observe",
     "convex_agent",
     345,
@@ -68,10 +69,11 @@ it("leaves local errors unattributed and keeps logs and user copy free of provid
     operation: "observe",
     occurredAtMs: 345,
     provider: "unknown",
+    message: "Browser session has closed",
   });
   expect(
     diagnoseTaskFailure(
-      new APIConnectionError({ message: "private network error" }),
+      new APIConnectionError({ message: "Connection reset" }),
       "advance",
       "agents_api",
       456,
@@ -88,9 +90,9 @@ it("leaves local errors unattributed and keeps logs and user copy free of provid
   });
   const serialized = JSON.stringify(log.mock.calls);
   expect(serialized).toContain('"deliveryStatus":"submitting"');
-  expect(serialized).not.toContain("private tool input");
+  expect(serialized).toContain("Browser session has closed");
   expect(serialized).not.toContain("secret-cookie");
-  expect(taskFailureMessage(diagnostic)).not.toContain("private");
+  expect(diagnostic.message).toBe("Browser session has closed");
 });
 
 it("drops unsafe or oversized provider identifiers", () => {

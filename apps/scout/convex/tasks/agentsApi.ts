@@ -48,27 +48,36 @@ export async function begin(
       });
     return false;
   }
-  const api = client();
+  const api = client(session._id);
   switch (args.command.kind) {
     case "start": {
       if (session.providerId) throw new Error("OpenAI session was already created");
       const resource = await runtimeTools(ctx, session, scout, null, purpose);
       try {
         const { data: created, response } = await api.beta.agents.sessions
-          .create({
-            agent: {
-              model: session.model,
-              reasoning: { effort: "max", summary: "auto" },
-              instructions: await taskInstructions(ctx, session, scout, purpose),
-              tools: [{ type: "web_search" }, ...(await functionDefinitions(resource.tools))],
+          .create(
+            {
+              agent: {
+                model: session.model,
+                reasoning: { effort: "max", summary: "auto" },
+                instructions: await taskInstructions(ctx, session, scout, purpose),
+                tools: [{ type: "web_search" }, ...(await functionDefinitions(resource.tools))],
+              },
+              environment: { type: "none" },
+              input: args.command.prompt,
+              stream: true,
+              metadata: { scoutSessionId: session._id },
             },
-            environment: { type: "none" },
-            input: args.command.prompt,
-            stream: true,
-            metadata: { scoutSessionId: session._id },
-          })
+            // Session creation has no documented idempotency key. A lost response
+            // must not automatically create another session running the same prompt.
+            { maxRetries: 0 },
+          )
           .withResponse();
-        await consumeOutput(ctx, created, session, new SessionOutput(), response.headers);
+        await consumeOutput(ctx, created, session, new SessionOutput(), {
+          method: "POST",
+          path: "/v1/agents/sessions",
+          headers: response.headers,
+        });
       } finally {
         await resource.dispose();
       }
@@ -98,15 +107,34 @@ export async function begin(
             }))
           )
             return;
-          await api.beta.agents.sessions.events.create(providerId, {
-            "Idempotency-Key": `${session._id}:${session.workflowId}`,
-            events: [
-              {
-                type: "agent.session.input.message",
-                input: [{ role: "user", content: [{ type: "input_text", text: message }] }],
-              },
-            ],
-          });
+          try {
+            await api.beta.agents.sessions.events.create(providerId, {
+              "Idempotency-Key": `${session._id}:${session.workflowId}`,
+              events: [
+                {
+                  type: "agent.session.input.message",
+                  input: [{ role: "user", content: [{ type: "input_text", text: message }] }],
+                },
+              ],
+            });
+          } catch (error) {
+            if (
+              session.pendingMessage &&
+              error instanceof OpenAI.APIError &&
+              (error.status === 400 ||
+                error.status === 401 ||
+                error.status === 403 ||
+                error.status === 404 ||
+                error.status === 422 ||
+                error.status === 429)
+            )
+              await ctx.runMutation(internal.tasks.sessions.messageDelivery, {
+                sessionId: session._id,
+                workflowId: session.pendingMessage.workflowId,
+                status: "rejected",
+              });
+            throw error;
+          }
           if (session.pendingMessage)
             await ctx.runMutation(internal.tasks.sessions.messageDelivery, {
               sessionId: session._id,
@@ -243,7 +271,11 @@ async function streamOutput(
       if (current.state.kind === "stopped") return;
       if (attempt === 0) await submit?.();
       try {
-        await consumeOutput(ctx, stream, session, output, response.headers);
+        await consumeOutput(ctx, stream, session, output, {
+          method: "GET",
+          path: `/v1/agents/sessions/${session.providerId}/events`,
+          headers: response.headers,
+        });
         return;
       } catch (error) {
         const diagnostic = diagnoseTaskFailure(error, "observe", "agents_api");
@@ -268,7 +300,7 @@ async function consumeOutput(
   stream: Stream<AgentSessionEvent>,
   session: Doc<"agentsApiSessions">,
   output: SessionOutput,
-  headers: Headers,
+  request: { method: "GET" | "POST"; path: string; headers: Headers },
 ) {
   const finished = new AbortController();
   const deadline = setTimeout(() => stream.controller.abort(), 45_000);
@@ -320,13 +352,13 @@ async function consumeOutput(
               toolType: event.item.type,
             });
           if (event.type === "error")
-            throw new OpenAI.APIError(undefined, event.error, event.error.message, headers);
+            throw new OpenAI.APIError(undefined, event.error, event.error.message, request.headers);
           if (event.type === "agent.session.failed")
             throw new OpenAI.APIError(
               undefined,
               undefined,
               event.session.error ?? "OpenAI session failed",
-              headers,
+              request.headers,
             );
           if (event.type === "agent.session.requires_action") return;
           if (
@@ -363,6 +395,19 @@ async function consumeOutput(
     };
     const results = await Promise.allSettled([consume(), watch()]);
     for (const result of results) if (result.status === "rejected") throw result.reason;
+  } catch (error) {
+    if (error instanceof OpenAI.APIError)
+      console.error("OpenAI event stream failed", {
+        sessionId: session._id,
+        method: request.method,
+        path: request.path,
+        diagnostic: diagnoseTaskFailure(
+          error,
+          request.method === "POST" ? "start" : "observe",
+          "agents_api",
+        ),
+      });
+    throw error;
   } finally {
     clearTimeout(deadline);
     finished.abort();
@@ -378,7 +423,7 @@ async function recordTurnUsage(
   billing: Infer<typeof agentsTurnBilling>,
 ): Promise<boolean> {
   if (billing.turnId === null) return false;
-  const api = client();
+  const api = client(sessionId);
   const turn = await api.beta.agents.sessions.turns.retrieve(billing.turnId, {
     session_id: billing.providerId,
   });
@@ -443,7 +488,7 @@ export const refreshUsage = internalAction({
       const billed = args.billing ? await recordTurnUsage(ctx, args.sessionId, args.billing) : true;
       let available = true;
       if (refreshDisplay && session.providerId) {
-        const remote = await client().beta.agents.sessions.retrieve(session.providerId);
+        const remote = await client(session._id).beta.agents.sessions.retrieve(session.providerId);
         const usage = readAgentsApiUsage(remote.usage);
         available = usage !== null;
         await ctx.runMutation(internal.tasks.sessions.update, {
@@ -484,7 +529,7 @@ export async function refreshExecution(
 ): Promise<null> {
   const providerId = session.providerId;
   if (!providerId) return null;
-  const api = client();
+  const api = client(session._id);
   const remote = await api.beta.agents.sessions.retrieve(providerId);
   await syncItems(
     ctx,
@@ -519,7 +564,7 @@ export async function advance(
     await ctx.runMutation(internal.tasks.sessions.scheduleCleanup, args);
     return false;
   }
-  const api = client();
+  const api = client(session._id);
   const providerId = session.providerId;
   if (!providerId) throw new Error("OpenAI session was not created");
   const { data: remote, response } = await api.beta.agents.sessions
@@ -603,6 +648,7 @@ export async function advance(
   const finishedResult = result;
   await streamOutput(ctx, api, { ...session, providerId }, () =>
     api.beta.agents.sessions.events.create(providerId, {
+      "Idempotency-Key": `${session._id}:${call.turn_id}:${call.call_id}`,
       events: [
         {
           type: "agent.session.input.tool_result",
@@ -620,7 +666,7 @@ export async function advance(
 
 export async function cancelExecution(_ctx: ActionCtx, session: Doc<"agentsApiSessions">) {
   if (!session.providerId) return;
-  const api = client();
+  const api = client(session._id);
   const remote = await api.beta.agents.sessions.retrieve(session.providerId);
   if (remote.status === "in_progress" || remote.status === "requires_action") {
     await api.beta.agents.sessions.events.create(session.providerId, {

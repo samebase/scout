@@ -95,15 +95,18 @@ async function setup() {
   });
   const items: AgentSessionItem[] = [];
   const events: unknown[] = [];
+  const inputKeys: Array<string | null> = [];
   const after: Array<string | null> = [];
   const provider = {
     items,
     events,
+    inputKeys,
     after,
     beforeRetrieve: vi.fn<() => Promise<void>>(async () => {}),
     httpFailure: vi.fn<() => Response | null>(() => null),
     beforeItems: vi.fn<() => Promise<void>>(async () => {}),
     onInput: vi.fn<() => void>(),
+    inputFailure: vi.fn<() => Response | null>(() => null),
     stream: vi.fn(
       () =>
         new ReadableStream<Uint8Array>({
@@ -169,6 +172,9 @@ async function setup() {
     if (request.method === "POST" && url.pathname.endsWith("/sessions/session-test/events")) {
       const body: unknown = await request.json();
       provider.events.push(body);
+      provider.inputKeys.push(request.headers.get("Idempotency-Key"));
+      const failure = provider.inputFailure();
+      if (failure) return failure;
       provider.onInput();
       return new Response(null, { status: 204 });
     }
@@ -230,6 +236,117 @@ const paidUsage: TokenUsage = {
   output_tokens_details: { reasoning_tokens: 0 },
 };
 
+it("retries a completed tool result with one identity and never reruns the tool", async () => {
+  vi.useRealTimers();
+  const t = await setup();
+  t.provider.inputFailure.mockReturnValueOnce(
+    Response.json(
+      { error: { code: "internal_error", message: "An internal error occurred." } },
+      { status: 500, headers: { "retry-after-ms": "1", "x-request-id": "req-tool-result" } },
+    ),
+  );
+  await expect(t.advance()).resolves.toBe(true);
+  // A later action may still read the same pending call before the provider updates it.
+  await expect(t.advance()).resolves.toBe(true);
+  expect(t.execute).toHaveBeenCalledOnce();
+  expect(t.provider.events).toHaveLength(3);
+  expect(t.provider.events[1]).toEqual(t.provider.events[0]);
+  expect(t.provider.events[2]).toEqual(t.provider.events[0]);
+  expect(t.provider.inputKeys).toEqual(Array(3).fill(`${t.sessionId}:turn-test:call-test`));
+  expect((await t.savedCall())?.result).toEqual({ kind: "success", output: '{"done":true}' });
+  expect((await t.session()).state.kind).toBe("running");
+});
+
+it("does not create duplicate sessions after an ambiguous creation failure", async () => {
+  const t = await setup();
+  const checkId = await t.backend.run(async (ctx) => {
+    await ctx.db.patch(t.sessionId, { providerId: undefined, browser: null });
+    return ctx.db.insert("agentsApiRequestChecks", {
+      sessionId: t.sessionId,
+      model: "gpt-5.6-luna",
+      prompt: "Check example.com",
+      kind: "initial",
+      state: { kind: "pending" },
+    });
+  });
+  const request = vi.fn<typeof fetch>(async () =>
+    Response.json({ error: { message: "Server error" } }, { status: 500 }),
+  );
+  vi.stubGlobal("fetch", request);
+  await expect(
+    t.backend.action(internal.tasks.runtime.begin, {
+      sessionId: t.sessionId,
+      command: { kind: "start", prompt: "Check example.com", checkId },
+    }),
+  ).rejects.toThrow("Server error");
+  expect(request).toHaveBeenCalledOnce();
+});
+
+it.each(["start", "observe"] as const)(
+  "logs an API error delivered inside the successful %s stream response",
+  async (phase) => {
+    const t = await setup();
+    const message = "MCP server 'managed-agents-functions' requires authentication.";
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const response = () =>
+      new Response(
+        `data: ${JSON.stringify({ type: "error", error: { code: "authentication_error", message } })}\n\n`,
+        {
+          status: phase === "start" ? 201 : 200,
+          headers: { "Content-Type": "text/event-stream", "x-request-id": "req-stream-error" },
+        },
+      );
+    if (phase === "start") {
+      const checkId = await t.backend.run(async (ctx) => {
+        await ctx.db.patch(t.sessionId, { providerId: undefined, browser: null });
+        return ctx.db.insert("agentsApiRequestChecks", {
+          sessionId: t.sessionId,
+          model: "gpt-5.6-luna",
+          prompt: "Check example.com",
+          kind: "initial",
+          state: { kind: "pending" },
+        });
+      });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn<typeof fetch>(async () => response()),
+      );
+      await expect(
+        t.backend.action(internal.tasks.runtime.begin, {
+          sessionId: t.sessionId,
+          command: { kind: "start", prompt: "Check example.com", checkId },
+        }),
+      ).rejects.toThrow(message);
+    } else {
+      const fetch = globalThis.fetch;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn<typeof fetch>(async (input, init) => {
+          const request = new Request(input, init);
+          return request.method === "GET" && new URL(request.url).pathname.endsWith("/events")
+            ? response()
+            : fetch(input, init);
+        }),
+      );
+      await expect(t.advance()).rejects.toThrow(message);
+    }
+    expect(log).toHaveBeenCalledWith(
+      "OpenAI event stream failed",
+      expect.objectContaining({
+        sessionId: t.sessionId,
+        method: phase === "start" ? "POST" : "GET",
+        path: phase === "start" ? "/v1/agents/sessions" : "/v1/agents/sessions/session-test/events",
+        diagnostic: expect.objectContaining({
+          message,
+          providerCode: "authentication_error",
+          requestId: "req-stream-error",
+        }),
+      }),
+    );
+    expect((await t.session()).state).toMatchObject({ kind: "failed", diagnostic: { message } });
+  },
+);
+
 it("records HTTP diagnostics with fresh delivery status while redacting the pending message", async () => {
   const t = await setup();
   const workflowId = await t.backend.run(async (ctx) => {
@@ -287,7 +404,7 @@ it("records HTTP diagnostics with fresh delivery status while redacting the pend
   expect(safeLog).toContain('"deliveryStatus":"submitting"');
   expect(safeLog).toContain('"providerSessionId":"session-test"');
   expect(safeLog).not.toContain("private pending message");
-  expect(safeLog).not.toContain("private response body");
+  expect(safeLog).toContain("private response body");
   expect(safeLog).not.toContain("private-cookie");
 });
 

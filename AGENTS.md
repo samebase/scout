@@ -51,6 +51,9 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
   developer being able to identify what failed and fix the affected records or operation.
 - Prefer explicit state, direct operations, and visible failures. Do not hide errors behind
   automatic repair, fallback values, or layers of recovery logic.
+- Show the actual API error to the task owner, with its status, error code, and request ID when
+  available. Do not replace it with a guessed outage or generic service-unavailable message.
+  Log the failed API method and path without logging credentials or request payloads.
 - Default to an explicit manual rerun after fixing the cause. Add automatic retries only for a
   concrete current need, with a clear limit and an inspectable failure when that limit is reached.
 - Reuse existing mechanisms and keep recovery state minimal. Do not introduce custom retry
