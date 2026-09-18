@@ -8,7 +8,7 @@ import { SdkError, type BrowserExecuteResponse, type Firecrawl } from "firecrawl
 import { setTimeout as wait } from "node:timers/promises";
 import { z } from "zod";
 import { browserActionValidator, browserOutcomeValidator } from "../browserModel";
-import { MAX_SCREENSHOT_NOTE_LENGTH } from "../agentsApi/screenshotModel";
+import { MAX_SCREENSHOT_NOTE_LENGTH } from "../tasks/screenshotModel";
 import { omitNullish } from "../../shared/omitNullish";
 import { type BrowserTarget } from "./browserTarget";
 import {

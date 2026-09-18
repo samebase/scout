@@ -99,12 +99,12 @@ type ScreenshotState =
   | { kind: "loading" }
   | {
       kind: "ready";
-      image: NonNullable<FunctionReturnType<typeof api.agentsApi.screenshots.imageUrl>>;
+      image: NonNullable<FunctionReturnType<typeof api.tasks.screenshots.imageUrl>>;
     }
   | { kind: "failed" };
 
 function ToolScreenshot({ id, label }: { id: Id<"agentsApiScreenshots">; label: string }) {
-  const imageUrl = useAction(api.agentsApi.screenshots.imageUrl);
+  const imageUrl = useAction(api.tasks.screenshots.imageUrl);
   const [state, setState] = useState<ScreenshotState>({ kind: "idle" });
 
   async function load() {

@@ -3,28 +3,19 @@ import type { SidebarLayoutStateController } from "@samebase/sidebars/SidebarLay
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useRef, type ReactNode } from "react";
 import { useScoutSidebarController } from "./scoutSidebarState";
-import { defaultChatPane } from "#lib/chat-search";
 
 export function ScoutSidebarProvider({ children }: { children: ReactNode }) {
   const controller = useScoutSidebarController();
-  const search = useSearch({ from: "/chats", shouldThrow: false });
   const agentsSearch = useSearch({ from: "/agents", shouldThrow: false });
   const navigate = useNavigate();
-  const state = search
+  const state = agentsSearch
     ? {
         ...controller.state,
-        leftDesktopOpen: search.chats !== "hidden",
-        rightDesktopOpen: search.inspector !== "hidden",
-        mobilePane: search.pane ?? defaultChatPane(search),
+        leftDesktopOpen: agentsSearch.sessions !== "hidden",
+        rightDesktopOpen: agentsSearch.inspector !== "hidden",
+        mobilePane: agentsSearch.pane ?? "main",
       }
-    : agentsSearch
-      ? {
-          ...controller.state,
-          leftDesktopOpen: agentsSearch.sessions !== "hidden",
-          rightDesktopOpen: agentsSearch.inspector !== "hidden",
-          mobilePane: agentsSearch.pane ?? "main",
-        }
-      : controller.state;
+    : controller.state;
   const latestState = useRef(state);
   latestState.current = state;
   const routeController: SidebarLayoutStateController = {
@@ -49,25 +40,6 @@ export function ScoutSidebarProvider({ children }: { children: ReactNode }) {
             sessions: next.leftDesktopOpen ? undefined : "hidden",
             inspector: next.rightDesktopOpen ? undefined : "hidden",
             pane: next.mobilePane === "main" ? undefined : next.mobilePane,
-          }),
-          replace: persistenceMode === "width_deferred",
-          resetScroll: false,
-        });
-      }
-      if (
-        search &&
-        (next.leftDesktopOpen !== current.leftDesktopOpen ||
-          next.rightDesktopOpen !== current.rightDesktopOpen ||
-          next.mobilePane !== current.mobilePane)
-      ) {
-        void navigate({
-          from: "/chats",
-          to: "/chats",
-          search: (previous) => ({
-            ...previous,
-            chats: next.leftDesktopOpen ? undefined : "hidden",
-            inspector: next.rightDesktopOpen ? undefined : "hidden",
-            pane: next.mobilePane === defaultChatPane(previous) ? undefined : next.mobilePane,
           }),
           replace: persistenceMode === "width_deferred",
           resetScroll: false,

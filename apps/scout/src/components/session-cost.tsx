@@ -8,13 +8,27 @@ const money = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 4,
 });
 const number = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
+const modelPricingCopy = {
+  standard_short_context_excluding_cache_writes: {
+    label: "Model estimate",
+    note: "Estimated OpenAI cost; Firecrawl billed separately in credits.",
+    detail:
+      "Standard model rates, excluding cache-write premiums. Unpriced charges are excluded from the subtotal.",
+  },
+  provider_reported: {
+    label: "Model cost",
+    note: "Provider-reported model cost; Firecrawl billed separately in credits.",
+    detail: "Provider-reported model charges. Unpriced charges are excluded from the subtotal.",
+  },
+};
 
 export function SessionCost({
   session,
 }: {
-  session: FunctionReturnType<typeof api.agentsApi.sessions.cost>;
+  session: FunctionReturnType<typeof api.tasks.sessions.cost>;
 }) {
   const { cost, usage } = session;
+  const pricing = modelPricingCopy[cost.modelPricingBasis];
   const checksCost = session.checks.reduce((sum, check) => sum + (check.cost ?? 0), 0);
   const checksComplete = session.checks.every((check) => check.cost !== null);
   const pricedChecks = session.checks.some((check) => check.cost !== null);
@@ -52,7 +66,7 @@ export function SessionCost({
             </dd>
           </>
         )}
-        <dt>Model estimate</dt>
+        <dt>{pricing.label}</dt>
         <dd className="text-right tabular-nums">
           {cost.modelEstimateUsd === null ? "Unpriced" : money.format(cost.modelEstimateUsd)}
         </dd>
@@ -94,11 +108,8 @@ export function SessionCost({
           </>
         )}
       </dl>
-      <p
-        className="pb-2 text-muted-foreground"
-        title="Standard model rates, excluding cache-write premiums. Unpriced charges are excluded from the subtotal."
-      >
-        Estimated OpenAI cost; Firecrawl billed separately in credits.
+      <p className="pb-2 text-muted-foreground" title={pricing.detail}>
+        {pricing.note}
       </p>
     </details>
   );

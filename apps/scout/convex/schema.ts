@@ -1,9 +1,10 @@
 import { authTables } from "@convex-dev/auth/server";
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
-import { requestCheckRecord } from "./agentsApi/requestCheckModel";
-import { siteProfile, siteResearchRecord } from "./agentsApi/siteResearchModel";
-import { screenshotRecord, walkthroughContent } from "./agentsApi/screenshotModel";
+import { requestCheckRecord } from "./tasks/requestCheckModel";
+import { convexContextRecord } from "./tasks/convexAgentModel";
+import { siteProfile, siteResearchRecord } from "./tasks/siteResearchModel";
+import { screenshotRecord, walkthroughContent } from "./tasks/screenshotModel";
 import { vWorkflowId } from "@convex-dev/workflow";
 import {
   browserActionValidator,
@@ -37,7 +38,8 @@ import {
   sessionItem,
   sessionState,
   sessionUsage,
-} from "./agentsApi/model";
+  taskEngine,
+} from "./tasks/model";
 
 const accountObservationFieldsValidator = v.object({
   threadId: v.string(),
@@ -77,6 +79,7 @@ const siteTask = v.object({ chatId: v.id("scoutChats"), createdAt: v.number() })
 
 export default defineSchema({
   ...authTables,
+  taskConvexContexts: defineTable(convexContextRecord).index("by_session_id", ["sessionId"]),
   agentsApiSiteResearch: defineTable(siteResearchRecord).index("by_session_id", ["sessionId"]),
   agentsApiScreenshots: defineTable(screenshotRecord)
     .index("by_session_id_and_browser_sequence_and_operation_sequence", [
@@ -89,6 +92,8 @@ export default defineSchema({
     .index("by_session_id", ["sessionId"])
     .index("by_session_id_and_kind", ["sessionId", "kind"]),
   agentsApiSessions: defineTable({
+    // Existing managed sessions predate the engine selector.
+    engine: v.optional(taskEngine),
     userId: v.id("users"),
     scoutId: v.id("scouts"),
     scoutName: v.string(),
@@ -105,6 +110,8 @@ export default defineSchema({
     nextSequence: v.number(),
     browser: v.union(browserHandle, v.null()),
     usage: v.union(sessionUsage, v.null()),
+    reportedModelUsd: v.optional(v.union(v.number(), v.null())),
+    modelUsageIncomplete: v.optional(v.boolean()),
     walkthrough: v.optional(walkthroughContent),
   })
     .index("by_user_id", ["userId"])

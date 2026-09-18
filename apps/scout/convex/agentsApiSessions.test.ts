@@ -29,37 +29,40 @@ async function setup() {
     return { userId, scoutId };
   });
   const owner = backend.withIdentity({ subject: ids.userId });
-  const sessionId = await owner.mutation(api.agentsApi.sessions.start, {
+  const sessionId = await owner.mutation(api.tasks.sessions.start, {
     scoutId: ids.scoutId,
     prompt: "Explore example.com",
+    engine: "agents_api",
   });
   return { backend, owner, ...ids, sessionId };
 }
 
 it("allows admin inspection and holds the Scout for both runtimes", async () => {
   const { backend, owner, scoutId, sessionId } = await setup();
-  await expect(backend.query(api.agentsApi.sessions.get, { sessionId })).rejects.toThrow();
+  await expect(backend.query(api.tasks.sessions.get, { sessionId })).rejects.toThrow();
   const otherId = await backend.run((ctx) =>
     insertTestAccount(ctx, { email: "nicu@samebase.com" }),
   );
   expect(
-    await backend
-      .withIdentity({ subject: otherId })
-      .query(api.agentsApi.sessions.get, { sessionId }),
+    await backend.withIdentity({ subject: otherId }).query(api.tasks.sessions.get, { sessionId }),
   ).toMatchObject({ _id: sessionId, canControl: false });
   await expect(
-    owner.mutation(api.agentsApi.sessions.start, { scoutId, prompt: "Another run" }),
+    owner.mutation(api.tasks.sessions.start, {
+      scoutId,
+      prompt: "Another run",
+      engine: "agents_api",
+    }),
   ).rejects.toThrow("already working");
   expect(await backend.run((ctx) => scoutIsWorking(ctx, scoutId))).toBe(true);
-  await owner.mutation(api.agentsApi.sessions.stop, { sessionId });
+  await owner.mutation(api.tasks.sessions.stop, { sessionId });
   expect(await backend.run((ctx) => scoutIsWorking(ctx, scoutId))).toBe(true);
-  await backend.mutation(internal.agentsApi.sessions.update, { sessionId, active: false });
+  await backend.mutation(internal.tasks.sessions.update, { sessionId, active: false });
   expect(await backend.run((ctx) => scoutIsWorking(ctx, scoutId))).toBe(false);
 });
 
 it("lists and inspects a member's private Review without granting session control", async () => {
   const { backend, owner: admin, scoutId, sessionId: previousSessionId } = await setup();
-  await backend.mutation(internal.agentsApi.sessions.update, {
+  await backend.mutation(internal.tasks.sessions.update, {
     sessionId: previousSessionId,
     state: { kind: "stopped" },
     active: false,
@@ -74,24 +77,24 @@ it("lists and inspects a member's private Review without granting session contro
     prompt: "Try example.com",
     visibility: "private",
   });
-  const firstPage = await admin.query(api.agentsApi.sessions.list, {
+  const firstPage = await admin.query(api.tasks.sessions.list, {
     paginationOpts: { numItems: 1, cursor: null },
   });
   const sessionId = firstPage.page[0]?._id;
   if (!sessionId) throw new Error("Missing Review session");
   expect(sessionId).toBe(threadId);
   expect(firstPage.isDone).toBe(false);
-  const nextPage = await admin.query(api.agentsApi.sessions.list, {
+  const nextPage = await admin.query(api.tasks.sessions.list, {
     paginationOpts: { numItems: 1, cursor: firstPage.continueCursor },
   });
   expect(nextPage.page.map((session) => session._id)).toEqual([previousSessionId]);
-  await backend.mutation(internal.agentsApi.sessions.saveItems, {
+  await backend.mutation(internal.tasks.sessions.saveItems, {
     sessionId,
     items: [
       { providerItemId: "reply", kind: "assistant", text: "I opened the site.", details: "{}" },
     ],
   });
-  await backend.mutation(internal.agentsApi.browsers.open, {
+  await backend.mutation(internal.tasks.browsers.open, {
     sessionId,
     browser: {
       providerSessionId: "browser-1",
@@ -101,16 +104,16 @@ it("lists and inspects a member's private Review without granting session contro
       currentUrl: null,
     },
   });
-  expect(await admin.query(api.agentsApi.sessions.get, { sessionId })).toMatchObject({
+  expect(await admin.query(api.tasks.sessions.get, { sessionId })).toMatchObject({
     canControl: false,
     browser: { liveViewUrl: "https://example.com/view", interactiveLiveViewUrl: null },
   });
-  const items = await admin.query(api.agentsApi.sessions.listItems, {
+  const items = await admin.query(api.tasks.sessions.listItems, {
     sessionId,
     paginationOpts: { numItems: 10, cursor: null },
   });
   expect(items.page[0]?.text).toBe("I opened the site.");
-  const browsers = await admin.query(api.agentsApi.sessions.listBrowsers, { sessionId });
+  const browsers = await admin.query(api.tasks.sessions.listBrowsers, { sessionId });
   expect(browsers[0]).toMatchObject({
     liveViewUrl: "https://example.com/view",
     interactiveLiveViewUrl: null,
@@ -119,33 +122,33 @@ it("lists and inspects a member's private Review without granting session contro
 
   for (const viewer of [backend, member]) {
     await expect(
-      viewer.query(api.agentsApi.sessions.list, {
+      viewer.query(api.tasks.sessions.list, {
         paginationOpts: { numItems: 10, cursor: null },
       }),
     ).rejects.toThrow("Not authorized");
-    await expect(viewer.query(api.agentsApi.sessions.get, { sessionId })).rejects.toThrow(
+    await expect(viewer.query(api.tasks.sessions.get, { sessionId })).rejects.toThrow(
       "Not authorized",
     );
     await expect(
-      viewer.query(api.agentsApi.sessions.listItems, {
+      viewer.query(api.tasks.sessions.listItems, {
         sessionId,
         paginationOpts: { numItems: 10, cursor: null },
       }),
     ).rejects.toThrow("Not authorized");
-    await expect(viewer.query(api.agentsApi.sessions.listBrowsers, { sessionId })).rejects.toThrow(
+    await expect(viewer.query(api.tasks.sessions.listBrowsers, { sessionId })).rejects.toThrow(
       "Not authorized",
     );
   }
   await expect(
-    admin.mutation(api.agentsApi.sessions.send, { sessionId, message: "Continue" }),
+    admin.mutation(api.tasks.sessions.send, { sessionId, message: "Continue" }),
   ).rejects.toThrow("Session not found");
   await expect(
-    admin.mutation(api.agentsApi.sessions.resume, { sessionId, callId: "call", turnId: "turn" }),
+    admin.mutation(api.tasks.sessions.resume, { sessionId, callId: "call", turnId: "turn" }),
   ).rejects.toThrow("Session not found");
-  await expect(admin.mutation(api.agentsApi.sessions.stop, { sessionId })).rejects.toThrow(
+  await expect(admin.mutation(api.tasks.sessions.stop, { sessionId })).rejects.toThrow(
     "Session not found",
   );
-  await expect(member.mutation(api.agentsApi.sessions.stop, { sessionId })).resolves.toBeNull();
+  await expect(member.mutation(api.tasks.sessions.stop, { sessionId })).resolves.toBeNull();
 });
 
 it("lets a member read their Review costs without Lab access or other session details", async () => {
@@ -168,8 +171,8 @@ it("lets a member read their Review costs without Lab access or other session de
     return userId;
   });
   const member = backend.withIdentity({ subject: memberId });
-  const costs = await member.query(api.agentsApi.sessions.cost, { sessionId });
-  const inspected = await admin.query(api.agentsApi.sessions.get, { sessionId });
+  const costs = await member.query(api.tasks.sessions.cost, { sessionId });
+  const inspected = await admin.query(api.tasks.sessions.get, { sessionId });
   expect(costs).toEqual({
     cost: inspected.cost,
     usage: inspected.usage,
@@ -178,48 +181,48 @@ it("lets a member read their Review costs without Lab access or other session de
   });
   expect(costs.cost.modelEstimateUsd).toBeCloseTo(0.0008);
   expect(costs.checks).toEqual([{ cost: 0 }]);
-  await expect(member.query(api.agentsApi.sessions.get, { sessionId })).rejects.toThrow(
+  await expect(member.query(api.tasks.sessions.get, { sessionId })).rejects.toThrow(
     "Not authorized",
   );
-  await expect(backend.query(api.agentsApi.sessions.cost, { sessionId })).rejects.toThrow();
-  await expect(admin.query(api.agentsApi.sessions.cost, { sessionId })).rejects.toThrow(
+  await expect(backend.query(api.tasks.sessions.cost, { sessionId })).rejects.toThrow();
+  await expect(admin.query(api.tasks.sessions.cost, { sessionId })).rejects.toThrow(
     "Session not found",
   );
   await backend.run((ctx) => ctx.db.patch(memberId, { isApproved: false }));
-  await expect(member.query(api.agentsApi.sessions.cost, { sessionId })).rejects.toThrow(
+  await expect(member.query(api.tasks.sessions.cost, { sessionId })).rejects.toThrow(
     "Not authorized",
   );
 });
 
 it("does not revive a stopped session or dispatch tools after stopping", async () => {
   const { backend, owner, sessionId } = await setup();
-  await owner.mutation(api.agentsApi.sessions.stop, { sessionId });
-  await backend.mutation(internal.agentsApi.sessions.update, {
+  await owner.mutation(api.tasks.sessions.stop, { sessionId });
+  await backend.mutation(internal.tasks.sessions.update, {
     sessionId,
     state: { kind: "running" },
   });
-  expect((await owner.query(api.agentsApi.sessions.get, { sessionId })).state.kind).toBe("stopped");
+  expect((await owner.query(api.tasks.sessions.get, { sessionId })).state.kind).toBe("stopped");
   await expect(
-    backend.mutation(internal.agentsApi.sessions.claimCall, { sessionId, callId: "call" }),
+    backend.mutation(internal.tasks.sessions.claimCall, { sessionId, callId: "call" }),
   ).rejects.toThrow("stopped");
 });
 
 it("keeps an explicit stop when an in-flight workflow fails and still schedules cleanup", async () => {
   const { backend, owner, sessionId, scoutId } = await setup();
-  const session = await backend.query(internal.agentsApi.sessions.cleanupResources, { sessionId });
+  const session = await backend.query(internal.tasks.sessions.cleanupResources, { sessionId });
   if (!session.workflowId) throw new Error("Expected a started workflow");
-  await owner.mutation(api.agentsApi.sessions.stop, { sessionId });
+  await owner.mutation(api.tasks.sessions.stop, { sessionId });
   await expect(
-    backend.mutation(internal.agentsApi.sessions.claimCall, { sessionId, callId: "late-call" }),
+    backend.mutation(internal.tasks.sessions.claimCall, { sessionId, callId: "late-call" }),
   ).rejects.toThrow("Session stopped before tool dispatch");
 
-  await backend.mutation(internal.agentsApi.lifecycle.onComplete, {
+  await backend.mutation(internal.tasks.lifecycle.onComplete, {
     workflowId: session.workflowId,
     context: { sessionId },
     result: { kind: "failed", error: "Session stopped before tool dispatch" },
   });
 
-  const stopped = await backend.query(internal.agentsApi.sessions.cleanupResources, { sessionId });
+  const stopped = await backend.query(internal.tasks.sessions.cleanupResources, { sessionId });
   expect(stopped.state).toEqual({ kind: "stopped" });
   expect(stopped.cleanupJobId).toBeDefined();
   expect(await backend.run((ctx) => scoutIsWorking(ctx, scoutId))).toBe(true);
@@ -227,49 +230,49 @@ it("keeps an explicit stop when an in-flight workflow fails and still schedules 
 
 it("reports workflow errors when the owner has not stopped the session", async () => {
   const { backend, sessionId } = await setup();
-  const session = await backend.query(internal.agentsApi.sessions.cleanupResources, { sessionId });
+  const session = await backend.query(internal.tasks.sessions.cleanupResources, { sessionId });
   if (!session.workflowId) throw new Error("Expected a started workflow");
 
-  await backend.mutation(internal.agentsApi.lifecycle.onComplete, {
+  await backend.mutation(internal.tasks.lifecycle.onComplete, {
     workflowId: session.workflowId,
     context: { sessionId },
     result: { kind: "failed", error: "Provider unavailable" },
   });
 
-  const failed = await backend.query(internal.agentsApi.sessions.cleanupResources, { sessionId });
+  const failed = await backend.query(internal.tasks.sessions.cleanupResources, { sessionId });
   expect(failed.state).toEqual({ kind: "failed", error: "Provider unavailable" });
   expect(failed.cleanupJobId).toBeDefined();
 });
 
 it("updates a streamed item without duplicating history and remembers tool results", async () => {
   const { backend, owner, sessionId } = await setup();
-  await backend.mutation(internal.agentsApi.sessions.update, {
+  await backend.mutation(internal.tasks.sessions.update, {
     sessionId,
     state: { kind: "running" },
   });
   const item = { providerItemId: "message", kind: "assistant", text: "Opening", details: "{}" };
-  await backend.mutation(internal.agentsApi.sessions.saveItems, { sessionId, items: [item] });
-  await backend.mutation(internal.agentsApi.sessions.saveItems, {
+  await backend.mutation(internal.tasks.sessions.saveItems, { sessionId, items: [item] });
+  await backend.mutation(internal.tasks.sessions.saveItems, {
     sessionId,
     items: [{ ...item, text: "Opened the site" }],
     cursor: "message",
   });
-  const history = await owner.query(api.agentsApi.sessions.listItems, {
+  const history = await owner.query(api.tasks.sessions.listItems, {
     sessionId,
     paginationOpts: { numItems: 10, cursor: null },
   });
   expect(history.page).toHaveLength(1);
   expect(history.page[0]?.text).toBe("Opened the site");
-  const first = await backend.mutation(internal.agentsApi.sessions.claimCall, {
+  const first = await backend.mutation(internal.tasks.sessions.claimCall, {
     sessionId,
     callId: "send-email",
   });
   expect(first.fresh).toBe(true);
-  await backend.mutation(internal.agentsApi.sessions.finishCall, {
+  await backend.mutation(internal.tasks.sessions.finishCall, {
     callId: first.call._id,
     result: { kind: "success", output: "sent" },
   });
-  const repeated = await backend.mutation(internal.agentsApi.sessions.claimCall, {
+  const repeated = await backend.mutation(internal.tasks.sessions.claimCall, {
     sessionId,
     callId: "send-email",
   });
@@ -279,55 +282,55 @@ it("updates a streamed item without duplicating history and remembers tool resul
 
 it("does not schedule cleanup over an idle session's next send", async () => {
   const { backend, owner, sessionId } = await setup();
-  await backend.mutation(internal.agentsApi.sessions.update, {
+  await backend.mutation(internal.tasks.sessions.update, {
     sessionId,
     providerId: "provider-session",
     active: false,
     state: { kind: "idle" },
   });
-  const before = await backend.query(internal.agentsApi.sessions.cleanupResources, { sessionId });
-  await owner.mutation(api.agentsApi.sessions.stop, { sessionId });
-  const stopped = await backend.query(internal.agentsApi.sessions.cleanupResources, { sessionId });
+  const before = await backend.query(internal.tasks.sessions.cleanupResources, { sessionId });
+  await owner.mutation(api.tasks.sessions.stop, { sessionId });
+  const stopped = await backend.query(internal.tasks.sessions.cleanupResources, { sessionId });
   expect(stopped.workflowId).toBe(before.workflowId);
   expect(stopped.active).toBe(false);
-  await owner.mutation(api.agentsApi.sessions.send, { sessionId, message: "Next task" });
-  const sent = await backend.query(internal.agentsApi.sessions.cleanupResources, { sessionId });
+  await owner.mutation(api.tasks.sessions.send, { sessionId, message: "Next task" });
+  const sent = await backend.query(internal.tasks.sessions.cleanupResources, { sessionId });
   expect(sent.workflowId).not.toBe(before.workflowId);
   expect(sent.active).toBe(true);
 });
 
 it("keeps the Scout reserved while stopping a handoff and schedules cleanup only once", async () => {
   const { backend, owner, sessionId } = await setup();
-  await backend.mutation(internal.agentsApi.sessions.update, {
+  await backend.mutation(internal.tasks.sessions.update, {
     sessionId,
     providerId: "provider-session",
     state: { kind: "waiting", message: "Captcha", callId: "call", turnId: "turn" },
   });
-  const before = await backend.query(internal.agentsApi.sessions.cleanupResources, { sessionId });
-  await owner.mutation(api.agentsApi.sessions.stop, { sessionId });
-  const stopped = await backend.query(internal.agentsApi.sessions.cleanupResources, { sessionId });
+  const before = await backend.query(internal.tasks.sessions.cleanupResources, { sessionId });
+  await owner.mutation(api.tasks.sessions.stop, { sessionId });
+  const stopped = await backend.query(internal.tasks.sessions.cleanupResources, { sessionId });
   expect(stopped.workflowId).toBe(before.workflowId);
   expect(stopped.cleanupJobId).toBeDefined();
   expect(stopped.active).toBe(true);
   await expect(
-    owner.mutation(api.agentsApi.sessions.send, { sessionId, message: "Next task" }),
+    owner.mutation(api.tasks.sessions.send, { sessionId, message: "Next task" }),
   ).rejects.toThrow("Stop the current run");
-  await owner.mutation(api.agentsApi.sessions.stop, { sessionId });
+  await owner.mutation(api.tasks.sessions.stop, { sessionId });
   expect(
-    (await backend.query(internal.agentsApi.sessions.cleanupResources, { sessionId })).cleanupJobId,
+    (await backend.query(internal.tasks.sessions.cleanupResources, { sessionId })).cleanupJobId,
   ).toBe(stopped.cleanupJobId);
 });
 
 it("does not launch a second cleanup while failed-workflow cleanup owns the Scout", async () => {
   const { backend, owner, sessionId } = await setup();
-  await backend.mutation(internal.agentsApi.sessions.update, {
+  await backend.mutation(internal.tasks.sessions.update, {
     sessionId,
     state: { kind: "failed", error: "Provider failed" },
   });
-  await backend.mutation(internal.agentsApi.sessions.scheduleCleanup, { sessionId });
-  const before = await backend.query(internal.agentsApi.sessions.cleanupResources, { sessionId });
-  await owner.mutation(api.agentsApi.sessions.stop, { sessionId });
-  const stopped = await backend.query(internal.agentsApi.sessions.cleanupResources, { sessionId });
+  await backend.mutation(internal.tasks.sessions.scheduleCleanup, { sessionId });
+  const before = await backend.query(internal.tasks.sessions.cleanupResources, { sessionId });
+  await owner.mutation(api.tasks.sessions.stop, { sessionId });
+  const stopped = await backend.query(internal.tasks.sessions.cleanupResources, { sessionId });
   expect(stopped.workflowId).toBe(before.workflowId);
   expect(stopped.cleanupJobId).toBe(before.cleanupJobId);
   expect(stopped.active).toBe(true);
@@ -337,7 +340,7 @@ it.each(["active", "closing"] as const)(
   "blocks Agents API start/send while a legacy browser is %s without a pending turn",
   async (kind) => {
     const { backend, owner, scoutId, sessionId } = await setup();
-    await backend.mutation(internal.agentsApi.sessions.update, {
+    await backend.mutation(internal.tasks.sessions.update, {
       sessionId,
       providerId: "provider-session",
       active: false,
@@ -372,14 +375,18 @@ it.each(["active", "closing"] as const)(
       { availability, busy: true },
     ]);
     await expect(
-      owner.mutation(api.agentsApi.sessions.start, { scoutId, prompt: "New session" }),
+      owner.mutation(api.tasks.sessions.start, {
+        scoutId,
+        prompt: "New session",
+        engine: "agents_api",
+      }),
     ).rejects.toThrow("existing browser");
     await expect(
-      owner.mutation(api.agentsApi.sessions.send, { sessionId, message: "Next task" }),
+      owner.mutation(api.tasks.sessions.send, { sessionId, message: "Next task" }),
     ).rejects.toThrow("existing browser");
     await backend.run(async (ctx) => ctx.db.delete("scoutBrowserSessions", browserId));
     await expect(
-      owner.mutation(api.agentsApi.sessions.send, { sessionId, message: "Next task" }),
+      owner.mutation(api.tasks.sessions.send, { sessionId, message: "Next task" }),
     ).resolves.toBeNull();
   },
 );

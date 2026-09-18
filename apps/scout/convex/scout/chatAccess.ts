@@ -1,10 +1,8 @@
-import type { ActionCtx, MutationCtx, QueryCtx } from "../_generated/server";
+import type { QueryCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
-import { MAX_BROWSER_OPERATIONS } from "../browserModel";
-import { scoutAgent } from "./agent";
 import { requireUserPermission, type ViewerAccess } from "../access";
 import { canAccess } from "../../shared/accessModel";
-import { getInitialCheck } from "../agentsApi/requestChecks";
+import { getInitialCheck } from "../tasks/requestChecks";
 
 export async function isPublicChat(ctx: Pick<QueryCtx, "db">, chat: Doc<"scoutChats">) {
   if (chat.visibility !== "public") return false;
@@ -49,35 +47,6 @@ export async function requireRunnableThread(ctx: Pick<QueryCtx, "db">, threadId:
   if (!chat) throw new Error("Chat not found");
   await requireUserPermission(ctx, chat.userId, chatPermission(chat.purpose));
   return chat;
-}
-
-type AgentThreadContext = QueryCtx | MutationCtx | ActionCtx;
-
-export async function browserReadyForTransfer(
-  ctx: QueryCtx,
-  sessionId: Id<"scoutBrowserSessions">,
-) {
-  const operations = await ctx.db
-    .query("scoutBrowserOperations")
-    .withIndex("by_session_id_and_sequence", (q) => q.eq("sessionId", sessionId))
-    .take(MAX_BROWSER_OPERATIONS);
-  return operations.every(
-    ({ state }) =>
-      state.kind !== "prepared" &&
-      (state.kind !== "indeterminate_after_dispatch" || state.executionFinished === true),
-  );
-}
-
-export async function requireOwnedAgentThread(
-  ctx: AgentThreadContext,
-  threadId: string,
-  userId: string,
-) {
-  const thread = await scoutAgent.getThreadMetadata(ctx, { threadId });
-  if (thread.userId !== userId) {
-    throw new Error("Thread not found");
-  }
-  return thread;
 }
 
 export async function scoutIsWorking(ctx: QueryCtx, scoutId: Id<"scouts">) {

@@ -2,7 +2,7 @@
 
 - **Project:** Scout
 - **Event:** Convex All Gas Hackathon
-- **What it does:** Offers browser play and product reviews with persistent Scouts, public activity, and a lab for chats, connected accounts, and replay.
+- **What it does:** Offers browser play and product reviews with persistent Scouts, public activity, connected accounts, and replay.
 - **Live app:** https://usable-spider-599.eu-west-1.convex.site
 - **Repo:** private
 - **Frontend:** Convex static hosting
@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-17T22:34:07Z
+- **Last updated:** 2026-09-18T09:06:15Z
 
 ## Log
 
@@ -1370,10 +1370,18 @@ An owner-authorized Convex query returns only cost data without granting Lab acc
 Agents links to the member review while preserving Chat or Walkthrough
 (`apps/scout/convex/agentsApi/sessions.ts`, `apps/scout/src/components/session-cost.tsx`).
 
-### 2026-09-17 - v223 - working tree
+### 2026-09-17 - v223 - d0fb0e8
 
 Members can see each Scout's connected services, account identifiers, login methods, and
 authentication status in the existing Scout directory and profile. Convex uses the existing
 view permission for account reads and keeps editing restricted to admins. Account lists omit
 private task references and observed URLs while retaining that evidence in storage
 (`apps/scout/convex/scout/serviceAccounts.ts`, `apps/scout/src/components/scout-service-accounts.tsx`).
+
+### 2026-09-18 - v224 - working tree
+
+Admins can compare Agents API and Convex Agent tasks in one Agents view; member tasks use Agents API.
+Both engines share checks, site research, browser tools, evidence, permissions, and cost display.
+Convex summarizes older messages, limits repeat reads, and keeps completed-step costs visible.
+Play tasks retain activity phases and game guidance; duplicate Lab execution and UI are retired
+(`apps/scout/convex/tasks/`, `apps/scout/src/tasks/`).

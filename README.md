@@ -1,7 +1,7 @@
 # Scout
 
-Explore Scout Play for browser games, Scout Review for testing products, and the lab
-for connected accounts and detailed agent work.
+Explore Scout Play for browser games, Scout Review for testing products, and Agents
+for inspecting tasks and comparing execution engines.
 
 Live app: [usable-spider-599.eu-west-1.convex.site](https://usable-spider-599.eu-west-1.convex.site)
 
@@ -27,7 +27,9 @@ The public home page shows one activity feed with All, Play, and Review filters.
 `/play` and `/review` use the same conversation interface, opening existing chats with `?thread=...`.
 Approved members can start private or public chats with an available Scout; signup does not create
 or assign Scouts. Guests can watch public conversations and live browsers or replays.
-`/chats` is the lab for detailed transcripts, replays, and model controls. See
+`/agents` provides one admin interface for tasks using OpenAI Agents API or the Convex Agent
+component. Both share task checks, research, tools, walkthroughs, and replay. Member tasks use
+Agents API by default; admins choose the engine when creating a task. See
 [`docs/play-product-direction.md`](./docs/play-product-direction.md) for the product options and research.
 
 Anyone can create an account and verify their email. `users.isApproved` is the only stored
@@ -37,19 +39,19 @@ The account model, permission boundaries, and rollout procedure are in
 [`docs/access-control-rfc.md`](./docs/access-control-rfc.md), with the Samebase source findings in
 [`docs/account-approval-research.md`](./docs/account-approval-research.md).
 
-Product pages and local behavior live in `apps/scout/src/products/`; Review uses the managed
-agent interface in `apps/scout/src/agents-api/`.
+Product pages live in `apps/scout/src/products/`; the admin task interface lives in
+`apps/scout/src/tasks/`, backed by the shared pipeline in `apps/scout/convex/tasks/`.
 Tailwind utilities style the UI, with shared class variants in `apps/scout/src/products/ui.ts`.
 Font declarations and Tailwind theme tokens live in `apps/scout/src/style.css`. Each product keeps its own
 identity; separate frontends would still need their own routing and deployment setup.
 
 Scout provides private chats with persistent Scout identities. A chat can use the Scout's
 AgentMail inbox to read, send, and reply to email, plus its Firecrawl browser profile and accounts
-across multiple services. Choose Qwen, Luna, or Manual, and inspect tool calls, Live/Replay, usage,
-and human handoffs in the same workspace.
+across multiple services. Inspect tool calls, live browsers, replay, usage, and human handoffs
+in the same task interface.
 
-Each chat also has a [Bash workspace](./docs/workspaces.md) with a file tree, text preview, downloads,
-and terminal. Plain JavaScript and TypeScript run with `js-exec`, using standard APIs and no npm.
+Each task also has a [Bash workspace](./docs/workspaces.md) with a file tree, text preview, and downloads.
+The agent can run JavaScript and TypeScript with `js-exec`, using standard APIs and no npm.
 The agent shares those files with the user. It runs inside Convex with file bytes in
 private Cloudflare R2 storage. Development and Preview defaults are configured; existing or
 isolated deployments need the [four R2 environment variables](./docs/workspaces.md#connect-r2).

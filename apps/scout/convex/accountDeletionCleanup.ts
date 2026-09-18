@@ -8,6 +8,40 @@ import { omitNullish } from "../shared/omitNullish";
 
 const BATCH_SIZE = 64;
 
+export const tasks = internalQuery({
+  args: { userId: v.id("users"), cursor: v.union(v.string(), v.null()) },
+  returns: v.object({
+    sessionIds: v.array(v.id("agentsApiSessions")),
+    cursor: v.string(),
+    isDone: v.boolean(),
+  }),
+  handler: async (ctx, { userId, cursor }) => {
+    const page = await ctx.db
+      .query("agentsApiSessions")
+      .withIndex("by_user_id", (q) => q.eq("userId", userId))
+      .paginate({ cursor, numItems: 32 });
+    return {
+      sessionIds: page.page.map((session) => session._id),
+      cursor: page.continueCursor,
+      isDone: page.isDone,
+    };
+  },
+});
+
+export const stopTask = internalMutation({
+  args: { userId: v.id("users"), sessionId: v.id("agentsApiSessions") },
+  returns: v.boolean(),
+  handler: async (ctx, { userId, sessionId }) => {
+    const user = await ctx.db.get(userId);
+    const session = await ctx.db.get(sessionId);
+    if (user?.state !== "deleting" || session?.userId !== userId)
+      throw new Error("Invalid task cleanup target");
+    if (!session.active) return false;
+    await ctx.db.patch(sessionId, { state: { kind: "stopped" } });
+    return true;
+  },
+});
+
 export const chats = internalQuery({
   args: { userId: v.id("users"), cursor: v.union(v.string(), v.null()) },
   returns: v.object({ threadIds: v.array(v.string()), cursor: v.string(), isDone: v.boolean() }),

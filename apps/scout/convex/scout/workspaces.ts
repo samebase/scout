@@ -22,7 +22,7 @@ import {
 } from "../workspaceModel";
 import { workspaceStorage, workspaceStorageConfigured } from "../workspaceStorage";
 import { chatPermission } from "./chatAccess";
-import { requireSessionPermission } from "../agentsApi/access";
+import { requireSessionPermission } from "../tasks/access";
 import { ensureSite } from "./siteListings";
 
 async function requireWorkspaceChat(

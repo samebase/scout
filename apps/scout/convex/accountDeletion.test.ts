@@ -2,10 +2,10 @@
 import agentTest from "@convex-dev/agent/test";
 import workflowTest from "@convex-dev/workflow/test";
 import { convexTest } from "convex-test";
+import { Firecrawl } from "firecrawl";
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
 import { api, components, internal } from "./_generated/api";
 import schema from "./schema";
-import { scoutAgent } from "./scout/agent";
 import { finishStoppingTurn } from "./scout/turns";
 import { authEmailRateLimitKey } from "./authEmail";
 import { ACCOUNT_DELETION_CONFIRMATION } from "../shared/accountDeletion";
@@ -14,7 +14,11 @@ import { ADMIN_EMAIL } from "./testing/accounts";
 
 const modules = import.meta.glob("./**/*.ts");
 beforeEach(() => vi.useFakeTimers());
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
+});
 
 async function setup(email = "deletion@example.test", isApproved = false) {
   const backend = convexTest(schema, modules);
@@ -96,7 +100,9 @@ async function setup(email = "deletion@example.test", isApproved = false) {
       agentMail: { inboxId: "shared-inbox", address: "shared@example.test" },
       firecrawl: { profileName: "shared-profile" },
     });
-    const { threadId } = await scoutAgent.createThread(ctx, { userId });
+    const { _id: threadId } = await ctx.runMutation(components.agent.threads.createThread, {
+      userId,
+    });
     const chatId = await ctx.db.insert("scoutChats", {
       purpose: { kind: "general" },
       visibility: "private",
@@ -105,12 +111,15 @@ async function setup(email = "deletion@example.test", isApproved = false) {
       scoutId,
       createdAt: Date.now(),
     });
-    const { messageId, message } = await scoutAgent.saveMessage(ctx, {
+    const {
+      messages: [message],
+    } = await ctx.runMutation(components.agent.messages.addMessages, {
       threadId,
       userId,
-      prompt: "Keep this shared history",
-      skipEmbeddings: true,
+      messages: [{ message: { role: "user", content: "Keep this shared history" } }],
     });
+    if (!message) throw new Error("Expected a stored history message");
+    const messageId = message._id;
     const turnId = await ctx.db.insert("scoutTurns", {
       threadId,
       order: message.order,
@@ -176,11 +185,86 @@ test("account deletion stops a managed Review before deleting the owner", async 
     state: { kind: "stopped" },
   });
   // No provider or browser has been created yet; cleanup can release the reservation directly.
-  await backend.action(internal.agentsApi.runtime.cleanup, { sessionId: next.sessionId });
+  await backend.action(internal.tasks.runtime.cleanup, { sessionId: next.sessionId });
   expect(
     await backend.mutation(internal.accountDeletionCleanup.stopChat, { userId, threadId }),
   ).toEqual({ kind: "ready" });
   expect(await backend.run((ctx) => ctx.db.get(scoutId))).not.toBeNull();
+});
+
+test.each(["agents_api", "convex_agent"] as const)(
+  "account deletion releases a standalone %s task without a product chat binding",
+  async (engine) => {
+    const { backend, viewer, userId, scoutId } = await setup(ADMIN_EMAIL);
+    const sessionId = await backend.run((ctx) =>
+      ctx.db.insert("agentsApiSessions", {
+        userId,
+        scoutId,
+        scoutName: "Standalone Scout",
+        title: "Standalone admin task",
+        model: "test",
+        engine,
+        state: { kind: "running" },
+        active: true,
+        nextSequence: 0,
+        browser: null,
+        usage: null,
+      }),
+    );
+    await viewer.mutation(api.accountDeletion.request, {
+      confirmation: ACCOUNT_DELETION_CONFIRMATION,
+    });
+    await backend.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await viewer.query(api.accountDeletion.status, {})).toEqual({ kind: "deleted" });
+    expect(await backend.run((ctx) => ctx.db.get(sessionId))).toMatchObject({
+      engine,
+      active: false,
+      state: { kind: "stopped" },
+    });
+  },
+);
+
+test("account deletion closes a stored legacy browser and retains its replay records", async () => {
+  const { backend, viewer, userId, scoutId, threadId, turnId, chatId } = await setup(ADMIN_EMAIL);
+  vi.stubEnv("FIRECRAWL_API_KEY", "test-key");
+  const closeBrowser = vi.spyOn(Firecrawl.prototype, "deleteBrowser").mockResolvedValue({
+    success: true,
+    sessionDurationMs: 12_000,
+    creditsBilled: 2,
+  });
+  const browserId = await backend.run((ctx) =>
+    ctx.db.insert("scoutBrowserSessions", {
+      threadId,
+      scoutId,
+      sequence: 1,
+      provider: "firecrawl",
+      providerSessionId: "stored-legacy-browser",
+      profileName: "legacy-profile",
+      viewport: { width: 1280, height: 800 },
+      nextOperationSequence: 1,
+      lifecycle: {
+        kind: "active",
+        openedAtMs: Date.now(),
+        providerExpiresAtMs: Date.now() + 60_000,
+        cdpUrl: "wss://browser.firecrawl.dev/cdp?token=test",
+        interactiveLiveViewUrl: null,
+      },
+    }),
+  );
+  await viewer.mutation(api.accountDeletion.request, {
+    confirmation: ACCOUNT_DELETION_CONFIRMATION,
+  });
+  await backend.finishAllScheduledFunctions(vi.runAllTimers);
+  expect(closeBrowser).toHaveBeenCalledExactlyOnceWith("stored-legacy-browser");
+  expect(await viewer.query(api.accountDeletion.status, {})).toEqual({ kind: "deleted" });
+  expect(await backend.run((ctx) => ctx.db.get(browserId))).toMatchObject({
+    providerSessionId: "stored-legacy-browser",
+    lifecycle: { kind: "closed", creditsBilled: 2 },
+  });
+  expect(await backend.run((ctx) => ctx.db.get(turnId))).toMatchObject({
+    state: { kind: "stopped", firecrawlCredits: 2 },
+  });
+  expect(await backend.run((ctx) => ctx.db.get(chatId))).toMatchObject({ userId, threadId });
 });
 
 test.each([
@@ -266,8 +350,8 @@ test.each([
     expect(await ctx.db.get(callId)).toEqual(before.call);
     expect(await ctx.db.get(otherUserId)).toEqual(before.otherUser);
     expect(await (await ctx.storage.get(fileId))?.text()).toBe("Keep this file");
-    const thread = await scoutAgent.getThreadMetadata(ctx, { threadId });
-    expect(thread.userId).toBe(userId);
+    const thread = await ctx.runQuery(components.agent.threads.getThread, { threadId });
+    expect(thread?.userId).toBe(userId);
     const messages = await ctx.runQuery(components.agent.messages.getMessagesByIds, {
       messageIds: [messageId],
     });
@@ -342,4 +426,96 @@ test("active Lab work stops before account deletion finishes", async () => {
   expect(await backend.run((ctx) => ctx.db.get(turnId))).toMatchObject({
     state: { kind: "stopped" },
   });
+});
+
+test("finishing a stored replacement stops the retired turn without creating new execution", async () => {
+  const { backend, turnId, threadId } = await setup(ADMIN_EMAIL);
+  await backend.run((ctx) =>
+    ctx.db.patch(turnId, {
+      state: {
+        kind: "stopping",
+        stopRequestedAt: Date.now(),
+        generationFinished: true,
+        replacement: { prompt: "Do not restart this legacy turn", model: "qwen/qwen3.7-flash" },
+        usage: { promptTokens: 12 },
+      },
+    }),
+  );
+  await backend.mutation(internal.scout.turns.finalizeStopping, { turnId });
+  expect(await backend.run((ctx) => ctx.db.get(turnId))).toMatchObject({
+    state: { kind: "stopped", usage: { promptTokens: 12 } },
+  });
+  expect(
+    await backend.run((ctx) =>
+      ctx.db
+        .query("scoutTurns")
+        .withIndex("by_thread_id_and_order", (q) => q.eq("threadId", threadId))
+        .take(2),
+    ),
+  ).toHaveLength(1);
+  expect(await backend.run((ctx) => ctx.db.query("agentsApiSessions").first())).toBeNull();
+});
+
+test("a persisted handoff expiry still closes its legacy browser without resuming Scout", async () => {
+  const { backend, viewer, userId, scoutId, threadId, turnId } = await setup(ADMIN_EMAIL);
+  await viewer.mutation(api.accountDeletion.request, {
+    confirmation: ACCOUNT_DELETION_CONFIRMATION,
+  });
+  const { browserId, handoffId } = await backend.run(async (ctx) => {
+    const user = await ctx.db.get(userId);
+    if (user?.state !== "deleting") throw new Error("Expected a cleanup workflow");
+    const browserId = await ctx.db.insert("scoutBrowserSessions", {
+      threadId,
+      scoutId,
+      sequence: 1,
+      provider: "firecrawl",
+      providerSessionId: "expiring-legacy-browser",
+      profileName: "legacy-profile",
+      viewport: { width: 1280, height: 800 },
+      nextOperationSequence: 1,
+      lifecycle: {
+        kind: "active",
+        openedAtMs: Date.now() - 60_000,
+        providerExpiresAtMs: Date.now() + 60_000,
+        cdpUrl: "wss://browser.firecrawl.dev/cdp?token=test",
+        interactiveLiveViewUrl: null,
+      },
+    });
+    const handoffId = await ctx.db.insert("scoutHumanHandoffs", {
+      sessionId: browserId,
+      turnId,
+      reason: "Old verification step",
+      requestedAt: Date.now() - 60_000,
+      claimExpiresAt: Date.now() - 1,
+      accessTokenHash: "a".repeat(64),
+      workflowId: user.workflowId,
+      status: "available",
+    });
+    return { browserId, handoffId };
+  });
+  vi.stubEnv("FIRECRAWL_API_KEY", "test-key");
+  const closeBrowser = vi
+    .spyOn(Firecrawl.prototype, "deleteBrowser")
+    .mockResolvedValue({ success: true });
+  expect(await backend.mutation(internal.humanHandoffs.expire, { handoffId })).toBe("expired");
+  expect(await backend.mutation(internal.humanHandoffs.expire, { handoffId })).toBe("expired");
+  await backend.action(internal.humanHandoffBrowser.finishBrowserSession, {
+    sessionId: browserId,
+    usageTurnId: turnId,
+    captureEvidence: false,
+  });
+  await backend.finishAllScheduledFunctions(vi.runAllTimers);
+  expect(closeBrowser).toHaveBeenCalledExactlyOnceWith("expiring-legacy-browser");
+  expect(await backend.run((ctx) => ctx.db.get(browserId))).toMatchObject({
+    lifecycle: { kind: "closed" },
+  });
+  expect(await backend.run((ctx) => ctx.db.get(handoffId))).toMatchObject({ status: "expired" });
+  expect(
+    await backend.run((ctx) =>
+      ctx.db
+        .query("scoutTurns")
+        .withIndex("by_thread_id_and_order", (q) => q.eq("threadId", threadId))
+        .take(2),
+    ),
+  ).toHaveLength(1);
 });

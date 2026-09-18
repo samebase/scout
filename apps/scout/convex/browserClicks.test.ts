@@ -5,7 +5,7 @@ import agentTest from "@convex-dev/agent/test";
 import workflowTest from "@convex-dev/workflow/test";
 import { convexTest } from "convex-test";
 import { describe, expect, test } from "vite-plus/test";
-import { api, internal } from "./_generated/api";
+import { components, internal } from "./_generated/api";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -28,7 +28,18 @@ async function setup() {
   );
   const owner = backend.withIdentity({ subject: `${userId}|test-session` });
   const other = backend.withIdentity({ subject: `${otherId}|test-session` });
-  const { threadId } = await owner.mutation(api.scout.chats.createThread, { scoutId });
+  const thread = await backend.mutation(components.agent.threads.createThread, { userId });
+  const threadId = thread._id;
+  await backend.run((ctx) =>
+    ctx.db.insert("scoutChats", {
+      threadId,
+      userId,
+      scoutId,
+      createdAt: Date.now(),
+      purpose: { kind: "general" },
+      visibility: "private",
+    }),
+  );
   const { sessionId } = await owner.mutation(internal.scout.browserSessions.open, {
     threadId,
     scoutId,

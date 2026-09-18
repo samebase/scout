@@ -27,8 +27,6 @@ const remote = vi.hoisted(() => ({
   subscribers: new Set<() => void>(),
   queries: new Map<string, unknown>(),
   createThread: vi.fn(),
-  sendMessage: vi.fn(),
-  stop: vi.fn(),
   sendManaged: vi.fn(),
   stopManaged: vi.fn(),
   resumeManaged: vi.fn(),
@@ -77,8 +75,7 @@ vi.mock("convex/react", () => ({
     return remote.queries.get(getFunctionName(reference));
   },
   useAction: (reference: FunctionReference<"action">) => {
-    if (getFunctionName(reference) === "agentsApi/screenshots:imageUrl")
-      return remote.screenshotUrl;
+    if (getFunctionName(reference) === "tasks/screenshots:imageUrl") return remote.screenshotUrl;
     if (getFunctionName(reference) === "browserReplay:listPages") return remote.listReplayPages;
     throw new Error("Unexpected action");
   },
@@ -93,17 +90,13 @@ vi.mock("convex/react", () => ({
     switch (getFunctionName(reference)) {
       case "scout/chats:startProductChat":
         return remote.createThread;
-      case "scout/chats:sendMessage":
-        return remote.sendMessage;
-      case "scout/chats:stop":
-        return remote.stop;
       case "scout/chats:setVisibility":
         return remote.setVisibility;
-      case "agentsApi/sessions:send":
+      case "tasks/sessions:send":
         return remote.sendManaged;
-      case "agentsApi/sessions:stop":
+      case "tasks/sessions:stop":
         return remote.stopManaged;
-      case "agentsApi/sessions:resume":
+      case "tasks/sessions:resume":
         return remote.resumeManaged;
       default:
         throw new Error("Unexpected mutation");
@@ -128,7 +121,7 @@ function session(overrides = {}) {
     isOwner: true,
     canControl: true,
     sessions: [],
-    runtime: { kind: "convex_agent" },
+    runtime: { kind: "task", sessionId: "managed-1" },
     latestSession: null,
     ...overrides,
   };
@@ -159,10 +152,13 @@ beforeEach(() => {
     status: "Exhausted",
     loadMore: vi.fn(),
   });
-  remote.queries.set("scout/chats:getScoutActivity", { kind: "idle" });
+  remote.queries.set("tasks/sessions:controls", {
+    state: { kind: "idle" },
+    canSend: true,
+    canStop: false,
+    busy: false,
+  });
   remote.createThread.mockReset().mockResolvedValue({ threadId: "game-thread" });
-  remote.sendMessage.mockReset().mockResolvedValue(null);
-  remote.stop.mockReset().mockResolvedValue(null);
   remote.sendManaged.mockReset().mockResolvedValue(null);
   remote.stopManaged.mockReset().mockResolvedValue(null);
   remote.resumeManaged.mockReset().mockResolvedValue(null);
@@ -226,13 +222,13 @@ test("a completed managed Review opens its walkthrough and pairs replay with Cha
       purpose: { kind: "review" },
       status: "finished",
       hasWalkthrough: true,
-      runtime: { kind: "agents_api", sessionId: "managed-1" },
+      runtime: { kind: "task", sessionId: "managed-1" },
       sessions: [{ engine: "agents_api", sessionId: "browser-1", kind: "closed", createdAt: 1000 }],
       isOwner: false,
       canControl: false,
     }),
   );
-  remote.queries.set("agentsApi/walkthrough:get", {
+  remote.queries.set("tasks/walkthrough:get", {
     walkthrough: {
       summary: "The game works.",
       sections: [
@@ -283,15 +279,15 @@ test("a report arriving during a running Review keeps the reader in Chat and pre
     purpose: { kind: "review" },
     status: "running",
     hasWalkthrough: false,
-    runtime: { kind: "agents_api", sessionId: "managed-1" },
+    runtime: { kind: "task", sessionId: "managed-1" },
   });
   remote.queries.set("scout/activity:get", running);
-  remote.queries.set("agentsApi/sessions:controls", {
+  remote.queries.set("tasks/sessions:controls", {
     state: { kind: "running" },
     canStop: true,
     canSend: false,
   });
-  remote.queries.set("agentsApi/walkthrough:get", { walkthrough: null, captures: [] });
+  remote.queries.set("tasks/walkthrough:get", { walkthrough: null, captures: [] });
   await openPlay("/review?thread=game-thread");
   expect(await screen.findByRole("region", { name: "Conversation with Scout" })).toBeTruthy();
   fireEvent.change(screen.getByLabelText("Message Scout"), {
@@ -303,12 +299,12 @@ test("a report arriving during a running Review keeps the reader in Chat and pre
       status: "finished",
       hasWalkthrough: true,
     });
-    remote.queries.set("agentsApi/sessions:controls", {
+    remote.queries.set("tasks/sessions:controls", {
       state: { kind: "idle" },
       canStop: false,
       canSend: true,
     });
-    remote.queries.set("agentsApi/walkthrough:get", {
+    remote.queries.set("tasks/walkthrough:get", {
       walkthrough: {
         summary: "The game works.",
         sections: [
@@ -352,10 +348,10 @@ test.each(["finished", "failed", "running", "stopped"])(
         purpose: { kind: "review" },
         status,
         hasWalkthrough: true,
-        runtime: { kind: "agents_api", sessionId: "managed-1" },
+        runtime: { kind: "task", sessionId: "managed-1" },
       }),
     );
-    remote.queries.set("agentsApi/walkthrough:get", { walkthrough: null, captures: [] });
+    remote.queries.set("tasks/walkthrough:get", { walkthrough: null, captures: [] });
     const router = await openPlay("/review?thread=game-thread&view=chat");
     fireEvent.change(await screen.findByRole("textbox", { name: "Message Scout" }), {
       target: { value: "Keep this follow-up" },
@@ -381,10 +377,10 @@ test("a direct walkthrough link shows an older task's empty state without forcin
       purpose: { kind: "review" },
       status: "finished",
       hasWalkthrough: false,
-      runtime: { kind: "agents_api", sessionId: "managed-1" },
+      runtime: { kind: "task", sessionId: "managed-1" },
     }),
   );
-  remote.queries.set("agentsApi/walkthrough:get", { walkthrough: null, captures: [] });
+  remote.queries.set("tasks/walkthrough:get", { walkthrough: null, captures: [] });
   await openPlay("/review?thread=game-thread&view=walkthrough");
   expect(await screen.findByRole("heading", { name: "No screenshots saved" })).toBeTruthy();
   expect(screen.getByRole("link", { name: "Chat & replay" })).toBeTruthy();
@@ -399,13 +395,13 @@ test("desktop Chat always shows its replay and Walkthrough occupies the full lay
       purpose: { kind: "review" },
       status: "finished",
       hasWalkthrough: true,
-      runtime: { kind: "agents_api", sessionId: "managed-1" },
+      runtime: { kind: "task", sessionId: "managed-1" },
       sessions: [{ engine: "agents_api", sessionId: "browser-1", kind: "closed", createdAt: 1000 }],
       isOwner: false,
       canControl: false,
     }),
   );
-  remote.queries.set("agentsApi/walkthrough:get", { walkthrough: null, captures: [] });
+  remote.queries.set("tasks/walkthrough:get", { walkthrough: null, captures: [] });
   await openPlay("/review?thread=game-thread");
   expect(await screen.findByRole("heading", { name: "No screenshots saved" })).toBeTruthy();
   for (let visit = 0; visit < 2; visit += 1) {
@@ -430,13 +426,13 @@ test("mobile Review keeps replay in the right sidebar without pane toggles", asy
       purpose: { kind: "review" },
       status: "finished",
       hasWalkthrough: true,
-      runtime: { kind: "agents_api", sessionId: "managed-1" },
+      runtime: { kind: "task", sessionId: "managed-1" },
       sessions: [{ engine: "agents_api", sessionId: "browser-1", kind: "closed", createdAt: 1000 }],
       isOwner: false,
       canControl: false,
     }),
   );
-  remote.queries.set("agentsApi/walkthrough:get", { walkthrough: null, captures: [] });
+  remote.queries.set("tasks/walkthrough:get", { walkthrough: null, captures: [] });
   const router = await openPlay("/review?thread=game-thread");
   await screen.findByRole("navigation", { name: "Review views" });
   for (const { label, view } of [
@@ -470,11 +466,11 @@ test("resizing Review keeps its title, pane controls, chat draft, and replay mou
       title: "Review Pika",
       primarySite: "pika.style",
       status: "finished",
-      runtime: { kind: "agents_api", sessionId: "managed-1" },
+      runtime: { kind: "task", sessionId: "managed-1" },
       sessions: [{ engine: "agents_api", sessionId: "browser-1", kind: "closed", createdAt: 1000 }],
     }),
   );
-  remote.queries.set("agentsApi/sessions:controls", {
+  remote.queries.set("tasks/sessions:controls", {
     state: { kind: "idle" },
     canSend: true,
     canStop: false,
@@ -492,7 +488,7 @@ test("resizing Review keeps its title, pane controls, chat draft, and replay mou
   expect(visibility.closest("[data-pane-side]")?.getAttribute("data-pane-side")).toBe("main");
   expect(
     screen
-      .getByRole("link", { name: "Open in lab" })
+      .getByRole("link", { name: "Open in Agents" })
       .closest('[data-sidebar-layout-part="address-chrome"]'),
   ).toBe(header);
   expect(
@@ -529,29 +525,74 @@ test("admins can open another member's Review in the Agents inspector", async ()
     "scout/activity:get",
     session({
       purpose: { kind: "review" },
-      runtime: { kind: "agents_api", sessionId: "managed-1" },
+      runtime: { kind: "task", sessionId: "managed-1" },
       isOwner: false,
       canControl: false,
       visibility: "public",
     }),
   );
   await openPlay("/review?thread=game-thread");
-  expect((await screen.findByRole("link", { name: "Open in lab" })).getAttribute("href")).toBe(
+  expect((await screen.findByRole("link", { name: "Open in Agents" })).getAttribute("href")).toBe(
     "/agents?session=managed-1",
   );
-  expect(remote.queryCalls).toHaveBeenCalledWith("agentsApi/sessions:controls", "skip");
+  expect(remote.queryCalls).toHaveBeenCalledWith("tasks/sessions:controls", "skip");
+});
+
+test("legacy threads without shared task IDs do not offer an Agents inspector link", async () => {
+  remote.queries.set(
+    "scout/activity:get",
+    session({ purpose: { kind: "review" }, runtime: { kind: "convex_agent" }, canControl: false }),
+  );
+  await openPlay("/review?thread=game-thread");
+  await screen.findByRole("region", { name: "Conversation with Scout" });
+  expect(screen.queryByRole("link", { name: "Open in Agents" })).toBeNull();
+  expect(screen.queryByRole("textbox", { name: "Message Scout" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Stop Scout" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Resume Scout" })).toBeNull();
+  expect(screen.queryByRole("combobox", { name: "Chat visibility" })).toBeNull();
+  expect(remote.queryCalls).toHaveBeenCalledWith("tasks/sessions:controls", "skip");
+  expect(remote.queryCalls).toHaveBeenCalledWith("tasks/sessions:cost", "skip");
+});
+
+test("legacy Convex sessions keep transcript and replay without mounting execution controls", async () => {
+  remote.queries.set(
+    "scout/activity:get",
+    session({
+      runtime: { kind: "convex_agent" },
+      canControl: false,
+      sessions: [
+        { engine: "convex_agent", sessionId: "legacy-browser", kind: "closed", createdAt: 1000 },
+      ],
+    }),
+  );
+  remote.messages = [
+    { kind: "message", id: "legacy-message", role: "assistant", text: "Saved legacy transcript." },
+  ];
+  await openPlay("/play?thread=game-thread");
+  expect(await screen.findByText("Saved legacy transcript.")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Show Scout’s view" }));
+  await waitFor(() =>
+    expect(remote.listReplayPages).toHaveBeenCalledWith({ sessionId: "legacy-browser" }),
+  );
+  expect(screen.queryByRole("textbox", { name: "Message Scout" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "Open in Agents" })).toBeNull();
+  expect(remote.queryCalls).not.toHaveBeenCalledWith(
+    "scout/chats:getScoutActivity",
+    expect.anything(),
+  );
+  expect(remote.queryCalls).not.toHaveBeenCalledWith("humanHandoffs:forSession", expect.anything());
 });
 
 test("Review uses managed controls and keeps live view, handoff and follow-up messages on the same page", async () => {
   const review = session({
     purpose: { kind: "review" },
-    runtime: { kind: "agents_api", sessionId: "managed-1" },
+    runtime: { kind: "task", sessionId: "managed-1" },
     status: "waiting",
     sessions: [{ engine: "agents_api", sessionId: "browser-1", kind: "active", createdAt: 1000 }],
   });
   remote.queries.set("scout/activity:get", review);
   remote.queries.set("scout/activity:liveView", { url: "about:blank#watch-only" });
-  remote.queries.set("agentsApi/sessions:controls", {
+  remote.queries.set("tasks/sessions:controls", {
     state: {
       kind: "waiting",
       message: "Complete verification",
@@ -572,7 +613,7 @@ test("Review uses managed controls and keeps live view, handoff and follow-up me
   expect(screen.getByTitle("Scout's live browser").getAttribute("src")).toBe(
     "about:blank#watch-only",
   );
-  expect(screen.getByRole("link", { name: "Open in lab" }).getAttribute("href")).toBe(
+  expect(screen.getByRole("link", { name: "Open in Agents" }).getAttribute("href")).toBe(
     "/agents?session=managed-1",
   );
   fireEvent.click(screen.getByRole("button", { name: "Resume Scout" }));
@@ -594,7 +635,7 @@ test("Review uses managed controls and keeps live view, handoff and follow-up me
   );
   act(() => {
     remote.queries.set("scout/activity:get", { ...review, status: "finished" });
-    remote.queries.set("agentsApi/sessions:controls", {
+    remote.queries.set("tasks/sessions:controls", {
       state: { kind: "idle" },
       canSend: true,
       canStop: false,
@@ -615,10 +656,11 @@ test("Review uses managed controls and keeps live view, handoff and follow-up me
       message: "Check another page",
     }),
   );
-  expect(remote.stop).not.toHaveBeenCalled();
-  expect(remote.sendMessage).not.toHaveBeenCalled();
-  expect(remote.queryCalls).toHaveBeenCalledWith("scout/chats:getScoutActivity", "skip");
-  expect(remote.queryCalls).toHaveBeenCalledWith("humanHandoffs:forSession", "skip");
+  expect(remote.queryCalls).not.toHaveBeenCalledWith(
+    "scout/chats:getScoutActivity",
+    expect.anything(),
+  );
+  expect(remote.queryCalls).not.toHaveBeenCalledWith("humanHandoffs:forSession", expect.anything());
 });
 
 test("public managed Reviews do not request owner controls, costs, or expose the handoff", async () => {
@@ -627,7 +669,7 @@ test("public managed Reviews do not request owner controls, costs, or expose the
     "scout/activity:get",
     session({
       purpose: { kind: "review" },
-      runtime: { kind: "agents_api", sessionId: "managed-1" },
+      runtime: { kind: "task", sessionId: "managed-1" },
       visibility: "public",
       isOwner: false,
       canControl: false,
@@ -638,8 +680,8 @@ test("public managed Reviews do not request owner controls, costs, or expose the
   expect(screen.queryByLabelText("Message Scout")).toBeNull();
   expect(screen.queryByRole("button", { name: "Resume Scout" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Stop Scout" })).toBeNull();
-  expect(remote.queryCalls).toHaveBeenCalledWith("agentsApi/sessions:controls", "skip");
-  expect(remote.queryCalls).toHaveBeenCalledWith("agentsApi/sessions:cost", "skip");
+  expect(remote.queryCalls).toHaveBeenCalledWith("tasks/sessions:controls", "skip");
+  expect(remote.queryCalls).toHaveBeenCalledWith("tasks/sessions:cost", "skip");
 });
 
 test.each(["Finish signing in before resuming.", "Could not capture browser evidence."])(
@@ -647,7 +689,7 @@ test.each(["Finish signing in before resuming.", "Could not capture browser evid
   async (reason) => {
     const review = session({
       purpose: { kind: "review" },
-      runtime: { kind: "agents_api", sessionId: "managed-1" },
+      runtime: { kind: "task", sessionId: "managed-1" },
       status: "waiting",
       sessions: [{ engine: "agents_api", sessionId: "browser-1", kind: "active", createdAt: 1000 }],
     });
@@ -666,7 +708,7 @@ test.each(["Finish signing in before resuming.", "Could not capture browser evid
       requestCheckMessage: reason,
     };
     remote.queries.set("scout/activity:get", review);
-    remote.queries.set("agentsApi/sessions:controls", controls);
+    remote.queries.set("tasks/sessions:controls", controls);
     remote.queries.set("scout/activity:liveView", { url: "about:blank#watch-only" });
     remote.messages = [
       { kind: "message", id: "message-1", role: "assistant", text: "I opened the site." },
@@ -684,7 +726,7 @@ test.each(["Finish signing in before resuming.", "Could not capture browser evid
       }),
     );
     act(() => {
-      remote.queries.set("agentsApi/sessions:controls", {
+      remote.queries.set("tasks/sessions:controls", {
         ...controls,
         state: { kind: "checking", checkId: "resume-check-2" },
         requestCheckMessage: null,
@@ -951,7 +993,7 @@ describe("Play invitation", () => {
     expect(screen.queryByLabelText("Message Scout")).toBeNull();
   });
 
-  test("approved members can start games without mounting Lab queries", async () => {
+  test("approved members can start games without mounting admin task queries", async () => {
     remote.queries.set("accounts:currentViewerAccess", {
       kind: "account",
       userId: "member",
@@ -982,7 +1024,7 @@ describe("Play invitation", () => {
           ),
       ),
     ).toBe(false);
-    expect(screen.queryByRole("link", { name: "Open in lab" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Open in Agents" })).toBeNull();
   });
 
   test("pending accounts cannot start games", async () => {
@@ -1008,7 +1050,7 @@ describe("Play invitation", () => {
     expect(await screen.findByRole("region", { name: "Conversation with Scout" })).toBeTruthy();
     expect(screen.queryByRole("textbox", { name: "Message Scout" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Stop Scout" })).toBeNull();
-    expect(screen.queryByRole("link", { name: "Open in lab" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Open in Agents" })).toBeNull();
     expect(screen.getByRole("link", { name: "Play with Scout" })).toBeTruthy();
     expect(
       remote.queryCalls.mock.calls.filter(
@@ -1035,16 +1077,16 @@ describe("Play invitation", () => {
     await openPlay("/play?thread=game-thread");
     expect(await screen.findByRole("region", { name: "Conversation with Scout" })).toBeTruthy();
     expect(remote.createThread).not.toHaveBeenCalled();
-    expect(remote.sendMessage).not.toHaveBeenCalled();
-    expect(remote.stop).not.toHaveBeenCalled();
+    expect(remote.sendManaged).not.toHaveBeenCalled();
+    expect(remote.stopManaged).not.toHaveBeenCalled();
   });
 
   test("an unavailable session does not create a replacement chat", async () => {
     await openPlay("/play?thread=missing-thread");
     expect(await screen.findByRole("heading", { name: "Session unavailable" })).toBeTruthy();
     expect(remote.createThread).not.toHaveBeenCalled();
-    expect(remote.sendMessage).not.toHaveBeenCalled();
-    expect(remote.stop).not.toHaveBeenCalled();
+    expect(remote.sendManaged).not.toHaveBeenCalled();
+    expect(remote.stopManaged).not.toHaveBeenCalled();
   });
 
   test("keeps the invitation through sign-in without starting a game automatically", async () => {
@@ -1060,7 +1102,7 @@ describe("Play invitation", () => {
       remote.subscribers.forEach((listener) => listener());
     });
     expect(screen.getByDisplayValue(invitation)).toBeTruthy();
-    expect(remote.sendMessage).not.toHaveBeenCalled();
+    expect(remote.sendManaged).not.toHaveBeenCalled();
   });
 
   test("sends a game request with the selected Scout and opens its session", async () => {
@@ -1077,7 +1119,7 @@ describe("Play invitation", () => {
       visibility: "private",
       prompt: invitation,
     });
-    expect(remote.sendMessage).not.toHaveBeenCalled();
+    expect(remote.sendManaged).not.toHaveBeenCalled();
     expect(await screen.findByRole("region", { name: "Conversation with Scout" })).toBeTruthy();
   });
 
@@ -1145,41 +1187,52 @@ describe("Play invitation", () => {
   });
 
   test("stops its own active game but disables controls while Scout is busy elsewhere", async () => {
-    remote.queries.set("scout/chats:getScoutActivity", {
-      kind: "running",
-      threadId: "game-thread",
-      turnId: "turn-1",
+    remote.queries.set("tasks/sessions:controls", {
+      state: { kind: "running" },
+      canSend: false,
+      canStop: true,
+      busy: false,
     });
     await openPlay("/play?thread=game-thread");
     const input = await screen.findByRole("textbox", { name: "Message Scout" });
     fireEvent.change(input, { target: { value: "Try another game." } });
     fireEvent.keyDown(input, { key: "Enter" });
-    expect(remote.sendMessage).not.toHaveBeenCalled();
-    expect(remote.stop).not.toHaveBeenCalled();
+    expect(remote.sendManaged).not.toHaveBeenCalled();
+    expect(remote.stopManaged).not.toHaveBeenCalled();
     fireEvent.click(await screen.findByRole("button", { name: "Stop Scout" }));
     await waitFor(() =>
-      expect(remote.stop).toHaveBeenCalledExactlyOnceWith({ threadId: "game-thread" }),
+      expect(remote.stopManaged).toHaveBeenCalledExactlyOnceWith({ sessionId: "managed-1" }),
     );
     expect(screen.getByDisplayValue("Try another game.")).toBeTruthy();
     act(() => {
-      remote.queries.set("scout/chats:getScoutActivity", { kind: "idle" });
+      remote.queries.set("tasks/sessions:controls", {
+        state: { kind: "idle" },
+        canSend: true,
+        canStop: false,
+        busy: false,
+      });
       remote.revision += 1;
       remote.subscribers.forEach((listener) => listener());
     });
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
     await waitFor(() =>
-      expect(remote.sendMessage).toHaveBeenCalledExactlyOnceWith({
-        threadId: "game-thread",
-        prompt: "Try another game.",
+      expect(remote.sendManaged).toHaveBeenCalledExactlyOnceWith({
+        sessionId: "managed-1",
+        message: "Try another game.",
       }),
     );
     act(() => {
-      remote.queries.set("scout/chats:getScoutActivity", { kind: "busy" });
+      remote.queries.set("tasks/sessions:controls", {
+        state: { kind: "idle" },
+        canSend: false,
+        canStop: false,
+        busy: true,
+      });
       remote.revision += 1;
       remote.subscribers.forEach((listener) => listener());
     });
     expect(screen.queryByRole("button", { name: "Stop Scout" })).toBeNull();
-    expect(screen.getByText("Busy in another session")).toBeTruthy();
+    expect(screen.getByText("This Scout is busy in another chat.")).toBeTruthy();
     expect(
       screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Message Scout" }).disabled,
     ).toBe(false);
@@ -1199,10 +1252,11 @@ test("shows persisted activity and assistant commentary while hiding tool payloa
       status: "running",
     }),
   );
-  remote.queries.set("scout/chats:getScoutActivity", {
-    kind: "running",
-    threadId: "game-thread",
-    turnId: "turn-1",
+  remote.queries.set("tasks/sessions:controls", {
+    state: { kind: "running" },
+    canSend: false,
+    canStop: true,
+    busy: false,
   });
   remote.messages = [
     {
@@ -1224,7 +1278,7 @@ test("shows persisted activity and assistant commentary while hiding tool payloa
   fireEvent.click(screen.getByRole("button", { name: "Show Scout’s view" }));
   fireEvent.click(screen.getByRole("button", { name: "Back to chat" }));
   expect(screen.getByDisplayValue("I'll be back in a minute.")).toBeTruthy();
-  expect(remote.sendMessage).not.toHaveBeenCalled();
+  expect(remote.sendManaged).not.toHaveBeenCalled();
 });
 
 test("Enter sends a message but composition and Shift+Enter do not", async () => {
@@ -1233,12 +1287,12 @@ test("Enter sends a message but composition and Shift+Enter do not", async () =>
   fireEvent.change(input, { target: { value: "Your turn." } });
   fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
   fireEvent.keyDown(input, { key: "Enter", isComposing: true });
-  expect(remote.sendMessage).not.toHaveBeenCalled();
+  expect(remote.sendManaged).not.toHaveBeenCalled();
   fireEvent.keyDown(input, { key: "Enter" });
   await waitFor(() =>
-    expect(remote.sendMessage).toHaveBeenCalledExactlyOnceWith({
-      threadId: "game-thread",
-      prompt: "Your turn.",
+    expect(remote.sendManaged).toHaveBeenCalledExactlyOnceWith({
+      sessionId: "managed-1",
+      message: "Your turn.",
     }),
   );
 });
@@ -1251,31 +1305,33 @@ test("keeps the live browser and handoff controls when switching views", async (
   remote.queries.set("scout/activity:liveView", {
     url: "about:blank",
   });
-  remote.queries.set("scout/chats:getScoutActivity", {
-    kind: "handoff",
-    threadId: "game-thread",
-    turnId: "turn-1",
-  });
-  remote.queries.set("humanHandoffs:forSession", {
-    handoffId: "handoff-1",
-    status: "available",
-    reason: "Please complete the verification.",
-    requestedAt: Date.now(),
-    expiresAt: Date.now() + 60_000,
+  remote.queries.set("tasks/sessions:controls", {
+    state: {
+      kind: "waiting",
+      message: "Please complete the verification.",
+      callId: "call-current",
+      turnId: "turn-current",
+    },
+    canSend: false,
+    canStop: true,
+    busy: false,
+    interactiveLiveViewUrl: "https://liveview.firecrawl.dev/control",
   });
   await openPlay("/play?thread=game-thread");
   const browser = await screen.findByTitle("Scout's live browser");
   fireEvent.click(screen.getByRole("button", { name: "Show Scout’s view" }));
   expect(screen.getByTitle("Scout's live browser")).toBe(browser);
-  expect(screen.getByRole("link", { name: "Open browser handoff" }).getAttribute("href")).toBe(
-    "/handoff/handoff-1",
-  );
+  expect(
+    within(screen.getByRole("region", { name: "Conversation with Scout" }))
+      .getByRole("link", { name: "Open browser" })
+      .getAttribute("href"),
+  ).toBe("https://liveview.firecrawl.dev/control");
   expect(screen.getAllByRole("button", { name: "Stop Scout" })).toHaveLength(2);
   fireEvent.click(screen.getByRole("button", { name: "Back to chat" }));
   expect(screen.getByTitle("Scout's live browser")).toBe(browser);
-  fireEvent.click(screen.getByRole("button", { name: "Cancel handoff" }));
+  fireEvent.click(screen.getAllByRole("button", { name: "Stop Scout" })[0]);
   await waitFor(() =>
-    expect(remote.stop).toHaveBeenCalledExactlyOnceWith({ threadId: "game-thread" }),
+    expect(remote.stopManaged).toHaveBeenCalledExactlyOnceWith({ sessionId: "managed-1" }),
   );
 });
 
@@ -1286,14 +1342,18 @@ test("selects older replays without changing the conversation or current handoff
   ];
   remote.queries.set("scout/activity:get", session({ sessions }));
   remote.queries.set("scout/activity:liveView:current", { url: "about:blank" });
-  remote.queries.set("humanHandoffs:forSession:current", {
-    handoffId: "current-handoff",
-    status: "available",
-    reason: "Complete the verification.",
-    requestedAt: Date.now(),
-    expiresAt: Date.now() + 60_000,
+  remote.queries.set("tasks/sessions:controls", {
+    state: {
+      kind: "waiting",
+      message: "Complete the verification.",
+      callId: "call-current",
+      turnId: "turn-current",
+    },
+    canSend: false,
+    canStop: true,
+    busy: false,
+    interactiveLiveViewUrl: "https://liveview.firecrawl.dev/control",
   });
-  remote.queries.set("humanHandoffs:forSession:older", null);
   const router = await openPlay("/play?thread=game-thread");
   fireEvent.click(screen.getByRole("button", { name: "Show Scout’s view" }));
   const selector = screen.getByRole<HTMLSelectElement>("combobox", { name: "Browser session" });
@@ -1307,13 +1367,13 @@ test("selects older replays without changing the conversation or current handoff
   expect(router.state.location.search.session).toBe("older");
   const bookmark = router.state.location.href;
   expect(screen.queryByTitle("Scout's live browser")).toBeNull();
-  expect(screen.getByRole("link", { name: "Open browser handoff" }).getAttribute("href")).toBe(
-    "/handoff/current-handoff",
+  expect(screen.getByRole("link", { name: "Open browser" }).getAttribute("href")).toBe(
+    "https://liveview.firecrawl.dev/control",
   );
   fireEvent.click(screen.getByRole("button", { name: "Back to chat" }));
   expect(screen.getByDisplayValue("Keep this draft.")).toBeTruthy();
-  expect(remote.sendMessage).not.toHaveBeenCalled();
-  expect(remote.stop).not.toHaveBeenCalled();
+  expect(remote.sendManaged).not.toHaveBeenCalled();
+  expect(remote.stopManaged).not.toHaveBeenCalled();
 
   act(() => router.history.back());
   await waitFor(() =>
@@ -1365,7 +1425,7 @@ test("members can inspect tool results directly in the conversation", async () =
       purpose: { kind: "review" },
       visibility: "public",
       status: "finished",
-      runtime: { kind: "agents_api", sessionId: "managed-1" },
+      runtime: { kind: "task", sessionId: "managed-1" },
     }),
   );
   remote.messages = [
@@ -1388,7 +1448,7 @@ test("members can inspect tool results directly in the conversation", async () =
     { kind: "message", id: "request", role: "user", text: "Try the export." },
   ];
   await openPlay("/review?thread=game-thread&view=chat");
-  expect(screen.queryByRole("link", { name: "Open in lab" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "Open in Agents" })).toBeNull();
   const messages = screen.getByRole("log", { name: "Session messages" });
   expect(messages.textContent?.indexOf("Try the export.")).toBeLessThan(
     messages.textContent?.indexOf("capture_screenshot") ?? 0,
@@ -1428,6 +1488,6 @@ test("follows new browser sessions until the user chooses a session", async () =
     "second",
   );
   expect(screen.getByTitle("Scout's live browser").getAttribute("src")).toBe("about:blank#second");
-  expect(remote.sendMessage).not.toHaveBeenCalled();
-  expect(remote.stop).not.toHaveBeenCalled();
+  expect(remote.sendManaged).not.toHaveBeenCalled();
+  expect(remote.stopManaged).not.toHaveBeenCalled();
 });

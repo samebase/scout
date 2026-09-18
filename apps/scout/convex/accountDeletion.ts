@@ -95,6 +95,28 @@ export const run = deletionWorkflow
       /* Continue bounded cleanup. */
     }
 
+    let taskCursor: string | null = null;
+    while (true) {
+      const page: FunctionReturnType<typeof internal.accountDeletionCleanup.tasks> =
+        await step.runQuery(internal.accountDeletionCleanup.tasks, { userId, cursor: taskCursor });
+      for (const taskSessionId of page.sessionIds) {
+        if (
+          await step.runMutation(internal.accountDeletionCleanup.stopTask, {
+            userId,
+            sessionId: taskSessionId,
+          })
+        ) {
+          await step.runAction(
+            internal.tasks.runtime.cleanup,
+            { sessionId: taskSessionId },
+            { retry: false },
+          );
+        }
+      }
+      if (page.isDone) break;
+      taskCursor = page.cursor;
+    }
+
     let cursor: string | null = null;
     while (true) {
       const page: FunctionReturnType<typeof internal.accountDeletionCleanup.chats> =
@@ -110,7 +132,7 @@ export const run = deletionWorkflow
             await step.sleep(2_000);
           } else if (chat.kind === "close_managed") {
             await step.runAction(
-              internal.agentsApi.runtime.cleanup,
+              internal.tasks.runtime.cleanup,
               { sessionId: chat.sessionId },
               { retry: false },
             );

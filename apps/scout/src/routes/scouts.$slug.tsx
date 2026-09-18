@@ -1,7 +1,6 @@
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useMutation, useQuery } from "convex/react";
-import { ArrowLeftIcon, LoaderCircleIcon, PlusIcon } from "lucide-react";
-import { useState } from "react";
+import { useQuery } from "convex/react";
+import { ArrowLeftIcon, PlusIcon } from "lucide-react";
 import { z } from "zod";
 import { api } from "../../convex/_generated/api";
 import { ServiceAccountsSection, type AccountEditor } from "#components/scout-service-accounts";
@@ -20,21 +19,14 @@ export const Route = createFileRoute("/scouts/$slug")({
   component: ScoutDetailPage,
 });
 
-type RegistrationState =
-  | { kind: "idle" }
-  | { kind: "submitting" }
-  | { kind: "failed"; message: string };
-
 function ScoutDetailPage() {
   const viewer = useViewerAccess();
   const canManage =
     viewer?.kind === "account" && canAccess("access_scout_manage", viewer.accessKeys);
-  const canUseLab = viewer?.kind === "account" && canAccess("access_lab", viewer.accessKeys);
+  const canStartTask = viewer?.kind === "account" && canAccess("access_lab", viewer.accessKeys);
   const { slug } = Route.useParams();
   const search = Route.useSearch();
   const navigate = useNavigate({ from: "/scouts/$slug" });
-  const createThread = useMutation(api.scout.chats.createThread);
-  const [chatState, setChatState] = useState<RegistrationState>({ kind: "idle" });
   const scout = useQuery(api.scout.scouts.get, { slug });
   const resources = useQuery(
     api.scout.scouts.resources,
@@ -82,21 +74,6 @@ function ScoutDetailPage() {
       : selectedAccount
         ? { kind: "update", account: selectedAccount }
         : { kind: "closed" };
-  const startChat = async () => {
-    if (
-      scout.status !== "active" ||
-      scout.availability !== "available" ||
-      chatState.kind === "submitting"
-    )
-      return;
-    setChatState({ kind: "submitting" });
-    try {
-      const created = await createThread({ scoutId: scout._id });
-      await navigate({ to: "/chats", search: { thread: created.threadId } });
-    } catch {
-      setChatState({ kind: "failed", message: "Could not start the chat. Try again." });
-    }
-  };
 
   return (
     <>
@@ -115,32 +92,22 @@ function ScoutDetailPage() {
           </div>
           <div className="flex shrink-0 items-center gap-3 self-start">
             <ScoutAvailability scout={scout} />
-            {canUseLab && (
-              <Button
-                type="button"
-                size="sm"
-                disabled={
-                  scout.status !== "active" ||
-                  scout.availability !== "available" ||
-                  chatState.kind === "submitting"
-                }
-                onClick={() => void startChat()}
-              >
-                {chatState.kind === "submitting" ? (
-                  <LoaderCircleIcon className="animate-spin" />
-                ) : (
-                  <PlusIcon />
-                )}
-                {chatState.kind === "submitting" ? "Starting" : "New chat"}
-              </Button>
-            )}
+            {canStartTask &&
+              (scout.status === "active" && scout.availability === "available" ? (
+                <Button asChild>
+                  <Link to="/agents" search={{ scout: scout._id }}>
+                    <PlusIcon aria-hidden="true" />
+                    New task
+                  </Link>
+                </Button>
+              ) : (
+                <Button type="button" disabled>
+                  <PlusIcon aria-hidden="true" />
+                  New task
+                </Button>
+              ))}
           </div>
         </div>
-        {chatState.kind === "failed" ? (
-          <p className="text-destructive text-sm" role="alert">
-            {chatState.message}
-          </p>
-        ) : null}
       </header>
 
       {scout.currentActivity && (

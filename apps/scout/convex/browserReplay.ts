@@ -118,7 +118,7 @@ export const data = internalQuery({
     const agentsId = ctx.db.normalizeId("agentsApiBrowserSessions", args.sessionId);
     let replayData;
     if (agentsId) {
-      replayData = await ctx.runQuery(internal.agentsApi.browsers.replayData, {
+      replayData = await ctx.runQuery(internal.tasks.browsers.replayData, {
         sessionId: agentsId,
       });
     } else {

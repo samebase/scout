@@ -1,13 +1,6 @@
 import { canAccess, useViewerAccess } from "../lib/access";
 import { Link, useRouterState } from "@tanstack/react-router";
-import {
-  BotIcon,
-  FocusIcon,
-  MessageSquareIcon,
-  SettingsIcon,
-  TelescopeIcon,
-  UsersIcon,
-} from "lucide-react";
+import { BotIcon, FocusIcon, SettingsIcon, TelescopeIcon, UsersIcon } from "lucide-react";
 
 const navigationLinkClass =
   "group inline-flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-medium text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/40 aria-[current=page]:bg-primary aria-[current=page]:text-primary-foreground";
@@ -56,12 +49,6 @@ export function AppNavigation() {
             <Link to="/agents" search={{}} className={navigationLinkClass}>
               <BotIcon aria-hidden="true" />
               <span>Agents</span>
-            </Link>
-          )}
-          {canAccess("access_lab", permissions) && (
-            <Link to="/chats" className={navigationLinkClass}>
-              <MessageSquareIcon aria-hidden="true" />
-              <span>Lab</span>
             </Link>
           )}
           {canAccess("access_members_manage", permissions) && (

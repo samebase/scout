@@ -11,7 +11,7 @@ import {
   type Page,
 } from "playwright-core";
 import { omitNullish } from "../../shared/omitNullish";
-import { MAX_SCREENSHOT_BYTES, type screenshotMetadata } from "../agentsApi/screenshotModel";
+import { MAX_SCREENSHOT_BYTES, type screenshotMetadata } from "../tasks/screenshotModel";
 import { browserTelemetryValidator } from "../browserModel";
 import { type BrowserTarget } from "./browserTarget";
 import { BrowserClickRecorder, type BrowserClickCapture } from "./browserClickRecorder";

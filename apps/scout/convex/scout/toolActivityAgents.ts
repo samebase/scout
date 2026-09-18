@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { taskToolCallSchema } from "../../shared/taskTranscript";
 import type { Doc } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import type { ToolActivity } from "../../shared/toolActivity";
@@ -81,49 +82,28 @@ export async function agentsToolActivity(
   item: Doc<"agentsApiItems">,
   audience: ToolAudience,
 ): Promise<ToolActivity | null> {
+  if (item.kind === "tool_call") {
+    const call = taskToolCallSchema.parse(parseToolValue(item.details));
+    return presentFunctionCall(ctx, session, item, audience, call, null);
+  }
   if (!supportedKinds.has(item.kind)) return null;
   const tool = parseStoredTool(item.details);
   const active = session.state.kind === "running" || session.state.kind === "starting";
   const pending = active ? "running" : "interrupted";
   switch (tool.type) {
-    case "function_call": {
-      const call = await ctx.db
-        .query("agentsApiCalls")
-        .withIndex("by_session_id_and_call_id", (q) =>
-          q.eq("sessionId", session._id).eq("callId", tool.call_id),
-        )
-        .unique();
-      const result = call?.result;
-      // The provider call item completing only means that arguments have been emitted.
-      const state =
-        result?.kind === "error" || tool.status === "failed"
-          ? "failed"
-          : result?.kind === "success"
-            ? "completed"
-            : tool.status === "incomplete"
-              ? "interrupted"
-              : pending;
-      const output = result?.kind === "success" ? parseToolValue(result.output) : null;
-      const activity = presentToolActivity({
-        id: item._id,
-        name: tool.name,
-        state,
-        input: parseToolValue(tool.arguments),
-        output,
-        error: result?.kind === "error" ? result.error : null,
+    case "function_call":
+      return presentFunctionCall(
+        ctx,
+        session,
+        item,
         audience,
-      });
-      if (tool.name === "browser_execute") {
-        const capture = screenshotOutput.safeParse(unwrapToolOutput(output));
-        if (capture.success) {
-          const id = ctx.db.normalizeId("agentsApiScreenshots", capture.data.capture.captureId);
-          const screenshot = id ? await ctx.db.get(id) : null;
-          if (screenshot?.sessionId === session._id && screenshot.state.kind === "ready")
-            activity.captures.push(screenshot._id);
-        }
-      }
-      return activity;
-    }
+        {
+          name: tool.name,
+          callId: tool.call_id,
+          input: parseToolValue(tool.arguments),
+        },
+        tool.status === "failed" || tool.status === "incomplete" ? tool.status : null,
+      );
     case "mcp_call":
       return presentToolActivity({
         id: item._id,
@@ -202,4 +182,56 @@ export async function pairedAgentsOutput(ctx: QueryCtx, item: Doc<"agentsApiItem
     )
     .unique();
   return call?.result.kind === "success" || call?.result.kind === "error";
+}
+
+async function presentFunctionCall(
+  ctx: QueryCtx,
+  session: Doc<"agentsApiSessions">,
+  item: Doc<"agentsApiItems">,
+  audience: ToolAudience,
+  tool: z.infer<typeof taskToolCallSchema>,
+  failure: "failed" | "incomplete" | null,
+): Promise<ToolActivity> {
+  const pending =
+    session.state.kind === "running" || session.state.kind === "starting"
+      ? "running"
+      : "interrupted";
+  const call = await ctx.db
+    .query("agentsApiCalls")
+    .withIndex("by_session_id_and_call_id", (q) =>
+      q.eq("sessionId", session._id).eq("callId", tool.callId),
+    )
+    .unique();
+  const result = call?.result;
+  // The provider call item completing only means that arguments have been emitted.
+  const state =
+    result?.kind === "error"
+      ? "failed"
+      : result?.kind === "success"
+        ? "completed"
+        : failure === "failed"
+          ? "failed"
+          : failure === "incomplete"
+            ? "interrupted"
+            : pending;
+  const output = result?.kind === "success" ? parseToolValue(result.output) : null;
+  const activity = presentToolActivity({
+    id: item._id,
+    name: tool.name,
+    state,
+    input: tool.input,
+    output,
+    error: result?.kind === "error" ? result.error : null,
+    audience,
+  });
+  if (tool.name === "browser_execute") {
+    const capture = screenshotOutput.safeParse(unwrapToolOutput(output));
+    if (capture.success) {
+      const id = ctx.db.normalizeId("agentsApiScreenshots", capture.data.capture.captureId);
+      const screenshot = id ? await ctx.db.get(id) : null;
+      if (screenshot?.sessionId === session._id && screenshot.state.kind === "ready")
+        activity.captures.push(screenshot._id);
+    }
+  }
+  return activity;
 }

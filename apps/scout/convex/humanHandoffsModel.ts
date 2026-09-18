@@ -2,11 +2,6 @@ import { vWorkflowId } from "@convex-dev/workflow";
 import { type Infer, v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
-import {
-  humanHandoffOutcomeEvent,
-  humanHandoffScoutPausedEvent,
-  humanHandoffWorkflow,
-} from "./humanHandoffWorkflow";
 
 const humanHandoffCommon = {
   sessionId: v.id("scoutBrowserSessions"),
@@ -89,97 +84,6 @@ export const humanHandoffValidator = v.union(
     failedAt: v.number(),
     failure: humanHandoffFailureValidator,
     claimed: v.literal(true),
-  }),
-);
-
-export const humanHandoffStatusValidator = v.union(
-  v.literal("available"),
-  v.literal("active"),
-  v.literal("continued"),
-  v.literal("resumed"),
-  v.literal("stopped"),
-  v.literal("expired"),
-  v.literal("failed"),
-  v.literal("missing"),
-);
-
-const chatHumanHandoffContext = {
-  handoffId: v.id("scoutHumanHandoffs"),
-  reason: v.string(),
-  requestedAt: v.number(),
-};
-
-export const chatHumanHandoffValidator = v.union(
-  v.object({
-    ...chatHumanHandoffContext,
-    status: v.union(v.literal("available"), v.literal("active")),
-    expiresAt: v.number(),
-  }),
-  v.object({
-    ...chatHumanHandoffContext,
-    status: v.union(
-      v.literal("continued"),
-      v.literal("resumed"),
-      v.literal("stopped"),
-      v.literal("expired"),
-    ),
-  }),
-  v.object({
-    ...chatHumanHandoffContext,
-    status: v.literal("failed"),
-    failure: humanHandoffFailureValidator,
-  }),
-);
-
-export const requestedHumanHandoffValidator = v.object({
-  handoffId: v.id("scoutHumanHandoffs"),
-  created: v.boolean(),
-  recipientEmail: v.string(),
-  scoutName: v.string(),
-  claimExpiresAt: v.number(),
-});
-
-export const humanHandoffDestinationValidator = v.object({
-  threadId: v.string(),
-});
-
-const humanHandoffPageContext = {
-  handoffId: v.id("scoutHumanHandoffs"),
-  reason: v.string(),
-  scoutName: v.string(),
-  destination: v.optional(humanHandoffDestinationValidator),
-};
-
-export const humanHandoffPageValidator = v.union(
-  v.object({ status: v.literal("invalid") }),
-  v.object({
-    status: v.literal("waiting"),
-    ...humanHandoffPageContext,
-    expiresAt: v.number(),
-    serverNow: v.number(),
-    interactiveLiveViewUrl: v.string(),
-  }),
-  v.object({
-    status: v.literal("continued"),
-    ...humanHandoffPageContext,
-    continuedAt: v.number(),
-  }),
-  v.object({
-    status: v.literal("expired"),
-    ...humanHandoffPageContext,
-    expiredAt: v.number(),
-    claimed: v.boolean(),
-  }),
-  v.object({
-    status: v.literal("stopped"),
-    ...humanHandoffPageContext,
-    stoppedAt: v.number(),
-  }),
-  v.object({
-    status: v.literal("failed"),
-    ...humanHandoffPageContext,
-    failedAt: v.number(),
-    failure: humanHandoffFailureValidator,
   }),
 );
 
@@ -266,18 +170,6 @@ export function stoppedHandoff(
       };
 }
 
-async function sendOutcome(
-  ctx: MutationCtx,
-  handoff: Doc<"scoutHumanHandoffs">,
-  kind: "continued" | "expired" | "failed" | "stopped",
-) {
-  await humanHandoffWorkflow.sendEvent(ctx, {
-    ...humanHandoffOutcomeEvent,
-    workflowId: handoff.workflowId,
-    value: { kind },
-  });
-}
-
 async function failOpenHandoff(
   ctx: MutationCtx,
   handoff: Extract<Doc<"scoutHumanHandoffs">, { status: "available" | "active" }>,
@@ -286,7 +178,6 @@ async function failOpenHandoff(
   const now = Date.now();
   if (handoffDeadline(handoff) <= now) {
     await ctx.db.replace("scoutHumanHandoffs", handoff._id, expiredHandoff(handoff, now));
-    await sendOutcome(ctx, handoff, "expired");
     return;
   }
   await ctx.db.replace(
@@ -294,7 +185,6 @@ async function failOpenHandoff(
     handoff._id,
     failedHandoff(handoff, { failedAt: now, failure }),
   );
-  await sendOutcome(ctx, handoff, "failed");
 }
 
 export async function failHumanHandoffForSession(
@@ -307,6 +197,11 @@ export async function failHumanHandoffForSession(
     .unique();
   if (handoff?.status === "available" || handoff?.status === "active") {
     await failOpenHandoff(ctx, handoff, "browser_ended");
+  } else if (handoff?.status === "continued") {
+    await ctx.db.replace(
+      handoff._id,
+      failedHandoff(handoff, { failedAt: Date.now(), failure: "browser_ended" }),
+    );
   }
 }
 
@@ -325,18 +220,9 @@ export async function failHumanHandoffForTurn(ctx: MutationCtx, turnId: Id<"scou
       handoff._id,
       failedHandoff(handoff, { failedAt: Date.now(), failure: "scout_failed" }),
     );
-    await signalHumanHandoffScoutPaused(ctx, handoff);
     return true;
   }
   return false;
-}
-
-export async function signalHumanHandoffOutcome(
-  ctx: MutationCtx,
-  handoff: Doc<"scoutHumanHandoffs">,
-  kind: "continued" | "expired" | "failed" | "stopped",
-) {
-  await sendOutcome(ctx, handoff, kind);
 }
 
 export async function stopHumanHandoffForTurn(ctx: MutationCtx, turnId: Id<"scoutTurns">) {
@@ -353,20 +239,4 @@ export async function stopHumanHandoffForTurn(ctx: MutationCtx, turnId: Id<"scou
     return;
   }
   await ctx.db.replace("scoutHumanHandoffs", handoff._id, stoppedHandoff(handoff, Date.now()));
-  if (handoff.status === "continued") {
-    await signalHumanHandoffScoutPaused(ctx, handoff);
-  } else {
-    await sendOutcome(ctx, handoff, "stopped");
-  }
-}
-
-export async function signalHumanHandoffScoutPaused(
-  ctx: MutationCtx,
-  handoff: Doc<"scoutHumanHandoffs">,
-) {
-  await humanHandoffWorkflow.sendEvent(ctx, {
-    ...humanHandoffScoutPausedEvent,
-    workflowId: handoff.workflowId,
-    value: null,
-  });
 }

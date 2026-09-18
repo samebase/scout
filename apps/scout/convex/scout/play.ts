@@ -1,6 +1,6 @@
 import { outdent } from "outdent";
 import { tool } from "ai";
-import { v, type Infer } from "convex/values";
+import { v } from "convex/values";
 import { z } from "zod";
 
 const playStep = z.enum(["research", "account_setup", "play"]);
@@ -8,8 +8,7 @@ const playStep = z.enum(["research", "account_setup", "play"]);
 export const playStepValidator = v.union(...playStep.options.map(v.literal));
 export const playContextValidator = v.object({ step: v.union(playStepValidator, v.null()) });
 
-export function playInstructions(play: Infer<typeof playContextValidator> | undefined) {
-  if (!play) return "";
+export function playInstructions() {
   return outdent`
     This is Scout Play. Help users find, prepare for, and play games. For unrelated
     requests, briefly explain that scope. Set up account access only when needed.
@@ -36,7 +35,6 @@ export function playInstructions(play: Infer<typeof playContextValidator> | unde
     - Call set_activity_step as you switch between research, account_setup, and play.
     - Share brief updates about meaningful moves and the final result.
 
-    Current activity: ${play.step ?? "not yet selected"}.
   `;
 }
 

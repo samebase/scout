@@ -20,13 +20,14 @@ import { SitePreview, SitePreviewCapture } from "#components/site-preview";
 import { SiteIdentity } from "#components/site-identity";
 import { SiteFilters } from "#components/site-filters";
 import { LoadOnScroll } from "#components/load-on-scroll";
-import { chatSearchSchema } from "#lib/chat-search";
 import { reviewFeedSearch } from "#lib/reviewFeedSearch";
 import { canAccess, useViewerAccess } from "#lib/access";
 import { siteHostnameSchema } from "../../shared/site";
 import { ProductShell } from "../products/shell";
 
-const searchSchema = chatSearchSchema.pick({ file: true, terminal: true }).extend({
+const searchSchema = z.object({
+  file: z.string().startsWith("/workspace/").optional().catch(undefined),
+  terminal: z.literal("hidden").optional().catch(undefined),
   ...reviewFeedSearch.shape,
   view: z.enum(["tasks", "workspace"]).optional(),
 });
@@ -260,7 +261,7 @@ function SiteResearchControl({
 }: {
   site: NonNullable<FunctionReturnType<typeof api.scout.sites.get>>;
 }) {
-  const refresh = useAction(api.agentsApi.siteResearch.refresh);
+  const refresh = useAction(api.tasks.siteResearch.refresh);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const busy =
