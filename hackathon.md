@@ -1430,6 +1430,7 @@ Settings shows a rounded balance and charge history; the $5 pack for 200 credits
 ### 2026-09-18 - working tree - v231
 
 New reviews start on the landing page, including tasks opened from a selected site.
+The `/review` route is deleted; existing tasks open at `/tasks/$thread`.
 Read-only chats explain why replies are unavailable, and owners can inspect cost and usage
-in both Chat and Walkthrough (`apps/scout/src/routes/review.tsx`,
+in both Chat and Walkthrough (`apps/scout/src/routes/tasks.$thread.tsx`,
 `apps/scout/src/products/conversation/page.tsx`).

@@ -11,7 +11,7 @@ export function AppNavigation() {
   const reviewPage = useRouterState({
     select: (state) =>
       state.location.pathname === "/" ||
-      state.location.pathname === "/review" ||
+      state.location.pathname.startsWith("/tasks/") ||
       state.location.pathname.startsWith("/sites/"),
   });
   const permissions = viewer?.kind === "account" ? viewer.accessKeys : [];

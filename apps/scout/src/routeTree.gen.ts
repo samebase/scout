@@ -14,12 +14,12 @@ import { Route as AccountDeletionRouteImport } from './routes/account-deletion'
 import { Route as AgentsRouteImport } from './routes/agents'
 import { Route as MembersRouteImport } from './routes/members'
 import { Route as PlayRouteImport } from './routes/play'
-import { Route as ReviewRouteImport } from './routes/review'
 import { Route as ScoutsRouteImport } from './routes/scouts'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ScoutsIndexRouteImport } from './routes/scouts.index'
 import { Route as ScoutsSlugRouteImport } from './routes/scouts.$slug'
 import { Route as SitesSiteRouteImport } from './routes/sites.$site'
+import { Route as TasksThreadRouteImport } from './routes/tasks.$thread'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -44,11 +44,6 @@ const MembersRoute = MembersRouteImport.update({
 const PlayRoute = PlayRouteImport.update({
   id: '/play',
   path: '/play',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ReviewRoute = ReviewRouteImport.update({
-  id: '/review',
-  path: '/review',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ScoutsRoute = ScoutsRouteImport.update({
@@ -76,6 +71,11 @@ const SitesSiteRoute = SitesSiteRouteImport.update({
   path: '/sites/$site',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TasksThreadRoute = TasksThreadRouteImport.update({
+  id: '/tasks/$thread',
+  path: '/tasks/$thread',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -83,11 +83,11 @@ export interface FileRoutesByFullPath {
   '/agents': typeof AgentsRoute
   '/members': typeof MembersRoute
   '/play': typeof PlayRoute
-  '/review': typeof ReviewRoute
   '/scouts': typeof ScoutsRouteWithChildren
   '/settings': typeof SettingsRoute
   '/scouts/$slug': typeof ScoutsSlugRoute
   '/sites/$site': typeof SitesSiteRoute
+  '/tasks/$thread': typeof TasksThreadRoute
   '/scouts/': typeof ScoutsIndexRoute
 }
 export interface FileRoutesByTo {
@@ -96,10 +96,10 @@ export interface FileRoutesByTo {
   '/agents': typeof AgentsRoute
   '/members': typeof MembersRoute
   '/play': typeof PlayRoute
-  '/review': typeof ReviewRoute
   '/settings': typeof SettingsRoute
   '/scouts/$slug': typeof ScoutsSlugRoute
   '/sites/$site': typeof SitesSiteRoute
+  '/tasks/$thread': typeof TasksThreadRoute
   '/scouts': typeof ScoutsIndexRoute
 }
 export interface FileRoutesById {
@@ -109,11 +109,11 @@ export interface FileRoutesById {
   '/agents': typeof AgentsRoute
   '/members': typeof MembersRoute
   '/play': typeof PlayRoute
-  '/review': typeof ReviewRoute
   '/scouts': typeof ScoutsRouteWithChildren
   '/settings': typeof SettingsRoute
   '/scouts/$slug': typeof ScoutsSlugRoute
   '/sites/$site': typeof SitesSiteRoute
+  '/tasks/$thread': typeof TasksThreadRoute
   '/scouts/': typeof ScoutsIndexRoute
 }
 export interface FileRouteTypes {
@@ -124,11 +124,11 @@ export interface FileRouteTypes {
     | '/agents'
     | '/members'
     | '/play'
-    | '/review'
     | '/scouts'
     | '/settings'
     | '/scouts/$slug'
     | '/sites/$site'
+    | '/tasks/$thread'
     | '/scouts/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -137,10 +137,10 @@ export interface FileRouteTypes {
     | '/agents'
     | '/members'
     | '/play'
-    | '/review'
     | '/settings'
     | '/scouts/$slug'
     | '/sites/$site'
+    | '/tasks/$thread'
     | '/scouts'
   id:
     | '__root__'
@@ -149,11 +149,11 @@ export interface FileRouteTypes {
     | '/agents'
     | '/members'
     | '/play'
-    | '/review'
     | '/scouts'
     | '/settings'
     | '/scouts/$slug'
     | '/sites/$site'
+    | '/tasks/$thread'
     | '/scouts/'
   fileRoutesById: FileRoutesById
 }
@@ -163,10 +163,10 @@ export interface RootRouteChildren {
   AgentsRoute: typeof AgentsRoute
   MembersRoute: typeof MembersRoute
   PlayRoute: typeof PlayRoute
-  ReviewRoute: typeof ReviewRoute
   ScoutsRoute: typeof ScoutsRouteWithChildren
   SettingsRoute: typeof SettingsRoute
   SitesSiteRoute: typeof SitesSiteRoute
+  TasksThreadRoute: typeof TasksThreadRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -206,13 +206,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PlayRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/review': {
-      id: '/review'
-      path: '/review'
-      fullPath: '/review'
-      preLoaderRoute: typeof ReviewRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/scouts': {
       id: '/scouts'
       path: '/scouts'
@@ -248,6 +241,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SitesSiteRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/tasks/$thread': {
+      id: '/tasks/$thread'
+      path: '/tasks/$thread'
+      fullPath: '/tasks/$thread'
+      preLoaderRoute: typeof TasksThreadRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -270,10 +270,10 @@ const rootRouteChildren: RootRouteChildren = {
   AgentsRoute: AgentsRoute,
   MembersRoute: MembersRoute,
   PlayRoute: PlayRoute,
-  ReviewRoute: ReviewRoute,
   ScoutsRoute: ScoutsRouteWithChildren,
   SettingsRoute: SettingsRoute,
   SitesSiteRoute: SitesSiteRoute,
+  TasksThreadRoute: TasksThreadRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

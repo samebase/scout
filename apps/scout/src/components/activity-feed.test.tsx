@@ -339,7 +339,7 @@ test.each(["public", "mine"])("site heading links preserve the %s scope", async 
   expect(screen.queryByTestId("site-preview")).toBeNull();
   expect(screen.queryByRole("button", { name: "Show more tasks" })).toBeNull();
   expect(screen.getByRole("link", { name: /papergames.io task 1/ }).getAttribute("href")).toContain(
-    "/review?",
+    "/tasks/",
   );
 });
 

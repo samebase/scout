@@ -25,7 +25,7 @@ import { api } from "../../../convex/_generated/api";
 import { omitNullish } from "../../../shared/omitNullish";
 import { creditFailure, creditFailureMessage } from "../../../shared/creditFailure";
 import { scoutAvailabilityLabels } from "#components/scout-current-activity";
-import { productRoutes, type ProductKind, type ConversationSearch } from "./model";
+import { conversationDestination, type ProductKind, type ConversationSearch } from "./model";
 import { gameInviteDisplayText } from "../play/invite";
 import { ConversationComposer } from "./composer";
 import { ConversationSidebar, BrowserToggle, BrowserStop, TasksToggle } from "./sidebar";
@@ -72,29 +72,19 @@ export function ConversationError() {
 
 export function ConversationPage({
   kind,
+  threadId,
   search,
 }: {
   kind: ProductKind;
+  threadId: string;
   search: ConversationSearch;
 }) {
-  const { thread } = search;
   return (
     <ProductShell>
-      <main
-        id="main-content"
-        className={
-          thread
-            ? "flex h-[calc(100dvh-4rem)] min-h-0 flex-col"
-            : "grid min-h-[calc(100dvh-4rem)] place-items-center px-5 pt-8 pb-[16vh] max-[760px]:pb-[12vh]"
-        }
-      >
-        {thread ? (
-          <ConversationSidebar>
-            <SessionLoader threadId={thread} kind={kind} search={search} />
-          </ConversationSidebar>
-        ) : (
-          <ConversationLobby key={kind} kind={kind} siteSelection={null} />
-        )}
+      <main id="main-content" className="flex h-[calc(100dvh-4rem)] min-h-0 flex-col">
+        <ConversationSidebar>
+          <SessionLoader threadId={threadId} kind={kind} search={search} />
+        </ConversationSidebar>
       </main>
     </ProductShell>
   );
@@ -170,7 +160,7 @@ export function ConversationLobby({
         prompt,
         visibility,
       });
-      await navigate({ to: productRoutes[kind], search: { thread: threadId } });
+      await navigate(conversationDestination(kind, threadId, {}));
     } catch (error) {
       setRequest({
         kind: "failed",
@@ -462,9 +452,11 @@ function ConversationTitle({ thread, kind }: { thread: ChatThread; kind: Product
 }
 
 function ReviewViews({
+  threadId,
   search,
   showingWalkthrough,
 }: {
+  threadId: string;
   search: ConversationSearch;
   showingWalkthrough: boolean;
 }) {
@@ -473,7 +465,8 @@ function ReviewViews({
     <nav aria-label="Review views" className="flex min-w-0 items-center gap-1 overflow-x-auto">
       <Button asChild variant={showingWalkthrough ? "secondary" : "ghost"} size="sm">
         <Link
-          to="/review"
+          to="/tasks/$thread"
+          params={{ thread: threadId }}
           search={{ ...search, view: "walkthrough" }}
           resetScroll={false}
           onClick={() => setMobilePane("main")}
@@ -484,7 +477,8 @@ function ReviewViews({
       </Button>
       <Button asChild variant={showingWalkthrough ? "ghost" : "secondary"} size="sm">
         <Link
-          to="/review"
+          to="/tasks/$thread"
+          params={{ thread: threadId }}
           search={{ ...search, view: "chat" }}
           resetScroll={false}
           onClick={() => setMobilePane("main")}
@@ -516,11 +510,7 @@ function ConversationNavigation({
       <ArrowLeftIcon size={16} aria-hidden="true" /> All sites
     </Link>
   ) : (
-    <Link
-      to={productRoutes[kind]}
-      search={{}}
-      className={cn(playTextLink, "min-h-11 text-muted-foreground")}
-    >
+    <Link to="/play" search={{}} className={cn(playTextLink, "min-h-11 text-muted-foreground")}>
       <ArrowLeftIcon size={16} aria-hidden="true" />{" "}
       <span className="whitespace-nowrap">New chat</span>
     </Link>
@@ -660,14 +650,13 @@ function ConversationBrowser({
               (session) => session.sessionId === event.currentTarget.value,
             );
             if (selected)
-              void navigate({
-                to: productRoutes[kind],
-                search: {
+              void navigate(
+                conversationDestination(kind, thread.threadId, {
                   ...search,
                   session: selected.sessionId,
                   replay: undefined,
-                },
-              });
+                }),
+              );
           }}
           className="min-h-11 min-w-0 flex-1 rounded-lg bg-transparent pr-1 font-medium"
         >
@@ -711,14 +700,13 @@ function ConversationBrowser({
             search.replay?.sessionId === session.sessionId ? search.replay.pageId : null
           }
           onSelectPage={(pageId) => {
-            void navigate({
-              to: productRoutes[kind],
-              search: {
+            void navigate(
+              conversationDestination(kind, thread.threadId, {
                 ...search,
                 session: session.sessionId,
                 replay: pageId === null ? undefined : { sessionId: session.sessionId, pageId },
-              },
-            });
+              }),
+            );
           }}
         />
       ) : (
@@ -884,7 +872,13 @@ function ConversationSession({
     >
       {kind === "review" && (
         <div data-sidebar-layout-part="pane-header" className="justify-between gap-2 px-3">
-          {managedId && <ReviewViews search={search} showingWalkthrough={showingWalkthrough} />}
+          {managedId && (
+            <ReviewViews
+              threadId={threadId}
+              search={search}
+              showingWalkthrough={showingWalkthrough}
+            />
+          )}
           <ConversationActions thread={thread} kind={kind} />
         </div>
       )}
