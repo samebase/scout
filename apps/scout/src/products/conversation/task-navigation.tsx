@@ -1,7 +1,7 @@
 import { PaneFrame } from "@samebase/sidebars/PaneFrame";
 import { useSidebarActions } from "@samebase/sidebars/SidebarRuntime";
 import { Link } from "@tanstack/react-router";
-import { ArrowLeftIcon } from "lucide-react";
+import { ArrowLeftIcon, GlobeIcon, LockKeyholeIcon } from "lucide-react";
 import { usePaginatedQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { api } from "../../../convex/_generated/api";
@@ -10,7 +10,7 @@ import { cn } from "#lib/utils";
 import type { ReviewFeedSearch } from "#lib/reviewFeedSearch";
 
 type Activity = FunctionReturnType<typeof api.scout.activity.list>["page"][number];
-type Task = Pick<Activity, "threadId" | "title" | "createdAt">;
+type Task = Pick<Activity, "threadId" | "title" | "createdAt" | "visibility">;
 
 export function TaskNavigation({
   site,
@@ -98,6 +98,7 @@ function TaskLink({
   search: ReviewFeedSearch;
 }) {
   const { setMobilePane } = useSidebarActions();
+  const VisibilityIcon = task.visibility === "public" ? GlobeIcon : LockKeyholeIcon;
   return (
     <li>
       <Link
@@ -112,8 +113,15 @@ function TaskLink({
           selected ? "border-primary/25 bg-primary/10" : "border-transparent hover:bg-secondary",
         )}
       >
-        <span className="line-clamp-3 text-sm leading-snug font-medium wrap-anywhere">
-          {task.title ?? "New review"}
+        <span className="flex items-start gap-2">
+          <VisibilityIcon
+            className="mt-0.5 size-3.5 shrink-0 text-muted-foreground"
+            role="img"
+            aria-label={task.visibility === "public" ? "Public" : "Private"}
+          />
+          <span className="line-clamp-3 text-sm leading-snug font-medium wrap-anywhere">
+            {task.title ?? "New review"}
+          </span>
         </span>
         <time
           dateTime={new Date(task.createdAt).toISOString()}

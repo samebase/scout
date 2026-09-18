@@ -1,7 +1,7 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useAction, usePaginatedQuery, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
-import { ArrowRightIcon, LockIcon } from "lucide-react";
+import { ArrowRightIcon, GlobeIcon, LockKeyholeIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "#components/ui/button";
 import { SiteFilters } from "#components/site-filters";
@@ -216,6 +216,7 @@ function ReviewRow({
   search: ReviewFeedSearch;
 }) {
   const checks = activity.walkthrough?.checks;
+  const VisibilityIcon = activity.visibility === "public" ? GlobeIcon : LockKeyholeIcon;
   const ongoing =
     activity.status === "ready" ||
     activity.status === "running" ||
@@ -236,6 +237,11 @@ function ReviewRow({
         preview ? "py-1 sm:max-lg:py-0.5" : "py-4",
       )}
     >
+      <VisibilityIcon
+        className="mt-0.5 size-3.5 shrink-0 self-start text-muted-foreground"
+        role="img"
+        aria-label={activity.visibility === "public" ? "Public" : "Private"}
+      />
       <div className="min-w-0 flex-1">
         <div
           className={cn(
@@ -266,9 +272,6 @@ function ReviewRow({
                 {activityLabels[activity.status]}
               </span>
             )}
-            {preview && activity.visibility === "private" && (
-              <LockIcon className="size-3 text-muted-foreground" role="img" aria-label="Private" />
-            )}
           </div>
         </div>
         <div className={cn(preview && "flex min-h-5 items-baseline gap-2")}>
@@ -283,9 +286,6 @@ function ReviewRow({
             >
               {activity.walkthrough.summary}
             </p>
-          )}
-          {!preview && activity.visibility === "private" && (
-            <p className="mt-1 shrink-0 text-xs text-muted-foreground">Private</p>
           )}
         </div>
       </div>
