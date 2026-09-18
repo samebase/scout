@@ -60,6 +60,7 @@ export function taskBrowserCredits(ctx: ActionCtx, sessionId: Id<"agentsApiSessi
       browser: async (options: Parameters<typeof firecrawl.browser>[0]) => {
         if (creditsEnabled() && !funding)
           funding = await ctx.runMutation(internal.tasks.browsers.reserve, { sessionId });
+        const requestedAt = Date.now();
         const result = await firecrawl.browser(
           funding
             ? { ...options, ttl: funding.durationSeconds, activityTtl: funding.durationSeconds }
@@ -80,7 +81,15 @@ export function taskBrowserCredits(ctx: ActionCtx, sessionId: Id<"agentsApiSessi
             creditsBilled: stopped.creditsBilled ?? null,
           });
         }
-        return result;
+        if (!result.success || !funding) return result;
+        const providerExpiry = result.expiresAt ? Date.parse(result.expiresAt) : Infinity;
+        const fundedExpiry = requestedAt + funding.durationSeconds * 1_000;
+        return {
+          ...result,
+          expiresAt: new Date(
+            Number.isFinite(providerExpiry) ? Math.min(providerExpiry, fundedExpiry) : fundedExpiry,
+          ).toISOString(),
+        };
       },
       browserExecute: async (...args: Parameters<typeof firecrawl.browserExecute>) =>
         await firecrawl.browserExecute(...args),
