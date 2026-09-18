@@ -58,7 +58,7 @@ export const polarOrderSchema = z.object({
   net_amount: cents,
   refunded_amount: cents,
   refunded_tax_amount: cents,
-  customer: z.object({ id: identifier, external_id: identifier, organization_id: identifier }),
+  customer: z.object({ id: identifier, organization_id: identifier }),
   product: z.object({
     id: identifier,
     organization_id: identifier,

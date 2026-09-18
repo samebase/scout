@@ -38,7 +38,6 @@ export const paidOrderEvidenceValidator = v.object({
   orderId: v.string(),
   checkoutId: v.string(),
   customerId: v.string(),
-  externalCustomerId: v.string(),
   organizationId: v.string(),
   productId: v.string(),
   environment: polarEnvironmentValidator,

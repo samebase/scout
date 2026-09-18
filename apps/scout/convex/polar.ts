@@ -93,7 +93,6 @@ export function orderEvidence(value: unknown, environment: "sandbox" | "producti
     orderId: order.id,
     checkoutId: order.checkout_id,
     customerId: order.customer_id,
-    externalCustomerId: order.customer.external_id,
     organizationId: order.customer.organization_id,
     productId: order.product_id,
     environment,
