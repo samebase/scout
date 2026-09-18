@@ -627,6 +627,10 @@ function SessionView({ session, walkthrough }: { session: Session; walkthrough: 
   const canStop = session.canControl && (controls.canStop || session.active);
   const error =
     session.cleanupError ?? (session.state.kind === "failed" ? session.state.error : null);
+  const errorMessage =
+    (!session.cleanupError && session.state.kind === "failed"
+      ? session.state.diagnostic?.message
+      : undefined) ?? error?.split(/\r?\n/, 1)[0];
   const pending = request.kind === "pending";
 
   async function run(operation: "send" | "retry" | "stop" | "resume" | "refresh") {
@@ -737,20 +741,21 @@ function SessionView({ session, walkthrough }: { session: Session; walkthrough: 
         )}
         {error && (
           <div className="space-y-2">
-            <p role="alert" className="text-sm wrap-anywhere text-destructive">
-              {error.split(/\r?\n/, 1)[0]}
+            <p role="alert" className="text-sm whitespace-pre-wrap wrap-anywhere text-destructive">
+              {errorMessage}
             </p>
             {session.state.kind === "failed" && session.state.diagnostic && (
               <details>
                 <summary className="cursor-pointer text-xs text-muted-foreground">
                   Failure details
                 </summary>
-                <pre className="mt-2 max-h-48 overflow-auto text-xs whitespace-pre-wrap wrap-anywhere">
+                <pre className="mt-2 max-h-48 overflow-auto text-xs whitespace-pre-wrap wrap-anywhere select-text">
                   {JSON.stringify(
                     {
                       taskId: session._id,
                       providerSessionId: session.providerId,
                       ...session.state.diagnostic,
+                      error: session.state.error,
                     },
                     null,
                     2,
@@ -758,16 +763,19 @@ function SessionView({ session, walkthrough }: { session: Session; walkthrough: 
                 </pre>
               </details>
             )}
-            {error.trimEnd().includes("\n") && (
-              <details>
-                <summary className="w-fit cursor-pointer rounded text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">
-                  Details
-                </summary>
-                <pre className="mt-2 max-h-48 overflow-auto rounded-lg border bg-muted/40 p-3 text-xs whitespace-pre-wrap wrap-anywhere">
-                  {error}
-                </pre>
-              </details>
-            )}
+            {error.trimEnd().includes("\n") &&
+              (session.cleanupError ||
+                session.state.kind !== "failed" ||
+                !session.state.diagnostic) && (
+                <details>
+                  <summary className="w-fit cursor-pointer rounded text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">
+                    Details
+                  </summary>
+                  <pre className="mt-2 max-h-48 overflow-auto rounded-lg border bg-muted/40 p-3 text-xs whitespace-pre-wrap wrap-anywhere select-text">
+                    {error}
+                  </pre>
+                </details>
+              )}
           </div>
         )}
         {session.state.kind === "stopped" && !error && (

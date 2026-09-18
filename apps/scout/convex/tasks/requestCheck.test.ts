@@ -7,7 +7,10 @@ import { api, internal } from "../_generated/api";
 import { ensureCreditWallet } from "../creditLedger";
 import schema from "../schema";
 import { ADMIN_EMAIL, insertTestAccount } from "../testing/accounts";
+import { captureHandoffEvidence } from "./handoffEvidence";
 import { REQUEST_CHECK_MODEL, requestCheckResult } from "./requestCheckModel";
+
+vi.mock("./handoffEvidence", () => ({ captureHandoffEvidence: vi.fn() }));
 
 const modules = {
   ...import.meta.glob("../**/*.ts"),
@@ -239,6 +242,80 @@ it.each([
   });
   expect((await t.publicFeed()).page).toEqual([]);
   expect(request).toHaveBeenCalledTimes(attempts);
+});
+
+it("preserves the full OpenAI error, code, and request ID for an initial check", async () => {
+  const t = await setup();
+  const providerMessage = `Rejected https://api.example.test/context ${"detail ".repeat(90)}final detail`;
+  const error = `Request check failed: 400 ${providerMessage} [code: invalid_request] [request_id: req-initial]`;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn<typeof fetch>(async () =>
+      Response.json(
+        { error: { message: providerMessage, code: "invalid_request" } },
+        { status: 400, headers: { "x-request-id": "req-initial" } },
+      ),
+    ),
+  );
+
+  expect(await t.check()).toBe(false);
+  expect((await t.inspectCheck()).state).toMatchObject({ kind: "failed", error });
+  expect((await t.inspect()).state).toEqual({ kind: "failed", error });
+  expect(
+    await t.member.query(api.tasks.sessions.controls, { sessionId: t.sessionId }),
+  ).toMatchObject({ requestCheckMessage: error });
+});
+
+it("preserves the OpenAI error, code, and request ID for a resume check", async () => {
+  const t = await setup();
+  const handoff = { message: "Finish verification", callId: "call-resume", turnId: "turn-resume" };
+  await t.backend.run((ctx) =>
+    ctx.db.patch(t.sessionId, {
+      providerId: "provider-session",
+      state: { kind: "waiting", ...handoff },
+      browser: {
+        providerSessionId: "browser-resume",
+        cdpUrl: "wss://browser.example.test/cdp",
+        interactiveLiveViewUrl: "https://browser.example.test/control",
+        liveViewUrl: null,
+        currentUrl: null,
+      },
+    }),
+  );
+  vi.mocked(captureHandoffEvidence).mockResolvedValue({
+    capturedAt: Date.now(),
+    pages: [{ tabId: "tab-1", url: "https://example.test", title: "Page", content: "Ready" }],
+  });
+  await t.member.mutation(api.tasks.sessions.resume, {
+    sessionId: t.sessionId,
+    callId: handoff.callId,
+    turnId: handoff.turnId,
+  });
+  const session = await t.backend.query(internal.tasks.sessions.cleanupResources, {
+    sessionId: t.sessionId,
+  });
+  if (session.state.kind !== "checking") throw new Error("Expected resume check");
+  vi.stubGlobal(
+    "fetch",
+    vi.fn<typeof fetch>(async () =>
+      Response.json(
+        { error: { message: "Missing model access", code: "authentication_error" } },
+        { status: 403, headers: { "x-request-id": "req-resume" } },
+      ),
+    ),
+  );
+
+  expect(
+    await t.backend.action(internal.tasks.requestCheck.run, { checkId: session.state.checkId }),
+  ).toBe(false);
+  const error =
+    "Resume check failed: 403 Missing model access [code: authentication_error] [request_id: req-resume]";
+  expect(
+    await t.backend.query(internal.tasks.requestChecks.get, { checkId: session.state.checkId }),
+  ).toMatchObject({ state: { kind: "failed", error } });
+  expect(
+    await t.member.query(api.tasks.sessions.controls, { sessionId: t.sessionId }),
+  ).toMatchObject({ state: { kind: "waiting" }, requestCheckMessage: error });
 });
 
 it("charges measured usage even when the task is stopped during the check", async () => {

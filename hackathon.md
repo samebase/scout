@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-18T18:43:52Z
+- **Last updated:** 2026-09-18T19:09:18Z
 
 ## Log
 
@@ -1450,7 +1450,14 @@ The URL bar now has a visible Follow Scout control; selecting a tab pauses autom
 until it is restored (`apps/scout/src/components/browser-replay-header.tsx`,
 `apps/scout/src/lib/browserReplayTimeline.ts`).
 
-### 2026-09-18 - working tree - v234
+### 2026-09-18 - 0e3432d - v234
 
 Site cards use even 12px content padding, leaving room above the title and below the task link.
 Removed the compressed header and footer sizing (`apps/scout/src/components/activity-feed.tsx`).
+
+### 2026-09-18 - working tree - v235
+
+Task owners see the actual API failure, with saved diagnostics and stack details available in the task.
+HTTP and stream errors log their API method, path, request ID, and tool-call identity without payloads.
+Tool-result retries reuse a stable key and saved result; rejected messages remain visibly unsent (`apps/scout/convex/tasks/`,
+`apps/scout/src/products/conversation/page.tsx`, `apps/scout/src/tasks/page.tsx`).

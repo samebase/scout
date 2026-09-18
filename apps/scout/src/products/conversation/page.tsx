@@ -24,7 +24,6 @@ import { type FormEvent, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import { omitNullish } from "../../../shared/omitNullish";
 import { creditFailure, creditFailureMessage } from "../../../shared/creditFailure";
-import { taskFailureMessage } from "../../../shared/taskFailure";
 import { PendingTaskMessage } from "../../tasks/pending-message";
 import { scoutAvailabilityLabels } from "#components/scout-current-activity";
 import { conversationDestination, type ProductKind, type ConversationSearch } from "./model";
@@ -1043,7 +1042,7 @@ function ConversationSession({
           />
           {failure && (
             <div role="alert" className={cn(playNotice, "mb-3")}>
-              <p>
+              <p className="whitespace-pre-wrap wrap-anywhere">
                 {failedCreditCode ? (
                   <>
                     {creditFailureMessage(failedCreditCode)}{" "}
@@ -1052,9 +1051,25 @@ function ConversationSession({
                     </Link>
                   </>
                 ) : (
-                  (managed?.requestCheckMessage ?? taskFailureMessage(failure.diagnostic))
+                  (managed?.requestCheckMessage ??
+                  failure.diagnostic?.message ??
+                  failure.error.split(/\r?\n/, 1)[0])
                 )}
               </p>
+              {!failedCreditCode &&
+                !managed?.requestCheckMessage &&
+                (failure.diagnostic || failure.error.trimEnd().includes("\n")) && (
+                  <details className="mt-2">
+                    <summary className="w-fit cursor-pointer rounded text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                      Details
+                    </summary>
+                    <pre className="mt-2 max-h-48 overflow-auto rounded-lg border bg-muted/40 p-3 text-xs whitespace-pre-wrap wrap-anywhere select-text">
+                      {failure.diagnostic
+                        ? JSON.stringify({ ...failure.diagnostic, error: failure.error }, null, 2)
+                        : failure.error}
+                    </pre>
+                  </details>
+                )}
               {!pendingMessage &&
                 !failedCreditCode &&
                 !managed?.requestCheckMessage &&

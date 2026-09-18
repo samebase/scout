@@ -1,6 +1,7 @@
 "use node";
 
 import { v } from "convex/values";
+import { APIError } from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
 import type { ResponseCreateParamsNonStreaming } from "openai/resources/responses/responses";
 import { internal } from "../_generated/api";
@@ -65,7 +66,7 @@ export const run = internalAction({
       } satisfies ResponseCreateParamsNonStreaming;
       const request = JSON.stringify(input);
       const startedAt = Date.now();
-      const client = openAIClient();
+      const client = openAIClient(session._id);
       if (
         !(await ctx.runMutation(internal.tasks.requestChecks.start, {
           checkId,
@@ -97,11 +98,15 @@ export const run = internalAction({
               result: { kind: "resume", ...resumeCheckResult.parse(parsed) },
             };
     } catch (error) {
+      const detail =
+        error instanceof APIError
+          ? `${error.message}${error.code ? ` [code: ${error.code}]` : ""}${error.requestID ? ` [request_id: ${error.requestID}]` : ""}`
+          : diagnosticMessage(error);
       state = {
         kind: "failed",
         finishedAt: Date.now(),
         call,
-        error: `${check.kind === "initial" ? "Request" : "Resume"} check failed: ${diagnosticMessage(error)}`,
+        error: `${check.kind === "initial" ? "Request" : "Resume"} check failed: ${detail}`,
       };
     }
     return await ctx.runMutation(internal.tasks.requestChecks.finish, { checkId, state });

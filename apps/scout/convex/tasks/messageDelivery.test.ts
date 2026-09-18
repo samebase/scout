@@ -78,16 +78,23 @@ async function setup(engine: "agents_api" | "convex_agent") {
   return { backend, owner, sessionId, session, pendingMessage: queued.pendingMessage };
 }
 
-it.each(["turns", "stream", "post", "after_ack"] as const)(
+it.each(["turns", "stream", "post", "post_400", "post_408", "post_429", "after_ack"] as const)(
   "preserves the correct delivery state when Agents API fails at %s",
   async (failure) => {
     const task = await setup("agents_api");
     const posted: unknown[] = [];
-    const unavailable = () =>
+    const unavailable = (status = 500) =>
       Response.json(
-        { error: { message: "Provider unavailable" } },
         {
-          status: 500,
+          error: {
+            message:
+              status === 400
+                ? "Cannot create a turn in a failed managed agent session"
+                : "Provider unavailable",
+          },
+        },
+        {
+          status,
           headers: { "x-should-retry": "false", "x-request-id": "req-http-test" },
         },
       );
@@ -114,6 +121,9 @@ it.each(["turns", "stream", "post", "after_ack"] as const)(
         });
         const body: unknown = await request.json();
         posted.push(body);
+        if (failure === "post_400") return unavailable(400);
+        if (failure === "post_408") return unavailable(408);
+        if (failure === "post_429") return unavailable(429);
         return failure === "post" ? unavailable() : new Response(null, { status: 204 });
       }
       throw new Error(`Unexpected provider request: ${request.method} ${path}`);
@@ -125,7 +135,11 @@ it.each(["turns", "stream", "post", "after_ack"] as const)(
         command: { kind: "send", message },
       }),
     ).rejects.toThrow(
-      failure === "after_ack" ? "Stream failed after acknowledgement" : "Provider unavailable",
+      failure === "after_ack"
+        ? "Stream failed after acknowledgement"
+        : failure === "post_400"
+          ? "Cannot create a turn in a failed managed agent session"
+          : "Provider unavailable",
     );
     expect((await task.session())?.state).toMatchObject({
       kind: "failed",
@@ -154,9 +168,11 @@ it.each(["turns", "stream", "post", "after_ack"] as const)(
     expect((await task.session())?.pendingMessage).toEqual(
       beforeSubmission
         ? task.pendingMessage
-        : failure === "post"
+        : failure === "post" || failure === "post_408"
           ? { ...task.pendingMessage, status: "submitting" }
-          : undefined,
+          : failure === "post_400" || failure === "post_429"
+            ? task.pendingMessage
+            : undefined,
     );
     await task.backend.mutation(internal.tasks.sessions.update, {
       sessionId: task.sessionId,
@@ -167,7 +183,7 @@ it.each(["turns", "stream", "post", "after_ack"] as const)(
     const retry = task.owner.mutation(api.tasks.sessions.retryMessage, {
       sessionId: task.sessionId,
     });
-    if (beforeSubmission) {
+    if (beforeSubmission || failure === "post_400" || failure === "post_429") {
       await expect(retry).resolves.toBeNull();
       expect((await task.session())?.pendingMessage).toMatchObject({ message, status: "queued" });
     } else await expect(retry).rejects.toThrow("not been submitted");
