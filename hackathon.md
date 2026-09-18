@@ -1412,9 +1412,17 @@ Convex checks site access and attaches the task before research, while public vi
 waits for request approval (`apps/scout/convex/scout/chats.ts`,
 `apps/scout/src/components/product-home.tsx`).
 
-### 2026-09-18 - working tree - v229
+### 2026-09-18 - f1e94a5 - v229
 
 Mobile walkthroughs let horizontal swipes open the task sidebar from text or screenshots.
 Previous and Next keep the visible screenshot in place as explanations change length,
 and reserve its space while the next image loads
 (`apps/scout/src/components/task-walkthrough.tsx`).
+
+### 2026-09-18 - working tree - v228
+
+Verified accounts receive 50 Scout credits. Task checks, site research, browser sessions,
+model use, and hosted search now debit a shared wallet from reported provider usage, with
+holds before paid work and inspectable unresolved charges. Settings shows balance and history;
+the $5 pack for 200 credits uses Polar checkout when configured and enabled
+(`apps/scout/convex/credits.ts`, `apps/scout/convex/tasks/`, `apps/scout/src/components/credits-panel.tsx`).
