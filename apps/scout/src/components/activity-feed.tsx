@@ -132,8 +132,8 @@ function SiteCard({
       >
         <SitePreview site={site} className="sm:w-[clamp(18rem,calc(25vw+8rem),24rem)]" />
       </Link>
-      <div className="flex min-h-60 min-w-0 flex-col px-4 sm:min-h-0 sm:px-5">
-        <header className="relative shrink-0 border-b py-1.5 sm:max-lg:py-1">
+      <div className="flex min-h-60 min-w-0 flex-col p-3 sm:min-h-0">
+        <header className="relative shrink-0 border-b pb-2">
           <Link
             to="/sites/$site"
             params={{ site: site.hostname }}
@@ -161,7 +161,7 @@ function SiteCard({
         <Button
           asChild
           variant="ghost"
-          className="h-7 w-full shrink-0 rounded-none border-t py-1 text-xs font-normal text-primary"
+          className="w-full shrink-0 rounded-none border-t text-xs font-normal text-primary"
         >
           <Link to="/sites/$site" params={{ site: site.hostname }} search={search}>
             {site.taskCount === 0
