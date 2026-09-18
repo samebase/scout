@@ -216,6 +216,43 @@ it("queues a check for this handoff and denies duplicate Resume while checking",
   expect(fetch).not.toHaveBeenCalled();
 });
 
+it("reserves and settles a resumed request check using its measured OpenAI usage", async () => {
+  vi.stubEnv("CREDITS_ENABLED", "true");
+  const t = await setup();
+  const checkId = await t.resume();
+  const request = vi.fn<typeof fetch>(async () => {
+    const reservation = await t.backend.run((ctx) =>
+      ctx.db
+        .query("creditReservations")
+        .withIndex("by_session_id_and_source_key", (q) =>
+          q.eq("sessionId", t.sessionId).eq("sourceKey", `request_check:${checkId}`),
+        )
+        .unique(),
+    );
+    expect(reservation).toMatchObject({
+      source: { kind: "request_check" },
+      state: { kind: "pending" },
+    });
+    return response({ decision: { kind: "approved" } });
+  });
+  vi.stubGlobal("fetch", request);
+
+  expect(await t.run(checkId)).toBe(true);
+  expect(await t.run(checkId)).toBe(false);
+  expect(request).toHaveBeenCalledTimes(1);
+  const { reservation, entries } = await t.backend.run(async (ctx) => ({
+    reservation: await ctx.db
+      .query("creditReservations")
+      .withIndex("by_session_id_and_source_key", (q) =>
+        q.eq("sessionId", t.sessionId).eq("sourceKey", `request_check:${checkId}`),
+      )
+      .unique(),
+    entries: await ctx.db.query("creditEntries").collect(),
+  }));
+  expect(reservation?.state).toMatchObject({ kind: "settled", costMicrodollars: 96 });
+  expect(entries.filter((entry) => entry.detail.kind === "usage")).toHaveLength(1);
+});
+
 it.each([
   { callId: "stale-call", turnId: handoff.turnId },
   { callId: handoff.callId, turnId: "stale-turn" },

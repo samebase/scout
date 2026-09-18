@@ -9,6 +9,7 @@ import { diagnosticMessage } from "../scout/lib/redaction";
 import { openAIClient } from "./client";
 import { readAgentsApiUsage } from "./cost";
 import { captureHandoffEvidence } from "./handoffEvidence";
+import { MAX_REQUEST_CHECK_OUTPUT_TOKENS } from "./requestCheckCredits";
 import {
   REQUEST_CHECK_INSTRUCTIONS,
   RESUME_CHECK_INSTRUCTIONS,
@@ -23,6 +24,7 @@ export const run = internalAction({
   returns: v.boolean(),
   handler: async (ctx, { checkId }): Promise<boolean> => {
     const check = await ctx.runQuery(internal.tasks.requestChecks.get, { checkId });
+    if (check.state.kind !== "pending") return false;
     let call: typeof checkCall.type | null = null;
     let state: typeof requestCheckFinishedState.type;
     try {
@@ -58,11 +60,12 @@ export const run = internalAction({
               ? zodTextFormat(requestCheckResult, "request_check")
               : zodTextFormat(resumeCheckResult, "resume_check"),
         },
-        max_output_tokens: 1_200,
+        max_output_tokens: MAX_REQUEST_CHECK_OUTPUT_TOKENS,
         store: false,
       } satisfies ResponseCreateParamsNonStreaming;
       const request = JSON.stringify(input);
       const startedAt = Date.now();
+      const client = openAIClient();
       if (
         !(await ctx.runMutation(internal.tasks.requestChecks.start, {
           checkId,
@@ -73,7 +76,7 @@ export const run = internalAction({
       )
         return false;
       call = { request, startedAt, response: null, usage: null };
-      const output = await openAIClient().responses.create(input);
+      const output = await client.responses.create(input);
       call.response = JSON.stringify(output);
       call.usage = readAgentsApiUsage(output.usage ?? null);
       if (output.status !== "completed") throw new Error(`Check ended with ${output.status}`);

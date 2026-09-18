@@ -4,6 +4,7 @@ import workflowTest from "@convex-dev/workflow/test";
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { api, internal } from "../_generated/api";
+import { ensureCreditWallet } from "../creditLedger";
 import schema from "../schema";
 import { ADMIN_EMAIL, insertTestAccount } from "../testing/accounts";
 import { REQUEST_CHECK_MODEL, requestCheckResult } from "./requestCheckModel";
@@ -82,7 +83,7 @@ async function setup() {
   };
 }
 
-function response(result: unknown) {
+function response(result: unknown, includeUsage = true) {
   return Response.json({
     id: "resp-check",
     object: "response",
@@ -97,7 +98,15 @@ function response(result: unknown) {
         content: [{ type: "output_text", text: JSON.stringify(result), annotations: [] }],
       },
     ],
-    usage: { input_tokens: 300, output_tokens: 30, input_tokens_details: { cached_tokens: 0 } },
+    ...(includeUsage
+      ? {
+          usage: {
+            input_tokens: 300,
+            output_tokens: 30,
+            input_tokens_details: { cached_tokens: 0 },
+          },
+        }
+      : {}),
   });
 }
 
@@ -233,6 +242,7 @@ it.each([
 });
 
 it("keeps a stop made during the call even when its response approves the request", async () => {
+  vi.stubEnv("CREDITS_ENABLED", "true");
   const t = await setup();
   vi.stubGlobal(
     "fetch",
@@ -247,9 +257,19 @@ it("keeps a stop made during the call even when its response approves the reques
     state: { kind: "stopped" },
     checks: [{ kind: "initial", status: "approved" }],
   });
+  const reservation = await t.backend.run((ctx) =>
+    ctx.db
+      .query("creditReservations")
+      .withIndex("by_session_id_and_source_key", (q) =>
+        q.eq("sessionId", t.sessionId).eq("sourceKey", `request_check:${t.checkId}`),
+      )
+      .unique(),
+  );
+  expect(reservation?.state).toMatchObject({ kind: "settled", costMicrodollars: 96 });
 });
 
 it("cancels before dispatch when stopped before the check begins", async () => {
+  vi.stubEnv("CREDITS_ENABLED", "true");
   const t = await setup();
   const request = vi.fn<typeof fetch>();
   vi.stubGlobal("fetch", request);
@@ -260,6 +280,164 @@ it("cancels before dispatch when stopped before the check begins", async () => {
     active: false,
     checks: [{ kind: "initial", status: "cancelled", cost: 0 }],
   });
+  expect(
+    await t.backend.run((ctx) =>
+      ctx.db
+        .query("creditReservations")
+        .withIndex("by_session_id_and_source_key", (q) =>
+          q.eq("sessionId", t.sessionId).eq("sourceKey", `request_check:${t.checkId}`),
+        )
+        .unique(),
+    ),
+  ).toBeNull();
+});
+
+it("reserves before the OpenAI request, settles measured usage once, and skips duplicate actions", async () => {
+  vi.stubEnv("CREDITS_ENABLED", "true");
+  const t = await setup();
+  const request = vi.fn<typeof fetch>(async () => {
+    const reservation = await t.backend.run((ctx) =>
+      ctx.db
+        .query("creditReservations")
+        .withIndex("by_session_id_and_source_key", (q) =>
+          q.eq("sessionId", t.sessionId).eq("sourceKey", `request_check:${t.checkId}`),
+        )
+        .unique(),
+    );
+    expect(reservation).toMatchObject({
+      source: { kind: "request_check" },
+      state: { kind: "pending" },
+    });
+    expect(reservation?.reservedUnits).toBeGreaterThan(0);
+    expect(await t.check()).toBe(false);
+    return response({ title: "Test Example", decision: { kind: "approved" } });
+  });
+  vi.stubGlobal("fetch", request);
+
+  expect(await t.check()).toBe(true);
+  expect(await t.check()).toBe(false);
+  expect(request).toHaveBeenCalledTimes(1);
+  const { reservation, wallet, entries } = await t.backend.run(async (ctx) => ({
+    reservation: await ctx.db
+      .query("creditReservations")
+      .withIndex("by_session_id_and_source_key", (q) =>
+        q.eq("sessionId", t.sessionId).eq("sourceKey", `request_check:${t.checkId}`),
+      )
+      .unique(),
+    wallet: await ctx.db.query("creditWallets").unique(),
+    entries: await ctx.db.query("creditEntries").collect(),
+  }));
+  expect(reservation?.state).toMatchObject({ kind: "settled", costMicrodollars: 96 });
+  expect(wallet?.balanceUnits).toBe(50 * 10_000 - 96);
+  expect(entries.filter((entry) => entry.detail.kind === "usage")).toHaveLength(1);
+});
+
+it("does not reserve or call OpenAI when the check cannot start", async () => {
+  vi.stubEnv("CREDITS_ENABLED", "true");
+  const t = await setup();
+  vi.stubEnv("OPENAI_API_KEY", "");
+  const request = vi.fn<typeof fetch>();
+  vi.stubGlobal("fetch", request);
+  expect(await t.check()).toBe(false);
+  expect(request).not.toHaveBeenCalled();
+  expect(
+    await t.backend.run((ctx) =>
+      ctx.db
+        .query("creditReservations")
+        .withIndex("by_session_id_and_source_key", (q) =>
+          q.eq("sessionId", t.sessionId).eq("sourceKey", `request_check:${t.checkId}`),
+        )
+        .unique(),
+    ),
+  ).toBeNull();
+});
+
+it("keeps an uncertain check charge for inspection when OpenAI returns no usage", async () => {
+  vi.stubEnv("CREDITS_ENABLED", "true");
+  const t = await setup();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn<typeof fetch>(async () =>
+      response({ title: "Test Example", decision: { kind: "approved" } }, false),
+    ),
+  );
+  expect(await t.check()).toBe(true);
+  const { reservation, wallet, entries } = await t.backend.run(async (ctx) => ({
+    reservation: await ctx.db
+      .query("creditReservations")
+      .withIndex("by_session_id_and_source_key", (q) =>
+        q.eq("sessionId", t.sessionId).eq("sourceKey", `request_check:${t.checkId}`),
+      )
+      .unique(),
+    wallet: await ctx.db.query("creditWallets").unique(),
+    entries: await ctx.db.query("creditEntries").collect(),
+  }));
+  expect(reservation?.state).toMatchObject({ kind: "unresolved" });
+  expect(wallet?.balanceUnits).toBe(50 * 10_000);
+  expect(wallet?.reservedUnits).toBeGreaterThanOrEqual(reservation?.reservedUnits ?? 1);
+  expect(entries.filter((entry) => entry.detail.kind === "usage")).toHaveLength(0);
+});
+
+it("settles reported usage even when OpenAI returns a failed check", async () => {
+  vi.stubEnv("CREDITS_ENABLED", "true");
+  const t = await setup();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn<typeof fetch>(async () =>
+      Response.json({
+        id: "resp-failed",
+        object: "response",
+        model: REQUEST_CHECK_MODEL,
+        status: "failed",
+        output: [],
+        usage: {
+          input_tokens: 300,
+          output_tokens: 30,
+          input_tokens_details: { cached_tokens: 0 },
+        },
+      }),
+    ),
+  );
+  expect(await t.check()).toBe(false);
+  const reservation = await t.backend.run((ctx) =>
+    ctx.db
+      .query("creditReservations")
+      .withIndex("by_session_id_and_source_key", (q) =>
+        q.eq("sessionId", t.sessionId).eq("sourceKey", `request_check:${t.checkId}`),
+      )
+      .unique(),
+  );
+  expect(reservation?.state).toMatchObject({ kind: "settled", costMicrodollars: 96 });
+  expect((await t.inspectCheck()).state).toMatchObject({ kind: "failed" });
+});
+
+it("denies an unfunded check before sending an OpenAI request", async () => {
+  vi.stubEnv("CREDITS_ENABLED", "true");
+  const t = await setup();
+  await t.backend.run(async (ctx) => {
+    const session = await ctx.db.get(t.sessionId);
+    if (!session) throw new Error("Expected a task session");
+    await ensureCreditWallet(ctx, session.userId);
+  });
+  await t.backend.run(async (ctx) => {
+    const wallet = await ctx.db.query("creditWallets").unique();
+    if (!wallet) throw new Error("Expected a credit wallet");
+    await ctx.db.patch(wallet._id, { balanceUnits: wallet.reservedUnits });
+  });
+  const request = vi.fn<typeof fetch>();
+  vi.stubGlobal("fetch", request);
+  expect(await t.check()).toBe(false);
+  expect(request).not.toHaveBeenCalled();
+  expect(
+    await t.backend.run((ctx) =>
+      ctx.db
+        .query("creditReservations")
+        .withIndex("by_session_id_and_source_key", (q) =>
+          q.eq("sessionId", t.sessionId).eq("sourceKey", `request_check:${t.checkId}`),
+        )
+        .unique(),
+    ),
+  ).toBeNull();
 });
 
 it("requires a reason for rejections and a useful short title", () => {
