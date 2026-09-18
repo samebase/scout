@@ -18,6 +18,7 @@ import {
   ArrowUpRightIcon,
   LoaderCircleIcon,
   MonitorIcon,
+  XIcon,
 } from "lucide-react";
 import { type FormEvent, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
@@ -91,7 +92,7 @@ export function ConversationPage({
             <SessionLoader threadId={thread} kind={kind} search={search} />
           </ConversationSidebar>
         ) : (
-          <ConversationLobby key={kind} kind={kind} showIntroduction />
+          <ConversationLobby key={kind} kind={kind} showIntroduction siteSelection={null} />
         )}
       </main>
     </ProductShell>
@@ -116,9 +117,11 @@ function ConversationUnavailable({ kind }: { kind: ProductKind }) {
 export function ConversationLobby({
   kind,
   showIntroduction,
+  siteSelection,
 }: {
   kind: ProductKind;
   showIntroduction: boolean;
+  siteSelection: { hostname: string; onRemove: () => void } | null;
 }) {
   const isPlay = kind === "play";
   const viewer = useViewerAccess();
@@ -160,7 +163,10 @@ export function ConversationLobby({
     setRequest({ kind: "pending" });
     try {
       const { threadId } = await startChat({
-        kind,
+        product:
+          kind === "review"
+            ? { kind, ...omitNullish({ site: siteSelection?.hostname }) }
+            : { kind },
         scoutId: selectedScout._id,
         prompt,
         visibility,
@@ -255,6 +261,23 @@ export function ConversationLobby({
               </div>
             )}
             <ConversationComposer
+              autoFocus={siteSelection !== null}
+              context={
+                siteSelection && (
+                  <div className="mb-1 px-2">
+                    <button
+                      type="button"
+                      onClick={siteSelection.onRemove}
+                      disabled={request.kind === "pending"}
+                      aria-label={`Remove ${siteSelection.hostname} from task`}
+                      className="inline-flex min-h-9 max-w-full items-center gap-2 rounded-lg bg-muted px-3 py-1 text-sm hover:bg-muted/70 focus-visible:outline-2 focus-visible:outline-ring"
+                    >
+                      <span className="truncate">{siteSelection.hostname}</span>
+                      <XIcon className="size-3.5 shrink-0" aria-hidden="true" />
+                    </button>
+                  </div>
+                )
+              }
               value={draft}
               onChange={setDraft}
               onSubmit={(event) => {
@@ -266,7 +289,9 @@ export function ConversationLobby({
               placeholder={
                 isPlay
                   ? "Let's play… Paste a game link or tell me what you have in mind."
-                  : "Paste a product link and describe what to review."
+                  : siteSelection
+                    ? "What should Scout do on this site?"
+                    : "Paste a product link and describe what to review."
               }
             >
               <div className="flex min-w-0 flex-wrap items-center gap-x-1">
@@ -1021,6 +1046,8 @@ function ConversationSession({
           <div className="shrink-0 border-t p-3">
             {cost && <SessionCost session={cost} />}
             <ConversationComposer
+              autoFocus={false}
+              context={null}
               value={draft}
               onChange={setDraft}
               onSubmit={(event) => {

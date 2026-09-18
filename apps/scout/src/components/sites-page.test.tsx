@@ -21,7 +21,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
 import { api } from "../../convex/_generated/api";
 import { omitNullish } from "../../shared/omitNullish";
 import { Route as SiteRoute } from "../routes/sites.$site";
-import { reviewFeedSearch } from "../lib/reviewFeedSearch";
+import { homeSearch } from "../lib/homeSearch";
 
 type Site = NonNullable<FunctionReturnType<typeof api.scout.sites.get>>;
 
@@ -189,7 +189,7 @@ async function openPage(path: string) {
       createRoute({
         getParentRoute: () => root,
         path: "/",
-        validateSearch: reviewFeedSearch,
+        validateSearch: homeSearch,
         staticData: { access: "access_public" },
       }),
     ]),
@@ -199,6 +199,25 @@ async function openPage(path: string) {
   await router.load();
   return router;
 }
+
+test.each([true, false])(
+  "opens a new task for the current site, signed in: %s",
+  async (signedIn) => {
+    remote.signedIn = signedIn;
+    const router = await openPage("/sites/chessmerge.com?site=chess&scope=mine");
+    const link = await screen.findByRole("link", { name: "New task" });
+    expect(
+      new URL(link.getAttribute("href") ?? "", "https://scout.test").searchParams.get("taskSite"),
+    ).toBe("chessmerge.com");
+    await userEvent.setup().click(link);
+    await waitFor(() => expect(router.state.location.pathname).toBe("/"));
+    expect(router.state.location.search).toEqual({
+      taskSite: "chessmerge.com",
+      site: "chess",
+      scope: signedIn ? "mine" : "public",
+    });
+  },
+);
 
 test("opens a site, previews and downloads files, and runs commands without a chat", async () => {
   const router = await openPage("/sites/chessmerge.com");

@@ -72,7 +72,7 @@ it("lists and inspects a member's private Review without granting session contro
   );
   const member = backend.withIdentity({ subject: memberId });
   const { threadId } = await member.mutation(api.scout.chats.startProductChat, {
-    kind: "review",
+    product: { kind: "review" },
     scoutId,
     prompt: "Try example.com",
     visibility: "private",

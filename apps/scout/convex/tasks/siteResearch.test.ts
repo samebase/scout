@@ -93,7 +93,7 @@ async function setup(prompt = "Try https://example.com and tell me whether it wo
   await admin.mutation(api.scout.chats.startProductChat, {
     scoutId,
     prompt,
-    kind: "review",
+    product: { kind: "review" },
     visibility: "private",
   });
   const session = await backend.run((ctx) => ctx.db.query("agentsApiSessions").unique());

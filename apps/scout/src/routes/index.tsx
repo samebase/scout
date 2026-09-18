@@ -1,10 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ProductHome } from "#components/product-home";
-import { reviewFeedSearch } from "#lib/reviewFeedSearch";
+import { homeSearch } from "#lib/homeSearch";
 
 export const Route = createFileRoute("/")({
   staticData: { access: "access_public" },
-  validateSearch: reviewFeedSearch,
+  validateSearch: homeSearch,
   head: () => ({
     meta: [
       { title: "Scout | Website reviews" },

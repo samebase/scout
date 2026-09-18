@@ -60,7 +60,7 @@ async function setup() {
   }
   async function review(visibility: Doc<"scoutChats">["visibility"] = "public") {
     const { threadId } = await member.mutation(api.scout.chats.startProductChat, {
-      kind: "review",
+      product: { kind: "review" },
       scoutId,
       prompt: "Try this product's onboarding.",
       visibility,
@@ -831,7 +831,7 @@ test("Review starts an Agents API session for a member without Lab permission", 
   const selection = { model: "openai/gpt-5.6-luna", reasoningEffort: "high" } as const;
   await t.backend.run((ctx) => ctx.db.patch(t.memberId, { defaultScoutModelSelection: selection }));
   const { threadId } = await t.member.mutation(api.scout.chats.startProductChat, {
-    kind: "review",
+    product: { kind: "review" },
     scoutId: t.scoutId,
     prompt: "Try this product's onboarding.",
     visibility: "private",
@@ -860,7 +860,7 @@ test("Review starts an Agents API session for a member without Lab permission", 
   expect(await t.backend.query(api.scout.activity.get, { threadId })).toBeNull();
   await expect(
     t.other.mutation(api.scout.chats.startProductChat, {
-      kind: "play",
+      product: { kind: "play" },
       scoutId: t.scoutId,
       prompt: "Play with me",
       visibility: "private",
@@ -872,7 +872,7 @@ test("Review starts an Agents API session for a member without Lab permission", 
   );
   await expect(
     t.member.mutation(api.scout.chats.startProductChat, {
-      kind: "review",
+      product: { kind: "review" },
       scoutId: t.scoutId,
       prompt: "Another review",
       visibility: "private",

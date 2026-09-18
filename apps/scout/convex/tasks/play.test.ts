@@ -44,7 +44,7 @@ async function setup(kind: "play" | "review") {
   }));
   const member = backend.withIdentity({ subject: userId });
   const { threadId } = await member.mutation(api.scout.chats.startProductChat, {
-    kind,
+    product: { kind },
     scoutId,
     prompt: "Play a game of chess",
     visibility: "private",

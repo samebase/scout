@@ -40,7 +40,12 @@ export function ActivityFeed({ search }: { search: ReviewFeedSearch }) {
           search={filters}
           layout="toolbar"
           onChange={(search, options) => {
-            void navigate({ to: "/", search, ...options, resetScroll: false });
+            void navigate({
+              to: "/",
+              search: (previous) => ({ ...previous, ...search }),
+              ...options,
+              resetScroll: false,
+            });
           }}
         />
       </div>
