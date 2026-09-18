@@ -1,9 +1,11 @@
 import { useAuthActions } from "@convex-dev/auth/react";
+import { Link } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
 import { ConvexError } from "convex/values";
 import { AUTH_EMAIL_COOLDOWN } from "../../shared/auth";
 import { Button } from "#components/ui/button";
 import { Input } from "#components/ui/input";
+import { LegalLinks } from "./legal-links";
 
 const PASSWORD_MIN_LENGTH = 8;
 const CODE_LENGTH = 8;
@@ -138,6 +140,17 @@ export function AuthPanel() {
               required
             />
           </label>
+          <p className="text-sm leading-6 text-muted-foreground">
+            By clicking {state.flow === "signUp" ? "Create account" : "Sign in"}, you agree to our{" "}
+            <Link to="/terms" className="text-primary underline underline-offset-4">
+              Terms and conditions
+            </Link>
+            . Read our{" "}
+            <Link to="/privacy" className="text-primary underline underline-offset-4">
+              Privacy policy
+            </Link>
+            .
+          </p>
           <Button type="submit" size="lg" className="mt-1 w-full" disabled={isPending}>
             {pendingLabel(state.flow, isPending)}
           </Button>
@@ -252,6 +265,7 @@ export function AuthPanel() {
           {error}
         </p>
       ) : null}
+      {state.kind !== "credentials" && <LegalLinks />}
     </section>
   );
 }

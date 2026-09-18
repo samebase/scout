@@ -13,6 +13,12 @@ For the complete provider setup, use the
 [Samebase do-it-yourself guide](https://samebase.com/docs/do-it-yourself). This README covers work
 inside the repository.
 
+The [privacy policy](./apps/scout/src/content/privacy-policy.md) and
+[terms and conditions](./apps/scout/src/content/terms-of-service.md) have an effective date
+of September 19, 2026. The public `/privacy` and `/terms` routes render these Markdown files.
+See [legal research](./docs/legal-research.md) for the sources, wording decisions, and ongoing
+operational responsibilities.
+
 ## Stack
 
 - React 19 and TanStack Start in SPA mode

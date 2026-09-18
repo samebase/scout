@@ -16,6 +16,8 @@ import { RouteAccessOutlet } from "./route-access";
 import { AppNavigation } from "./app-navigation";
 import { Route as SettingsRoute } from "../routes/settings";
 import { Route as ScoutsRoute } from "../routes/scouts";
+import { Route as PrivacyRoute } from "../routes/privacy";
+import { Route as TermsRoute } from "../routes/terms";
 import { omitNullish } from "../../shared/omitNullish";
 
 const remote = vi.hoisted(() => ({
@@ -107,6 +109,18 @@ async function open(path: string) {
       lab,
       settings,
       review,
+      createRoute({
+        getParentRoute: () => root,
+        path: "/privacy",
+        staticData: PrivacyRoute.options.staticData,
+        ...omitNullish({ component: PrivacyRoute.options.component }),
+      }),
+      createRoute({
+        getParentRoute: () => root,
+        path: "/terms",
+        staticData: TermsRoute.options.staticData,
+        ...omitNullish({ component: TermsRoute.options.component }),
+      }),
       createRoute({
         getParentRoute: () => root,
         path: "/scouts",
@@ -244,3 +258,107 @@ test.each(["deleting", "deleted"])(
     expect(screen.queryByRole("heading", { name: "Agents contents" })).toBeNull();
   },
 );
+
+for (const { path, title } of [
+  { path: "/privacy", title: "Privacy policy" },
+  { path: "/terms", title: "Terms and conditions" },
+]) {
+  test.each(["anonymous", "loading", "pending", "member", "staff", "deleting", "deleted"])(
+    `${path} remains readable for %s viewers`,
+    async (state) => {
+      switch (state) {
+        case "anonymous":
+          remote.authenticated = false;
+          break;
+        case "pending":
+          setViewer("role_pending_access");
+          break;
+        case "member":
+          setViewer("role_member");
+          break;
+        case "staff":
+          setViewer("role_staff");
+          break;
+        case "deleting":
+        case "deleted":
+          remote.values.set("viewer", { kind: state });
+          break;
+      }
+      await open(path);
+      expect(await screen.findByRole("heading", { level: 1, name: title })).toBeTruthy();
+      expect(screen.getByText("Effective date: September 19, 2026")).toBeTruthy();
+      expect(screen.getByRole("main").textContent).not.toMatch(
+        /\{\{[A-Z_]+\}\}|Draft for review|Not yet effective/,
+      );
+      expect(screen.queryByRole("heading", { name: "Account deletion" })).toBeNull();
+      expect(screen.queryByLabelText("Account access")).toBeNull();
+    },
+  );
+}
+
+test("legal documents render tables, email links, and section anchors before the account query resolves", async () => {
+  await open("/privacy");
+  const heading = await screen.findByRole("heading", { name: "Who is responsible" });
+  expect(heading.id).toBe("legal-who-is-responsible");
+  expect(screen.getAllByRole("table")).toHaveLength(3);
+  expect(screen.getByRole("columnheader", { name: "Legal basis" })).toBeTruthy();
+  expect(
+    screen.getAllByRole("link", { name: "contact@samebase.com" })[0].getAttribute("href"),
+  ).toBe("mailto:contact@samebase.com");
+  act(() => {
+    remote.values.set("viewer", { kind: "deleted" });
+    remote.revision += 1;
+    for (const listener of remote.subscribers) listener();
+  });
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("link", { name: "Terms and conditions" }));
+  expect(
+    await screen.findByRole("heading", { level: 1, name: "Terms and conditions" }),
+  ).toBeTruthy();
+  await user.click(screen.getByRole("link", { name: "Privacy policy" }));
+  expect(await screen.findByRole("heading", { level: 1, name: "Privacy policy" })).toBeTruthy();
+});
+
+test("guests can read policies from signup before submitting account information", async () => {
+  remote.authenticated = false;
+  await open("/settings");
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "Create account" }));
+  expect(screen.getByRole("heading", { name: "Create account" })).toBeTruthy();
+  expect(screen.getByText(/By clicking Create account, you agree to our/)).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Terms and conditions" }).getAttribute("href")).toBe(
+    "/terms",
+  );
+  await user.click(screen.getByRole("link", { name: "Privacy policy" }));
+  expect(await screen.findByRole("heading", { name: "Privacy policy" })).toBeTruthy();
+});
+
+test("pending accounts can read the terms from Settings", async () => {
+  setViewer("role_pending_access");
+  await open("/settings");
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("link", { name: "Terms and conditions" }));
+  expect(await screen.findByRole("heading", { name: "Terms and conditions" })).toBeTruthy();
+});
+
+test("guests can use the header legal menu with a keyboard", async () => {
+  remote.authenticated = false;
+  await open("/");
+  const user = userEvent.setup();
+  const trigger = screen.getByRole("button", { name: "More options" });
+  trigger.focus();
+  await user.keyboard("{Enter}");
+  const privacy = await screen.findByRole("menuitem", { name: "Privacy policy" });
+  expect(document.activeElement).toBe(privacy);
+  await user.keyboard("{ArrowDown}");
+  expect(document.activeElement).toBe(
+    screen.getByRole("menuitem", { name: "Terms and conditions" }),
+  );
+  await user.keyboard("{Escape}");
+  expect(screen.queryByRole("menu")).toBeNull();
+  expect(document.activeElement).toBe(trigger);
+  await user.keyboard("{Enter}");
+  await user.click(await screen.findByRole("menuitem", { name: "Privacy policy" }));
+  expect(await screen.findByRole("heading", { name: "Privacy policy" })).toBeTruthy();
+  expect(screen.queryByRole("menu")).toBeNull();
+});

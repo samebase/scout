@@ -14,8 +14,10 @@ import { Route as AccountDeletionRouteImport } from './routes/account-deletion'
 import { Route as AgentsRouteImport } from './routes/agents'
 import { Route as MembersRouteImport } from './routes/members'
 import { Route as PlayRouteImport } from './routes/play'
+import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as ScoutsRouteImport } from './routes/scouts'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as TermsRouteImport } from './routes/terms'
 import { Route as ScoutsIndexRouteImport } from './routes/scouts.index'
 import { Route as ScoutsSlugRouteImport } from './routes/scouts.$slug'
 import { Route as SitesSiteRouteImport } from './routes/sites.$site'
@@ -46,6 +48,11 @@ const PlayRoute = PlayRouteImport.update({
   path: '/play',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ScoutsRoute = ScoutsRouteImport.update({
   id: '/scouts',
   path: '/scouts',
@@ -54,6 +61,11 @@ const ScoutsRoute = ScoutsRouteImport.update({
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ScoutsIndexRoute = ScoutsIndexRouteImport.update({
@@ -83,8 +95,10 @@ export interface FileRoutesByFullPath {
   '/agents': typeof AgentsRoute
   '/members': typeof MembersRoute
   '/play': typeof PlayRoute
+  '/privacy': typeof PrivacyRoute
   '/scouts': typeof ScoutsRouteWithChildren
   '/settings': typeof SettingsRoute
+  '/terms': typeof TermsRoute
   '/scouts/$slug': typeof ScoutsSlugRoute
   '/sites/$site': typeof SitesSiteRoute
   '/tasks/$thread': typeof TasksThreadRoute
@@ -96,7 +110,9 @@ export interface FileRoutesByTo {
   '/agents': typeof AgentsRoute
   '/members': typeof MembersRoute
   '/play': typeof PlayRoute
+  '/privacy': typeof PrivacyRoute
   '/settings': typeof SettingsRoute
+  '/terms': typeof TermsRoute
   '/scouts/$slug': typeof ScoutsSlugRoute
   '/sites/$site': typeof SitesSiteRoute
   '/tasks/$thread': typeof TasksThreadRoute
@@ -109,8 +125,10 @@ export interface FileRoutesById {
   '/agents': typeof AgentsRoute
   '/members': typeof MembersRoute
   '/play': typeof PlayRoute
+  '/privacy': typeof PrivacyRoute
   '/scouts': typeof ScoutsRouteWithChildren
   '/settings': typeof SettingsRoute
+  '/terms': typeof TermsRoute
   '/scouts/$slug': typeof ScoutsSlugRoute
   '/sites/$site': typeof SitesSiteRoute
   '/tasks/$thread': typeof TasksThreadRoute
@@ -124,8 +142,10 @@ export interface FileRouteTypes {
     | '/agents'
     | '/members'
     | '/play'
+    | '/privacy'
     | '/scouts'
     | '/settings'
+    | '/terms'
     | '/scouts/$slug'
     | '/sites/$site'
     | '/tasks/$thread'
@@ -137,7 +157,9 @@ export interface FileRouteTypes {
     | '/agents'
     | '/members'
     | '/play'
+    | '/privacy'
     | '/settings'
+    | '/terms'
     | '/scouts/$slug'
     | '/sites/$site'
     | '/tasks/$thread'
@@ -149,8 +171,10 @@ export interface FileRouteTypes {
     | '/agents'
     | '/members'
     | '/play'
+    | '/privacy'
     | '/scouts'
     | '/settings'
+    | '/terms'
     | '/scouts/$slug'
     | '/sites/$site'
     | '/tasks/$thread'
@@ -163,8 +187,10 @@ export interface RootRouteChildren {
   AgentsRoute: typeof AgentsRoute
   MembersRoute: typeof MembersRoute
   PlayRoute: typeof PlayRoute
+  PrivacyRoute: typeof PrivacyRoute
   ScoutsRoute: typeof ScoutsRouteWithChildren
   SettingsRoute: typeof SettingsRoute
+  TermsRoute: typeof TermsRoute
   SitesSiteRoute: typeof SitesSiteRoute
   TasksThreadRoute: typeof TasksThreadRoute
 }
@@ -206,6 +232,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PlayRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/scouts': {
       id: '/scouts'
       path: '/scouts'
@@ -218,6 +251,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/scouts/': {
@@ -270,8 +310,10 @@ const rootRouteChildren: RootRouteChildren = {
   AgentsRoute: AgentsRoute,
   MembersRoute: MembersRoute,
   PlayRoute: PlayRoute,
+  PrivacyRoute: PrivacyRoute,
   ScoutsRoute: ScoutsRouteWithChildren,
   SettingsRoute: SettingsRoute,
+  TermsRoute: TermsRoute,
   SitesSiteRoute: SitesSiteRoute,
   TasksThreadRoute: TasksThreadRoute,
 }

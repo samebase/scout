@@ -9,11 +9,12 @@ export function RouteAccessOutlet() {
   const policies = useMatches({
     select: (matches) => matches.map((match) => match.staticData.access),
   });
-  const deletionPage = useMatches({
-    select: (matches) => matches.some((match) => match.pathname === "/account-deletion"),
+  const accessibleAfterAccountClosure = useMatches({
+    select: (matches) =>
+      matches.some((match) => ["/account-deletion", "/privacy", "/terms"].includes(match.pathname)),
   });
   const viewer = useViewerAccess();
-  if ((viewer?.kind === "deleting" || viewer?.kind === "deleted") && !deletionPage)
+  if ((viewer?.kind === "deleting" || viewer?.kind === "deleted") && !accessibleAfterAccountClosure)
     return <Navigate to="/account-deletion" replace />;
   if (policies.every((access) => access === "access_public")) return <Outlet />;
   if (!viewer)

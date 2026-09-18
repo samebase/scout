@@ -5,6 +5,7 @@ import { LogOutIcon, ShieldCheckIcon } from "lucide-react";
 import { useState } from "react";
 import { z } from "zod";
 import { CreditsPanel } from "#components/credits-panel";
+import { LegalLinks } from "#components/legal-links";
 import { Button } from "#components/ui/button";
 import { accountAccessMessage, useViewerAccess } from "#lib/access";
 
@@ -53,6 +54,9 @@ function SettingsPage() {
           </Link>
         </section>
       </Authenticated>
+      <footer className="mt-8">
+        <LegalLinks />
+      </footer>
     </main>
   );
 }
