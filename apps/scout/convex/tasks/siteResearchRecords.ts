@@ -10,6 +10,13 @@ import {
 import type { Doc, Id } from "../_generated/dataModel";
 import { query } from "../functions";
 import schema from "../schema";
+import { creditsEnabled, costMicrodollars } from "../creditPolicy";
+import {
+  markCreditUnresolved,
+  releaseCreditOperation,
+  reserveCreditOperation,
+  settleCreditOperation,
+} from "../creditLedger";
 import { getInitialCheck } from "./requestChecks";
 import { requireSessionPermission } from "./access";
 import { siteHostnameSchema } from "../../shared/site";
@@ -60,7 +67,20 @@ const emptyJob = {
   credits: null,
 };
 
-async function startSiteResearch(ctx: MutationCtx, site: Doc<"sites">, userId: Id<"users">) {
+// The initial research rate is $0.005 per provider credit, as in the existing
+// Scout credit estimate. Firecrawl's maxCredits bounds the up-front hold.
+const RESEARCH_USD_PER_PROVIDER_CREDIT = 0.005;
+const researchCost = (providerCredits: number) =>
+  costMicrodollars(providerCredits * RESEARCH_USD_PER_PROVIDER_CREDIT);
+const researchSourceKey = (researchId: Id<"agentsApiSiteResearch">) =>
+  `site-research:${researchId}`;
+
+async function startSiteResearch(
+  ctx: MutationCtx,
+  site: Doc<"sites">,
+  userId: Id<"users">,
+  sessionId: Id<"agentsApiSessions"> | null,
+) {
   const researchId = await ctx.db.insert("agentsApiSiteResearch", {
     ...emptyJob,
     site: site.hostname,
@@ -68,13 +88,57 @@ async function startSiteResearch(ctx: MutationCtx, site: Doc<"sites">, userId: I
     userId,
     state: { kind: "running" },
   });
+  const reservationId =
+    creditsEnabled() && sessionId
+      ? await reserveCreditOperation(ctx, {
+          sessionId,
+          sourceKey: researchSourceKey(researchId),
+          source: { kind: "research" },
+          maximumCostMicrodollars: researchCost(SITE_RESEARCH_MAX_CREDITS),
+        })
+      : null;
   await ctx.db.patch(site._id, { researchId });
-  await ctx.scheduler.runAfter(0, internal.tasks.siteResearch.process, { researchId });
+  await ctx.scheduler.runAfter(0, internal.tasks.siteResearch.process, {
+    researchId,
+    reservationId,
+  });
   await ctx.scheduler.runAfter(0, internal.scout.sitePreviews.ensure, { site: site.hostname });
   return researchId;
 }
 
-export async function ensureSiteResearch(ctx: MutationCtx, hostname: string, userId: Id<"users">) {
+async function initiatingSession(ctx: MutationCtx, hostname: string, userId: Id<"users">) {
+  const chats = await ctx.db
+    .query("scoutChats")
+    .withIndex("by_user_id_and_purpose_kind_and_created_at", (q) =>
+      q.eq("userId", userId).eq("purpose.kind", "review"),
+    )
+    .order("desc")
+    .take(101);
+  if (chats.length === 101)
+    throw new Error("Cannot identify the task that initiated site research");
+  let owner: Id<"agentsApiSessions"> | null = null;
+  for (const chat of chats) {
+    if (chat.primarySite !== hostname || chat.runtime?.kind !== "agents_api") continue;
+    const session = await ctx.db.get(chat.runtime.sessionId);
+    if (
+      !session?.active ||
+      session.userId !== userId ||
+      (session.state.kind !== "starting" && session.state.kind !== "running")
+    )
+      continue;
+    if (owner) throw new Error("More than one task could own this site research");
+    owner = session._id;
+  }
+  if (!owner) throw new Error("Cannot identify the task that initiated site research");
+  return owner;
+}
+
+export async function ensureSiteResearch(
+  ctx: MutationCtx,
+  hostname: string,
+  userId: Id<"users">,
+  sessionId?: Id<"agentsApiSessions">,
+) {
   if (researchSite(`https://${hostname}/`) !== hostname)
     throw new Error("Research requires a public hostname");
   const siteId = await ensureSite(ctx, hostname);
@@ -82,7 +146,15 @@ export async function ensureSiteResearch(ctx: MutationCtx, hostname: string, use
   if (!site) throw new Error("Site not found");
   return site.researchId
     ? { researchId: site.researchId, reused: true }
-    : { researchId: await startSiteResearch(ctx, site, userId), reused: false };
+    : {
+        researchId: await startSiteResearch(
+          ctx,
+          site,
+          userId,
+          sessionId ?? (creditsEnabled() ? await initiatingSession(ctx, hostname, userId) : null),
+        ),
+        reused: false,
+      };
 }
 
 export const currentSiteJob = internalQuery({
@@ -117,7 +189,7 @@ export const refresh = internalMutation({
       if (current?.state.kind === "running" || site.researchId !== args.expectedResearchId)
         return site.researchId;
     }
-    return startSiteResearch(ctx, site, args.userId);
+    return startSiteResearch(ctx, site, args.userId, null);
   },
 });
 
@@ -151,7 +223,12 @@ export const start = internalMutation({
       await ctx.db.patch(chat._id, { primarySite: hostname });
       await syncChatSite(ctx, chat);
     }
-    const { researchId, reused } = await ensureSiteResearch(ctx, hostname, session.userId);
+    const { researchId, reused } = await ensureSiteResearch(
+      ctx,
+      hostname,
+      session.userId,
+      session._id,
+    );
     return ctx.db.insert("agentsApiSiteResearch", {
       ...emptyJob,
       sessionId: session._id,
@@ -181,12 +258,39 @@ export const finish = internalMutation({
     responsePath: v.union(v.string(), v.null()),
     credits: v.union(v.number(), v.null()),
     profile: v.union(siteProfile, v.null()),
+    billing: v.optional(
+      v.object({
+        reservationId: v.id("creditReservations"),
+        providerAttempted: v.boolean(),
+      }),
+    ),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
     const research = await ctx.db.get(args.researchId);
     if (!research || (research.state.kind !== "running" && research.state.kind !== "waiting"))
       return null;
+    if (args.billing) {
+      if (research.sessionId !== null) throw new Error("Only shared research can be charged");
+      const reservation = await ctx.db.get(args.billing.reservationId);
+      if (
+        !reservation ||
+        reservation.source.kind !== "research" ||
+        reservation.sourceKey !== researchSourceKey(research._id) ||
+        reservation.userId !== research.userId
+      )
+        throw new Error("Site research credit reservation does not match its job");
+      if (args.credits !== null)
+        await settleCreditOperation(ctx, reservation, researchCost(args.credits));
+      else if (args.billing.providerAttempted)
+        await markCreditUnresolved(
+          ctx,
+          reservation,
+          "Firecrawl did not report research creditsUsed",
+        );
+      else
+        await releaseCreditOperation(ctx, reservation, "Research ended before a provider request");
+    }
     let state = args.state;
     if (research.sessionId !== null) {
       const session = await ctx.db.get(research.sessionId);

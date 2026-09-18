@@ -178,8 +178,13 @@ async function setup(prompt = "Try https://example.com and tell me whether it wo
     site,
     sharedJob,
     records: () => backend.run((ctx) => ctx.db.query("agentsApiSiteResearch").collect()),
-    process: (researchId: Id<"agentsApiSiteResearch">) =>
-      backend.action(internal.tasks.siteResearch.process, { researchId }),
+    process: async (researchId: Id<"agentsApiSiteResearch">) => {
+      const reservations = await backend.run((ctx) => ctx.db.query("creditReservations").collect());
+      const reservationId =
+        reservations.find((reservation) => reservation.sourceKey === `site-research:${researchId}`)
+          ?._id ?? null;
+      return backend.action(internal.tasks.siteResearch.process, { researchId, reservationId });
+    },
     refresh: () => admin.action(api.tasks.siteResearch.refresh, { site: "example.com" }),
   };
 }
@@ -365,6 +370,237 @@ it("lets concurrent tasks share one paid job and attributes its credits only onc
   expect(startAgent).toHaveBeenCalledTimes(1);
   expect(getAgentStatus).toHaveBeenCalledTimes(1);
   expect(cancelAgent).not.toHaveBeenCalled();
+});
+
+it("reserves one shared research job before Firecrawl and settles its reported usage to the initiating owner", async () => {
+  const t = await setup();
+  vi.stubEnv("CREDITS_ENABLED", "true");
+  const second = await t.addTask();
+  expect(await Promise.all([t.run(), second.run()])).toEqual([true, true]);
+  const shared = await t.sharedJob();
+  const before = await t.backend.run(async (ctx) => ({
+    reservations: await ctx.db.query("creditReservations").collect(),
+    wallets: await ctx.db.query("creditWallets").collect(),
+  }));
+  expect(before.reservations).toHaveLength(1);
+  expect(before.reservations[0]).toMatchObject({
+    userId: t.userId,
+    sessionId: t.sessionId,
+    sourceKey: `site-research:${shared._id}`,
+    source: { kind: "research" },
+    reservedUnits: 250_000,
+    state: { kind: "pending" },
+  });
+  expect(before.wallets).toMatchObject([
+    { userId: t.userId, balanceUnits: 500_000, reservedUnits: 250_000 },
+  ]);
+  expect(startAgent).not.toHaveBeenCalled();
+  const scheduled = await t.backend.run((ctx) =>
+    ctx.db.system.query("_scheduled_functions").collect(),
+  );
+  expect(scheduled.find((job) => job.name === "tasks/siteResearch:process")?.args).toEqual([
+    { researchId: shared._id, reservationId: before.reservations[0]._id },
+  ]);
+
+  await t.process(shared._id);
+  await t.process(shared._id);
+  await Promise.all([t.advance(), second.advance()]);
+  const after = await t.backend.run(async (ctx) => ({
+    reservations: await ctx.db.query("creditReservations").collect(),
+    wallets: await ctx.db.query("creditWallets").collect(),
+    entries: await ctx.db.query("creditEntries").collect(),
+  }));
+  expect(after.reservations[0].state).toMatchObject({
+    kind: "settled",
+    costMicrodollars: 60_000,
+    debitedUnits: 60_000,
+  });
+  expect(after.wallets).toMatchObject([
+    { userId: t.userId, balanceUnits: 440_000, reservedUnits: 0 },
+  ]);
+  expect(after.entries.filter((entry) => entry.detail.kind === "usage")).toHaveLength(1);
+  expect((await second.inspect())?.credits).toBe(0);
+  const later = await t.addTask();
+  expect(await later.run()).toBe(false);
+  expect((await later.inspect())?.credits).toBe(0);
+  expect(await t.backend.run((ctx) => ctx.db.query("creditWallets").collect())).toEqual(
+    after.wallets,
+  );
+  await t.process(shared._id);
+  expect(await t.backend.run((ctx) => ctx.db.query("creditEntries").collect())).toEqual(
+    after.entries,
+  );
+  expect(startAgent).toHaveBeenCalledTimes(1);
+});
+
+it("keeps the research hold unresolved when Firecrawl omits creditsUsed", async () => {
+  const t = await setup();
+  vi.stubEnv("CREDITS_ENABLED", "true");
+  await t.run();
+  const shared = await t.sharedJob();
+  await t.process(shared._id);
+  getAgentStatus.mockResolvedValueOnce({
+    success: true,
+    status: "completed",
+    expiresAt: result.expiresAt,
+    data: result.data,
+  });
+  await t.process(shared._id);
+  const reservation = await t.backend.run((ctx) => ctx.db.query("creditReservations").unique());
+  const wallet = await t.backend.run((ctx) => ctx.db.query("creditWallets").unique());
+  expect(reservation?.state).toMatchObject({ kind: "unresolved" });
+  expect(wallet).toMatchObject({ balanceUnits: 500_000, reservedUnits: 250_000 });
+  expect((await t.sharedJob()).credits).toBeNull();
+  expect(startAgent).toHaveBeenCalledTimes(1);
+});
+
+it("settles reported provider credits even when the research result fails", async () => {
+  const t = await setup();
+  vi.stubEnv("CREDITS_ENABLED", "true");
+  await t.run();
+  const shared = await t.sharedJob();
+  await t.process(shared._id);
+  getAgentStatus.mockResolvedValueOnce({
+    ...result,
+    status: "failed",
+    error: "Site unavailable",
+    data: undefined,
+  });
+  await t.process(shared._id);
+  const reservation = await t.backend.run((ctx) => ctx.db.query("creditReservations").unique());
+  expect(reservation?.state).toMatchObject({ kind: "settled", costMicrodollars: 60_000 });
+  expect((await t.sharedJob()).state.kind).toBe("failed");
+});
+
+it("settles known provider usage when the returned profile is invalid", async () => {
+  const t = await setup();
+  vi.stubEnv("CREDITS_ENABLED", "true");
+  await t.run();
+  const shared = await t.sharedJob();
+  await t.process(shared._id);
+  getAgentStatus.mockResolvedValueOnce({ ...result, data: { brief: "Invalid profile" } });
+  await t.process(shared._id);
+  const reservation = await t.backend.run((ctx) => ctx.db.query("creditReservations").unique());
+  expect(reservation?.state).toMatchObject({ kind: "settled", costMicrodollars: 60_000 });
+  expect((await t.sharedJob()).state.kind).toBe("failed");
+  expect(getAgentStatus).toHaveBeenCalledTimes(1);
+});
+
+it("keeps the hold unresolved when submission was attempted but Firecrawl returned no job ID", async () => {
+  const t = await setup();
+  vi.stubEnv("CREDITS_ENABLED", "true");
+  await t.run();
+  const shared = await t.sharedJob();
+  startAgent.mockResolvedValueOnce({
+    success: false,
+    id: "",
+    error: "Unknown submission status",
+  });
+  await t.process(shared._id);
+  const reservation = await t.backend.run((ctx) => ctx.db.query("creditReservations").unique());
+  expect(reservation?.state).toMatchObject({ kind: "unresolved" });
+  expect((await t.sharedJob()).state.kind).toBe("failed");
+});
+
+it("releases a research hold if work fails before the Firecrawl request", async () => {
+  const t = await setup();
+  vi.stubEnv("CREDITS_ENABLED", "true");
+  await t.run();
+  const shared = await t.sharedJob();
+  vi.mocked(saveWorkspaceFile).mockRejectedValueOnce(new Error("Workspace unavailable"));
+  await t.process(shared._id);
+  const reservation = await t.backend.run((ctx) => ctx.db.query("creditReservations").unique());
+  const wallet = await t.backend.run((ctx) => ctx.db.query("creditWallets").unique());
+  expect(reservation?.state).toMatchObject({ kind: "released" });
+  expect(wallet).toMatchObject({ balanceUnits: 500_000, reservedUnits: 0 });
+  expect(startAgent).not.toHaveBeenCalled();
+});
+
+it("does not start new research when its owner cannot reserve the bounded cost", async () => {
+  const t = await setup();
+  vi.stubEnv("CREDITS_ENABLED", "true");
+  await t.backend.run((ctx) =>
+    ctx.db.insert("creditWallets", {
+      userId: t.userId,
+      balanceUnits: 10_000,
+      reservedUnits: 0,
+      hold: { kind: "clear" },
+    }),
+  );
+  await expect(t.run()).rejects.toThrow();
+  expect(await t.site()).toBeNull();
+  expect(await t.records()).toHaveLength(0);
+  expect(await t.backend.run((ctx) => ctx.db.query("creditReservations").collect())).toEqual([]);
+  expect(startAgent).not.toHaveBeenCalled();
+});
+
+it("reserves site research discovered by Scout after the task starts", async () => {
+  const t = await setup("Find a public calculator and try it.");
+  vi.stubEnv("CREDITS_ENABLED", "true");
+  expect(await t.run()).toBe(false);
+  await t.backend.run((ctx) => ctx.db.patch(t.sessionId, { state: { kind: "running" } }));
+  await t.backend.mutation(internal.scout.reviewSites.identify, {
+    sessionId: t.sessionId,
+    site: "example.com",
+  });
+  const shared = await t.sharedJob();
+  const reservation = await t.backend.run((ctx) => ctx.db.query("creditReservations").unique());
+  if (!reservation) throw new Error("Missing research reservation");
+  expect(reservation).toMatchObject({
+    userId: t.userId,
+    sessionId: t.sessionId,
+    sourceKey: `site-research:${shared._id}`,
+    state: { kind: "pending" },
+  });
+  await t.process(shared._id);
+  await t.process(shared._id);
+  expect((await t.backend.run((ctx) => ctx.db.get(reservation._id)))?.state).toMatchObject({
+    kind: "settled",
+    costMicrodollars: 60_000,
+  });
+  expect(startAgent).toHaveBeenCalledTimes(1);
+});
+
+it("does not guess who pays when two active tasks could have discovered the same site", async () => {
+  const t = await setup("Find a public calculator and try it.");
+  vi.stubEnv("CREDITS_ENABLED", "true");
+  expect(await t.run()).toBe(false);
+  await t.backend.run(async (ctx) => {
+    const first = await ctx.db.get(t.sessionId);
+    if (!first) throw new Error("Missing first task");
+    await ctx.db.patch(first._id, { state: { kind: "running" } });
+    const otherId = await ctx.db.insert("agentsApiSessions", {
+      userId: t.userId,
+      scoutId: first.scoutId,
+      scoutName: first.scoutName,
+      title: "Other task",
+      model: first.model,
+      state: { kind: "running" },
+      active: true,
+      nextSequence: 0,
+      browser: null,
+      usage: null,
+    });
+    await ctx.db.insert("scoutChats", {
+      threadId: otherId,
+      runtime: { kind: "agents_api", sessionId: otherId },
+      userId: t.userId,
+      scoutId: first.scoutId,
+      createdAt: Date.now(),
+      primarySite: "example.com",
+      purpose: { kind: "review" },
+      visibility: "private",
+    });
+  });
+  await expect(
+    t.backend.mutation(internal.scout.reviewSites.identify, {
+      sessionId: t.sessionId,
+      site: "example.com",
+    }),
+  ).rejects.toThrow("More than one task");
+  expect(await t.site()).toBeNull();
+  expect(await t.backend.run((ctx) => ctx.db.query("creditReservations").collect())).toEqual([]);
+  expect(startAgent).not.toHaveBeenCalled();
 });
 
 it.each(["saving request", "submitting job"])(
