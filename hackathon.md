@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-18T09:50:51Z
+- **Last updated:** 2026-09-18T11:47:40Z
 
 ## Log
 
@@ -1386,8 +1386,14 @@ Convex summarizes older messages, limits repeat reads, and keeps completed-step 
 Play tasks retain activity phases and game guidance; duplicate Lab execution and UI are retired
 (`apps/scout/convex/tasks/`, `apps/scout/src/tasks/`).
 
-### 2026-09-18 - working tree - v225
+### 2026-09-18 - 2f4ce3a - v225
 
 Cloudflare Workers Builds now builds and deploys without rerunning checks or tests.
 GitHub CI runs formatting, lint, types, and tests separately; local check and build remain
 separate commands (`.github/workflows/ci.yml`, `apps/scout/package.json`).
+
+### 2026-09-18 - working tree - v226
+
+Site cards leave a description-line gap between task previews and grow on phones when wrapped
+content needs more room. The review scope and site search controls fill their rows when stacked
+(`apps/scout/src/components/activity-feed.tsx`, `apps/scout/src/components/site-filters.tsx`).
