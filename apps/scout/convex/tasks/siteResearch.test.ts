@@ -561,7 +561,7 @@ it("reserves site research discovered by Scout after the task starts", async () 
   expect(startAgent).toHaveBeenCalledTimes(1);
 });
 
-it("does not guess who pays when two active tasks could have discovered the same site", async () => {
+it("charges the task that identified the site even when another task knows it", async () => {
   const t = await setup("Find a public calculator and try it.");
   vi.stubEnv("CREDITS_ENABLED", "true");
   expect(await t.run()).toBe(false);
@@ -592,14 +592,13 @@ it("does not guess who pays when two active tasks could have discovered the same
       visibility: "private",
     });
   });
-  await expect(
-    t.backend.mutation(internal.scout.reviewSites.identify, {
-      sessionId: t.sessionId,
-      site: "example.com",
-    }),
-  ).rejects.toThrow("More than one task");
-  expect(await t.site()).toBeNull();
-  expect(await t.backend.run((ctx) => ctx.db.query("creditReservations").collect())).toEqual([]);
+  await t.backend.mutation(internal.scout.reviewSites.identify, {
+    sessionId: t.sessionId,
+    site: "example.com",
+  });
+  const [reservation] = await t.backend.run((ctx) => ctx.db.query("creditReservations").collect());
+  expect(reservation).toMatchObject({ userId: t.userId, sessionId: t.sessionId });
+  expect(await t.site()).not.toBeNull();
   expect(startAgent).not.toHaveBeenCalled();
 });
 

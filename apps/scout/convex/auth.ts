@@ -1,8 +1,6 @@
 import { Password } from "@convex-dev/auth/providers/Password";
 import type { ConvexCredentialsUserConfig } from "@convex-dev/auth/providers/ConvexCredentials";
 import { convexAuth } from "@convex-dev/auth/server";
-import { makeFunctionReference } from "convex/server";
-import type { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { normalizeAuthEmail } from "./authEmail";
 import { emailVerificationCode, passwordResetCode } from "./authEmails";
@@ -39,10 +37,6 @@ function passwordOptions(
 
 const basePasswordProvider = createPasswordProvider(emailVerificationCode, passwordResetCode);
 const basePasswordOptions = passwordOptions(basePasswordProvider);
-// The generated API is from v226; this function reference stays typed until the next codegen.
-const grantOnSignIn = makeFunctionReference<"mutation", { userId: Id<"users"> }, null>(
-  "credits:grantOnSignIn",
-);
 
 function withEmailCooldown(
   provider: typeof emailVerificationCode,
@@ -102,7 +96,7 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
   callbacks: {
     beforeSessionCreation: async (ctx, { userId }) => {
       await ctx.runQuery(internal.accounts.assertActiveForAuth, { userId });
-      await ctx.runMutation(grantOnSignIn, { userId });
+      await ctx.runMutation(internal.credits.grantOnSignIn, { userId });
     },
     afterUserCreatedOrUpdated: async (ctx, args) => {
       await ctx.runQuery(internal.accounts.assertActiveForAuth, { userId: args.userId });

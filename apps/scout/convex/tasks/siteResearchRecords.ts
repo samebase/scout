@@ -106,38 +106,11 @@ async function startSiteResearch(
   return researchId;
 }
 
-async function initiatingSession(ctx: MutationCtx, hostname: string, userId: Id<"users">) {
-  const chats = await ctx.db
-    .query("scoutChats")
-    .withIndex("by_user_id_and_purpose_kind_and_created_at", (q) =>
-      q.eq("userId", userId).eq("purpose.kind", "review"),
-    )
-    .order("desc")
-    .take(101);
-  if (chats.length === 101)
-    throw new Error("Cannot identify the task that initiated site research");
-  let owner: Id<"agentsApiSessions"> | null = null;
-  for (const chat of chats) {
-    if (chat.primarySite !== hostname || chat.runtime?.kind !== "agents_api") continue;
-    const session = await ctx.db.get(chat.runtime.sessionId);
-    if (
-      !session?.active ||
-      session.userId !== userId ||
-      (session.state.kind !== "starting" && session.state.kind !== "running")
-    )
-      continue;
-    if (owner) throw new Error("More than one task could own this site research");
-    owner = session._id;
-  }
-  if (!owner) throw new Error("Cannot identify the task that initiated site research");
-  return owner;
-}
-
 export async function ensureSiteResearch(
   ctx: MutationCtx,
   hostname: string,
   userId: Id<"users">,
-  sessionId?: Id<"agentsApiSessions">,
+  sessionId: Id<"agentsApiSessions">,
 ) {
   if (researchSite(`https://${hostname}/`) !== hostname)
     throw new Error("Research requires a public hostname");
@@ -147,12 +120,7 @@ export async function ensureSiteResearch(
   return site.researchId
     ? { researchId: site.researchId, reused: true }
     : {
-        researchId: await startSiteResearch(
-          ctx,
-          site,
-          userId,
-          sessionId ?? (creditsEnabled() ? await initiatingSession(ctx, hostname, userId) : null),
-        ),
+        researchId: await startSiteResearch(ctx, site, userId, sessionId),
         reused: false,
       };
 }
