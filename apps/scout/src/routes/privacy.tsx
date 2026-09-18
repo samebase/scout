@@ -5,7 +5,7 @@ import privacyPolicy from "../content/privacy-policy.md?raw";
 export const Route = createFileRoute("/privacy")({
   staticData: { access: "access_public" },
   head: () => ({
-    meta: [{ title: "Privacy policy | Scout" }, { name: "robots", content: "noindex" }],
+    meta: [{ title: "Privacy policy | Scout" }],
   }),
   component: () => <LegalDocument content={privacyPolicy} />,
 });

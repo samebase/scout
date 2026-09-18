@@ -1,20 +1,21 @@
 # Scout privacy and terms research
 
-Researched September 18, 2026 against the current checkout and the primary sources linked
-below. This is an implementation-informed drafting record, not a jurisdiction-specific legal
-opinion. Have a qualified adviser review applicability and the final text for the operator's
-country and intended markets before publication.
+Researched September 18, 2026 and revised September 19, 2026 against the current checkout,
+the Samebase policies, the operator's instructions, and the primary sources linked below.
+This internal record explains the wording and the operational work behind it. It is not a
+jurisdiction-specific opinion or a certification of legal compliance.
 
 ## Deliverables and scope
 
-- [Privacy policy draft](../apps/scout/src/content/privacy-policy.md), rendered at `/privacy`.
-- [Terms and conditions draft](../apps/scout/src/content/terms-of-service.md), rendered at `/terms`.
+- [Privacy policy](../apps/scout/src/content/privacy-policy.md), rendered at `/privacy`.
+- [Terms and conditions](../apps/scout/src/content/terms-of-service.md), rendered at `/terms`.
 
-The public routes render these Markdown files directly, including their draft notices and
-unresolved placeholders. The documents are not effective. Both routes request `noindex`
-while the text remains a draft.
+The public routes render the Markdown directly. Both documents are dated September 19, 2026,
+with complete text and no publication placeholders or draft notices. The scope covers Scout
+websites, apps, and services linking to the documents, so a domain change does not leave a
+hard-coded service address out of date. The temporary route `noindex` metadata is removed.
 
-The drafts describe the current product, including public tasks, shared Scouts, AI providers,
+The documents describe the current product, including public tasks, shared Scouts, AI providers,
 remote-browser recordings, and account closure that retains history. They cover optional paid
 credit packs because the code already supports Polar checkout. No live deployment settings,
 provider dashboards, signed contracts, or existing customer records were inspected.
@@ -26,7 +27,7 @@ Scout uses the same operator and public contact as Samebase, as requested by the
 clause also follows Samebase's operator-based wording. No personal address is requested or
 included. Intended markets and applicable legal requirements still need to be assessed.
 
-## What the research changes about the draft
+## Research behind the wording
 
 ### A free or experimental service still needs accurate disclosures
 
@@ -60,8 +61,8 @@ delivery close to collection, and keep any consent separate from terms acceptanc
 is a useful drafting aid, not evidence that UK law necessarily applies to Scout. That page
 itself flags ongoing updates following changes to UK law.
 
-The proposed purposes distinguish contract performance, legitimate interests, and legal
-obligations. These are proposed legal assessments, not conclusions proved by code. Record
+The purposes distinguish contract performance, legitimate interests, and legal obligations.
+Those bases depend on how the service actually operates; code alone does not establish them. Record
 necessity and balancing for security, support, and incidental third-party data. A user's
 contract does not supply a legal basis for processing everyone else's data. The ICO explains
 the assessment in its [legitimate-interests guidance](https://ico.org.uk/for-organisations/uk-gdpr-guidance-and-resources/lawful-basis/a-guide-to-lawful-basis/legitimate-interests/).
@@ -99,7 +100,7 @@ The Commission explains why language and substantive fairness both matter in its
 
 Polar's current [buyer terms](https://polar.sh/legal/checkout-buyer-terms) distinguish its
 merchant-of-record sale from the supplier's terms for using the product. Scout still needs
-its own service terms and support process. The draft uses conditional one-time credit
+its own service terms and support process. The terms use conditional one-time credit
 purchases, not an invented subscription or a promise that Scout will stay free.
 
 Classify credits and their underlying service before implementing withdrawal consent. The
@@ -122,8 +123,8 @@ based only on an application-code search. See the ICO's
 [storage and access guidance](https://ico.org.uk/for-organisations/direct-marketing-and-privacy-and-electronic-communications/guidance-on-the-use-of-storage-and-access-technologies/what-are-storage-and-access-technologies/).
 
 The app's remote-browser replay is a task artifact. It is different from recording visitors'
-interactions with Scout through an analytics SDK. The draft makes that distinction, while
-requiring a real deployed-browser audit for injected scripts, embedded providers, and checkout.
+interactions with Scout through an analytics SDK. The notice makes that distinction. A
+deployed-browser audit still needs to cover injected scripts, embedded providers, and checkout.
 
 Clearly identify Scouts as AI at the point of interaction, as well as in the terms. Assess
 the EU AI Act's applicable transparency duties for both the chat and external communications;
@@ -133,10 +134,10 @@ against the actual feature. See the Commission's
 
 The public feed also warrants a scoped review of Digital Services Act duties, including
 reporting and contact mechanisms where applicable. Small size does not answer every scope
-question. The draft offers a reporting contact but does not claim that this completes DSA
+question. The terms offer a reporting contact but do not claim that this completes DSA
 compliance. See the Commission's [user-rights overview](https://digital-strategy.ec.europa.eu/en/factpages/user-rights-under-digital-services-act).
 
-The proposed 18+ limit is a product choice for this experimental service, not a legal finding
+The 18+ limit is a product choice for this experimental service, not a legal finding
 or an implemented age check. A games feature needs an audience assessment: writing "18+"
 does not by itself settle whether a service is directed to children. See the FTC's
 [COPPA guidance](https://www.ftc.gov/business-guidance/resources/complying-coppa-frequently-asked-questions).
@@ -148,22 +149,22 @@ threshold-based scope.
 
 Paths below are relative to `apps/scout/` unless stated otherwise.
 
-| Topic                         | Observed evidence                                                                                                                                                  | Drafting consequence                                                                                                                                                                                                               |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Signup and approval           | `src/components/auth-panel.tsx`, `convex/auth.ts`, `convex/authEmails.ts`, `convex/accounts.ts`                                                                    | Email/password registration, verification and reset codes, manual approval, and saved task-engine/Scout preferences. No terms-version acceptance or age declaration found in signup.                                               |
-| Authentication and UI storage | `src/lib/convex.tsx`, installed `@convex-dev/auth/src/react/client.tsx` and `providers/Password.ts`, `src/sidebars/scoutSidebarState.ts`                           | Default password hashing and local-storage authentication tokens; persistent sidebar layout. No visitor-analytics SDK found in authored frontend code or declared dependencies.                                                    |
-| Public and private access     | `convex/scout/chats.ts`, `convex/scout/chatAccess.ts`, `convex/tasks/access.ts`, `convex/browserReplay.ts`                                                         | Public viewing exists; owner/admin permissions govern other access. Making a chat public is a real disclosure, including associated browser activity.                                                                              |
-| Shared Scouts and secrets     | Repository `docs/agent-runtime.md` and `docs/scout-credential-store-decision.md`; `convex/scout/credentialCrypto.ts`                                               | Persistent inboxes, profiles and accounts; encrypted managed passwords still reach Firecrawl and destination sites. No guarantee of redaction from provider pixels.                                                                |
-| Task and AI records           | `convex/schema.ts`, `convex/scout/models.ts`, `convex/tasks/client.ts`, `convex/tasks/agentsApi.ts`, `convex/tasks/convexAgent.ts`, `convex/tasks/requestCheck.ts` | OpenAI direct and Convex Gateway paths; OpenAI, Qwen, DeepSeek model options; stored prompts, responses, summaries and request-check evidence. A request check's `store: false` is not an app-wide deletion policy.                |
-| Files and screenshots         | `convex/workspaceStorage.ts`, `convex/scout/workspaces.ts`, `convex/tasks/screenshots.ts`                                                                          | Convex metadata and Cloudflare R2 bytes. File permissions are separate from public chat display, but a file's contents may be copied into visible tool results.                                                                    |
-| Email and browser vendors     | `convex/email.ts`, `convex/scout/lib/agentMail.ts`, `convex/tasks/tools.ts`, `convex/scout/lib/firecrawlReplay.ts`                                                 | Cloudflare sends authentication email; AgentMail handles Scout inboxes; Firecrawl handles research, browsers and replay. Do not list Resend, PostHog, or 1Password as Scout integrations merely because another project uses them. |
-| Handoffs                      | `convex/humanHandoffs.ts`, `convex/humanHandoffBrowser.ts`, repository `docs/agent-runtime.md`                                                                     | Temporary links grant access to the remote browser; handing control to a person does not stop recording.                                                                                                                           |
-| Account deletion              | `convex/accountDeletion.ts`, `convex/accountDeletionCleanup.ts`, `src/routes/account-deletion.tsx`, repository `docs/account-deletion-rfc.md`                      | Authentication and profile deletion; persistent minimal user record; retained task content and shared resources. No full personal-data erasure workflow or general content expiry found.                                           |
-| Payments                      | `convex/creditPolicy.ts`, `convex/creditLedger.ts`, `convex/polar.ts`, `convex/polarConfig.ts`, `convex/creditPurchases.ts`, `src/components/credits-panel.tsx`    | Separate usage and checkout flags. Current offer is 200 credits for USD 5 before tax, with 50 signup credits. Usage settles asynchronously, can go negative, and refunds adjust credits. Live flags were not inspected.            |
+| Topic                         | Observed evidence                                                                                                                                                  | Drafting consequence                                                                                                                                                                                                                                    |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Signup and approval           | `src/components/auth-panel.tsx`, `convex/auth.ts`, `convex/authEmails.ts`, `convex/accounts.ts`                                                                    | Email/password registration, verification and reset codes, manual approval, and saved task-engine/Scout preferences. The account form includes a terms-agreement notice beside submission. Terms-version records and an age declaration are not stored. |
+| Authentication and UI storage | `src/lib/convex.tsx`, installed `@convex-dev/auth/src/react/client.tsx` and `providers/Password.ts`, `src/sidebars/scoutSidebarState.ts`                           | Default password hashing and local-storage authentication tokens; persistent sidebar layout. No visitor-analytics SDK found in authored frontend code or declared dependencies.                                                                         |
+| Public and private access     | `convex/scout/chats.ts`, `convex/scout/chatAccess.ts`, `convex/tasks/access.ts`, `convex/browserReplay.ts`                                                         | Public viewing exists; owner/admin permissions govern other access. Making a chat public is a real disclosure, including associated browser activity.                                                                                                   |
+| Shared Scouts and secrets     | Repository `docs/agent-runtime.md` and `docs/scout-credential-store-decision.md`; `convex/scout/credentialCrypto.ts`                                               | Persistent inboxes, profiles and accounts; encrypted managed passwords still reach Firecrawl and destination sites. No guarantee of redaction from provider pixels.                                                                                     |
+| Task and AI records           | `convex/schema.ts`, `convex/scout/models.ts`, `convex/tasks/client.ts`, `convex/tasks/agentsApi.ts`, `convex/tasks/convexAgent.ts`, `convex/tasks/requestCheck.ts` | OpenAI direct and Convex Gateway paths; OpenAI, Qwen, DeepSeek model options; stored prompts, responses, summaries and request-check evidence. A request check's `store: false` is not an app-wide deletion policy.                                     |
+| Files and screenshots         | `convex/workspaceStorage.ts`, `convex/scout/workspaces.ts`, `convex/tasks/screenshots.ts`                                                                          | Convex metadata and Cloudflare R2 bytes. File permissions are separate from public chat display, but a file's contents may be copied into visible tool results.                                                                                         |
+| Email and browser vendors     | `convex/email.ts`, `convex/scout/lib/agentMail.ts`, `convex/tasks/tools.ts`, `convex/scout/lib/firecrawlReplay.ts`                                                 | Cloudflare sends authentication email; AgentMail handles Scout inboxes; Firecrawl handles research, browsers and replay. Do not list Resend, PostHog, or 1Password as Scout integrations merely because another project uses them.                      |
+| Handoffs                      | `convex/humanHandoffs.ts`, `convex/humanHandoffBrowser.ts`, repository `docs/agent-runtime.md`                                                                     | Temporary links grant access to the remote browser; handing control to a person does not stop recording.                                                                                                                                                |
+| Account deletion              | `convex/accountDeletion.ts`, `convex/accountDeletionCleanup.ts`, `src/routes/account-deletion.tsx`, repository `docs/account-deletion-rfc.md`                      | Authentication and profile deletion; persistent minimal user record; retained task content and shared resources. No full personal-data erasure workflow or general content expiry found.                                                                |
+| Payments                      | `convex/creditPolicy.ts`, `convex/creditLedger.ts`, `convex/polar.ts`, `convex/polarConfig.ts`, `convex/creditPurchases.ts`, `src/components/credits-panel.tsx`    | Separate usage and checkout flags. Current offer is 200 credits for USD 5 before tax, with 50 signup credits. Usage settles asynchronously, can go negative, and refunds adjust credits. Live flags were not inspected.                                 |
 
 ## Provider findings and remaining verification
 
-| Provider   | Primary source and finding                                                                                                                                                                                                                                                                                   | Still needed before a final privacy claim                                                                                                                                                                                                |
+| Provider   | Primary source and finding                                                                                                                                                                                                                                                                                   | Operational verification                                                                                                                                                                                                                 |
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Convex     | [AI Gateway documentation](https://docs.convex.dev/ai-gateway/overview), [DPA](https://www.convex.dev/legal/dpa), [subprocessors](https://www.convex.dev/legal/subprocessors). The gateway forwards model requests. The DPA addresses transfers and deletion with backup exceptions.                         | Confirm the contracted entity, deployment region, backup retention, and gateway's actual serving providers and terms. The published subprocessors list inspected did not resolve the Qwen/DeepSeek serving chain.                        |
 | OpenAI     | [API data controls](https://developers.openai.com/api/docs/guides/your-data). API content is not used for training by default unless opted in; abuse monitoring and endpoint-specific application state have separate retention. The current table lists Agents application state as retained until deleted. | Verify organization sharing settings, applicable API endpoints and region, and removal of provider sessions. Do not describe all data as deleted after 30 days or assume a gateway account uses the same settings as the direct account. |
@@ -176,51 +177,77 @@ Convex's legal pages render their documents in an inline frame. The DPA and subp
 text was read from that frame's HTML because the search reader returned only the page shell.
 Public provider documentation does not prove which contracts or settings apply to this account.
 
-## Finish before publication
+## Contractual choices
 
-| Decision or work               | What must be settled                                                                                                                                                                                                                                                                                                                                   |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Publication and scope          | Replace `SERVICE_URLS` and `EFFECTIVE_DATE`. Use the Samebase team and `contact@samebase.com` for the operator and contact, as requested. Select the relevant authority and assess any representative or DPO requirements against the intended markets.                                                                                                |
-| Provider processing            | Resolve `AI_PROVIDER_AND_DATA_USE_DETAILS`, `PROCESSING_COUNTRIES_AND_TRANSFER_SAFEGUARDS`, and `PROVIDER_DELETION_AND_BACKUP_DETAILS`. Confirm each enabled model's serving entity, data uses, countries, contracts and retention. Disable an unverified route if it cannot support the notice that will be published.                                |
-| Retention and rights           | Replace `RETENTION_SCHEDULE` with category-specific periods or meaningful criteria, including after account closure. Establish and test access, correction and erasure handling, including provider copies and public content. Indefinite retained history needs a product decision, not softer wording.                                               |
-| Optional data uses and storage | Resolve `OPTIONAL_DATA_USE_DETAILS`, `SALE_AND_ADVERTISING_DETAILS`, and `BROWSER_STORAGE_AUDIT_DETAILS`. Confirm no off-code marketing, sale/sharing, analytics or training arrangements; inspect signed-out, signed-in, live-view and checkout network/storage behavior.                                                                             |
-| Credits and refunds            | Resolve `CREDIT_METERING_DISCLOSURE` with the current conversion, metered items, rounding and variable provider rates, and make the information accessible before purchase/use. Confirm current expiry behavior and the proposed refund approach. Complete applicable withdrawal information and interface requirements before enabling paid checkout. |
-| Audience and agreement         | Confirm the proposed 18+ restriction and audience design. Add explicit terms acceptance and save the accepted version/time. Give existing users appropriate notice and renewed acceptance where needed. Staff must be able to fulfill the draft's reporting and human-review commitments.                                                              |
+The operator requested stronger protection against risks caused by automated tasks. The
+terms therefore place responsibility for instructions, permissions, access limits, budgets,
+supervision, and authorized external actions on the user. They disclose that AI can ignore
+constraints or be misled by external content, that stopping does not reverse prior actions,
+and that automated checks do not mean every task is supervised by the operator.
 
-`SUPERVISORY_AUTHORITY_DETAILS` is also a publication placeholder. The authority information
-should name the relevant body and link to its complaint process while preserving other
-applicable complaint rights. Add representative or DPO details only if applicable; no such
-appointment is established by the existing Samebase documents.
+The service has an express as-is warranty disclaimer, exclusions for indirect losses, and
+an aggregate liability cap of the greater of US$100 or Scout fees paid in the preceding
+12 months. That amount is a contractual drafting choice, not a statutory threshold or a
+figure taken from Samebase's existing terms. Business users also indemnify the operator for
+third-party claims caused by their unlawful instructions, unauthorized access, or material
+breach. The indemnity excludes the operator's own breach, negligence, and misconduct.
 
-For a starting retention discussion, consider private task content for a fixed period after
-last activity, public content while deliberately published with periodic necessity review,
-short operational-log retention, and separate statutory transaction retention. Pick actual
-periods with the operator and provider evidence. These are recommendations, not implemented
-expiry rules or promises in the drafts.
+These clauses preserve non-waivable consumer and data-protection remedies and exceptions
+for fraud, intentional misconduct, gross negligence, and death or injury caused by
+negligence. A catch-all waiver cannot guarantee immunity. The European Commission explains
+that unfair terms do not bind consumers, including inappropriate restrictions on liability
+for inadequate performance: [unfair contract terms](https://europa.eu/youreurope/citizens/consumers/unfair-treatment/unfair-contract-terms/indexamp_en.htm).
+The UK legislation's [Consumer Rights Act explanatory notes](https://www.legislation.gov.uk/ukpga/2015/15/pdfs/ukpgaen_20150015_en.pdf)
+also explain the restrictions on excluding required service standards. Which rules apply
+depends on the operator, user, transaction, and market; broad wording does not settle that.
 
-Proposed contractual choices also need confirmation: adults only, no scheduled credit expiry,
-case-by-case refunds outside statutory rights, no mandatory arbitration, and no invented
-monetary liability cap. Local legal review should focus on these choices and the mandatory
-consumer protections.
+## Privacy and pricing decisions
 
-## Route integration and remaining adoption work
+Retention is described by record category and purpose, rather than inventing expiry jobs or
+provider deletion periods. The notice says explicitly that retained task history has no
+automatic expiry and that account closure does not erase it. Operational removal when a
+lawful purpose ends or a valid erasure request applies remains necessary.
 
-The `/privacy` and `/terms` TanStack Router routes are public. They render the Markdown with
-table support, page titles, section anchors prefixed with `legal-`, and links between the
-pages. Wide tables scroll within keyboard-focusable regions. Links are available from the
-sticky header menu, Settings, the account form, and the account-deletion page. The access guard
-allows both legal routes during and after account deletion, including while access is loading.
+The notice distinguishes Scout's own use from provider processing. It does not promise
+universal zero retention, uniform AI training settings, or a specific unverified transfer
+mechanism. International processing requirements remain applicable. See the EDPB's
+[international-transfer guidance](https://www.edpb.europa.eu/sme/be-compliant/international-data-transfers_en).
+Complaint information links to the [EEA authority directory](https://www.edpb.europa.eu/about-edpb/our-members_en)
+and the [ICO complaint page](https://ico.org.uk/make-a-complaint/), without inventing the
+operator's location or representative.
 
-Before adopting the policies:
+Credit metering follows `convex/creditPolicy.ts`, `convex/creditLedger.ts`, and the recorded
+usage categories in `convex/creditsModel.ts`: one credit corresponds to US$0.01 of recorded
+provider cost, with costs rounded upward to whole microdollars. At the current conversion,
+one microdollar is 0.0001 credits. Model estimates and provider-reported amounts are described
+as such. Credit-pack retail prices are separate from the usage conversion. The terms do not
+promise fixed task prices, free retries, or payment-card charging for negative balances.
 
-1. Resolve all placeholders and the decisions above. Show the approved effective date, remove
-   draft notices and route `noindex` metadata, and archive each effective version.
-2. Recheck the text against the production configuration and provider agreements.
-3. Add an unselected agreement control or equally clear affirmative signup action linked to
-   the terms, with version/time recorded on the backend. Treat the privacy notice as information;
-   collect any optional consent separately. Provide a path for existing accounts as appropriate.
-4. Put concise disclosures at the decision points: public sharing, shared Scout resources,
-   remote-browser recording/handoff, and buying or spending credits. Link to the full details.
-5. Verify any new signup agreement behavior. The current routes and plain links do not record
-   agreement or consent. If later navigation changes affect sibling task/site layouts, follow
-   the repository's delayed-query/sidebar checks.
+## Operational responsibilities
+
+Publishing the policies does not implement or verify every practice they describe. Maintain
+provider contracts, a record of the serving providers and transfer safeguards, and workable
+manual privacy-request handling across Scout, files, providers, and public content. Review
+continued retention, optional tracking, and any changes to provider data use against the
+notice. The no-sale, no-advertising-sharing, and no-own-model-training statements are service
+commitments to maintain, not conclusions about uninspected business arrangements.
+
+The account form now explains beside the submission button that signing in or creating an
+account signifies agreement to the linked terms. The privacy policy remains an informational
+link, not a bundled consent. The backend does not yet record an accepted terms version or
+timestamp, and already signed-in accounts do not encounter a new acceptance gate. Versioned
+acceptance records and an appropriate notice to existing users would strengthen the evidence
+of agreement. Do not claim that adding the links proves assent by every existing user.
+
+If paid checkout is enabled, complete any required withdrawal information and interface
+requirements with Polar. Keep credits, refunds, and retention disclosures aligned with the
+implemented behavior. Assess any representative, DPO, audience, or local disclosure duties
+against actual applicability; none is established merely by the computer's timezone.
+
+## Route integration
+
+The `/privacy` and `/terms` routes render the Markdown with tables, document titles, section
+anchors prefixed with `legal-`, and links between the pages. Wide tables scroll within
+keyboard-focusable regions. The sticky header menu, account form, Settings, and account
+deletion page link to the policies. Both routes remain accessible while signed out, awaiting
+approval, loading account access, and during or after account deletion.

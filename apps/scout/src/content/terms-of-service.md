@@ -1,18 +1,22 @@
 # Terms and conditions
 
-> Draft for review, prepared September 18, 2026. Not yet effective.
-> Some details remain to be confirmed.
+Effective date: September 19, 2026
 
-Effective date: {{EFFECTIVE_DATE}}
-
-These terms govern Scout at {{SERVICE_URLS}}. Scout is operated by the Samebase team.
+These terms govern Scout and the websites, apps, and services that link to these terms.
+Scout is operated by the Samebase team.
 "We", "us", and "our" refer to that operator. For support, legal notices, or questions about
 these terms, email contact@samebase.com.
 
-By accepting these terms when creating an account or before using account features, you
-enter into an agreement with us. If you act for an organization, you must have authority to
-bind it. Our privacy policy explains how we handle personal information; accepting these
-terms is not blanket consent to personal-data processing.
+By creating an account, signing in, or directing a Scout after these terms are presented to
+you, you agree to them. If you do not agree, do not use account features or direct a Scout.
+If you act for an organization, you must have authority to bind it. Our privacy policy
+explains how we handle personal information; accepting these terms is not blanket consent
+to personal-data processing.
+
+**You are responsible for the tasks you direct, the accounts and information you provide,
+and your use of the resulting actions and outputs. Scouts can act without asking you to
+approve each step and can make costly or irreversible mistakes.** The limits and exceptions
+to this allocation of responsibility are set out below.
 
 ## What Scout does
 
@@ -37,22 +41,53 @@ Creating or verifying an account does not guarantee permission to run tasks. Som
 require administrator approval and depend on available Scouts, usage limits, and providers.
 Do not transfer your account or use another person's account without authorization.
 
-## Instructions and external actions
+## Your instructions, authorization, and responsibility
 
 Give Scout only tasks you are authorized to perform. Your instructions authorize the actions
 reasonably needed to carry out the task within the service's available tools and permissions.
 State limits clearly, particularly for communications, purchases, account changes, or public
 posting. Do not assume Scout will ask you before every external action.
 
-Review a task before starting it and review its results before relying on them. Stop a task
-if it is acting outside your intent. Stopping does not undo messages already sent, information
-already disclosed, or changes already made. Human handoffs give access to a remote browser;
-do not share a handoff link with someone who should not control that browser.
+As between you and us, you are responsible for:
+
+- Having the rights, permissions, and lawful basis for your instructions, supplied content,
+  connected accounts, and the actions you ask Scout to perform.
+- Choosing suitable accounts and systems, limiting the access you provide, setting budgets
+  and other constraints, and keeping independent backups of information you need.
+- Supervising tasks and checking communications, changes, purchases, and other results
+  before relying on them or allowing them to affect other people.
+- Third-party charges, commitments, communications, publications, and changes that result
+  from actions you authorize, including actions carried out through an account you supply.
+- Your own breach of law, these terms, or third-party rules. Using an automated tool does
+  not remove your responsibility for the conduct you direct or approve.
+
+You authorize Scout to use its available tools and transmit the information reasonably
+needed to perform your task. That authorization does not make the Samebase team a party to
+your third-party transactions or authorize you to make commitments on our behalf. We do not
+undertake to review or supervise every task. Automated checks and occasional operator
+intervention do not replace your review or guarantee that an action is safe or lawful.
+
+AI can misunderstand instructions, ignore a constraint, select the wrong target, or be
+misled by a website, message, or other external content. Only give Scout access to resources
+for which you can manage those risks. Do not rely on Scout for emergency services, critical
+infrastructure, or decisions where an error could cause death or serious injury. Obtain
+qualified human advice for medical, legal, financial, and other professional decisions.
+
+Stop a task if it is acting outside your intent. Stopping does not undo messages already
+sent, information already disclosed, charges incurred, or changes already made. You are
+responsible for reviewing and addressing those consequences with the affected services or
+people. Human handoffs give access to a remote browser; do not share a handoff link with
+someone who should not control that browser.
 
 Third-party websites and services have their own rules, charges, and privacy practices.
 Scout access does not grant permission to bypass those rules or access accounts or data you
 are not entitled to use. Paying for Scout does not pay for purchases or subscriptions at
 third-party services.
+
+Subject to the liability section below, you accept the risks of the automated tasks you
+choose to run, including erroneous actions, disclosure, account restrictions, loss of data,
+and third-party disputes. These terms do not make you responsible for another user's
+independent tasks or transfer responsibility that applicable law requires us to retain.
 
 ## Public tasks and shared resources
 
@@ -123,10 +158,18 @@ the merchant of record and authorized reseller for the sale; its
 [buyer terms](https://polar.sh/legal/checkout-buyer-terms) also govern checkout. These terms
 govern use of Scout.
 
-Credits measure service usage, not successful outcomes. Model calls, request checks, browser
-activity, and other metered work can use credits even when a task fails, stops, or produces
-an unsatisfactory result. The rate depends on the resources used. Review the usage
-information in Scout. {{CREDIT_METERING_DISCLOSURE}}
+Credits measure service usage, not successful outcomes. Model calls, request checks, website
+research, remote-browser activity, and hosted web searches can use credits even when a task
+fails, stops, or produces an unsatisfactory result. Review the usage information in Scout.
+
+Under the current metering policy, one Scout credit corresponds to US$0.01 of recorded
+provider cost. Costs may use provider-reported amounts or estimates based on model token
+rates and tool usage; they are not a promise to pass through a provider's final invoice.
+Model, browser, and research rates vary by provider and feature. Recorded costs are rounded
+up to the nearest US$0.000001, equivalent to 0.0001 Scout credits at the current conversion.
+The price of a credit pack is set separately and shown at checkout. Buying credits does not
+guarantee a particular number of tasks or results. We will disclose material metering changes
+before they apply to new work.
 
 Credits are usable only in Scout and cannot be transferred or exchanged for cash, except
 through an applicable refund. The current credit system has no scheduled expiry. We may
@@ -193,20 +236,59 @@ appropriate, we will explain the action to the affected user and consider a requ
 review. We may limit that explanation where disclosure would create a security risk or
 breach the law.
 
-## Responsibility and liability
+## Warranty disclaimer
 
-To the extent permitted by law, the experimental service is provided as available, without
-additional promises of uninterrupted operation, accuracy, or fitness for a particular purpose.
+To the maximum extent permitted by law, Scout, its agents, and their outputs are provided
+"as is" and "as available", without express, implied, or statutory warranties, including
+warranties of merchantability, fitness for a particular purpose, title, and non-infringement.
+We do not warrant that Scout will be uninterrupted, secure, error-free, accurate, or suitable
+for your intended use; that it will follow every instruction; or that errors will be corrected.
+No task result, support response, or demonstration creates an additional warranty unless we
+expressly agree to it in writing. Mandatory guarantees and binding pre-contract information
+remain effective where required by law.
 
-If you are a consumer, nothing in these terms excludes statutory guarantees or responsibility
-that cannot lawfully be limited. We remain responsible for loss or damage to the extent
-required by applicable law.
+You decide whether to run a task, grant access, publish content, or rely on output. We do not
+endorse third-party content or accept responsibility for third-party services' independent
+conduct, availability, security, charges, account restrictions, or policies, except where
+applicable law makes us responsible.
 
-If you use Scout for business purposes, to the extent permitted by law, we exclude liability
-for indirect or consequential losses and lost profits, revenue, or business opportunities.
-This exclusion does not apply to fraud, intentional misconduct, gross negligence, death or
-personal injury caused by negligence, or any other liability the law does not allow us to
-exclude. No term limits data-protection rights or remedies that cannot be waived.
+## Limitation of liability
+
+To the maximum extent permitted by law, neither the Samebase team nor its contributors,
+personnel, or service providers will be liable for indirect, incidental, special,
+consequential, exemplary, or punitive damages, or loss of profits, revenue, business
+opportunities, goodwill, or anticipated savings arising from Scout or its outputs. For
+business users, this exclusion also covers business interruption, loss or corruption of data,
+and the cost of substitute services, whether those losses are direct or indirect.
+
+To the maximum extent permitted by law, our total aggregate liability for all claims arising
+out of or relating to Scout or these terms is limited to the greater of **US$100** or **the
+amount you paid for Scout in the 12 months before the event giving rise to the claim**.
+Payments through an authorized reseller count as payments for Scout. The limit applies
+across all related claims and legal theories, including contract, tort, and negligence,
+even if we were advised that a loss was possible.
+
+These exclusions and limits do not apply to fraud, fraudulent misrepresentation, intentional
+misconduct, gross negligence, death or personal injury caused by negligence, or any other
+liability that cannot lawfully be excluded or limited. They do not remove mandatory consumer
+guarantees, statutory refunds or remedies, or non-waivable data-protection rights. If you
+are a consumer, they apply only to the extent permitted by the law that protects you. We do
+not require you to waive a right that the law says you must keep.
+
+## Business-user indemnity
+
+If you use Scout for a business or organization, to the extent permitted by law you will
+indemnify the Samebase team and its personnel against third-party claims, damages, and
+reasonable legal costs to the extent caused by your unlawful instructions or content, your
+unauthorized use of third-party accounts or services, or your material breach of these terms.
+This includes claims arising from actions a Scout takes to carry out those instructions.
+It does not cover losses caused by our own breach, negligence, or misconduct, and does not
+apply to you when acting as a consumer.
+
+We will give prompt notice of a claim and reasonable cooperation. You may control its
+defense with qualified counsel, but cannot settle it in a way that admits wrongdoing by us
+or imposes a non-monetary obligation on us without our consent, which we will not
+unreasonably withhold. We may participate through our own counsel at our own expense.
 
 ## Governing law and disputes
 

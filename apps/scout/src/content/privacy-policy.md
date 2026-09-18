@@ -1,13 +1,10 @@
 # Privacy policy
 
-> Draft for review, prepared September 18, 2026. Not yet effective.
-> Some details remain to be confirmed.
-
-Effective date: {{EFFECTIVE_DATE}}
+Effective date: September 19, 2026
 
 Scout lets you ask AI agents to explore websites, play browser games, review products, and
 carry out online tasks. This policy explains how we handle personal information when you
-visit {{SERVICE_URLS}}, create an account, or use Scout.
+visit a Scout website or app that links to this policy, create an account, or use Scout.
 
 Public chats can reveal your messages and the Scout's browser activity to anyone. A private
 chat limits access to its history, but its Scout can use an inbox, browser profile, and
@@ -64,7 +61,9 @@ rights of the people concerned. This is not permission to collect or expose info
 without a lawful basis.
 
 This policy is a notice, not a request for blanket consent. If a feature needs consent, we
-will ask separately and explain how to withdraw it. {{OPTIONAL_DATA_USE_DETAILS}}
+will ask separately and explain how to withdraw it. Account, security, and billing messages
+are part of operating the service. We do not treat a Scout account as permission to send
+optional marketing emails or record your use of our website for optional analytics.
 
 ## AI processing and automated checks
 
@@ -74,7 +73,11 @@ and tool results. Choosing a model can change which provider receives that conte
 
 Scout uses OpenAI directly for its Agents API and request checks. Other model calls use the
 Convex AI Gateway, with OpenAI, Qwen, and DeepSeek model options. Model names do not by
-themselves identify the company hosting a model. {{AI_PROVIDER_AND_DATA_USE_DETAILS}}
+themselves identify the company hosting a model. The gateway and the providers serving the
+selected model can process that task context under their applicable service terms and data
+controls. We do not train our own AI models on your task content. Provider retention and
+permitted uses vary by service; we do not promise that every model or tool has the same
+retention period or data-use settings.
 
 Scout stores task history and model-call information so tasks can continue and their results
 can be inspected. A short-lived browser session or a provider's no-training setting does not
@@ -126,14 +129,17 @@ administration, security, and support.
 We may disclose relevant information when legally required or when reasonably necessary to
 address fraud, protect people's safety, or establish or defend legal claims.
 
-{{SALE_AND_ADVERTISING_DETAILS}}
+We do not sell personal information or share it for cross-context behavioral advertising.
 
 ## International processing
 
-Providers may process information outside your country. An EU database region does not mean
-that all AI, browser, email, support, or payment processing stays in the EU.
-
-{{PROCESSING_COUNTRIES_AND_TRANSFER_SAFEGUARDS}}
+Providers may process information outside your country, including in the United States and
+other countries where they and their subprocessors operate. An EU database region does not
+mean that all AI, browser, email, support, or payment processing stays in the EU. Processing
+locations and transfer protections depend on the provider, service, and resource location.
+Where data-protection law restricts international transfers, the transfer must have a valid
+legal basis and any safeguards that law requires. Accepting our terms does not waive those
+requirements or constitute consent to an otherwise unlawful transfer.
 
 You can email contact@samebase.com for information about the safeguards applicable to your
 data and a copy where the law entitles you to one.
@@ -147,7 +153,9 @@ out and reset preferences.
 
 The current Scout application does not include advertising trackers or a visitor-analytics
 session-replay SDK. Infrastructure, checkout, and embedded providers may use their own
-storage when you interact with those services. {{BROWSER_STORAGE_AUDIT_DETAILS}}
+storage when you interact with those services. Their notices and controls apply to their
+independent processing. Where optional storage or tracking on Scout requires consent, we
+will ask before enabling it; you can refuse or withdraw that consent.
 
 Websites opened inside a Scout's remote browser can set cookies in that remote browser's
 persistent profile. Those cookies can outlive an individual task. They are separate from
@@ -166,7 +174,23 @@ account identifier. A "Deleted account" label does not anonymize personal inform
 those records. Existing chat visibility continues to apply.
 
 The current application does not automatically expire retained chat and task history.
-{{RETENTION_SCHEDULE}}
+We determine how long information is needed using these criteria:
+
+- Account and authentication records support an active account and are removed through the
+  account-closure process described above.
+- Task content, files, recordings, and shared-resource history support continued tasks,
+  published results, and investigation of previous actions. They can remain after account
+  closure and have no fixed automatic expiry; continued retention remains subject to
+  necessity and applicable deletion rights.
+- Usage, payment, and refund records support balances, reconciliation, disputes, fraud
+  prevention, and applicable tax or accounting obligations.
+- Security logs, support correspondence, deletion records, and legal-request records are
+  kept while needed to investigate the relevant matter, protect the service, demonstrate
+  compliance, or establish or defend claims, including applicable limitation periods.
+
+We remove or de-identify personal information when it is no longer needed for a lawful
+purpose. This may require manual cleanup; account closure does not trigger that cleanup for
+all retained content.
 
 To request erasure of personal information in retained content, email contact@samebase.com.
 This is separate from closing your account. We will assess the request under applicable
@@ -174,9 +198,12 @@ law, remove information where required, and explain any lawful reason for keepin
 records. Public sharing and shared history do not remove your data-protection rights.
 
 Provider backups, security records, AI application state, browser recordings, and email copies
-may have separate retention periods. {{PROVIDER_DELETION_AND_BACKUP_DETAILS}} Recipients may
-keep messages or public copies independently; we cannot guarantee that copies outside our
-control disappear.
+may have separate retention periods under the relevant provider's terms, backup lifecycle,
+security needs, and legal obligations. Removing an active record does not instantly erase
+every backup or revoke credentials at an external service. When a deletion request covers
+information held by our processors, we address those copies as required by law and explain
+any applicable exception. Recipients may keep messages or public copies independently; we
+cannot guarantee that copies outside our control disappear.
 
 ## Security
 
@@ -202,7 +229,11 @@ the applicable legal deadline. Under the EU GDPR, this is normally one month, wi
 permitted in specified cases; we will explain an extension within that first month.
 
 You can also complain to the relevant data-protection authority without contacting us first.
-{{SUPERVISORY_AUTHORITY_DETAILS}}
+In the EEA, you can contact the authority where you habitually live or work, or where the
+alleged infringement occurred. The European Data Protection Board maintains a
+[directory of EEA authorities](https://www.edpb.europa.eu/about-edpb/our-members_en).
+In the UK, you can [complain to the Information Commissioner's Office](https://ico.org.uk/make-a-complaint/).
+Elsewhere, contact the data-protection regulator with jurisdiction over your complaint.
 
 ## Age and changes to this policy
 

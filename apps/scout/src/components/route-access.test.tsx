@@ -286,7 +286,10 @@ for (const { path, title } of [
       }
       await open(path);
       expect(await screen.findByRole("heading", { level: 1, name: title })).toBeTruthy();
-      expect(screen.getByText(/Draft for review/).textContent).toContain("Not yet effective");
+      expect(screen.getByText("Effective date: September 19, 2026")).toBeTruthy();
+      expect(screen.getByRole("main").textContent).not.toMatch(
+        /\{\{[A-Z_]+\}\}|Draft for review|Not yet effective/,
+      );
       expect(screen.queryByRole("heading", { name: "Account deletion" })).toBeNull();
       expect(screen.queryByLabelText("Account access")).toBeNull();
     },
@@ -322,6 +325,7 @@ test("guests can read policies from signup before submitting account information
   const user = userEvent.setup();
   await user.click(await screen.findByRole("button", { name: "Create account" }));
   expect(screen.getByRole("heading", { name: "Create account" })).toBeTruthy();
+  expect(screen.getByText(/By clicking Create account, you agree to our/)).toBeTruthy();
   expect(screen.getByRole("link", { name: "Terms and conditions" }).getAttribute("href")).toBe(
     "/terms",
   );
