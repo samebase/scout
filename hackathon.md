@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-18T22:40:08Z
+- **Last updated:** 2026-09-18T23:08:49Z
 
 ## Log
 
@@ -1495,8 +1495,14 @@ liability limits. The sticky header keeps the pages accessible throughout Scout 
 account closure; the account form links agreement to sign-in and signup
 (`apps/scout/src/content/`, `apps/scout/src/components/`, `docs/legal-research.md`).
 
-### 2026-09-18 - working tree - v241
+### 2026-09-18 - d1cf36c - v241
 
 Credit purchases match the saved Scout checkout even when Polar reuses a customer from another app.
 Signed notifications still verify the product and price, and repeated deliveries cannot add credits twice
 (`apps/scout/convex/creditPurchases.ts`, `apps/scout/convex/polarModel.ts`).
+
+### 2026-09-18 - working tree - v242
+
+Credit history opens on its own page, keeping the balance and purchase controls compact in Settings.
+Sign out is the first account control, and the history page links back to Settings
+(`apps/scout/src/routes/settings.tsx`, `apps/scout/src/components/credit-history-page.tsx`).
