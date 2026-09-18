@@ -134,6 +134,9 @@ export default defineSchema({
     chargedModelMicrodollars: v.optional(v.number()),
     chargedWebSearchCalls: v.optional(v.number()),
     creditUsageTerms: v.optional(creditTermsValidator),
+    creditUsageBaseline: v.optional(
+      v.object({ modelCostUsd: v.number(), webSearchCalls: v.number() }),
+    ),
     creditAdmissionReservationId: v.optional(v.id("creditReservations")),
     creditModelWorkStarted: v.optional(v.boolean()),
     creditAdmissionTurnUsageRecorded: v.optional(v.boolean()),

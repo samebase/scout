@@ -9,6 +9,15 @@ import { Button } from "./ui/button";
 const credits = new Intl.NumberFormat(undefined, { maximumFractionDigits: 4 });
 const dollars = new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" });
 
+const purchaseMessages = {
+  pending: "Waiting for payment confirmation. Your balance will update here.",
+  paid: "Payment confirmed. Credits were added to your balance.",
+  partially_refunded: "Your payment was partially refunded. Your credit balance is up to date.",
+  refunded: "Your payment was refunded. No credits remain from this purchase.",
+  needs_review: "Your payment needs review. Contact an admin with this page’s link.",
+  checkout_failed: "Checkout could not be opened. Try buying credits again.",
+} satisfies Record<NonNullable<FunctionReturnType<typeof api.creditPurchases.status>>, string>;
+
 type CreditDetail = FunctionReturnType<typeof api.credits.history>["page"][number]["detail"];
 
 function entryLabel(detail: CreditDetail) {
@@ -106,11 +115,7 @@ export function CreditsPanel({ purchaseId }: { purchaseId: string | undefined })
         <>
           {purchaseId && purchase && (
             <p className="mt-4 text-sm" role="status">
-              {purchase.fulfillment.kind === "manual_refund"
-                ? "Your payment needs review. No credits were added."
-                : purchase.creditedUnits > 0
-                  ? "Payment confirmed. Credits were added to your balance."
-                  : "Waiting for payment confirmation. Your balance will update here."}
+              {purchaseMessages[purchase]}
             </p>
           )}
           <div className="mt-4 flex flex-wrap items-end justify-between gap-4 rounded-xl border border-border bg-muted/40 p-4 sm:p-5">

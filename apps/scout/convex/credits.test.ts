@@ -62,6 +62,7 @@ const recordSessionUsage = makeFunctionReference<
   "mutation",
   {
     sessionId: Id<"agentsApiSessions">;
+    reservationId: Id<"creditReservations">;
     modelCostMicrodollars: number;
     budgetModelCostMicrodollars: number;
     webSearchCalls: number;
@@ -258,12 +259,16 @@ describe("credit wallet", () => {
       sessionId,
       sourceKey: "run-1",
     });
+    await backend.run((ctx) =>
+      ctx.db.patch(sessionId, { creditAdmissionReservationId: reserveId }),
+    );
     expect(await owner.query(balance, {})).toMatchObject({ reservedUnits: 50_000 });
     await expect(
       backend.mutation(debitCumulative, { reservationId: reserveId, totalCostMicrodollars: 1 }),
     ).rejects.toThrow("admission hold cannot be billed");
     const first = {
       sessionId,
+      reservationId: reserveId,
       modelCostMicrodollars: 10_000,
       budgetModelCostMicrodollars: 10_000,
       webSearchCalls: 2,
@@ -272,12 +277,14 @@ describe("credit wallet", () => {
     await backend.mutation(recordSessionUsage, first);
     await backend.mutation(recordSessionUsage, {
       sessionId,
+      reservationId: reserveId,
       modelCostMicrodollars: 8_000,
       budgetModelCostMicrodollars: 8_000,
       webSearchCalls: 1,
     });
     await backend.mutation(recordSessionUsage, {
       sessionId,
+      reservationId: reserveId,
       modelCostMicrodollars: 12_000,
       budgetModelCostMicrodollars: 12_000,
       webSearchCalls: 3,
@@ -321,6 +328,7 @@ describe("credit wallet", () => {
     expect(
       await backend.mutation(recordSessionUsage, {
         sessionId,
+        reservationId,
         modelCostMicrodollars: 0,
         budgetModelCostMicrodollars: 0,
         webSearchCalls: 0,
@@ -329,6 +337,7 @@ describe("credit wallet", () => {
     expect(
       await backend.mutation(recordSessionUsage, {
         sessionId,
+        reservationId,
         modelCostMicrodollars: 50_000,
         budgetModelCostMicrodollars: 50_000,
         webSearchCalls: 0,
@@ -350,6 +359,7 @@ describe("credit wallet", () => {
     expect(
       await backend.mutation(recordSessionUsage, {
         sessionId,
+        reservationId,
         modelCostMicrodollars: 0,
         budgetModelCostMicrodollars: 500_001,
         webSearchCalls: 0,

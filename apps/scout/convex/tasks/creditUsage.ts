@@ -2,6 +2,19 @@ import type { ActionCtx } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
 import { costMicrodollars } from "../creditPolicy";
+import { creditFailure } from "../../shared/creditFailure";
+
+export async function failTaskOnCreditError(
+  ctx: ActionCtx,
+  sessionId: Id<"agentsApiSessions">,
+  error: unknown,
+): Promise<never> {
+  const failure = creditFailure(error);
+  // Workflow stores failed actions as strings, so preserve the code before returning to it.
+  if (failure)
+    await ctx.runMutation(internal.tasks.lifecycle.failForCredits, { sessionId, ...failure });
+  throw error;
+}
 
 export async function recordTaskCreditUsage(
   ctx: ActionCtx,
@@ -16,6 +29,7 @@ export async function recordTaskCreditUsage(
     throw new Error("AI model usage cannot be priced for the task budget");
   const canContinue = await ctx.runMutation(internal.credits.recordSessionUsage, {
     sessionId,
+    reservationId: usage.admissionReservationId,
     modelCostMicrodollars: costMicrodollars(usage.modelCostUsd ?? 0),
     budgetModelCostMicrodollars: costMicrodollars(usage.modelBudgetUsd),
     webSearchCalls: usage.webSearchCalls,

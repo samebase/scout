@@ -151,14 +151,9 @@ describe("Polar credit settlement", () => {
       success_url: `https://scout.example.test/settings?purchase=${result.purchaseId}`,
     });
     expect(await owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 500_000 });
-    expect(
-      await owner.query(api.creditPurchases.status, { purchaseId: result.purchaseId }),
-    ).toMatchObject({
-      paid: false,
-      creditedUnits: 0,
-      fulfillment: { kind: "pending" },
-      checkout: { kind: "ready", url: result.url },
-    });
+    expect(await owner.query(api.creditPurchases.status, { purchaseId: result.purchaseId })).toBe(
+      "pending",
+    );
   });
 
   test("a checkout attempt grants nothing; a verified paid webhook grants exactly once", async () => {

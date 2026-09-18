@@ -9,6 +9,21 @@ const creditFailureSchema = z.object({
   message: z.string(),
 });
 
+type CreditFailureCode = z.infer<typeof creditFailureSchema>["code"];
+
+export function creditFailureMessage(code: CreditFailureCode) {
+  switch (code) {
+    case "INSUFFICIENT_CREDITS":
+      return INSUFFICIENT_CREDITS_MESSAGE;
+    case "CREDIT_HOLD":
+      return "Your credits need review. Contact an admin with this conversation’s link.";
+    default: {
+      const unhandled: never = code;
+      return unhandled;
+    }
+  }
+}
+
 export function creditFailure(error: unknown) {
   if (!(error instanceof ConvexError)) return null;
   const result = creditFailureSchema.safeParse(error.data);

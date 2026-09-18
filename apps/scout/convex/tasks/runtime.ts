@@ -10,7 +10,7 @@ import * as agentsApi from "./agentsApi";
 import * as convexAgent from "./convexAgent";
 import { closeBrowser } from "./execution";
 import { endResearch } from "./siteResearch";
-import { recordTaskCreditUsage, releaseTaskCreditHold } from "./creditUsage";
+import { failTaskOnCreditError, recordTaskCreditUsage, releaseTaskCreditHold } from "./creditUsage";
 import { insufficientCredits } from "../creditLedger";
 import { costMicrodollars } from "../creditPolicy";
 
@@ -50,6 +50,7 @@ async function finishCreditSettlement(
         throw new Error("Hosted web search usage exceeds the billing limit");
       await ctx.runMutation(internal.credits.recordSessionUsage, {
         sessionId,
+        reservationId,
         modelCostMicrodollars: costMicrodollars(modelCostUsd),
         budgetModelCostMicrodollars: costMicrodollars(modelCostUsd),
         webSearchCalls: usage.webSearchCalls,
@@ -139,21 +140,29 @@ export const begin = internalAction({
   args: { sessionId: v.id("agentsApiSessions"), command },
   returns: v.boolean(),
   handler: async (ctx, args): Promise<boolean> => {
-    const session = await ctx.runQuery(internal.tasks.sessions.cleanupResources, {
-      sessionId: args.sessionId,
-    });
-    if (session.state.kind !== "stopped" && !(await recordTaskCreditUsage(ctx, args.sessionId)))
-      throw insufficientCredits();
-    if (session.state.kind !== "stopped" && session.creditAdmissionReservationId)
-      await ctx.runMutation(internal.tasks.sessions.markModelWorkStarted, {
+    try {
+      const session = await ctx.runQuery(internal.tasks.sessions.cleanupResources, {
         sessionId: args.sessionId,
-        reservationId: session.creditAdmissionReservationId,
       });
-    switch (session.engine) {
-      case "agents_api":
-        return agentsApi.begin(ctx, args);
-      case "convex_agent":
-        return convexAgent.begin(ctx, args);
+      if (session.state.kind !== "stopped" && !(await recordTaskCreditUsage(ctx, args.sessionId)))
+        throw insufficientCredits();
+      if (
+        session.state.kind !== "stopped" &&
+        session.engine === "convex_agent" &&
+        session.creditAdmissionReservationId
+      )
+        await ctx.runMutation(internal.tasks.sessions.markModelWorkStarted, {
+          sessionId: args.sessionId,
+          reservationId: session.creditAdmissionReservationId,
+        });
+      switch (session.engine) {
+        case "agents_api":
+          return await agentsApi.begin(ctx, args);
+        case "convex_agent":
+          return await convexAgent.begin(ctx, args);
+      }
+    } catch (error) {
+      return failTaskOnCreditError(ctx, args.sessionId, error);
     }
   },
 });
@@ -162,20 +171,24 @@ export const advance = internalAction({
   args: { sessionId: v.id("agentsApiSessions") },
   returns: v.boolean(),
   handler: async (ctx, args): Promise<boolean> => {
-    const session = await ctx.runQuery(internal.tasks.sessions.cleanupResources, args);
-    let continues: boolean;
-    switch (session.engine) {
-      case "agents_api":
-        continues = await agentsApi.advance(ctx, args);
-        break;
-      case "convex_agent":
-        continues = await convexAgent.advance(ctx, args);
-        break;
+    try {
+      const session = await ctx.runQuery(internal.tasks.sessions.cleanupResources, args);
+      let continues: boolean;
+      switch (session.engine) {
+        case "agents_api":
+          continues = await agentsApi.advance(ctx, args);
+          break;
+        case "convex_agent":
+          continues = await convexAgent.advance(ctx, args);
+          break;
+      }
+      const expectModelUsage = continues && session.engine === "convex_agent";
+      const canContinue = await recordTaskCreditUsage(ctx, args.sessionId, expectModelUsage);
+      if (continues && !canContinue) throw insufficientCredits();
+      return continues;
+    } catch (error) {
+      return failTaskOnCreditError(ctx, args.sessionId, error);
     }
-    const expectModelUsage = continues && session.engine === "convex_agent";
-    const canContinue = await recordTaskCreditUsage(ctx, args.sessionId, expectModelUsage);
-    if (continues && !canContinue) throw insufficientCredits();
-    return continues;
   },
 });
 

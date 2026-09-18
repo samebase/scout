@@ -8,16 +8,14 @@ import {
   createRoute,
   createRouter,
 } from "@tanstack/react-router";
-import { getFunctionName, type FunctionReference } from "convex/server";
+import { getFunctionName, type FunctionReference, type FunctionReturnType } from "convex/server";
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
 import { CreditBalanceLink, CreditsPanel } from "./credits-panel";
+import type { api } from "../../convex/_generated/api";
 
 const remote = vi.hoisted(() => {
   const state: {
-    purchase: null | {
-      creditedUnits: number;
-      fulfillment: { kind: "wallet" | "manual_refund" };
-    };
+    purchase: FunctionReturnType<typeof api.creditPurchases.status>;
   } = { purchase: null };
   return {
     ...state,
@@ -195,12 +193,49 @@ test("lets a failed checkout be retried", async () => {
 });
 
 test("shows payment confirmation after returning from checkout", () => {
-  remote.purchase = { creditedUnits: 2_000_000, fulfillment: { kind: "wallet" } };
+  remote.purchase = "paid";
   render(<CreditsPanel purchaseId="purchase-1" />);
 
   expect(screen.getByRole("status")).toHaveProperty(
     "textContent",
     "Payment confirmed. Credits were added to your balance.",
+  );
+});
+
+test("updates the return page from pending through payment and refunds", () => {
+  remote.purchase = "pending";
+  const { rerender } = render(<CreditsPanel purchaseId="purchase-1" />);
+  expect(screen.getByRole("status").textContent).toContain("Waiting for payment confirmation");
+
+  remote.purchase = "paid";
+  rerender(<CreditsPanel purchaseId="purchase-1" />);
+  expect(screen.getByRole("status").textContent).toContain("Payment confirmed");
+
+  remote.purchase = "partially_refunded";
+  rerender(<CreditsPanel purchaseId="purchase-1" />);
+  expect(screen.getByRole("status").textContent).toContain("partially refunded");
+
+  remote.purchase = "refunded";
+  rerender(<CreditsPanel purchaseId="purchase-1" />);
+  expect(screen.getByRole("status").textContent).toBe(
+    "Your payment was refunded. No credits remain from this purchase.",
+  );
+  expect(screen.queryByText(/Waiting for payment confirmation/)).toBeNull();
+});
+
+test("gives a concrete next step for a payment needing review", () => {
+  remote.purchase = "needs_review";
+  render(<CreditsPanel purchaseId="purchase-1" />);
+  expect(screen.getByRole("status").textContent).toBe(
+    "Your payment needs review. Contact an admin with this page’s link.",
+  );
+});
+
+test("distinguishes checkout failure from pending payment", () => {
+  remote.purchase = "checkout_failed";
+  render(<CreditsPanel purchaseId="purchase-1" />);
+  expect(screen.getByRole("status").textContent).toBe(
+    "Checkout could not be opened. Try buying credits again.",
   );
 });
 

@@ -19,19 +19,19 @@ import { itemIsComplete, presentItem } from "./output";
 import { estimateAgentsApiCost, readAgentsApiUsage } from "./cost";
 import { SessionOutput } from "./events";
 import { closeBrowser, taskInstructions, executeTaskTool } from "./execution";
+import { recordTaskCreditUsage } from "./creditUsage";
+import { insufficientCredits } from "../creditLedger";
 
 async function latestRootTurn(api: OpenAI, providerId: string) {
   let scanned = 0;
-  let subagentSeen = false;
   for await (const turn of api.beta.agents.sessions.turns.list(providerId, {
     order: "desc",
     limit: 50,
   })) {
     if (++scanned > 1_000) throw new Error("Agent session has too many turns to settle credits");
-    if (turn.subagent_id === null) return { turn, subagentSeen };
-    subagentSeen = true;
+    if (turn.subagent_id === null) return turn;
   }
-  return { turn: null, subagentSeen };
+  return null;
 }
 
 export async function begin(
@@ -54,6 +54,11 @@ export async function begin(
       if (session.providerId) throw new Error("OpenAI session was already created");
       const resource = await runtimeTools(ctx, session, scout, null, purpose);
       try {
+        if (session.creditAdmissionReservationId)
+          await ctx.runMutation(internal.tasks.sessions.markModelWorkStarted, {
+            sessionId: session._id,
+            reservationId: session.creditAdmissionReservationId,
+          });
         const created = await api.beta.agents.sessions.create({
           agent: {
             model: session.model,
@@ -74,11 +79,30 @@ export async function begin(
     }
     case "send": {
       if (!session.providerId) throw new Error("OpenAI session is not available");
-      const { turn: previousTurn } = await latestRootTurn(api, session.providerId);
+      const previousTurn = await latestRootTurn(api, session.providerId);
+      if (session.creditAdmissionReservationId) {
+        const remote = await api.beta.agents.sessions.retrieve(session.providerId);
+        await syncItems(
+          ctx,
+          api,
+          { ...session, providerId: session.providerId },
+          { fromStart: true },
+        );
+        if (remote.usage)
+          await ctx.runMutation(internal.tasks.sessions.update, {
+            sessionId: session._id,
+            usage: readAgentsApiUsage(remote.usage),
+          });
+      }
       if (previousTurn)
         await ctx.runMutation(internal.tasks.sessions.update, {
           sessionId: session._id,
           previousTurnId: previousTurn.id,
+        });
+      if (session.creditAdmissionReservationId)
+        await ctx.runMutation(internal.tasks.sessions.markModelWorkStarted, {
+          sessionId: session._id,
+          reservationId: session.creditAdmissionReservationId,
         });
       const providerId = session.providerId;
       const message = args.command.message;
@@ -368,14 +392,12 @@ export async function reportedModelCost(session: Doc<"agentsApiSessions">) {
     limit: 50,
   })) {
     if (++scanned > 1_000) throw new Error("Agent session has too many turns to settle credits");
+    if (turn.id === session.previousTurnId) break;
     // Root usage may include subagent usage. Charging both could double bill it.
     if (turn.subagent_id !== null) return null;
     if (latestRootId === null) {
       latestRootId = turn.id;
-      if (
-        turn.id === session.previousTurnId ||
-        (turn.status !== "completed" && turn.status !== "failed" && turn.status !== "cancelled")
-      )
+      if (turn.status !== "completed" && turn.status !== "failed" && turn.status !== "cancelled")
         return null;
     }
     if (!turn.usage) return null;
@@ -417,7 +439,7 @@ export async function advance(
     });
   if (remote.status === "failed") throw new Error(remote.error ?? "OpenAI session failed");
   if (remote.status === "idle") {
-    const { turn } = await latestRootTurn(api, providerId);
+    const turn = await latestRootTurn(api, providerId);
     // A posted follow-up can be acknowledged before its turn appears.
     if (turn?.id === session.previousTurnId) return true;
     if (
@@ -436,6 +458,10 @@ export async function advance(
       state: { kind: turn.status === "cancelled" ? "stopped" : "idle" },
     });
     return false;
+  }
+
+  if (remote.usage && session.creditAdmissionReservationId) {
+    if (!(await recordTaskCreditUsage(ctx, session._id))) throw insufficientCredits();
   }
 
   const call = remote.required_actions[0];

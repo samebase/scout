@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { agentsApiUsageValidator } from "./cost";
+import { creditFailureCodeValidator } from "../creditsModel";
 
 export const taskEngine = v.union(v.literal("agents_api"), v.literal("convex_agent"));
 
@@ -15,7 +16,11 @@ export const sessionState = v.union(
   }),
   v.object({ kind: v.literal("idle") }),
   v.object({ kind: v.literal("stopped") }),
-  v.object({ kind: v.literal("failed"), error: v.string() }),
+  v.object({
+    kind: v.literal("failed"),
+    error: v.string(),
+    creditFailureCode: v.optional(creditFailureCodeValidator),
+  }),
 );
 
 export const browserHandle = v.object({

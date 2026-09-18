@@ -8,7 +8,6 @@ import {
   CREDIT_POLICY,
   costUnits,
   creditsEnabled,
-  currentCreditTerms,
   nonnegativeInteger,
   positiveInteger,
   signedInteger,
@@ -133,6 +132,7 @@ async function sessionHasCredit(
 export const recordSessionUsage = internalMutation({
   args: {
     sessionId: v.id("agentsApiSessions"),
+    reservationId: v.id("creditReservations"),
     modelCostMicrodollars: v.number(),
     budgetModelCostMicrodollars: v.number(),
     webSearchCalls: v.number(),
@@ -144,11 +144,17 @@ export const recordSessionUsage = internalMutation({
     const reportedSearches = nonnegativeInteger.parse(args.webSearchCalls);
     const session = await ctx.db.get(args.sessionId);
     if (!session) throw new Error("Task session is missing");
+    if (session.creditAdmissionReservationId !== args.reservationId)
+      throw new Error("Task billing changed before usage was recorded");
+    const reservation = await ctx.db.get(args.reservationId);
+    if (!reservation || reservation.sessionId !== session._id)
+      throw new Error("Task credit reservation is missing");
+    if (reservation.state.kind === "settled" || reservation.state.kind === "released") return true;
     const previousModel = nonnegativeInteger.parse(session.chargedModelMicrodollars ?? 0);
     const previousSearches = nonnegativeInteger.parse(session.chargedWebSearchCalls ?? 0);
     const modelTotal = Math.max(previousModel, reportedModel);
     const searchTotal = Math.max(previousSearches, reportedSearches);
-    const terms = session.creditUsageTerms ?? currentCreditTerms();
+    const terms = reservation.terms;
     const projectedModelUnits = nonnegativeInteger.parse(
       costUnits(Math.max(modelTotal, budgetModel), terms) - costUnits(modelTotal, terms),
     );
@@ -158,8 +164,6 @@ export const recordSessionUsage = internalMutation({
       return sessionHasCredit(ctx, session, wallet, wallet.balanceUnits, projectedModelUnits);
     }
 
-    if ((previousModel > 0 || previousSearches > 0) && !session.creditUsageTerms)
-      throw new Error("Session credit conversion terms are missing");
     const searchRate = positiveInteger.parse(terms.hostedWebSearchMicrodollarsPerCall);
     const modelDeltaUnits = nonnegativeInteger.parse(
       costUnits(modelTotal, terms) - costUnits(previousModel, terms),
@@ -175,7 +179,7 @@ export const recordSessionUsage = internalMutation({
     if (modelDeltaUnits > 0) {
       await ctx.db.insert("creditEntries", {
         userId: session.userId,
-        sourceKey: `session:model:${session._id}:${modelTotal}`,
+        sourceKey: `session:model:${args.reservationId}:${modelTotal}`,
         amountUnits: -modelDeltaUnits,
         balanceAfterUnits: modelBalance,
         detail: {
@@ -188,7 +192,7 @@ export const recordSessionUsage = internalMutation({
     if (searchDeltaUnits > 0) {
       await ctx.db.insert("creditEntries", {
         userId: session.userId,
-        sourceKey: `session:web_search:${session._id}:${searchTotal}`,
+        sourceKey: `session:web_search:${args.reservationId}:${searchTotal}`,
         amountUnits: -searchDeltaUnits,
         balanceAfterUnits: finalBalance,
         detail: { kind: "session_web_search", sessionId: session._id, totalCalls: searchTotal },

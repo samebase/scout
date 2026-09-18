@@ -15,6 +15,122 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
+it.each(["agents_api", "convex_agent"] as const)(
+  "charges only new model and search work when credits are enabled on an old %s task",
+  async (engine) => {
+    const { backend, owner, sessionId } = await setup();
+    await backend.run((ctx) =>
+      ctx.db.patch(sessionId, {
+        engine,
+        active: false,
+        state: { kind: "idle" },
+        providerId: "old-free-session",
+        usage: { inputTokens: 1_000_000, outputTokens: 0, cachedInputTokens: 0 },
+        ...(engine === "convex_agent" ? { reportedModelUsd: 0.2 } : {}),
+      }),
+    );
+    await backend.mutation(internal.tasks.sessions.saveItems, {
+      sessionId,
+      items: [{ providerItemId: "old-search", kind: "web_search_call", text: "", details: "{}" }],
+    });
+    vi.stubEnv("CREDITS_ENABLED", "true");
+    await owner.mutation(api.tasks.sessions.send, { sessionId, message: "Continue" });
+    const paid = await backend.run((ctx) => ctx.db.get(sessionId));
+    if (!paid?.creditAdmissionReservationId) throw new Error("Missing paid turn");
+    expect(await backend.query(internal.tasks.sessions.creditUsage, { sessionId })).toMatchObject({
+      modelBudgetUsd: 0,
+      webSearchCalls: 0,
+    });
+    await backend.mutation(internal.tasks.sessions.update, {
+      sessionId,
+      usage: { inputTokens: 1_100_000, outputTokens: 0, cachedInputTokens: 0 },
+      ...(engine === "convex_agent" ? { reportedModelUsd: 0.22 } : {}),
+    });
+    await backend.mutation(internal.tasks.sessions.saveItems, {
+      sessionId,
+      items: [{ providerItemId: "new-search", kind: "web_search_call", text: "", details: "{}" }],
+    });
+    const usage = await backend.query(internal.tasks.sessions.creditUsage, { sessionId });
+    expect(usage.modelBudgetUsd).toBeCloseTo(0.02);
+    expect(usage.webSearchCalls).toBe(1);
+    if (engine === "convex_agent") expect(usage.modelCostUsd).toBeCloseTo(0.02);
+    await backend.mutation(internal.credits.recordSessionUsage, {
+      sessionId,
+      reservationId: paid.creditAdmissionReservationId,
+      modelCostMicrodollars: 20_000,
+      budgetModelCostMicrodollars: 20_000,
+      webSearchCalls: usage.webSearchCalls ?? 0,
+    });
+    expect(await owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 470_000 });
+  },
+);
+
+it("detaches a completed paid turn when credits are disabled, then starts a fresh paid boundary", async () => {
+  vi.stubEnv("CREDITS_ENABLED", "true");
+  const { backend, owner, sessionId } = await setup();
+  const initial = await backend.run((ctx) => ctx.db.get(sessionId));
+  if (!initial?.creditAdmissionReservationId) throw new Error("Missing admission hold");
+  const previousId = initial.creditAdmissionReservationId;
+  await backend.mutation(internal.credits.recordSessionUsage, {
+    sessionId,
+    reservationId: previousId,
+    modelCostMicrodollars: 10_000,
+    budgetModelCostMicrodollars: 10_000,
+    webSearchCalls: 1,
+  });
+  await backend.mutation(internal.credits.release, {
+    reservationId: previousId,
+    reason: "Turn completed; usage recorded separately",
+  });
+  await backend.mutation(internal.tasks.sessions.update, {
+    sessionId,
+    active: false,
+    state: { kind: "idle" },
+    providerId: "provider-session",
+  });
+  vi.stubEnv("CREDITS_ENABLED", "false");
+  await owner.mutation(api.tasks.sessions.send, { sessionId, message: "Free follow-up" });
+  expect(
+    (await backend.run((ctx) => ctx.db.get(sessionId)))?.creditAdmissionReservationId,
+  ).toBeUndefined();
+  await expect(
+    backend.mutation(internal.credits.recordSessionUsage, {
+      sessionId,
+      reservationId: previousId,
+      modelCostMicrodollars: 100_000,
+      budgetModelCostMicrodollars: 100_000,
+      webSearchCalls: 5,
+    }),
+  ).rejects.toThrow("billing changed");
+  await backend.mutation(internal.tasks.sessions.update, {
+    sessionId,
+    active: false,
+    state: { kind: "idle" },
+    usage: { inputTokens: 2_000_000, outputTokens: 0, cachedInputTokens: 0 },
+  });
+  vi.stubEnv("CREDITS_ENABLED", "true");
+  await owner.mutation(api.tasks.sessions.send, { sessionId, message: "Paid follow-up" });
+  const paid = await backend.run((ctx) => ctx.db.get(sessionId));
+  if (!paid?.creditAdmissionReservationId) throw new Error("Missing new admission hold");
+  expect(paid.creditAdmissionReservationId).not.toBe(previousId);
+  expect(paid.chargedModelMicrodollars).toBe(0);
+  expect(paid.chargedWebSearchCalls).toBe(0);
+  expect(await backend.query(internal.tasks.sessions.creditUsage, { sessionId })).toMatchObject({
+    modelBudgetUsd: 0,
+    webSearchCalls: 0,
+  });
+  await backend.mutation(internal.credits.recordSessionUsage, {
+    sessionId,
+    reservationId: paid.creditAdmissionReservationId,
+    modelCostMicrodollars: 10_000,
+    budgetModelCostMicrodollars: 10_000,
+    webSearchCalls: 1,
+  });
+  expect(await owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 460_000 });
+  const entries = await backend.run((ctx) => ctx.db.query("creditEntries").collect());
+  expect(new Set(entries.map((entry) => entry.sourceKey)).size).toBe(entries.length);
+});
+
 it("reserves credits at task admission and leaves an unfunded follow-up idle", async () => {
   vi.stubEnv("CREDITS_ENABLED", "true");
   const { backend, owner, userId, sessionId } = await setup();

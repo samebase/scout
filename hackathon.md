@@ -1423,7 +1423,7 @@ and reserve its space while the next image loads
 
 Verified accounts receive 50 Scout credits. Task checks, site research, browser sessions,
 model use, and hosted search now debit a shared wallet from reported provider usage, with
-holds before paid work and inspectable unresolved charges. Turn holds remain in place until
-the matching usage is recorded, including across browser handoffs. When credits are enabled,
+holds before paid work and inspectable unresolved charges. Each paid turn excludes earlier free
+work and keeps its hold across browser handoffs until usage is recorded. When credits are enabled,
 Settings shows balance and history; the $5 pack for 200 credits uses Polar checkout
 (`apps/scout/convex/credits.ts`, `apps/scout/convex/tasks/`, `apps/scout/src/components/credits-panel.tsx`).

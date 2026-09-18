@@ -3,8 +3,27 @@ import { v } from "convex/values";
 import { components, internal } from "../_generated/api";
 import { internalMutation } from "../_generated/server";
 import { command } from "./model";
+import { creditFailureCodeValidator } from "../creditsModel";
 
 export const workflow = new WorkflowManager(components.workflow);
+
+export const failForCredits = internalMutation({
+  args: {
+    sessionId: v.id("agentsApiSessions"),
+    code: creditFailureCodeValidator,
+    message: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, { sessionId, code, message }) => {
+    const session = await ctx.db.get(sessionId);
+    if (!session) throw new Error("Task session is missing");
+    if (!session.active || session.state.kind === "stopped") return null;
+    await ctx.db.patch(sessionId, {
+      state: { kind: "failed", error: message, creditFailureCode: code },
+    });
+    return null;
+  },
+});
 
 export const run = workflow
   .define({
@@ -70,10 +89,14 @@ export const onComplete = internalMutation({
     if (session?.workflowId === args.workflowId && args.result.kind !== "success") {
       if (session.state.kind !== "stopped") {
         await ctx.db.patch(session._id, {
-          state: {
-            kind: "failed",
-            error: args.result.kind === "failed" ? args.result.error : "Execution was cancelled",
-          },
+          state:
+            session.state.kind === "failed" && session.state.creditFailureCode
+              ? session.state
+              : {
+                  kind: "failed",
+                  error:
+                    args.result.kind === "failed" ? args.result.error : "Execution was cancelled",
+                },
         });
       }
       await ctx.runMutation(internal.tasks.sessions.scheduleCleanup, {

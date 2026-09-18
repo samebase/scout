@@ -72,6 +72,7 @@ async function setup() {
       state: { kind: "running" },
       nextSequence: 0,
       usage: null,
+      creditUsageBaseline: { modelCostUsd: 0, webSearchCalls: 0 },
       providerId: "session-test",
       browser: {
         providerSessionId: "browser-test",
@@ -389,7 +390,7 @@ it("retries invalid turn usage before releasing the AI hold", async () => {
   }
 });
 
-it("charges reported turns even when a late correction makes the session total misleading", async () => {
+it("charges only the current turn when a late correction changes an older free turn", async () => {
   vi.stubEnv("CREDITS_ENABLED", "true");
   const t = await setup();
   await t.backend.mutation(internal.credits.grantOnSignIn, { userId: t.userId });
@@ -455,7 +456,7 @@ it("charges reported turns even when a late correction makes the session total m
     session: await ctx.db.get(t.sessionId),
   }));
   expect(settled.reservation?.state.kind).toBe("released");
-  expect(settled.session?.chargedModelMicrodollars).toBe(88);
+  expect(settled.session?.chargedModelMicrodollars).toBe(29);
 });
 
 it("keeps a subagent turn's credit hold for review rather than guessing its usage", async () => {

@@ -14,6 +14,7 @@ import { createFirecrawlClient } from "../scout/lib/firecrawl";
 import { diagnosticMessage } from "../scout/lib/redaction";
 import { researchFinishedState, SITE_RESEARCH_TIMEOUT_MS } from "./siteResearchModel";
 import { researchSite, researchRequest, siteBrief, renderBrief } from "./siteResearchSources";
+import { failTaskOnCreditError } from "./creditUsage";
 
 export async function endResearch(
   ctx: ActionCtx,
@@ -89,12 +90,16 @@ export const run = internalAction({
   args: { sessionId: v.id("agentsApiSessions"), prompt: v.string() },
   returns: v.boolean(),
   handler: async (ctx, args): Promise<boolean> => {
-    const researchId = await ctx.runMutation(internal.tasks.siteResearchRecords.start, {
-      sessionId: args.sessionId,
-      site: researchSite(args.prompt),
-    });
-    if (!researchId) return false;
-    return advanceTask(ctx, args.sessionId);
+    try {
+      const researchId = await ctx.runMutation(internal.tasks.siteResearchRecords.start, {
+        sessionId: args.sessionId,
+        site: researchSite(args.prompt),
+      });
+      if (!researchId) return false;
+      return await advanceTask(ctx, args.sessionId);
+    } catch (error) {
+      return failTaskOnCreditError(ctx, args.sessionId, error);
+    }
   },
 });
 

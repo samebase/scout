@@ -39,8 +39,8 @@ models read. Existing Firecrawl, AgentMail, and credential-encryption configurat
 must also be present.
 
 Run `pnpm run dev` from the primary checkout for port 5173 and its development
-deployment. API usage is billed to the configured OpenAI project; Scout credits do
-not apply to this experiment.
+deployment. API usage is billed to the configured OpenAI project and consumes Scout
+credits when credit billing is enabled.
 
 ## Execution
 
@@ -96,7 +96,12 @@ in Agents to fetch it again manually. Missing token counts display as “Usage p
 unknown model rate still displays as “Unpriced”.
 
 Errors remain visible. Interrupted side effects are not automatically replayed.
-Scout credits are not integrated with task execution.
+With credits enabled, unresolved usage keeps the turn’s hold until an admin reviews it.
+Use the member’s conversation link to find the task in Agents, then Refresh after fixing
+the cause or confirming provider usage is available. Refresh retries settlement without
+rerunning the task. If evidence still needs a manual correction, inspect its reservation
+before using `credits:resolveManually` or `credits:adjustManually`; do not release a hold
+as a substitute for recording billable usage.
 
 ## Shared-engine verification, September 18, 2026
 

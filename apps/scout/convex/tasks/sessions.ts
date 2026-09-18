@@ -88,21 +88,23 @@ async function startWorkflow(
       context: { sessionId },
     },
   );
-  if (creditsEnabled()) {
-    const session = await ctx.db.get(sessionId);
-    if (!session) throw new Error("Session not found");
-    if (session.creditAdmissionReservationId) {
-      const previous = await ctx.db.get(session.creditAdmissionReservationId);
-      if (!previous) throw new Error("Previous credit admission hold is missing");
-      if (previous.state.kind === "unresolved")
-        throw new Error("Previous AI usage needs review before this task can continue");
-      if (previous.state.kind === "pending" && input.kind === "resume") {
-        await ctx.db.patch(sessionId, { workflowId });
-        return;
-      }
-      if (previous.state.kind === "pending")
-        throw new Error("Previous AI usage is still being finalized. Try again shortly.");
+  const session = await requireSession(ctx, sessionId);
+  if (session.creditAdmissionReservationId) {
+    const previous = await ctx.db.get(session.creditAdmissionReservationId);
+    if (!previous) throw new Error("Previous credit admission hold is missing");
+    if (previous.state.kind === "unresolved")
+      throw new Error("Previous AI usage needs review before this task can continue");
+    if (previous.state.kind === "pending" && input.kind === "resume") {
+      await ctx.db.patch(sessionId, { workflowId });
+      return;
     }
+    if (previous.state.kind === "pending")
+      throw new Error("Previous AI usage is still being finalized. Try again shortly.");
+  }
+  if (creditsEnabled() && input.kind !== "resume") {
+    const baseline = await sessionCreditUsage(ctx, session);
+    if (baseline.modelBudgetUsd === null || baseline.webSearchCalls === null)
+      throw new Error("Previous task usage must be available before starting paid work");
     const reservationId = await reserveCreditOperation(ctx, {
       sessionId,
       sourceKey: `workflow:${workflowId}`,
@@ -115,9 +117,16 @@ async function startWorkflow(
       creditAdmissionReservationId: reservationId,
       creditModelWorkStarted: false,
       creditAdmissionTurnUsageRecorded: false,
+      creditUsageBaseline: {
+        modelCostUsd: baseline.modelBudgetUsd,
+        webSearchCalls: baseline.webSearchCalls,
+      },
+      chargedModelMicrodollars: 0,
+      chargedWebSearchCalls: 0,
+      creditUsageTerms: undefined,
     });
   } else {
-    await ctx.db.patch(sessionId, { workflowId });
+    await ctx.db.patch(sessionId, { workflowId, creditAdmissionReservationId: undefined });
   }
 }
 
@@ -228,9 +237,38 @@ export const cost = query({
   },
 });
 
-// Convex Agent reports cumulative model usage. Agents API model charges come
-// from individual turns at settlement, since its session total can be revised
-// after an earlier turn finishes. Hosted search calls are persisted as items.
+async function sessionCreditUsage(ctx: QueryCtx, session: Doc<"agentsApiSessions">) {
+  const searches = await ctx.db
+    .query("agentsApiItems")
+    .withIndex("by_session_id_and_kind", (q) =>
+      q.eq("sessionId", session._id).eq("kind", "web_search_call"),
+    )
+    .take(1_001);
+  const cost = estimateAgentsApiCost({
+    model: session.model,
+    reportedModelUsd: session.reportedModelUsd ?? null,
+    modelUsageIncomplete: session.modelUsageIncomplete ?? false,
+    usage: session.usage,
+    webSearchCalls: 0,
+    browsers: [],
+    firecrawlUsdPerCredit: null,
+    now: 0,
+  });
+  return {
+    modelCostUsd: cost.modelEstimateUsd,
+    modelBudgetUsd:
+      cost.modelEstimateUsd ??
+      (session.usage === null
+        ? 0
+        : session.model === "gpt-5.6-luna"
+          ? uncachedLunaBudgetCost(session.usage)
+          : null),
+    webSearchCalls: searches.length > 1_000 ? null : searches.length,
+  };
+}
+
+// Usage counters belong to one paid turn. A resumed handoff keeps the same
+// boundary; a follow-up starts a new one, including after credits were disabled.
 export const creditUsage = internalQuery({
   args: { sessionId: v.id("agentsApiSessions") },
   returns: v.object({
@@ -242,34 +280,25 @@ export const creditUsage = internalQuery({
   }),
   handler: async (ctx, args) => {
     const session = await requireSession(ctx, args.sessionId);
-    const searches = await ctx.db
-      .query("agentsApiItems")
-      .withIndex("by_session_id_and_kind", (q) =>
-        q.eq("sessionId", session._id).eq("kind", "web_search_call"),
-      )
-      .take(1_001);
-    const cost = estimateAgentsApiCost({
-      model: session.model,
-      reportedModelUsd: session.reportedModelUsd ?? null,
-      modelUsageIncomplete: session.modelUsageIncomplete ?? false,
-      usage: session.usage,
-      webSearchCalls: 0,
-      browsers: [],
-      firecrawlUsdPerCredit: null,
-      now: 0,
-    });
+    const usage = await sessionCreditUsage(ctx, session);
+    const baseline = session.creditUsageBaseline;
+    if (session.creditAdmissionReservationId && !baseline)
+      throw new Error("Paid turn is missing its usage boundary; inspect its credit reservation");
     return {
-      modelCostUsd: session.engine === "convex_agent" ? cost.modelEstimateUsd : null,
+      modelCostUsd:
+        session.engine === "convex_agent" && usage.modelCostUsd !== null
+          ? Math.max(0, usage.modelCostUsd - (baseline?.modelCostUsd ?? 0))
+          : null,
       modelBudgetUsd:
-        cost.modelEstimateUsd ??
-        (session.usage === null
-          ? 0
-          : session.model === "gpt-5.6-luna"
-            ? uncachedLunaBudgetCost(session.usage)
-            : null),
+        usage.modelBudgetUsd === null
+          ? null
+          : Math.max(0, usage.modelBudgetUsd - (baseline?.modelCostUsd ?? 0)),
+      webSearchCalls:
+        usage.webSearchCalls === null
+          ? null
+          : Math.max(0, usage.webSearchCalls - (baseline?.webSearchCalls ?? 0)),
       modelUsageIncomplete: session.modelUsageIncomplete ?? false,
       admissionReservationId: session.creditAdmissionReservationId ?? null,
-      webSearchCalls: searches.length > 1_000 ? null : searches.length,
     };
   },
 });
@@ -629,7 +658,17 @@ export const markModelWorkStarted = internalMutation({
     const session = await ctx.db.get(sessionId);
     if (!session || session.creditAdmissionReservationId !== reservationId)
       throw new Error("Credit admission changed while model work started");
-    await ctx.db.patch(sessionId, { creditModelWorkStarted: true });
+    if (session.creditModelWorkStarted) return null;
+    const baseline = await sessionCreditUsage(ctx, session);
+    if (baseline.modelBudgetUsd === null || baseline.webSearchCalls === null)
+      throw new Error("Previous task usage must be available before starting paid work");
+    await ctx.db.patch(sessionId, {
+      creditModelWorkStarted: true,
+      creditUsageBaseline: {
+        modelCostUsd: baseline.modelBudgetUsd,
+        webSearchCalls: baseline.webSearchCalls,
+      },
+    });
     return null;
   },
 });

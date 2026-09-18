@@ -23,7 +23,7 @@ import {
 import { type FormEvent, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import { omitNullish } from "../../../shared/omitNullish";
-import { creditFailure } from "../../../shared/creditFailure";
+import { creditFailure, creditFailureMessage } from "../../../shared/creditFailure";
 import { scoutAvailabilityLabels } from "#components/scout-current-activity";
 import { productRoutes, type ProductKind, type ConversationSearch } from "./model";
 import { gameInviteDisplayText } from "../play/invite";
@@ -833,6 +833,8 @@ function ConversationSession({
   const [request, setRequest] = useState<RequestState>({ kind: "idle" });
   const pending = useRef(false);
   const canStop = managed?.canStop === true;
+  const failedCreditCode =
+    managed?.state.kind === "failed" ? managed.state.creditFailureCode : undefined;
   const canSend =
     thread.canControl &&
     scout.status === "active" &&
@@ -1024,8 +1026,18 @@ function ConversationSession({
                   managed?.state.kind !== "checking" && (
                     <MessageScrollerItem messageId="turn-status" className="mr-auto max-w-[95%]">
                       <p className={cn(playNotice, "mb-0 px-3 py-2")} role="alert">
-                        {managed?.requestCheckMessage ?? "Scout couldn't finish this turn."}
-                        {!managed?.requestCheckMessage &&
+                        {failedCreditCode ? (
+                          <>
+                            {creditFailureMessage(failedCreditCode)}{" "}
+                            <Link to="/settings" className={playTextLink}>
+                              View credits
+                            </Link>
+                          </>
+                        ) : (
+                          (managed?.requestCheckMessage ?? "Scout couldn't finish this turn.")
+                        )}
+                        {!failedCreditCode &&
+                        !managed?.requestCheckMessage &&
                         (managed ? managed.canSend : thread.canControl)
                           ? " Send a message to try again."
                           : ""}
@@ -1060,7 +1072,8 @@ function ConversationSession({
             )}
             {managed?.creditHoldStatus === "unresolved" && (
               <p className="px-3 text-sm text-muted-foreground">
-                This turn’s credit usage needs review before you can continue.
+                This turn’s credit usage needs review. Contact an admin with this conversation’s
+                link.
               </p>
             )}
             <ConversationComposer

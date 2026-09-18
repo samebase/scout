@@ -184,23 +184,24 @@ export const status = query({
   args: { purchaseId: v.string() },
   returns: v.union(
     v.null(),
-    v.object({
-      paid: v.boolean(),
-      creditedUnits: v.number(),
-      checkout: schema.doc("creditPurchases").fields.checkout,
-      fulfillment: schema.doc("creditPurchases").fields.fulfillment,
-    }),
+    v.literal("pending"),
+    v.literal("paid"),
+    v.literal("partially_refunded"),
+    v.literal("refunded"),
+    v.literal("needs_review"),
+    v.literal("checkout_failed"),
   ),
   handler: async (ctx, args) => {
     const id = ctx.db.normalizeId("creditPurchases", args.purchaseId);
     const purchase = id && (await ctx.db.get(id));
-    return purchase && purchase.userId === ctx.viewer.userId
-      ? {
-          paid: purchase.paid,
-          creditedUnits: purchase.creditedUnits,
-          checkout: purchase.checkout,
-          fulfillment: purchase.fulfillment,
-        }
-      : null;
+    if (!purchase || purchase.userId !== ctx.viewer.userId) return null;
+    if (purchase.paid && purchase.refundedProductCents === purchase.terms.priceCents)
+      return "refunded";
+    if (purchase.fulfillment.kind === "manual_refund") return "needs_review";
+    if (purchase.paid)
+      return purchase.refundedProductCents > 0 || purchase.refundedTaxCents > 0
+        ? "partially_refunded"
+        : "paid";
+    return purchase.checkout.kind === "failed" ? "checkout_failed" : "pending";
   },
 });
