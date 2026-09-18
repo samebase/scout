@@ -336,3 +336,25 @@ test("pending accounts can read the terms from Settings", async () => {
   await user.click(await screen.findByRole("link", { name: "Terms and conditions" }));
   expect(await screen.findByRole("heading", { name: "Terms and conditions" })).toBeTruthy();
 });
+
+test("guests can use the header legal menu with a keyboard", async () => {
+  remote.authenticated = false;
+  await open("/");
+  const user = userEvent.setup();
+  const trigger = screen.getByRole("button", { name: "More options" });
+  trigger.focus();
+  await user.keyboard("{Enter}");
+  const privacy = await screen.findByRole("menuitem", { name: "Privacy policy" });
+  expect(document.activeElement).toBe(privacy);
+  await user.keyboard("{ArrowDown}");
+  expect(document.activeElement).toBe(
+    screen.getByRole("menuitem", { name: "Terms and conditions" }),
+  );
+  await user.keyboard("{Escape}");
+  expect(screen.queryByRole("menu")).toBeNull();
+  expect(document.activeElement).toBe(trigger);
+  await user.keyboard("{Enter}");
+  await user.click(await screen.findByRole("menuitem", { name: "Privacy policy" }));
+  expect(await screen.findByRole("heading", { name: "Privacy policy" })).toBeTruthy();
+  expect(screen.queryByRole("menu")).toBeNull();
+});

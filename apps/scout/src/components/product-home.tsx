@@ -6,7 +6,6 @@ import { ConversationLobby } from "../products/conversation/page";
 import type { homeSearch } from "#lib/homeSearch";
 import { ActivityFeed } from "./activity-feed";
 import { DiscoveryHero } from "./discovery-hero";
-import { LegalLinks } from "./legal-links";
 
 export function ProductHome({ search }: { search: z.infer<typeof homeSearch> }) {
   const [composing, setComposing] = useState(false);
@@ -45,9 +44,6 @@ export function ProductHome({ search }: { search: z.infer<typeof homeSearch> }) 
           <ActivityFeed search={{ site: search.site, scope: search.scope }} />
         </div>
       </main>
-      <footer className="mx-auto max-w-[1160px] border-t px-8 py-6 max-[640px]:px-4">
-        <LegalLinks />
-      </footer>
     </ProductShell>
   );
 }

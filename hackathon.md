@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-18T22:28:25Z
+- **Last updated:** 2026-09-18T21:41:32Z
 
 ## Log
 
@@ -1491,6 +1491,6 @@ continues to link the purchased credits to the correct balance (`apps/scout/conv
 
 Added public privacy and terms pages from shared Markdown drafts using the Samebase operator.
 The pages explain task sharing, AI processing, and retained history, and stay readable after
-account closure. Linked them from the homepage, signup, Settings, and deletion screens, with
+account closure. Linked them from the sticky header menu, signup, Settings, and deletion screens, with
 research for the remaining policy decisions (`apps/scout/src/content/`, `apps/scout/src/routes/`,
 `docs/legal-research.md`).

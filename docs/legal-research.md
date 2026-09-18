@@ -208,7 +208,7 @@ consumer protections.
 The `/privacy` and `/terms` TanStack Router routes are public. They render the Markdown with
 table support, page titles, section anchors prefixed with `legal-`, and links between the
 pages. Wide tables scroll within keyboard-focusable regions. Links are available from the
-homepage footer, Settings, the account form, and the account-deletion page. The access guard
+sticky header menu, Settings, the account form, and the account-deletion page. The access guard
 allows both legal routes during and after account deletion, including while access is loading.
 
 Before adopting the policies:
