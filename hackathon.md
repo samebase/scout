@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-18T17:47:49Z
+- **Last updated:** 2026-09-18T18:17:28Z
 
 ## Log
 
@@ -1435,10 +1435,17 @@ Read-only chats explain why replies are unavailable, and owners can inspect cost
 in both Chat and Walkthrough (`apps/scout/src/routes/tasks.$thread.tsx`,
 `apps/scout/src/products/conversation/page.tsx`).
 
-### 2026-09-18 - working tree - v232
+### 2026-09-18 - a027431 - v232
 
 Failed tasks show a notice beside the reply controls. Follow-up messages stay saved until delivery
 is confirmed; messages not yet submitted can be retried, while uncertain delivery is shown explicitly.
 Interrupted response streams get one read-only reconnect without resending messages or browser work.
 Provider failures retain status codes and request IDs, with task, workflow, and operation details in logs
 (`apps/scout/convex/tasks/`, `apps/scout/src/products/conversation/page.tsx`).
+
+### 2026-09-18 - working tree - v233
+
+Replay follows Scout across login popups and redirects by matching each tab's initial address.
+The URL bar now has a visible Follow Scout control; selecting a tab pauses automatic following
+until it is restored (`apps/scout/src/components/browser-replay-header.tsx`,
+`apps/scout/src/lib/browserReplayTimeline.ts`).
