@@ -9,7 +9,7 @@ import * as agentsApi from "./agentsApi";
 import * as convexAgent from "./convexAgent";
 import { closeBrowser } from "./execution";
 import { endResearch } from "./siteResearch";
-import { recordTaskCreditUsage } from "./creditUsage";
+import { recordTaskCreditUsage, releaseTaskCreditHold } from "./creditUsage";
 import { insufficientCredits } from "../creditLedger";
 
 export const begin = internalAction({
@@ -44,7 +44,15 @@ export const advance = internalAction({
         continues = await convexAgent.advance(ctx, args);
         break;
     }
-    const canContinue = await recordTaskCreditUsage(ctx, args.sessionId);
+    const after = await ctx.runQuery(internal.tasks.sessions.cleanupResources, args);
+    const expectModelUsage =
+      Boolean(after.providerId) &&
+      (session.engine === "convex_agent"
+        ? session.state.kind !== "stopped"
+        : after.state.kind === "idle" ||
+          after.state.kind === "failed" ||
+          after.state.kind === "waiting");
+    const canContinue = await recordTaskCreditUsage(ctx, args.sessionId, expectModelUsage);
     if (continues && !canContinue) throw insufficientCredits();
     return continues;
   },
@@ -65,7 +73,8 @@ export const refresh = action({
         await convexAgent.refreshExecution(ctx, session);
         break;
     }
-    await recordTaskCreditUsage(ctx, session._id);
+    await recordTaskCreditUsage(ctx, session._id, Boolean(session.providerId));
+    await releaseTaskCreditHold(ctx, session.creditAdmissionReservationId);
     return null;
   },
 });
@@ -110,7 +119,8 @@ export const cleanup = internalAction({
         await convexAgent.refreshExecution(ctx, session);
         break;
     }
-    await recordTaskCreditUsage(ctx, session._id);
+    await recordTaskCreditUsage(ctx, session._id, Boolean(session.providerId));
+    await releaseTaskCreditHold(ctx, session.creditAdmissionReservationId);
     return null;
   },
 });

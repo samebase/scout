@@ -81,10 +81,16 @@ export const onComplete = internalMutation({
         sessionId: session._id,
       });
     }
-    if (session?.workflowId === args.workflowId && session.creditAdmissionReservationId) {
+    if (
+      session?.workflowId === args.workflowId &&
+      session.creditAdmissionReservationId &&
+      args.result.kind === "success" &&
+      (session.providerId === null || session.state.kind !== "stopped")
+    ) {
       const reservation = await ctx.db.get(session.creditAdmissionReservationId);
       if (!reservation) throw new Error("Credit admission hold is missing");
-      await releaseCreditOperation(ctx, reservation, "Turn completed; usage recorded separately");
+      if (reservation.state.kind === "pending")
+        await releaseCreditOperation(ctx, reservation, "Turn completed; usage recorded separately");
     }
     await workflow.cleanup(ctx, args.workflowId);
     return null;

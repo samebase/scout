@@ -94,7 +94,10 @@ async function startWorkflow(
     if (session.creditAdmissionReservationId) {
       const previous = await ctx.db.get(session.creditAdmissionReservationId);
       if (!previous) throw new Error("Previous credit admission hold is missing");
-      await releaseCreditOperation(ctx, previous, "Turn completed; usage recorded separately");
+      if (previous.state.kind === "unresolved")
+        throw new Error("Previous AI usage needs review before this task can continue");
+      if (previous.state.kind === "pending")
+        await releaseCreditOperation(ctx, previous, "Turn completed; usage recorded separately");
     }
     const reservationId = await reserveCreditOperation(ctx, {
       sessionId,
@@ -223,6 +226,8 @@ export const creditUsage = internalQuery({
   args: { sessionId: v.id("agentsApiSessions") },
   returns: v.object({
     modelCostUsd: v.union(v.number(), v.null()),
+    modelUsageIncomplete: v.boolean(),
+    admissionReservationId: v.union(v.id("creditReservations"), v.null()),
     webSearchCalls: v.union(v.number(), v.null()),
   }),
   handler: async (ctx, args) => {
@@ -249,6 +254,8 @@ export const creditUsage = internalQuery({
         (session.model === "gpt-5.6-luna" && session.usage
           ? uncachedLunaCost(session.usage)
           : null),
+      modelUsageIncomplete: session.modelUsageIncomplete ?? false,
+      admissionReservationId: session.creditAdmissionReservationId ?? null,
       webSearchCalls: searches.length > 1_000 ? null : searches.length,
     };
   },

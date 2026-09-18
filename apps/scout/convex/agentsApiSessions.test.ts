@@ -49,6 +49,34 @@ it("reserves credits at task admission and leaves an unfunded follow-up idle", a
   });
 });
 
+it("keeps an unresolved AI hold until its usage is resolved", async () => {
+  vi.stubEnv("CREDITS_ENABLED", "true");
+  const { backend, owner, sessionId } = await setup();
+  const session = await backend.run((ctx) => ctx.db.get(sessionId));
+  if (!session?.creditAdmissionReservationId) throw new Error("Missing admission hold");
+  const reservationId = session.creditAdmissionReservationId;
+  await backend.mutation(internal.credits.unresolved, {
+    reservationId,
+    reason: "Provider usage missing",
+  });
+  await backend.mutation(internal.tasks.sessions.update, {
+    sessionId,
+    active: false,
+    state: { kind: "idle" },
+    providerId: "provider-session",
+  });
+  await expect(
+    owner.mutation(api.tasks.sessions.send, { sessionId, message: "Continue" }),
+  ).rejects.toThrow("needs review");
+  expect(await owner.query(api.credits.balance, {})).toMatchObject({ reservedUnits: 50_000 });
+  await backend.mutation(internal.credits.resolveManually, {
+    reservationId,
+    resolution: { kind: "settle", costMicrodollars: 0 },
+  });
+  await owner.mutation(api.tasks.sessions.send, { sessionId, message: "Continue" });
+  expect(await owner.query(api.credits.balance, {})).toMatchObject({ reservedUnits: 50_000 });
+});
+
 async function setup() {
   const backend = convexTest(schema, modules);
   workflowTest.register(backend);

@@ -217,8 +217,8 @@ it("queues a check for this handoff and denies duplicate Resume while checking",
 });
 
 it("reserves and settles a resumed request check using its measured OpenAI usage", async () => {
-  vi.stubEnv("CREDITS_ENABLED", "true");
   const t = await setup();
+  vi.stubEnv("CREDITS_ENABLED", "true");
   const checkId = await t.resume();
   const request = vi.fn<typeof fetch>(async () => {
     const reservation = await t.backend.run((ctx) =>
