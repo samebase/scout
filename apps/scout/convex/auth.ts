@@ -96,6 +96,7 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
   callbacks: {
     beforeSessionCreation: async (ctx, { userId }) => {
       await ctx.runQuery(internal.accounts.assertActiveForAuth, { userId });
+      await ctx.runMutation(internal.credits.grantOnSignIn, { userId });
     },
     afterUserCreatedOrUpdated: async (ctx, args) => {
       await ctx.runQuery(internal.accounts.assertActiveForAuth, { userId: args.userId });

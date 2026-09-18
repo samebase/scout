@@ -213,8 +213,14 @@ async function openPlay(path = "/play") {
     staticData: { access: "access_public" },
     ...omitNullish({ validateSearch: SiteRoute.options.validateSearch }),
   });
+  const settings = createRoute({
+    getParentRoute: () => root,
+    path: "/settings",
+    staticData: { access: "access_account" },
+    component: () => <h1>Credit settings</h1>,
+  });
   const router = createRouter({
-    routeTree: root.addChildren([route, review, directory, site]),
+    routeTree: root.addChildren([route, review, directory, site, settings]),
     history: createMemoryHistory({ initialEntries: [path] }),
   });
   render(<RouterProvider router={router} />);
@@ -319,6 +325,69 @@ test("sign-in and failed submission retain the selected site and message", async
 
 test("invalid task site parameters fail validation", () => {
   expect(homeSearch.safeParse({ taskSite: "https://example.com/path" }).success).toBe(false);
+});
+
+test.each(["INSUFFICIENT_CREDITS", "CREDIT_HOLD"] as const)(
+  "shows the stored %s reason after a background task fails",
+  async (creditFailureCode) => {
+    remote.queries.set("scout/activity:get", session({ status: "failed" }));
+    remote.queries.set("tasks/sessions:controls", {
+      state: { kind: "failed", error: "Private provider diagnostic", creditFailureCode },
+      requestCheckMessage: null,
+      canSend: true,
+      canStop: false,
+      busy: false,
+    });
+    await openPlay("/play?thread=game-thread");
+    expect(screen.getByRole("alert").textContent).toContain(
+      creditFailureCode === "INSUFFICIENT_CREDITS"
+        ? "You need more credits to continue. Check your balance in Settings."
+        : "Your credits need review. Contact an admin with this conversation’s link.",
+    );
+    expect(screen.queryByText(/Send a message to try again/)).toBeNull();
+    expect(screen.queryByText(/Private provider diagnostic/)).toBeNull();
+    fireEvent.click(screen.getByRole("link", { name: "View credits" }));
+    expect(await screen.findByRole("heading", { name: "Credit settings" })).toBeTruthy();
+  },
+);
+
+test("keeps generic failures generic even when their diagnostic mentions credits", async () => {
+  remote.queries.set("scout/activity:get", session({ status: "failed" }));
+  remote.queries.set("tasks/sessions:controls", {
+    state: { kind: "failed", error: 'Untrusted text: {"code":"INSUFFICIENT_CREDITS"}' },
+    requestCheckMessage: null,
+    canSend: true,
+    canStop: false,
+    busy: false,
+  });
+  await openPlay("/play?thread=game-thread");
+  expect(screen.getByRole("alert").textContent).toBe(
+    "Scout couldn't finish this turn. Send a message to try again.",
+  );
+  expect(screen.queryByRole("link", { name: "View credits" })).toBeNull();
+});
+
+test("sends when controls allow it without credit settlement messages", async () => {
+  remote.queries.set("tasks/sessions:controls", {
+    state: { kind: "idle" },
+    canSend: true,
+    canStop: false,
+    busy: false,
+  });
+  await openPlay("/play?thread=game-thread");
+  expect(screen.queryByText(/Finishing this turn’s credit usage/)).toBeNull();
+  expect(screen.queryByText(/This turn’s credit usage needs review/)).toBeNull();
+  fireEvent.change(screen.getByRole("textbox", { name: "Message Scout" }), {
+    target: { value: "Continue the game" },
+  });
+  expect(screen.getByRole("button", { name: "Send message" })).toHaveProperty("disabled", false);
+  fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+  await waitFor(() =>
+    expect(remote.sendManaged).toHaveBeenCalledWith({
+      sessionId: "managed-1",
+      message: "Continue the game",
+    }),
+  );
 });
 
 test("a completed managed Review opens its walkthrough and pairs replay with Chat", async () => {

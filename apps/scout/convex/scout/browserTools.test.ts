@@ -82,7 +82,7 @@ function dependencies(browserRuntime = runtime()) {
       }),
     ),
     connect: vi.fn(async () => browserRuntime),
-    deleteBrowser: vi.fn(async () => ({
+    deleteBrowser: vi.fn<Firecrawl["deleteBrowser"]>(async () => ({
       success: true,
       sessionDurationMs: 1_500,
       creditsBilled: 2,
@@ -1091,6 +1091,28 @@ describe("Lab browser harness", () => {
     await expect(browser.open("http://example.com")).rejects.toThrow("must use HTTPS");
     await expect(browser.open("https://example.com")).rejects.toThrow(
       "Playwright could not connect",
+    );
+    expect(deps.deleteBrowser).toHaveBeenCalledExactlyOnceWith("session-1");
+  });
+
+  test("closes a provider browser that has no CDP URL", async () => {
+    const deps = dependencies();
+    deps.browser.mockResolvedValueOnce({ success: true, id: "session-1" });
+    const browser = createBrowserHarness({}, deps);
+
+    await expect(browser.open("https://example.com")).rejects.toThrow("without a CDP URL");
+    expect(deps.deleteBrowser).toHaveBeenCalledExactlyOnceWith("session-1");
+    await expect(browser.close()).resolves.toBeUndefined();
+  });
+
+  test("reports the browser ID when setup and cleanup both fail", async () => {
+    const deps = dependencies();
+    deps.browser.mockResolvedValueOnce({ success: true, id: "session-1" });
+    deps.deleteBrowser.mockResolvedValueOnce({ success: false, error: "provider unavailable" });
+    const browser = createBrowserHarness({}, deps);
+
+    await expect(browser.open("https://example.com")).rejects.toThrow(
+      "Browser session-1 has no CDP URL and cleanup failed",
     );
     expect(deps.deleteBrowser).toHaveBeenCalledExactlyOnceWith("session-1");
   });

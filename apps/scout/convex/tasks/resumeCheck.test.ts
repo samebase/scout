@@ -216,6 +216,31 @@ it("queues a check for this handoff and denies duplicate Resume while checking",
   expect(fetch).not.toHaveBeenCalled();
 });
 
+it("checks admission and charges a resumed request check using measured OpenAI usage", async () => {
+  const t = await setup();
+  vi.stubEnv("CREDITS_ENABLED", "true");
+  const checkId = await t.resume();
+  const request = vi.fn<typeof fetch>(async () => {
+    expect(await t.backend.query(internal.tasks.requestChecks.get, { checkId })).toMatchObject({
+      state: { kind: "running", billable: true },
+    });
+    return response({ decision: { kind: "approved" } });
+  });
+  vi.stubGlobal("fetch", request);
+
+  expect(await t.run(checkId)).toBe(true);
+  expect(await t.run(checkId)).toBe(false);
+  expect(request).toHaveBeenCalledTimes(1);
+  const { totals, entries } = await t.backend.run(async (ctx) => ({
+    totals: await ctx.db.query("creditUsageTotals").collect(),
+    entries: await ctx.db.query("creditEntries").collect(),
+  }));
+  expect(totals).toMatchObject([
+    { kind: "request_check", sourceKey: `request_check:${checkId}`, totalCostMicrodollars: 96 },
+  ]);
+  expect(entries.filter((entry) => entry.detail.kind === "usage")).toHaveLength(1);
+});
+
 it.each([
   { callId: "stale-call", turnId: handoff.turnId },
   { callId: handoff.callId, turnId: "stale-turn" },

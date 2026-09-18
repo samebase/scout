@@ -3,11 +3,14 @@ import { Link, Navigate, createFileRoute, useNavigate } from "@tanstack/react-ro
 import { Authenticated, AuthLoading, Unauthenticated } from "convex/react";
 import { LogOutIcon, ShieldCheckIcon } from "lucide-react";
 import { useState } from "react";
+import { z } from "zod";
+import { CreditsPanel } from "#components/credits-panel";
 import { Button } from "#components/ui/button";
 import { accountAccessMessage, useViewerAccess } from "#lib/access";
 
 export const Route = createFileRoute("/settings")({
   staticData: { access: "access_account" },
+  validateSearch: (search) => z.object({ purchase: z.string().optional() }).parse(search),
   head: () => ({
     meta: [{ title: "Settings | Scout" }],
   }),
@@ -17,6 +20,7 @@ export const Route = createFileRoute("/settings")({
 type SignOutState = { kind: "idle" } | { kind: "pending" } | { kind: "failed" };
 
 function SettingsPage() {
+  const { purchase } = Route.useSearch();
   return (
     <main className="route-page max-w-3xl">
       <header>
@@ -34,6 +38,7 @@ function SettingsPage() {
       </Unauthenticated>
       <Authenticated>
         <AccountStatus />
+        <CreditsPanel purchaseId={purchase} />
         <SessionSettings />
         <section className="surface-panel mt-8 p-5 sm:p-6">
           <h2 className="text-base font-semibold">Delete account</h2>

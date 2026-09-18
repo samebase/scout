@@ -10,6 +10,8 @@ import {
 import type { Doc, Id } from "../_generated/dataModel";
 import { query } from "../functions";
 import schema from "../schema";
+import { creditsEnabled, costMicrodollars } from "../creditPolicy";
+import { assertCreditAdmission, recordCreditUsage } from "../creditLedger";
 import { getInitialCheck } from "./requestChecks";
 import { requireSessionPermission } from "./access";
 import { siteHostnameSchema } from "../../shared/site";
@@ -60,12 +62,27 @@ const emptyJob = {
   credits: null,
 };
 
-async function startSiteResearch(ctx: MutationCtx, site: Doc<"sites">, userId: Id<"users">) {
+// The initial research rate is $0.005 per provider credit.
+const RESEARCH_USD_PER_PROVIDER_CREDIT = 0.005;
+const researchCost = (providerCredits: number) =>
+  costMicrodollars(providerCredits * RESEARCH_USD_PER_PROVIDER_CREDIT);
+const researchSourceKey = (researchId: Id<"agentsApiSiteResearch">) =>
+  `site-research:${researchId}`;
+
+async function startSiteResearch(
+  ctx: MutationCtx,
+  site: Doc<"sites">,
+  userId: Id<"users">,
+  sessionId: Id<"agentsApiSessions"> | null,
+) {
+  const billable = creditsEnabled() && sessionId !== null;
+  if (billable) await assertCreditAdmission(ctx, userId);
   const researchId = await ctx.db.insert("agentsApiSiteResearch", {
     ...emptyJob,
     site: site.hostname,
     sessionId: null,
     userId,
+    billable,
     state: { kind: "running" },
   });
   await ctx.db.patch(site._id, { researchId });
@@ -74,7 +91,12 @@ async function startSiteResearch(ctx: MutationCtx, site: Doc<"sites">, userId: I
   return researchId;
 }
 
-export async function ensureSiteResearch(ctx: MutationCtx, hostname: string, userId: Id<"users">) {
+export async function ensureSiteResearch(
+  ctx: MutationCtx,
+  hostname: string,
+  userId: Id<"users">,
+  sessionId: Id<"agentsApiSessions">,
+) {
   if (researchSite(`https://${hostname}/`) !== hostname)
     throw new Error("Research requires a public hostname");
   const siteId = await ensureSite(ctx, hostname);
@@ -82,7 +104,10 @@ export async function ensureSiteResearch(ctx: MutationCtx, hostname: string, use
   if (!site) throw new Error("Site not found");
   return site.researchId
     ? { researchId: site.researchId, reused: true }
-    : { researchId: await startSiteResearch(ctx, site, userId), reused: false };
+    : {
+        researchId: await startSiteResearch(ctx, site, userId, sessionId),
+        reused: false,
+      };
 }
 
 export const currentSiteJob = internalQuery({
@@ -117,7 +142,7 @@ export const refresh = internalMutation({
       if (current?.state.kind === "running" || site.researchId !== args.expectedResearchId)
         return site.researchId;
     }
-    return startSiteResearch(ctx, site, args.userId);
+    return startSiteResearch(ctx, site, args.userId, null);
   },
 });
 
@@ -151,7 +176,12 @@ export const start = internalMutation({
       await ctx.db.patch(chat._id, { primarySite: hostname });
       await syncChatSite(ctx, chat);
     }
-    const { researchId, reused } = await ensureSiteResearch(ctx, hostname, session.userId);
+    const { researchId, reused } = await ensureSiteResearch(
+      ctx,
+      hostname,
+      session.userId,
+      session._id,
+    );
     return ctx.db.insert("agentsApiSiteResearch", {
       ...emptyJob,
       sessionId: session._id,
@@ -173,6 +203,18 @@ export const submitted = internalMutation({
   },
 });
 
+export const admit = internalMutation({
+  args: { researchId: v.id("agentsApiSiteResearch") },
+  returns: v.null(),
+  handler: async (ctx, { researchId }) => {
+    const research = await ctx.db.get(researchId);
+    if (!research || research.sessionId !== null || research.state.kind !== "running")
+      throw new Error("Site research is no longer running");
+    if (research.billable) await assertCreditAdmission(ctx, research.userId);
+    return null;
+  },
+});
+
 export const finish = internalMutation({
   args: {
     researchId: v.id("agentsApiSiteResearch"),
@@ -187,6 +229,14 @@ export const finish = internalMutation({
     const research = await ctx.db.get(args.researchId);
     if (!research || (research.state.kind !== "running" && research.state.kind !== "waiting"))
       return null;
+    if (research.sessionId === null && research.billable && args.credits !== null)
+      await recordCreditUsage(ctx, {
+        userId: research.userId,
+        sessionId: null,
+        sourceKey: researchSourceKey(research._id),
+        kind: "research",
+        totalCostMicrodollars: researchCost(args.credits),
+      });
     let state = args.state;
     if (research.sessionId !== null) {
       const session = await ctx.db.get(research.sessionId);

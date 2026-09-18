@@ -22,6 +22,7 @@ import { saveScreenshot } from "./screenshots";
 import { MAX_TASK_SCREENSHOTS } from "./screenshotModel";
 import { reviewChecksSchema } from "../../shared/reviewChecks";
 import { createPlayTools } from "../scout/play";
+import { taskBrowserBilling } from "./browserCredits";
 
 export const handoffInput = z.object({ message: z.string().trim().min(1).max(2_000) });
 const mailNames = new Set([
@@ -51,75 +52,101 @@ export async function runtimeTools(
     await ctx.runMutation(internal.tasks.sessions.update, { sessionId, browser: handle });
   }
 
-  const browser = createBrowserHarness({
-    profileName: scout.firecrawl.profileName,
-    beforeDispatch,
-    captureScreenshot: async ({ toolCallId, note, take }) => {
-      await beforeDispatch();
-      if (!handle) throw new Error("Browser is not open");
-      return await saveScreenshot(ctx, {
-        sessionId,
-        providerSessionId: handle.providerSessionId,
-        toolCallId,
-        note,
-        take,
-      });
+  const browserBilling = taskBrowserBilling(ctx, sessionId);
+  const browser = createBrowserHarness(
+    {
+      profileName: scout.firecrawl.profileName,
+      beforeDispatch,
+      captureScreenshot: async ({ toolCallId, note, take }) => {
+        await beforeDispatch();
+        if (!handle) throw new Error("Browser is not open");
+        await ctx.runMutation(internal.tasks.browsers.admitOperation, {
+          providerSessionId: handle.providerSessionId,
+        });
+        return await saveScreenshot(ctx, {
+          sessionId,
+          providerSessionId: handle.providerSessionId,
+          toolCallId,
+          note,
+          take,
+        });
+      },
+      onSessionCreated: async (created) => {
+        handle = {
+          providerSessionId: created.providerSessionId,
+          cdpUrl: created.cdpUrl,
+          ...omitNullish({ selectedTabId: created.selectedTabId }),
+          interactiveLiveViewUrl: created.interactiveLiveViewUrl,
+          liveViewUrl: null,
+          currentUrl: null,
+        };
+        await ctx.runMutation(internal.tasks.browsers.open, {
+          sessionId,
+          browser: handle,
+        });
+        return { captureOperations: true };
+      },
+      onLiveViewAvailable: async (liveViewUrl) => {
+        if (!handle) throw new Error("Browser was not registered");
+        handle = { ...handle, liveViewUrl };
+        await saveBrowser();
+      },
+      onInteractiveLiveViewAvailable: async (interactiveLiveViewUrl) => {
+        if (!handle) throw new Error("Browser was not registered");
+        handle = { ...handle, interactiveLiveViewUrl };
+        await saveBrowser();
+      },
+      onOperationPrepared: async (operation) => {
+        await beforeDispatch();
+        if (!handle) throw new Error("Browser was not registered");
+        return await ctx.runMutation(internal.tasks.browsers.prepareOperation, {
+          providerSessionId: handle.providerSessionId,
+          ...operation,
+        });
+      },
+      onOperationSettled: async ({ outcome, selectedTabId, toolCallId, clickCapture }) => {
+        if (!handle) throw new Error("Browser was not registered");
+        await ctx.runMutation(internal.tasks.browsers.settleOperation, {
+          providerSessionId: handle.providerSessionId,
+          outcome,
+          toolCallId,
+          clickCapture,
+        });
+        const currentUrl =
+          outcome.kind === "applied" || outcome.kind === "applied_snapshot_failed"
+            ? (outcome.telemetry.after.tabs.find((tab) => tab.tabId === selectedTabId)?.url ?? null)
+            : null;
+        handle = { ...handle, ...omitNullish({ selectedTabId }), currentUrl };
+        await saveBrowser();
+      },
+      onSessionClosed: async ({ sessionDurationMs, creditsBilled }) => {
+        if (!handle) throw new Error("Browser was not registered");
+        await ctx.runMutation(internal.tasks.browsers.close, {
+          providerSessionId: handle.providerSessionId,
+          providerDurationMs: sessionDurationMs,
+          creditsBilled,
+        });
+        handle = null;
+        browserBilling.closed();
+      },
     },
-    onSessionCreated: async (created) => {
-      handle = {
-        providerSessionId: created.providerSessionId,
-        cdpUrl: created.cdpUrl,
-        ...omitNullish({ selectedTabId: created.selectedTabId }),
-        interactiveLiveViewUrl: created.interactiveLiveViewUrl,
-        liveViewUrl: null,
-        currentUrl: null,
-      };
-      await ctx.runMutation(internal.tasks.browsers.open, { sessionId, browser: handle });
-      return { captureOperations: true };
+    browserBilling.dependencies,
+  );
+
+  const createSessionTool = browser.tools.create_new_firecrawl_session;
+  const createSessionExecute = createSessionTool.execute;
+  if (!createSessionExecute) throw new Error("Browser session creation tool is unavailable");
+  const createSessionToolWithBilling = {
+    ...createSessionTool,
+    execute: async (...args: Parameters<typeof createSessionExecute>) => {
+      try {
+        return await createSessionExecute(...args);
+      } catch (error) {
+        await browserBilling.failedOpen(error);
+        throw error;
+      }
     },
-    onLiveViewAvailable: async (liveViewUrl) => {
-      if (!handle) throw new Error("Browser was not registered");
-      handle = { ...handle, liveViewUrl };
-      await saveBrowser();
-    },
-    onInteractiveLiveViewAvailable: async (interactiveLiveViewUrl) => {
-      if (!handle) throw new Error("Browser was not registered");
-      handle = { ...handle, interactiveLiveViewUrl };
-      await saveBrowser();
-    },
-    onOperationPrepared: async (operation) => {
-      await beforeDispatch();
-      if (!handle) throw new Error("Browser was not registered");
-      return await ctx.runMutation(internal.tasks.browsers.prepareOperation, {
-        providerSessionId: handle.providerSessionId,
-        ...operation,
-      });
-    },
-    onOperationSettled: async ({ outcome, selectedTabId, toolCallId, clickCapture }) => {
-      if (!handle) throw new Error("Browser was not registered");
-      await ctx.runMutation(internal.tasks.browsers.settleOperation, {
-        providerSessionId: handle.providerSessionId,
-        outcome,
-        toolCallId,
-        clickCapture,
-      });
-      const currentUrl =
-        outcome.kind === "applied" || outcome.kind === "applied_snapshot_failed"
-          ? (outcome.telemetry.after.tabs.find((tab) => tab.tabId === selectedTabId)?.url ?? null)
-          : null;
-      handle = { ...handle, ...omitNullish({ selectedTabId }), currentUrl };
-      await saveBrowser();
-    },
-    onSessionClosed: async ({ sessionDurationMs, creditsBilled }) => {
-      if (!handle) throw new Error("Browser was not registered");
-      await ctx.runMutation(internal.tasks.browsers.close, {
-        providerSessionId: handle.providerSessionId,
-        providerDurationMs: sessionDurationMs,
-        creditsBilled,
-      });
-      handle = null;
-    },
-  });
+  };
 
   const credentials = await ctx.runQuery(
     internal.scout.serviceAccountCredentials.listRuntimeCredentialsForScout,
@@ -130,6 +157,7 @@ export async function runtimeTools(
   let mailClient: Awaited<ReturnType<typeof createMCPClient>> | null = null;
   const tools: ToolSet = {
     ...browser.tools,
+    create_new_firecrawl_session: createSessionToolWithBilling,
     list_screenshots: tool({
       description: outdent`
         List this task's saved screenshots in capture order, with IDs, notes, page URLs,

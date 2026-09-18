@@ -110,8 +110,15 @@ async function setup() {
         }),
     ),
     usage: vi.fn<() => TokenUsage | null>(() => null),
-    status: vi.fn<() => "idle" | "requires_action">(() => "requires_action"),
-    turn: vi.fn(() => ({ id: "previous-turn", status: "cancelled" })),
+    status: vi.fn<() => "idle" | "requires_action" | "failed">(() => "requires_action"),
+    turn: vi.fn<
+      () => {
+        id: string;
+        status: "cancelled" | "completed" | "failed";
+        subagent_id: string | null;
+        usage: TokenUsage | null;
+      }
+    >(() => ({ id: "previous-turn", status: "cancelled", subagent_id: null, usage: null })),
     call: {
       type: "function_call",
       call_id: "call-test",
@@ -120,6 +127,7 @@ async function setup() {
       arguments: {},
     },
   };
+  const turns = vi.fn(() => [provider.turn()]);
   const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
     const request = new Request(input, init);
     const url = new URL(request.url);
@@ -132,7 +140,12 @@ async function setup() {
       });
     }
     if (request.method === "GET" && url.pathname.endsWith("/sessions/session-test/turns")) {
-      return Response.json({ data: [provider.turn()], has_more: false });
+      return Response.json({ data: turns(), has_more: false });
+    }
+    if (request.method === "GET" && url.pathname.includes("/sessions/session-test/turns/")) {
+      const turn = turns().find((entry) => entry.id === url.pathname.split("/").at(-1));
+      if (!turn) throw new Error("Provider turn not found");
+      return Response.json(turn);
     }
     if (request.method === "GET" && url.pathname.endsWith("/sessions/session-test/items")) {
       await provider.beforeItems();
@@ -190,6 +203,7 @@ async function setup() {
     owner,
     ...seeded,
     provider,
+    turns,
     execute,
     dispose,
     advance,
@@ -202,6 +216,260 @@ async function setup() {
 function reasoning(id: string, status: "in_progress" | "completed"): AgentReasoningItem {
   return { id, type: "reasoning", status, summary: [], turn_id: "turn-test" };
 }
+
+const paidUsage: TokenUsage = {
+  input_tokens: 80,
+  output_tokens: 20,
+  total_tokens: 100,
+  input_tokens_details: { cached_tokens: 64 },
+  output_tokens_details: { reasoning_tokens: 0 },
+};
+
+it.each(["idle", "failed"] as const)(
+  "captures and bills a failed root turn polled from a %s session without a stream turn event",
+  async (status) => {
+    vi.stubEnv("CREDITS_ENABLED", "true");
+    const t = await setup();
+    await t.backend.mutation(internal.credits.grantOnSignIn, { userId: t.userId });
+    await t.backend.run((ctx) =>
+      ctx.db.patch(t.sessionId, {
+        billingEnabled: true,
+        previousTurnId: "previous-turn",
+        browser: null,
+      }),
+    );
+    t.provider.status.mockReturnValue(status);
+    t.provider.usage.mockReturnValue(paidUsage);
+    t.provider.turn.mockReturnValue({
+      id: "failed-turn",
+      status: "failed",
+      subagent_id: null,
+      usage: paidUsage,
+    });
+    expect((await t.session()).modelTurnId).toBeUndefined();
+    await expect(t.advance()).rejects.toThrow();
+    expect((await t.session()).modelTurnId).toBe("failed-turn");
+    expect(t.provider.stream).not.toHaveBeenCalled();
+
+    // The workflow failure callback preserves the error and schedules this cleanup.
+    await t.backend.run((ctx) =>
+      ctx.db.patch(t.sessionId, { state: { kind: "failed", error: "Provider turn failed" } }),
+    );
+    await t.backend.action(internal.tasks.runtime.cleanup, { sessionId: t.sessionId });
+    await t.backend.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await t.session()).toMatchObject({
+      active: false,
+      state: { kind: "failed", error: "Provider turn failed" },
+      modelUsageIncomplete: false,
+    });
+    expect(await t.owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 499_971 });
+    const charges = await t.backend.run((ctx) => ctx.db.query("creditUsageTotals").collect());
+    expect(charges).toHaveLength(1);
+    expect(charges[0]).toMatchObject({
+      sourceKey: "agents:session-test:failed-turn:model",
+      totalCostMicrodollars: 29,
+    });
+  },
+);
+
+it("reports a failed session without attributing its previous turn to new work", async () => {
+  const t = await setup();
+  await t.backend.run((ctx) =>
+    ctx.db.patch(t.sessionId, { billingEnabled: true, previousTurnId: "previous-turn" }),
+  );
+  t.provider.status.mockReturnValue("failed");
+  await expect(t.advance()).rejects.toThrow("OpenAI session failed");
+  expect((await t.session()).modelTurnId).toBeUndefined();
+});
+
+it.each([true, false])(
+  "bills a captured late turn once after a follow-up starts (paid follow-up: %s)",
+  async (nextPaid) => {
+    vi.stubEnv("CREDITS_ENABLED", "true");
+    const t = await setup();
+    await t.backend.mutation(internal.credits.grantOnSignIn, { userId: t.userId });
+    await t.backend.run((ctx) =>
+      ctx.db.patch(t.sessionId, { billingEnabled: true, browser: null }),
+    );
+    t.provider.status.mockReturnValue("idle");
+    t.provider.turn.mockReturnValue({
+      id: "paid-turn",
+      status: "completed",
+      subagent_id: null,
+      usage: null,
+    });
+    expect(await t.advance()).toBe(false);
+    const billing = {
+      userId: t.userId,
+      providerId: "session-test",
+      model: "gpt-5.6-luna",
+      turnId: "paid-turn",
+    };
+    const jobs = await t.backend.run((ctx) =>
+      ctx.db.system.query("_scheduled_functions").collect(),
+    );
+    expect(jobs.find((job) => job.name === "tasks/agentsApi:refreshUsage")?.args).toEqual([
+      { sessionId: t.sessionId, workflowId: null, attempt: 0, billing },
+    ]);
+    await t.backend.action(internal.tasks.agentsApi.refreshUsage, {
+      sessionId: t.sessionId,
+      workflowId: null,
+      attempt: 0,
+      billing,
+    });
+    vi.stubEnv("CREDITS_ENABLED", nextPaid ? "true" : "false");
+    await t.owner.mutation(api.tasks.sessions.send, {
+      sessionId: t.sessionId,
+      message: "Continue before old usage arrives",
+    });
+    t.turns.mockReturnValue([
+      {
+        id: "new-turn",
+        status: "completed",
+        subagent_id: null,
+        usage: { ...paidUsage, output_tokens: 100_000 },
+      },
+      { id: "paid-turn", status: "completed", subagent_id: null, usage: paidUsage },
+      { id: "old-free-turn", status: "completed", subagent_id: null, usage: paidUsage },
+    ]);
+    t.provider.items.push(
+      {
+        id: "old-free-search",
+        type: "web_search_call",
+        turn_id: "old-free-turn",
+        status: "completed",
+        action: null,
+      },
+      {
+        id: "new-search",
+        type: "web_search_call",
+        turn_id: "new-turn",
+        status: "completed",
+        action: null,
+      },
+    );
+    await t.backend.run(async (ctx) => {
+      const wallet = await ctx.db
+        .query("creditWallets")
+        .withIndex("by_user_id", (q) => q.eq("userId", t.userId))
+        .unique();
+      if (!wallet) throw new Error("Missing wallet");
+      await ctx.db.patch(wallet._id, { balanceUnits: 1 });
+    });
+    for (let i = 0; i < 2; i++)
+      await t.backend.action(internal.tasks.agentsApi.refreshUsage, {
+        sessionId: t.sessionId,
+        workflowId: null,
+        attempt: 2,
+        billing,
+      });
+    expect(await t.owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: -28 });
+    const charges = await t.backend.run((ctx) => ctx.db.query("creditUsageTotals").collect());
+    expect(charges).toHaveLength(1);
+    expect(charges[0]).toMatchObject({ kind: "model", totalCostMicrodollars: 29 });
+    expect(await t.session()).toMatchObject({ active: true, billingEnabled: nextPaid });
+    expect((await t.session()).modelTurnId).toBeUndefined();
+  },
+);
+
+it("leaves missing cached usage visible and prices only searches belonging to the paid turn", async () => {
+  vi.stubEnv("CREDITS_ENABLED", "true");
+  const t = await setup();
+  await t.backend.mutation(internal.credits.grantOnSignIn, { userId: t.userId });
+  await t.backend.run((ctx) =>
+    ctx.db.patch(t.sessionId, {
+      active: false,
+      state: { kind: "idle" },
+      billingEnabled: true,
+      modelTurnId: "paid-turn",
+    }),
+  );
+  t.provider.usage.mockReturnValue(paidUsage);
+  t.provider.turn.mockReturnValue({
+    id: "paid-turn",
+    status: "completed",
+    subagent_id: null,
+    // @ts-expect-error The provider can omit cache details despite the SDK's required field.
+    usage: { ...paidUsage, input_tokens_details: null },
+  });
+  t.provider.items.push(
+    {
+      id: "paid-search",
+      type: "web_search_call",
+      turn_id: "paid-turn",
+      status: "completed",
+      action: null,
+    },
+    {
+      id: "late-free-search",
+      type: "web_search_call",
+      turn_id: "old-free-turn",
+      status: "completed",
+      action: null,
+    },
+  );
+  const billing = {
+    userId: t.userId,
+    providerId: "session-test",
+    model: "gpt-5.6-luna",
+    turnId: "paid-turn",
+  };
+  await expect(
+    t.backend.action(internal.tasks.agentsApi.refreshUsage, {
+      sessionId: t.sessionId,
+      workflowId: null,
+      attempt: 2,
+      billing,
+    }),
+  ).rejects.toThrow("usage is still unavailable");
+  expect((await t.session()).modelUsageIncomplete).toBe(true);
+  expect(await t.owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 490_000 });
+  t.provider.turn.mockReturnValue({
+    id: "paid-turn",
+    status: "completed",
+    subagent_id: null,
+    usage: paidUsage,
+  });
+  await t.owner.action(api.tasks.runtime.refresh, { sessionId: t.sessionId });
+  await t.owner.action(api.tasks.runtime.refresh, { sessionId: t.sessionId });
+  expect(await t.owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 489_971 });
+  expect((await t.session()).modelUsageIncomplete).toBe(false);
+});
+
+it("cleanup never guesses that the preceding free turn belongs to failed paid work", async () => {
+  const t = await setup();
+  await t.backend.run((ctx) =>
+    ctx.db.patch(t.sessionId, {
+      billingEnabled: true,
+      modelTurnId: undefined,
+      previousTurnId: "even-older-turn",
+      state: { kind: "failed", error: "Admission failed before submitting input" },
+    }),
+  );
+  t.provider.status.mockReturnValue("idle");
+  t.provider.usage.mockReturnValue(paidUsage);
+  t.provider.turn.mockReturnValue({
+    id: "previous-free-turn",
+    status: "completed",
+    subagent_id: null,
+    usage: paidUsage,
+  });
+  await t.backend.action(internal.tasks.runtime.cleanup, { sessionId: t.sessionId });
+  expect((await t.session()).modelUsageIncomplete).toBe(true);
+  expect(await t.backend.run((ctx) => ctx.db.query("creditUsageTotals").collect())).toEqual([]);
+  expect(t.turns).not.toHaveBeenCalled();
+});
+
+it("never bills an unmarked free turn when credits are enabled later", async () => {
+  const t = await setup();
+  await t.backend.run((ctx) =>
+    ctx.db.patch(t.sessionId, { active: false, modelTurnId: "free-turn" }),
+  );
+  vi.stubEnv("CREDITS_ENABLED", "true");
+  t.provider.usage.mockReturnValue(paidUsage);
+  await t.owner.action(api.tasks.runtime.refresh, { sessionId: t.sessionId });
+  expect(await t.backend.run((ctx) => ctx.db.query("creditUsageTotals").collect())).toEqual([]);
+});
 
 it("executes review site assignment through the real tools without connecting to the browser", async () => {
   const t = await setup();
@@ -223,6 +491,7 @@ it("executes review site assignment through the real tools without connecting to
   t.provider.call.name = "set_review_site";
   t.provider.call.arguments = { site: "samebase.com" };
   expect(await t.advance()).toBe(true);
+  expect(t.turns).not.toHaveBeenCalled();
   expect(await t.savedCall()).toMatchObject({
     result: { kind: "success", output: JSON.stringify({ primarySite: "samebase.com" }) },
   });
@@ -480,7 +749,12 @@ it("waits for the follow-up turn instead of finishing against the previous cance
   await expect(advance()).resolves.toBe(true);
   expect(runtimeTools).not.toHaveBeenCalled();
   provider.status.mockReturnValue("idle");
-  provider.turn.mockReturnValue({ id: "new-turn", status: "completed" });
+  provider.turn.mockReturnValue({
+    id: "new-turn",
+    status: "completed",
+    subagent_id: null,
+    usage: null,
+  });
   await expect(advance()).resolves.toBe(false);
   expect(await session()).toMatchObject({ state: { kind: "idle" }, active: false });
   expect(closeFirecrawlBrowserSession).toHaveBeenCalledOnce();
@@ -529,7 +803,12 @@ it("refreshes ended-session history and cost without restarting the agent or cha
 it("fetches late usage after completion and replaces revised cumulative totals", async () => {
   const { backend, sessionId, provider, advance, session, owner } = await setup();
   provider.status.mockReturnValue("idle");
-  provider.turn.mockReturnValue({ id: "completed-turn", status: "completed" });
+  provider.turn.mockReturnValue({
+    id: "completed-turn",
+    status: "completed",
+    subagent_id: null,
+    usage: null,
+  });
   provider.usage
     .mockReturnValueOnce(null)
     .mockReturnValueOnce(null)
@@ -573,7 +852,12 @@ it("bounds missing-usage checks and leaves an inspectable failure without erasin
   const errors = vi.spyOn(console, "error").mockImplementation(() => {});
   const { backend, sessionId, provider, advance, session } = await setup();
   provider.status.mockReturnValue("idle");
-  provider.turn.mockReturnValue({ id: "completed-turn", status: "completed" });
+  provider.turn.mockReturnValue({
+    id: "completed-turn",
+    status: "completed",
+    subagent_id: null,
+    usage: null,
+  });
   provider.usage.mockReturnValueOnce({
     input_tokens: 100,
     output_tokens: 20,

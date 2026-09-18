@@ -48,7 +48,7 @@ export const identify = internalMutation({
     }
     const check = await getInitialCheck(ctx, session._id);
     if (check?.state.kind === "completed" && check.state.result.decision.kind === "approved")
-      await ensureSiteResearch(ctx, primarySite, session.userId);
+      await ensureSiteResearch(ctx, primarySite, session.userId, session._id);
     return { primarySite };
   },
 });

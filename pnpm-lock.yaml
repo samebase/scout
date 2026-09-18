@@ -75,6 +75,9 @@ importers:
       '@convex-dev/workpool':
         specifier: ^0.4.10
         version: 0.4.10(convex-helpers@0.1.123(@standard-schema/spec@1.1.0)(convex@1.45.0(react@19.2.6))(hono@4.13.7)(react@19.2.6)(typescript@6.0.3)(zod@4.4.3))(convex@1.45.0(react@19.2.6))(react@19.2.6)
+      '@polar-sh/sdk':
+        specifier: 1.0.0-alpha.20
+        version: 1.0.0-alpha.20
       '@samebase/sidebars':
         specifier: ^0.1.2
         version: 0.1.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -1571,6 +1574,10 @@ packages:
 
   '@panva/hkdf@1.2.1':
     resolution: {integrity: sha512-6oclG6Y3PiDFcoyk8srjLfVKyMfVCKJ27JwNPViuXziFpmdz+MZnZN/aKY0JGXgYuO/VghU0jcOAZgWXZ1Dmrw==}
+
+  '@polar-sh/sdk@1.0.0-alpha.20':
+    resolution: {integrity: sha512-/IX6YFtxDArPdKtF6AgiV4J+p3jb5+8/nyuw1Z+ZH07ykMqjCVox/tw9va208e6KMGlLk4BPHuFl+GE1YWlm5Q==}
+    engines: {node: '>=22'}
 
   '@polka/url@1.0.0-next.29':
     resolution: {integrity: sha512-wwQAWhWSuHaag8c4q/KN/vCoeOJYshAIvMQwD4GpSb3OiZklFfvAgmj0VCBBImRpuF/aFgIRzllXlVX93Jevww==}
@@ -6430,6 +6437,8 @@ snapshots:
   '@oxlint/plugins@1.73.0': {}
 
   '@panva/hkdf@1.2.1': {}
+
+  '@polar-sh/sdk@1.0.0-alpha.20': {}
 
   '@polka/url@1.0.0-next.29': {}
 

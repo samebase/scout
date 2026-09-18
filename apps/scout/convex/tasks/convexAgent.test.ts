@@ -162,6 +162,61 @@ async function setup() {
   };
 }
 
+it("records captured paid generations once even after the session starts a free follow-up", async () => {
+  const task = await setup();
+  const session = await task.session();
+  if (!session) throw new Error("Task session is missing");
+  await task.backend.mutation(internal.credits.grantOnSignIn, { userId: session.userId });
+  await task.backend.run(async (ctx) => {
+    await ctx.db.patch(task.sessionId, {
+      billingEnabled: false,
+      previousTurnId: "new-free-prompt",
+    });
+    const wallet = await ctx.db
+      .query("creditWallets")
+      .withIndex("by_user_id", (q) => q.eq("userId", session.userId))
+      .unique();
+    if (!wallet) throw new Error("Wallet missing");
+    await ctx.db.patch(wallet._id, { balanceUnits: 1 });
+  });
+  const usage = {
+    inputTokens: 100,
+    outputTokens: 20,
+    cachedInputTokens: 80,
+    reasoningTokens: 0,
+    costUsd: 0.001,
+  };
+  const args = {
+    sessionId: task.sessionId,
+    billingEnabled: true,
+    sourceKey: "convex:old-paid-prompt:step:0",
+    usage,
+  };
+  await task.backend.mutation(internal.tasks.convexAgentRecords.recordUsage, args);
+  await task.backend.mutation(internal.tasks.convexAgentRecords.recordUsage, args);
+  await task.backend.mutation(internal.tasks.convexAgentRecords.recordUsage, {
+    ...args,
+    sourceKey: "convex:free-prompt:step:0",
+    billingEnabled: false,
+  });
+  await task.backend.mutation(internal.tasks.convexAgentRecords.recordUsage, {
+    ...args,
+    sourceKey: "convex:missing-cost:step:0",
+    usage: { ...usage, costUsd: null },
+  });
+  const wallet = await task.backend.run((ctx) =>
+    ctx.db
+      .query("creditWallets")
+      .withIndex("by_user_id", (q) => q.eq("userId", session.userId))
+      .unique(),
+  );
+  expect(wallet?.balanceUnits).toBe(-999);
+  expect(await task.backend.run((ctx) => ctx.db.query("creditUsageTotals").collect())).toHaveLength(
+    1,
+  );
+  expect((await task.session())?.modelUsageIncomplete).toBe(true);
+});
+
 it("runs one model step, executes the shared tool separately, and projects stable common items", async () => {
   const task = await setup();
   provider.stream.mockResolvedValueOnce(
@@ -438,7 +493,12 @@ it("pauses an unresolved handoff without running later calls", async () => {
 });
 
 it("uses a whole advance for compaction and includes its usage only once", async () => {
+  vi.stubEnv("CREDITS_ENABLED", "true");
   const task = await setup();
+  const ownerId = (await task.session())?.userId;
+  if (!ownerId) throw new Error("Task owner missing");
+  await task.backend.mutation(internal.credits.grantOnSignIn, { userId: ownerId });
+  await task.backend.run((ctx) => ctx.db.patch(task.sessionId, { billingEnabled: true }));
   const session = await task.session();
   if (!session?.providerId || !session.previousTurnId) throw new Error("Task thread missing");
   const threadId = session.providerId;
@@ -482,6 +542,17 @@ it("uses a whole advance for compaction and includes its usage only once", async
   expect(modelInput).toContain("Earlier product findings preserved.");
   expect(modelInput).not.toContain("Earlier finding 0:");
   expect((await task.session())?.reportedModelUsd).toBe(0.012);
+  const totals = await task.backend.run((ctx) => ctx.db.query("creditUsageTotals").collect());
+  expect(totals.map((total) => total.totalCostMicrodollars).sort((a, b) => a - b)).toEqual([
+    2_000, 10_000,
+  ]);
+  const wallet = await task.backend.run((ctx) =>
+    ctx.db
+      .query("creditWallets")
+      .withIndex("by_user_id", (q) => q.eq("userId", ownerId))
+      .unique(),
+  );
+  expect(wallet?.balanceUnits).toBe(488_000);
 });
 
 function message(id: number, content: string): MessageDoc {

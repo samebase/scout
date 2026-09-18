@@ -81,13 +81,15 @@ vi.mock("convex/react", () => ({
     };
   },
   useQuery: (
-    _ref: FunctionReference<"query">,
+    ref: FunctionReference<"query">,
     args:
       | FunctionArgs<typeof api.scout.workspaces.list>
       | FunctionArgs<typeof api.scout.sites.get>
       | "skip",
   ) => {
     useSyncExternalStore(subscribe, () => remote.revision);
+    if (getFunctionName(ref) === "credits:balance") return null;
+    if (getFunctionName(ref) === "credits:offer") return undefined;
     if (args === "skip") return undefined;
     if ("site" in args)
       return remote.loadingSites.has(args.site) ? undefined : (remote.sites.get(args.site) ?? null);

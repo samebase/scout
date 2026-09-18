@@ -39,8 +39,8 @@ models read. Existing Firecrawl, AgentMail, and credential-encryption configurat
 must also be present.
 
 Run `pnpm run dev` from the primary checkout for port 5173 and its development
-deployment. API usage is billed to the configured OpenAI project; Scout credits do
-not apply to this experiment.
+deployment. API usage is billed to the configured OpenAI project and consumes Scout
+credits when credit billing is enabled.
 
 ## Execution
 
@@ -96,7 +96,22 @@ in Agents to fetch it again manually. Missing token counts display as “Usage p
 unknown model rate still displays as “Unpriced”.
 
 Errors remain visible. Interrupted side effects are not automatically replayed.
-Scout credits are not integrated with task execution.
+With credits enabled, new work requires a positive wallet balance and no account hold.
+Actual usage is charged when reported, even if that makes the balance negative. Missing
+usage does not block follow-ups, stop, or cleanup.
+
+Each start/send captures whether model work is paid; handoff resume retains that choice.
+Agents API billing uses the exact root turn ID and search items with that turn ID. Final
+refresh jobs capture the billing identity independently of the session's current turn, so
+late paid usage still bills after a new paid or free follow-up starts. Cumulative session
+snapshots are display data. Convex Agent bills reported Gateway cost by prompt/step, with
+separate keys for summaries. Repeated reports of the same cumulative cost do not charge
+again. Missing cached-token details or Gateway cost never become an uncached estimate.
+
+Use Refresh in Agents to check the current turn again. If an older turn exhausted its
+three checks after a follow-up started, inspect the failed refresh job and rerun its
+captured arguments once provider usage is available. There is no reservation, settlement
+queue, or automatic reconciliation. Old sessions without a billing flag remain free.
 
 ## Shared-engine verification, September 18, 2026
 

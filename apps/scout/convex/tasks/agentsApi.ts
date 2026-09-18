@@ -13,12 +13,25 @@ import type { Doc, Id } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
 import { openAIClient as client } from "./client";
 import { omitNullish } from "../../shared/omitNullish";
-import { command } from "./model";
+import { agentsTurnBilling, command } from "./model";
 import { functionDefinitions, handoffInput, runtimeTools } from "./tools";
 import { itemIsComplete, presentItem } from "./output";
-import { readAgentsApiUsage } from "./cost";
+import { estimateAgentsApiCost, readAgentsApiUsage } from "./cost";
 import { SessionOutput } from "./events";
 import { closeBrowser, taskInstructions, executeTaskTool } from "./execution";
+import { costMicrodollars } from "../creditPolicy";
+
+async function latestRootTurn(api: OpenAI, providerId: string) {
+  let scanned = 0;
+  for await (const turn of api.beta.agents.sessions.turns.list(providerId, {
+    order: "desc",
+    limit: 50,
+  })) {
+    if (++scanned > 1_000) throw new Error("Agent session has too many turns to inspect");
+    if (turn.subagent_id === null) return turn;
+  }
+  return null;
+}
 
 export async function begin(
   ctx: ActionCtx,
@@ -60,11 +73,7 @@ export async function begin(
     }
     case "send": {
       if (!session.providerId) throw new Error("OpenAI session is not available");
-      const turns = await api.beta.agents.sessions.turns.list(session.providerId, {
-        order: "desc",
-        limit: 1,
-      });
-      const previousTurn = turns.data[0];
+      const previousTurn = await latestRootTurn(api, session.providerId);
       if (previousTurn)
         await ctx.runMutation(internal.tasks.sessions.update, {
           sessionId: session._id,
@@ -72,16 +81,20 @@ export async function begin(
         });
       const providerId = session.providerId;
       const message = args.command.message;
-      await streamOutput(ctx, api, { ...session, providerId }, () =>
-        api.beta.agents.sessions.events.create(providerId, {
-          "Idempotency-Key": `${session._id}:${session.workflowId}`,
-          events: [
-            {
-              type: "agent.session.input.message",
-              input: [{ role: "user", content: [{ type: "input_text", text: message }] }],
-            },
-          ],
-        }),
+      await streamOutput(
+        ctx,
+        api,
+        { ...session, providerId, ...omitNullish({ previousTurnId: previousTurn?.id }) },
+        () =>
+          api.beta.agents.sessions.events.create(providerId, {
+            "Idempotency-Key": `${session._id}:${session.workflowId}`,
+            events: [
+              {
+                type: "agent.session.input.message",
+                input: [{ role: "user", content: [{ type: "input_text", text: message }] }],
+              },
+            ],
+          }),
       );
       break;
     }
@@ -229,6 +242,19 @@ async function consumeOutput(
               state: { kind: "running" },
             });
           }
+          if (
+            (event.type === "agent.session.turn.created" ||
+              event.type === "agent.session.turn.in_progress" ||
+              event.type === "agent.session.turn.completed" ||
+              event.type === "agent.session.turn.cancelled" ||
+              event.type === "agent.session.turn.failed") &&
+            event.turn.subagent_id === null &&
+            event.turn.id !== session.previousTurnId
+          )
+            await ctx.runMutation(internal.tasks.sessions.update, {
+              sessionId: session._id,
+              modelTurnId: event.turn.id,
+            });
           output.apply(event);
           if (event.type === "error") throw new Error(event.error.message);
           if (event.type === "agent.session.failed")
@@ -276,37 +302,101 @@ async function consumeOutput(
   }
 }
 
+// Bill only the captured provider turn, even if another paid or free turn has started.
+async function recordTurnUsage(
+  ctx: ActionCtx,
+  sessionId: Id<"agentsApiSessions">,
+  billing: Infer<typeof agentsTurnBilling>,
+): Promise<boolean> {
+  if (billing.turnId === null) return false;
+  const api = client();
+  const turn = await api.beta.agents.sessions.turns.retrieve(billing.turnId, {
+    session_id: billing.providerId,
+  });
+  if (turn.subagent_id !== null) throw new Error("Expected the task's root provider turn");
+  const searches = new Set<string>();
+  let scanned = 0;
+  for await (const item of api.beta.agents.sessions.items.list(billing.providerId, {
+    order: "asc",
+    limit: 100,
+  })) {
+    if (++scanned > 10_000) throw new Error("Agent session has too many items to price searches");
+    if (item.turn_id === billing.turnId && item.type === "web_search_call") {
+      searches.add(item.id);
+    }
+  }
+  const cost = estimateAgentsApiCost({
+    model: billing.model,
+    usage: readAgentsApiUsage(turn.usage),
+    modelUsageIncomplete: false,
+    webSearchCalls: searches.size,
+    browsers: [],
+    firecrawlUsdPerCredit: null,
+    now: 0,
+  });
+  await ctx.runMutation(internal.credits.recordUsage, {
+    userId: billing.userId,
+    sessionId,
+    sourceKey: "agents:" + billing.providerId + ":" + billing.turnId + ":web_search",
+    kind: "web_search",
+    totalCostMicrodollars: costMicrodollars(cost.webSearchUsd ?? 0),
+  });
+  if (cost.modelEstimateUsd === null) return false;
+  await ctx.runMutation(internal.credits.recordUsage, {
+    userId: billing.userId,
+    sessionId,
+    sourceKey: "agents:" + billing.providerId + ":" + billing.turnId + ":model",
+    kind: "model",
+    totalCostMicrodollars: costMicrodollars(cost.modelEstimateUsd),
+  });
+  return turn.status === "completed" || turn.status === "failed" || turn.status === "cancelled";
+}
+
 export const refreshUsage = internalAction({
   args: {
     sessionId: v.id("agentsApiSessions"),
     workflowId: v.union(vWorkflowId, v.null()),
     attempt: v.union(v.literal(0), v.literal(1), v.literal(2)),
+    billing: v.optional(agentsTurnBilling),
   },
   returns: v.null(),
   handler: async (ctx, args): Promise<null> => {
     const session = await ctx.runQuery(internal.tasks.sessions.cleanupResources, {
       sessionId: args.sessionId,
     });
-    if (
-      session.active ||
-      (session.workflowId ?? null) !== args.workflowId ||
-      session.engine !== "agents_api" ||
-      !session.providerId
-    )
-      return null;
-
-    const remote = await client().beta.agents.sessions.retrieve(session.providerId);
-    const usage = readAgentsApiUsage(remote.usage);
-    await ctx.runMutation(internal.tasks.sessions.update, {
-      sessionId: session._id,
-      refreshWorkflowId: args.workflowId,
-      ...omitNullish({ usage }),
-      modelUsageIncomplete: args.attempt < 2 || usage === null,
-    });
-
-    // Accounting can arrive after completion, or revise a previous turn's subtotal.
-    // Fetch fresh cumulative snapshots each time; never add snapshots together.
-    if (args.attempt < 2) {
+    const refreshDisplay =
+      !session.active &&
+      (session.workflowId ?? null) === args.workflowId &&
+      session.engine === "agents_api" &&
+      Boolean(session.providerId);
+    if (!refreshDisplay && !args.billing) return null;
+    try {
+      const billed = args.billing ? await recordTurnUsage(ctx, args.sessionId, args.billing) : true;
+      let available = true;
+      if (refreshDisplay && session.providerId) {
+        const remote = await client().beta.agents.sessions.retrieve(session.providerId);
+        const usage = readAgentsApiUsage(remote.usage);
+        available = usage !== null;
+        await ctx.runMutation(internal.tasks.sessions.update, {
+          sessionId: session._id,
+          refreshWorkflowId: args.workflowId,
+          ...omitNullish({ usage }),
+          modelUsageIncomplete: args.attempt < 2 || !available || !billed,
+        });
+      }
+      if (args.attempt === 2 && (!available || !billed))
+        throw new Error(
+          "OpenAI usage is still unavailable after three checks. Inspect this refresh job or use Refresh in Agents.",
+        );
+    } catch (error) {
+      if (args.attempt === 2) throw error;
+      console.error("OpenAI usage refresh failed", {
+        sessionId: args.sessionId,
+        attempt: args.attempt,
+        error,
+      });
+    }
+    if (args.attempt < 2)
       await ctx.scheduler.runAfter(
         args.attempt === 0 ? 30_000 : 120_000,
         internal.tasks.agentsApi.refreshUsage,
@@ -315,11 +405,6 @@ export const refreshUsage = internalAction({
           attempt: args.attempt === 0 ? 1 : 2,
         },
       );
-    } else if (usage === null) {
-      throw new Error(
-        "OpenAI usage is still unavailable after three checks. Use Refresh in Agents to check again.",
-      );
-    }
     return null;
   },
 });
@@ -338,13 +423,21 @@ export async function refreshExecution(
     { ...session, providerId },
     { refreshWorkflowId: session.workflowId ?? null },
   );
-  if (remote.usage)
-    await ctx.runMutation(internal.tasks.sessions.update, {
-      sessionId: session._id,
-      refreshWorkflowId: session.workflowId ?? null,
-      usage: readAgentsApiUsage(remote.usage),
-      modelUsageIncomplete: false,
-    });
+  const billed = session.billingEnabled
+    ? await recordTurnUsage(ctx, session._id, {
+        userId: session.userId,
+        providerId,
+        model: session.model,
+        turnId: session.modelTurnId ?? null,
+      })
+    : true;
+  const usage = readAgentsApiUsage(remote.usage);
+  await ctx.runMutation(internal.tasks.sessions.update, {
+    sessionId: session._id,
+    refreshWorkflowId: session.workflowId ?? null,
+    ...omitNullish({ usage }),
+    modelUsageIncomplete: usage === null || !billed,
+  });
   return null;
 }
 
@@ -367,21 +460,17 @@ export async function advance(
       sessionId: session._id,
       usage: readAgentsApiUsage(remote.usage),
     });
-  if (remote.status === "failed") throw new Error(remote.error ?? "OpenAI session failed");
-  if (remote.status === "idle") {
-    const turns = await api.beta.agents.sessions.turns.list(providerId, {
-      order: "desc",
-      limit: 1,
-    });
-    const turn = turns.data[0];
+  if (remote.status === "idle" || remote.status === "failed") {
+    const turn = await latestRootTurn(api, providerId);
+    if (turn && turn.id !== session.previousTurnId)
+      await ctx.runMutation(internal.tasks.sessions.update, {
+        sessionId: session._id,
+        modelTurnId: turn.id,
+      });
+    if (remote.status === "failed") throw new Error(remote.error ?? "OpenAI session failed");
     // A posted follow-up can be acknowledged before its turn appears.
-    if (turn?.id === session.previousTurnId) return true;
-    if (
-      !turn ||
-      turn.status === "queued" ||
-      turn.status === "in_progress" ||
-      turn.status === "waiting"
-    )
+    if (!turn || turn.id === session.previousTurnId) return true;
+    if (turn.status === "queued" || turn.status === "in_progress" || turn.status === "waiting")
       return true;
     if (turn.status === "failed") throw new Error(JSON.stringify(turn.error));
     await closeBrowser(ctx, session);
@@ -394,6 +483,9 @@ export async function advance(
     return false;
   }
 
+  if (session.billingEnabled)
+    await ctx.runMutation(internal.credits.checkBalance, { sessionId: session._id });
+
   const call = remote.required_actions[0];
   if (!call) {
     await streamOutput(ctx, api, { ...session, providerId }, null);
@@ -402,6 +494,10 @@ export async function advance(
   if (call.type !== "function_call")
     throw new Error("OpenAI hosted environment needs reconnection");
   if (call.turn_id === session.previousTurnId) return true;
+  await ctx.runMutation(internal.tasks.sessions.update, {
+    sessionId: session._id,
+    modelTurnId: call.turn_id,
+  });
   if (call.name === "request_browser_handoff") {
     const { message } = handoffInput.parse(call.arguments);
     const waiting: boolean = await ctx.runMutation(internal.tasks.sessions.enterHandoff, {

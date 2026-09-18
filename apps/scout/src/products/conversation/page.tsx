@@ -23,6 +23,7 @@ import {
 import { type FormEvent, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import { omitNullish } from "../../../shared/omitNullish";
+import { creditFailure, creditFailureMessage } from "../../../shared/creditFailure";
 import { scoutAvailabilityLabels } from "#components/scout-current-activity";
 import { productRoutes, type ProductKind, type ConversationSearch } from "./model";
 import { gameInviteDisplayText } from "../play/invite";
@@ -172,10 +173,12 @@ export function ConversationLobby({
         visibility,
       });
       await navigate({ to: productRoutes[kind], search: { thread: threadId } });
-    } catch {
+    } catch (error) {
       setRequest({
         kind: "failed",
-        message: "Couldn't start the chat. Choose an available Scout and try again.",
+        message:
+          creditFailure(error)?.message ??
+          "Couldn't start the chat. Choose an available Scout and try again.",
       });
     } finally {
       submitting.current = false;
@@ -830,6 +833,8 @@ function ConversationSession({
   const [request, setRequest] = useState<RequestState>({ kind: "idle" });
   const pending = useRef(false);
   const canStop = managed?.canStop === true;
+  const failedCreditCode =
+    managed?.state.kind === "failed" ? managed.state.creditFailureCode : undefined;
   const canSend =
     thread.canControl &&
     scout.status === "active" &&
@@ -867,10 +872,12 @@ function ConversationSession({
       await sendManaged({ sessionId: managedId, message: prompt });
       setDraft("");
       setRequest({ kind: "idle" });
-    } catch {
+    } catch (error) {
       setRequest({
         kind: "failed",
-        message: "Your message wasn't sent. Try again when Scout is ready.",
+        message:
+          creditFailure(error)?.message ??
+          "Your message wasn't sent. Try again when Scout is ready.",
       });
     } finally {
       pending.current = false;
@@ -888,8 +895,11 @@ function ConversationSession({
         turnId: managed.state.turnId,
       });
       setRequest({ kind: "idle" });
-    } catch {
-      setRequest({ kind: "failed", message: "Couldn't resume Scout. Try again." });
+    } catch (error) {
+      setRequest({
+        kind: "failed",
+        message: creditFailure(error)?.message ?? "Couldn't resume Scout. Try again.",
+      });
     } finally {
       pending.current = false;
     }
@@ -1016,8 +1026,18 @@ function ConversationSession({
                   managed?.state.kind !== "checking" && (
                     <MessageScrollerItem messageId="turn-status" className="mr-auto max-w-[95%]">
                       <p className={cn(playNotice, "mb-0 px-3 py-2")} role="alert">
-                        {managed?.requestCheckMessage ?? "Scout couldn't finish this turn."}
-                        {!managed?.requestCheckMessage &&
+                        {failedCreditCode ? (
+                          <>
+                            {creditFailureMessage(failedCreditCode)}{" "}
+                            <Link to="/settings" className={playTextLink}>
+                              View credits
+                            </Link>
+                          </>
+                        ) : (
+                          (managed?.requestCheckMessage ?? "Scout couldn't finish this turn.")
+                        )}
+                        {!failedCreditCode &&
+                        !managed?.requestCheckMessage &&
                         (managed ? managed.canSend : thread.canControl)
                           ? " Send a message to try again."
                           : ""}

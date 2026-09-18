@@ -30,6 +30,8 @@ import { researchSummary } from "./siteResearchModel";
 import { agentsToolActivity, pairedAgentsOutput } from "../scout/toolActivityAgents";
 import { toolActivityValidator } from "../../shared/toolActivity";
 import schema from "../schema";
+import { creditsEnabled } from "../creditPolicy";
+import { assertCreditAdmission } from "../creditLedger";
 
 async function requireSession(ctx: QueryCtx, sessionId: Id<"agentsApiSessions">) {
   const session = await ctx.db.get(sessionId);
@@ -86,7 +88,15 @@ async function startWorkflow(
       context: { sessionId },
     },
   );
-  await ctx.db.patch(sessionId, { workflowId });
+  const session = await requireSession(ctx, sessionId);
+  if (input.kind === "resume" || input.kind === "observe") {
+    if (session.billingEnabled) await assertCreditAdmission(ctx, session.userId);
+    await ctx.db.patch(sessionId, { workflowId });
+  } else {
+    const billingEnabled = creditsEnabled();
+    if (billingEnabled) await assertCreditAdmission(ctx, session.userId);
+    await ctx.db.patch(sessionId, { workflowId, billingEnabled, modelTurnId: undefined });
+  }
 }
 
 export const list = query({
@@ -538,6 +548,7 @@ export const update = internalMutation({
     refreshWorkflowId: v.optional(v.union(vWorkflowId, v.null())),
     providerId: v.optional(v.string()),
     previousTurnId: v.optional(v.string()),
+    modelTurnId: v.optional(v.string()),
     state: v.optional(sessionState),
     active: v.optional(v.boolean()),
     usage: v.optional(v.union(sessionUsage, v.null())),
@@ -551,7 +562,8 @@ export const update = internalMutation({
     if (!session) throw new Error("Session not found");
     if (
       refreshWorkflowId !== undefined &&
-      (session.active || (session.workflowId ?? null) !== refreshWorkflowId)
+      ((session.active && session.state.kind !== "waiting") ||
+        (session.workflowId ?? null) !== refreshWorkflowId)
     )
       return null;
     if (session.state.kind === "stopped") delete patch.state;
@@ -566,6 +578,16 @@ export const update = internalMutation({
         sessionId,
         workflowId: session.workflowId ?? null,
         attempt: 0,
+        ...omitNullish({
+          billing: session.billingEnabled
+            ? {
+                userId: session.userId,
+                providerId: session.providerId,
+                model: session.model,
+                turnId: patch.modelTurnId ?? session.modelTurnId ?? null,
+              }
+            : undefined,
+        }),
       });
     }
     await ctx.db.patch(sessionId, patch);
@@ -587,7 +609,8 @@ export const saveItems = internalMutation({
     if (!session) throw new Error("Session not found");
     if (
       args.refreshWorkflowId !== undefined &&
-      (session.active || (session.workflowId ?? null) !== args.refreshWorkflowId)
+      ((session.active && session.state.kind !== "waiting") ||
+        (session.workflowId ?? null) !== args.refreshWorkflowId)
     )
       return null;
     let sequence = args.sequence ?? session.nextSequence;

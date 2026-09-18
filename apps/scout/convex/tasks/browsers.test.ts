@@ -61,7 +61,7 @@ async function setup() {
       },
     });
   const list = () => owner.query(api.tasks.sessions.listBrowsers, { sessionId });
-  return { backend, owner, other, sessionId, open, list };
+  return { backend, owner, other, userId, sessionId, open, list };
 }
 
 it("retains ordered browser history and billed usage across close/reopen without exposing connection secrets", async () => {
@@ -95,6 +95,99 @@ it("retains ordered browser history and billed usage across close/reopen without
     liveViewUrl: null,
     interactiveLiveViewUrl: null,
   });
+});
+
+it("charges reported browser usage once, allows an overrun, and blocks the next open", async () => {
+  vi.stubEnv("CREDITS_ENABLED", "true");
+  const { backend, owner, userId, sessionId, open } = await setup();
+  await backend.mutation(internal.credits.grantOnSignIn, { userId });
+  await backend.run(async (ctx) => {
+    const wallet = await ctx.db
+      .query("creditWallets")
+      .withIndex("by_user_id", (q) => q.eq("userId", userId))
+      .unique();
+    if (!wallet) throw new Error("Missing wallet");
+    await ctx.db.patch(wallet._id, { balanceUnits: 1_000 });
+  });
+  expect(await backend.mutation(internal.tasks.browsers.admit, { sessionId })).toBe(true);
+  await open("billable-browser");
+  const close = {
+    providerSessionId: "billable-browser",
+    providerDurationMs: 60_000,
+    creditsBilled: 2,
+  };
+  await backend.mutation(internal.tasks.browsers.close, close);
+  await backend.mutation(internal.tasks.browsers.close, close);
+  expect(await owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: -9_000 });
+  const { entries, totals } = await backend.run(async (ctx) => ({
+    entries: await ctx.db.query("creditEntries").collect(),
+    totals: await ctx.db.query("creditUsageTotals").collect(),
+  }));
+  expect(entries.filter((entry) => entry.detail.kind === "usage")).toHaveLength(1);
+  expect(totals).toMatchObject([{ kind: "browser", totalCostMicrodollars: 10_000 }]);
+  await expect(backend.mutation(internal.tasks.browsers.admit, { sessionId })).rejects.toThrow();
+});
+
+it("keeps missing browser usage visible and charges a later report without blocking another open", async () => {
+  vi.stubEnv("CREDITS_ENABLED", "true");
+  const { backend, owner, userId, sessionId, open, list } = await setup();
+  await backend.mutation(internal.credits.grantOnSignIn, { userId });
+  expect(await backend.mutation(internal.tasks.browsers.admit, { sessionId })).toBe(true);
+  await open("missing-report");
+  await backend.mutation(internal.tasks.browsers.close, {
+    providerSessionId: "missing-report",
+    providerDurationMs: null,
+    creditsBilled: null,
+  });
+  expect((await list())[0]?.lifecycle).toMatchObject({ kind: "closed", creditsBilled: null });
+  expect(await backend.mutation(internal.tasks.browsers.admit, { sessionId })).toBe(true);
+  await backend.mutation(internal.tasks.browsers.close, {
+    providerSessionId: "missing-report",
+    providerDurationMs: 60_000,
+    creditsBilled: 1,
+  });
+  expect(await owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 495_000 });
+  expect((await list())[0]?.lifecycle).toMatchObject({ creditsBilled: 1 });
+});
+
+it("records orphan browser cleanup and charges its reported usage once", async () => {
+  vi.stubEnv("CREDITS_ENABLED", "true");
+  const { backend, owner, userId, sessionId, list } = await setup();
+  await backend.mutation(internal.credits.grantOnSignIn, { userId });
+  const close = {
+    providerSessionId: "orphan-browser",
+    providerDurationMs: 30_000,
+    creditsBilled: 2,
+    orphan: { sessionId, billable: true, openedAtMs: 1_000 },
+  };
+  await backend.mutation(internal.tasks.browsers.close, close);
+  await backend.mutation(internal.tasks.browsers.close, close);
+  expect((await list())[0]?.lifecycle).toMatchObject({ kind: "closed", creditsBilled: 2 });
+  expect(await owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 490_000 });
+  const entries = await backend.run((ctx) => ctx.db.query("creditEntries").collect());
+  expect(entries.filter((entry) => entry.detail.kind === "usage")).toHaveLength(1);
+});
+
+it("blocks a new browser operation when another charge exhausts the wallet", async () => {
+  vi.stubEnv("CREDITS_ENABLED", "true");
+  const { backend, userId, open } = await setup();
+  await backend.mutation(internal.credits.grantOnSignIn, { userId });
+  await open("active-browser");
+  await backend.run(async (ctx) => {
+    const wallet = await ctx.db
+      .query("creditWallets")
+      .withIndex("by_user_id", (q) => q.eq("userId", userId))
+      .unique();
+    if (!wallet) throw new Error("Missing wallet");
+    await ctx.db.patch(wallet._id, { balanceUnits: 0 });
+  });
+  await expect(
+    backend.mutation(internal.tasks.browsers.prepareOperation, {
+      providerSessionId: "active-browser",
+      toolCallId: "new-step",
+      action: { kind: "open", url: "https://example.com" },
+    }),
+  ).rejects.toThrow();
 });
 
 it("persists real tab telemetry and clicks for the shared replay after the live browser closes", async () => {

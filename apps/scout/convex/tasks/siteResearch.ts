@@ -12,6 +12,7 @@ import { createFirecrawlClient } from "../scout/lib/firecrawl";
 import { diagnosticMessage } from "../scout/lib/redaction";
 import { researchFinishedState, SITE_RESEARCH_TIMEOUT_MS } from "./siteResearchModel";
 import { researchSite, researchRequest, siteBrief, renderBrief } from "./siteResearchSources";
+import { failTaskOnCreditError } from "./creditUsage";
 
 export async function endResearch(
   ctx: ActionCtx,
@@ -19,7 +20,7 @@ export async function endResearch(
   state: typeof researchFinishedState.type,
 ) {
   let credits = research.credits;
-  if (research.jobId) {
+  if (research.jobId && credits === null) {
     try {
       const client = createFirecrawlClient();
       const status = await client.getAgentStatus(research.jobId);
@@ -84,12 +85,16 @@ export const run = internalAction({
   args: { sessionId: v.id("agentsApiSessions"), prompt: v.string() },
   returns: v.boolean(),
   handler: async (ctx, args): Promise<boolean> => {
-    const researchId = await ctx.runMutation(internal.tasks.siteResearchRecords.start, {
-      sessionId: args.sessionId,
-      site: researchSite(args.prompt),
-    });
-    if (!researchId) return false;
-    return advanceTask(ctx, args.sessionId);
+    try {
+      const researchId = await ctx.runMutation(internal.tasks.siteResearchRecords.start, {
+        sessionId: args.sessionId,
+        site: researchSite(args.prompt),
+      });
+      if (!researchId) return false;
+      return await advanceTask(ctx, args.sessionId);
+    } catch (error) {
+      return failTaskOnCreditError(ctx, args.sessionId, error);
+    }
   },
 });
 
@@ -175,17 +180,23 @@ export const process = internalAction({
   args: { researchId: v.id("agentsApiSiteResearch") },
   returns: v.null(),
   handler: async (ctx, args): Promise<null> => {
-    const research = await ctx.runQuery(internal.tasks.siteResearchRecords.job, args);
+    const research = await ctx.runQuery(internal.tasks.siteResearchRecords.job, {
+      researchId: args.researchId,
+    });
     if (!research || research.state.kind !== "running") return null;
     if (research.sessionId !== null || !research.site)
       throw new Error("Expected site-owned research");
     const target = { kind: "site" as const, site: research.site };
     let responsePath = research.responsePath;
     let jobId = research.jobId;
+    let observedCredits = research.credits;
     try {
       if (Date.now() - research._creationTime >= SITE_RESEARCH_TIMEOUT_MS)
         throw new Error(`Site research exceeded ${SITE_RESEARCH_TIMEOUT_MS / 1000} seconds`);
       if (!jobId) {
+        await ctx.runMutation(internal.tasks.siteResearchRecords.admit, {
+          researchId: research._id,
+        });
         const request = researchRequest(research.site);
         const requestPath = "/workspace/research/request.json";
         await saveWorkspaceFile(ctx, {
@@ -211,6 +222,7 @@ export const process = internalAction({
         if (!response.success)
           throw new Error(response.error ?? "Firecrawl research request failed");
         if (response.status !== "processing") {
+          observedCredits = response.creditsUsed ?? null;
           responsePath = "/workspace/research/result.json";
           await saveWorkspaceFile(ctx, {
             target,
@@ -264,7 +276,7 @@ export const process = internalAction({
     } catch (error) {
       await endResearch(
         ctx,
-        { ...research, jobId, responsePath },
+        { ...research, jobId, responsePath, credits: observedCredits },
         {
           kind: "failed",
           finishedAt: Date.now(),

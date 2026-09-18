@@ -1107,9 +1107,21 @@ export function createBrowserHarness(
         },
         abortSignal,
       );
-      if (!session.success || !session.id || !session.cdpUrl) {
+      if (!session.success || !session.id) {
         abortSignal?.throwIfAborted();
         throw new Error(session.error?.trim() || "Firecrawl did not create a browser session");
+      }
+      if (!session.cdpUrl) {
+        const error = new Error("Firecrawl created a browser session without a CDP URL");
+        try {
+          await deleteCreatedBrowserSession(dependencies, session.id);
+        } catch (cleanupError) {
+          throw new AggregateError(
+            [error, cleanupError],
+            `Browser ${session.id} has no CDP URL and cleanup failed`,
+          );
+        }
+        throw error;
       }
       if (abortSignal?.aborted) {
         await abortCreatedBrowserSession(
@@ -1127,14 +1139,28 @@ export function createBrowserHarness(
         interactiveLiveViewUrl = optionalFirecrawlLiveViewUrl(session.interactiveLiveViewUrl);
         providerExpiresAtMs = firecrawlBrowserExpiresAt(session.expiresAt, dependencies.now());
       } catch (error) {
-        await dependencies.deleteBrowser(session.id);
+        try {
+          await deleteCreatedBrowserSession(dependencies, session.id);
+        } catch (cleanupError) {
+          throw new AggregateError(
+            [error, cleanupError],
+            `Browser ${session.id} setup and cleanup both failed`,
+          );
+        }
         throw error;
       }
       let connected: PlaywrightBrowser;
       try {
         connected = await dependencies.connect(session.cdpUrl, abortSignal);
       } catch (error) {
-        await dependencies.deleteBrowser(session.id);
+        try {
+          await deleteCreatedBrowserSession(dependencies, session.id);
+        } catch (cleanupError) {
+          throw new AggregateError(
+            [error, cleanupError],
+            `Browser ${session.id} connection and cleanup both failed`,
+          );
+        }
         throw new Error(`Playwright could not connect to Firecrawl: ${diagnosticMessage(error)}`);
       }
       if (abortSignal?.aborted) {

@@ -10,7 +10,105 @@ import { scoutIsWorking } from "./scout/chatAccess";
 
 const modules = import.meta.glob("./**/*.ts");
 beforeEach(() => vi.useFakeTimers());
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
+});
+
+it.each(["agents_api", "convex_agent"] as const)(
+  "captures paid versus free %s turns without waiting for prior usage",
+  async (engine) => {
+    const { backend, owner, sessionId } = await setup();
+    await backend.run((ctx) =>
+      ctx.db.patch(sessionId, {
+        engine,
+        active: false,
+        state: { kind: "idle" },
+        providerId: "old-free-session",
+        modelTurnId: "old-free-turn",
+        modelUsageIncomplete: true,
+        usage: { inputTokens: 1_000_000, outputTokens: 0, cachedInputTokens: 0 },
+      }),
+    );
+    vi.stubEnv("CREDITS_ENABLED", "true");
+    await owner.mutation(api.tasks.sessions.send, { sessionId, message: "Continue" });
+    expect(await backend.run((ctx) => ctx.db.get(sessionId))).toMatchObject({
+      billingEnabled: true,
+      modelUsageIncomplete: true,
+    });
+    expect((await backend.run((ctx) => ctx.db.get(sessionId)))?.modelTurnId).toBeUndefined();
+    expect(await owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 500_000 });
+    await backend.run((ctx) =>
+      ctx.db.patch(sessionId, { active: false, modelTurnId: "paid-turn" }),
+    );
+    vi.stubEnv("CREDITS_ENABLED", "false");
+    await owner.mutation(api.tasks.sessions.send, { sessionId, message: "Free follow-up" });
+    const free = await backend.run((ctx) => ctx.db.get(sessionId));
+    expect(free?.billingEnabled).toBe(false);
+    expect(free?.modelTurnId).toBeUndefined();
+  },
+);
+
+it.each([true, false])(
+  "resume retains the original billing choice (%s)",
+  async (billingEnabled) => {
+    const { backend, owner, sessionId } = await setup();
+    if (billingEnabled) {
+      const session = await backend.run((ctx) => ctx.db.get(sessionId));
+      if (!session) throw new Error("Task missing");
+      await backend.mutation(internal.credits.grantOnSignIn, { userId: session.userId });
+    }
+    await backend.run((ctx) =>
+      ctx.db.patch(sessionId, {
+        billingEnabled,
+        modelTurnId: "original-turn",
+        state: { kind: "waiting", message: "Sign in", callId: "call", turnId: "original-turn" },
+        browser: {
+          providerSessionId: "browser",
+          cdpUrl: "wss://browser.test",
+          liveViewUrl: null,
+          interactiveLiveViewUrl: null,
+          currentUrl: null,
+        },
+      }),
+    );
+    vi.stubEnv("CREDITS_ENABLED", billingEnabled ? "false" : "true");
+    await owner.mutation(api.tasks.sessions.resume, {
+      sessionId,
+      callId: "call",
+      turnId: "original-turn",
+    });
+    expect(await backend.run((ctx) => ctx.db.get(sessionId))).toMatchObject({
+      billingEnabled,
+      modelTurnId: "original-turn",
+      state: { kind: "checking" },
+    });
+  },
+);
+
+it("rejects new paid work at zero balance without preventing stop or usage reporting", async () => {
+  const { backend, owner, sessionId, userId } = await setup();
+  await backend.mutation(internal.credits.grantOnSignIn, { userId });
+  await backend.run(async (ctx) => {
+    const wallet = await ctx.db
+      .query("creditWallets")
+      .withIndex("by_user_id", (q) => q.eq("userId", userId))
+      .unique();
+    if (!wallet) throw new Error("Wallet missing");
+    await ctx.db.patch(wallet._id, { balanceUnits: 0 });
+    await ctx.db.patch(sessionId, {
+      active: false,
+      providerId: "session-test",
+      modelUsageIncomplete: true,
+    });
+  });
+  vi.stubEnv("CREDITS_ENABLED", "true");
+  await expect(
+    owner.mutation(api.tasks.sessions.send, { sessionId, message: "Continue" }),
+  ).rejects.toThrow("more credits");
+  expect((await owner.query(api.tasks.sessions.controls, { sessionId })).canSend).toBe(true);
+  await owner.mutation(api.tasks.sessions.stop, { sessionId });
+});
 
 async function setup() {
   const backend = convexTest(schema, modules);

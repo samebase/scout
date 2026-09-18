@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { agentsApiUsageValidator } from "./cost";
+import { creditFailureCodeValidator } from "../creditsModel";
 
 export const taskEngine = v.union(v.literal("agents_api"), v.literal("convex_agent"));
 
@@ -15,7 +16,11 @@ export const sessionState = v.union(
   }),
   v.object({ kind: v.literal("idle") }),
   v.object({ kind: v.literal("stopped") }),
-  v.object({ kind: v.literal("failed"), error: v.string() }),
+  v.object({
+    kind: v.literal("failed"),
+    error: v.string(),
+    creditFailureCode: v.optional(creditFailureCodeValidator),
+  }),
 );
 
 export const browserHandle = v.object({
@@ -28,6 +33,14 @@ export const browserHandle = v.object({
 });
 
 export const sessionUsage = agentsApiUsageValidator;
+
+// Captured in scheduled args so later turns cannot change who or what is billed.
+export const agentsTurnBilling = v.object({
+  userId: v.id("users"),
+  providerId: v.string(),
+  model: v.string(),
+  turnId: v.union(v.string(), v.null()),
+});
 
 export const sessionItem = v.object({
   providerItemId: v.string(),
