@@ -25,6 +25,7 @@ const remote = vi.hoisted(() => {
     reservedUnits: 0,
     walletMissing: false,
     approved: true,
+    usageEnabled: true,
     checkoutEnabled: true,
     history: vi.fn(),
     historyStatus: "Exhausted",
@@ -56,6 +57,7 @@ vi.mock("convex/react", () => ({
           unitsPerCredit: 10_000,
           packCredits: 200,
           packPriceCents: 500,
+          usageEnabled: remote.usageEnabled,
           checkoutEnabled: remote.checkoutEnabled,
         };
       case "creditPurchases:status":
@@ -90,6 +92,7 @@ beforeEach(() => {
   remote.reservedUnits = 0;
   remote.walletMissing = false;
   remote.approved = true;
+  remote.usageEnabled = true;
   remote.checkoutEnabled = true;
   remote.purchase = null;
   remote.historyStatus = "Exhausted";
@@ -143,6 +146,18 @@ test("keeps the offer visible but disables checkout when purchases are unavailab
   );
   expect(screen.getByText("Credit purchases are unavailable right now.")).toBeTruthy();
   expect(remote.createCheckout).not.toHaveBeenCalled();
+});
+
+test("hides the entire credits panel when usage is disabled", () => {
+  remote.usageEnabled = false;
+  remote.checkoutEnabled = false;
+  const { container, rerender } = render(<CreditsPanel purchaseId={undefined} />);
+
+  expect(container.firstChild).toBeNull();
+
+  remote.walletMissing = true;
+  rerender(<CreditsPanel purchaseId={undefined} />);
+  expect(remote.ensureWallet).not.toHaveBeenCalled();
 });
 
 test("requires account approval to buy credits", () => {
@@ -213,4 +228,11 @@ test("links the navigation balance to settings", async () => {
   expect(balance.getAttribute("href")).toBe("/settings");
   fireEvent.click(balance);
   expect(await screen.findByText("Settings page")).toBeTruthy();
+});
+
+test("hides the navigation balance when usage is disabled", () => {
+  remote.usageEnabled = false;
+  const { container } = render(<CreditBalanceLink />);
+
+  expect(container.firstChild).toBeNull();
 });

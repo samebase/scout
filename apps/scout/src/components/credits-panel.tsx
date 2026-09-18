@@ -37,7 +37,7 @@ function entryLabel(detail: CreditDetail) {
 export function CreditBalanceLink() {
   const balance = useQuery(api.credits.balance, {});
   const offer = useQuery(api.credits.offer, {});
-  if (!balance || !offer) return null;
+  if (!balance || !offer?.usageEnabled) return null;
 
   const available = credits.format(balance.availableUnits / offer.unitsPerCredit);
   return (
@@ -67,7 +67,7 @@ export function CreditsPanel({ purchaseId }: { purchaseId: string | undefined })
   const [checkoutState, setCheckoutState] = useState<"idle" | "pending" | "failed">("idle");
 
   useEffect(() => {
-    if (balance !== null) return;
+    if (offer?.usageEnabled !== true || balance !== null) return;
     let active = true;
     void ensureWallet({}).catch(() => {
       if (active) setWalletError(true);
@@ -75,7 +75,7 @@ export function CreditsPanel({ purchaseId }: { purchaseId: string | undefined })
     return () => {
       active = false;
     };
-  }, [balance, ensureWallet]);
+  }, [balance, ensureWallet, offer?.usageEnabled]);
 
   const canBuy = viewer?.kind === "account" && canAccess("access_play", viewer.accessKeys);
   const buy = async () => {
@@ -88,6 +88,8 @@ export function CreditsPanel({ purchaseId }: { purchaseId: string | undefined })
       setCheckoutState("failed");
     }
   };
+
+  if (offer?.usageEnabled === false) return null;
 
   return (
     <section className="surface-panel mt-8 p-5 sm:p-6" aria-labelledby="credits-heading">
