@@ -1482,7 +1482,14 @@ New $5 packs contain 400 credits, while existing balances and older checkout qua
 Polar discount codes can cover part or all of the price; refunds revoke credits in proportion
 to the amount paid after discount (`apps/scout/convex/creditPolicy.ts`, `apps/scout/convex/creditPurchases.ts`).
 
-### 2026-09-18 - working tree - v239
+### 2026-09-18 - 02da79e - v239
 
 Credit checkout fills in the signed-in user's Scout email in Polar, while the account ID
 continues to link the purchased credits to the correct balance (`apps/scout/convex/polar.ts`).
+
+### 2026-09-18 - working tree - v238
+
+Documented what Scout stores and shares during AI, browser, and email tasks, including public
+recordings and history retained after account closure. Drafted privacy and terms text using
+the Samebase operator, with research for the remaining publication decisions and legal routes
+(`apps/scout/src/content/`, `docs/legal-research.md`).

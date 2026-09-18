@@ -13,6 +13,11 @@ For the complete provider setup, use the
 [Samebase do-it-yourself guide](https://samebase.com/docs/do-it-yourself). This README covers work
 inside the repository.
 
+Draft [privacy policy](./apps/scout/src/content/privacy-policy.md) and
+[terms and conditions](./apps/scout/src/content/terms-of-service.md) are available for review.
+They are not published or effective. See [legal research](./docs/legal-research.md) for sources,
+unresolved publication details, and the planned `/privacy` and `/terms` routes.
+
 ## Stack
 
 - React 19 and TanStack Start in SPA mode
