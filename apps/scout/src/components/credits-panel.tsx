@@ -57,7 +57,7 @@ export function CreditsPanel() {
     { initialNumItems: 10 },
   );
   const ensureWallet = useMutation(api.credits.ensureWallet);
-  const createCheckout = useAction(api.polar.createCheckout);
+  const createCheckout = useAction(api.polar.checkout);
   const [walletError, setWalletError] = useState(false);
   const [checkoutState, setCheckoutState] = useState<"idle" | "pending" | "failed">("idle");
 

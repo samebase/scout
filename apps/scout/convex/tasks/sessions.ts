@@ -196,6 +196,40 @@ export const cost = query({
   },
 });
 
+// Both task engines persist cumulative model usage on the session. The hosted
+// search calls are persisted as items, so this read gives the credit driver one
+// monotonic snapshot without including browser charges settled separately.
+export const creditUsage = internalQuery({
+  args: { sessionId: v.id("agentsApiSessions") },
+  returns: v.object({
+    modelCostUsd: v.union(v.number(), v.null()),
+    webSearchCalls: v.union(v.number(), v.null()),
+  }),
+  handler: async (ctx, args) => {
+    const session = await requireSession(ctx, args.sessionId);
+    const searches = await ctx.db
+      .query("agentsApiItems")
+      .withIndex("by_session_id_and_kind", (q) =>
+        q.eq("sessionId", session._id).eq("kind", "web_search_call"),
+      )
+      .take(1_001);
+    const cost = estimateAgentsApiCost({
+      model: session.model,
+      reportedModelUsd: session.reportedModelUsd ?? null,
+      modelUsageIncomplete: session.modelUsageIncomplete ?? false,
+      usage: session.usage,
+      webSearchCalls: 0,
+      browsers: [],
+      firecrawlUsdPerCredit: null,
+      now: 0,
+    });
+    return {
+      modelCostUsd: cost.modelEstimateUsd,
+      webSearchCalls: searches.length > 1_000 ? null : searches.length,
+    };
+  },
+});
+
 export const get = query({
   access: "access_lab",
   args: { sessionId: v.id("agentsApiSessions") },

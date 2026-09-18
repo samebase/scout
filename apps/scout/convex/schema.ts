@@ -7,6 +7,7 @@ import {
   creditReservationValidator,
   creditTermsValidator,
 } from "./creditsModel";
+import { creditPurchaseValidator } from "./creditPurchasesModel";
 import { requestCheckRecord } from "./tasks/requestCheckModel";
 import { convexContextRecord } from "./tasks/convexAgentModel";
 import { siteProfile, siteResearchRecord } from "./tasks/siteResearchModel";
@@ -93,6 +94,10 @@ export default defineSchema({
     "by_session_id_and_source_key",
     ["sessionId", "sourceKey"],
   ),
+  creditPurchases: defineTable(creditPurchaseValidator)
+    .index("by_product_and_environment", ["terms.productId", "terms.environment"])
+    .index("by_user_id", ["userId"])
+    .index("by_order_id", ["orderId"]),
   taskConvexContexts: defineTable(convexContextRecord).index("by_session_id", ["sessionId"]),
   agentsApiSiteResearch: defineTable(siteResearchRecord).index("by_session_id", ["sessionId"]),
   agentsApiScreenshots: defineTable(screenshotRecord)

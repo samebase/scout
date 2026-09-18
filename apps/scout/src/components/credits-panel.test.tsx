@@ -59,7 +59,7 @@ vi.mock("convex/react", () => ({
     return remote.ensureWallet;
   },
   useAction: (reference: FunctionReference<"action">) => {
-    if (getFunctionName(reference) !== "polar:createCheckout")
+    if (getFunctionName(reference) !== "polar:checkout")
       throw new Error(`Unexpected action: ${getFunctionName(reference)}`);
     return remote.createCheckout;
   },

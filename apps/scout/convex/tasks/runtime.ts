@@ -9,6 +9,7 @@ import * as agentsApi from "./agentsApi";
 import * as convexAgent from "./convexAgent";
 import { closeBrowser } from "./execution";
 import { endResearch } from "./siteResearch";
+import { recordTaskCreditUsage } from "./creditUsage";
 
 export const begin = internalAction({
   args: { sessionId: v.id("agentsApiSessions"), command },
@@ -31,12 +32,17 @@ export const advance = internalAction({
   returns: v.boolean(),
   handler: async (ctx, args): Promise<boolean> => {
     const session = await ctx.runQuery(internal.tasks.sessions.cleanupResources, args);
+    let continues: boolean;
     switch (session.engine) {
       case "agents_api":
-        return agentsApi.advance(ctx, args);
+        continues = await agentsApi.advance(ctx, args);
+        break;
       case "convex_agent":
-        return convexAgent.advance(ctx, args);
+        continues = await convexAgent.advance(ctx, args);
+        break;
     }
+    await recordTaskCreditUsage(ctx, args.sessionId);
+    return continues;
   },
 });
 
@@ -55,6 +61,7 @@ export const refresh = action({
         await convexAgent.refreshExecution(ctx, session);
         break;
     }
+    await recordTaskCreditUsage(ctx, session._id);
     return null;
   },
 });
@@ -99,6 +106,7 @@ export const cleanup = internalAction({
         await convexAgent.refreshExecution(ctx, session);
         break;
     }
+    await recordTaskCreditUsage(ctx, session._id);
     return null;
   },
 });

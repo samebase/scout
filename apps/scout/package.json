@@ -43,6 +43,7 @@
     "@convex-dev/static-hosting": "^0.2.1",
     "@convex-dev/workflow": "^0.4.6",
     "@convex-dev/workpool": "^0.4.10",
+    "@polar-sh/sdk": "1.0.0-alpha.20",
     "@samebase/sidebars": "^0.1.2",
     "@shadcn/react": "^0.3.0",
     "@tailwindcss/vite": "^4.3.0",

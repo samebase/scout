@@ -9,6 +9,7 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import { useSyncExternalStore, type ReactNode } from "react";
+import { getFunctionName, type FunctionReference } from "convex/server";
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
 import { readAccessKeysForRole, type ViewerRole } from "../../shared/accessModel";
 import { RouteAccessOutlet } from "./route-access";
@@ -35,10 +36,15 @@ vi.mock("convex/react", () => ({
     remote.authenticated ? children : null,
   Unauthenticated: ({ children }: { children: ReactNode }) =>
     remote.authenticated ? null : children,
-  useQuery: () => {
+  useQuery: (reference: FunctionReference<"query">) => {
     useSyncExternalStore(subscribe, () => remote.revision);
+    if (getFunctionName(reference) === "credits:balance") return null;
+    if (getFunctionName(reference) === "credits:offer") return undefined;
     return remote.values.get("viewer");
   },
+  useMutation: () => async () => {},
+  useAction: () => async () => {},
+  usePaginatedQuery: () => ({ results: [], status: "Exhausted", loadMore: () => {} }),
 }));
 vi.mock("@convex-dev/auth/react", () => ({
   useAuthActions: () => ({ signOut: async () => {}, signIn: async () => ({ signingIn: true }) }),
