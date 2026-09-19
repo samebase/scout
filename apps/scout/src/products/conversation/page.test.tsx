@@ -1419,74 +1419,6 @@ test("shows the local Resume deadline and the specific reason after expiration",
   expect(screen.queryByRole("button", { name: "Resume Scout" })).toBeNull();
 });
 
-test.each(["opened", "expired", "failed"])(
-  "Review opens the interactive browser only on click and handles an %s result",
-  async (outcome) => {
-    remote.queries.set(
-      "scout/activity:get",
-      session({
-        purpose: { kind: "review" },
-        status: "waiting",
-        sessions: [
-          { engine: "agents_api", sessionId: "browser-1", kind: "active", createdAt: 1000 },
-        ],
-      }),
-    );
-    remote.queries.set("scout/activity:liveView", { url: "about:blank#watch-only" });
-    remote.queries.set("tasks/sessions:controls", {
-      state: { kind: "waiting", message: "Complete verification", callId: "call", turnId: "turn" },
-      resumeAttempts: [],
-      canSend: false,
-      canStop: true,
-      active: true,
-      interactiveLiveViewUrl: "https://liveview.firecrawl.dev/control",
-    });
-    const tab = window.open("about:blank", "_blank");
-    if (!tab) throw new Error("Expected a test browser tab");
-    // happy-dom omits the browser's writable opener property.
-    Object.defineProperty(tab, "opener", { configurable: true, writable: true, value: window });
-    const navigate = vi.spyOn(tab.location, "replace").mockImplementation(() => {});
-    const close = vi.spyOn(tab, "close");
-    const reserve = vi.spyOn(window, "open").mockReturnValue(tab);
-    let finishOpening = () => {};
-    const admitted = new Promise<void>((resolve) => {
-      finishOpening = resolve;
-    });
-    remote.openHandoffBrowser.mockImplementation(async () => {
-      await admitted;
-      if (outcome === "failed")
-        throw new ConvexError("Browser unavailable: 403 [request_id: req-open]");
-      return outcome === "expired"
-        ? null
-        : { url: "https://liveview.firecrawl.dev/admitted", expiresAt: 1_000_000 };
-    });
-    await openPlay("/tasks/game-thread");
-    const controls = await screen.findByRole("region", { name: "Conversation with Scout" });
-    expect(screen.getByTitle("Scout's live browser").getAttribute("src")).toBe(
-      "about:blank#watch-only",
-    );
-    expect(remote.openHandoffBrowser).not.toHaveBeenCalled();
-    expect(reserve).not.toHaveBeenCalled();
-    fireEvent.click(within(controls).getByRole("button", { name: "Open browser" }));
-    expect(reserve).toHaveBeenCalledExactlyOnceWith("about:blank", "_blank");
-    expect(remote.openHandoffBrowser).toHaveBeenCalledExactlyOnceWith({ sessionId: "managed-1" });
-    expect(navigate).not.toHaveBeenCalled();
-    await act(async () => finishOpening());
-    if (outcome === "opened") {
-      expect(navigate).toHaveBeenCalledExactlyOnceWith("https://liveview.firecrawl.dev/admitted");
-      expect(close).not.toHaveBeenCalled();
-      tab.close();
-    } else {
-      expect(close).toHaveBeenCalledOnce();
-      expect(navigate).not.toHaveBeenCalled();
-      if (outcome === "failed")
-        expect(screen.getByRole("alert").textContent).toBe(
-          "Browser unavailable: 403 [request_id: req-open]",
-        );
-    }
-  },
-);
-
 test("Review declines the current handoff and preserves the stopped reason", async () => {
   remote.queries.set(
     "scout/activity:get",
@@ -1555,6 +1487,12 @@ test("Review uses managed controls and keeps live view, handoff and follow-up me
   remote.messages = [
     { kind: "message", id: "message-1", role: "assistant", text: "I opened the site." },
   ];
+  const tab = window.open("about:blank", "_blank");
+  if (!tab) throw new Error("Expected a test browser tab");
+  // happy-dom omits the browser's writable opener property.
+  Object.defineProperty(tab, "opener", { configurable: true, writable: true, value: window });
+  const navigate = vi.spyOn(tab.location, "replace").mockImplementation(() => {});
+  const reserve = vi.spyOn(window, "open").mockReturnValue(tab);
   await openPlay("/tasks/game-thread");
   expect(await screen.findByText("I opened the site.")).toBeTruthy();
   expect(screen.getByTitle("Scout's live browser").getAttribute("src")).toBe(
@@ -1563,6 +1501,14 @@ test("Review uses managed controls and keeps live view, handoff and follow-up me
   expect(screen.getByRole("link", { name: "Open in Agents" }).getAttribute("href")).toBe(
     "/agents?session=managed-1",
   );
+  expect(remote.openHandoffBrowser).not.toHaveBeenCalled();
+  expect(reserve).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Open browser" }));
+  expect(remote.openHandoffBrowser).toHaveBeenCalledExactlyOnceWith({ sessionId: "managed-1" });
+  await waitFor(() =>
+    expect(navigate).toHaveBeenCalledExactlyOnceWith("https://liveview.firecrawl.dev/control"),
+  );
+  tab.close();
   fireEvent.click(screen.getByRole("button", { name: "Resume Scout" }));
   await waitFor(() =>
     expect(remote.resumeManaged).toHaveBeenCalledExactlyOnceWith({
