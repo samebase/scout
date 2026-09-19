@@ -25,6 +25,8 @@ import { omitNullish } from "../../../shared/omitNullish";
 const remote = vi.hoisted(() => ({
   authenticated: true,
   messages: Array<FunctionReturnType<typeof api.scout.activity.messages>["page"][number]>(),
+  messageStatus: "Exhausted",
+  loadEarlierMessages: vi.fn(),
   revision: 0,
   subscribers: new Set<() => void>(),
   queries: new Map<string, unknown>(),
@@ -87,7 +89,11 @@ vi.mock("convex/react", () => ({
     useSyncExternalStore(subscribe, () => remote.revision);
     remote.queryCalls(getFunctionName(reference), args);
     if (getFunctionName(reference) === "scout/activity:messages")
-      return { results: remote.messages, status: "Exhausted" };
+      return {
+        results: remote.messages,
+        status: remote.messageStatus,
+        loadMore: remote.loadEarlierMessages,
+      };
     return remote.queries.get(getFunctionName(reference));
   },
   useMutation: (reference: FunctionReference<"mutation">) => {
@@ -140,6 +146,8 @@ function session(overrides = {}) {
 beforeEach(() => {
   vi.spyOn(window, "innerWidth", "get").mockReturnValue(390);
   remote.messages = [];
+  remote.messageStatus = "Exhausted";
+  remote.loadEarlierMessages.mockReset();
   remote.authenticated = true;
   remote.queryCalls.mockClear();
   remote.screenshotUrl.mockReset().mockResolvedValue(null);
@@ -2188,6 +2196,65 @@ describe("Play invitation", () => {
     );
     expect(document.body.textContent).not.toContain("another-game");
   });
+});
+
+test("scrolling near the start loads earlier messages one page at a time", async () => {
+  remote.messageStatus = "CanLoadMore";
+  remote.messages = [{ kind: "message", id: "recent", role: "assistant", text: "Recent message" }];
+  remote.loadEarlierMessages.mockImplementation(() => {
+    remote.messageStatus = "LoadingMore";
+    remote.revision++;
+    remote.subscribers.forEach((notify) => notify());
+  });
+  await openPlay("/play?thread=game-thread");
+  const viewport = await screen.findByRole("region", { name: "Session messages" });
+  const recentMessage = screen.getByText("Recent message");
+  expect(screen.queryByRole("button", { name: "Earlier messages" })).toBeNull();
+  expect(remote.loadEarlierMessages).not.toHaveBeenCalled();
+
+  fireEvent.scroll(viewport, { target: { scrollTop: 200 } });
+  expect(remote.loadEarlierMessages).not.toHaveBeenCalled();
+  fireEvent.scroll(viewport, { target: { scrollTop: 241 } });
+  expect(remote.loadEarlierMessages).not.toHaveBeenCalled();
+  fireEvent.scroll(viewport, { target: { scrollTop: 240 } });
+  expect(remote.loadEarlierMessages).toHaveBeenCalledExactlyOnceWith(50);
+  expect(screen.getByText("Loading earlier messages…").getAttribute("role")).toBe("status");
+  expect(within(screen.getByRole("log")).queryByText("Loading earlier messages…")).toBeNull();
+  fireEvent.scroll(viewport, { target: { scrollTop: 0 } });
+  expect(remote.loadEarlierMessages).toHaveBeenCalledTimes(1);
+
+  act(() => {
+    remote.messages.push({ kind: "message", id: "older", role: "user", text: "Older message" });
+    remote.messageStatus = "CanLoadMore";
+    remote.revision++;
+    remote.subscribers.forEach((notify) => notify());
+  });
+  expect(screen.getByRole("region", { name: "Session messages" })).toBe(viewport);
+  expect(screen.getByText("Recent message")).toBe(recentMessage);
+  expect(screen.queryByText("Loading earlier messages…")).toBeNull();
+  expect(screen.getByRole("log").textContent).toBe("Older messagePipRecent message");
+
+  fireEvent.scroll(viewport, { target: { scrollTop: 1000 } });
+  fireEvent.scroll(viewport, { target: { scrollTop: 200 } });
+  expect(remote.loadEarlierMessages).toHaveBeenCalledTimes(2);
+  act(() => {
+    remote.messageStatus = "Exhausted";
+    remote.revision++;
+    remote.subscribers.forEach((notify) => notify());
+  });
+  fireEvent.scroll(viewport, { target: { scrollTop: 0 } });
+  expect(remote.loadEarlierMessages).toHaveBeenCalledTimes(2);
+  expect(screen.queryByText("Loading earlier messages…")).toBeNull();
+});
+
+test("scrolling while the first message page loads does not request history", async () => {
+  remote.messageStatus = "LoadingFirstPage";
+  await openPlay("/play?thread=game-thread");
+  expect(await screen.findByText("Loading messages…")).toBeTruthy();
+  fireEvent.scroll(screen.getByRole("region", { name: "Session messages" }), {
+    target: { scrollTop: 0 },
+  });
+  expect(remote.loadEarlierMessages).not.toHaveBeenCalled();
 });
 
 test("shows persisted activity and assistant commentary while hiding tool payloads", async () => {

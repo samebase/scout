@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-19T11:42:25Z
+- **Last updated:** 2026-09-19T12:22:59Z
 
 ## Log
 
@@ -1515,8 +1515,14 @@ Both runtimes share account recording and retain a private explanation of how si
 Resume checks recognize Scout's inbox access, allowing email verification after a human solves a CAPTCHA.
 Resume history remains visible after stopping or following up; cancellation and resume decisions are logged.
 
-### 2026-09-19 - working tree - v244
+### 2026-09-19 - 7ad6f50 - v244
 
 Account recording keeps the same login-method format between model generation and tool execution.
 This fixes Convex Agent rejecting its own saved account calls after a successful signup
 (`apps/scout/convex/scout/serviceAccountTool.ts`).
+
+### 2026-09-19 - working tree - v245
+
+Chat loads earlier messages as the reader scrolls near the top, keeping their place when history arrives.
+A loading indicator replaces the button without shifting the message list
+(`apps/scout/src/products/conversation/page.tsx`).

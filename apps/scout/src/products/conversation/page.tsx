@@ -869,6 +869,7 @@ function ConversationSession({
     { threadId },
     { initialNumItems: 50 },
   );
+  const lastMessageScrollTop = useRef(0);
   const sendManaged = useMutation(api.tasks.sessions.send);
   const retryManaged = useMutation(api.tasks.sessions.retryMessage);
   const stopManaged = useMutation(api.tasks.sessions.stop);
@@ -1057,24 +1058,24 @@ function ConversationSession({
       <div hidden={showingWalkthrough} className="min-h-0 flex-1 overflow-hidden">
         <MessageScrollerProvider autoScroll defaultScrollPosition="end">
           <MessageScroller>
-            <MessageScrollerViewport aria-label="Session messages" className="[mask-image:none]">
+            <MessageScrollerViewport
+              aria-label="Session messages"
+              className="[mask-image:none]"
+              onScroll={(event) => {
+                const scrollTop = event.currentTarget.scrollTop;
+                const scrolledUp = scrollTop < lastMessageScrollTop.current;
+                lastMessageScrollTop.current = scrollTop;
+                if (scrolledUp && scrollTop <= 240 && messages.status === "CanLoadMore") {
+                  messages.loadMore(50);
+                }
+              }}
+            >
               <MessageScrollerContent
                 className="gap-2 px-4 pt-5 pb-7"
                 role="log"
                 aria-label="Session messages"
                 aria-live="polite"
               >
-                {messages.status === "CanLoadMore" && (
-                  <button
-                    type="button"
-                    className={cn(playTextLink, "self-center py-2")}
-                    onClick={() => {
-                      messages.loadMore(50);
-                    }}
-                  >
-                    Earlier messages
-                  </button>
-                )}
                 {messages.status === "LoadingFirstPage" && (
                   <p role="status" className="text-sm text-muted-foreground">
                     Loading messages…
@@ -1134,6 +1135,14 @@ function ConversationSession({
                 )}
               </MessageScrollerContent>
             </MessageScrollerViewport>
+            {messages.status === "LoadingMore" && (
+              <p
+                role="status"
+                className="pointer-events-none absolute inset-x-0 top-0 bg-background/90 py-2 text-center text-sm text-muted-foreground"
+              >
+                Loading earlier messages…
+              </p>
+            )}
             <MessageScrollerButton className="size-11" />
           </MessageScroller>
         </MessageScrollerProvider>
