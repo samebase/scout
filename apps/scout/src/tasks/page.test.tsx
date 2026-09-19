@@ -14,6 +14,7 @@ import { useSyncExternalStore } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
 import { ROLE_ACCESS_GRANTS } from "../../shared/accessModel";
 import { omitNullish } from "../../shared/omitNullish";
+import { HANDOFF_EXPIRED_REASON, handoffDeadlineMessage } from "../../shared/handoff";
 import { AppNavigation } from "../components/app-navigation";
 import { RouteAccessOutlet } from "../components/route-access";
 import { Route as AgentsRoute } from "../routes/agents";
@@ -853,6 +854,29 @@ test("provider-reported model costs use the shared cost details without OpenAI e
   expect(
     screen.queryByText("Estimated OpenAI cost; Firecrawl billed separately in credits."),
   ).toBeNull();
+});
+
+test("shows the local handoff deadline and keeps expiration visible if cleanup fails", async () => {
+  const expiresAt = Date.parse("2026-09-19T12:45:00Z");
+  remote.queries.set(
+    "tasks/sessions:get",
+    session({
+      kind: "waiting",
+      message: "Complete verification",
+      callId: "call",
+      turnId: "turn",
+      expiresAt,
+    }),
+  );
+  await open("/agents?session=session-1");
+  expect(await screen.findByText(handoffDeadlineMessage(expiresAt, undefined))).toBeTruthy();
+  updateQuery("tasks/sessions:get", {
+    ...session({ kind: "stopped", reason: "handoff_expired" }),
+    active: true,
+    cleanupError: "Browser provider unavailable",
+  });
+  expect(await screen.findByText(HANDOFF_EXPIRED_REASON)).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Retry stop" })).toBeTruthy();
 });
 
 test("a saved link opens a session outside the recent list through the validated get query", async () => {

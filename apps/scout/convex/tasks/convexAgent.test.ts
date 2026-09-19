@@ -621,6 +621,7 @@ it("pauses an unresolved handoff without running later calls", async () => {
     ctx.db.patch(task.sessionId, {
       browser: {
         providerSessionId: "browser",
+        providerExpiresAtMs: Date.now() + 3_600_000,
         cdpUrl: "wss://example.test",
         interactiveLiveViewUrl: "https://example.test",
         liveViewUrl: null,

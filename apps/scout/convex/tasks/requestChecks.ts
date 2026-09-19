@@ -9,7 +9,9 @@ import { syncChatSite } from "../scout/siteListings";
 import { estimateAgentsApiCost } from "./cost";
 import { handoffEvidenceValidator } from "./handoffEvidenceModel";
 import { requestCheckCreditSourceKey } from "./requestCheckCredits";
-import { MAX_SESSION_CHECKS, requestCheckFinishedState, handoffContext } from "./requestCheckModel";
+import { MAX_SESSION_CHECKS, requestCheckFinishedState } from "./requestCheckModel";
+import { handoffContext } from "./model";
+import { internal } from "../_generated/api";
 
 export function getInitialCheck(ctx: Pick<QueryCtx, "db">, sessionId: Id<"agentsApiSessions">) {
   return ctx.db
@@ -242,6 +244,14 @@ export const finish = internalMutation({
         await ctx.db.patch(session._id, { state: { kind: "failed", error }, active: false });
     } else if (error !== null) {
       await ctx.db.patch(session._id, { state: { kind: "waiting", ...check.handoff } });
+      if (check.handoff.expiresAt !== undefined) {
+        await ctx.scheduler.runAt(check.handoff.expiresAt, internal.tasks.sessions.expireHandoff, {
+          sessionId: session._id,
+          callId: check.handoff.callId,
+          turnId: check.handoff.turnId,
+          expiresAt: check.handoff.expiresAt,
+        });
+      }
     }
     console.info("Task request check finished", {
       sessionId: session._id,

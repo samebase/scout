@@ -21,6 +21,7 @@ import { homeSearch } from "../../lib/homeSearch";
 import { api } from "../../../convex/_generated/api";
 import { ROLE_ACCESS_GRANTS } from "../../../shared/accessModel";
 import { omitNullish } from "../../../shared/omitNullish";
+import { HANDOFF_EXPIRED_REASON, handoffDeadlineMessage } from "../../../shared/handoff";
 
 const remote = vi.hoisted(() => ({
   authenticated: true,
@@ -1348,6 +1349,46 @@ test("legacy Convex sessions keep transcript and replay without mounting executi
     expect.anything(),
   );
   expect(remote.queryCalls).not.toHaveBeenCalledWith("humanHandoffs:forSession", expect.anything());
+});
+
+test("shows the local Resume deadline and the specific reason after expiration", async () => {
+  const expiresAt = Date.parse("2026-09-19T12:45:00Z");
+  remote.queries.set(
+    "scout/activity:get",
+    session({ purpose: { kind: "review" }, status: "waiting" }),
+  );
+  const controls = {
+    state: {
+      kind: "waiting",
+      message: "Complete verification",
+      callId: "call",
+      turnId: "turn",
+      expiresAt,
+    },
+    resumeAttempts: [],
+    canSend: false,
+    canStop: true,
+    active: true,
+    interactiveLiveViewUrl: null,
+  };
+  remote.queries.set("tasks/sessions:controls", controls);
+  await openPlay("/tasks/game-thread");
+  expect(await screen.findByText(handoffDeadlineMessage(expiresAt, undefined))).toBeTruthy();
+  act(() => {
+    remote.queries.set(
+      "scout/activity:get",
+      session({ purpose: { kind: "review" }, status: "stopped" }),
+    );
+    remote.queries.set("tasks/sessions:controls", {
+      ...controls,
+      state: { kind: "stopped", reason: "handoff_expired" },
+      active: false,
+    });
+    remote.revision++;
+    remote.subscribers.forEach((listener) => listener());
+  });
+  expect(await screen.findByText(HANDOFF_EXPIRED_REASON)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Resume Scout" })).toBeNull();
 });
 
 test("Review uses managed controls and keeps live view, handoff and follow-up messages on the same page", async () => {

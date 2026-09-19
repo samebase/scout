@@ -6,6 +6,14 @@ import { taskFailureDiagnosticValidator } from "../../shared/taskFailure";
 
 export const taskEngine = v.union(v.literal("agents_api"), v.literal("convex_agent"));
 
+export const handoffContext = v.object({
+  message: v.string(),
+  callId: v.string(),
+  turnId: v.string(),
+  // Existing handoffs and resume checks predate saved deadlines.
+  expiresAt: v.optional(v.number()),
+});
+
 export const pendingMessage = v.object({
   message: v.string(),
   workflowId: vWorkflowId,
@@ -16,14 +24,9 @@ export const sessionState = v.union(
   v.object({ kind: v.literal("starting") }),
   v.object({ kind: v.literal("running"), resumedAtMs: v.optional(v.number()) }),
   v.object({ kind: v.literal("checking"), checkId: v.id("agentsApiRequestChecks") }),
-  v.object({
-    kind: v.literal("waiting"),
-    message: v.string(),
-    callId: v.string(),
-    turnId: v.string(),
-  }),
+  handoffContext.extend({ kind: v.literal("waiting") }),
   v.object({ kind: v.literal("idle") }),
-  v.object({ kind: v.literal("stopped") }),
+  v.object({ kind: v.literal("stopped"), reason: v.optional(v.literal("handoff_expired")) }),
   v.object({
     kind: v.literal("failed"),
     error: v.string(),
@@ -34,6 +37,8 @@ export const sessionState = v.union(
 
 export const browserHandle = v.object({
   providerSessionId: v.string(),
+  // Browsers opened before handoff expiration did not retain Firecrawl's expiry.
+  providerExpiresAtMs: v.optional(v.number()),
   cdpUrl: v.string(),
   interactiveLiveViewUrl: v.union(v.string(), v.null()),
   liveViewUrl: v.union(v.string(), v.null()),
