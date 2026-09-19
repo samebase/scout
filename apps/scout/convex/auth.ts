@@ -1,6 +1,8 @@
 import { Password } from "@convex-dev/auth/providers/Password";
 import type { ConvexCredentialsUserConfig } from "@convex-dev/auth/providers/ConvexCredentials";
 import { convexAuth } from "@convex-dev/auth/server";
+import { ConvexError } from "convex/values";
+import { TERMS_ACCEPTANCE_REQUIRED } from "../shared/terms";
 import { internal } from "./_generated/api";
 import { normalizeAuthEmail } from "./authEmail";
 import { emailVerificationCode, passwordResetCode } from "./authEmails";
@@ -23,6 +25,10 @@ function createPasswordProvider(
       assertPasswordLoggingIsSafe();
       const email = normalizeAuthEmail(params["email"]);
       params["email"] = email;
+      if (params["flow"] === "signUp") {
+        if (params["termsAccepted"] !== "true") throw new ConvexError(TERMS_ACCEPTANCE_REQUIRED);
+        return { email, termsAcceptedAt: Date.now() };
+      }
       return { email };
     },
   });

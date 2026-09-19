@@ -12,6 +12,7 @@ export const viewerAccessValidator = v.union(
   v.object({ kind: v.literal("unavailable") }),
   v.object({ kind: v.literal("deleting") }),
   v.object({ kind: v.literal("deleted") }),
+  v.object({ kind: v.literal("terms_required"), userId: v.id("users") }),
   accountAccessFields.extend({
     kind: v.literal("account"),
     email: v.union(v.string(), v.null()),

@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-19T12:50:15Z
+- **Last updated:** 2026-09-19T12:59:48Z
 
 ## Log
 
@@ -1534,9 +1534,16 @@ The email and task banners show that deadline; missed handoffs stop with a saved
 and release the browser through existing cleanup. Resume checks preserve the deadline, and
 selected older handoffs can receive a deadline through bounded internal maintenance.
 
-### 2026-09-19 - working tree - v247
+### 2026-09-19 - fee37f4 - v247
 
 About is linked from the main bar and explains the project’s purpose, browser evidence,
 and shared reviews. Its title, section headings, and larger, darker body text use three
 consistent styles (`apps/scout/src/routes/about.tsx`,
 `apps/scout/src/components/app-navigation.tsx`).
+
+### 2026-09-19 - working tree - v248
+
+Signup now requires explicit terms acceptance, and returning accounts review the terms before continuing.
+The user record stores the acceptance timestamp.
+Policy pages, sign-out, and account closure remain available before acceptance
+(`apps/scout/convex/accounts.ts`, `apps/scout/src/components/terms-acceptance.tsx`).

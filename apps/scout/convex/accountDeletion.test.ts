@@ -166,6 +166,7 @@ async function setup(email = "deletion@example.test", isApproved = false) {
 
 test("account deletion stops a managed Review before deleting the owner", async () => {
   const { backend, viewer, userId, scoutId } = await setup("review-deletion@example.test", true);
+  await viewer.mutation(api.accounts.acceptTerms, {});
   const { threadId } = await viewer.mutation(api.scout.chats.startProductChat, {
     product: { kind: "review" },
     scoutId,

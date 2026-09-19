@@ -5,7 +5,6 @@ import type { FunctionReturnType } from "convex/server";
 import { components, internal } from "./_generated/api";
 import { internalMutation } from "./_generated/server";
 import { publicMutation, publicQuery } from "./functions";
-import { requireViewerPermission } from "./access";
 import { ACCOUNT_DELETION_CONFIRMATION } from "../shared/accountDeletion";
 import { omitNullish } from "../shared/omitNullish";
 
@@ -24,7 +23,8 @@ export const status = publicQuery({
   ),
   handler: async (ctx) => {
     if (ctx.viewer.kind === "anonymous") return { kind: "signed_out" as const };
-    if (ctx.viewer.kind === "account") return { kind: "ready" as const };
+    if (ctx.viewer.kind === "account" || ctx.viewer.kind === "terms_required")
+      return { kind: "ready" as const };
     if (ctx.viewer.kind === "unavailable") return { kind: "unavailable" as const };
     if (ctx.viewer.kind === "deleted") return { kind: "deleted" as const };
     const userId = await getAuthUserId(ctx);
@@ -48,7 +48,9 @@ export const request = publicMutation({
     if (confirmation !== ACCOUNT_DELETION_CONFIRMATION)
       throw new ConvexError(`Type ${ACCOUNT_DELETION_CONFIRMATION} to confirm`);
     if (ctx.viewer.kind === "deleting" || ctx.viewer.kind === "deleted") return null;
-    const { userId } = requireViewerPermission(ctx.viewer, "access_account");
+    if (ctx.viewer.kind !== "account" && ctx.viewer.kind !== "terms_required")
+      throw new ConvexError("Not authorized");
+    const { userId } = ctx.viewer;
     const sessionId = await getAuthSessionId(ctx);
     const session = sessionId && (await ctx.db.get("authSessions", sessionId));
     if (!session || session.userId !== userId || session.expirationTime <= Date.now())

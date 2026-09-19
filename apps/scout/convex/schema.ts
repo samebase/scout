@@ -80,6 +80,7 @@ export const taskPreferences = v.object({
 
 const userProfile = authTables.users.validator.extend({
   ...taskPreferences.fields,
+  termsAcceptedAt: v.optional(v.number()),
   isApproved: v.optional(v.boolean()),
   defaultScoutModelSelection: v.optional(scoutModelSelectionValidator),
 });

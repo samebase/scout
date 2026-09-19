@@ -3,8 +3,58 @@ import { expect, test } from "vite-plus/test";
 import { api } from "./_generated/api";
 import schema from "./schema";
 import { ADMIN_EMAIL, insertTestAccount } from "./testing/accounts";
+import { TERMS_ACCEPTANCE_REQUIRED } from "../shared/terms";
 
 const modules = import.meta.glob("./**/*.ts");
+
+test.each([ADMIN_EMAIL, "member@example.test"])(
+  "%s must accept terms once before using account features",
+  async (email) => {
+    const backend = convexTest(schema, modules);
+    const userId = await backend.run((ctx) =>
+      ctx.db.insert("users", {
+        email,
+        emailVerificationTime: Date.now(),
+      }),
+    );
+    const user = backend.withIdentity({ subject: `${userId}|session` });
+    expect(await user.query(api.accounts.currentViewerAccess, {})).toEqual({
+      kind: "terms_required",
+      userId,
+    });
+    await expect(user.query(api.accounts.taskPreferences, {})).rejects.toThrow(
+      TERMS_ACCEPTANCE_REQUIRED,
+    );
+    await expect(user.mutation(api.accounts.setTaskPreferences, {})).rejects.toThrow(
+      TERMS_ACCEPTANCE_REQUIRED,
+    );
+    await expect(user.action(api.polar.checkout, {})).rejects.toThrow(TERMS_ACCEPTANCE_REQUIRED);
+    expect(await user.query(api.accountDeletion.status, {})).toEqual({ kind: "ready" });
+
+    await user.mutation(api.accounts.acceptTerms, {});
+    const accepted = await backend.run((ctx) => ctx.db.get(userId));
+    expect(accepted).toMatchObject({ termsAcceptedAt: expect.any(Number) });
+    expect(await user.query(api.accounts.currentViewerAccess, {})).toMatchObject({
+      kind: "account",
+      isApproved: false,
+    });
+    await expect(user.query(api.accounts.taskPreferences, {})).resolves.toEqual({});
+    await user.mutation(api.accounts.acceptTerms, {});
+    expect(await backend.run((ctx) => ctx.db.get(userId))).toEqual(accepted);
+  },
+);
+
+test("anonymous, unverified, and deleted users cannot accept terms", async () => {
+  const backend = convexTest(schema, modules);
+  await expect(backend.mutation(api.accounts.acceptTerms, {})).rejects.toThrow("Not authorized");
+  const userId = await backend.run((ctx) =>
+    ctx.db.insert("users", { email: "member@example.test" }),
+  );
+  const user = backend.withIdentity({ subject: `${userId}|session` });
+  await expect(user.mutation(api.accounts.acceptTerms, {})).rejects.toThrow("Not authorized");
+  await backend.run((ctx) => ctx.db.replace(userId, { state: "deleted", deletedAt: Date.now() }));
+  await expect(user.mutation(api.accounts.acceptTerms, {})).rejects.toThrow("Not authorized");
+});
 
 async function setup() {
   const backend = convexTest(schema, modules);
@@ -32,7 +82,11 @@ test.each(["nicu.dev@gmail.com", "nicu@samebase.com", "NICU.DEV@GMAIL.COM"])(
   async (email) => {
     const backend = convexTest(schema, modules);
     const userId = await backend.run((ctx) =>
-      ctx.db.insert("users", { email, emailVerificationTime: Date.now() }),
+      ctx.db.insert("users", {
+        email,
+        emailVerificationTime: Date.now(),
+        termsAcceptedAt: Date.now(),
+      }),
     );
     const admin = backend.withIdentity({ subject: `${userId}|session` });
     expect(await admin.query(api.accounts.currentViewerAccess, {})).toMatchObject({
@@ -54,7 +108,11 @@ test.each(["member@example.test", "nicuchiciuc@gmail.com", "NICUCHICIUC@GMAIL.CO
   async (email) => {
     const { backend, admin } = await setup();
     const userId = await backend.run((ctx) =>
-      ctx.db.insert("users", { email, emailVerificationTime: Date.now() }),
+      ctx.db.insert("users", {
+        email,
+        emailVerificationTime: Date.now(),
+        termsAcceptedAt: Date.now(),
+      }),
     );
     const member = backend.withIdentity({ subject: `${userId}|session` });
     const pending = {

@@ -7,6 +7,9 @@ import schema from "../../convex/schema";
 import { AUTH_EMAIL_COOLDOWN } from "../../shared/auth";
 import type { Doc } from "../../convex/_generated/dataModel";
 
+import { TERMS_ACCEPTANCE_REQUIRED } from "../../shared/terms";
+import { omitNullish } from "../../shared/omitNullish";
+
 type ScoutTest = TestConvex<typeof schema>;
 const modules = import.meta.glob("../../convex/**/*.*s");
 const MEMBER_EMAIL = "member@example.test";
@@ -38,6 +41,42 @@ afterEach(() => {
 });
 
 describe("password authentication", () => {
+  it.each([undefined, "false"])(
+    "rejects signup with terms acceptance %s before creating an account",
+    async (termsAccepted) => {
+      const t = convexTest(schema, modules);
+      await expect(
+        t.action(api.auth.signIn, {
+          provider: "password",
+          params: omitNullish({
+            email: MEMBER_EMAIL,
+            password: "secure-password",
+            flow: "signUp",
+            termsAccepted,
+          }),
+        }),
+      ).rejects.toThrow(TERMS_ACCEPTANCE_REQUIRED);
+      expect(await t.run((ctx) => ctx.db.query("users").collect())).toEqual([]);
+    },
+  );
+
+  it("records signup acceptance once, without changing it during verification or sign-in", async () => {
+    const t = convexTest(schema, modules);
+    await createVerifiedUser(t, MEMBER_EMAIL, "secure-password");
+    const account = await t.run((ctx) => ctx.db.query("users").unique());
+    expect(account).toMatchObject({ termsAcceptedAt: expect.any(Number) });
+    await t.action(api.auth.signIn, {
+      provider: "password",
+      params: {
+        email: MEMBER_EMAIL,
+        password: "secure-password",
+        flow: "signIn",
+        termsAcceptedAt: 1,
+      },
+    });
+    expect(await t.run((ctx) => ctx.db.query("users").unique())).toEqual(account);
+  });
+
   it("seeds one verified development account idempotently", async () => {
     const t = convexTest(schema, modules);
     vi.stubEnv("DEV_SEED_AUTH_ENABLED", "true");
@@ -57,6 +96,11 @@ describe("password authentication", () => {
       return user._id;
     });
     const seedViewer = t.withIdentity({ subject: `${seedUserId}|session` });
+    await expect(seedViewer.query(api.accounts.currentViewerAccess, {})).resolves.toEqual({
+      kind: "terms_required",
+      userId: seedUserId,
+    });
+    await seedViewer.mutation(api.accounts.acceptTerms, {});
     await expect(seedViewer.query(api.accounts.currentViewerAccess, {})).resolves.toEqual({
       kind: "account",
       email: "preview@example.com",
@@ -130,6 +174,7 @@ describe("password authentication", () => {
           email: "preview@example.com",
           password: "another-password",
           flow: "signUp",
+          termsAccepted: "true",
         },
       }),
     ).rejects.toThrow("The development seed account only allows password sign-in");
@@ -165,6 +210,7 @@ describe("password authentication", () => {
           email: "  MEMBER@EXAMPLE.TEST  ",
           password: "secure-password",
           flow: "signUp",
+          termsAccepted: "true",
         },
       }),
     );
@@ -268,6 +314,7 @@ describe("password authentication", () => {
           email: MEMBER_EMAIL,
           password: "secure-password",
           flow: "signUp",
+          termsAccepted: "true",
         },
       }),
     );
@@ -304,7 +351,12 @@ describe("password authentication", () => {
     await expect(
       t.action(api.auth.signIn, {
         provider: "password",
-        params: { email, password: "secure-password", flow: "signUp" },
+        params: {
+          email,
+          password: "secure-password",
+          flow: "signUp",
+          termsAccepted: "true",
+        },
       }),
     ).rejects.toThrow("Missing environment variable `SITE_URL`");
     await t.run(async (ctx) => {
@@ -413,14 +465,24 @@ describe("password authentication", () => {
     await expect(
       t.action(api.auth.signIn, {
         provider: "password",
-        params: { email: MEMBER_EMAIL, password: "short", flow: "signUp" },
+        params: {
+          email: MEMBER_EMAIL,
+          password: "short",
+          flow: "signUp",
+          termsAccepted: "true",
+        },
       }),
     ).rejects.toThrow("Invalid password");
 
     const signUp = await captureAuthCode(() =>
       t.action(api.auth.signIn, {
         provider: "password",
-        params: { email: MEMBER_EMAIL, password: "secure-password", flow: "signUp" },
+        params: {
+          email: MEMBER_EMAIL,
+          password: "secure-password",
+          flow: "signUp",
+          termsAccepted: "true",
+        },
       }),
     );
     expect(signUp.result.tokens).toBeNull();
@@ -431,7 +493,12 @@ describe("password authentication", () => {
     await captureAuthCode(() =>
       t.action(api.auth.signIn, {
         provider: "password",
-        params: { email: MEMBER_EMAIL, password: "secure-password", flow: "signUp" },
+        params: {
+          email: MEMBER_EMAIL,
+          password: "secure-password",
+          flow: "signUp",
+          termsAccepted: "true",
+        },
       }),
     );
     const retryAt = Date.now() + 60_000;
@@ -469,7 +536,12 @@ describe("password authentication", () => {
     const signUp = await captureAuthCode(() =>
       t.action(api.auth.signIn, {
         provider: "password",
-        params: { email: MEMBER_EMAIL, password: "secure-password", flow: "signUp" },
+        params: {
+          email: MEMBER_EMAIL,
+          password: "secure-password",
+          flow: "signUp",
+          termsAccepted: "true",
+        },
       }),
     );
     const send = vi.fn(() => {
@@ -507,6 +579,7 @@ describe("password authentication", () => {
           email,
           password: "secure-password",
           flow: "signUp",
+          termsAccepted: "true",
           isApproved: true,
           role: "role_admin",
         },
@@ -694,6 +767,7 @@ describe("password authentication", () => {
           email: MEMBER_EMAIL,
           password: "secure-password",
           flow: "signUp",
+          termsAccepted: "true",
         },
       }),
     ).rejects.toThrow("Password authentication is disabled while AUTH_LOG_LEVEL is DEBUG");
@@ -704,7 +778,7 @@ async function createVerifiedUser(t: ScoutTest, email: string, password: string)
   const signUp = await captureAuthCode(() =>
     t.action(api.auth.signIn, {
       provider: "password",
-      params: { email, password, flow: "signUp" },
+      params: { email, password, flow: "signUp", termsAccepted: "true" },
     }),
   );
 

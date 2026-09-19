@@ -7,5 +7,6 @@ export async function insertTestAccount(ctx: Pick<MutationCtx, "db">, account: {
     email: account.email,
     emailVerificationTime: Date.now(),
     isApproved: true,
+    termsAcceptedAt: Date.now(),
   });
 }

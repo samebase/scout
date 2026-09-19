@@ -4,6 +4,7 @@ import { useState } from "react";
 import { accountAccessMessage, canAccess, useViewerAccess } from "../lib/access";
 import { AuthPanel } from "./auth-panel";
 import { Button } from "./ui/button";
+import { TermsAcceptance } from "./terms-acceptance";
 
 export function RouteAccessOutlet() {
   const policies = useMatches({
@@ -16,13 +17,16 @@ export function RouteAccessOutlet() {
   const viewer = useViewerAccess();
   if ((viewer?.kind === "deleting" || viewer?.kind === "deleted") && !accessibleAfterAccountClosure)
     return <Navigate to="/account-deletion" replace />;
-  if (policies.every((access) => access === "access_public")) return <Outlet />;
+  if (viewer?.kind === "terms_required" && !accessibleAfterAccountClosure)
+    return <TermsAcceptance />;
+  if (accessibleAfterAccountClosure) return <Outlet />;
   if (!viewer)
     return (
       <main className="route-page" role="status">
         Loading account…
       </main>
     );
+  if (policies.every((access) => access === "access_public")) return <Outlet />;
   if (viewer.kind === "anonymous")
     return (
       <main className="route-page max-w-md">

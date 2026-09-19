@@ -1,11 +1,23 @@
 import { paginationOptsValidator, paginationResultValidator } from "convex/server";
 import { ConvexError, v } from "convex/values";
 import { internalQuery } from "./_generated/server";
-import { mutation, publicQuery, query } from "./functions";
+import { mutation, publicMutation, publicQuery, query } from "./functions";
 import { readViewerRoleForUser, resolveViewer } from "./access";
 import { accountAccessFields, viewerAccessValidator } from "./accessModel";
 import { taskPreferences as taskPreferencesValidator } from "./schema";
 import { omitNullish } from "../shared/omitNullish";
+
+export const acceptTerms = publicMutation({
+  access: "access_public",
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    if (ctx.viewer.kind === "account") return null;
+    if (ctx.viewer.kind !== "terms_required") throw new ConvexError("Not authorized");
+    await ctx.db.patch(ctx.viewer.userId, { termsAcceptedAt: Date.now() });
+    return null;
+  },
+});
 
 export const taskPreferences = query({
   access: "access_account",

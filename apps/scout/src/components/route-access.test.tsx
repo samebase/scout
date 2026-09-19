@@ -20,6 +20,8 @@ import { Route as ScoutsRoute } from "../routes/scouts";
 import { Route as PrivacyRoute } from "../routes/privacy";
 import { Route as TermsRoute } from "../routes/terms";
 import { omitNullish } from "../../shared/omitNullish";
+import { TERMS_ACCEPTANCE_LABEL } from "../../shared/terms";
+import { ConvexError } from "convex/values";
 
 const remote = vi.hoisted(() => ({
   authenticated: true,
@@ -27,6 +29,7 @@ const remote = vi.hoisted(() => ({
   values: new Map<string, unknown>(),
   subscribers: new Set<() => void>(),
   lab: vi.fn(),
+  accept: vi.fn(),
 }));
 function subscribe(listener: () => void) {
   remote.subscribers.add(listener);
@@ -45,7 +48,8 @@ vi.mock("convex/react", () => ({
     if (getFunctionName(reference) === "credits:offer") return undefined;
     return remote.values.get("viewer");
   },
-  useMutation: () => async () => {},
+  useMutation: (reference: FunctionReference<"mutation">) =>
+    getFunctionName(reference) === "accounts:acceptTerms" ? remote.accept : async () => {},
   useAction: () => async () => {},
   usePaginatedQuery: () => ({ results: [], status: "Exhausted", loadMore: () => {} }),
 }));
@@ -56,6 +60,7 @@ beforeEach(() => {
   remote.authenticated = true;
   remote.values.clear();
   remote.lab.mockClear();
+  remote.accept.mockReset().mockResolvedValue(null);
   remote.revision = 0;
 });
 afterEach(cleanup);
@@ -294,37 +299,44 @@ for (const { path, title } of [
   { path: "/privacy", title: "Privacy policy" },
   { path: "/terms", title: "Terms and conditions" },
 ]) {
-  test.each(["anonymous", "loading", "pending", "member", "staff", "deleting", "deleted"])(
-    `${path} remains readable for %s viewers`,
-    async (state) => {
-      switch (state) {
-        case "anonymous":
-          remote.authenticated = false;
-          break;
-        case "pending":
-          setViewer("role_pending_access");
-          break;
-        case "member":
-          setViewer("role_member");
-          break;
-        case "staff":
-          setViewer("role_staff");
-          break;
-        case "deleting":
-        case "deleted":
-          remote.values.set("viewer", { kind: state });
-          break;
-      }
-      await open(path);
-      expect(await screen.findByRole("heading", { level: 1, name: title })).toBeTruthy();
-      expect(screen.getByText("Effective date: September 19, 2026")).toBeTruthy();
-      expect(screen.getByRole("main").textContent).not.toMatch(
-        /\{\{[A-Z_]+\}\}|Draft for review|Not yet effective/,
-      );
-      expect(screen.queryByRole("heading", { name: "Account deletion" })).toBeNull();
-      expect(screen.queryByLabelText("Account access")).toBeNull();
-    },
-  );
+  test.each([
+    "anonymous",
+    "loading",
+    "pending",
+    "member",
+    "staff",
+    "deleting",
+    "deleted",
+    "terms_required",
+  ])(`${path} remains readable for %s viewers`, async (state) => {
+    switch (state) {
+      case "anonymous":
+        remote.authenticated = false;
+        break;
+      case "pending":
+        setViewer("role_pending_access");
+        break;
+      case "member":
+        setViewer("role_member");
+        break;
+      case "staff":
+        setViewer("role_staff");
+        break;
+      case "deleting":
+      case "deleted":
+      case "terms_required":
+        remote.values.set("viewer", { kind: state });
+        break;
+    }
+    await open(path);
+    expect(await screen.findByRole("heading", { level: 1, name: title })).toBeTruthy();
+    expect(screen.getByText("Effective date: September 19, 2026")).toBeTruthy();
+    expect(screen.getByRole("main").textContent).not.toMatch(
+      /\{\{[A-Z_]+\}\}|Draft for review|Not yet effective/,
+    );
+    expect(screen.queryByRole("heading", { name: "Account deletion" })).toBeNull();
+    expect(screen.queryByLabelText("Account access")).toBeNull();
+  });
 }
 
 test("legal documents render tables, email links, and section anchors before the account query resolves", async () => {
@@ -356,12 +368,44 @@ test("guests can read policies from signup before submitting account information
   const user = userEvent.setup();
   await user.click(await screen.findByRole("button", { name: "Create account" }));
   expect(screen.getByRole("heading", { name: "Create account" })).toBeTruthy();
-  expect(screen.getByText(/By clicking Create account, you agree to our/)).toBeTruthy();
+  expect(screen.getByRole("checkbox", { name: TERMS_ACCEPTANCE_LABEL })).toHaveProperty(
+    "checked",
+    false,
+  );
   expect(screen.getByRole("link", { name: "Terms and conditions" }).getAttribute("href")).toBe(
     "/terms",
   );
-  await user.click(screen.getByRole("link", { name: "Privacy policy" }));
-  expect(await screen.findByRole("heading", { name: "Privacy policy" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Privacy policy" }).getAttribute("target")).toBe(
+    "_blank",
+  );
+});
+
+test("existing users explicitly accept before protected content mounts, and failed saves remain visible", async () => {
+  remote.values.set("viewer", { kind: "terms_required", userId: "account" });
+  await open("/agents");
+  const user = userEvent.setup();
+  expect(await screen.findByRole("heading", { name: "Review our terms" })).toBeTruthy();
+  expect(remote.lab).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Accept and continue" }));
+  expect(remote.accept).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("checkbox", { name: TERMS_ACCEPTANCE_LABEL }));
+  remote.accept.mockRejectedValueOnce(new ConvexError("Acceptance could not be saved"));
+  await user.click(screen.getByRole("button", { name: "Accept and continue" }));
+  expect((await screen.findByRole("alert")).textContent).toBe("Acceptance could not be saved");
+  expect(remote.lab).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Accept and continue" }));
+  expect(remote.accept).toHaveBeenLastCalledWith({});
+  setViewer("role_staff");
+  expect(await screen.findByRole("heading", { name: "Agents contents" })).toBeTruthy();
+});
+
+test("a user can close an account without accepting terms", async () => {
+  remote.values.set("viewer", { kind: "terms_required", userId: "account" });
+  await open("/agents");
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("link", { name: "Close account" }));
+  expect(await screen.findByRole("heading", { name: "Account deletion" })).toBeTruthy();
+  expect(remote.accept).not.toHaveBeenCalled();
 });
 
 test("pending accounts can read the terms from Settings", async () => {

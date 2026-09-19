@@ -1,11 +1,12 @@
 import { useAuthActions } from "@convex-dev/auth/react";
-import { Link } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
 import { ConvexError } from "convex/values";
 import { AUTH_EMAIL_COOLDOWN } from "../../shared/auth";
 import { Button } from "#components/ui/button";
 import { Input } from "#components/ui/input";
 import { LegalLinks } from "./legal-links";
+import { TermsCheckbox } from "./terms-checkbox";
+import { TERMS_ACCEPTANCE_REQUIRED } from "../../shared/terms";
 
 const PASSWORD_MIN_LENGTH = 8;
 const CODE_LENGTH = 8;
@@ -140,17 +141,7 @@ export function AuthPanel() {
               required
             />
           </label>
-          <p className="text-sm leading-6 text-muted-foreground">
-            By clicking {state.flow === "signUp" ? "Create account" : "Sign in"}, you agree to our{" "}
-            <Link to="/terms" className="text-primary underline underline-offset-4">
-              Terms and conditions
-            </Link>
-            . Read our{" "}
-            <Link to="/privacy" className="text-primary underline underline-offset-4">
-              Privacy policy
-            </Link>
-            .
-          </p>
+          {state.flow === "signUp" ? <TermsCheckbox /> : <LegalLinks />}
           <Button type="submit" size="lg" className="mt-1 w-full" disabled={isPending}>
             {pendingLabel(state.flow, isPending)}
           </Button>
@@ -333,6 +324,8 @@ function pendingLabel(flow: CredentialsFlow, isPending: boolean) {
 }
 
 function authErrorMessage(error: unknown, action: AuthAction) {
+  if (error instanceof ConvexError && error.data === TERMS_ACCEPTANCE_REQUIRED)
+    return TERMS_ACCEPTANCE_REQUIRED;
   const message = error instanceof Error ? error.message : "";
   if (error instanceof ConvexError && error.data === AUTH_EMAIL_COOLDOWN) {
     return "Wait a minute before requesting another code.";
