@@ -1536,7 +1536,7 @@ selected older handoffs can receive a deadline through bounded internal maintena
 
 ### 2026-09-19 - working tree - v247
 
-The landing page keeps its introduction together over the discovery field,
-with the composer and public reviews immediately below. About is linked from the main bar
-and explains the project’s purpose, browser evidence, and shared reviews in larger, darker text
-(`apps/scout/src/components/discovery-hero.tsx`, `apps/scout/src/routes/about.tsx`).
+About is linked from the main bar and explains the project’s purpose, browser evidence,
+and shared reviews. Its title, section headings, and larger, darker body text use three
+consistent styles (`apps/scout/src/routes/about.tsx`,
+`apps/scout/src/components/app-navigation.tsx`).

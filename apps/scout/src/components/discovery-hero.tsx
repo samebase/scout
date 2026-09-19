@@ -24,8 +24,7 @@ export function DiscoveryHero({
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    const surface = canvas?.parentElement;
-    if (!canvas || !surface || !navigator.gpu) return;
+    if (!canvas || !navigator.gpu) return;
 
     let field: Awaited<ReturnType<typeof createDiscoveryField>> | null = null;
     const initialization = new AbortController();
@@ -102,7 +101,7 @@ export function DiscoveryHero({
     });
     resizeObserver.observe(canvas);
     intersectionObserver.observe(canvas);
-    surface.addEventListener("pointermove", point);
+    canvas.addEventListener("pointermove", point);
     document.addEventListener("visibilitychange", refresh);
     refreshRef.current = refresh;
     resize();
@@ -129,7 +128,7 @@ export function DiscoveryHero({
       refreshRef.current = null;
       resizeObserver.disconnect();
       intersectionObserver.disconnect();
-      surface.removeEventListener("pointermove", point);
+      canvas.removeEventListener("pointermove", point);
       document.removeEventListener("visibilitychange", refresh);
       stop();
     };
@@ -146,31 +145,24 @@ export function DiscoveryHero({
     >
       <div
         aria-hidden="true"
-        className={`absolute inset-0 bg-[url('/discovery-field.svg')] bg-[length:100%_100%] bg-center mask-[linear-gradient(to_bottom,black_65%,transparent_100%)] transition-opacity duration-700 ${available ? "opacity-0" : "opacity-100"}`}
+        className={`absolute inset-0 bg-[url('/discovery-field.svg')] bg-[length:100%_100%] bg-center mask-[linear-gradient(to_bottom,black_45%,transparent_100%)] transition-opacity duration-700 ${available ? "opacity-0" : "opacity-100"}`}
       />
       <canvas
         ref={canvasRef}
         aria-hidden="true"
-        className={`absolute inset-0 size-full mask-[linear-gradient(to_bottom,black_65%,transparent_100%)] transition-opacity duration-700 ${available ? "opacity-100" : "opacity-0"}`}
+        className={`absolute inset-0 size-full mask-[linear-gradient(to_bottom,black_45%,transparent_100%)] transition-opacity duration-700 ${available ? "opacity-100" : "opacity-0"}`}
       />
-      <div className="relative mx-auto max-w-[1160px] px-8 pt-14 pb-10 max-[640px]:px-4 max-[640px]:pt-10 max-[640px]:pb-8">
-        <div className="mx-auto max-w-[660px]">
-          <h1
-            id="discovery-heading"
-            className="text-center font-display text-[64px] leading-[1.02] font-medium tracking-[-0.05em] max-[1100px]:text-[56px] max-[640px]:text-[44px]"
-          >
-            See what lies
-            <br />
-            beneath the pitch.
-          </h1>
-          <p className="mx-auto mt-5 max-w-[540px] text-center text-[17px] leading-[1.65] max-[640px]:text-[16px]">
-            The internet is a confusing place.{" "}
-            <span className="font-medium text-foreground">Send Scout in first.</span> It tries the
-            website and brings back evidence you can inspect.
-          </p>
-          <div className="mt-7">{children}</div>
-        </div>
+      <div className="pointer-events-none relative mx-auto max-w-[1160px] px-8 py-8 max-[640px]:px-4 max-[640px]:py-7">
+        <h1
+          id="discovery-heading"
+          className="font-display text-[64px] leading-[1.02] font-medium tracking-[-0.05em] max-[760px]:text-[52px] max-[640px]:text-[40px]"
+        >
+          See what lies
+          <br />
+          beneath the pitch.
+        </h1>
       </div>
+      <div className="relative mx-auto max-w-[1160px] px-8 max-[640px]:px-4">{children}</div>
     </section>
   );
 }
