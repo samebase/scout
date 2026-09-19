@@ -16,7 +16,9 @@ export function SitePreview({ site, className }: { site: Site; className?: strin
       aria-hidden="true"
       className={cn("relative aspect-[8/5] overflow-hidden bg-muted", className)}
     >
-      {site.preview?.kind === "ready" ? (
+      {site.preview?.kind === "public" ? (
+        <PublicPreview key={site.preview.url} url={site.preview.url} />
+      ) : site.preview?.kind === "ready" ? (
         <LandingImage
           key={`${site.hostname}:${site.preview.capturedAt}`}
           site={site.hostname}
@@ -26,6 +28,22 @@ export function SitePreview({ site, className }: { site: Site; className?: strin
         <EmptyPreview />
       )}
     </div>
+  );
+}
+
+function PublicPreview({ url }: { url: string }) {
+  const [failed, setFailed] = useState(false);
+  return failed ? (
+    <EmptyPreview />
+  ) : (
+    <img
+      src={url}
+      alt=""
+      loading="lazy"
+      decoding="async"
+      className="size-full object-cover object-top"
+      onError={() => setFailed(true)}
+    />
   );
 }
 
@@ -41,8 +59,12 @@ export function SitePreviewCapture({ site }: { site: Site }) {
   const capture = useAction(api.scout.sitePreviews.capture);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  if (site.preview?.kind === "ready") return null;
-  const busy = pending || site.preview?.kind === "capturing";
+  if (site.preview?.kind === "ready" || site.preview?.kind === "public") return null;
+  const busy = pending || site.preview?.kind === "capturing" || site.preview?.kind === "publishing";
+  const failure =
+    site.preview?.kind === "failed" || site.preview?.kind === "publication_failed"
+      ? site.preview.message
+      : null;
   return (
     <div className="text-right">
       <Button
@@ -61,14 +83,16 @@ export function SitePreviewCapture({ site }: { site: Site }) {
       >
         <CameraIcon aria-hidden="true" />
         {busy
-          ? "Capturing preview…"
-          : site.preview?.kind === "failed"
+          ? site.preview?.kind === "publishing"
+            ? "Publishing preview…"
+            : "Capturing preview…"
+          : failure
             ? "Retry preview"
             : "Capture preview"}
       </Button>
-      {(error || site.preview?.kind === "failed") && (
+      {(error || failure) && (
         <p role="alert" className="mt-1 text-xs text-destructive">
-          {error ?? (site.preview?.kind === "failed" ? site.preview.message : null)}
+          {error ?? failure}
         </p>
       )}
     </div>

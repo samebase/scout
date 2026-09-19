@@ -45,6 +45,12 @@ type Env = {
   readonly POLAR_ORGANIZATION_ID: string | undefined;
   readonly POLAR_SERVER: string | undefined;
   readonly POLAR_WEBHOOK_SECRET: string | undefined;
+  readonly PUBLIC_MEDIA_ACCESS_KEY_ID: string | undefined;
+  readonly PUBLIC_MEDIA_BUCKET: string | undefined;
+  readonly PUBLIC_MEDIA_CACHE_PURGE_TOKEN: string | undefined;
+  readonly PUBLIC_MEDIA_ORIGIN: string | undefined;
+  readonly PUBLIC_MEDIA_SECRET_ACCESS_KEY: string | undefined;
+  readonly PUBLIC_MEDIA_ZONE_ID: string | undefined;
   readonly R2_ACCESS_KEY_ID: string | undefined;
   readonly R2_BUCKET: string | undefined;
   readonly R2_ENDPOINT: string | undefined;

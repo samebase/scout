@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
 import { api, internal } from "./_generated/api";
 import schema from "./schema";
 import { ADMIN_EMAIL, insertTestAccount } from "./testing/accounts";
+import { publicPreviewKey } from "./scout/sitePreviewModel";
 
 const png = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
@@ -26,6 +27,12 @@ beforeEach(() => {
   vi.stubEnv("R2_ENDPOINT", "https://r2.example.test");
   vi.stubEnv("R2_ACCESS_KEY_ID", "test-key");
   vi.stubEnv("R2_SECRET_ACCESS_KEY", "test-secret");
+  vi.stubEnv("PUBLIC_MEDIA_BUCKET", "public-previews");
+  vi.stubEnv("PUBLIC_MEDIA_ORIGIN", "https://media.example.test");
+  vi.stubEnv("PUBLIC_MEDIA_ACCESS_KEY_ID", "public-key");
+  vi.stubEnv("PUBLIC_MEDIA_SECRET_ACCESS_KEY", "public-secret");
+  vi.stubEnv("PUBLIC_MEDIA_ZONE_ID", "test-zone");
+  vi.stubEnv("PUBLIC_MEDIA_CACHE_PURGE_TOKEN", "purge-token");
   scrape
     .mockReset()
     .mockResolvedValue({ screenshot: providerImage, metadata: { statusCode: 200 } });
@@ -34,8 +41,10 @@ beforeEach(() => {
   deleteObject.mockReset().mockResolvedValue(undefined);
   fetchImage
     .mockReset()
-    .mockImplementation(
-      async () => new Response(png, { headers: { "content-type": "image/png" } }),
+    .mockImplementation(async (input) =>
+      (input instanceof Request ? input.url : input.toString()).includes("/purge_cache")
+        ? Response.json({ success: true, errors: [] })
+        : new Response(png, { headers: { "content-type": "image/png" } }),
     );
   vi.spyOn(Firecrawl.prototype, "scrape").mockImplementation(scrape);
   vi.spyOn(R2.prototype, "store").mockImplementation(store);
@@ -170,7 +179,219 @@ test("captures the unauthenticated root once, including overlapping requests, in
         paginationOpts: { cursor: null, numItems: 10 },
       })
     ).page,
-  ).toEqual([{ ...row, taskCount: 1 }]);
+  ).toEqual([{ ...row, preview: { kind: "publishing", capturedAt: Date.now() }, taskCount: 1 }]);
+});
+
+test("publishes an unchanged PNG once and includes a stable URL in site queries without signing", async () => {
+  const t = await setup();
+  await t.owner.mutation(api.scout.chats.setVisibility, {
+    threadId: "thread",
+    visibility: "public",
+  });
+  await t.ensure();
+  expect((await t.inspect())?.preview).toMatchObject({
+    publication: { kind: "publishing", version: 1 },
+  });
+  await t.backend.finishAllScheduledFunctions(vi.runAllTimers);
+  const preview = (await t.inspect())?.preview;
+  if (preview?.kind !== "ready") throw new Error("Missing capture");
+  expect(preview.publication).toEqual({ kind: "public", version: 1 });
+  const key = publicPreviewKey(preview.key, 1);
+  expect(store).toHaveBeenCalledTimes(2);
+  expect(store.mock.contexts[1]).toMatchObject({
+    config: { bucket: "public-previews", accessKeyId: "public-key" },
+  });
+  expect(store).toHaveBeenLastCalledWith(expect.anything(), expect.any(Blob), {
+    key,
+    type: "image/png",
+    disposition: "inline",
+    cacheControl: "public, max-age=60, s-maxage=31536000, must-revalidate",
+  });
+  getUrl.mockClear();
+  const site = await t.backend.query(api.scout.sites.get, { site: "example.com" });
+  expect(site?.preview).toEqual({
+    kind: "public",
+    capturedAt: preview.capturedAt,
+    url: `https://media.example.test/${key}`,
+  });
+  expect((await t.backend.query(api.scout.sites.get, { site: "example.com" }))?.preview).toEqual(
+    site?.preview,
+  );
+  expect(getUrl).not.toHaveBeenCalled();
+  await t.admin.action(api.scout.sitePreviews.capture, { site: "example.com" });
+  await t.backend.finishAllScheduledFunctions(vi.runAllTimers);
+  expect(store).toHaveBeenCalledTimes(2);
+});
+
+test("unpublishing removes only the public copy, purges its URL, and a later publication gets a new key", async () => {
+  const t = await setup();
+  await t.ensure();
+  await t.owner.mutation(api.scout.chats.setVisibility, {
+    threadId: "thread",
+    visibility: "public",
+  });
+  await t.backend.finishAllScheduledFunctions(vi.runAllTimers);
+  const preview = (await t.inspect())?.preview;
+  if (preview?.kind !== "ready") throw new Error("Missing capture");
+  const key = publicPreviewKey(preview.key, 1);
+  await t.owner.mutation(api.scout.chats.setVisibility, {
+    threadId: "thread",
+    visibility: "private",
+  });
+  expect(await t.backend.query(api.scout.sites.get, { site: "example.com" })).toBeNull();
+  expect((await t.owner.query(api.scout.sites.get, { site: "example.com" }))?.preview?.kind).toBe(
+    "ready",
+  );
+  await t.backend.finishAllScheduledFunctions(vi.runAllTimers);
+  expect(deleteObject).toHaveBeenCalledExactlyOnceWith(expect.anything(), key);
+  expect(deleteObject.mock.contexts[0]).toMatchObject({ config: { bucket: "public-previews" } });
+  expect(fetchImage).toHaveBeenCalledWith(
+    "https://api.cloudflare.com/client/v4/zones/test-zone/purge_cache",
+    expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({ files: [`https://media.example.test/${key}`] }),
+    }),
+  );
+  await t.owner.mutation(api.scout.chats.setVisibility, {
+    threadId: "thread",
+    visibility: "public",
+  });
+  await t.backend.finishAllScheduledFunctions(vi.runAllTimers);
+  expect(
+    (await t.backend.query(api.scout.sites.get, { site: "example.com" }))?.preview,
+  ).toMatchObject({
+    kind: "public",
+    url: `https://media.example.test/${publicPreviewKey(preview.key, 2)}`,
+  });
+  expect(scrape).toHaveBeenCalledTimes(1);
+});
+
+test("an upload finishing after unpublication cannot resurrect the public preview", async () => {
+  const t = await setup();
+  await t.ensure();
+  await t.owner.mutation(api.scout.chats.setVisibility, {
+    threadId: "thread",
+    visibility: "public",
+  });
+  store.mockImplementationOnce(async () => {
+    await t.owner.mutation(api.scout.chats.setVisibility, {
+      threadId: "thread",
+      visibility: "private",
+    });
+    return "uploaded";
+  });
+  await t.backend.finishAllScheduledFunctions(vi.runAllTimers);
+  expect((await t.inspect())?.preview).toMatchObject({
+    publication: { kind: "private", version: 1 },
+  });
+  expect(await t.backend.query(api.scout.sites.get, { site: "example.com" })).toBeNull();
+  expect(deleteObject).toHaveBeenCalled();
+  expect(fetchImage).toHaveBeenCalledWith(
+    "https://api.cloudflare.com/client/v4/zones/test-zone/purge_cache",
+    expect.objectContaining({ method: "POST" }),
+  );
+});
+
+test("existing public captures can be published in bounded batches without publishing private-only sites", async () => {
+  const t = await setup();
+  await t.ensure();
+  const args = { paginationOpts: { cursor: null, numItems: 1 }, retryFailed: false };
+  expect(
+    await t.backend.mutation(internal.scout.sitePreviewRecords.publishExisting, args),
+  ).toMatchObject({ processed: 1, isDone: true });
+  await t.backend.finishAllScheduledFunctions(vi.runAllTimers);
+  expect(store).toHaveBeenCalledTimes(1);
+  await t.backend.run((ctx) =>
+    ctx.db.patch(t.siteId, { latestPublicTask: { chatId: t.chatId, createdAt: 1 } }),
+  );
+  await t.backend.mutation(internal.scout.sitePreviewRecords.publishExisting, args);
+  await t.backend.mutation(internal.scout.sitePreviewRecords.publishExisting, args);
+  await t.backend.finishAllScheduledFunctions(vi.runAllTimers);
+  expect(store).toHaveBeenCalledTimes(2);
+  expect((await t.inspect())?.preview).toMatchObject({
+    publication: { kind: "public", version: 1 },
+  });
+});
+
+test("cleanup from an older publication cannot delete a newer public copy", async () => {
+  const t = await setup();
+  await t.ensure();
+  await t.owner.mutation(api.scout.chats.setVisibility, {
+    threadId: "thread",
+    visibility: "public",
+  });
+  store.mockImplementationOnce(async () => {
+    await t.owner.mutation(api.scout.chats.setVisibility, {
+      threadId: "thread",
+      visibility: "private",
+    });
+    await t.owner.mutation(api.scout.chats.setVisibility, {
+      threadId: "thread",
+      visibility: "public",
+    });
+    return "older-upload-finished";
+  });
+  await t.backend.finishAllScheduledFunctions(vi.runAllTimers);
+  const preview = (await t.inspect())?.preview;
+  if (preview?.kind !== "ready") throw new Error("Missing capture");
+  expect(preview.publication).toEqual({ kind: "public", version: 2 });
+  expect(deleteObject).toHaveBeenCalledWith(expect.anything(), publicPreviewKey(preview.key, 1));
+  expect(deleteObject).not.toHaveBeenCalledWith(
+    expect.anything(),
+    publicPreviewKey(preview.key, 2),
+  );
+  expect(scrape).toHaveBeenCalledTimes(1);
+});
+
+test("a failed cache purge reports the Cloudflare status, code, and request ID for manual repair", async () => {
+  const t = await setup();
+  fetchImage.mockResolvedValueOnce(
+    Response.json(
+      { success: false, errors: [{ code: 10000, message: "Authentication error" }] },
+      { status: 403, headers: { "cf-ray": "purge-request-id" } },
+    ),
+  );
+  await expect(
+    t.backend.action(internal.scout.publicSitePreviews.remove, { key: "old-preview.png" }),
+  ).rejects.toThrow(
+    "Cloudflare POST /zones/test-zone/purge_cache failed (HTTP 403; 10000: Authentication error; request purge-request-id)",
+  );
+  expect(deleteObject).toHaveBeenCalledExactlyOnceWith(expect.anything(), "old-preview.png");
+  expect(fetchImage).toHaveBeenCalledTimes(1);
+});
+
+test("publication fails visibly when removal credentials are missing and an admin can retry without recapturing", async () => {
+  const t = await setup();
+  await t.ensure();
+  vi.stubEnv("PUBLIC_MEDIA_CACHE_PURGE_TOKEN", "");
+  await t.owner.mutation(api.scout.chats.setVisibility, {
+    threadId: "thread",
+    visibility: "public",
+  });
+  await t.backend.finishAllScheduledFunctions(vi.runAllTimers);
+  expect(
+    (await t.backend.query(api.scout.sites.get, { site: "example.com" }))?.preview,
+  ).toMatchObject({
+    kind: "publication_failed",
+    message: expect.stringContaining("PUBLIC_MEDIA_CACHE_PURGE_TOKEN"),
+  });
+  expect(store).toHaveBeenCalledTimes(1);
+  vi.stubEnv("PUBLIC_MEDIA_CACHE_PURGE_TOKEN", "purge-token");
+  await t.backend.mutation(internal.scout.sitePreviewRecords.publishExisting, {
+    paginationOpts: { cursor: null, numItems: 1 },
+    retryFailed: false,
+  });
+  await t.backend.finishAllScheduledFunctions(vi.runAllTimers);
+  expect(store).toHaveBeenCalledTimes(1);
+  await expect(
+    t.other.action(api.scout.sitePreviews.capture, { site: "example.com" }),
+  ).rejects.toThrow("Not authorized");
+  await t.admin.action(api.scout.sitePreviews.capture, { site: "example.com" });
+  await t.backend.finishAllScheduledFunctions(vi.runAllTimers);
+  expect((await t.inspect())?.preview).toMatchObject({
+    publication: { kind: "public", version: 2 },
+  });
+  expect(scrape).toHaveBeenCalledTimes(1);
 });
 
 test("records failures, never automatically retries, and allows only an admin to retry", async () => {

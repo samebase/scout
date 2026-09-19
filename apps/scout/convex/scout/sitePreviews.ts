@@ -70,7 +70,14 @@ export const capture = action({
   access: "access_lab",
   args: { site: v.string() },
   returns: v.null(),
-  handler: (ctx, { site }): Promise<null> => capturePreview(ctx, site, true),
+  handler: async (ctx, { site }): Promise<null> => {
+    const hostname = siteHostnameSchema.parse(site);
+    if (
+      await ctx.runMutation(internal.scout.sitePreviewRecords.retryPublication, { site: hostname })
+    )
+      return null;
+    return capturePreview(ctx, hostname, true);
+  },
 });
 
 export const imageUrl = publicAction({

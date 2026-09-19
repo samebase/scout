@@ -26,7 +26,7 @@ async function presentSite(ctx: QueryCtx, site: Doc<"sites">, viewer: ViewerAcce
   const research = site.researchId ? await ctx.db.get(site.researchId) : null;
   return {
     hostname: site.hostname,
-    preview: previewMetadata(site.preview),
+    preview: previewMetadata(site.preview, site.latestPublicTask !== null),
     profile: site.profile
       ? {
           name: site.profile.name,
