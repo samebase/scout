@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-19T16:46:16Z
+- **Last updated:** 2026-09-19T17:43:12Z
 
 ## Log
 
@@ -1584,9 +1584,15 @@ The handoff page shows time remaining, gives the embedded browser full width on 
 and keeps Resume as its main action. Homepage Scout and engine pickers sit together without a fixed-width gap
 (`apps/scout/src/components/human-handoff-page.tsx`, `apps/scout/src/products/conversation/page.tsx`).
 
-### 2026-09-19 - working tree - v254
+### 2026-09-19 - 4d6d80a - v254
 
 Browser handoffs allow 45 minutes to open the link, then ten minutes to act, capped by browser lifetime.
 The page has one title, a prominent countdown, and an option to stop when help cannot resolve the step.
 Convex saves the active deadline across reloads and Resume checks, and records why a declined task stopped
 (`apps/scout/convex/tasks/sessions.ts`, `apps/scout/src/components/human-handoff-page.tsx`).
+
+### 2026-09-19 - working tree - v255
+
+Tasks identify the Scout who ran them in the walkthrough and chat header, site task lists,
+and homepage previews. The task sidebar keeps the name beside the timestamp, and the shared
+name pill wraps beneath long titles on narrow screens (`apps/scout/src/components/scout-badge.tsx`).

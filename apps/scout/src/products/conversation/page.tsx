@@ -57,6 +57,7 @@ import {
 import { AuthPanel } from "../../components/auth-panel";
 import { BrowserReplay } from "../../components/browser-replay";
 import { TaskWalkthrough } from "#components/task-walkthrough";
+import { ScoutBadge } from "#components/scout-badge";
 import { ToolActivityRow } from "#components/tool-activity";
 import { SessionCost } from "#components/session-cost";
 import { TaskResumeHistory } from "#components/task-resume-history";
@@ -532,12 +533,15 @@ function ConversationTitle({ thread, kind }: { thread: ChatThread; kind: Product
   return (
     <div className="flex min-w-0 flex-1 items-center gap-4">
       {kind === "play" && <ScoutPiece size="brand" className="max-[760px]:hidden" />}
-      <h1
-        className="line-clamp-2 min-w-0 text-[28px] leading-tight font-semibold tracking-[-0.8px] wrap-anywhere max-[760px]:text-[24px]"
-        title={thread.title ?? undefined}
-      >
-        {thread.title ?? `Chat with ${thread.scout.displayName}`}
-      </h1>
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+        <h1
+          className="line-clamp-2 min-w-0 text-[28px] leading-tight font-semibold tracking-[-0.8px] wrap-anywhere max-[760px]:text-[24px]"
+          title={thread.title ?? undefined}
+        >
+          {thread.title ?? `Chat with ${thread.scout.displayName}`}
+        </h1>
+        {kind === "review" && <ScoutBadge name={thread.scout.displayName} />}
+      </div>
     </div>
   );
 }

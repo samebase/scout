@@ -6,11 +6,12 @@ import { usePaginatedQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { api } from "../../../convex/_generated/api";
 import { LoadOnScroll } from "#components/load-on-scroll";
+import { ScoutBadge } from "#components/scout-badge";
 import { cn } from "#lib/utils";
 import type { ReviewFeedSearch } from "#lib/reviewFeedSearch";
 
 type Activity = FunctionReturnType<typeof api.scout.activity.list>["page"][number];
-type Task = Pick<Activity, "threadId" | "title" | "createdAt" | "visibility">;
+type Task = Pick<Activity, "threadId" | "title" | "createdAt" | "visibility" | "scout">;
 
 export function TaskNavigation({
   site,
@@ -122,17 +123,20 @@ function TaskLink({
             {task.title ?? "New review"}
           </span>
         </span>
-        <time
-          dateTime={new Date(task.createdAt).toISOString()}
-          className="mt-1.5 block text-xs text-muted-foreground"
-        >
-          {new Date(task.createdAt).toLocaleString(undefined, {
-            month: "short",
-            day: "numeric",
-            hour: "numeric",
-            minute: "2-digit",
-          })}
-        </time>
+        <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+          <ScoutBadge name={task.scout.displayName} />
+          <time
+            dateTime={new Date(task.createdAt).toISOString()}
+            className="text-xs text-muted-foreground"
+          >
+            {new Date(task.createdAt).toLocaleString(undefined, {
+              month: "short",
+              day: "numeric",
+              hour: "numeric",
+              minute: "2-digit",
+            })}
+          </time>
+        </span>
       </Link>
     </li>
   );
