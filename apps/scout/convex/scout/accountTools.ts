@@ -128,7 +128,7 @@ export function createAccountTools(
       };
     }),
     record_authenticated_service_account: createServiceAccountRecordingTool(
-      async ({ accountAccess, identifier, loginMethod }, abortSignal) => {
+      async ({ accountAccess, identifier, loginMethod, verification }, abortSignal) => {
         const observationStartedAt = Date.now();
         const currentUrl = await args.browser.actions.getPage("url", abortSignal);
         if (!currentUrl.success) {
@@ -141,6 +141,7 @@ export function createAccountTools(
           sessionId: browserSessionId,
           accountAccess,
           loginMethod,
+          verification,
           observedUrl: currentUrl.output,
           identifier,
         });

@@ -15,6 +15,7 @@ import {
   scoutServiceAccountFieldsValidator,
   scoutServiceAccountLoginMethodValidator,
   profileAccountTargetValidator,
+  observedLoginMethodValidator,
 } from "./model";
 
 const MAX_ACCOUNTS = 200;
@@ -25,15 +26,6 @@ const MAX_OBSERVED_URL_LENGTH = 2_048;
 const serviceAccountPublicValidator = scoutServiceAccountFieldsValidator.extend({
   _id: v.id("scoutServiceAccounts"),
 });
-
-const observedLoginMethodValidator = v.union(
-  v.object({ kind: v.literal("managed_password") }),
-  v.object({
-    kind: v.literal("oauth"),
-    providerServiceDomain: v.string(),
-    providerIdentifier: v.string(),
-  }),
-);
 
 const runtimeServiceAccountValidator = v.object({
   serviceAccountId: v.id("scoutServiceAccounts"),
@@ -149,7 +141,7 @@ export const saveOAuth = mutation({
       if (!provider || provider.scoutId !== registration.scoutId) {
         throw new ConvexError("Choose a provider account belonging to this Scout.");
       }
-      if (provider.loginMethod.kind === "managed_password") break;
+      if (provider.loginMethod.kind !== "oauth") break;
       providerId = provider.loginMethod.providerAccountId;
     }
     const fields = {
@@ -212,8 +204,8 @@ async function resolveObservedLoginMethod(
   scoutId: Doc<"scouts">["_id"],
   loginMethod: typeof observedLoginMethodValidator.type,
 ) {
-  if (loginMethod.kind === "managed_password") {
-    return { kind: "managed_password" as const };
+  if (loginMethod.kind !== "oauth") {
+    return loginMethod;
   }
   const providerServiceDomain = canonicalServiceDomain(
     loginMethod.providerServiceDomain,
@@ -241,7 +233,7 @@ function loginMethodsMatch(
 ) {
   if (stored.kind !== observed.kind) return false;
   return (
-    stored.kind === "managed_password" ||
+    stored.kind !== "oauth" ||
     (observed.kind === "oauth" && stored.providerAccountId === observed.providerAccountId)
   );
 }
@@ -291,6 +283,7 @@ export const recordAuthenticated = internalMutation({
     observedUrl: v.string(),
     identifier: v.string(),
     loginMethod: observedLoginMethodValidator,
+    verification: v.string(),
   },
   returns: serviceAccountRecordingResultValidator,
   handler: async (ctx, args) => {
@@ -322,118 +315,160 @@ export const recordAuthenticated = internalMutation({
     }
     const observedUrl = observedHttpsUrl(args.observedUrl);
     const identifier = canonicalIdentifier(args.identifier);
-    const identifierKey = serviceAccountIdentifierKey(identifier);
     const activeTab = latestOperation.state.telemetry.after.tabs.find((tab) => tab.active);
     const telemetryUrl = activeTab?.url ? observedHttpsUrl(activeTab.url) : null;
-    let observedDomain: string;
-    try {
-      observedDomain = canonicalServiceDomain(observedUrl, "Observed service URL");
-    } catch {
-      throw new Error("The observed service page is invalid");
-    }
     if (observedUrl !== telemetryUrl) {
       throw new Error("The authenticated account evidence is not from the latest service page");
     }
 
-    const accounts = await ctx.db
-      .query("scoutServiceAccounts")
-      .withIndex("by_scout_id", (query) => query.eq("scoutId", chat.scoutId))
-      .take(MAX_ACCOUNTS_PER_SCOUT);
-    const serviceAccounts = accounts.filter(
+    return await recordObservedAccount(ctx, {
+      scoutId: chat.scoutId,
+      observedUrl,
+      identifier,
+      loginMethod: args.loginMethod,
+      observationStartedAt: args.observationStartedAt,
+      lastObserved: {
+        kind: "agent_report",
+        operationId: latestOperation._id,
+        threadId: chat.threadId,
+        sessionId: session._id,
+        recordedAt: Date.now(),
+        observedUrl,
+        accountAccess: args.accountAccess,
+        verification: requiredText(args.verification, "Authentication verification", 1000),
+      },
+    });
+  },
+});
+
+export async function recordObservedAccount(
+  ctx: Pick<MutationCtx, "db">,
+  args: {
+    scoutId: Doc<"scouts">["_id"];
+    observedUrl: string;
+    identifier: string;
+    loginMethod: typeof observedLoginMethodValidator.type;
+    observationStartedAt: number;
+    lastObserved: NonNullable<Doc<"scoutServiceAccounts">["lastObserved"]>;
+  },
+) {
+  const observedDomain = canonicalServiceDomain(args.observedUrl);
+  const identifier = canonicalIdentifier(args.identifier);
+  const identifierKey = serviceAccountIdentifierKey(identifier);
+  const accounts = await ctx.db
+    .query("scoutServiceAccounts")
+    .withIndex("by_scout_id", (query) => query.eq("scoutId", args.scoutId))
+    .take(MAX_ACCOUNTS_PER_SCOUT);
+  const serviceAccounts = accounts.filter(
+    (account) =>
+      observedDomain === account.serviceDomain ||
+      observedDomain.endsWith(`.${account.serviceDomain}`),
+  );
+  if (
+    serviceAccounts.some(
       (account) =>
-        observedDomain === account.serviceDomain ||
-        observedDomain.endsWith(`.${account.serviceDomain}`),
+        account.loginUpdatedAt !== undefined && args.observationStartedAt <= account.loginUpdatedAt,
+    )
+  ) {
+    throw new Error(
+      "Account login settings changed. Read the current page again before recording authentication.",
     );
-    if (
-      serviceAccounts.some(
-        (account) =>
-          account.loginUpdatedAt !== undefined &&
-          args.observationStartedAt <= account.loginUpdatedAt,
-      )
-    ) {
+  }
+  const matchingAccounts = serviceAccounts.filter(
+    (account) => serviceAccountIdentifierKey(account.identifier) === identifierKey,
+  );
+  if (matchingAccounts.length > 1) {
+    throw new Error("The login identifier must match exactly one Scout service account");
+  }
+  const loginMethod = await resolveObservedLoginMethod(ctx, args.scoutId, args.loginMethod);
+  const recordedAt = Date.now();
+  const evidence = { kind: "succeeded" as const, checkedAt: recordedAt };
+  const boundAccount = matchingAccounts[0];
+  if (boundAccount) {
+    if (!loginMethodsMatch(boundAccount.loginMethod, loginMethod)) {
+      throw new Error("Observed login method does not match the registered service account");
+    }
+    if (loginMethod.kind === "oauth" && loginMethod.providerAccountId === boundAccount._id) {
+      throw new Error("A service account cannot authenticate through itself");
+    }
+    await ctx.db.patch("scoutServiceAccounts", boundAccount._id, {
+      authenticationEvidence: evidence,
+      lastObserved: args.lastObserved,
+    });
+    return { serviceAccountId: boundAccount._id, created: false };
+  }
+
+  if (loginMethod.kind === "managed_password") {
+    const registeredIdentifiers = serviceAccounts
+      .filter((account) => account.loginMethod.kind === "managed_password")
+      .map((account) => account.identifier);
+    if (registeredIdentifiers.length > 0) {
       throw new Error(
-        "Account login settings changed. Read the current page again before recording authentication.",
+        `No saved login matches ${JSON.stringify(identifier)} on this service. Use the registered account identifier: ${registeredIdentifiers.map((identifier) => JSON.stringify(identifier)).join(", ")}.`,
       );
     }
-    const matchingAccounts = serviceAccounts.filter(
-      (account) => serviceAccountIdentifierKey(account.identifier) === identifierKey,
-    );
-    if (matchingAccounts.length > 1) {
-      throw new Error("The login identifier must match exactly one Scout service account");
-    }
-    const loginMethod = await resolveObservedLoginMethod(ctx, chat.scoutId, args.loginMethod);
-    const recordedAt = Date.now();
-    const evidence = { kind: "succeeded" as const, checkedAt: recordedAt };
-    const lastObserved = {
-      kind: "agent_report" as const,
-      operationId: latestOperation._id,
-      threadId: chat.threadId,
-      sessionId: session._id,
-      recordedAt,
-      observedUrl,
-      accountAccess: args.accountAccess,
-    };
-    const boundAccount = matchingAccounts[0];
-    if (boundAccount) {
-      if (!loginMethodsMatch(boundAccount.loginMethod, loginMethod)) {
-        throw new Error("Observed login method does not match the registered service account");
-      }
-      if (loginMethod.kind === "oauth" && loginMethod.providerAccountId === boundAccount._id) {
-        throw new Error("A service account cannot authenticate through itself");
-      }
-      await ctx.db.patch("scoutServiceAccounts", boundAccount._id, {
-        authenticationEvidence: evidence,
-        lastObserved,
-      });
-      return { serviceAccountId: boundAccount._id, created: false };
-    }
+    throw new Error("A managed-password account must be registered before it is used");
+  }
+  const scout = await ctx.db.get("scouts", args.scoutId);
+  if (!scout) throw new Error("Scout not found");
+  const knownIdentifiers = [
+    scout.agentMail.address,
+    ...accounts.map((account) => account.identifier),
+  ]
+    .map(canonicalIdentifier)
+    .filter((identifier, index, identifiers) => identifiers.indexOf(identifier) === index);
+  const accountIdentifier = knownIdentifiers.find(
+    (identifier) => serviceAccountIdentifierKey(identifier) === identifierKey,
+  );
+  if (!accountIdentifier) {
+    throw new Error("The account identifier does not belong to this Scout");
+  }
+  if (accounts.length >= MAX_ACCOUNTS_PER_SCOUT) {
+    throw new Error(`A Scout can have at most ${MAX_ACCOUNTS_PER_SCOUT} service accounts`);
+  }
+  const allAccounts = await ctx.db
+    .query("scoutServiceAccounts")
+    .withIndex("by_scout_id")
+    .take(MAX_ACCOUNTS);
+  if (allAccounts.length >= MAX_ACCOUNTS) {
+    throw new Error(`Service account inventory can contain at most ${MAX_ACCOUNTS} accounts`);
+  }
+  return {
+    serviceAccountId: await ctx.db.insert("scoutServiceAccounts", {
+      scoutId: args.scoutId,
+      serviceName: observedDomain,
+      serviceDomain: observedDomain,
+      identifier: accountIdentifier,
+      authenticationEvidence: evidence,
+      loginMethod,
+      lastObserved: args.lastObserved,
+    }),
+    created: true,
+  };
+}
 
-    if (loginMethod.kind === "managed_password") {
-      const registeredIdentifiers = serviceAccounts
-        .filter((account) => account.loginMethod.kind === "managed_password")
-        .map((account) => account.identifier);
-      if (registeredIdentifiers.length > 0) {
-        throw new Error(
-          `No saved login matches ${JSON.stringify(identifier)} on this service. Use the registered account identifier: ${registeredIdentifiers.map((identifier) => JSON.stringify(identifier)).join(", ")}.`,
-        );
-      }
-      throw new Error("A managed-password account must be registered before it is used");
-    }
-    const scout = await ctx.db.get("scouts", chat.scoutId);
-    if (!scout) throw new Error("Scout not found");
-    const knownIdentifiers = [
-      scout.agentMail.address,
-      ...accounts.map((account) => account.identifier),
-    ]
-      .map(canonicalIdentifier)
-      .filter((identifier, index, identifiers) => identifiers.indexOf(identifier) === index);
-    const accountIdentifier = knownIdentifiers.find(
-      (identifier) => serviceAccountIdentifierKey(identifier) === identifierKey,
-    );
-    if (!accountIdentifier) {
-      throw new Error("The account identifier does not belong to this Scout");
-    }
-    if (accounts.length >= MAX_ACCOUNTS_PER_SCOUT) {
-      throw new Error(`A Scout can have at most ${MAX_ACCOUNTS_PER_SCOUT} service accounts`);
-    }
-    const allAccounts = await ctx.db
-      .query("scoutServiceAccounts")
-      .withIndex("by_scout_id")
-      .take(MAX_ACCOUNTS);
-    if (allAccounts.length >= MAX_ACCOUNTS) {
-      throw new Error(`Service account inventory can contain at most ${MAX_ACCOUNTS} accounts`);
-    }
-    return {
-      serviceAccountId: await ctx.db.insert("scoutServiceAccounts", {
-        scoutId: chat.scoutId,
-        serviceName: observedDomain,
-        serviceDomain: observedDomain,
-        identifier: accountIdentifier,
-        authenticationEvidence: evidence,
-        loginMethod,
-        lastObserved,
-      }),
-      created: true,
+export const savePasswordless = mutation({
+  access: "access_scout_manage",
+  args: { account: profileAccountTargetValidator },
+  returns: v.object({ serviceAccountId: v.id("scoutServiceAccounts") }),
+  handler: async (ctx, args) => {
+    const { registration, account } = await resolveProfileAccount(ctx, args.account);
+    const fields = {
+      ...registration,
+      authenticationEvidence: { kind: "none" as const },
+      loginMethod: { kind: "passwordless" as const },
     };
+    if (!account) return { serviceAccountId: await ctx.db.insert("scoutServiceAccounts", fields) };
+    const credential = await ctx.db
+      .query("scoutManagedCredentials")
+      .withIndex("by_service_account_id", (q) => q.eq("serviceAccountId", account._id))
+      .unique();
+    if (credential) await ctx.db.delete("scoutManagedCredentials", credential._id);
+    await ctx.db.patch("scoutServiceAccounts", account._id, {
+      ...fields,
+      lastObserved: undefined,
+      loginUpdatedAt: Date.now(),
+    });
+    return { serviceAccountId: account._id };
   },
 });

@@ -137,6 +137,7 @@ async function accountContext() {
     observationStartedAt: Date.now(),
     sessionId: browser.sessionId,
     accountAccess: "created",
+    verification: "Account settings shows the Scout identity after completed sign-in.",
     observedUrl,
     identifier: "conrad@example.test",
     loginMethod: {
@@ -172,6 +173,94 @@ async function fillInventory(
 }
 
 describe("Scout service-account inventory", () => {
+  it("lets only managers change an account to passwordless and clears the old credential and verification", async () => {
+    const { backend, admin, scoutId, evidence } = await accountContext();
+    const serviceAccountId = await insertManagedAccount(backend, {
+      scoutId,
+      serviceName: "Example",
+      serviceDomain: "example.com",
+      identifier: evidence.identifier,
+    });
+    await backend.mutation(internal.scout.serviceAccounts.recordAuthenticated, {
+      ...evidence,
+      loginMethod: { kind: "managed_password" },
+    });
+    const credentialId = await backend.run((ctx) =>
+      ctx.db.insert("scoutManagedCredentials", {
+        credentialReference: crypto.randomUUID(),
+        serviceAccountId,
+        scoutId,
+        formatVersion: 1,
+        algorithm: "aes-256-gcm",
+        keyVersion: 1,
+        keyFingerprint: "fixture",
+        credentialHost: "example.com",
+        identifier: evidence.identifier,
+        nonce: "fixture",
+        ciphertext: "fixture",
+        authenticationTag: "fixture",
+        createdAt: 1,
+      }),
+    );
+    const memberId = await insertUser(backend, "member@example.test");
+    const args = {
+      account: { kind: "update" as const, serviceAccountId, identifier: evidence.identifier },
+    };
+    await expect(
+      backend
+        .withIdentity({ subject: `${memberId}|test-session` })
+        .mutation(api.scout.serviceAccounts.savePasswordless, args),
+    ).rejects.toThrow("Not authorized");
+    // A manager closes the browser before changing its saved login method.
+    await backend.run((ctx) => ctx.db.delete("scoutBrowserSessions", evidence.sessionId));
+    await admin.mutation(api.scout.serviceAccounts.savePasswordless, args);
+    const saved = await backend.run((ctx) => ctx.db.get("scoutServiceAccounts", serviceAccountId));
+    expect(saved).toMatchObject({
+      loginMethod: { kind: "passwordless" },
+      authenticationEvidence: { kind: "none" },
+      loginUpdatedAt: expect.any(Number),
+    });
+    expect(saved?.lastObserved).toBeUndefined();
+    expect(
+      await backend.run((ctx) => ctx.db.get("scoutManagedCredentials", credentialId)),
+    ).toBeNull();
+  });
+  it("creates and reuses a passwordless account, keeping verification private", async () => {
+    const { backend, admin, evidence } = await accountContext();
+    const observation = { ...evidence, loginMethod: { kind: "passwordless" as const } };
+    const first = await backend.mutation(
+      internal.scout.serviceAccounts.recordAuthenticated,
+      observation,
+    );
+    expect(first.created).toBe(true);
+    expect(
+      await backend.mutation(internal.scout.serviceAccounts.recordAuthenticated, observation),
+    ).toEqual({ serviceAccountId: first.serviceAccountId, created: false });
+    const account = await backend.run((ctx) =>
+      ctx.db.get("scoutServiceAccounts", first.serviceAccountId),
+    );
+    expect(account).toMatchObject({
+      loginMethod: { kind: "passwordless" },
+      lastObserved: { verification: evidence.verification },
+    });
+    expect(await backend.run((ctx) => ctx.db.query("scoutManagedCredentials").take(1))).toEqual([]);
+    const visible = await admin.query(api.scout.serviceAccounts.list, {});
+    expect(visible.find((entry) => entry._id === first.serviceAccountId)).not.toHaveProperty(
+      "lastObserved",
+    );
+    await expect(
+      backend.mutation(internal.scout.serviceAccounts.recordAuthenticated, {
+        ...observation,
+        identifier: "stranger@example.test",
+      }),
+    ).rejects.toThrow("does not belong");
+    await expect(
+      backend.mutation(internal.scout.serviceAccounts.recordAuthenticated, {
+        ...observation,
+        verification: "  ",
+      }),
+    ).rejects.toThrow("cannot be empty");
+  });
   it.each(["conrad@example.test", "conrad-new"])(
     "rejects a pending authentication observation after editing the login to %s",
     async (identifier) => {
@@ -295,6 +384,7 @@ describe("Scout service-account inventory", () => {
         kind: "agent_report",
         operationId: expect.any(String),
         accountAccess: "created",
+        verification: "Account settings shows the Scout identity after completed sign-in.",
       },
     });
     await expect(
@@ -348,6 +438,7 @@ describe("Scout service-account inventory", () => {
         kind: "agent_report",
         operationId: expect.any(String),
         accountAccess: "recovered",
+        verification: evidence.verification,
       },
     });
   });

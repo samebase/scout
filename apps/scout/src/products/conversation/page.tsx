@@ -12,6 +12,7 @@ import { SidebarLayout } from "@samebase/sidebars/SidebarLayout";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useConvexAuth, useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
+import { ConvexError } from "convex/values";
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
@@ -52,6 +53,7 @@ import { BrowserReplay } from "../../components/browser-replay";
 import { TaskWalkthrough } from "#components/task-walkthrough";
 import { ToolActivityRow } from "#components/tool-activity";
 import { SessionCost } from "#components/session-cost";
+import { TaskResumeHistory } from "#components/task-resume-history";
 import { Button, buttonVariants } from "#components/ui/button";
 import { ProductShell } from "../shell";
 import { ScoutPiece } from "../play/scout-piece";
@@ -943,9 +945,16 @@ function ConversationSession({
       });
       setRequest({ kind: "idle" });
     } catch (error) {
+      const reason =
+        creditFailure(error)?.message ??
+        (error instanceof ConvexError && typeof error.data === "string"
+          ? error.data
+          : error instanceof Error
+            ? error.message
+            : "The resume request failed.");
       setRequest({
         kind: "failed",
-        message: creditFailure(error)?.message ?? "Couldn't resume Scout. Try again.",
+        message: `Scout could not resume: ${reason}`,
       });
     } finally {
       pending.current = false;
@@ -986,12 +995,17 @@ function ConversationSession({
           <ConversationActions thread={thread} kind={kind} />
         </div>
       )}
+      {request.kind === "failed" && (
+        <p role="alert" className={cn(playError, "shrink-0 whitespace-pre-wrap wrap-anywhere")}>
+          {request.message}
+        </p>
+      )}
       {managed?.state.kind === "waiting" && (
         <div className={cn(playNotice, "space-y-3")}>
           <p className="whitespace-pre-wrap">{managed.state.message}</p>
           {managed.requestCheckMessage && (
-            <p role="alert" className="whitespace-pre-wrap">
-              {managed.requestCheckMessage}
+            <p role="alert" className="whitespace-pre-wrap wrap-anywhere">
+              Scout could not resume: {managed.requestCheckMessage}
             </p>
           )}
           {managed.handoffEmailFailed && (
@@ -1018,6 +1032,22 @@ function ConversationSession({
             </button>
           </div>
         </div>
+      )}
+      {managed?.state.kind === "checking" && (
+        <p role="status" className={cn(playNotice, "flex shrink-0 items-center gap-2.5")}>
+          <LoaderCircleIcon size={15} className="animate-spin" aria-hidden="true" />
+          Checking browser…
+        </p>
+      )}
+      {managed && <TaskResumeHistory attempts={managed.resumeAttempts} state={managed.state} />}
+      {(thread.status === "stopped" || thread.status === "stopping") && (
+        <p role="status" className="shrink-0 border-b px-4 py-3 text-sm text-muted-foreground">
+          {thread.status === "stopping" ? "Stopping Scout…" : "Task stopped."}
+          {thread.status === "stopped" &&
+            managed?.canSend &&
+            !showingWalkthrough &&
+            " Send a message to continue."}
+        </p>
       )}
       {showingWalkthrough && managedId && (
         <div className="min-h-0 flex-1 overflow-hidden">
@@ -1093,15 +1123,13 @@ function ConversationSession({
                     </p>
                   </MessageScrollerItem>
                 )}
-                {(thread.status === "running" || managed?.state.kind === "checking") && (
+                {thread.status === "running" && managed?.state.kind !== "checking" && (
                   <p
                     role="status"
                     className="flex items-center gap-2.5 text-sm text-muted-foreground"
                   >
                     <LoaderCircleIcon size={15} className="animate-spin" aria-hidden="true" />
-                    {managed?.state.kind === "checking"
-                      ? "Checking…"
-                      : (phaseLabel ?? <span className="sr-only">Scout is working</span>)}
+                    {phaseLabel ?? <span className="sr-only">Scout is working</span>}
                   </p>
                 )}
               </MessageScrollerContent>
@@ -1180,11 +1208,6 @@ function ConversationSession({
                   </Link>
                 )}
             </div>
-          )}
-          {request.kind === "failed" && (
-            <p role="alert" className={playError}>
-              {request.message}
-            </p>
           )}
           {!showingWalkthrough && (
             <ConversationComposer

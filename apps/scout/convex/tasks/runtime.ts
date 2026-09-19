@@ -129,6 +129,11 @@ export const cleanup = internalAction({
   returns: v.null(),
   handler: async (ctx, args): Promise<null> => {
     const session = await ctx.runQuery(internal.tasks.sessions.cleanupResources, args);
+    console.info("Task cleanup started", {
+      sessionId: session._id,
+      state: session.state.kind,
+      workflowId: session.workflowId ?? null,
+    });
     try {
       const research = await ctx.runQuery(internal.tasks.siteResearchRecords.get, args);
       if (research?.state.kind === "running" || research?.state.kind === "waiting") {

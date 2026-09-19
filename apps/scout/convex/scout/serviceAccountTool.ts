@@ -7,6 +7,14 @@ const serviceAccountEvidenceFields = {
     .enum(["created", "recovered"])
     .describe("created for a new signup; recovered for signing in to an existing account"),
   identifier: z.string().min(1).describe("The account's saved login email or username"),
+  verification: z
+    .string()
+    .trim()
+    .min(1)
+    .max(1000)
+    .describe(
+      "What you checked to establish that this Scout is signed in: an account menu/settings page identifying the Scout, or an action requiring sign-in whose saved result you verified. Never include passwords, codes or tokens.",
+    ),
 };
 
 const serviceAccountEvidenceInputSchema = z
@@ -14,6 +22,14 @@ const serviceAccountEvidenceInputSchema = z
     z
       .object({
         loginMethod: z.literal("managed_password"),
+        ...serviceAccountEvidenceFields,
+      })
+      .strict(),
+    z
+      .object({
+        loginMethod: z
+          .literal("passwordless")
+          .describe("Sign-in by an email code or magic link; no saved password or OAuth provider"),
         ...serviceAccountEvidenceFields,
       })
       .strict(),
@@ -37,14 +53,15 @@ const serviceAccountEvidenceInputSchema = z
   .transform((input) => ({
     accountAccess: input.accountAccess,
     loginMethod:
-      input.loginMethod === "managed_password"
-        ? { kind: "managed_password" as const }
+      input.loginMethod !== "oauth"
+        ? { kind: input.loginMethod }
         : {
             kind: "oauth" as const,
             providerServiceDomain: input.oauthProviderServiceDomain,
             providerIdentifier: input.oauthProviderIdentifier,
           },
     identifier: input.identifier,
+    verification: input.verification,
   }));
 
 export type ServiceAccountEvidence = z.output<typeof serviceAccountEvidenceInputSchema>;
@@ -63,6 +80,14 @@ export function createServiceAccountRecordingTool(
       - The current browser session determines the service.
       - Managed-password accounts must already be prepared or registered; OAuth requires
         a provider account in this Scout's inventory.
+      - Use passwordless for email-code or magic-link sign-in. Do not prepare a password
+        or invent an OAuth provider for these accounts.
+      - Before recording, verify the Scout's identity in account settings or its account
+        menu, or perform an action requiring sign-in and verify the saved result.
+        Describe that check in verification. A landing page, product tour, welcome screen,
+        prepared password, or submitted signup form alone does not prove authentication.
+      - Finish outstanding signup, CAPTCHA, and email verification steps first. If login
+        cannot be verified, do not record it. Continue investigating or report the blocker.
       - Repeated calls update the existing account.
     `,
     inputSchema: serviceAccountEvidenceInputSchema,

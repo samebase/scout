@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-18T23:08:49Z
+- **Last updated:** 2026-09-19T11:00:15Z
 
 ## Log
 
@@ -1501,8 +1501,16 @@ Credit purchases match the saved Scout checkout even when Polar reuses a custome
 Signed notifications still verify the product and price, and repeated deliveries cannot add credits twice
 (`apps/scout/convex/creditPurchases.ts`, `apps/scout/convex/polarModel.ts`).
 
-### 2026-09-18 - working tree - v242
+### 2026-09-18 - eedcfe6 - v242
 
 Credit history opens on its own page, keeping the balance and purchase controls compact in Settings.
 Sign out is the first account control, and the history page links back to Settings
 (`apps/scout/src/routes/settings.tsx`, `apps/scout/src/components/credit-history-page.tsx`).
+
+### 2026-09-19 - working tree - v243
+
+Scouts can record and reuse accounts that sign in by email code or link, and admins can select that login method.
+Both runtimes share account recording and retain a private explanation of how sign-in was verified
+(`apps/scout/convex/scout/serviceAccounts.ts`, `apps/scout/convex/scout/serviceAccountTool.ts`).
+Resume checks recognize Scout's inbox access, allowing email verification after a human solves a CAPTCHA.
+Resume history remains visible after stopping or following up; cancellation and resume decisions are logged.

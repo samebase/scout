@@ -28,9 +28,20 @@ export const scoutManagedPasswordLoginMethodValidator = v.object({
 
 export const scoutServiceAccountLoginMethodValidator = v.union(
   scoutManagedPasswordLoginMethodValidator,
+  v.object({ kind: v.literal("passwordless") }),
   v.object({
     kind: v.literal("oauth"),
     providerAccountId: v.id("scoutServiceAccounts"),
+  }),
+);
+
+export const observedLoginMethodValidator = v.union(
+  v.object({ kind: v.literal("managed_password") }),
+  v.object({ kind: v.literal("passwordless") }),
+  v.object({
+    kind: v.literal("oauth"),
+    providerServiceDomain: v.string(),
+    providerIdentifier: v.string(),
   }),
 );
 

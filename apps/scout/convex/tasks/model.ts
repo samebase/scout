@@ -74,4 +74,5 @@ export const callResult = v.union(
   v.object({ kind: v.literal("running") }),
   v.object({ kind: v.literal("success"), output: v.string() }),
   v.object({ kind: v.literal("error"), error: v.string() }),
+  v.object({ kind: v.literal("interrupted"), error: v.string() }),
 );

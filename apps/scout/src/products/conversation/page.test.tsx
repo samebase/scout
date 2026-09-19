@@ -10,6 +10,7 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import { getFunctionName, type FunctionReturnType, type FunctionReference } from "convex/server";
+import { ConvexError } from "convex/values";
 import { useSyncExternalStore } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { Route as TaskRoute } from "../../routes/tasks.$thread";
@@ -180,6 +181,7 @@ beforeEach(() => {
     pendingMessage: null,
     active: false,
     canRetryMessage: false,
+    resumeAttempts: [],
     canSend: true,
     canStop: false,
     busy: false,
@@ -387,6 +389,7 @@ test.each(["INSUFFICIENT_CREDITS", "CREDIT_HOLD"] as const)(
     remote.queries.set("tasks/sessions:controls", {
       state: { kind: "failed", error: "Private provider diagnostic", creditFailureCode },
       requestCheckMessage: null,
+      resumeAttempts: [],
       canSend: true,
       canStop: false,
       busy: false,
@@ -410,6 +413,7 @@ test("shows the persisted error without treating embedded text as a credit failu
   remote.queries.set("tasks/sessions:controls", {
     state: { kind: "failed", error: 'Untrusted text: {"code":"INSUFFICIENT_CREDITS"}' },
     requestCheckMessage: null,
+    resumeAttempts: [],
     canSend: true,
     canStop: false,
     busy: false,
@@ -433,6 +437,7 @@ describe("task delivery and failure feedback", () => {
       state: { kind: "idle" },
       pendingMessage: { message: "Check checkout.", workflowId: "delivery-1", status: "queued" },
       active: true,
+      resumeAttempts: [],
       canSend: false,
       canStop: true,
       canRetryMessage: false,
@@ -461,6 +466,7 @@ describe("task delivery and failure feedback", () => {
       ...queued,
       state: { kind: "failed", error: "Private workflow error" },
       active: false,
+      resumeAttempts: [],
       canSend: true,
       canStop: false,
       canRetryMessage: true,
@@ -522,6 +528,7 @@ describe("task delivery and failure feedback", () => {
           status,
         },
         active: false,
+        resumeAttempts: [],
         canSend: true,
         canStop: false,
         canRetryMessage: status === "queued",
@@ -564,6 +571,7 @@ describe("task delivery and failure feedback", () => {
         state: { kind: "idle" },
         pendingMessage: { message: "Pending text", workflowId: "delivery-1", status },
         active: true,
+        resumeAttempts: [],
         canSend: false,
         canStop: true,
         canRetryMessage: false,
@@ -597,6 +605,7 @@ describe("task delivery and failure feedback", () => {
         state: { kind: "failed", error: "Private error" },
         pendingMessage: { message: "Pending text", workflowId: "delivery-1", status: "queued" },
         active,
+        resumeAttempts: [],
         canSend: false,
         canStop: active,
         canRetryMessage: false,
@@ -653,6 +662,7 @@ describe("task delivery and failure feedback", () => {
         pendingMessage: null,
         active: false,
         canRetryMessage: false,
+        resumeAttempts: [],
         canSend: true,
         canStop: false,
         busy: false,
@@ -709,6 +719,7 @@ describe("task delivery and failure feedback", () => {
         state: { kind: "failed", error, ...omitNullish({ diagnostic }) },
         pendingMessage: null,
         active: false,
+        resumeAttempts: [],
         canSend: true,
         canStop: false,
         canRetryMessage: false,
@@ -736,6 +747,7 @@ describe("task delivery and failure feedback", () => {
         state: { kind: "failed", error: "Private startup failure" },
         pendingMessage,
         active: false,
+        resumeAttempts: [],
         canSend: false,
         canStop: false,
         canRetryMessage: false,
@@ -758,6 +770,7 @@ describe("task delivery and failure feedback", () => {
         status: "queued",
       },
       active: false,
+      resumeAttempts: [],
       canSend: true,
       canStop: false,
       canRetryMessage: true,
@@ -784,6 +797,7 @@ describe("task delivery and failure feedback", () => {
       requestCheckMessage: "Could not capture browser evidence.",
       pendingMessage: null,
       active: false,
+      resumeAttempts: [],
       canSend: true,
       canStop: false,
       canRetryMessage: false,
@@ -811,6 +825,7 @@ describe("task delivery and failure feedback", () => {
       },
       pendingMessage: null,
       active: false,
+      resumeAttempts: [],
       canSend: true,
       canStop: false,
       canRetryMessage: false,
@@ -842,6 +857,7 @@ describe("task delivery and failure feedback", () => {
       state: { kind: "stopped" },
       pendingMessage: { message: "Original request", workflowId: "delivery-1", status: "queued" },
       active: false,
+      resumeAttempts: [],
       canSend: true,
       canStop: false,
       canRetryMessage: true,
@@ -864,6 +880,7 @@ describe("task delivery and failure feedback", () => {
 test("sends when controls allow it without credit settlement messages", async () => {
   remote.queries.set("tasks/sessions:controls", {
     state: { kind: "idle" },
+    resumeAttempts: [],
     canSend: true,
     canStop: false,
     busy: false,
@@ -954,6 +971,7 @@ test("a report arriving during a running Review keeps the reader in Chat and pre
   remote.queries.set("tasks/sessions:controls", {
     state: { kind: "running" },
     canStop: true,
+    resumeAttempts: [],
     canSend: false,
   });
   remote.queries.set("tasks/walkthrough:get", { walkthrough: null, captures: [] });
@@ -971,6 +989,7 @@ test("a report arriving during a running Review keeps the reader in Chat and pre
     remote.queries.set("tasks/sessions:controls", {
       state: { kind: "idle" },
       canStop: false,
+      resumeAttempts: [],
       canSend: true,
     });
     remote.queries.set("tasks/walkthrough:get", {
@@ -1205,6 +1224,7 @@ test("resizing Review keeps its title, pane controls, chat draft, and replay mou
   );
   remote.queries.set("tasks/sessions:controls", {
     state: { kind: "idle" },
+    resumeAttempts: [],
     canSend: true,
     canStop: false,
   });
@@ -1338,6 +1358,7 @@ test("Review uses managed controls and keeps live view, handoff and follow-up me
       callId: "call-current",
       turnId: "turn-current",
     },
+    resumeAttempts: [],
     canSend: false,
     canStop: true,
     busy: false,
@@ -1376,6 +1397,7 @@ test("Review uses managed controls and keeps live view, handoff and follow-up me
     remote.queries.set("scout/activity:get", { ...review, status: "finished" });
     remote.queries.set("tasks/sessions:controls", {
       state: { kind: "idle" },
+      resumeAttempts: [],
       canSend: true,
       canStop: false,
       busy: false,
@@ -1443,6 +1465,7 @@ test.each(["Finish signing in before resuming.", "Could not capture browser evid
         callId: "call-latest",
         turnId: "turn-latest",
       },
+      resumeAttempts: [],
       canSend: false,
       canStop: true,
       busy: false,
@@ -1457,7 +1480,9 @@ test.each(["Finish signing in before resuming.", "Could not capture browser evid
       { kind: "message", id: "message-1", role: "assistant", text: "I opened the site." },
     ];
     await openPlay("/tasks/game-thread");
-    expect((await screen.findByRole("alert")).textContent).toBe(reason);
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      `Scout could not resume: ${reason}`,
+    );
     const draft = screen.getByLabelText<HTMLTextAreaElement>("Message Scout");
     fireEvent.change(draft, { target: { value: "Keep this draft" } });
     fireEvent.click(screen.getByRole("button", { name: "Resume Scout" }));
@@ -1477,7 +1502,7 @@ test.each(["Finish signing in before resuming.", "Could not capture browser evid
       remote.revision++;
       remote.subscribers.forEach((listener) => listener());
     });
-    expect(await screen.findByText("Checking…")).toBeTruthy();
+    expect(await screen.findByText("Checking browser…")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Resume Scout" })).toBeNull();
     expect(screen.queryByText(reason)).toBeNull();
     expect(screen.queryByText("Complete verification")).toBeNull();
@@ -1502,6 +1527,173 @@ test.each(["Finish signing in before resuming.", "Could not capture browser evid
       expect(remote.stopManaged).toHaveBeenCalledExactlyOnceWith({ sessionId: "managed-1" }),
     );
     expect(remote.resumeManaged).toHaveBeenCalledTimes(1);
+  },
+);
+
+test.each([
+  {
+    view: "chat",
+    error: new ConvexError("Session is no longer waiting for this handoff"),
+    reason: "Session is no longer waiting for this handoff",
+  },
+  {
+    view: "walkthrough",
+    error: new ConvexError("Handoff browser is not available"),
+    reason: "Handoff browser is not available",
+  },
+  {
+    view: "walkthrough",
+    error: new Error("Resume failed: 503 [request_id: req-resume]"),
+    reason: "Resume failed: 503 [request_id: req-resume]",
+  },
+])(
+  "shows the actual resume request error above the $view pane: $reason",
+  async ({ view, error, reason }) => {
+    remote.queries.set(
+      "scout/activity:get",
+      session({ purpose: { kind: "review" }, status: "waiting" }),
+    );
+    remote.queries.set("tasks/walkthrough:get", { walkthrough: null, captures: [] });
+    remote.queries.set("tasks/sessions:controls", {
+      state: { kind: "waiting", message: "Complete verification", callId: "call", turnId: "turn" },
+      resumeAttempts: [],
+      canSend: false,
+      canStop: true,
+      requestCheckMessage: null,
+      interactiveLiveViewUrl: "https://example.test/control",
+    });
+    remote.resumeManaged.mockRejectedValueOnce(error);
+    await openPlay(`/tasks/game-thread?view=${view}`);
+    fireEvent.click(await screen.findByRole("button", { name: "Resume Scout" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe(`Scout could not resume: ${reason}`);
+    expect(alert.closest("[hidden]")).toBeNull();
+    const region = screen.getByRole("region", {
+      name: view === "walkthrough" ? "Walkthrough with Scout" : "Conversation with Scout",
+    });
+    expect(alert.parentElement).toBe(region);
+    expect(
+      alert.compareDocumentPosition(screen.getByRole("button", { name: "Resume Scout" })) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0);
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Resume Scout" })).toHaveProperty("disabled", false);
+  },
+);
+
+test.each(["chat", "walkthrough"])(
+  "keeps resume progress and a returned rejection visible in the mobile %s view",
+  async (view) => {
+    remote.queries.set(
+      "scout/activity:get",
+      session({ purpose: { kind: "review" }, status: "waiting" }),
+    );
+    remote.queries.set("tasks/walkthrough:get", { walkthrough: null, captures: [] });
+    const controls = {
+      state: {
+        kind: "waiting",
+        message: "Complete verification",
+        callId: "handoff-call",
+        turnId: "handoff-turn",
+      },
+      resumeAttempts: [],
+      canSend: false,
+      canStop: true,
+      interactiveLiveViewUrl: "https://example.test/control",
+      requestCheckMessage: null,
+    };
+    remote.queries.set("tasks/sessions:controls", controls);
+    await openPlay(`/tasks/game-thread?view=${view}`);
+    fireEvent.click(await screen.findByRole("button", { name: "Resume Scout" }));
+    await waitFor(() => expect(remote.resumeManaged).toHaveBeenCalledTimes(1));
+    act(() => {
+      remote.queries.set("tasks/sessions:controls", {
+        ...controls,
+        state: { kind: "checking", checkId: "resume-check" },
+      });
+      remote.revision++;
+      remote.subscribers.forEach((listener) => listener());
+    });
+    const progress = screen
+      .getAllByRole("status")
+      .find((element) => element.textContent?.includes("Checking browser…"));
+    expect(progress).toBeDefined();
+    expect(progress?.closest("[hidden]")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Resume Scout" })).toBeNull();
+    const reason = "Verification is incomplete. The page is still asking for an email code.";
+    act(() => {
+      remote.queries.set("tasks/sessions:controls", { ...controls, requestCheckMessage: reason });
+      remote.revision++;
+      remote.subscribers.forEach((listener) => listener());
+    });
+    expect(screen.getByRole("alert").textContent).toBe(`Scout could not resume: ${reason}`);
+    expect(screen.getByRole("alert").closest("[hidden]")).toBeNull();
+    expect(screen.getByRole("link", { name: "Open browser" }).getAttribute("href")).toBe(
+      controls.interactiveLiveViewUrl,
+    );
+    expect(screen.getByRole("button", { name: "Resume Scout" })).toBeTruthy();
+    expect(screen.queryByText("Checking browser…")).toBeNull();
+  },
+);
+
+test.each(["chat", "walkthrough"])(
+  "shows saved resume rejections on a stopped task in %s and retains them after a follow-up",
+  async (view) => {
+    remote.queries.set(
+      "scout/activity:get",
+      session({ purpose: { kind: "review" }, status: "stopped" }),
+    );
+    remote.queries.set("tasks/walkthrough:get", { walkthrough: null, captures: [] });
+    const reason =
+      "Goodreads requires an email code. The code is not available in the captured page.";
+    const controls = {
+      state: { kind: "stopped" },
+      active: false,
+      canSend: true,
+      canStop: false,
+      requestCheckMessage: null,
+      interactiveLiveViewUrl: null,
+      resumeAttempts: [
+        { id: "resume-2", finishedAt: 1789777532049, outcome: { kind: "rejected", reason } },
+        {
+          id: "resume-1",
+          finishedAt: 1789777506084,
+          outcome: { kind: "rejected", reason: "Earlier rejection" },
+        },
+      ],
+    };
+    remote.queries.set("tasks/sessions:controls", controls);
+    await openPlay(`/tasks/game-thread?view=${view}`);
+    const history = await screen.findByRole("list", { name: "Resume attempts" });
+    expect(
+      screen.getByText(
+        view === "chat" ? "Task stopped. Send a message to continue." : "Task stopped.",
+      ),
+    ).toBeTruthy();
+    expect(history.closest("details")).toHaveProperty("open", true);
+    expect(history.closest("[hidden]")).toBeNull();
+    expect(within(history).getByText(reason)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Resume Scout" })).toBeNull();
+    act(() => {
+      remote.queries.set(
+        "scout/activity:get",
+        session({ purpose: { kind: "review" }, status: "running" }),
+      );
+      remote.queries.set("tasks/sessions:controls", {
+        ...controls,
+        state: { kind: "running" },
+        active: true,
+        canSend: false,
+      });
+      remote.revision++;
+      remote.subscribers.forEach((listener) => listener());
+    });
+    expect(history.closest("details")).toHaveProperty("open", false);
+    expect(screen.queryByText("Task stopped.", { exact: false })).toBeNull();
+    expect(within(history).getByText(reason)).toBeTruthy();
+    cleanup();
+    await openPlay(`/tasks/game-thread?view=${view}`);
+    expect(screen.getByText(reason)).toBeTruthy();
   },
 );
 
@@ -1941,6 +2133,7 @@ describe("Play invitation", () => {
   test("stops its own active game but disables controls while Scout is busy elsewhere", async () => {
     remote.queries.set("tasks/sessions:controls", {
       state: { kind: "running" },
+      resumeAttempts: [],
       canSend: false,
       canStop: true,
       busy: false,
@@ -1959,6 +2152,7 @@ describe("Play invitation", () => {
     act(() => {
       remote.queries.set("tasks/sessions:controls", {
         state: { kind: "idle" },
+        resumeAttempts: [],
         canSend: true,
         canStop: false,
         busy: false,
@@ -1976,6 +2170,7 @@ describe("Play invitation", () => {
     act(() => {
       remote.queries.set("tasks/sessions:controls", {
         state: { kind: "idle" },
+        resumeAttempts: [],
         canSend: false,
         canStop: false,
         busy: true,
@@ -2006,6 +2201,7 @@ test("shows persisted activity and assistant commentary while hiding tool payloa
   );
   remote.queries.set("tasks/sessions:controls", {
     state: { kind: "running" },
+    resumeAttempts: [],
     canSend: false,
     canStop: true,
     busy: false,
@@ -2064,6 +2260,7 @@ test("keeps the live browser and handoff controls when switching views", async (
       callId: "call-current",
       turnId: "turn-current",
     },
+    resumeAttempts: [],
     canSend: false,
     canStop: true,
     busy: false,
@@ -2101,6 +2298,7 @@ test("selects older replays without changing the conversation or current handoff
       callId: "call-current",
       turnId: "turn-current",
     },
+    resumeAttempts: [],
     canSend: false,
     canStop: true,
     busy: false,

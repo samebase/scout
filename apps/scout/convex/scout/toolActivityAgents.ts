@@ -181,7 +181,7 @@ export async function pairedAgentsOutput(ctx: QueryCtx, item: Doc<"agentsApiItem
       q.eq("sessionId", item.sessionId).eq("callId", parsed.data.call_id),
     )
     .unique();
-  return call?.result.kind === "success" || call?.result.kind === "error";
+  return call !== null && call.result.kind !== "running";
 }
 
 async function presentFunctionCall(
@@ -207,13 +207,15 @@ async function presentFunctionCall(
   const state =
     result?.kind === "error"
       ? "failed"
-      : result?.kind === "success"
-        ? "completed"
-        : failure === "failed"
-          ? "failed"
-          : failure === "incomplete"
-            ? "interrupted"
-            : pending;
+      : result?.kind === "interrupted"
+        ? "interrupted"
+        : result?.kind === "success"
+          ? "completed"
+          : failure === "failed"
+            ? "failed"
+            : failure === "incomplete"
+              ? "interrupted"
+              : pending;
   const output = result?.kind === "success" ? parseToolValue(result.output) : null;
   const activity = presentToolActivity({
     id: item._id,
@@ -221,7 +223,7 @@ async function presentFunctionCall(
     state,
     input: tool.input,
     output,
-    error: result?.kind === "error" ? result.error : null,
+    error: result?.kind === "error" || result?.kind === "interrupted" ? result.error : null,
     audience,
   });
   if (tool.name === "browser_execute") {

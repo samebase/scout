@@ -56,6 +56,15 @@ export const accountObservationValidator = v.union(
   accountObservationFieldsValidator.extend({
     kind: v.literal("agent_report"),
     operationId: v.id("scoutBrowserOperations"),
+    verification: v.optional(v.string()),
+  }),
+  v.object({
+    kind: v.literal("task_report"),
+    taskSessionId: v.id("agentsApiSessions"),
+    recordedAt: v.number(),
+    observedUrl: v.string(),
+    accountAccess: v.union(v.literal("created"), v.literal("recovered")),
+    verification: v.string(),
   }),
   // Earlier observations remain readable in production.
   accountObservationFieldsValidator.extend({

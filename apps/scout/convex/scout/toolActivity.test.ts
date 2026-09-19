@@ -19,6 +19,25 @@ function activity(
   });
 }
 
+test.each(["admin", "member"] satisfies Array<"admin" | "member">)(
+  "keeps a cancellation reason interrupted for %s viewers",
+  (audience) => {
+    const error =
+      "Browser handoff was cancelled because the task stopped before browser control returned to Scout.";
+    expect(
+      presentToolActivity({
+        id: "handoff",
+        name: "request_browser_handoff",
+        state: "interrupted",
+        input: { message: "Solve the CAPTCHA" },
+        output: null,
+        error,
+        audience,
+      }),
+    ).toMatchObject({ state: "interrupted", error });
+  },
+);
+
 test("browser and shell activity retains useful actual inputs, outputs and first-line previews", () => {
   const browser = activity(
     "browser_execute",

@@ -29,7 +29,7 @@ export const run = internalAction({
     let call: typeof checkCall.type | null = null;
     let state: typeof requestCheckFinishedState.type;
     try {
-      const { session } = await ctx.runQuery(internal.tasks.sessions.runtime, {
+      const { session, scout } = await ctx.runQuery(internal.tasks.sessions.runtime, {
         sessionId: check.sessionId,
       });
       let evidence = null;
@@ -51,6 +51,7 @@ export const run = internalAction({
             ? check.prompt
             : JSON.stringify({
                 originalRequest: check.prompt,
+                scout: { email: scout.agentMail.address },
                 handoff: check.handoff.message,
                 browser: evidence,
               }),
