@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-19T12:37:53Z
+- **Last updated:** 2026-09-19T12:50:15Z
 
 ## Log
 
@@ -1527,9 +1527,16 @@ Chat loads earlier messages as the reader scrolls near the top, keeping their pl
 A loading indicator replaces the button without shifting the message list
 (`apps/scout/src/products/conversation/page.tsx`).
 
-### 2026-09-19 - working tree - v246
+### 2026-09-19 - d56e922 - v246
 
 Browser handoffs have an up-to-45-minute Resume deadline capped by the browser's lifetime.
 The email and task banners show that deadline; missed handoffs stop with a saved explanation
 and release the browser through existing cleanup. Resume checks preserve the deadline, and
 selected older handoffs can receive a deadline through bounded internal maintenance.
+
+### 2026-09-19 - working tree - v247
+
+About is linked from the main bar and explains the project’s purpose, browser evidence,
+and shared reviews. Its title, section headings, and larger, darker body text use three
+consistent styles (`apps/scout/src/routes/about.tsx`,
+`apps/scout/src/components/app-navigation.tsx`).

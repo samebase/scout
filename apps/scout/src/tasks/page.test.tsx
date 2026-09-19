@@ -805,7 +805,13 @@ test("has one admin task navigation entry", async () => {
   const links = within(screen.getByRole("navigation", { name: "Primary navigation" })).getAllByRole(
     "link",
   );
-  expect(links.map((link) => link.textContent)).toEqual(["Reviews", "Scouts", "Agents", "Members"]);
+  expect(links.map((link) => link.textContent)).toEqual([
+    "Reviews",
+    "About",
+    "Scouts",
+    "Agents",
+    "Members",
+  ]);
   expect(links.filter((link) => link.getAttribute("href") === "/agents")).toHaveLength(1);
   expect(screen.queryByRole("link", { name: "Lab" })).toBeNull();
 });
