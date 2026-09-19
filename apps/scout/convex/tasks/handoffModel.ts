@@ -12,7 +12,6 @@ export const handoffAccess = v.object({
 const activePage = {
   scoutName: v.string(),
   expiresAt: v.number(),
-  serverNow: v.number(),
 };
 
 export const handoffPage = v.union(

@@ -27,13 +27,10 @@ async function page(
   if (state.kind === "stopped")
     return { status: state.reason === "handoff_expired" ? "expired" : "stopped" };
   if (state.kind === "failed")
-    return Date.now() >= access.expiresAt
-      ? { status: "expired" }
-      : { status: "failed", error: state.error, diagnostic: state.diagnostic ?? null };
+    return { status: "failed", error: state.error, diagnostic: state.diagnostic ?? null };
   const active = {
     scoutName: session.scoutName,
     expiresAt: access.expiresAt,
-    serverNow: Date.now(),
   };
   switch (state.kind) {
     case "waiting": {

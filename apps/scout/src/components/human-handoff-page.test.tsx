@@ -33,7 +33,6 @@ const waiting = {
   message: "Sign in to continue the booking.",
   interactiveLiveViewUrl: "about:blank",
   checkMessage: null,
-  serverNow: Date.UTC(2026, 8, 19, 10),
   expiresAt: Date.UTC(2026, 8, 19, 10, 10),
 } satisfies Page;
 
@@ -158,16 +157,14 @@ test.each(["load", "resume"])(
   },
 );
 
-test("a replacement token clears the old browser and deadline while its new request loads", async () => {
+test("a replacement token clears the old browser and poll while its new request loads", async () => {
   vi.useFakeTimers();
   let resolveNext: (page: Page) => void;
-  remote.load
-    .mockResolvedValueOnce({ ...waiting, expiresAt: waiting.serverNow + 2_000 })
-    .mockReturnValueOnce(
-      new Promise<Page>((resolve) => {
-        resolveNext = resolve;
-      }),
-    );
+  remote.load.mockResolvedValueOnce(waiting).mockReturnValueOnce(
+    new Promise<Page>((resolve) => {
+      resolveNext = resolve;
+    }),
+  );
   await act(async () => {
     render(<HumanHandoffPage sessionId="session" />);
   });
@@ -178,7 +175,7 @@ test("a replacement token clears the old browser and deadline while its new requ
   });
   expect(screen.queryByTitle("Scout browser")).toBeNull();
   expect(screen.getByRole("status").textContent).toBe("Loading handoff status…");
-  await act(() => vi.advanceTimersByTimeAsync(2_000));
+  await act(() => vi.advanceTimersByTimeAsync(5_000));
   expect(remote.load).toHaveBeenCalledTimes(2);
   await act(async () => {
     resolveNext(waiting);
@@ -267,6 +264,7 @@ test("a failed poll removes previous browser access and waits for manual reload"
 });
 
 test.each<Page>([
+  { status: "expired" },
   { status: "stopped" },
   { status: "continued", scoutName: "Robin" },
   { status: "failed", error: "Browser provider failed: 503, request req_456", diagnostic: null },
@@ -292,7 +290,6 @@ test("checking keeps polling until Scout continues", async () => {
     .mockResolvedValueOnce({
       status: "checking",
       scoutName: "Robin",
-      serverNow: waiting.serverNow,
       expiresAt: waiting.expiresAt,
     })
     .mockResolvedValue({ status: "continued", scoutName: "Robin" });
@@ -312,7 +309,7 @@ test("failed handoffs retain the provider message and diagnostic details", async
     diagnostic: {
       category: "transient_service",
       operation: "resume",
-      occurredAtMs: waiting.serverNow,
+      occurredAtMs: Date.UTC(2026, 8, 19, 10),
       provider: "openai",
       httpStatus: 503,
       providerCode: "service_error",
@@ -329,97 +326,32 @@ test("failed handoffs retain the provider message and diagnostic details", async
   );
 });
 
-test.each([1_000, 3_000])(
-  "Resume checking returned after %ims can finish beyond the deadline",
-  async (responseDelay) => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2040-01-01"));
-    const expiresAt = waiting.serverNow + 2_000;
-    remote.load
-      .mockResolvedValueOnce({ ...waiting, expiresAt })
-      .mockResolvedValue({ status: "continued", scoutName: "Robin" });
-    let resolveResume: (page: Page) => void;
-    remote.resume.mockReturnValue(
-      new Promise<Page>((resolve) => {
-        resolveResume = resolve;
-      }),
-    );
-    await act(async () => {
-      render(<HumanHandoffPage sessionId="session" />);
-    });
-    expect(screen.getByTitle("Scout browser")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Resume Scout" }));
-    expect(screen.queryByTitle("Scout browser")).toBeNull();
-    await act(() => vi.advanceTimersByTimeAsync(responseDelay));
-    expect(screen.getByRole("status").textContent).toContain("Checking");
-    expect(remote.load).toHaveBeenCalledOnce();
-    await act(async () => {
-      resolveResume({
-        status: "checking",
-        scoutName: "Robin",
-        expiresAt,
-        serverNow: waiting.serverNow + responseDelay,
-      });
-    });
-    await act(() => vi.advanceTimersByTimeAsync(2_000));
-    expect(screen.getByRole("status").textContent).toContain("Checking");
-    expect(screen.queryByTitle("Scout browser")).toBeNull();
-    await act(() => vi.advanceTimersByTimeAsync(3_000));
-    expect(screen.getByText("Robin has continued. You can close this tab.")).toBeTruthy();
-  },
-);
-
-test("waiting reaches the server deadline despite clock skew and reloads its actual status", async () => {
+test("a delayed Resume response starts polling until Scout continues", async () => {
   vi.useFakeTimers();
-  vi.setSystemTime(new Date("2040-01-01"));
   remote.load
-    .mockResolvedValueOnce({ ...waiting, expiresAt: waiting.serverNow + 2_000 })
-    .mockResolvedValue({ status: "expired" });
+    .mockResolvedValueOnce(waiting)
+    .mockResolvedValue({ status: "continued", scoutName: "Robin" });
+  let resolveResume: (page: Page) => void;
+  remote.resume.mockReturnValue(
+    new Promise<Page>((resolve) => {
+      resolveResume = resolve;
+    }),
+  );
   await act(async () => {
     render(<HumanHandoffPage sessionId="session" />);
   });
-  expect(screen.getByTitle("Scout browser")).toBeTruthy();
-  await act(() => vi.advanceTimersByTimeAsync(2_000));
+  fireEvent.click(screen.getByRole("button", { name: "Resume Scout" }));
   expect(screen.queryByTitle("Scout browser")).toBeNull();
-  expect(screen.getByRole("status").textContent).toBe(
-    "This handoff has expired. Browser control is no longer available.",
-  );
-  expect(remote.load).toHaveBeenCalledTimes(2);
-});
-
-test("a stale waiting poll crossing the deadline hides controls and reloads authoritative checking status", async () => {
-  vi.useFakeTimers();
-  const expiresAt = waiting.serverNow + 6_000;
-  let resolvePoll: (page: Page) => void;
-  remote.load
-    .mockResolvedValueOnce({ ...waiting, expiresAt })
-    .mockImplementationOnce(
-      () =>
-        new Promise<Page>((resolve) => {
-          resolvePoll = resolve;
-        }),
-    )
-    .mockResolvedValueOnce({
+  await act(() => vi.advanceTimersByTimeAsync(5_000));
+  expect(screen.getByRole("status").textContent).toContain("Checking");
+  expect(remote.load).toHaveBeenCalledOnce();
+  await act(async () => {
+    resolveResume({
       status: "checking",
       scoutName: "Robin",
-      expiresAt,
-      serverNow: expiresAt + 1,
-    })
-    .mockResolvedValue({ status: "continued", scoutName: "Robin" });
-  await act(async () => {
-    render(<HumanHandoffPage sessionId="session" />);
+      expiresAt: waiting.expiresAt,
+    });
   });
-  await act(() => vi.advanceTimersByTimeAsync(5_000));
-  expect(remote.load).toHaveBeenCalledTimes(2);
-  await act(() => vi.advanceTimersByTimeAsync(1_000));
-  expect(screen.queryByTitle("Scout browser")).toBeNull();
-  expect(screen.queryByRole("link", { name: "Open browser" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "Resume Scout" })).toBeNull();
-  expect(screen.getByRole("status").textContent).toBe("Loading handoff status…");
-  await act(async () => {
-    resolvePoll({ ...waiting, expiresAt, serverNow: waiting.serverNow + 5_000 });
-  });
-  expect(remote.load).toHaveBeenCalledTimes(3);
   expect(screen.getByRole("status").textContent).toContain("Checking");
   expect(screen.queryByTitle("Scout browser")).toBeNull();
   await act(() => vi.advanceTimersByTimeAsync(5_000));

@@ -1306,6 +1306,7 @@ it.each([
         status: "checking",
       });
     }
+    vi.setSystemTime(expiresAt + 1);
     if (outcome === "stop") await owner.mutation(api.tasks.sessions.stop, { sessionId });
   } finally {
     proceed.resolve();

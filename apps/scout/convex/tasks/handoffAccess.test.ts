@@ -136,7 +136,6 @@ describe.each(["agents_api", "convex_agent"] as const)("%s handoff access", (eng
       status: "waiting",
       scoutName: "Scout",
       expiresAt: t.access.expiresAt,
-      serverNow: Date.now(),
       message: handoff.message,
       interactiveLiveViewUrl: t.browser.interactiveLiveViewUrl,
       checkMessage: null,
@@ -146,7 +145,6 @@ describe.each(["agents_api", "convex_agent"] as const)("%s handoff access", (eng
       status: "checking",
       scoutName: "Scout",
       expiresAt: t.access.expiresAt,
-      serverNow: Date.now(),
     };
     expect(await t.backend.action(api.tasks.handoff.resume, t.args)).toEqual(checking);
     const session = await t.read();
@@ -333,7 +331,6 @@ describe.each(["agents_api", "convex_agent"] as const)("%s handoff access", (eng
             status: "checking",
             scoutName: "Scout",
             expiresAt: t.access.expiresAt,
-            serverNow: now,
           });
         }
         expect((await t.read())?.state).toEqual({ kind: "checking", checkId: check._id });

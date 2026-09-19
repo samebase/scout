@@ -65,7 +65,7 @@ export function HumanHandoffPage({ sessionId }: { sessionId: string }) {
 function HandoffSession({ sessionId, accessToken }: { sessionId: string; accessToken: string }) {
   const load = useAction(api.tasks.handoff.load);
   const resume = useAction(api.tasks.handoff.resume);
-  const [snapshot, setSnapshot] = useState<{ page: HandoffPage; requestedAt: number } | null>(null);
+  const [page, setPage] = useState<HandoffPage | null>(null);
   const [pending, setPending] = useState<"load" | "resume" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const requestId = useRef(0);
@@ -73,20 +73,16 @@ function HandoffSession({ sessionId, accessToken }: { sessionId: string; accessT
   const request = useCallback(
     async (operation: "load" | "resume") => {
       const id = ++requestId.current;
-      const requestedAt = performance.now();
       setPending(operation);
       setError(null);
-      if (operation === "resume") setSnapshot(null);
+      if (operation === "resume") setPage(null);
       try {
         const page = await (operation === "load" ? load : resume)({ sessionId, accessToken });
         if (id !== requestId.current) return;
-        const overdue =
-          page.status === "waiting" &&
-          page.expiresAt - page.serverNow <= performance.now() - requestedAt;
-        setSnapshot(overdue ? null : { page, requestedAt });
+        setPage(page);
       } catch (caught) {
         if (id === requestId.current) {
-          setSnapshot(null);
+          setPage(null);
           setError(requestError(caught));
         }
       } finally {
@@ -103,32 +99,18 @@ function HandoffSession({ sessionId, accessToken }: { sessionId: string; accessT
   }, [request]);
 
   useEffect(() => {
-    if (!snapshot || snapshot.page.status !== "waiting") return;
-    const { page, requestedAt } = snapshot;
-    const remaining = page.expiresAt - page.serverNow - (performance.now() - requestedAt);
-    const timer = window.setTimeout(
-      () => {
-        setSnapshot((current) => (current === snapshot ? null : current));
-      },
-      Math.max(0, remaining),
-    );
-    return () => window.clearTimeout(timer);
-  }, [snapshot]);
-
-  useEffect(() => {
     if (pending || error) return;
-    if (!snapshot) {
+    if (!page) {
       void request("load");
       return;
     }
-    if (snapshot.page.status !== "waiting" && snapshot.page.status !== "checking") return;
+    if (page.status !== "waiting" && page.status !== "checking") return;
     const timer = window.setTimeout(() => {
       void request("load");
     }, 5_000);
     return () => window.clearTimeout(timer);
-  }, [error, pending, request, snapshot]);
+  }, [error, pending, request, page]);
 
-  const page = snapshot?.page;
   return (
     <>
       {error ? (
