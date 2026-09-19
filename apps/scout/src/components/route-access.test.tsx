@@ -217,13 +217,6 @@ test.each(["anonymous", "loading", "terms_required", "deleted"])(
   },
 );
 
-test("the handoff exemption does not bypass terms on other public routes", async () => {
-  remote.values.set("viewer", { kind: "terms_required", userId: "account" });
-  await open("/tasks/thread");
-  expect(await screen.findByRole("heading", { name: "Review our terms" })).toBeTruthy();
-  expect(screen.queryByRole("heading", { name: "Review contents" })).toBeNull();
-});
-
 test("a direct Agents link never mounts restricted content for a member", async () => {
   setViewer("role_member");
   await open("/agents");

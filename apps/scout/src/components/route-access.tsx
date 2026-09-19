@@ -8,14 +8,6 @@ import { TermsAcceptance } from "./terms-acceptance";
 import type { AccessKey } from "../../shared/accessModel";
 
 export function RouteAccessOutlet() {
-  const isHandoff = useMatches({
-    select: (matches) => matches.some((match) => match.routeId === "/handoff/$sessionId"),
-  });
-  if (isHandoff) return <Outlet />;
-  return <AccountRouteAccessOutlet />;
-}
-
-function AccountRouteAccessOutlet() {
   const policies = useMatches({
     select: (matches) => matches.map((match) => match.staticData.access),
   });
