@@ -8,6 +8,8 @@ import { CreditsPanel } from "#components/credits-panel";
 import { LegalLinks } from "#components/legal-links";
 import { Button } from "#components/ui/button";
 import { accountAccessMessage, useViewerAccess } from "#lib/access";
+import { SessionRecordingSettings } from "../components/session-recording-settings";
+import { resetAnalytics } from "../lib/posthog";
 
 export const Route = createFileRoute("/settings")({
   staticData: { access: "access_account" },
@@ -36,6 +38,7 @@ function SettingsPage() {
       </Unauthenticated>
       <Authenticated>
         <SessionSettings />
+        <SessionRecordingSettings />
         <AccountStatus />
         <CreditsPanel purchaseId={purchase} />
         <section className="surface-panel mt-8 p-5 sm:p-6">
@@ -88,6 +91,7 @@ function SessionSettings() {
     }
 
     setState({ kind: "pending" });
+    resetAnalytics();
     try {
       await signOut();
       await navigate({ to: "/", replace: true });

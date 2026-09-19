@@ -62,6 +62,7 @@
     "openai": "^7.15.0",
     "outdent": "^0.8.0",
     "playwright-core": "^1.62.1",
+    "posthog-js": "^1.434.2",
     "radix-ui": "^1.4.3",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",

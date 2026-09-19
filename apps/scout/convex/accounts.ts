@@ -6,6 +6,59 @@ import { readViewerRoleForUser, resolveViewer } from "./access";
 import { accountAccessFields, viewerAccessValidator } from "./accessModel";
 import { taskPreferences as taskPreferencesValidator } from "./schema";
 import { omitNullish } from "../shared/omitNullish";
+import { sessionRecordingConsent } from "./sessionRecordingModel";
+import { SESSION_RECORDING_CONSENT_VERSION } from "../shared/sessionRecording";
+
+export const analyticsPreferences = publicQuery({
+  access: "access_public",
+  args: {},
+  returns: v.union(
+    v.null(),
+    v.object({
+      userId: v.id("users"),
+      recording: v.union(v.null(), sessionRecordingConsent),
+    }),
+  ),
+  handler: async (ctx) => {
+    if (ctx.viewer.kind !== "account" && ctx.viewer.kind !== "terms_required") return null;
+    const user = await ctx.db.get(ctx.viewer.userId);
+    if (!user || user.state === "deleting" || user.state === "deleted") return null;
+    return { userId: user._id, recording: user.sessionRecordingConsent ?? null };
+  },
+});
+
+export const setSessionRecording = publicMutation({
+  access: "access_public",
+  args: { enabled: v.boolean() },
+  returns: v.null(),
+  handler: async (ctx, { enabled }) => {
+    if (ctx.viewer.kind !== "account" && ctx.viewer.kind !== "terms_required") {
+      throw new ConvexError("Not authorized");
+    }
+    const user = await ctx.db.get(ctx.viewer.userId);
+    if (!user || user.state === "deleting" || user.state === "deleted")
+      throw new ConvexError("Account not found");
+    const now = Date.now();
+    await ctx.db.patch(ctx.viewer.userId, {
+      sessionRecordingConsent: {
+        enabled,
+        version: SESSION_RECORDING_CONSENT_VERSION,
+        updatedAt: now,
+        source: "settings" as const,
+        ...omitNullish({
+          lastGrant: enabled
+            ? {
+                version: SESSION_RECORDING_CONSENT_VERSION,
+                grantedAt: now,
+                source: "settings" as const,
+              }
+            : user.sessionRecordingConsent?.lastGrant,
+        }),
+      },
+    });
+    return null;
+  },
+});
 
 export const acceptTerms = publicMutation({
   access: "access_public",

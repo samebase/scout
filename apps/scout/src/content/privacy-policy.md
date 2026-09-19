@@ -28,6 +28,7 @@ For privacy questions, requests, or complaints, email contact@samebase.com.
 | Browser and connected-service information | Visited URLs, page content, browser actions, remote-browser recordings, persistent browser profiles, service-account identifiers, and managed credentials for Scout accounts.                                                                                                                                         |
 | Email and human assistance                | Messages and attachments read or sent through a Scout inbox, recipients and senders, requests for human help, temporary handoff links, and the browser activity associated with a handoff.                                                                                                                            |
 | Usage and diagnostic information          | Task status, timestamps, selected models, model requests and responses, token and credit usage, provider costs, failures, and operational logs. Our hosting and service providers also receive connection information such as IP addresses and browser information when handling requests.                            |
+| Website analytics and optional recordings | Page visits, browser and device type, timestamps, an internal account identifier when signed in, and your recording preference. If you opt in, PostHog also receives masked recordings of clicks, scrolling, and navigation in Scout.                                                                                 |
 | Purchases, when available                 | Credit balances, purchase and checkout identifiers, payment status, amounts, currency, tax and refund amounts. Polar and its payment providers collect payment and billing details at checkout. Scout's payment integration does not receive full payment-card numbers.                                               |
 | Correspondence                            | Information you send us in support requests, privacy requests, reports, and feedback.                                                                                                                                                                                                                                 |
 
@@ -46,13 +47,15 @@ lawful reason and the task requires it.
 
 Where data-protection law requires a legal basis, we use the following bases for these purposes.
 
-| Purpose                                                                                                   | Information used                                                   | Legal basis                                                                                                                                                           |
-| --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Create and operate your account, run requested tasks, maintain task history, and deliver account messages | Account, task, browser, connected-service, and email information   | Performing our contract with you, to the extent this processing is necessary to provide the service you request.                                                      |
-| Display a chat you choose to make public                                                                  | The chat and associated task activity described below              | Performing the public-sharing feature you request, where necessary to our contract. Your choice does not authorize publication of someone else's private information. |
-| Process credit purchases and maintain balances, when enabled                                              | Account identifiers, usage, and transaction information            | Performing our contract; legal obligations for records we must keep.                                                                                                  |
-| Approve access, investigate faults, prevent abuse, secure Scout, and answer support requests              | Account, diagnostic, correspondence, and relevant task information | Our legitimate interests in operating a reliable service, controlling access, and protecting users and systems, balanced against the people affected.                 |
-| Handle legal requests, privacy rights, and disputes                                                       | The information relevant to the request or dispute                 | Applicable legal obligations; legitimate interests in establishing, exercising, or defending legal claims where appropriate.                                          |
+| Purpose                                                                                                   | Information used                                                                  | Legal basis                                                                                                                                                           |
+| --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Create and operate your account, run requested tasks, maintain task history, and deliver account messages | Account, task, browser, connected-service, and email information                  | Performing our contract with you, to the extent this processing is necessary to provide the service you request.                                                      |
+| Display a chat you choose to make public                                                                  | The chat and associated task activity described below                             | Performing the public-sharing feature you request, where necessary to our contract. Your choice does not authorize publication of someone else's private information. |
+| Process credit purchases and maintain balances, when enabled                                              | Account identifiers, usage, and transaction information                           | Performing our contract; legal obligations for records we must keep.                                                                                                  |
+| Approve access, investigate faults, prevent abuse, secure Scout, and answer support requests              | Account, diagnostic, correspondence, and relevant task information                | Our legitimate interests in operating a reliable service, controlling access, and protecting users and systems, balanced against the people affected.                 |
+| Handle legal requests, privacy rights, and disputes                                                       | The information relevant to the request or dispute                                | Applicable legal obligations; legitimate interests in establishing, exercising, or defending legal claims where appropriate.                                          |
+| Understand which pages people use and improve Scout                                                       | Limited website analytics linked to an internal account identifier when signed in | Our legitimate interests in understanding and improving Scout, subject to applicable consent requirements and your right to object.                                   |
+| Review optional recordings to find usability problems                                                     | Masked website session recordings linked to an internal account identifier        | Your separate consent, which you can withdraw in Settings.                                                                                                            |
 
 The contract basis does not automatically cover information about people who are not parties
 to that contract. For incidental third-party information needed for a task, we assess our
@@ -63,7 +66,7 @@ without a lawful basis.
 This policy is a notice, not a request for blanket consent. If a feature needs consent, we
 will ask separately and explain how to withdraw it. Account, security, and billing messages
 are part of operating the service. We do not treat a Scout account as permission to send
-optional marketing emails or record your use of our website for optional analytics.
+optional marketing emails or make optional recordings of your use of our website.
 
 ## AI processing and automated checks
 
@@ -112,14 +115,15 @@ its access window, so treat the link as confidential.
 
 ## Who receives information
 
-| Recipient                                                 | What it does and the information involved                                                                                                                                                                                          |
-| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Convex                                                    | Hosts Scout's backend, database, authentication, task history, and some site delivery. Its AI Gateway also handles model requests.                                                                                                 |
-| Cloudflare                                                | Delivers the website, stores workspace files and screenshots in R2, and sends account-verification and password-reset emails. It handles the relevant content and network information.                                             |
-| OpenAI and the providers serving gateway models           | Generate responses, operate agents, and evaluate task requests using the task context sent to them.                                                                                                                                |
-| Firecrawl                                                 | Searches and reads websites, runs remote browsers and persistent profiles, and provides screenshots, live views, and replays. It receives visited content and browser commands.                                                    |
-| AgentMail                                                 | Hosts Scout inboxes and handles messages, attachments, addresses, and delivery information used by email tasks and human handoffs.                                                                                                 |
-| Polar and its payment providers, when checkout is enabled | Sell credit packs through checkout and handle payment, billing, tax, fraud prevention, and refunds. Polar acts as the merchant of record for those sales and processes information for its own legal and payment responsibilities. |
+| Recipient                                                 | What it does and the information involved                                                                                                                                                                                                                                 |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Convex                                                    | Hosts Scout's backend, database, authentication, task history, and some site delivery. Its AI Gateway also handles model requests.                                                                                                                                        |
+| Cloudflare                                                | Delivers the website, stores workspace files and screenshots in R2, and sends account-verification and password-reset emails. It handles the relevant content and network information.                                                                                    |
+| PostHog                                                   | Processes website analytics and, with your consent, masked session recordings in our EU Cloud project. We send an internal account identifier rather than your name or email address. PostHog also receives network connection information when your browser contacts it. |
+| OpenAI and the providers serving gateway models           | Generate responses, operate agents, and evaluate task requests using the task context sent to them.                                                                                                                                                                       |
+| Firecrawl                                                 | Searches and reads websites, runs remote browsers and persistent profiles, and provides screenshots, live views, and replays. It receives visited content and browser commands.                                                                                           |
+| AgentMail                                                 | Hosts Scout inboxes and handles messages, attachments, addresses, and delivery information used by email tasks and human handoffs.                                                                                                                                        |
+| Polar and its payment providers, when checkout is enabled | Sell credit packs through checkout and handle payment, billing, tax, fraud prevention, and refunds. Polar acts as the merchant of record for those sales and processes information for its own legal and payment responsibilities.                                        |
 
 Websites the Scout visits and people it emails receive the information submitted to them.
 Their own privacy practices govern their independent use of that information. Public viewers
@@ -151,17 +155,36 @@ Signing out removes the stored authentication tokens; layout preferences remain 
 replaced or cleared. You can clear site data in your browser settings, which may sign you
 out and reset preferences.
 
-The current Scout application does not include advertising trackers or a visitor-analytics
-session-replay SDK. Infrastructure, checkout, and embedded providers may use their own
-storage when you interact with those services. Their notices and controls apply to their
-independent processing. Where optional storage or tracking on Scout requires consent, we
-will ask before enabling it; you can refuse or withdraw that consent.
+Scout uses PostHog for website analytics, with persistent analytics identifiers in cookies
+and local storage disabled. Signed-in page visits are linked to your internal Scout account
+identifier. We send route patterns rather than task identifiers, search parameters, or
+handoff tokens. We do not send your email, chat messages, task prompts, or user-written
+page titles as analytics properties. The integration respects the browser's Do Not Track
+signal. You can also contact us to object to analytics processing.
+
+Session recording is off unless you select the separate, optional checkbox at account
+creation or enable it in Settings. Declining does not affect access to Scout. You can turn
+it off in Settings at any time. Withdrawal stops future recording; it does not automatically
+delete earlier recordings. We mask page text and inputs and exclude images, media, remote
+browser previews, authentication forms, account and payment settings, and administration
+pages. Network requests and console logs are not recorded. Basic page-visit analytics are
+separate from this recording choice.
+
+Infrastructure, checkout, and embedded providers may use their own storage when you interact
+with those services. Their notices and controls apply to their independent processing.
 
 Websites opened inside a Scout's remote browser can set cookies in that remote browser's
 persistent profile. Those cookies can outlive an individual task. They are separate from
 storage in your own browser.
 
 ## Retention and deletion
+
+PostHog session recordings use a 30-day retention setting; provider deletion may take
+additional processing time. Analytics events have a separate retention policy and are
+reviewed for continued necessity. Account closure does not automatically erase previously
+collected PostHog data. Contact contact@samebase.com to request access or deletion; we can
+locate it using your internal Scout account identifier. We retain recording-consent records
+to record your current choice and demonstrate consent where required.
 
 Deleting your account in Settings starts removal of your profile and authentication records
 and blocks further account access. When cleanup finishes, a minimal record containing the
