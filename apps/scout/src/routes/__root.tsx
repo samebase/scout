@@ -11,6 +11,7 @@ import { ScoutSidebarProvider } from "../sidebars/ScoutSidebarProvider";
 import appCss from "../style.css?url";
 import { RouteAccessOutlet } from "../components/route-access";
 import { AppNavigation } from "#components/app-navigation";
+import { PostHogRuntime } from "../components/posthog-runtime";
 
 export const Route = createRootRoute({
   staticData: { access: "access_public" },
@@ -56,6 +57,7 @@ function RootComponent() {
     <RootDocument>
       <ScoutSidebarProvider>
         <ConvexClientProvider>
+          <PostHogRuntime />
           {!isProductPage && !isHandoff && <AppNavigation />}
           <RouteAccessOutlet />
         </ConvexClientProvider>

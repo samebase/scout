@@ -3,6 +3,8 @@ import type { ConvexCredentialsUserConfig } from "@convex-dev/auth/providers/Con
 import { convexAuth } from "@convex-dev/auth/server";
 import { ConvexError } from "convex/values";
 import { TERMS_ACCEPTANCE_REQUIRED } from "../shared/terms";
+import { SESSION_RECORDING_CONSENT_VERSION } from "../shared/sessionRecording";
+import { omitNullish } from "../shared/omitNullish";
 import { internal } from "./_generated/api";
 import { normalizeAuthEmail } from "./authEmail";
 import { emailVerificationCode, passwordResetCode } from "./authEmails";
@@ -27,7 +29,27 @@ function createPasswordProvider(
       params["email"] = email;
       if (params["flow"] === "signUp") {
         if (params["termsAccepted"] !== "true") throw new ConvexError(TERMS_ACCEPTANCE_REQUIRED);
-        return { email, termsAcceptedAt: Date.now() };
+        const now = Date.now();
+        const enabled = params["sessionRecordingConsent"] === "true";
+        return {
+          email,
+          termsAcceptedAt: now,
+          sessionRecordingConsent: {
+            enabled,
+            version: SESSION_RECORDING_CONSENT_VERSION,
+            updatedAt: now,
+            source: "signup" as const,
+            ...omitNullish({
+              lastGrant: enabled
+                ? {
+                    version: SESSION_RECORDING_CONSENT_VERSION,
+                    grantedAt: now,
+                    source: "signup" as const,
+                  }
+                : undefined,
+            }),
+          },
+        };
       }
       return { email };
     },

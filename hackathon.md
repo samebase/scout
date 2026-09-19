@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-19T18:39:56Z
+- **Last updated:** 2026-09-19T19:56:00Z
 
 ## Log
 
@@ -1605,9 +1605,16 @@ The site sidebar shows the same site total as the landing page beside the review
 The compact count wraps below the selector in narrow sidebars and follows Public or My reviews
 (`apps/scout/src/components/site-filters.tsx`, `apps/scout/src/routes/sites.$site.tsx`).
 
-### 2026-09-19 - working tree - v257
+### 2026-09-19 - a6d2494 - v257
 
 Scout managers can refresh saved-cookie and domain counts beside each Firecrawl profile name.
 Convex caches the counts and check time after a read-only browser inspection, keeping the previous
 summary when refresh fails (`apps/scout/convex/scout/browserProfiles.ts`,
 `apps/scout/src/components/scout-browser-profile.tsx`).
+
+### 2026-09-19 - working tree - v258
+
+Added PostHog pageviews with account attribution and optional session recordings.
+Signup and Settings save the recording choice in Convex; withdrawal and sign-out stop capture.
+Recordings mask text and inputs and exclude embedded browsers and account pages
+(`apps/scout/convex/accounts.ts`, `apps/scout/src/lib/posthog.ts`).

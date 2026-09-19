@@ -8,6 +8,7 @@ import { AUTH_EMAIL_COOLDOWN } from "../../shared/auth";
 import type { Doc } from "../../convex/_generated/dataModel";
 
 import { TERMS_ACCEPTANCE_REQUIRED } from "../../shared/terms";
+import { SESSION_RECORDING_CONSENT_VERSION } from "../../shared/sessionRecording";
 import { omitNullish } from "../../shared/omitNullish";
 
 type ScoutTest = TestConvex<typeof schema>;
@@ -41,6 +42,57 @@ afterEach(() => {
 });
 
 describe("password authentication", () => {
+  it.each([undefined, "true"])(
+    "persists signup recording choice %s without trusting supplied timestamps",
+    async (choice) => {
+      const t = convexTest(schema, modules);
+      const signup = await captureAuthCode(() =>
+        t.action(api.auth.signIn, {
+          provider: "password",
+          params: {
+            email: MEMBER_EMAIL,
+            password: "secure-password",
+            flow: "signUp",
+            termsAccepted: "true",
+            ...omitNullish({ sessionRecordingConsent: choice }),
+            sessionRecordingConsentVersion: "forged",
+            sessionRecordingConsentAt: 1,
+          },
+        }),
+      );
+      const before = await t.run((ctx) => ctx.db.query("users").unique());
+      if (!before || before.state === "deleted")
+        throw new Error("Signup must create an active account");
+      expect(before?.sessionRecordingConsent).toMatchObject({
+        enabled: choice === "true",
+        version: SESSION_RECORDING_CONSENT_VERSION,
+        source: "signup",
+        updatedAt: expect.any(Number),
+      });
+      expect(before?.sessionRecordingConsent?.updatedAt).not.toBe(1);
+      await t.action(api.auth.signIn, {
+        provider: "password",
+        params: {
+          email: MEMBER_EMAIL,
+          code: signup.code,
+          flow: "email-verification",
+          sessionRecordingConsent: choice === "true" ? "false" : "true",
+        },
+      });
+      await t.action(api.auth.signIn, {
+        provider: "password",
+        params: {
+          email: MEMBER_EMAIL,
+          password: "secure-password",
+          flow: "signIn",
+          sessionRecordingConsent: choice === "true" ? "false" : "true",
+        },
+      });
+      const after = await t.run((ctx) => ctx.db.query("users").unique());
+      expect(after).toMatchObject({ sessionRecordingConsent: before.sessionRecordingConsent });
+    },
+  );
+
   it.each([undefined, "false"])(
     "rejects signup with terms acceptance %s before creating an account",
     async (termsAccepted) => {

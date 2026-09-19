@@ -6,6 +6,7 @@ import { useState, type FormEvent } from "react";
 import { api } from "../../convex/_generated/api";
 import { TermsCheckbox } from "./terms-checkbox";
 import { Button } from "./ui/button";
+import { resetAnalytics } from "../lib/posthog";
 
 export function TermsAcceptance() {
   const accept = useMutation(api.accounts.acceptTerms);
@@ -59,6 +60,7 @@ export function TermsAcceptance() {
           variant="outline"
           disabled={pending}
           onClick={() => {
+            resetAnalytics();
             void run(signOut);
           }}
         >

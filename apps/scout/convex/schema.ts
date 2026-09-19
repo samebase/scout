@@ -1,4 +1,5 @@
 import { authTables } from "@convex-dev/auth/server";
+import { sessionRecordingConsent } from "./sessionRecordingModel";
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import { creditWalletValidator, creditEntryValidator, creditUsageInput } from "./creditsModel";
@@ -83,6 +84,7 @@ export const taskPreferences = v.object({
 const userProfile = authTables.users.validator.extend({
   ...taskPreferences.fields,
   termsAcceptedAt: v.optional(v.number()),
+  sessionRecordingConsent: v.optional(sessionRecordingConsent),
   isApproved: v.optional(v.boolean()),
   defaultScoutModelSelection: v.optional(scoutModelSelectionValidator),
 });

@@ -101,6 +101,7 @@ import type * as scout_workspaceShell from "../scout/workspaceShell.js";
 import type * as scout_workspaceTools from "../scout/workspaceTools.js";
 import type * as scout_workspaces from "../scout/workspaces.js";
 import type * as serviceDomains from "../serviceDomains.js";
+import type * as sessionRecordingModel from "../sessionRecordingModel.js";
 import type * as tasks_access from "../tasks/access.js";
 import type * as tasks_accounts from "../tasks/accounts.js";
 import type * as tasks_accountsState from "../tasks/accountsState.js";
@@ -246,6 +247,7 @@ declare const fullApi: ApiFromModules<{
   "scout/workspaceTools": typeof scout_workspaceTools;
   "scout/workspaces": typeof scout_workspaces;
   serviceDomains: typeof serviceDomains;
+  sessionRecordingModel: typeof sessionRecordingModel;
   "tasks/access": typeof tasks_access;
   "tasks/accounts": typeof tasks_accounts;
   "tasks/accountsState": typeof tasks_accountsState;

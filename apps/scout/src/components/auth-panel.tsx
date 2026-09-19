@@ -6,6 +6,7 @@ import { Button } from "#components/ui/button";
 import { Input } from "#components/ui/input";
 import { LegalLinks } from "./legal-links";
 import { TermsCheckbox } from "./terms-checkbox";
+import { SessionRecordingCheckbox } from "./session-recording-checkbox";
 import { TERMS_ACCEPTANCE_REQUIRED } from "../../shared/terms";
 
 const PASSWORD_MIN_LENGTH = 8;
@@ -110,7 +111,11 @@ export function AuthPanel() {
   };
 
   return (
-    <section className="surface-panel flex flex-col gap-6 p-5 sm:p-7" aria-label="Account access">
+    <section
+      data-posthog-block
+      className="surface-panel flex flex-col gap-6 p-5 sm:p-7"
+      aria-label="Account access"
+    >
       <AuthHeading state={state} />
 
       {state.kind === "credentials" ? (
@@ -141,7 +146,14 @@ export function AuthPanel() {
               required
             />
           </label>
-          {state.flow === "signUp" ? <TermsCheckbox /> : <LegalLinks />}
+          {state.flow === "signUp" ? (
+            <>
+              <TermsCheckbox />
+              <SessionRecordingCheckbox />
+            </>
+          ) : (
+            <LegalLinks />
+          )}
           <Button type="submit" size="lg" className="mt-1 w-full" disabled={isPending}>
             {pendingLabel(state.flow, isPending)}
           </Button>
