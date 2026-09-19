@@ -263,7 +263,7 @@ describe("Autonomous managed-password preparation", () => {
           accountAccess: "created",
           verification: "Account settings shows the Scout identity after completed sign-in.",
           identifier: "magda@example.test",
-          loginMethod: { kind: "managed_password" },
+          loginMethod: "managed_password",
         },
         toolOptions,
       );

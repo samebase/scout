@@ -128,7 +128,7 @@ it("records passwordless authentication with its task evidence and no credential
     const evidence = {
       accountAccess: "created" as const,
       identifier: scout.agentMail.address,
-      loginMethod: { kind: "passwordless" as const },
+      loginMethod: "passwordless" as const,
       verification: "Account settings shows the Scout email after signing in with a code.",
     };
     const saved = await recordingTool.execute(evidence, options);
@@ -193,7 +193,7 @@ it.each([observedUrl, null, "https://accounts.example.com/previous"])(
         accountAccess: "created",
         verification: "Account settings shows the Scout identity after completed sign-in.",
         identifier: account.identifier,
-        loginMethod: { kind: "managed_password" },
+        loginMethod: "managed_password",
       } as const;
       runtime.getPage.mockResolvedValue("https://example.com/dashboard?from=signup#account");
       runtime.snapshot.mockClear();
@@ -273,7 +273,7 @@ it("rejects filling on another host and recording a password account on another 
           accountAccess: "created",
           verification: "Account settings shows the Scout identity after completed sign-in.",
           identifier: account.identifier,
-          loginMethod: { kind: "managed_password" },
+          loginMethod: "managed_password",
         },
         options,
       ),
@@ -315,7 +315,7 @@ it("checks the session owner again after permission is revoked", async () => {
           accountAccess: "created",
           verification: "Account settings shows the Scout identity after completed sign-in.",
           identifier: account.identifier,
-          loginMethod: { kind: "managed_password" },
+          loginMethod: "managed_password",
         },
         options,
       ),
@@ -396,11 +396,9 @@ it("records OAuth only through this Scout's provider account and preserves the r
       accountAccess: "created",
       verification: "Account settings shows the Scout identity after completed sign-in.",
       identifier: account.identifier,
-      loginMethod: {
-        kind: "oauth",
-        providerServiceDomain: "github.com",
-        providerIdentifier: "scout-provider",
-      },
+      loginMethod: "oauth",
+      oauthProviderServiceDomain: "github.com",
+      oauthProviderIdentifier: "scout-provider",
     } as const;
     await expect(
       record.execute({ ...evidence, identifier: "foreign@example.test" }, options),

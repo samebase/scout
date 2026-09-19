@@ -1,11 +1,95 @@
 import { validateTypes } from "@ai-sdk/provider-utils";
 import { describe, expect, it, vi } from "vite-plus/test";
+import { requireRuntimeTool } from "./lib/runtimeTool";
 import { createServiceAccountRecordingTool } from "./serviceAccountTool";
 
 const abortSignal = new AbortController().signal;
 const toolOptions = { toolCallId: "tool-1", messages: [], context: {}, abortSignal };
 
 describe("Scout service-account recording tool", () => {
+  describe.each(["Agents API", "Convex Agent"])("%s execution", (engine) => {
+    it.each(["managed_password", "passwordless", "oauth"] as const)(
+      "records %s evidence from persisted tool input",
+      async (loginMethod) => {
+        const record = vi.fn(async () => ({ serviceAccountId: "account-1", created: true }));
+        const recordingTool = createServiceAccountRecordingTool(record);
+        const input = {
+          accountAccess: "recovered",
+          identifier: "john@eggfit.com",
+          verification: "  Account settings shows John Scout and john@eggfit.com.  ",
+          ...(loginMethod === "oauth"
+            ? {
+                loginMethod,
+                oauthProviderServiceDomain: "github.com",
+                oauthProviderIdentifier: "john-scout",
+              }
+            : { loginMethod }),
+        };
+        const generatedInput =
+          engine === "Convex Agent"
+            ? await validateTypes({ value: input, schema: recordingTool.inputSchema })
+            : input;
+        const persistedInput: unknown = JSON.parse(JSON.stringify(generatedInput));
+        expect(persistedInput).toEqual({
+          ...input,
+          verification: engine === "Convex Agent" ? input.verification.trim() : input.verification,
+        });
+        expect(record).not.toHaveBeenCalled();
+
+        const runtimeTool = requireRuntimeTool(
+          { record_authenticated_service_account: recordingTool },
+          "record_authenticated_service_account",
+        );
+        await expect(runtimeTool.execute(persistedInput, toolOptions)).resolves.toEqual({
+          serviceAccountId: "account-1",
+          created: true,
+        });
+        expect(record).toHaveBeenCalledExactlyOnceWith(
+          {
+            accountAccess: input.accountAccess,
+            identifier: input.identifier,
+            verification: input.verification.trim(),
+            loginMethod:
+              loginMethod === "oauth"
+                ? {
+                    kind: "oauth",
+                    providerServiceDomain: "github.com",
+                    providerIdentifier: "john-scout",
+                  }
+                : { kind: loginMethod },
+          },
+          abortSignal,
+        );
+      },
+    );
+  });
+
+  it.each(["managed_password", "passwordless", "oauth"])(
+    "rejects an already-mapped %s login method before recording",
+    async (kind) => {
+      const record = vi.fn(async () => ({ serviceAccountId: "account-1", created: true }));
+      const runtimeTool = requireRuntimeTool(
+        { record_authenticated_service_account: createServiceAccountRecordingTool(record) },
+        "record_authenticated_service_account",
+      );
+      await expect(
+        runtimeTool.execute(
+          {
+            accountAccess: "created",
+            identifier: "john@eggfit.com",
+            verification: "Account settings shows John Scout and john@eggfit.com.",
+            loginMethod:
+              kind === "oauth"
+                ? { kind, providerServiceDomain: "github.com", providerIdentifier: "john-scout" }
+                : { kind },
+          },
+          toolOptions,
+        ),
+      ).rejects.toThrow("No matching discriminator");
+      expect(record).not.toHaveBeenCalled();
+    },
+  );
+
   it("records email-code sign-in without a password or OAuth provider", async () => {
     const record = vi.fn(async () => ({ serviceAccountId: "notion-account", created: true }));
     const recordingTool = createServiceAccountRecordingTool(record);
