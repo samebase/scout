@@ -1,5 +1,7 @@
 import { useEffect, useEffectEvent, useState } from "react";
 import { SearchIcon, XIcon } from "lucide-react";
+import type { FunctionReturnType } from "convex/server";
+import type { api } from "../../convex/_generated/api";
 import { Button } from "#components/ui/button";
 import { Input } from "#components/ui/input";
 import {
@@ -14,15 +16,19 @@ import { reviewFeedSearch, type ReviewFeedSearch } from "#lib/reviewFeedSearch";
 import { cn } from "#lib/utils";
 import { siteSearchSchema } from "../../shared/site";
 
-export function SiteFilters({
-  search,
-  layout,
-  onChange,
-}: {
-  search: ReviewFeedSearch;
-  layout: "toolbar" | "sidebar";
-  onChange: (search: ReviewFeedSearch, options: { replace: boolean }) => void;
-}) {
+export function SiteFilters(
+  props: {
+    search: ReviewFeedSearch;
+    onChange: (search: ReviewFeedSearch, options: { replace: boolean }) => void;
+  } & (
+    | {
+        layout: "toolbar";
+        reviewedSiteCount: FunctionReturnType<typeof api.scout.sites.count> | undefined;
+      }
+    | { layout: "sidebar" }
+  ),
+) {
+  const { search, layout, onChange } = props;
   const viewer = useViewerAccess();
   const [draft, setDraft] = useState(search.site ?? "");
   useEffect(() => {
@@ -46,33 +52,46 @@ export function SiteFilters({
         "flex gap-2",
         layout === "sidebar"
           ? "flex-col"
-          : "flex-wrap items-start justify-between gap-3 max-[500px]:flex-col",
+          : "flex-wrap items-center justify-between gap-3 max-[500px]:flex-col max-[500px]:items-stretch",
       )}
     >
-      {signedIn && (
-        <Select
-          value={scope}
-          onValueChange={(value) =>
-            onChange(
-              { site: search.site, scope: reviewFeedSearch.shape.scope.parse(value) },
-              { replace: false },
-            )
-          }
+      {(signedIn || layout === "toolbar") && (
+        <div
+          className={cn("flex flex-wrap items-center gap-3", layout === "toolbar" && "min-h-11")}
         >
-          <SelectTrigger
-            aria-label="Review visibility"
-            className={cn(
-              "min-h-11 bg-card",
-              layout === "sidebar" ? "w-full" : "min-w-40 max-[500px]:w-full",
-            )}
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent position="popper" align="start">
-            <SelectItem value="public">Public reviews</SelectItem>
-            <SelectItem value="mine">My reviews</SelectItem>
-          </SelectContent>
-        </Select>
+          {signedIn && (
+            <Select
+              value={scope}
+              onValueChange={(value) =>
+                onChange(
+                  { site: search.site, scope: reviewFeedSearch.shape.scope.parse(value) },
+                  { replace: false },
+                )
+              }
+            >
+              <SelectTrigger
+                aria-label="Review visibility"
+                className={cn(
+                  "min-h-11 bg-card",
+                  layout === "sidebar" ? "w-full" : "min-w-40 shrink-0",
+                )}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper" align="start">
+                <SelectItem value="public">Public reviews</SelectItem>
+                <SelectItem value="mine">My reviews</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+          {props.layout === "toolbar" && props.reviewedSiteCount !== undefined && (
+            <span className="text-sm whitespace-nowrap text-muted-foreground">
+              {props.reviewedSiteCount.count.toLocaleString()}
+              {props.reviewedSiteCount.hasMore ? "+" : ""} reviewed{" "}
+              {props.reviewedSiteCount.count === 1 ? "site" : "sites"}
+            </span>
+          )}
+        </div>
       )}
       <div
         className={cn(

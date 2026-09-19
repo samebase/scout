@@ -129,6 +129,30 @@ export const list = publicQuery({
   },
 });
 
+export const count = publicQuery({
+  access: "access_public",
+  args: { scope: v.union(v.literal("public"), v.literal("mine")) },
+  returns: v.object({ count: v.number(), hasMore: v.boolean() }),
+  handler: async (ctx, { scope }) => {
+    const limit = 1_000;
+    const sites =
+      scope === "mine"
+        ? await ctx.db
+            .query("siteUserListings")
+            .withIndex("by_user_id_and_hostname", (q) =>
+              q.eq("userId", requireViewerPermission(ctx.viewer, "access_account").userId),
+            )
+            .take(limit + 1)
+        : await ctx.db
+            .query("sites")
+            .withIndex("by_latest_public_task_created_at_and_hostname", (q) =>
+              q.gt("latestPublicTask.createdAt", undefined),
+            )
+            .take(limit + 1);
+    return { count: Math.min(sites.length, limit), hasMore: sites.length > limit };
+  },
+});
+
 export const get = publicQuery({
   access: "access_public",
   args: { site: v.string() },

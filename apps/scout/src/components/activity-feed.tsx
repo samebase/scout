@@ -32,6 +32,7 @@ export function ActivityFeed({ search }: { search: ReviewFeedSearch }) {
   const viewer = useViewerAccess();
   const navigate = useNavigate();
   const scope = viewer?.kind === "account" ? (search.scope ?? "public") : "public";
+  const reviewedSiteCount = useQuery(api.scout.sites.count, { scope });
   const filters = { site: search.site, scope };
   return (
     <section aria-label="Reviews">
@@ -39,6 +40,7 @@ export function ActivityFeed({ search }: { search: ReviewFeedSearch }) {
         <SiteFilters
           search={filters}
           layout="toolbar"
+          reviewedSiteCount={reviewedSiteCount}
           onChange={(search, options) => {
             void navigate({
               to: "/",
