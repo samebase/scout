@@ -1,6 +1,8 @@
 import { Password } from "@convex-dev/auth/providers/Password";
 import type { ConvexCredentialsUserConfig } from "@convex-dev/auth/providers/ConvexCredentials";
 import { convexAuth } from "@convex-dev/auth/server";
+import { ConvexError } from "convex/values";
+import { CURRENT_TERMS_VERSION, TERMS_ACCEPTANCE_REQUIRED } from "../shared/terms";
 import { internal } from "./_generated/api";
 import { normalizeAuthEmail } from "./authEmail";
 import { emailVerificationCode, passwordResetCode } from "./authEmails";
@@ -23,6 +25,11 @@ function createPasswordProvider(
       assertPasswordLoggingIsSafe();
       const email = normalizeAuthEmail(params["email"]);
       params["email"] = email;
+      if (params["flow"] === "signUp") {
+        if (params["termsVersion"] !== CURRENT_TERMS_VERSION)
+          throw new ConvexError(TERMS_ACCEPTANCE_REQUIRED);
+        return { email, acceptedTermsVersion: CURRENT_TERMS_VERSION };
+      }
       return { email };
     },
   });
@@ -104,6 +111,12 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
         await ctx.db.patch(args.userId, {
           isApproved: false,
           state: "active",
+        });
+      }
+      if (args.profile["acceptedTermsVersion"] === CURRENT_TERMS_VERSION) {
+        await ctx.runMutation(internal.terms.recordForSignup, {
+          userId: args.userId,
+          version: CURRENT_TERMS_VERSION,
         });
       }
     },

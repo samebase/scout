@@ -4,6 +4,8 @@ import { api } from "./_generated/api";
 import schema from "./schema";
 import { ADMIN_EMAIL, insertTestAccount } from "./testing/accounts";
 
+import { CURRENT_TERMS_VERSION } from "../shared/terms";
+
 const modules = import.meta.glob("./**/*.ts");
 
 async function setup() {
@@ -32,7 +34,11 @@ test.each(["nicu.dev@gmail.com", "nicu@samebase.com", "NICU.DEV@GMAIL.COM"])(
   async (email) => {
     const backend = convexTest(schema, modules);
     const userId = await backend.run((ctx) =>
-      ctx.db.insert("users", { email, emailVerificationTime: Date.now() }),
+      ctx.db.insert("users", {
+        email,
+        emailVerificationTime: Date.now(),
+        acceptedTermsVersion: CURRENT_TERMS_VERSION,
+      }),
     );
     const admin = backend.withIdentity({ subject: `${userId}|session` });
     expect(await admin.query(api.accounts.currentViewerAccess, {})).toMatchObject({
@@ -54,7 +60,11 @@ test.each(["member@example.test", "nicuchiciuc@gmail.com", "NICUCHICIUC@GMAIL.CO
   async (email) => {
     const { backend, admin } = await setup();
     const userId = await backend.run((ctx) =>
-      ctx.db.insert("users", { email, emailVerificationTime: Date.now() }),
+      ctx.db.insert("users", {
+        email,
+        emailVerificationTime: Date.now(),
+        acceptedTermsVersion: CURRENT_TERMS_VERSION,
+      }),
     );
     const member = backend.withIdentity({ subject: `${userId}|session` });
     const pending = {

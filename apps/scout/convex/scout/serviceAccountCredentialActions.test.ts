@@ -306,13 +306,8 @@ describe("Profile account login settings", () => {
   it("requires admin access for both create and update", async () => {
     const { admin, backend, args } = await context();
     const github = await admin.action(passwordApi, args);
-    const otherUserId = await backend.run(
-      async (ctx) =>
-        await ctx.db.insert("users", {
-          email: "member@example.test",
-          emailVerificationTime: Date.now(),
-          isApproved: true,
-        }),
+    const otherUserId = await backend.run((ctx) =>
+      insertTestAccount(ctx, { email: "member@example.test" }),
     );
     for (const caller of [
       backend,
