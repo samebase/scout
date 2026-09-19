@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AboutRouteImport } from './routes/about'
 import { Route as AccountDeletionRouteImport } from './routes/account-deletion'
 import { Route as AgentsRouteImport } from './routes/agents'
 import { Route as CreditHistoryRouteImport } from './routes/credit-history'
@@ -27,6 +28,11 @@ import { Route as TasksThreadRouteImport } from './routes/tasks.$thread'
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AboutRoute = AboutRouteImport.update({
+  id: '/about',
+  path: '/about',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AccountDeletionRoute = AccountDeletionRouteImport.update({
@@ -97,6 +103,7 @@ const TasksThreadRoute = TasksThreadRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
   '/account-deletion': typeof AccountDeletionRoute
   '/agents': typeof AgentsRoute
   '/credit-history': typeof CreditHistoryRoute
@@ -113,6 +120,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
   '/account-deletion': typeof AccountDeletionRoute
   '/agents': typeof AgentsRoute
   '/credit-history': typeof CreditHistoryRoute
@@ -129,6 +137,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
   '/account-deletion': typeof AccountDeletionRoute
   '/agents': typeof AgentsRoute
   '/credit-history': typeof CreditHistoryRoute
@@ -147,6 +156,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/about'
     | '/account-deletion'
     | '/agents'
     | '/credit-history'
@@ -163,6 +173,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/about'
     | '/account-deletion'
     | '/agents'
     | '/credit-history'
@@ -178,6 +189,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/about'
     | '/account-deletion'
     | '/agents'
     | '/credit-history'
@@ -195,6 +207,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AboutRoute: typeof AboutRoute
   AccountDeletionRoute: typeof AccountDeletionRoute
   AgentsRoute: typeof AgentsRoute
   CreditHistoryRoute: typeof CreditHistoryRoute
@@ -215,6 +228,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/about': {
+      id: '/about'
+      path: '/about'
+      fullPath: '/about'
+      preLoaderRoute: typeof AboutRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/account-deletion': {
@@ -326,6 +346,7 @@ const ScoutsRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AboutRoute: AboutRoute,
   AccountDeletionRoute: AccountDeletionRoute,
   AgentsRoute: AgentsRoute,
   CreditHistoryRoute: CreditHistoryRoute,

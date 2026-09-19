@@ -49,6 +49,9 @@ export function AppNavigation() {
             <FocusIcon aria-hidden="true" />
             <span>Reviews</span>
           </Link>
+          <Link to="/about" className={navigationLinkClass}>
+            About
+          </Link>
           {canAccess("access_scout_view", permissions) && (
             <Link to="/scouts" className={navigationLinkClass}>
               <UsersIcon aria-hidden="true" />

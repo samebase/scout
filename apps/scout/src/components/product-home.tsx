@@ -15,7 +15,6 @@ export function ProductHome({ search }: { search: z.infer<typeof homeSearch> }) 
       <main id="main-content">
         <DiscoveryHero composing={composing}>
           <div
-            className="mx-auto mt-5 max-w-[660px] pb-8"
             onFocusCapture={() => setComposing(true)}
             onBlurCapture={(event) => {
               if (!event.currentTarget.contains(event.relatedTarget)) setComposing(false);
