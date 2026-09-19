@@ -179,6 +179,7 @@ describe("Scout registry", () => {
     await expect(admin.query(api.scout.scouts.resources, { scoutId })).resolves.toEqual({
       agentMail: scoutRegistrationFields.agentMail,
       firecrawl: scoutRegistrationFields.firecrawl,
+      browserProfileSummary: null,
     });
     await expect(member.query(api.scout.scouts.resources, { scoutId })).rejects.toThrow(
       "Not authorized",

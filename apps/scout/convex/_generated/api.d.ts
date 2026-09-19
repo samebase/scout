@@ -46,6 +46,8 @@ import type * as scout_agentMailTools from "../scout/agentMailTools.js";
 import type * as scout_availability from "../scout/availability.js";
 import type * as scout_browserClickRecorder from "../scout/browserClickRecorder.js";
 import type * as scout_browserContext from "../scout/browserContext.js";
+import type * as scout_browserProfileModel from "../scout/browserProfileModel.js";
+import type * as scout_browserProfiles from "../scout/browserProfiles.js";
 import type * as scout_browserSessionConnection from "../scout/browserSessionConnection.js";
 import type * as scout_browserSessions from "../scout/browserSessions.js";
 import type * as scout_browserTarget from "../scout/browserTarget.js";
@@ -189,6 +191,8 @@ declare const fullApi: ApiFromModules<{
   "scout/availability": typeof scout_availability;
   "scout/browserClickRecorder": typeof scout_browserClickRecorder;
   "scout/browserContext": typeof scout_browserContext;
+  "scout/browserProfileModel": typeof scout_browserProfileModel;
+  "scout/browserProfiles": typeof scout_browserProfiles;
   "scout/browserSessionConnection": typeof scout_browserSessionConnection;
   "scout/browserSessions": typeof scout_browserSessions;
   "scout/browserTarget": typeof scout_browserTarget;

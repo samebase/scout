@@ -7,6 +7,7 @@ import { ServiceAccountsSection, type AccountEditor } from "#components/scout-se
 import { Button } from "#components/ui/button";
 import { ScoutAvailability, ScoutCurrentActivity } from "#components/scout-current-activity";
 import { canAccess, useViewerAccess } from "#lib/access";
+import { ScoutBrowserProfile } from "#components/scout-browser-profile";
 
 const searchSchema = z.object({
   view: z.literal("add-account").optional().catch(undefined),
@@ -151,10 +152,12 @@ function ScoutDetailPage() {
                 {resources.agentMail.inboxId}
               </dd>
             </div>
-            <div className="min-w-0">
-              <dt className="text-muted-foreground text-xs">Firecrawl profile</dt>
-              <dd className="mt-1 wrap-break-word">{resources.firecrawl.profileName}</dd>
-            </div>
+            <ScoutBrowserProfile
+              key={scout._id}
+              scoutId={scout._id}
+              profileName={resources.firecrawl.profileName}
+              summary={resources.browserProfileSummary}
+            />
           </dl>
         </section>
       )}
