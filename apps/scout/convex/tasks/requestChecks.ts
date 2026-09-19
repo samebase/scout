@@ -81,6 +81,39 @@ export async function currentCheckMessage(
     : null;
 }
 
+export async function resumeAttempts(
+  ctx: Pick<QueryCtx, "db">,
+  sessionId: Id<"agentsApiSessions">,
+) {
+  const checks = await ctx.db
+    .query("agentsApiRequestChecks")
+    .withIndex("by_session_id_and_kind", (q) => q.eq("sessionId", sessionId).eq("kind", "resume"))
+    .order("desc")
+    .take(MAX_SESSION_CHECKS);
+  return checks
+    .map((check) => {
+      switch (check.state.kind) {
+        case "completed":
+          return {
+            id: check._id,
+            finishedAt: check.state.finishedAt,
+            outcome: check.state.result.decision,
+          };
+        case "failed":
+          return {
+            id: check._id,
+            finishedAt: check.state.finishedAt,
+            outcome: { kind: "failed" as const, error: check.state.error },
+          };
+        case "pending":
+        case "running":
+        case "cancelled":
+          return null;
+      }
+    })
+    .filter((check) => check !== null);
+}
+
 const checkDoc = schema.doc("agentsApiRequestChecks");
 export const inspect = query({
   access: "access_lab",
@@ -210,6 +243,12 @@ export const finish = internalMutation({
     } else if (error !== null) {
       await ctx.db.patch(session._id, { state: { kind: "waiting", ...check.handoff } });
     }
+    console.info("Task request check finished", {
+      sessionId: session._id,
+      checkId,
+      kind: check.kind,
+      outcome: state.kind === "failed" ? "failed" : state.result.decision.kind,
+    });
     return error === null;
   },
 });
@@ -233,6 +272,11 @@ export const releaseHandoff = internalMutation({
     )
       throw new Error("Resume check has not approved this handoff");
     await ctx.db.patch(sessionId, { state: { kind: "running" } });
+    console.info("Task browser handoff released", {
+      sessionId,
+      checkId,
+      callId: check.handoff.callId,
+    });
     return { handoff: check.handoff, evidence: check.evidence };
   },
 });

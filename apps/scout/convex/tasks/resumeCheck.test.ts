@@ -382,6 +382,33 @@ it("runs the Resume gate first in the real workflow and retains the browser on r
   expect(await t.backend.run((ctx) => scoutIsWorking(ctx, t.scoutId))).toBe(true);
 });
 
+it("keeps resume rejection history available to the owner after stopping and a later turn", async () => {
+  const t = await setup();
+  const reason = "The page requires an email code that is not in the captured page.";
+  vi.stubGlobal(
+    "fetch",
+    vi.fn<typeof fetch>(async () => response({ decision: { kind: "rejected", reason } })),
+  );
+  const checkId = await t.resume();
+  expect(await t.run(checkId)).toBe(false);
+  await t.backend.run((ctx) =>
+    ctx.db.patch(t.sessionId, {
+      state: { kind: "stopped" },
+      active: false,
+      browser: null,
+      previousTurnId: "later-follow-up",
+    }),
+  );
+  const controls = await t.owner.query(api.tasks.sessions.controls, { sessionId: t.sessionId });
+  expect(controls.requestCheckMessage).toBeNull();
+  expect(controls.resumeAttempts).toEqual([
+    { id: checkId, finishedAt: evidence.capturedAt, outcome: { kind: "rejected", reason } },
+  ]);
+  await expect(
+    t.other.query(api.tasks.sessions.controls, { sessionId: t.sessionId }),
+  ).rejects.toThrow();
+});
+
 it("saves capture failure without an OpenAI call and permits a manual retry", async () => {
   const t = await setup();
   capture.mockRejectedValueOnce(new Error("Could not inspect the open tabs"));
@@ -518,6 +545,7 @@ it("keeps history through rejection, an approved retry, and a later handoff on t
     store: false,
     input: JSON.stringify({
       originalRequest: prompt,
+      scout: { email: "scout@example.test" },
       handoff: handoff.message,
       browser: freshEvidence,
     }),
@@ -573,6 +601,12 @@ it("keeps history through rejection, an approved retry, and a later handoff on t
     { _id: rejectedId, kind: "resume", status: "rejected" },
     { _id: retryId, kind: "resume", status: "approved" },
     { _id: laterId, kind: "resume", status: "approved" },
+  ]);
+  const controls = await t.owner.query(api.tasks.sessions.controls, { sessionId: t.sessionId });
+  expect(controls.resumeAttempts.map(({ id, outcome }) => ({ id, outcome }))).toEqual([
+    { id: laterId, outcome: approved.decision },
+    { id: retryId, outcome: approved.decision },
+    { id: rejectedId, outcome: rejected.decision },
   ]);
   const listed = await t.admin.query(api.tasks.sessions.list, { paginationOpts });
   expect(listed.page[0]?.checks).toEqual(session.checks);

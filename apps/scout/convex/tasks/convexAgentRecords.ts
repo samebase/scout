@@ -198,10 +198,13 @@ export const interruptTool = internalMutation({
       call && call.result.kind !== "running"
         ? call.result
         : {
-            kind: "error",
-            error: call
-              ? "Tool execution was interrupted. Its outcome is unknown; inspect the task records before repeating it."
-              : "Task stopped before this tool was executed.",
+            kind: "interrupted",
+            error:
+              args.name === "request_browser_handoff"
+                ? `Browser handoff was cancelled because the task ${session.state.kind} before browser control returned to Scout.`
+                : call
+                  ? "Tool execution was interrupted. Its outcome is unknown; inspect the task records before repeating it."
+                  : `Task ${session.state.kind} before this tool was executed.`,
           };
     if (!call) {
       await ctx.db.insert("agentsApiCalls", {

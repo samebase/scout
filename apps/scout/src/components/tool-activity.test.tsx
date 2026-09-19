@@ -62,8 +62,13 @@ test("shows failed and interrupted calls without implying success", () => {
   fireEvent.click(screen.getByRole("button", { name: "browser_execute: Failed" }));
   expect(screen.getByText("Navigation timed out")).toBeTruthy();
   expect(screen.queryByText("Finished")).toBeNull();
-  rerender(<ToolActivityRow tool={{ ...running, state: "interrupted" }} />);
+  const reason =
+    "Browser handoff was cancelled because the task stopped before browser control returned to Scout.";
+  rerender(<ToolActivityRow tool={{ ...running, state: "interrupted", error: reason }} />);
   expect(screen.getByRole("button", { name: "browser_execute: Interrupted" })).toBeTruthy();
+  expect(screen.getByText("Reason")).toBeTruthy();
+  expect(screen.getByText(reason)).toBeTruthy();
+  expect(screen.queryByText("Error")).toBeNull();
 });
 
 test("loads a screenshot only when opened and reuses its unexpired URL", async () => {

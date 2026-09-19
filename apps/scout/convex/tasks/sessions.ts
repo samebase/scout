@@ -1,6 +1,6 @@
 import { paginationOptsValidator, paginationResultValidator } from "convex/server";
 import { vWorkflowId } from "@convex-dev/workflow";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
@@ -23,7 +23,13 @@ import { omitNullish } from "../../shared/omitNullish";
 import { MAX_BROWSER_SESSIONS_PER_THREAD } from "../scout/browserSessions";
 import { browserSessionLifecycleValidator } from "../browserModel";
 import { agentsApiCostValidator, estimateAgentsApiCost } from "./cost";
-import { getInitialCheck, listChecks, summarizeCheck, currentCheckMessage } from "./requestChecks";
+import {
+  getInitialCheck,
+  listChecks,
+  summarizeCheck,
+  currentCheckMessage,
+  resumeAttempts,
+} from "./requestChecks";
 import { REQUEST_CHECK_MODEL, MAX_SESSION_CHECKS, checkSummary } from "./requestCheckModel";
 import { getResearch, summarizeResearch } from "./siteResearchRecords";
 import { researchSummary } from "./siteResearchModel";
@@ -386,6 +392,7 @@ export const controls = query({
         !busy &&
         session.pendingMessage?.status === "queued",
       requestCheckMessage: await currentCheckMessage(ctx, session),
+      resumeAttempts: await resumeAttempts(ctx, session._id),
       canSend: !session.active && Boolean(session.providerId) && !busy,
       canStop:
         session.active && (session.state.kind !== "stopped" || cleanup?.state.kind === "failed"),
@@ -483,12 +490,14 @@ export const resume = mutation({
       session.state.callId !== args.callId ||
       session.state.turnId !== args.turnId
     )
-      throw new Error("Session is no longer waiting for this handoff");
-    if (!session.browser) throw new Error("Handoff browser is not available");
+      throw new ConvexError("Session is no longer waiting for this handoff");
+    if (!session.browser) throw new ConvexError("Handoff browser is not available");
     const initial = await getInitialCheck(ctx, session._id);
-    if (!initial) throw new Error("Original request check not found");
+    if (!initial) throw new ConvexError("Original request check not found");
     if ((await listChecks(ctx, session._id)).length >= MAX_SESSION_CHECKS)
-      throw new Error("This session reached its check limit. Stop it and start a new session.");
+      throw new ConvexError(
+        "This session reached its check limit. Stop it and start a new session.",
+      );
     const checkId = await ctx.db.insert("agentsApiRequestChecks", {
       kind: "resume",
       sessionId: session._id,
@@ -505,6 +514,12 @@ export const resume = mutation({
     });
     await ctx.db.patch(session._id, { state: { kind: "checking", checkId } });
     await startWorkflow(ctx, session._id, { kind: "resume", checkId });
+    console.info("Task resume requested", {
+      sessionId: session._id,
+      checkId,
+      callId: args.callId,
+      userId: ctx.viewer.userId,
+    });
     return null;
   },
 });
@@ -517,6 +532,11 @@ export const stop = mutation({
     const session = await owned(ctx, args.sessionId, ctx.viewer.userId);
     await requireSessionPermission(ctx, session);
     await ctx.db.patch(session._id, { state: { kind: "stopped" } });
+    console.info("Task stop requested", {
+      sessionId: session._id,
+      previousState: session.state.kind,
+      userId: ctx.viewer.userId,
+    });
     if (
       session.active &&
       (session.state.kind === "waiting" ||
@@ -557,6 +577,7 @@ export const enterHandoff = internalMutation({
     if (!session.browser?.interactiveLiveViewUrl)
       throw new Error("No interactive browser is available for handoff");
     await ctx.db.patch(sessionId, { state: { kind: "waiting", ...handoff } });
+    console.info("Task waiting for browser handoff", { sessionId, callId: handoff.callId });
     const chat = await ctx.db
       .query("scoutChats")
       .withIndex("by_thread_id", (q) => q.eq("threadId", sessionId))

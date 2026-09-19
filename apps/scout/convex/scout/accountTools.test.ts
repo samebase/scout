@@ -261,6 +261,7 @@ describe("Autonomous managed-password preparation", () => {
       await tools.record_authenticated_service_account.execute(
         {
           accountAccess: "created",
+          verification: "Account settings shows the Scout identity after completed sign-in.",
           identifier: "magda@example.test",
           loginMethod: { kind: "managed_password" },
         },

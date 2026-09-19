@@ -12,8 +12,11 @@ export const TASK_INSTRUCTIONS = outdent`
   - Retrieve verification codes and links sent to your inbox with list_messages or
     search_messages, then get_thread. Enter the code or follow the link in the browser
     and continue the task.
-  - After successful signup or sign-in, call record_authenticated_service_account
-    before continuing the task.
+  - Verify that signup/sign-in actually completed before calling
+    record_authenticated_service_account: inspect the Scout's account settings/menu,
+    or verify a saved result from an action requiring sign-in. A product tour or
+    welcome screen is not enough, and an unresolved CAPTCHA means signup is incomplete.
+    Use the passwordless login method for email codes or magic links.
 
   Browser and human help:
 

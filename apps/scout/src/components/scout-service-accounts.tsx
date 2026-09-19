@@ -20,6 +20,7 @@ export type AccountEditor =
 type SaveState = { kind: "idle" } | { kind: "submitting" } | { kind: "failed"; message: string };
 type Login =
   | { kind: "password"; password: PasswordArgs["password"]; credentialHost: string }
+  | { kind: "passwordless" }
   | { kind: "oauth"; providerAccountId: ServiceAccount["_id"] | null };
 
 const evidenceDate = new Intl.DateTimeFormat(undefined, {
@@ -164,6 +165,8 @@ function LoginMethod({
 }) {
   const loginMethod = account.loginMethod;
   switch (loginMethod.kind) {
+    case "passwordless":
+      return <span>Email code or link</span>;
     case "managed_password":
       return (
         <span>
@@ -204,18 +207,30 @@ function AccountForm({
 }) {
   const savePassword = useAction(api.scout.serviceAccountCredentialActions.savePassword);
   const saveOAuth = useMutation(api.scout.serviceAccounts.saveOAuth);
+  const savePasswordless = useMutation(api.scout.serviceAccounts.savePasswordless);
   const [serviceName, setServiceName] = useState(account?.serviceName ?? "");
   const [serviceDomain, setServiceDomain] = useState(account?.serviceDomain ?? "");
   const [identifier, setIdentifier] = useState(account?.identifier ?? scout.agentMail.address);
-  const [login, setLogin] = useState<Login>(() =>
-    account?.loginMethod.kind === "oauth"
-      ? { kind: "oauth", providerAccountId: account.loginMethod.providerAccountId }
-      : {
+  const [login, setLogin] = useState<Login>(() => {
+    const loginMethod = account?.loginMethod;
+    switch (loginMethod?.kind) {
+      case "oauth":
+        return { kind: "oauth", providerAccountId: loginMethod.providerAccountId };
+      case "passwordless":
+        return { kind: "passwordless" };
+      case "managed_password":
+      case undefined:
+        return {
           kind: "password",
           password: { kind: "provided", value: "" },
-          credentialHost: account?.loginMethod.credentialHost ?? "",
-        },
-  );
+          credentialHost: loginMethod?.credentialHost ?? "",
+        };
+      default: {
+        const exhaustive: never = loginMethod;
+        return exhaustive;
+      }
+    }
+  });
   const [state, setState] = useState<SaveState>({ kind: "idle" });
   const mounted = useRef(false);
   useEffect(() => {
@@ -236,6 +251,9 @@ function AccountForm({
     setState({ kind: "submitting" });
     try {
       switch (login.kind) {
+        case "passwordless":
+          await savePasswordless({ account: target });
+          break;
         case "password":
           await savePassword({
             account: target,
@@ -337,6 +355,15 @@ function AccountForm({
               <input
                 type="radio"
                 name="login-method"
+                checked={login.kind === "passwordless"}
+                onChange={() => setLogin({ kind: "passwordless" })}
+              />
+              Email code or link
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                name="login-method"
                 checked={login.kind === "oauth"}
                 onChange={() => setLogin({ kind: "oauth", providerAccountId: null })}
               />
@@ -418,7 +445,7 @@ function AccountForm({
               )}
             </div>
           </>
-        ) : (
+        ) : login.kind === "oauth" ? (
           <div className="sm:col-span-2">
             <FormField label="Provider account" htmlFor="service-account-provider">
               <select
@@ -450,7 +477,7 @@ function AccountForm({
               </p>
             ) : null}
           </div>
-        )}
+        ) : null}
         {state.kind === "failed" ? (
           <p className="text-destructive text-sm sm:col-span-2" role="alert">
             {state.message}

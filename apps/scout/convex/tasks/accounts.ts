@@ -89,13 +89,15 @@ export function createAgentsAccountTools(
       },
     ),
     record_authenticated_service_account: createServiceAccountRecordingTool(
-      async ({ identifier, loginMethod }, abortSignal) => {
+      async ({ accountAccess, identifier, loginMethod, verification }, abortSignal) => {
         const observationStartedAt = Date.now();
         const scope = await currentScope(abortSignal);
         return await ctx.runMutation(internal.tasks.accountsState.recordAuthenticated, {
           ...scope,
           identifier,
+          accountAccess,
           loginMethod,
+          verification,
           observationStartedAt,
         });
       },

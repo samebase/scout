@@ -14,6 +14,7 @@ export type RuntimeServiceAccount = {
   authenticationEvidence: Doc<"scoutServiceAccounts">["authenticationEvidence"];
   loginMethod:
     | { kind: "managed_password"; credentialHost: string; createdAt: number }
+    | { kind: "passwordless" }
     | { kind: "oauth"; providerAccountId: string };
 };
 
@@ -74,6 +75,12 @@ export function serviceAccountLoginInstructions(accounts: ReadonlyArray<RuntimeS
         return outdent`
           - ${account.serviceName} at ${account.serviceDomain}
             as ${JSON.stringify(account.identifier)}: managed password; ${authentication}
+        `;
+      }
+      if (account.loginMethod.kind === "passwordless") {
+        return outdent`
+          - ${account.serviceName} at ${account.serviceDomain}
+            as ${JSON.stringify(account.identifier)}: email code or magic link; ${authentication}
         `;
       }
       const provider = byId.get(account.loginMethod.providerAccountId);

@@ -74,9 +74,19 @@ export function generationUsage(usage: LanguageModelUsage): Infer<typeof convexU
 export type CompletedCall = Exclude<Infer<typeof callResult>, { kind: "running" }>;
 
 export function modelToolOutput(result: CompletedCall): Infer<typeof vToolResultOutput> {
-  if (result.kind === "error") return { type: "error-text", value: result.error };
-  const value = z.json().parse(JSON.parse(result.output));
-  return validate(vToolResultOutput, value) ? value : { type: "json", value };
+  switch (result.kind) {
+    case "error":
+    case "interrupted":
+      return { type: "error-text", value: result.error };
+    case "success": {
+      const value = z.json().parse(JSON.parse(result.output));
+      return validate(vToolResultOutput, value) ? value : { type: "json", value };
+    }
+    default: {
+      const exhaustive: never = result;
+      return exhaustive;
+    }
+  }
 }
 
 export function toolCallItem(call: {

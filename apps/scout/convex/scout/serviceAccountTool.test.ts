@@ -6,6 +6,45 @@ const abortSignal = new AbortController().signal;
 const toolOptions = { toolCallId: "tool-1", messages: [], context: {}, abortSignal };
 
 describe("Scout service-account recording tool", () => {
+  it("records email-code sign-in without a password or OAuth provider", async () => {
+    const record = vi.fn(async () => ({ serviceAccountId: "notion-account", created: true }));
+    const recordingTool = createServiceAccountRecordingTool(record);
+    const input = await validateTypes({
+      value: {
+        accountAccess: "created",
+        loginMethod: "passwordless",
+        identifier: "john@eggfit.com",
+        verification:
+          "Notion account settings shows John and john@eggfit.com after email verification.",
+      },
+      schema: recordingTool.inputSchema,
+    });
+    await recordingTool.execute(input, toolOptions);
+    expect(record).toHaveBeenCalledWith(
+      { ...input, loginMethod: { kind: "passwordless" } },
+      abortSignal,
+    );
+  });
+
+  it.each([undefined, "", "   "])(
+    "requires a verification explanation (%s)",
+    async (verification) => {
+      const record = vi.fn(async () => ({ serviceAccountId: "trello-account", created: false }));
+      const recordingTool = createServiceAccountRecordingTool(record);
+      await expect(
+        validateTypes({
+          value: {
+            accountAccess: "created",
+            loginMethod: "managed_password",
+            identifier: "conrad@example.test",
+            verification,
+          },
+          schema: recordingTool.inputSchema,
+        }),
+      ).rejects.toThrow();
+      expect(record).not.toHaveBeenCalled();
+    },
+  );
   it("records a saved login without page text selectors", async () => {
     const record = vi.fn(async () => ({ serviceAccountId: "account-1", created: false }));
     const recordingTool = createServiceAccountRecordingTool(record);
@@ -13,6 +52,7 @@ describe("Scout service-account recording tool", () => {
     const input = await validateTypes({
       value: {
         accountAccess: "created",
+        verification: "Account settings shows the Scout identity after completed sign-in.",
         loginMethod: "managed_password",
         identifier: "conrad@example.test",
       },
@@ -26,6 +66,7 @@ describe("Scout service-account recording tool", () => {
     expect(record).toHaveBeenCalledWith(
       {
         accountAccess: "created",
+        verification: "Account settings shows the Scout identity after completed sign-in.",
         loginMethod: { kind: "managed_password" },
         identifier: "conrad@example.test",
       },
@@ -45,6 +86,7 @@ describe("Scout service-account recording tool", () => {
         [field: string]: string;
       } = {
         accountAccess: "created",
+        verification: "Account settings shows the Scout identity after completed sign-in.",
         loginMethod: "managed_password",
         identifier: "conrad@example.test",
         [field]: "other@example.test",
@@ -64,6 +106,7 @@ describe("Scout service-account recording tool", () => {
     const input = await validateTypes({
       value: {
         accountAccess: "created",
+        verification: "Account settings shows the Scout identity after completed sign-in.",
         loginMethod: "oauth",
         oauthProviderServiceDomain: "github.com",
         oauthProviderIdentifier: "conrad-scout",
@@ -77,6 +120,7 @@ describe("Scout service-account recording tool", () => {
     expect(record).toHaveBeenCalledWith(
       {
         accountAccess: "created",
+        verification: "Account settings shows the Scout identity after completed sign-in.",
         loginMethod: {
           kind: "oauth",
           providerServiceDomain: "github.com",
@@ -96,6 +140,7 @@ describe("Scout service-account recording tool", () => {
       validateTypes({
         value: {
           accountAccess: "created",
+          verification: "Account settings shows the Scout identity after completed sign-in.",
           loginMethod: "oauth",
           identifier: "conrad@example.test",
         },

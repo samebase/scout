@@ -177,7 +177,7 @@ export function presentToolActivity(args: {
         : mailTools.has(args.name)
           ? null
           : safeText(resultError);
-  const state = resultError === null ? args.state : "failed";
+  const state = resultError === null || args.state === "interrupted" ? args.state : "failed";
   function display(value: Json) {
     const text = printable(value);
     return args.audience === "member" && text && text.length > 12_000

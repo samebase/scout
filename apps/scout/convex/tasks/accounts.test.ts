@@ -120,6 +120,47 @@ async function setup() {
   return { backend, ...seeded, runtime, browser, tools, request };
 }
 
+it("records passwordless authentication with its task evidence and no credential", async () => {
+  const { backend, tools, scout, sessionId, runtime } = await setup();
+  runtime.getPage.mockResolvedValue("https://notion.so/settings?token=private#account");
+  await backend.action(async (ctx) => {
+    const recordingTool = tools(ctx).record_authenticated_service_account;
+    const evidence = {
+      accountAccess: "created" as const,
+      identifier: scout.agentMail.address,
+      loginMethod: { kind: "passwordless" as const },
+      verification: "Account settings shows the Scout email after signing in with a code.",
+    };
+    const saved = await recordingTool.execute(evidence, options);
+    expect(saved).toMatchObject({ created: true });
+    expect(await recordingTool.execute(evidence, options)).toEqual({ ...saved, created: false });
+    await backend.run(async (dbCtx) => {
+      const recorded = await dbCtx.db
+        .query("scoutServiceAccounts")
+        .withIndex("by_scout_id_and_service_domain", (q) =>
+          q.eq("scoutId", scout._id).eq("serviceDomain", "notion.so"),
+        )
+        .unique();
+      expect(recorded).toMatchObject({
+        loginMethod: { kind: "passwordless" },
+        lastObserved: {
+          kind: "task_report",
+          taskSessionId: sessionId,
+          observedUrl: "https://notion.so/settings",
+          verification: evidence.verification,
+        },
+      });
+      expect(await dbCtx.db.query("scoutManagedCredentials").take(1)).toEqual([]);
+    });
+    await expect(recordingTool.execute({ ...evidence, verification: "" }, options)).rejects.toThrow(
+      "Authentication verification",
+    );
+    await expect(
+      recordingTool.execute({ ...evidence, identifier: "another@example.test" }, options),
+    ).rejects.toThrow("does not belong");
+  });
+});
+
 it.each([observedUrl, null, "https://accounts.example.com/previous"])(
   "uses the live page to prepare, fill, record and reuse passwords when persisted currentUrl is %s",
   async (currentUrl) => {
@@ -150,6 +191,7 @@ it.each([observedUrl, null, "https://accounts.example.com/previous"])(
       expect((await browser.actions.snapshot()).output).toBe("Password: [secret redacted]");
       const evidence = {
         accountAccess: "created",
+        verification: "Account settings shows the Scout identity after completed sign-in.",
         identifier: account.identifier,
         loginMethod: { kind: "managed_password" },
       } as const;
@@ -170,11 +212,16 @@ it.each([observedUrl, null, "https://accounts.example.com/previous"])(
           { ...evidence, identifier: "another-user" },
           options,
         ),
-      ).rejects.toThrow("matching managed-password");
+      ).rejects.toThrow(/registered account identifier|registered before/);
       await backend.run(async (dbCtx) => {
         const saved = await dbCtx.db.get("scoutServiceAccounts", credential.serviceAccountId);
         expect(saved?.authenticationEvidence.kind).toBe("succeeded");
-        expect(saved?.lastObserved).toBeUndefined();
+        expect(saved?.lastObserved).toMatchObject({
+          kind: "task_report",
+          taskSessionId: sessionId,
+          verification: evidence.verification,
+          observedUrl: "https://example.com/dashboard",
+        });
         expect(await dbCtx.db.query("scoutChats").take(1)).toEqual([]);
         expect(await dbCtx.db.query("scoutBrowserSessions").take(1)).toEqual([]);
         expect(await dbCtx.db.query("scoutTurns").take(1)).toEqual([]);
@@ -224,12 +271,13 @@ it("rejects filling on another host and recording a password account on another 
       accountTools.record_authenticated_service_account.execute(
         {
           accountAccess: "created",
+          verification: "Account settings shows the Scout identity after completed sign-in.",
           identifier: account.identifier,
           loginMethod: { kind: "managed_password" },
         },
         options,
       ),
-    ).rejects.toThrow("matching managed-password");
+    ).rejects.toThrow(/registered account identifier|registered before/);
     expect(runtime.fill).not.toHaveBeenCalled();
   });
 });
@@ -265,6 +313,7 @@ it("checks the session owner again after permission is revoked", async () => {
       tools(ctx).record_authenticated_service_account.execute(
         {
           accountAccess: "created",
+          verification: "Account settings shows the Scout identity after completed sign-in.",
           identifier: account.identifier,
           loginMethod: { kind: "managed_password" },
         },
@@ -345,6 +394,7 @@ it("records OAuth only through this Scout's provider account and preserves the r
     const record = tools(ctx).record_authenticated_service_account;
     const evidence = {
       accountAccess: "created",
+      verification: "Account settings shows the Scout identity after completed sign-in.",
       identifier: account.identifier,
       loginMethod: {
         kind: "oauth",

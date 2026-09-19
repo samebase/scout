@@ -86,7 +86,13 @@ export function ToolActivityRow({ tool, children }: { tool: ToolActivity; childr
         <dl className="space-y-3 py-2">
           {tool.input !== null && <ToolValue label="Input" value={tool.input} />}
           {tool.output !== null && <ToolValue label="Output" value={tool.output} />}
-          {tool.error !== null && <ToolValue label="Error" value={tool.error} destructive />}
+          {tool.error !== null && (
+            <ToolValue
+              label={tool.state === "interrupted" ? "Reason" : "Error"}
+              value={tool.error}
+              destructive={tool.state === "failed"}
+            />
+          )}
           {children}
         </dl>
       </CollapsibleContent>

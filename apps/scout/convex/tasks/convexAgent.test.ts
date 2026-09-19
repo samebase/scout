@@ -17,6 +17,7 @@ import {
   pendingToolCalls,
   prepareContext,
   projectMessage,
+  type CompletedCall,
 } from "./convexAgentModel";
 
 const provider = vi.hoisted(() => ({
@@ -336,7 +337,7 @@ it.each([false, true])(
         )
         .unique(),
     );
-    expect(sharedCall?.result).toEqual({ kind: "error", error: expectedError });
+    expect(sharedCall?.result).toEqual({ kind: "interrupted", error: expectedError });
     const messages = await task.backend.query(components.agent.messages.listMessagesByThreadId, {
       threadId: session.providerId,
       order: "asc",
@@ -366,7 +367,7 @@ it.each([false, true])(
         paginationOpts: { cursor: null, numItems: 20 },
       });
     expect((await visibleItems()).page.find((item) => item.kind === "tool_call")?.tool?.state).toBe(
-      "failed",
+      "interrupted",
     );
     await task.backend.run((ctx) =>
       ctx.db.patch(task.sessionId, { active: true, state: { kind: "running" } }),
@@ -376,7 +377,7 @@ it.each([false, true])(
       command: { kind: "send", message: "Continue the task." },
     });
     expect((await visibleItems()).page.find((item) => item.kind === "tool_call")?.tool?.state).toBe(
-      "failed",
+      "interrupted",
     );
     // Even a repeated provider call ID must reuse the terminal result, never its effects.
     provider.stream.mockResolvedValueOnce(callStream());
@@ -384,8 +385,157 @@ it.each([false, true])(
     expect(await task.advance()).toBe(true);
     expect(execute).not.toHaveBeenCalled();
     expect((await visibleItems()).page.find((item) => item.kind === "tool_call")?.tool?.state).toBe(
-      "failed",
+      "interrupted",
     );
+  },
+);
+
+it.each(["stopped", "failed"] satisfies Array<"stopped" | "failed">)(
+  "records a cancelled handoff as interrupted when the task %s",
+  async (state) => {
+    const task = await setup();
+    provider.stream.mockResolvedValueOnce(
+      streamed(
+        [
+          {
+            type: "tool-call",
+            toolCallId: "handoff",
+            toolName: "request_browser_handoff",
+            input: JSON.stringify({ message: "Solve the CAPTCHA" }),
+          },
+        ],
+        "tool-calls",
+      ),
+    );
+    await task.advance();
+    const session = await task.session();
+    if (!session?.previousTurnId || !session.providerId) throw new Error("Thread missing");
+    await task.backend.run((ctx) =>
+      ctx.db.patch(task.sessionId, {
+        state: state === "stopped" ? { kind: "stopped" } : { kind: "failed", error: "Task failed" },
+      }),
+    );
+    await task.backend.mutation(internal.tasks.convexAgentRecords.interruptTool, {
+      sessionId: task.sessionId,
+      promptMessageId: session.previousTurnId,
+      callId: "handoff",
+      name: "request_browser_handoff",
+    });
+    const error = `Browser handoff was cancelled because the task ${state} before browser control returned to Scout.`;
+    expect(
+      await task.backend.mutation(internal.tasks.sessions.claimCall, {
+        sessionId: task.sessionId,
+        callId: "handoff",
+      }),
+    ).toMatchObject({ fresh: false, call: { result: { kind: "interrupted", error } } });
+    const items = await task.backend
+      .withIdentity({ subject: session.userId })
+      .query(api.tasks.sessions.listItems, {
+        sessionId: task.sessionId,
+        paginationOpts: { cursor: null, numItems: 20 },
+      });
+    expect(items.page.find((item) => item.kind === "tool_call")?.tool).toMatchObject({
+      state: "interrupted",
+      error,
+    });
+    const messages = await task.backend.query(components.agent.messages.listMessagesByThreadId, {
+      threadId: session.providerId,
+      order: "asc",
+      paginationOpts: { cursor: null, numItems: 20 },
+    });
+    expect(pendingToolCalls(messages.page)).toEqual([]);
+    expect(messages.page).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: {
+            role: "tool",
+            content: [
+              {
+                type: "tool-result",
+                toolCallId: "handoff",
+                toolName: "request_browser_handoff",
+                output: { type: "error-text", value: error },
+              },
+            ],
+          },
+        }),
+      ]),
+    );
+    expect(execute).not.toHaveBeenCalled();
+  },
+);
+
+it.each([
+  { kind: "success", output: JSON.stringify({ saved: true }) },
+  { kind: "error", error: "The provider rejected the operation" },
+] satisfies CompletedCall[])(
+  "preserves an existing terminal $kind during cancellation",
+  async (result) => {
+    const task = await setup();
+    provider.stream.mockResolvedValueOnce(
+      streamed(
+        [
+          {
+            type: "tool-call",
+            toolCallId: "finished",
+            toolName: "browser_read",
+            input: JSON.stringify({ value: "Evidence" }),
+          },
+        ],
+        "tool-calls",
+      ),
+    );
+    await task.advance();
+    const session = await task.session();
+    if (!session?.previousTurnId || !session.providerId) throw new Error("Thread missing");
+    const claimed = await task.backend.mutation(internal.tasks.sessions.claimCall, {
+      sessionId: task.sessionId,
+      callId: "finished",
+    });
+    await task.backend.mutation(internal.tasks.sessions.finishCall, {
+      callId: claimed.call._id,
+      result,
+    });
+    await task.backend.run((ctx) => ctx.db.patch(task.sessionId, { state: { kind: "stopped" } }));
+    await task.backend.mutation(internal.tasks.convexAgentRecords.interruptTool, {
+      sessionId: task.sessionId,
+      promptMessageId: session.previousTurnId,
+      callId: "finished",
+      name: "browser_read",
+    });
+    expect(
+      await task.backend.mutation(internal.tasks.sessions.claimCall, {
+        sessionId: task.sessionId,
+        callId: "finished",
+      }),
+    ).toMatchObject({ fresh: false, call: { result } });
+    const messages = await task.backend.query(components.agent.messages.listMessagesByThreadId, {
+      threadId: session.providerId,
+      order: "asc",
+      paginationOpts: { cursor: null, numItems: 20 },
+    });
+    expect(pendingToolCalls(messages.page)).toEqual([]);
+    expect(messages.page).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: {
+            role: "tool",
+            content: [
+              {
+                type: "tool-result",
+                toolCallId: "finished",
+                toolName: "browser_read",
+                output:
+                  result.kind === "success"
+                    ? { type: "json", value: { saved: true } }
+                    : { type: "error-text", value: result.error },
+              },
+            ],
+          },
+        }),
+      ]),
+    );
+    expect(execute).not.toHaveBeenCalled();
   },
 );
 
