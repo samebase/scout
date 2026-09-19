@@ -10,6 +10,7 @@ import { z } from "zod";
 import { browserActionValidator, browserOutcomeValidator } from "../browserModel";
 import { MAX_SCREENSHOT_NOTE_LENGTH } from "../tasks/screenshotModel";
 import { omitNullish } from "../../shared/omitNullish";
+import { FIRECRAWL_BROWSER_TTL_SECONDS } from "../../shared/handoff";
 import { type BrowserTarget } from "./browserTarget";
 import {
   BROWSER_CLOSE_DESCRIPTION,
@@ -40,7 +41,6 @@ const MAX_TOOL_TEXT_LENGTH = 20_000;
 const MAX_TOOL_OUTPUT_LENGTH = 20_000;
 const PLAYWRIGHT_RESULT_PREFIX = "__SCOUT_PLAYWRIGHT_RESULT__";
 const PROFILE_WRITE_RETRY_DELAYS_MS = [10_000, 10_000, 10_000] as const;
-const FIRECRAWL_BROWSER_TTL_SECONDS = 3_600;
 
 const agentMailToolNames = ["list_messages", "search_messages", "get_thread"] as const;
 const playwrightExecutionResultSchema = z.discriminatedUnion("ok", [

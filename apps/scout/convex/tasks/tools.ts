@@ -74,6 +74,7 @@ export async function runtimeTools(
       onSessionCreated: async (created) => {
         handle = {
           providerSessionId: created.providerSessionId,
+          providerExpiresAtMs: created.providerExpiresAtMs,
           cdpUrl: created.cdpUrl,
           ...omitNullish({ selectedTabId: created.selectedTabId }),
           interactiveLiveViewUrl: created.interactiveLiveViewUrl,

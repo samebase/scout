@@ -7,13 +7,14 @@ import { internalAction } from "../_generated/server";
 import { getRuntimeEnv } from "../runtimeEnv";
 import { createAgentMailInboxClient, requiredAgentMailApiKey } from "../scout/lib/agentMail";
 import { humanHandoffOrigin } from "../scout/lib/humanHandoffUrl";
+import { handoffDeadlineMessage } from "../../shared/handoff";
 
 export const notify = internalAction({
   args: { sessionId: v.id("agentsApiSessions"), callId: v.string() },
   returns: v.null(),
   handler: async (ctx, args) => {
     const delivery = await ctx.runQuery(internal.tasks.sessions.handoffNotification, args);
-    if (!delivery) return null;
+    if (!delivery || delivery.expiresAt === null || delivery.expiresAt <= Date.now()) return null;
     const url = new URL(
       `/tasks/${encodeURIComponent(args.sessionId)}`,
       humanHandoffOrigin(getRuntimeEnv("SITE_URL")),
@@ -29,6 +30,8 @@ export const notify = internalAction({
         Open this conversation to take over the browser, then resume ${delivery.scoutName}:
 
         ${url.href}
+
+        ${handoffDeadlineMessage(delivery.expiresAt, "UTC")}
       `,
       idempotencyKey: `review-handoff-${args.sessionId}-${args.callId}`,
     });

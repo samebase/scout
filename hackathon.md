@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-19T12:22:59Z
+- **Last updated:** 2026-09-19T12:37:53Z
 
 ## Log
 
@@ -1521,8 +1521,15 @@ Account recording keeps the same login-method format between model generation an
 This fixes Convex Agent rejecting its own saved account calls after a successful signup
 (`apps/scout/convex/scout/serviceAccountTool.ts`).
 
-### 2026-09-19 - working tree - v245
+### 2026-09-19 - 4bac23f - v245
 
 Chat loads earlier messages as the reader scrolls near the top, keeping their place when history arrives.
 A loading indicator replaces the button without shifting the message list
 (`apps/scout/src/products/conversation/page.tsx`).
+
+### 2026-09-19 - working tree - v246
+
+Browser handoffs have an up-to-45-minute Resume deadline capped by the browser's lifetime.
+The email and task banners show that deadline; missed handoffs stop with a saved explanation
+and release the browser through existing cleanup. Resume checks preserve the deadline, and
+selected older handoffs can receive a deadline through bounded internal maintenance.

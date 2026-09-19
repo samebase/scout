@@ -3,15 +3,10 @@ import { outdent } from "outdent";
 import { z } from "zod";
 import { agentsApiUsageValidator } from "./cost";
 import { handoffEvidenceValidator } from "./handoffEvidenceModel";
+import { handoffContext } from "./model";
 
 export const REQUEST_CHECK_MODEL = "gpt-5.6-luna";
 export const MAX_SESSION_CHECKS = 100;
-
-export const handoffContext = v.object({
-  callId: v.string(),
-  turnId: v.string(),
-  message: v.string(),
-});
 
 export const REQUEST_CHECK_INSTRUCTIONS = outdent`
   Check a request before Scout uses a website, then give it a short title.

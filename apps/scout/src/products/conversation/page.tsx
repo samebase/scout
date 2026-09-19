@@ -26,6 +26,7 @@ import {
 import { type FormEvent, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import { omitNullish } from "../../../shared/omitNullish";
+import { HANDOFF_EXPIRED_REASON, handoffDeadlineMessage } from "../../../shared/handoff";
 import { creditFailure, creditFailureMessage } from "../../../shared/creditFailure";
 import { PendingTaskMessage } from "../../tasks/pending-message";
 import { scoutAvailabilityLabels } from "#components/scout-current-activity";
@@ -1004,6 +1005,9 @@ function ConversationSession({
       {managed?.state.kind === "waiting" && (
         <div className={cn(playNotice, "space-y-3")}>
           <p className="whitespace-pre-wrap">{managed.state.message}</p>
+          {managed.state.expiresAt !== undefined && (
+            <p>{handoffDeadlineMessage(managed.state.expiresAt, undefined)}</p>
+          )}
           {managed.requestCheckMessage && (
             <p role="alert" className="whitespace-pre-wrap wrap-anywhere">
               Scout could not resume: {managed.requestCheckMessage}
@@ -1043,7 +1047,11 @@ function ConversationSession({
       {managed && <TaskResumeHistory attempts={managed.resumeAttempts} state={managed.state} />}
       {(thread.status === "stopped" || thread.status === "stopping") && (
         <p role="status" className="shrink-0 border-b px-4 py-3 text-sm text-muted-foreground">
-          {thread.status === "stopping" ? "Stopping Scout…" : "Task stopped."}
+          {managed?.state.kind === "stopped" && managed.state.reason === "handoff_expired"
+            ? HANDOFF_EXPIRED_REASON
+            : thread.status === "stopping"
+              ? "Stopping Scout…"
+              : "Task stopped."}
           {thread.status === "stopped" &&
             managed?.canSend &&
             !showingWalkthrough &&

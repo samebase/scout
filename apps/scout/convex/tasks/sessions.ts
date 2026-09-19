@@ -38,6 +38,11 @@ import { toolActivityValidator } from "../../shared/toolActivity";
 import schema from "../schema";
 import { creditsEnabled } from "../creditPolicy";
 import { assertCreditAdmission } from "../creditLedger";
+import {
+  FIRECRAWL_BROWSER_TTL_SECONDS,
+  HANDOFF_EXPIRED_REASON,
+  HANDOFF_RESPONSE_WINDOW_MS,
+} from "../../shared/handoff";
 
 async function requireSession(ctx: QueryCtx, sessionId: Id<"agentsApiSessions">) {
   const session = await ctx.db.get(sessionId);
@@ -75,6 +80,115 @@ async function scheduleSessionCleanup(ctx: MutationCtx, session: Doc<"agentsApiS
   });
   await ctx.db.patch(session._id, { cleanupJobId });
 }
+
+async function stopSession(
+  ctx: MutationCtx,
+  session: Doc<"agentsApiSessions">,
+  state: Extract<Doc<"agentsApiSessions">["state"], { kind: "stopped" }>,
+) {
+  await ctx.db.patch(session._id, { state });
+  if (
+    session.active &&
+    (session.state.kind === "waiting" ||
+      session.state.kind === "checking" ||
+      session.state.kind === "failed" ||
+      session.cleanupJobId !== undefined)
+  ) {
+    await scheduleSessionCleanup(ctx, { ...session, state });
+  }
+}
+
+async function browserHandoffDeadline(ctx: MutationCtx, session: Doc<"agentsApiSessions">) {
+  if (!session.browser) throw new Error("Handoff browser is not available");
+  const handle = session.browser;
+  let browserExpiresAt = handle.providerExpiresAtMs;
+  if (browserExpiresAt === undefined) {
+    const browser = await ctx.db
+      .query("agentsApiBrowserSessions")
+      .withIndex("by_provider_session_id", (q) =>
+        q.eq("providerSessionId", handle.providerSessionId),
+      )
+      .unique();
+    if (!browser || browser.agentsSessionId !== session._id)
+      throw new Error("Handoff browser record is missing");
+    // Before expiry was persisted, every browser was opened with this one-hour TTL.
+    browserExpiresAt = browser.lifecycle.openedAtMs + FIRECRAWL_BROWSER_TTL_SECONDS * 1_000;
+  }
+  return Math.min(Date.now() + HANDOFF_RESPONSE_WINDOW_MS, browserExpiresAt);
+}
+
+export const expireHandoff = internalMutation({
+  args: {
+    sessionId: v.id("agentsApiSessions"),
+    callId: v.string(),
+    turnId: v.string(),
+    expiresAt: v.number(),
+  },
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    const session = await ctx.db.get(args.sessionId);
+    if (
+      !session?.active ||
+      session.state.kind !== "waiting" ||
+      session.state.callId !== args.callId ||
+      session.state.turnId !== args.turnId ||
+      session.state.expiresAt !== args.expiresAt ||
+      Date.now() < args.expiresAt
+    )
+      return false;
+    await stopSession(ctx, session, { kind: "stopped", reason: "handoff_expired" });
+    console.info("Task browser handoff expired", {
+      sessionId: session._id,
+      callId: args.callId,
+      turnId: args.turnId,
+      expiresAt: args.expiresAt,
+    });
+    const call = await ctx.db
+      .query("agentsApiCalls")
+      .withIndex("by_session_id_and_call_id", (q) =>
+        q.eq("sessionId", session._id).eq("callId", args.callId),
+      )
+      .unique();
+    const result = { kind: "interrupted" as const, error: HANDOFF_EXPIRED_REASON };
+    if (call) await ctx.db.patch(call._id, { result });
+    else
+      await ctx.db.insert("agentsApiCalls", {
+        sessionId: session._id,
+        callId: args.callId,
+        result,
+      });
+    return true;
+  },
+});
+
+// Explicit maintenance for pre-deadline handoffs; never scans or repairs unrelated tasks.
+export const repairHandoffDeadlines = internalMutation({
+  args: { sessionIds: v.array(v.id("agentsApiSessions")) },
+  returns: v.array(v.object({ sessionId: v.id("agentsApiSessions"), expiresAt: v.number() })),
+  handler: async (ctx, { sessionIds }) => {
+    if (sessionIds.length > 50) throw new Error("Repair at most 50 handoffs per call");
+    const repaired = [];
+    for (const sessionId of sessionIds) {
+      const session = await ctx.db.get(sessionId);
+      if (
+        !session?.active ||
+        session.state.kind !== "waiting" ||
+        session.state.expiresAt !== undefined
+      )
+        continue;
+      const expiresAt = await browserHandoffDeadline(ctx, session);
+      await ctx.db.patch(sessionId, { state: { ...session.state, expiresAt } });
+      await ctx.scheduler.runAt(expiresAt, internal.tasks.sessions.expireHandoff, {
+        sessionId,
+        callId: session.state.callId,
+        turnId: session.state.turnId,
+        expiresAt,
+      });
+      repaired.push({ sessionId, expiresAt });
+    }
+    return repaired;
+  },
+});
 
 async function startWorkflow(
   ctx: MutationCtx,
@@ -491,6 +605,13 @@ export const resume = mutation({
       session.state.turnId !== args.turnId
     )
       throw new ConvexError("Session is no longer waiting for this handoff");
+    if (session.state.expiresAt !== undefined && session.state.expiresAt <= Date.now()) {
+      await ctx.runMutation(internal.tasks.sessions.expireHandoff, {
+        ...args,
+        expiresAt: session.state.expiresAt,
+      });
+      return null;
+    }
     if (!session.browser) throw new ConvexError("Handoff browser is not available");
     const initial = await getInitialCheck(ctx, session._id);
     if (!initial) throw new ConvexError("Original request check not found");
@@ -507,6 +628,7 @@ export const resume = mutation({
         callId: session.state.callId,
         turnId: session.state.turnId,
         message: session.state.message,
+        ...omitNullish({ expiresAt: session.state.expiresAt }),
       },
       providerSessionId: session.browser.providerSessionId,
       evidence: null,
@@ -531,21 +653,16 @@ export const stop = mutation({
   handler: async (ctx, args): Promise<null> => {
     const session = await owned(ctx, args.sessionId, ctx.viewer.userId);
     await requireSessionPermission(ctx, session);
-    await ctx.db.patch(session._id, { state: { kind: "stopped" } });
+    await stopSession(
+      ctx,
+      session,
+      session.state.kind === "stopped" ? session.state : { kind: "stopped" },
+    );
     console.info("Task stop requested", {
       sessionId: session._id,
       previousState: session.state.kind,
       userId: ctx.viewer.userId,
     });
-    if (
-      session.active &&
-      (session.state.kind === "waiting" ||
-        session.state.kind === "checking" ||
-        session.state.kind === "failed" ||
-        session.cleanupJobId !== undefined)
-    ) {
-      await scheduleSessionCleanup(ctx, { ...session, state: { kind: "stopped" } });
-    }
     return null;
   },
 });
@@ -576,8 +693,20 @@ export const enterHandoff = internalMutation({
     if (session.state.kind !== "running") throw new Error("Session is no longer running");
     if (!session.browser?.interactiveLiveViewUrl)
       throw new Error("No interactive browser is available for handoff");
-    await ctx.db.patch(sessionId, { state: { kind: "waiting", ...handoff } });
-    console.info("Task waiting for browser handoff", { sessionId, callId: handoff.callId });
+    const expiresAt = await browserHandoffDeadline(ctx, session);
+    await ctx.db.patch(sessionId, { state: { kind: "waiting", ...handoff, expiresAt } });
+    await ctx.scheduler.runAt(expiresAt, internal.tasks.sessions.expireHandoff, {
+      sessionId,
+      callId: handoff.callId,
+      turnId: handoff.turnId,
+      expiresAt,
+    });
+    console.info("Task waiting for browser handoff", {
+      sessionId,
+      callId: handoff.callId,
+      turnId: handoff.turnId,
+      expiresAt,
+    });
     const chat = await ctx.db
       .query("scoutChats")
       .withIndex("by_thread_id", (q) => q.eq("threadId", sessionId))
@@ -611,6 +740,7 @@ export const handoffNotification = internalQuery({
       recipient: owner.email,
       inboxId: scout.agentMail.inboxId,
       scoutName: scout.displayName,
+      expiresAt: session.state.expiresAt ?? null,
     };
   },
 });

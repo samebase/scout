@@ -1,4 +1,5 @@
 import { PaneFrame } from "@samebase/sidebars/PaneFrame";
+import { HANDOFF_EXPIRED_REASON, handoffDeadlineMessage } from "../../shared/handoff";
 import { SidebarLayout } from "@samebase/sidebars/SidebarLayout";
 import { useSidebarActions, useSidebarLayoutPresentation } from "@samebase/sidebars/SidebarRuntime";
 import { Link, useNavigate, type ErrorComponentProps } from "@tanstack/react-router";
@@ -719,6 +720,11 @@ function SessionView({ session, walkthrough }: { session: Session; walkthrough: 
         {session.state.kind === "waiting" && (
           <div className="space-y-3">
             <p className="text-sm whitespace-pre-wrap wrap-anywhere">{session.state.message}</p>
+            {session.state.expiresAt !== undefined && (
+              <p className="text-sm">
+                {handoffDeadlineMessage(session.state.expiresAt, undefined)}
+              </p>
+            )}
             {session.checkMessage && (
               <p
                 role="alert"
@@ -778,11 +784,16 @@ function SessionView({ session, walkthrough }: { session: Session; walkthrough: 
               )}
           </div>
         )}
-        {session.state.kind === "stopped" && !error && (
-          <p className="text-sm text-muted-foreground">
-            {session.active ? "Stopping…" : "Stopped"}
-          </p>
-        )}
+        {session.state.kind === "stopped" &&
+          (session.state.reason === "handoff_expired" || !error) && (
+            <p className="text-sm text-muted-foreground">
+              {session.state.reason === "handoff_expired"
+                ? HANDOFF_EXPIRED_REASON
+                : session.active
+                  ? "Stopping…"
+                  : "Stopped"}
+            </p>
+          )}
         {request.kind === "failed" && (
           <p role="alert" className="text-sm wrap-anywhere text-destructive">
             {request.message}
