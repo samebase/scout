@@ -300,14 +300,11 @@ export function ConversationLobby({
               }
             >
               <div className="flex min-w-0 flex-wrap items-center sm:gap-x-1">
-                <div
-                  className="flex min-h-11 w-[145px] shrink-0 items-center sm:w-[190px]"
-                  aria-busy={loadingScouts}
-                >
+                <div className="flex min-h-11 shrink-0 items-center" aria-busy={loadingScouts}>
                   {loadingScouts ? null : request.kind === "pending" ? (
                     "Starting…"
                   ) : activeScouts.length > 0 ? (
-                    <div className="flex w-full min-w-0 items-center gap-1">
+                    <div className="flex min-w-0 items-center gap-1">
                       {isPlay && <ScoutPiece size="brand" className="scale-75" />}
                       <Select
                         value={selectedScout?._id ?? ""}

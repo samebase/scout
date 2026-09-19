@@ -67,7 +67,7 @@ test("the email token is stripped, survives a tab reload, and stays scoped to it
   expect(window.location.hash).toBe("");
   expect(remote.load).toHaveBeenCalledWith({ sessionId: "session", accessToken: token });
   expect(screen.getByText(waiting.message)).toBeTruthy();
-  expect(screen.getByRole("link", { name: "Open browser" }).getAttribute("rel")).toBe(
+  expect(screen.getByRole("link", { name: "Open browser in a new tab" }).getAttribute("rel")).toBe(
     "noopener noreferrer",
   );
   expect(screen.getByTitle("Scout browser").getAttribute("referrerpolicy")).toBe("no-referrer");
@@ -223,7 +223,9 @@ test("a denied resume shows its explanation and a later success closes the brows
   await user.click(screen.getByRole("button", { name: "Resume Scout" }));
   expect(await screen.findByText("Robin has continued. You can close this tab.")).toBeTruthy();
   expect(screen.queryByTitle("Scout browser")).toBeNull();
-  expect(screen.queryByRole("link", { name: "Open browser" })).toBeNull();
+  expect(
+    screen.queryByRole("link", { name: "Open browser in a new tab", hidden: true }),
+  ).toBeNull();
 });
 
 test("a thrown resume error hides browser controls and shows actual details until manual reload", async () => {
@@ -256,7 +258,9 @@ test("a failed poll removes previous browser access and waits for manual reload"
     "Access revoked: 403 FORBIDDEN, request req_789",
   );
   expect(screen.queryByTitle("Scout browser")).toBeNull();
-  expect(screen.queryByRole("link", { name: "Open browser" })).toBeNull();
+  expect(
+    screen.queryByRole("link", { name: "Open browser in a new tab", hidden: true }),
+  ).toBeNull();
   expect(screen.queryByRole("button", { name: "Resume Scout" })).toBeNull();
   expect(screen.getByRole("button", { name: "Reload handoff" })).toBeTruthy();
   await act(() => vi.advanceTimersByTimeAsync(10_000));
@@ -282,6 +286,18 @@ test.each<Page>([
     expect(screen.getByRole("alert").textContent).toBe(terminal.error);
   await act(() => vi.advanceTimersByTimeAsync(10_000));
   expect(remote.load).toHaveBeenCalledTimes(2);
+});
+
+test("the countdown shows the existing deadline without extra requests", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(waiting.expiresAt - 125_000);
+  const view = await act(async () => render(<HumanHandoffPage sessionId="session" />));
+  expect(screen.getByText("2:05 remaining")).toBeTruthy();
+  await act(() => vi.advanceTimersByTimeAsync(1_000));
+  expect(screen.getByText("2:04 remaining")).toBeTruthy();
+  expect(remote.load).toHaveBeenCalledOnce();
+  view.unmount();
+  expect(vi.getTimerCount()).toBe(0);
 });
 
 test("checking keeps polling until Scout continues", async () => {

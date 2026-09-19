@@ -15,6 +15,24 @@ type Access =
   | { status: "ready"; accessToken: string }
   | { status: "unavailable"; message: string };
 
+function HandoffCountdown({ expiresAt }: { expiresAt: number }) {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const seconds = Math.max(0, Math.ceil((expiresAt - now) / 1_000));
+  return (
+    <time
+      dateTime={new Date(expiresAt).toISOString()}
+      title={`Available until ${new Date(expiresAt).toLocaleString()}`}
+      className="tabular-nums"
+    >
+      {Math.floor(seconds / 60)}:{(seconds % 60).toString().padStart(2, "0")} remaining
+    </time>
+  );
+}
+
 export function HumanHandoffPage({ sessionId }: { sessionId: string }) {
   const [access, setAccess] = useState<Access>({ status: "loading" });
   useEffect(() => {
@@ -44,13 +62,21 @@ export function HumanHandoffPage({ sessionId }: { sessionId: string }) {
   }, [sessionId]);
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col gap-5 px-4 py-6 sm:px-6 sm:py-8">
-      <header>
+    <main className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col gap-3 py-3 sm:gap-5 sm:px-6 sm:py-8">
+      <header className="px-3 sm:px-0">
         <p className="text-sm font-semibold text-muted-foreground">Scout</p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">Help Scout continue</h1>
       </header>
-      {access.status === "loading" ? <p role="status">Opening handoff…</p> : null}
-      {access.status === "unavailable" ? <p role="alert">{access.message}</p> : null}
+      {access.status === "loading" ? (
+        <p role="status" className="px-3 sm:px-0">
+          Opening handoff…
+        </p>
+      ) : null}
+      {access.status === "unavailable" ? (
+        <p role="alert" className="px-3 sm:px-0">
+          {access.message}
+        </p>
+      ) : null}
       {access.status === "ready" ? (
         <HandoffSession
           key={access.accessToken}
@@ -114,14 +140,14 @@ function HandoffSession({ sessionId, accessToken }: { sessionId: string; accessT
   return (
     <>
       {error ? (
-        <p role="alert" className="whitespace-pre-wrap break-words text-destructive">
+        <p role="alert" className="px-3 whitespace-pre-wrap break-words text-destructive sm:px-0">
           {error}
         </p>
       ) : null}
       {error ? (
         <Button
           variant="outline"
-          className="self-start"
+          className="mx-3 self-start sm:mx-0"
           onClick={() => {
             void request("load");
           }}
@@ -131,7 +157,7 @@ function HandoffSession({ sessionId, accessToken }: { sessionId: string; accessT
       ) : null}
       {!page ? (
         !error && (
-          <p role="status">
+          <p role="status" className="px-3 sm:px-0">
             {pending === "resume"
               ? "Checking whether Scout can continue…"
               : "Loading handoff status…"}
@@ -153,17 +179,25 @@ function HandoffContent({ page, onResume }: { page: HandoffPage; onResume: () =>
   switch (page.status) {
     case "invalid":
       return (
-        <p role="alert">
+        <p role="alert" className="px-3 sm:px-0">
           This handoff link is invalid or no longer available. Open the latest link from your email.
         </p>
       );
     case "expired":
-      return <p role="status">This handoff has expired. Browser control is no longer available.</p>;
+      return (
+        <p role="status" className="px-3 sm:px-0">
+          This handoff has expired. Browser control is no longer available.
+        </p>
+      );
     case "stopped":
-      return <p role="status">This task has stopped. Browser control is no longer available.</p>;
+      return (
+        <p role="status" className="px-3 sm:px-0">
+          This task has stopped. Browser control is no longer available.
+        </p>
+      );
     case "failed":
       return (
-        <div role="alert" className="text-destructive">
+        <div role="alert" className="px-3 text-destructive sm:px-0">
           <p className="whitespace-pre-wrap break-words">
             {page.diagnostic?.message ?? page.error}
           </p>
@@ -180,61 +214,57 @@ function HandoffContent({ page, onResume }: { page: HandoffPage; onResume: () =>
         </div>
       );
     case "continued":
-      return <p role="status">{page.scoutName} has continued. You can close this tab.</p>;
+      return (
+        <p role="status" className="px-3 sm:px-0">
+          {page.scoutName} has continued. You can close this tab.
+        </p>
+      );
     case "checking":
     case "waiting":
       return (
         <>
-          <section className="space-y-3">
+          <section className="space-y-3 px-3 sm:px-0">
             <h2 className="text-lg font-medium">{page.scoutName} needs your help</h2>
             {page.status === "waiting" ? (
               <p className="whitespace-pre-wrap break-words">{page.message}</p>
             ) : null}
             {page.status === "waiting" ? (
               <p className="text-sm text-muted-foreground">
-                Available until{" "}
-                <time dateTime={new Date(page.expiresAt).toISOString()}>
-                  {new Date(page.expiresAt).toLocaleString(undefined, {
-                    dateStyle: "medium",
-                    timeStyle: "short",
-                  })}
-                </time>{" "}
-                · your local time
+                <HandoffCountdown expiresAt={page.expiresAt} />
               </p>
             ) : null}
           </section>
           {page.status === "checking" ? (
-            <p role="status">Checking whether Scout can continue…</p>
+            <p role="status" className="px-3 sm:px-0">
+              Checking whether Scout can continue…
+            </p>
           ) : (
             <>
               {page.checkMessage ? (
-                <p role="alert" className="whitespace-pre-wrap break-words">
+                <p role="alert" className="px-3 whitespace-pre-wrap break-words sm:px-0">
                   {page.checkMessage}
                 </p>
               ) : null}
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-sm text-muted-foreground">
-                  Complete the step in the browser, then resume Scout.
-                </p>
-                <div className="flex flex-wrap items-center gap-3">
-                  <Button variant="outline" asChild>
-                    <a
-                      href={page.interactiveLiveViewUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      referrerPolicy="no-referrer"
-                    >
-                      Open browser
-                    </a>
-                  </Button>
-                  <Button onClick={onResume}>Resume Scout</Button>
+              <div className="flex flex-col gap-3 px-3 sm:flex-row sm:items-center sm:justify-between sm:px-0">
+                <div className="space-y-2 text-sm text-muted-foreground">
+                  <p>Complete the step in the browser, then resume Scout.</p>
+                  <a
+                    href={page.interactiveLiveViewUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    referrerPolicy="no-referrer"
+                    className="inline-block rounded underline underline-offset-4 focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    Open browser in a new tab
+                  </a>
                 </div>
+                <Button onClick={onResume}>Resume Scout</Button>
               </div>
               <iframe
                 title="Scout browser"
                 src={page.interactiveLiveViewUrl}
                 referrerPolicy="no-referrer"
-                className="h-[65dvh] min-h-80 w-full rounded-lg border bg-card"
+                className="h-[65dvh] min-h-80 w-full border-y bg-card sm:rounded-lg sm:border"
               />
             </>
           )}
