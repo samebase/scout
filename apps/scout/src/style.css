@@ -13,6 +13,7 @@
 }
 
 @theme inline {
+  --container-page: 75rem;
   --font-display: "Bricolage Grotesque", "Avenir Next", sans-serif;
   --font-heading: var(--font-sans);
   --font-sans:
@@ -260,9 +261,9 @@
   flex: none;
 }
 
-.route-page {
+@utility route-page {
   width: 100%;
-  max-width: 72rem;
+  max-width: var(--container-page);
   margin-inline: auto;
   padding: clamp(1.5rem, 4vw, 3.5rem) 1rem;
 }

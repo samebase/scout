@@ -19,7 +19,7 @@ function MembersPage() {
     { initialNumItems: 30 },
   );
   return (
-    <main className="route-page max-w-6xl">
+    <main className="route-page">
       <h1 className="route-heading">Members</h1>
       <p className="mt-3 text-muted-foreground">Approve or revoke member access.</p>
       <div

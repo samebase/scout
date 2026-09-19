@@ -40,7 +40,7 @@ export function ProductHome({ search }: { search: z.infer<typeof homeSearch> }) 
             />
           </div>
         </DiscoveryHero>
-        <div className="mx-auto max-w-[1160px] px-8 pb-16 max-[640px]:px-4">
+        <div className="mx-auto max-w-page px-8 pb-16 max-[640px]:px-4">
           <ActivityFeed search={{ site: search.site, scope: search.scope }} />
         </div>
       </main>

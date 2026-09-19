@@ -8,7 +8,7 @@ export const Route = createFileRoute("/scouts")({
 
 function ScoutsLayout() {
   return (
-    <main className="route-page flex max-w-6xl flex-col gap-8">
+    <main className="route-page flex flex-col gap-8">
       <Outlet />
     </main>
   );

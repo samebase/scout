@@ -1004,7 +1004,7 @@ function ConversationSession({
   return (
     <section
       aria-label={showingWalkthrough ? "Walkthrough with Scout" : "Conversation with Scout"}
-      className="flex h-full min-h-0 min-w-0 flex-col"
+      className="mx-auto flex h-full min-h-0 w-full min-w-0 max-w-page flex-col"
     >
       {kind === "review" && (
         <div data-sidebar-layout-part="pane-header" className="justify-between gap-2 px-3">
