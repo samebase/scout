@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-19T13:36:42Z
+- **Last updated:** 2026-09-19T14:07:41Z
 
 ## Log
 
@@ -1548,9 +1548,16 @@ The user record stores the acceptance timestamp.
 Policy pages, sign-out, and account closure remain available before acceptance
 (`apps/scout/convex/accounts.ts`, `apps/scout/src/components/terms-acceptance.tsx`).
 
-### 2026-09-19 - working tree - v249
+### 2026-09-19 - 043c0b8 - v249
 
 Public site previews load directly from a separate R2 bucket and cached media domain,
 removing the per-image signed-URL request. Convex publishes and removes public copies
 as review visibility changes, while private captures retain access checks
 (`apps/scout/convex/scout/publicSitePreviews.ts`, `apps/scout/src/components/site-preview.tsx`).
+
+### 2026-09-19 - working tree - v250
+
+The landing page shows the number of reviewed sites beside the visibility selector.
+Convex maintains distinct public and per-account totals as reviews change, including sites
+beyond the loaded page (`apps/scout/convex/scout/siteListings.ts`,
+`apps/scout/src/components/site-filters.tsx`).

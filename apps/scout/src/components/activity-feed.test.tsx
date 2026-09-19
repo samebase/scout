@@ -11,7 +11,7 @@ import {
   createRouter,
 } from "@tanstack/react-router";
 import type { PaginatedQueryArgs, UsePaginatedQueryReturnType } from "convex/react";
-import { getFunctionName, type FunctionReference } from "convex/server";
+import { getFunctionName, type FunctionArgs, type FunctionReference } from "convex/server";
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
 import { api } from "../../convex/_generated/api";
 import { reviewFeedSearch } from "../lib/reviewFeedSearch";
@@ -22,6 +22,7 @@ type Tasks = UsePaginatedQueryReturnType<typeof api.scout.activity.list>;
 type Activity = Tasks["results"][number];
 
 const remote = vi.hoisted(() => ({
+  count: vi.fn<(scope: "public" | "mine") => number | undefined>(),
   paginated: vi.fn(),
   loadSites: vi.fn<(count: number) => void>(),
   loadChessTasks: vi.fn<(count: number) => void>(),
@@ -38,6 +39,14 @@ vi.mock("./site-preview", () => ({
   SitePreview: () => <div data-testid="site-preview" />,
 }));
 vi.mock("convex/react", () => ({
+  useQuery: (
+    reference: FunctionReference<"query">,
+    args: FunctionArgs<typeof api.scout.sites.count>,
+  ) => {
+    const name = getFunctionName(reference);
+    if (name !== "scout/sites:count") throw new Error(`Unexpected query: ${name}`);
+    return remote.count(args.scope);
+  },
   usePaginatedQuery: (
     reference: FunctionReference<"query">,
     args:
@@ -155,6 +164,7 @@ function task(site: string, number: number): Activity {
 }
 
 beforeEach(() => {
+  remote.count.mockImplementation((scope) => (scope === "public" ? 1250 : 1));
   vi.stubGlobal("IntersectionObserver", TestIntersectionObserver);
   remote.sites = [
     {
@@ -228,6 +238,7 @@ async function openFeed(path = "/") {
 test("requests six sites initially and two tasks for each site", async () => {
   await openFeed();
 
+  expect(screen.getByText("1,250 reviewed sites")).toBeTruthy();
   expect(remote.paginated).toHaveBeenCalledWith(
     "scout/sites:list",
     { site: null, scope: "public" },
@@ -264,6 +275,9 @@ test.each(["public", "mine"])(
   "View all tasks opens the site's task page and preserves the %s scope",
   async (scope) => {
     const router = await openFeed(`/?scope=${scope}`);
+    expect(
+      screen.getByText(scope === "public" ? "1,250 reviewed sites" : "1 reviewed site"),
+    ).toBeTruthy();
     const user = userEvent.setup();
     const card = within(screen.getByRole("article", { name: "chessmerge.com" }));
     const link = card.getByRole("link", { name: "View all 7 tasks" });

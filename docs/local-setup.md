@@ -60,6 +60,23 @@ The primary checkout reserves `http://localhost:5173` and stops if that port is 
 Linked worktrees start at port `5174` and try higher ports when needed. Open the local URL
 printed by Vite.
 
+## Reviewed-site totals
+
+The landing page shows the total number of distinct sites in the selected review visibility.
+The total includes sites beyond the loaded page and stays unchanged when searching by name.
+Review changes update the public and account totals in the same transaction as the site listings.
+
+After first deploying reviewed-site totals to an existing database, initialize them once:
+
+```sh
+pnpm --filter samebase-scout exec convex run scout/sites:recount
+```
+
+This targets the selected development deployment. Run it against any existing deployment when
+rolling out the change, before serving the updated frontend. It can also repair the totals after
+manual data edits. Recount is atomic, can be repeated, and rejects tables with more than 4,000 rows
+instead of storing a partial total.
+
 ## Public handoff links
 
 Human-help emails reuse Convex Auth's `SITE_URL` as the canonical app origin. Local development

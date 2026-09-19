@@ -5,6 +5,7 @@ import { authEmailRateLimitKey } from "./authEmail";
 import { EMAIL_VERIFICATION_PROVIDER_ID, PASSWORD_RESET_PROVIDER_ID } from "../shared/auth";
 import { finalizeStoppingTurn, stopTurn } from "./scout/turns";
 import { omitNullish } from "../shared/omitNullish";
+import { adjustReviewedSiteCount } from "./scout/siteListings";
 
 const BATCH_SIZE = 64;
 
@@ -236,6 +237,7 @@ export const finish = internalMutation({
       .withIndex("by_user_id_and_hostname", (q) => q.eq("userId", userId))
       .take(BATCH_SIZE);
     for (const listing of listings) await ctx.db.delete(listing._id);
+    await adjustReviewedSiteCount(ctx, userId, -listings.length);
     if (listings.length === BATCH_SIZE) return false;
     if (!(await deleteSessionChildren(ctx, sessionId))) return false;
     if (session) await ctx.db.delete(session._id);

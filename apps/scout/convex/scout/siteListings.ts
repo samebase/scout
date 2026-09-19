@@ -39,6 +39,22 @@ export async function ensureSite(ctx: MutationCtx, hostname: string): Promise<Id
   );
 }
 
+export async function adjustReviewedSiteCount(
+  ctx: MutationCtx,
+  userId: Id<"users"> | null,
+  delta: number,
+) {
+  if (delta === 0) return;
+  const counter = await ctx.db
+    .query("reviewedSiteCounts")
+    .withIndex("by_user_id", (q) => q.eq("userId", userId))
+    .unique();
+  const count = (counter?.count ?? 0) + delta;
+  if (count < 0) throw new Error("Reviewed site count is negative. Run scout/sites:recount.");
+  if (counter) await ctx.db.patch(counter._id, { count });
+  else await ctx.db.insert("reviewedSiteCounts", { userId, count });
+}
+
 // Call after changing or deleting the chat, in the same mutation, with its previous document.
 export async function syncChatSite(ctx: MutationCtx, before: Doc<"scoutChats">): Promise<void> {
   const after = await ctx.db.get(before._id);
@@ -74,6 +90,11 @@ export async function syncChatSite(ctx: MutationCtx, before: Doc<"scoutChats">):
         Number(current === hostname && publicSiteEligible) -
         Number(previous === hostname && before.publicSiteEligible === true),
     });
+    await adjustReviewedSiteCount(
+      ctx,
+      null,
+      Number(latest !== null) - Number(site.latestPublicTask !== null),
+    );
     await updatePreviewPublication(ctx, site, latest !== null);
   }
   for (const [index, { hostname, userId }] of memberships.entries()) {
@@ -105,9 +126,13 @@ export async function syncChatSite(ctx: MutationCtx, before: Doc<"scoutChats">):
         Number(current === hostname && after?.userId === userId) -
         Number(previous === hostname && before.userId === userId);
       if (listing) await ctx.db.patch(listing._id, { latestTask, taskCount });
-      else await ctx.db.insert("siteUserListings", { userId, hostname, latestTask, taskCount });
+      else {
+        await ctx.db.insert("siteUserListings", { userId, hostname, latestTask, taskCount });
+        await adjustReviewedSiteCount(ctx, userId, 1);
+      }
     } else if (listing) {
       await ctx.db.delete(listing._id);
+      await adjustReviewedSiteCount(ctx, userId, -1);
     }
   }
 }

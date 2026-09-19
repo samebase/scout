@@ -294,6 +294,11 @@ export default defineSchema({
       "latestPublicTask.createdAt",
       "hostname",
     ]),
+  reviewedSiteCounts: defineTable({
+    // null counts public sites; an account ID counts that account's sites.
+    userId: v.union(v.id("users"), v.null()),
+    count: v.number(),
+  }).index("by_user_id", ["userId"]),
   siteUserListings: defineTable({
     userId: v.id("users"),
     hostname: v.string(),
