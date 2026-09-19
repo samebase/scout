@@ -154,16 +154,16 @@ export function DiscoveryHero({
         className={`absolute inset-0 size-full mask-[linear-gradient(to_bottom,black_65%,transparent_100%)] transition-opacity duration-700 ${available ? "opacity-100" : "opacity-0"}`}
       />
       <div className="relative mx-auto max-w-[1160px] px-8 pt-14 pb-10 max-[640px]:px-4 max-[640px]:pt-10 max-[640px]:pb-8">
-        <div className="max-w-[570px] max-[1100px]:max-w-[510px] max-[900px]:max-w-[660px]">
+        <div className="mx-auto max-w-[660px]">
           <h1
             id="discovery-heading"
-            className="font-display text-[64px] leading-[1.02] font-medium tracking-[-0.05em] max-[1100px]:text-[56px] max-[640px]:text-[44px]"
+            className="text-center font-display text-[64px] leading-[1.02] font-medium tracking-[-0.05em] max-[1100px]:text-[56px] max-[640px]:text-[44px]"
           >
             See what lies
             <br />
             beneath the pitch.
           </h1>
-          <p className="mt-5 max-w-[440px] text-[17px] leading-[1.65] text-muted-foreground max-[640px]:text-[16px]">
+          <p className="mx-auto mt-5 max-w-[540px] text-center text-[17px] leading-[1.65] max-[640px]:text-[16px]">
             The internet is a confusing place.{" "}
             <span className="font-medium text-foreground">Send Scout in first.</span> It tries the
             website and brings back evidence you can inspect.
