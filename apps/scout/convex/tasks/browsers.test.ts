@@ -49,9 +49,10 @@ async function setup() {
   });
   const owner = backend.withIdentity({ subject: userId });
   const other = backend.withIdentity({ subject: otherUserId });
-  const open = (providerSessionId: string) =>
+  const open = async (providerSessionId: string) =>
     backend.mutation(internal.tasks.browsers.open, {
       sessionId,
+      billable: await backend.mutation(internal.tasks.browsers.admit, { sessionId }),
       browser: {
         providerSessionId,
         cdpUrl: "wss://browser.example.com/private",
@@ -99,6 +100,7 @@ it("retains ordered browser history and billed usage across close/reopen without
 
 it("charges reported browser usage once, allows an overrun, and blocks the next open", async () => {
   vi.stubEnv("CREDITS_ENABLED", "true");
+  vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", "true");
   const { backend, owner, userId, sessionId, open } = await setup();
   await backend.mutation(internal.credits.grantOnSignIn, { userId });
   await backend.run(async (ctx) => {
@@ -128,8 +130,97 @@ it("charges reported browser usage once, allows an overrun, and blocks the next 
   await expect(backend.mutation(internal.tasks.browsers.admit, { sessionId })).rejects.toThrow();
 });
 
+it.each([undefined, "false", "true"])(
+  "keeps the browser billing choice from admission when Firecrawl charging is %s",
+  async (setting) => {
+    vi.stubEnv("CREDITS_ENABLED", "true");
+    vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", setting);
+    const { backend, owner, userId, sessionId, list } = await setup();
+    const billable = await backend.mutation(internal.tasks.browsers.admit, { sessionId });
+    expect(billable).toBe(setting === "true");
+    expect(await owner.query(api.credits.offer, {})).toMatchObject({
+      packCredits: 400,
+      packPriceCents: 500,
+      signupCredits: 50,
+      firecrawlIncluded: !billable,
+    });
+
+    vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", billable ? "false" : "true");
+    await backend.mutation(internal.tasks.browsers.open, {
+      sessionId,
+      billable,
+      browser: {
+        providerSessionId: "snapshotted-browser",
+        cdpUrl: "wss://browser.example.com/private",
+        liveViewUrl: null,
+        interactiveLiveViewUrl: null,
+        currentUrl: null,
+      },
+    });
+    const close = {
+      providerSessionId: "snapshotted-browser",
+      providerDurationMs: 60_000,
+      creditsBilled: 2,
+    };
+    await backend.mutation(internal.tasks.browsers.close, close);
+    await backend.mutation(internal.tasks.browsers.close, close);
+    expect((await list())[0]?.lifecycle).toMatchObject({ creditsBilled: 2 });
+    const expectedBalance = billable ? 490_000 : 500_000;
+    expect(await owner.query(api.credits.balance, {})).toMatchObject({
+      balanceUnits: expectedBalance,
+    });
+
+    await backend.mutation(internal.credits.recordUsage, {
+      userId,
+      sessionId,
+      sourceKey: "model:paid-turn",
+      kind: "model",
+      totalCostMicrodollars: 20_000,
+    });
+    expect(await owner.query(api.credits.balance, {})).toMatchObject({
+      balanceUnits: expectedBalance - 20_000,
+    });
+  },
+);
+
+it("still blocks browser work when AI exhausts the wallet while Firecrawl is included", async () => {
+  vi.stubEnv("CREDITS_ENABLED", "true");
+  vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", "false");
+  const { backend, userId, sessionId, open } = await setup();
+  await backend.run((ctx) => ctx.db.patch(sessionId, { billingEnabled: true }));
+  await open("included-browser");
+  await backend.mutation(internal.credits.recordUsage, {
+    userId,
+    sessionId,
+    sourceKey: "model:expensive-turn",
+    kind: "model",
+    totalCostMicrodollars: 500_000,
+  });
+  await expect(
+    backend.mutation(internal.tasks.browsers.prepareOperation, {
+      providerSessionId: "included-browser",
+      toolCallId: "new-step",
+      action: { kind: "open", url: "https://example.com" },
+    }),
+  ).rejects.toThrow("more credits");
+  await expect(
+    backend.mutation(internal.tasks.browsers.admitOperation, {
+      providerSessionId: "included-browser",
+    }),
+  ).rejects.toThrow("more credits");
+  await backend.mutation(internal.tasks.browsers.close, {
+    providerSessionId: "included-browser",
+    providerDurationMs: 60_000,
+    creditsBilled: 2,
+  });
+  await expect(backend.mutation(internal.tasks.browsers.admit, { sessionId })).rejects.toThrow(
+    "more credits",
+  );
+});
+
 it("keeps missing browser usage visible and charges a later report without blocking another open", async () => {
   vi.stubEnv("CREDITS_ENABLED", "true");
+  vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", "true");
   const { backend, owner, userId, sessionId, open, list } = await setup();
   await backend.mutation(internal.credits.grantOnSignIn, { userId });
   expect(await backend.mutation(internal.tasks.browsers.admit, { sessionId })).toBe(true);
@@ -152,6 +243,7 @@ it("keeps missing browser usage visible and charges a later report without block
 
 it("records orphan browser cleanup and charges its reported usage once", async () => {
   vi.stubEnv("CREDITS_ENABLED", "true");
+  vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", "true");
   const { backend, owner, userId, sessionId, list } = await setup();
   await backend.mutation(internal.credits.grantOnSignIn, { userId });
   const close = {
@@ -170,6 +262,7 @@ it("records orphan browser cleanup and charges its reported usage once", async (
 
 it("blocks a new browser operation when another charge exhausts the wallet", async () => {
   vi.stubEnv("CREDITS_ENABLED", "true");
+  vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", "true");
   const { backend, userId, open } = await setup();
   await backend.mutation(internal.credits.grantOnSignIn, { userId });
   await open("active-browser");

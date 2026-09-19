@@ -58,7 +58,7 @@ describe("credit wallet", () => {
       paginationOpts: { numItems: 10, cursor: null },
     });
     expect(page.page).toHaveLength(1);
-    expect(page.page[0]?.detail).toEqual({ kind: "signup", policyVersion: "2026-09-19" });
+    expect(page.page[0]?.detail).toEqual({ kind: "signup", policyVersion: "2026-09-20" });
     await expect(backend.query(api.credits.balance, {})).rejects.toThrow("Not authorized");
     const otherId = await backend.run((ctx) =>
       insertTestAccount(ctx, { email: "other@example.test" }),

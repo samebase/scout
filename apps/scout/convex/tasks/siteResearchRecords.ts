@@ -10,7 +10,7 @@ import {
 import type { Doc, Id } from "../_generated/dataModel";
 import { query } from "../functions";
 import schema from "../schema";
-import { creditsEnabled, costMicrodollars } from "../creditPolicy";
+import { creditsEnabled, costMicrodollars, firecrawlCreditsEnabled } from "../creditPolicy";
 import { assertCreditAdmission, recordCreditUsage } from "../creditLedger";
 import { getInitialCheck } from "./requestChecks";
 import { requireSessionPermission } from "./access";
@@ -75,8 +75,9 @@ async function startSiteResearch(
   userId: Id<"users">,
   sessionId: Id<"agentsApiSessions"> | null,
 ) {
-  const billable = creditsEnabled() && sessionId !== null;
-  if (billable) await assertCreditAdmission(ctx, userId);
+  const paidTask = creditsEnabled() && sessionId !== null;
+  if (paidTask) await assertCreditAdmission(ctx, userId);
+  const billable = paidTask && firecrawlCreditsEnabled();
   const researchId = await ctx.db.insert("agentsApiSiteResearch", {
     ...emptyJob,
     site: site.hostname,

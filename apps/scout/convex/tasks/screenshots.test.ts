@@ -118,6 +118,7 @@ async function setup(visibility: Doc<"scoutChats">["visibility"]) {
   const task = await createTask();
   const open = (providerSessionId: string) =>
     backend.mutation(internal.tasks.browsers.open, {
+      billable: false,
       sessionId: task.sessionId,
       browser: {
         providerSessionId,

@@ -1209,7 +1209,7 @@ test("a finished review keeps costs and usage visible across Walkthrough and Cha
   await userEvent.setup().click(cost);
   expect(cost.closest("details")?.open).toBe(true);
   expect(screen.getByText("Input tokens").nextElementSibling?.textContent).toBe("1,200");
-  expect(screen.getByText("Firecrawl").nextElementSibling?.textContent).toBe("2 credits");
+  expect(screen.getByText("Firecrawl").nextElementSibling?.textContent).toBe("2 Firecrawl credits");
   expect(screen.queryByRole("textbox", { name: "Message Scout" })).toBeNull();
   expect(remote.queryCalls).toHaveBeenCalledWith("tasks/sessions:cost", {
     sessionId: "managed-1",

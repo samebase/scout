@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const CREDIT_POLICY = {
-  version: "2026-09-19",
+  version: "2026-09-20",
   unitsPerCredit: 10_000,
   microdollarsPerCredit: 10_000,
   signupCredits: 50,
@@ -13,6 +13,13 @@ export const CREDIT_POLICY = {
 
 export function creditsEnabled() {
   return process.env["CREDITS_ENABLED"] === "true";
+}
+
+export function firecrawlCreditsEnabled() {
+  return (
+    z.enum(["true", "false"]).default("false").parse(process.env["FIRECRAWL_CREDITS_ENABLED"]) ===
+    "true"
+  );
 }
 
 export const nonnegativeInteger = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);

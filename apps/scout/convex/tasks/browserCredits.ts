@@ -2,6 +2,8 @@
 
 import { setTimeout as wait } from "node:timers/promises";
 import type { Id } from "../_generated/dataModel";
+import type { Infer } from "convex/values";
+import type { browserHandle } from "./model";
 import type { ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { closeFirecrawlBrowserSession, createFirecrawlClient } from "../scout/lib/firecrawl";
@@ -35,6 +37,15 @@ export function taskBrowserBilling(ctx: ActionCtx, sessionId: Id<"agentsApiSessi
   }
 
   return {
+    opened: async (browser: Infer<typeof browserHandle>) => {
+      if (!admission || createdProviderId !== browser.providerSessionId)
+        throw new Error("Browser has no matching billing admission");
+      await ctx.runMutation(internal.tasks.browsers.open, {
+        sessionId,
+        browser,
+        billable: admission.billable,
+      });
+    },
     closed: clear,
     failedOpen: async (error: unknown) => {
       if (createdProviderId && !closed) await recordCleanupFailure(createdProviderId, error);

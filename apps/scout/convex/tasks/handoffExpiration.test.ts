@@ -70,6 +70,7 @@ async function setup(engine: NonNullable<Doc<"agentsApiSessions">["engine"]>, re
     return { sessionId, userId, scoutId };
   });
   await backend.mutation(internal.tasks.browsers.open, {
+    billable: false,
     sessionId: ids.sessionId,
     browser: {
       providerSessionId: "browser",

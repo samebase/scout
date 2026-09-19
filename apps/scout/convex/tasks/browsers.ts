@@ -9,7 +9,7 @@ import {
 } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
 import { assertCreditAdmission, recordCreditUsage } from "../creditLedger";
-import { costMicrodollars, creditsEnabled } from "../creditPolicy";
+import { costMicrodollars, creditsEnabled, firecrawlCreditsEnabled } from "../creditPolicy";
 import {
   browserActionValidator,
   browserClickCaptureValidator,
@@ -49,7 +49,7 @@ async function assertOperationAdmission(ctx: MutationCtx, providerSessionId: str
     (session.state.kind !== "running" && session.state.kind !== "starting")
   )
     throw new Error("Session is no longer running");
-  if (browser.billable) await assertCreditAdmission(ctx, session.userId);
+  if (session.billingEnabled || browser.billable) await assertCreditAdmission(ctx, session.userId);
   return browser;
 }
 
@@ -79,9 +79,8 @@ export const admit = internalMutation({
   returns: v.boolean(),
   handler: async (ctx, { sessionId }) => {
     const { session } = await openingSlot(ctx, sessionId);
-    const billable = creditsEnabled();
-    if (billable) await assertCreditAdmission(ctx, session.userId);
-    return billable;
+    if (creditsEnabled()) await assertCreditAdmission(ctx, session.userId);
+    return creditsEnabled() && firecrawlCreditsEnabled();
   },
 });
 
@@ -89,6 +88,7 @@ export const open = internalMutation({
   args: {
     sessionId: v.id("agentsApiSessions"),
     browser: browserHandle,
+    billable: v.boolean(),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -97,7 +97,7 @@ export const open = internalMutation({
       agentsSessionId: args.sessionId,
       sequence,
       providerSessionId: args.browser.providerSessionId,
-      billable: creditsEnabled(),
+      billable: args.billable,
       viewport: { width: 1280, height: 800 },
       lifecycle: { kind: "active", openedAtMs: Date.now() },
       nextOperationSequence: 1,
@@ -128,7 +128,8 @@ export const prepareOperation = internalMutation({
     if (duplicate) return false;
     if (browser.nextOperationSequence > MAX_BROWSER_OPERATIONS)
       throw new Error(`A browser session can have at most ${MAX_BROWSER_OPERATIONS} operations`);
-    if (browser.billable) await assertCreditAdmission(ctx, session.userId);
+    if (session.billingEnabled || browser.billable)
+      await assertCreditAdmission(ctx, session.userId);
     await ctx.db.insert("agentsApiBrowserOperations", {
       sessionId: browser._id,
       sequence: browser.nextOperationSequence,

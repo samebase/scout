@@ -11,13 +11,13 @@ const number = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
 const modelPricingCopy = {
   standard_short_context_excluding_cache_writes: {
     label: "Model estimate",
-    note: "Estimated OpenAI cost; Firecrawl billed separately in credits.",
+    note: "Estimated OpenAI cost. The dollar subtotal excludes Firecrawl browsing and research.",
     detail:
       "Standard model rates, excluding cache-write premiums. Unpriced charges are excluded from the subtotal.",
   },
   provider_reported: {
     label: "Model cost",
-    note: "Provider-reported model cost; Firecrawl billed separately in credits.",
+    note: "Provider-reported model cost. The dollar subtotal excludes Firecrawl browsing and research.",
     detail: "Provider-reported model charges. Unpriced charges are excluded from the subtotal.",
   },
 };
@@ -52,7 +52,7 @@ export function SessionCost({
             <dd className="text-right tabular-nums">
               {session.research.reportedCredits === null
                 ? "Credits not reported"
-                : `${session.research.reportedCredits} credits`}
+                : `${session.research.reportedCredits} Firecrawl credits`}
             </dd>
           </>
         )}
@@ -84,7 +84,7 @@ export function SessionCost({
         <dd className="text-right tabular-nums">
           {cost.reportedBrowserCredits === 0 && cost.unreportedBrowserSessions > 0
             ? "Credits pending"
-            : `${number.format(cost.reportedBrowserCredits)} credits`}
+            : `${number.format(cost.reportedBrowserCredits)} Firecrawl credits`}
           {cost.reportedBrowserCredits > 0 && cost.unreportedBrowserSessions > 0 && " + pending"}
         </dd>
         {cost.browserSeconds > 0 && (
