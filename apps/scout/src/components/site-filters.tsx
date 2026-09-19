@@ -1,5 +1,7 @@
 import { useEffect, useEffectEvent, useState } from "react";
 import { SearchIcon, XIcon } from "lucide-react";
+import type { FunctionReturnType } from "convex/server";
+import type { api } from "../../convex/_generated/api";
 import { Button } from "#components/ui/button";
 import { Input } from "#components/ui/input";
 import {
@@ -18,7 +20,13 @@ export function SiteFilters(
   props: {
     search: ReviewFeedSearch;
     onChange: (search: ReviewFeedSearch, options: { replace: boolean }) => void;
-  } & ({ layout: "toolbar"; reviewedSiteCount: number | undefined } | { layout: "sidebar" }),
+  } & (
+    | {
+        layout: "toolbar";
+        reviewedSiteCount: FunctionReturnType<typeof api.scout.sites.count> | undefined;
+      }
+    | { layout: "sidebar" }
+  ),
 ) {
   const { search, layout, onChange } = props;
   const viewer = useViewerAccess();
@@ -48,7 +56,9 @@ export function SiteFilters(
       )}
     >
       {(signedIn || layout === "toolbar") && (
-        <div className={cn("flex items-center gap-3", layout === "toolbar" && "min-h-11")}>
+        <div
+          className={cn("flex flex-wrap items-center gap-3", layout === "toolbar" && "min-h-11")}
+        >
           {signedIn && (
             <Select
               value={scope}
@@ -76,8 +86,9 @@ export function SiteFilters(
           )}
           {props.layout === "toolbar" && props.reviewedSiteCount !== undefined && (
             <span className="text-sm whitespace-nowrap text-muted-foreground">
-              {props.reviewedSiteCount.toLocaleString()} reviewed{" "}
-              {props.reviewedSiteCount === 1 ? "site" : "sites"}
+              {props.reviewedSiteCount.count.toLocaleString()}
+              {props.reviewedSiteCount.hasMore ? "+" : ""} reviewed{" "}
+              {props.reviewedSiteCount.count === 1 ? "site" : "sites"}
             </span>
           )}
         </div>

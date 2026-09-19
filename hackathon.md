@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-19T14:07:41Z
+- **Last updated:** 2026-09-19T14:31:33Z
 
 ## Log
 
@@ -1558,6 +1558,6 @@ as review visibility changes, while private captures retain access checks
 ### 2026-09-19 - working tree - v250
 
 The landing page shows the number of reviewed sites beside the visibility selector.
-Convex maintains distinct public and per-account totals as reviews change, including sites
-beyond the loaded page (`apps/scout/convex/scout/siteListings.ts`,
+The count reads existing public or account site listings, includes sites beyond the loaded page,
+and shows 1,000+ above the query limit (`apps/scout/convex/scout/sites.ts`,
 `apps/scout/src/components/site-filters.tsx`).

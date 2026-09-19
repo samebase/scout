@@ -298,8 +298,10 @@ test("site cursors count sites, order by latest eligible activity, and never exp
 
 test("reviewed site totals count distinct visible sites and follow membership changes", async () => {
   const t = await setup();
-  const publicCount = () => t.backend.query(api.scout.sites.count, { scope: "public" });
-  const ownCount = () => t.owner.query(api.scout.sites.count, { scope: "mine" });
+  const publicCount = async () =>
+    (await t.backend.query(api.scout.sites.count, { scope: "public" })).count;
+  const ownCount = async () =>
+    (await t.owner.query(api.scout.sites.count, { scope: "mine" })).count;
   expect(await publicCount()).toBe(0);
   expect(await ownCount()).toBe(0);
   const first = await t.review("shared.test", 1);
@@ -309,7 +311,10 @@ test("reviewed site totals count distinct visible sites and follow membership ch
   await t.review("pending.test", 5, { decision: "pending" });
   expect(await publicCount()).toBe(1);
   expect(await ownCount()).toBe(3);
-  expect(await t.other.query(api.scout.sites.count, { scope: "mine" })).toBe(1);
+  expect(await t.other.query(api.scout.sites.count, { scope: "mine" })).toEqual({
+    count: 1,
+    hasMore: false,
+  });
   await expect(t.backend.query(api.scout.sites.count, { scope: "mine" })).rejects.toThrow(
     "Not authorized",
   );
@@ -329,21 +334,39 @@ test("reviewed site totals count distinct visible sites and follow membership ch
   expect(await ownCount()).toBe(3);
 });
 
-test("recount initializes existing site totals and can be repeated without double counting", async () => {
+test("counts existing listings exactly through 1,000 sites and marks larger totals", async () => {
   const t = await setup();
-  await t.review("public.test", 1);
-  await t.review("public.test", 2);
-  await t.review("private.test", 3, { visibility: "private" });
-  await t.review("other.test", 4, { userId: t.otherId });
+  const first = await t.review("first.test", 0);
   await t.backend.run(async (ctx) => {
-    const counters = await ctx.db.query("reviewedSiteCounts").take(10);
-    for (const counter of counters) await ctx.db.delete(counter._id);
+    for (let index = 1; index < 1_000; index++) {
+      const hostname = `site-${index}.test`;
+      const latestTask = { chatId: first.chatId, createdAt: index };
+      await ctx.db.insert("sites", {
+        hostname,
+        latestPublicTask: latestTask,
+        taskCount: 1,
+        publicTaskCount: 1,
+      });
+      await ctx.db.insert("siteUserListings", {
+        hostname,
+        userId: t.userId,
+        latestTask,
+        taskCount: 1,
+      });
+    }
   });
-  for (let run = 0; run < 2; run++) {
-    await t.backend.mutation(internal.scout.sites.recount, {});
-    expect(await t.backend.query(api.scout.sites.count, { scope: "public" })).toBe(2);
-    expect(await t.owner.query(api.scout.sites.count, { scope: "mine" })).toBe(2);
-    expect(await t.other.query(api.scout.sites.count, { scope: "mine" })).toBe(1);
+  for (const scope of ["public", "mine"] as const) {
+    expect(await t.owner.query(api.scout.sites.count, { scope })).toEqual({
+      count: 1_000,
+      hasMore: false,
+    });
+  }
+  await t.review("overflow.test", 1_000);
+  for (const scope of ["public", "mine"] as const) {
+    expect(await t.owner.query(api.scout.sites.count, { scope })).toEqual({
+      count: 1_000,
+      hasMore: true,
+    });
   }
 });
 
