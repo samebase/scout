@@ -5,8 +5,8 @@
   "assets": {
     "directory": "./dist/client",
     "html_handling": "none",
-    // Cloudflare SPA mode serves /index.html for unknown app routes. Keep
-    // vite.config.ts emitting the TanStack Start shell there.
+    // Public pages use build-generated _redirects rewrites. Unknown app routes
+    // receive the separate TanStack Start shell at /index.html.
     "not_found_handling": "single-page-application",
   },
 }

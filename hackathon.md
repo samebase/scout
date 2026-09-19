@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-19T14:31:33Z
+- **Last updated:** 2026-09-19T14:07:03Z
 
 ## Log
 
@@ -1555,9 +1555,16 @@ removing the per-image signed-URL request. Convex publishes and removes public c
 as review visibility changes, while private captures retain access checks
 (`apps/scout/convex/scout/publicSitePreviews.ts`, `apps/scout/src/components/site-preview.tsx`).
 
-### 2026-09-19 - working tree - v250
+### 2026-09-19 - 1f56f38 - v250
 
 The landing page shows the number of reviewed sites beside the visibility selector.
 The count reads existing public or account site listings, includes sites beyond the loaded page,
 and shows 1,000+ above the query limit (`apps/scout/convex/scout/sites.ts`,
 `apps/scout/src/components/site-filters.tsx`).
+
+### 2026-09-19 - working tree - v251
+
+Public pages render without waiting for account loading or terms acceptance.
+The homepage, About, Privacy, and Terms are prerendered using the restored Samebase
+SPA + SSG setup, with matching Cloudflare and Convex static-hosting paths
+(`apps/scout/prerender.config.ts`, `apps/scout/src/components/route-access.tsx`).

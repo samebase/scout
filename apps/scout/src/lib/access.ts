@@ -18,6 +18,11 @@ export function useViewerAccess() {
 }
 
 export function accountAccessMessage(viewer: ViewerAccess | undefined) {
+  if (viewer?.kind === "terms_required")
+    return {
+      title: "Review our terms",
+      description: "Accept the terms in account settings before starting a task.",
+    };
   if (viewer?.kind === "unavailable")
     return {
       title: "Access unavailable",

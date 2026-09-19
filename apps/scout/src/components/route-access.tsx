@@ -5,28 +5,27 @@ import { accountAccessMessage, canAccess, useViewerAccess } from "../lib/access"
 import { AuthPanel } from "./auth-panel";
 import { Button } from "./ui/button";
 import { TermsAcceptance } from "./terms-acceptance";
+import type { AccessKey } from "../../shared/accessModel";
 
 export function RouteAccessOutlet() {
   const policies = useMatches({
     select: (matches) => matches.map((match) => match.staticData.access),
   });
-  const accessibleAfterAccountClosure = useMatches({
-    select: (matches) =>
-      matches.some((match) => ["/account-deletion", "/privacy", "/terms"].includes(match.pathname)),
-  });
+  if (policies.every((access) => access === "access_public")) return <Outlet />;
+  return <ProtectedRouteOutlet policies={policies} />;
+}
+
+function ProtectedRouteOutlet({ policies }: { policies: AccessKey[] }) {
   const viewer = useViewerAccess();
-  if ((viewer?.kind === "deleting" || viewer?.kind === "deleted") && !accessibleAfterAccountClosure)
+  if (viewer?.kind === "deleting" || viewer?.kind === "deleted")
     return <Navigate to="/account-deletion" replace />;
-  if (viewer?.kind === "terms_required" && !accessibleAfterAccountClosure)
-    return <TermsAcceptance />;
-  if (accessibleAfterAccountClosure) return <Outlet />;
+  if (viewer?.kind === "terms_required") return <TermsAcceptance />;
   if (!viewer)
     return (
       <main className="route-page" role="status">
         Loading account…
       </main>
     );
-  if (policies.every((access) => access === "access_public")) return <Outlet />;
   if (viewer.kind === "anonymous")
     return (
       <main className="route-page max-w-md">
