@@ -4,12 +4,11 @@ import { useMutation } from "convex/react";
 import { ConvexError } from "convex/values";
 import { useState, type FormEvent } from "react";
 import { api } from "../../convex/_generated/api";
-import { CURRENT_TERMS_VERSION } from "../../shared/terms";
 import { TermsCheckbox } from "./terms-checkbox";
 import { Button } from "./ui/button";
 
 export function TermsAcceptance() {
-  const accept = useMutation(api.terms.accept);
+  const accept = useMutation(api.accounts.acceptTerms);
   const { signOut } = useAuthActions();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
@@ -35,7 +34,7 @@ export function TermsAcceptance() {
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!event.currentTarget.reportValidity()) return;
-    void run(() => accept({ version: CURRENT_TERMS_VERSION }));
+    void run(() => accept({}));
   }
 
   return (

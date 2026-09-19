@@ -1544,6 +1544,6 @@ consistent styles (`apps/scout/src/routes/about.tsx`,
 ### 2026-09-19 - working tree - v248
 
 Signup now requires explicit terms acceptance, and returning accounts review the terms before continuing.
-Convex records the accepted version and time without replacing earlier evidence; the dated terms stay archived.
+The user record stores the acceptance timestamp.
 Policy pages, sign-out, and account closure remain available before acceptance
-(`apps/scout/convex/terms.ts`, `apps/scout/src/components/terms-acceptance.tsx`).
+(`apps/scout/convex/accounts.ts`, `apps/scout/src/components/terms-acceptance.tsx`).

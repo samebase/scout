@@ -20,7 +20,7 @@ import { Route as ScoutsRoute } from "../routes/scouts";
 import { Route as PrivacyRoute } from "../routes/privacy";
 import { Route as TermsRoute } from "../routes/terms";
 import { omitNullish } from "../../shared/omitNullish";
-import { CURRENT_TERMS_VERSION, TERMS_ACCEPTANCE_LABEL } from "../../shared/terms";
+import { TERMS_ACCEPTANCE_LABEL } from "../../shared/terms";
 import { ConvexError } from "convex/values";
 
 const remote = vi.hoisted(() => ({
@@ -49,7 +49,7 @@ vi.mock("convex/react", () => ({
     return remote.values.get("viewer");
   },
   useMutation: (reference: FunctionReference<"mutation">) =>
-    getFunctionName(reference) === "terms:accept" ? remote.accept : async () => {},
+    getFunctionName(reference) === "accounts:acceptTerms" ? remote.accept : async () => {},
   useAction: () => async () => {},
   usePaginatedQuery: () => ({ results: [], status: "Exhausted", loadMore: () => {} }),
 }));
@@ -394,7 +394,7 @@ test("existing users explicitly accept before protected content mounts, and fail
   expect((await screen.findByRole("alert")).textContent).toBe("Acceptance could not be saved");
   expect(remote.lab).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "Accept and continue" }));
-  expect(remote.accept).toHaveBeenLastCalledWith({ version: CURRENT_TERMS_VERSION });
+  expect(remote.accept).toHaveBeenLastCalledWith({});
   setViewer("role_staff");
   expect(await screen.findByRole("heading", { name: "Agents contents" })).toBeTruthy();
 });

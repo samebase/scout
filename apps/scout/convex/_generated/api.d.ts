@@ -135,7 +135,6 @@ import type * as tasks_siteResearchSources from "../tasks/siteResearchSources.js
 import type * as tasks_toolCallRepair from "../tasks/toolCallRepair.js";
 import type * as tasks_tools from "../tasks/tools.js";
 import type * as tasks_walkthrough from "../tasks/walkthrough.js";
-import type * as terms from "../terms.js";
 import type * as testing_accounts from "../testing/accounts.js";
 import type * as workspaceModel from "../workspaceModel.js";
 import type * as workspaceStorage from "../workspaceStorage.js";
@@ -274,7 +273,6 @@ declare const fullApi: ApiFromModules<{
   "tasks/toolCallRepair": typeof tasks_toolCallRepair;
   "tasks/tools": typeof tasks_tools;
   "tasks/walkthrough": typeof tasks_walkthrough;
-  terms: typeof terms;
   "testing/accounts": typeof testing_accounts;
   workspaceModel: typeof workspaceModel;
   workspaceStorage: typeof workspaceStorage;

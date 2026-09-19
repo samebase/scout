@@ -11,7 +11,6 @@ import { authEmailRateLimitKey } from "./authEmail";
 import { ACCOUNT_DELETION_CONFIRMATION } from "../shared/accountDeletion";
 import { EMAIL_VERIFICATION_PROVIDER_ID, PASSWORD_RESET_PROVIDER_ID } from "../shared/auth";
 import { ADMIN_EMAIL } from "./testing/accounts";
-import { CURRENT_TERMS_VERSION } from "../shared/terms";
 
 const modules = import.meta.glob("./**/*.ts");
 beforeEach(() => vi.useFakeTimers());
@@ -167,7 +166,7 @@ async function setup(email = "deletion@example.test", isApproved = false) {
 
 test("account deletion stops a managed Review before deleting the owner", async () => {
   const { backend, viewer, userId, scoutId } = await setup("review-deletion@example.test", true);
-  await viewer.mutation(api.terms.accept, { version: CURRENT_TERMS_VERSION });
+  await viewer.mutation(api.accounts.acceptTerms, {});
   const { threadId } = await viewer.mutation(api.scout.chats.startProductChat, {
     product: { kind: "review" },
     scoutId,

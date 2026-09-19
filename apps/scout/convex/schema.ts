@@ -80,7 +80,7 @@ export const taskPreferences = v.object({
 
 const userProfile = authTables.users.validator.extend({
   ...taskPreferences.fields,
-  acceptedTermsVersion: v.optional(v.string()),
+  termsAcceptedAt: v.optional(v.number()),
   isApproved: v.optional(v.boolean()),
   defaultScoutModelSelection: v.optional(scoutModelSelectionValidator),
 });
@@ -98,11 +98,6 @@ const siteTask = v.object({ chatId: v.id("scoutChats"), createdAt: v.number() })
 
 export default defineSchema({
   ...authTables,
-  termsAcceptances: defineTable({
-    userId: v.id("users"),
-    version: v.string(),
-    acceptedAt: v.number(),
-  }).index("by_user_id_and_version", ["userId", "version"]),
   creditWallets: defineTable(creditWalletValidator).index("by_user_id", ["userId"]),
   creditEntries: defineTable(creditEntryValidator)
     .index("by_user_id", ["userId"])

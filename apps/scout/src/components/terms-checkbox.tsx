@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { CURRENT_TERMS_VERSION, TERMS_ACCEPTANCE_LABEL } from "../../shared/terms";
+import { TERMS_ACCEPTANCE_LABEL } from "../../shared/terms";
 
 export function TermsCheckbox() {
   return (
@@ -7,8 +7,8 @@ export function TermsCheckbox() {
       <label className="flex items-start gap-3">
         <input
           type="checkbox"
-          name="termsVersion"
-          value={CURRENT_TERMS_VERSION}
+          name="termsAccepted"
+          value="true"
           required
           aria-label={TERMS_ACCEPTANCE_LABEL}
           className="mt-1 size-4 shrink-0 accent-primary"

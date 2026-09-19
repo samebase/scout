@@ -21,15 +21,15 @@ For privacy questions, requests, or complaints, email contact@samebase.com.
 
 ## Information we collect and receive
 
-| Information                               | Examples and sources                                                                                                                                                                                                                                                                                                          |
-| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Account information                       | The email address and password you provide, email-verification and password-reset records, account identifiers, sign-in sessions, access-approval status, accepted terms versions and timestamps, and saved task-engine and Scout preferences. Authentication stores a password hash rather than a readable account password. |
-| Chats and task content                    | Your instructions, messages, submitted URLs, AI responses, summaries, tool inputs and results, files, screenshots, and walkthroughs. Information also comes from websites and services the Scout visits for a task.                                                                                                           |
-| Browser and connected-service information | Visited URLs, page content, browser actions, remote-browser recordings, persistent browser profiles, service-account identifiers, and managed credentials for Scout accounts.                                                                                                                                                 |
-| Email and human assistance                | Messages and attachments read or sent through a Scout inbox, recipients and senders, requests for human help, temporary handoff links, and the browser activity associated with a handoff.                                                                                                                                    |
-| Usage and diagnostic information          | Task status, timestamps, selected models, model requests and responses, token and credit usage, provider costs, failures, and operational logs. Our hosting and service providers also receive connection information such as IP addresses and browser information when handling requests.                                    |
-| Purchases, when available                 | Credit balances, purchase and checkout identifiers, payment status, amounts, currency, tax and refund amounts. Polar and its payment providers collect payment and billing details at checkout. Scout's payment integration does not receive full payment-card numbers.                                                       |
-| Correspondence                            | Information you send us in support requests, privacy requests, reports, and feedback.                                                                                                                                                                                                                                         |
+| Information                               | Examples and sources                                                                                                                                                                                                                                                                                                  |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Account information                       | The email address and password you provide, email-verification and password-reset records, account identifiers, sign-in sessions, access-approval status, the terms-acceptance timestamp, and saved task-engine and Scout preferences. Authentication stores a password hash rather than a readable account password. |
+| Chats and task content                    | Your instructions, messages, submitted URLs, AI responses, summaries, tool inputs and results, files, screenshots, and walkthroughs. Information also comes from websites and services the Scout visits for a task.                                                                                                   |
+| Browser and connected-service information | Visited URLs, page content, browser actions, remote-browser recordings, persistent browser profiles, service-account identifiers, and managed credentials for Scout accounts.                                                                                                                                         |
+| Email and human assistance                | Messages and attachments read or sent through a Scout inbox, recipients and senders, requests for human help, temporary handoff links, and the browser activity associated with a handoff.                                                                                                                            |
+| Usage and diagnostic information          | Task status, timestamps, selected models, model requests and responses, token and credit usage, provider costs, failures, and operational logs. Our hosting and service providers also receive connection information such as IP addresses and browser information when handling requests.                            |
+| Purchases, when available                 | Credit balances, purchase and checkout identifiers, payment status, amounts, currency, tax and refund amounts. Polar and its payment providers collect payment and billing details at checkout. Scout's payment integration does not receive full payment-card numbers.                                               |
+| Correspondence                            | Information you send us in support requests, privacy requests, reports, and feedback.                                                                                                                                                                                                                                 |
 
 Information about other people may appear in a task, website, screenshot, or email even if
 they do not have a Scout account. We receive it from the person submitting the task, the
@@ -169,7 +169,7 @@ account identifier and creation and deletion timestamps remains.
 
 **Account deletion currently keeps chats, messages, files, screenshots, task records, and
 shared Scout history.** It also keeps shared Scout inboxes, browser profiles, external
-accounts, credit or purchase records, and terms-acceptance records. Retained records remain linked to the deleted
+accounts, and credit or purchase records. Retained records remain linked to the deleted
 account identifier. A "Deleted account" label does not anonymize personal information inside
 those records. Existing chat visibility continues to apply.
 
@@ -184,7 +184,7 @@ We determine how long information is needed using these criteria:
   necessity and applicable deletion rights.
 - Usage, payment, and refund records support balances, reconciliation, disputes, fraud
   prevention, and applicable tax or accounting obligations.
-- Terms-acceptance records, security logs, support correspondence, deletion records, and legal-request records are
+- Security logs, support correspondence, deletion records, and legal-request records are
   kept while needed to investigate the relevant matter, protect the service, demonstrate
   compliance, or establish or defend claims, including applicable limitation periods.
 

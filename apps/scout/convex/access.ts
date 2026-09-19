@@ -9,7 +9,7 @@ import {
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { viewerAccessValidator } from "./accessModel";
-import { CURRENT_TERMS_VERSION, TERMS_ACCEPTANCE_REQUIRED } from "../shared/terms";
+import { TERMS_ACCEPTANCE_REQUIRED } from "../shared/terms";
 
 export type ViewerAccess = Infer<typeof viewerAccessValidator>;
 
@@ -31,8 +31,7 @@ export async function readUserAccess(
   if (user.state === "deleted") return { kind: "deleted" };
   if (user.state === "deleting") return { kind: "deleting" };
   if (user.emailVerificationTime === undefined) return { kind: "unavailable" };
-  if (user.acceptedTermsVersion !== CURRENT_TERMS_VERSION)
-    return { kind: "terms_required", userId };
+  if (user.termsAcceptedAt === undefined) return { kind: "terms_required", userId };
   const role = readViewerRoleForUser(user);
   return {
     kind: "account",

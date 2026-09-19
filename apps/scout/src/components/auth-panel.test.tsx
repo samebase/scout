@@ -11,7 +11,7 @@ import { ConvexError } from "convex/values";
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
 import { AUTH_EMAIL_COOLDOWN } from "../../shared/auth";
 import { AuthPanel } from "./auth-panel";
-import { CURRENT_TERMS_VERSION, TERMS_ACCEPTANCE_LABEL } from "../../shared/terms";
+import { TERMS_ACCEPTANCE_LABEL } from "../../shared/terms";
 
 const remote = vi.hoisted(() => ({ signIn: vi.fn() }));
 
@@ -43,7 +43,7 @@ test("an email cooldown shows retry guidance instead of a credentials error", as
   );
 });
 
-test("signup requires an unchecked terms box and sends the displayed version", async () => {
+test("signup requires an unchecked terms box and sends acceptance", async () => {
   remote.signIn.mockResolvedValue({ signingIn: false });
   const user = userEvent.setup();
   const router = createRouter({
@@ -72,7 +72,7 @@ test("signup requires an unchecked terms box and sends the displayed version", a
   const data: unknown = remote.signIn.mock.calls[0]?.[1];
   expect(data).toBeInstanceOf(FormData);
   if (!(data instanceof FormData)) throw new Error("Expected signup form data");
-  expect(data.get("termsVersion")).toBe(CURRENT_TERMS_VERSION);
+  expect(data.get("termsAccepted")).toBe("true");
   expect(data.get("flow")).toBe("signUp");
   expect(await screen.findByRole("button", { name: "Verify email" })).toBeTruthy();
 });

@@ -7,7 +7,7 @@ import schema from "../../convex/schema";
 import { AUTH_EMAIL_COOLDOWN } from "../../shared/auth";
 import type { Doc } from "../../convex/_generated/dataModel";
 
-import { CURRENT_TERMS_VERSION, TERMS_ACCEPTANCE_REQUIRED } from "../../shared/terms";
+import { TERMS_ACCEPTANCE_REQUIRED } from "../../shared/terms";
 import { omitNullish } from "../../shared/omitNullish";
 
 type ScoutTest = TestConvex<typeof schema>;
@@ -41,9 +41,9 @@ afterEach(() => {
 });
 
 describe("password authentication", () => {
-  it.each([undefined, "old-terms"])(
-    "rejects signup with terms version %s before creating an account",
-    async (termsVersion) => {
+  it.each([undefined, "false"])(
+    "rejects signup with terms acceptance %s before creating an account",
+    async (termsAccepted) => {
       const t = convexTest(schema, modules);
       await expect(
         t.action(api.auth.signIn, {
@@ -52,34 +52,29 @@ describe("password authentication", () => {
             email: MEMBER_EMAIL,
             password: "secure-password",
             flow: "signUp",
-            termsVersion,
+            termsAccepted,
           }),
         }),
       ).rejects.toThrow(TERMS_ACCEPTANCE_REQUIRED);
       expect(await t.run((ctx) => ctx.db.query("users").collect())).toEqual([]);
-      expect(await t.run((ctx) => ctx.db.query("termsAcceptances").collect())).toEqual([]);
     },
   );
 
   it("records signup acceptance once, without changing it during verification or sign-in", async () => {
     const t = convexTest(schema, modules);
     await createVerifiedUser(t, MEMBER_EMAIL, "secure-password");
-    const records = await t.run((ctx) => ctx.db.query("termsAcceptances").collect());
-    expect(records).toHaveLength(1);
-    expect(records[0]).toMatchObject({
-      version: CURRENT_TERMS_VERSION,
-      acceptedAt: expect.any(Number),
-    });
+    const account = await t.run((ctx) => ctx.db.query("users").unique());
+    expect(account).toMatchObject({ termsAcceptedAt: expect.any(Number) });
     await t.action(api.auth.signIn, {
       provider: "password",
       params: {
         email: MEMBER_EMAIL,
         password: "secure-password",
         flow: "signIn",
-        termsVersion: "fake",
+        termsAcceptedAt: 1,
       },
     });
-    expect(await t.run((ctx) => ctx.db.query("termsAcceptances").collect())).toEqual(records);
+    expect(await t.run((ctx) => ctx.db.query("users").unique())).toEqual(account);
   });
 
   it("seeds one verified development account idempotently", async () => {
@@ -105,7 +100,7 @@ describe("password authentication", () => {
       kind: "terms_required",
       userId: seedUserId,
     });
-    await seedViewer.mutation(api.terms.accept, { version: CURRENT_TERMS_VERSION });
+    await seedViewer.mutation(api.accounts.acceptTerms, {});
     await expect(seedViewer.query(api.accounts.currentViewerAccess, {})).resolves.toEqual({
       kind: "account",
       email: "preview@example.com",
@@ -179,7 +174,7 @@ describe("password authentication", () => {
           email: "preview@example.com",
           password: "another-password",
           flow: "signUp",
-          termsVersion: CURRENT_TERMS_VERSION,
+          termsAccepted: "true",
         },
       }),
     ).rejects.toThrow("The development seed account only allows password sign-in");
@@ -215,7 +210,7 @@ describe("password authentication", () => {
           email: "  MEMBER@EXAMPLE.TEST  ",
           password: "secure-password",
           flow: "signUp",
-          termsVersion: CURRENT_TERMS_VERSION,
+          termsAccepted: "true",
         },
       }),
     );
@@ -319,7 +314,7 @@ describe("password authentication", () => {
           email: MEMBER_EMAIL,
           password: "secure-password",
           flow: "signUp",
-          termsVersion: CURRENT_TERMS_VERSION,
+          termsAccepted: "true",
         },
       }),
     );
@@ -360,7 +355,7 @@ describe("password authentication", () => {
           email,
           password: "secure-password",
           flow: "signUp",
-          termsVersion: CURRENT_TERMS_VERSION,
+          termsAccepted: "true",
         },
       }),
     ).rejects.toThrow("Missing environment variable `SITE_URL`");
@@ -474,7 +469,7 @@ describe("password authentication", () => {
           email: MEMBER_EMAIL,
           password: "short",
           flow: "signUp",
-          termsVersion: CURRENT_TERMS_VERSION,
+          termsAccepted: "true",
         },
       }),
     ).rejects.toThrow("Invalid password");
@@ -486,7 +481,7 @@ describe("password authentication", () => {
           email: MEMBER_EMAIL,
           password: "secure-password",
           flow: "signUp",
-          termsVersion: CURRENT_TERMS_VERSION,
+          termsAccepted: "true",
         },
       }),
     );
@@ -502,7 +497,7 @@ describe("password authentication", () => {
           email: MEMBER_EMAIL,
           password: "secure-password",
           flow: "signUp",
-          termsVersion: CURRENT_TERMS_VERSION,
+          termsAccepted: "true",
         },
       }),
     );
@@ -545,7 +540,7 @@ describe("password authentication", () => {
           email: MEMBER_EMAIL,
           password: "secure-password",
           flow: "signUp",
-          termsVersion: CURRENT_TERMS_VERSION,
+          termsAccepted: "true",
         },
       }),
     );
@@ -584,7 +579,7 @@ describe("password authentication", () => {
           email,
           password: "secure-password",
           flow: "signUp",
-          termsVersion: CURRENT_TERMS_VERSION,
+          termsAccepted: "true",
           isApproved: true,
           role: "role_admin",
         },
@@ -772,7 +767,7 @@ describe("password authentication", () => {
           email: MEMBER_EMAIL,
           password: "secure-password",
           flow: "signUp",
-          termsVersion: CURRENT_TERMS_VERSION,
+          termsAccepted: "true",
         },
       }),
     ).rejects.toThrow("Password authentication is disabled while AUTH_LOG_LEVEL is DEBUG");
@@ -783,7 +778,7 @@ async function createVerifiedUser(t: ScoutTest, email: string, password: string)
   const signUp = await captureAuthCode(() =>
     t.action(api.auth.signIn, {
       provider: "password",
-      params: { email, password, flow: "signUp", termsVersion: CURRENT_TERMS_VERSION },
+      params: { email, password, flow: "signUp", termsAccepted: "true" },
     }),
   );
 
