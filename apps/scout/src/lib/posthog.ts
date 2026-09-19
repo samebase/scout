@@ -14,7 +14,7 @@ let suspendedUser: string | null = null;
 let lastPageview: string | null = null;
 
 const replayBlockSelector =
-  "[data-posthog-block], .ph-no-capture, iframe, img, picture, video, audio, canvas, svg, pre, code, [contenteditable], input[type=hidden], input[type=file]";
+  '[data-posthog-block], .ph-no-capture, iframe, input[type="hidden"], input[autocomplete="one-time-code"]';
 
 const eventProperties = new Set([
   "token",
@@ -81,10 +81,10 @@ export const posthogConfig = {
   before_send: beforeSend,
   session_recording: {
     blockSelector: replayBlockSelector,
-    maskAllInputs: true,
-    maskTextSelector: "*",
-    maskAttributeFn: (name, value, element) =>
-      name === "class" && element && !element.matches(replayBlockSelector) ? value : "[masked]",
+    maskAllInputs: false,
+    maskInputOptions: { password: true },
+    maskTextSelector: "[data-posthog-mask]",
+    maskAllElementAttributes: false,
     captureJsonLd: false,
     collectFonts: false,
     inlineStylesheet: true,

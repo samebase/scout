@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-19T19:56:00Z
+- **Last updated:** 2026-09-19T21:15:02Z
 
 ## Log
 
@@ -1619,8 +1619,15 @@ Signup and Settings save the recording choice in Convex; withdrawal and sign-out
 Recordings mask text and inputs and exclude embedded browsers and account pages
 (`apps/scout/convex/accounts.ts`, `apps/scout/src/lib/posthog.ts`).
 
-### 2026-09-19 - working tree - v259
+### 2026-09-19 - 47682c7 - v259
 
 Restored Qwen 3.7 Flash and DeepSeek V4 Flash in Review, Play, and the admin task picker.
 Both run through the shared Convex task engine, with the selected model retained for the task
 and remembered for later member tasks (`apps/scout/shared/taskModels.ts`, `apps/scout/convex/tasks/`).
+
+### 2026-09-19 - working tree - v260
+
+Session replays preserve page text, ordinary inputs, images, and styling. Passwords and
+verification codes stay hidden; existing account and remote-browser exclusions remain.
+The recording choice now describes this capture and uses a new consent version
+(`apps/scout/src/lib/posthog.ts`, `apps/scout/shared/sessionRecording.ts`).

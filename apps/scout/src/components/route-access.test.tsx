@@ -378,7 +378,7 @@ for (const { path, title } of [
     await open(path);
     expect(await screen.findByRole("heading", { level: 1, name: title })).toBeTruthy();
     if (path === "/privacy" || path === "/terms") {
-      expect(screen.getByText("Effective date: September 19, 2026")).toBeTruthy();
+      expect(screen.getByText(/^Effective date: [A-Z][a-z]+ \d{1,2}, \d{4}$/)).toBeTruthy();
       expect(screen.getByRole("main").textContent).not.toMatch(
         /\{\{[A-Z_]+\}\}|Draft for review|Not yet effective/,
       );

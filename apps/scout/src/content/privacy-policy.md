@@ -1,6 +1,6 @@
 # Privacy policy
 
-Effective date: September 19, 2026
+Effective date: September 20, 2026
 
 Scout lets you ask AI agents to explore websites, play browser games, review products, and
 carry out online tasks. This policy explains how we handle personal information when you
@@ -28,7 +28,7 @@ For privacy questions, requests, or complaints, email contact@samebase.com.
 | Browser and connected-service information | Visited URLs, page content, browser actions, remote-browser recordings, persistent browser profiles, service-account identifiers, and managed credentials for Scout accounts.                                                                                                                                         |
 | Email and human assistance                | Messages and attachments read or sent through a Scout inbox, recipients and senders, requests for human help, temporary handoff links, and the browser activity associated with a handoff.                                                                                                                            |
 | Usage and diagnostic information          | Task status, timestamps, selected models, model requests and responses, token and credit usage, provider costs, failures, and operational logs. Our hosting and service providers also receive connection information such as IP addresses and browser information when handling requests.                            |
-| Website analytics and optional recordings | Page visits, browser and device type, timestamps, an internal account identifier when signed in, and your recording preference. If you opt in, PostHog also receives masked recordings of clicks, scrolling, and navigation in Scout.                                                                                 |
+| Website analytics and optional recordings | Page visits, browser and device type, timestamps, an internal account identifier when signed in, and your recording preference. If you opt in, PostHog also receives recordings of page content, ordinary inputs, clicks, scrolling, and navigation in Scout.                                                         |
 | Purchases, when available                 | Credit balances, purchase and checkout identifiers, payment status, amounts, currency, tax and refund amounts. Polar and its payment providers collect payment and billing details at checkout. Scout's payment integration does not receive full payment-card numbers.                                               |
 | Correspondence                            | Information you send us in support requests, privacy requests, reports, and feedback.                                                                                                                                                                                                                                 |
 
@@ -55,7 +55,7 @@ Where data-protection law requires a legal basis, we use the following bases for
 | Approve access, investigate faults, prevent abuse, secure Scout, and answer support requests              | Account, diagnostic, correspondence, and relevant task information                | Our legitimate interests in operating a reliable service, controlling access, and protecting users and systems, balanced against the people affected.                 |
 | Handle legal requests, privacy rights, and disputes                                                       | The information relevant to the request or dispute                                | Applicable legal obligations; legitimate interests in establishing, exercising, or defending legal claims where appropriate.                                          |
 | Understand which pages people use and improve Scout                                                       | Limited website analytics linked to an internal account identifier when signed in | Our legitimate interests in understanding and improving Scout, subject to applicable consent requirements and your right to object.                                   |
-| Review optional recordings to find usability problems                                                     | Masked website session recordings linked to an internal account identifier        | Your separate consent, which you can withdraw in Settings.                                                                                                            |
+| Review optional recordings to find usability problems                                                     | Website session recordings linked to an internal account identifier               | Your separate consent, which you can withdraw in Settings.                                                                                                            |
 
 The contract basis does not automatically cover information about people who are not parties
 to that contract. For incidental third-party information needed for a task, we assess our
@@ -115,15 +115,15 @@ its access window, so treat the link as confidential.
 
 ## Who receives information
 
-| Recipient                                                 | What it does and the information involved                                                                                                                                                                                                                                 |
-| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Convex                                                    | Hosts Scout's backend, database, authentication, task history, and some site delivery. Its AI Gateway also handles model requests.                                                                                                                                        |
-| Cloudflare                                                | Delivers the website, stores workspace files and screenshots in R2, and sends account-verification and password-reset emails. It handles the relevant content and network information.                                                                                    |
-| PostHog                                                   | Processes website analytics and, with your consent, masked session recordings in our EU Cloud project. We send an internal account identifier rather than your name or email address. PostHog also receives network connection information when your browser contacts it. |
-| OpenAI and the providers serving gateway models           | Generate responses, operate agents, and evaluate task requests using the task context sent to them.                                                                                                                                                                       |
-| Firecrawl                                                 | Searches and reads websites, runs remote browsers and persistent profiles, and provides screenshots, live views, and replays. It receives visited content and browser commands.                                                                                           |
-| AgentMail                                                 | Hosts Scout inboxes and handles messages, attachments, addresses, and delivery information used by email tasks and human handoffs.                                                                                                                                        |
-| Polar and its payment providers, when checkout is enabled | Sell credit packs through checkout and handle payment, billing, tax, fraud prevention, and refunds. Polar acts as the merchant of record for those sales and processes information for its own legal and payment responsibilities.                                        |
+| Recipient                                                 | What it does and the information involved                                                                                                                                                                                                    |
+| --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Convex                                                    | Hosts Scout's backend, database, authentication, task history, and some site delivery. Its AI Gateway also handles model requests.                                                                                                           |
+| Cloudflare                                                | Delivers the website, stores workspace files and screenshots in R2, and sends account-verification and password-reset emails. It handles the relevant content and network information.                                                       |
+| PostHog                                                   | Processes website analytics and, with your consent, session recordings in our EU Cloud project. Account attribution uses your internal Scout identifier. PostHog also receives network connection information when your browser contacts it. |
+| OpenAI and the providers serving gateway models           | Generate responses, operate agents, and evaluate task requests using the task context sent to them.                                                                                                                                          |
+| Firecrawl                                                 | Searches and reads websites, runs remote browsers and persistent profiles, and provides screenshots, live views, and replays. It receives visited content and browser commands.                                                              |
+| AgentMail                                                 | Hosts Scout inboxes and handles messages, attachments, addresses, and delivery information used by email tasks and human handoffs.                                                                                                           |
+| Polar and its payment providers, when checkout is enabled | Sell credit packs through checkout and handle payment, billing, tax, fraud prevention, and refunds. Polar acts as the merchant of record for those sales and processes information for its own legal and payment responsibilities.           |
 
 Websites the Scout visits and people it emails receive the information submitted to them.
 Their own privacy practices govern their independent use of that information. Public viewers
@@ -165,10 +165,11 @@ signal. You can also contact us to object to analytics processing.
 Session recording is off unless you select the separate, optional checkbox at account
 creation or enable it in Settings. Declining does not affect access to Scout. You can turn
 it off in Settings at any time. Withdrawal stops future recording; it does not automatically
-delete earlier recordings. We mask page text and inputs and exclude images, media, remote
-browser previews, authentication forms, account and payment settings, and administration
-pages. Network requests and console logs are not recorded. Basic page-visit analytics are
-separate from this recording choice.
+delete earlier recordings. Recordings include the page content you see, images, clicks,
+scrolling, navigation, and ordinary form inputs, including task prompts. Passwords and
+verification codes are hidden. Remote browser embeds, authentication forms, account and
+payment settings, and administration pages are excluded. Network requests and console logs
+are not recorded. Basic page-visit analytics are separate from this recording choice.
 
 Infrastructure, checkout, and embedded providers may use their own storage when you interact
 with those services. Their notices and controls apply to their independent processing.

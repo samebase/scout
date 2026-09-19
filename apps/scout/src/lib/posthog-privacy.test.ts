@@ -1,15 +1,20 @@
 // @vitest-environment happy-dom
+// @vitest-environment-options {"settings":{"disableCSSFileLoading":true,"handleDisabledFileLoadingAsSuccess":true}}
 import { afterEach, expect, test, vi } from "vite-plus/test";
 import type { CaptureResult } from "posthog-js";
 import { record } from "posthog-js/rrweb";
 import DOMTokenList from "happy-dom/lib/dom/DOMTokenList.js";
+import HappyDOMNode from "happy-dom/lib/nodes/node/Node.js";
+import CharacterData from "happy-dom/lib/nodes/character-data/CharacterData.js";
 import { posthogConfig, updateAnalytics } from "./posthog";
 
 afterEach(() => {
   updateAnalytics(null);
+  document.head.replaceChildren();
   document.body.replaceChildren();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 test("the actual SDK emits only the allowed page metadata and leaves no analytics storage", async () => {
@@ -50,17 +55,34 @@ test("the actual SDK emits only the allowed page metadata and leaves no analytic
   client.opt_out_capturing();
 });
 
-test("the bundled recorder masks rendered content, values, attributes, and embedded media", async () => {
+test("the bundled recorder keeps the page readable and masks only credentials and marked areas", async () => {
   vi.stubGlobal("DOMTokenList", DOMTokenList);
+  // rrweb calls Node's native getter directly; Happy DOM only implements it on CharacterData.
+  vi.spyOn(HappyDOMNode.prototype, "textContent", "get").mockImplementation(
+    function (this: HappyDOMNode) {
+      return this instanceof CharacterData ? this.data : "";
+    },
+  );
+  const stylesheet = new CSSStyleSheet();
+  stylesheet.replaceSync(".replay-layout { display: grid; }");
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href = "/assets/style-public.css";
+  Object.defineProperty(link, "sheet", { value: stylesheet });
+  document.head.append(link);
   document.body.innerHTML = `
-    <main data-private="SCOUT_TEST_SECRET">
-      <p>SCOUT_TEST_SECRET visible text</p>
-      <input value="SCOUT_TEST_SECRET">
+    <main class="replay-layout" data-state="open">
+      <p>Readable public page text</p>
+      <input value="Visible search query">
+      <textarea>Visible task prompt</textarea>
+      <input type="password" value="SCOUT_TEST_SECRET">
       <input type="hidden" value="SCOUT_TEST_SECRET">
-      <textarea>SCOUT_TEST_SECRET</textarea>
-      <pre class="language-SCOUT_TEST_SECRET">SCOUT_TEST_SECRET</pre>
-      <div style="background-image: url('https://example.test/SCOUT_TEST_SECRET')">private</div>
-      <img src="https://example.test/SCOUT_TEST_SECRET" alt="SCOUT_TEST_SECRET">
+      <input autocomplete="one-time-code" value="SCOUT_TEST_SECRET">
+      <span data-posthog-mask>SCOUT_TEST_SECRET</span>
+      <pre><code>Readable public code</code></pre>
+      <div style="background-color: red">Styled content</div>
+      <img src="https://example.test/public-image.png" alt="Public site preview">
+      <svg viewBox="0 0 24 24"><path d="M1 1 L2 2" /></svg>
       <iframe srcdoc="SCOUT_TEST_SECRET"></iframe>
       <div data-posthog-block><p>SCOUT_TEST_SECRET blocked transcript</p></div>
     </main>`;
@@ -71,12 +93,32 @@ test("the bundled recorder masks rendered content, values, attributes, and embed
   });
   try {
     await vi.waitFor(() => expect(snapshots.length).toBeGreaterThan(0));
+    for (const visible of [
+      ".replay-layout { display: grid; }",
+      "Readable public page text",
+      "Visible search query",
+      "Visible task prompt",
+      "Readable public code",
+      "background-color: red",
+      "public-image.png",
+      "M1 1 L2 2",
+    ]) {
+      expect(JSON.stringify(snapshots)).toContain(visible);
+    }
     expect(JSON.stringify(snapshots)).not.toContain("SCOUT_TEST_SECRET");
     const paragraph = document.querySelector("p");
     if (!paragraph) throw new Error("Missing privacy fixture paragraph");
     const countBeforeChange = snapshots.length;
-    paragraph.textContent = "SCOUT_TEST_SECRET changed text";
+    paragraph.textContent = "Readable changed text";
+    const password = document.querySelector('input[type="password"]');
+    if (!(password instanceof HTMLInputElement)) throw new Error("Missing password fixture");
+    password.value = "SCOUT_TEST_SECRET changed password";
+    password.dispatchEvent(new Event("input", { bubbles: true }));
     await vi.waitFor(() => expect(snapshots.length).toBeGreaterThan(countBeforeChange));
+    await vi.waitFor(() =>
+      expect(JSON.stringify(snapshots)).toContain('"text":"' + "*".repeat(password.value.length)),
+    );
+    expect(JSON.stringify(snapshots)).toContain("Readable changed text");
     expect(JSON.stringify(snapshots)).not.toContain("SCOUT_TEST_SECRET");
   } finally {
     stop?.();
