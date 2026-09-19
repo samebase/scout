@@ -1,6 +1,7 @@
 import { paginationOptsValidator, paginationResultValidator } from "convex/server";
 import { vWorkflowId } from "@convex-dev/workflow";
 import { ConvexError, v } from "convex/values";
+import { taskSelection, type TaskSelection } from "../../shared/taskModels";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
@@ -500,7 +501,7 @@ export async function startSession(
     userId: Id<"users">;
     scoutId: Id<"scouts">;
     prompt: string;
-    engine: Infer<typeof taskEngine>;
+    selection: TaskSelection;
   },
 ): Promise<Id<"agentsApiSessions">> {
   const prompt = args.prompt.trim();
@@ -510,12 +511,12 @@ export async function startSession(
   if (!scout || scout.status !== "active") throw new Error("Active Scout not found");
   await requireAvailableScout(ctx, scout._id);
   const sessionId = await ctx.db.insert("agentsApiSessions", {
-    engine: args.engine,
+    engine: args.selection.engine,
     userId: args.userId,
     scoutId: scout._id,
     scoutName: scout.displayName,
     title: "New session",
-    model: "gpt-5.6-luna",
+    model: args.selection.model,
     state: { kind: "starting" },
     active: true,
     nextSequence: 0,
@@ -535,7 +536,7 @@ export async function startSession(
 
 export const start = mutation({
   access: "access_lab",
-  args: { scoutId: v.id("scouts"), prompt: v.string(), engine: taskEngine },
+  args: { scoutId: v.id("scouts"), prompt: v.string(), selection: taskSelection },
   returns: v.id("agentsApiSessions"),
   handler: async (ctx, args): Promise<Id<"agentsApiSessions">> =>
     await startSession(ctx, { ...args, userId: ctx.viewer.userId }),

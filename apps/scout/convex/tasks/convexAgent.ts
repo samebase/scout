@@ -41,6 +41,9 @@ function gatewayModel(model: string) {
   switch (model) {
     case "gpt-5.6-luna":
       return convexGateway("openai/gpt-5.6-luna");
+    case "qwen/qwen3.7-flash":
+    case "deepseek/deepseek-v4-flash-0731":
+      return convexGateway(model);
     default:
       throw new Error(`Unsupported Convex Agent model: ${model}`);
   }

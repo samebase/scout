@@ -6,14 +6,6 @@ import { reviewFeedSearch } from "#lib/reviewFeedSearch";
 
 export type ProductKind = FunctionArgs<typeof api.scout.chats.startProductChat>["product"]["kind"];
 
-export const engineOptions = [
-  { value: "convex_agent", label: "Luna - Convex" },
-  { value: "agents_api", label: "Luna - Agents API" },
-] satisfies {
-  value: NonNullable<FunctionArgs<typeof api.scout.chats.startProductChat>["engine"]>;
-  label: string;
-}[];
-
 export const conversationSearch = z.object({
   ...reviewFeedSearch.shape,
   view: z.enum(["walkthrough", "chat"]).optional(),

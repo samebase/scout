@@ -79,7 +79,11 @@ export const taskPreferences = query({
   handler: async (ctx) => {
     const user = await ctx.db.get(ctx.viewer.userId);
     if (!user || user.state === "deleted") throw new ConvexError("Account not found");
-    return omitNullish({ lastTaskEngine: user.lastTaskEngine, lastScoutId: user.lastScoutId });
+    return omitNullish({
+      lastTaskEngine: user.lastTaskEngine,
+      lastConvexModel: user.lastConvexModel,
+      lastScoutId: user.lastScoutId,
+    });
   },
 });
 

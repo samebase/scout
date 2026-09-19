@@ -26,6 +26,7 @@ import {
 import { type FormEvent, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import { omitNullish } from "../../../shared/omitNullish";
+import { taskModelOptions, type TaskSelection } from "../../../shared/taskModels";
 import {
   HANDOFF_DECLINED_REASON,
   HANDOFF_EXPIRED_REASON,
@@ -35,12 +36,7 @@ import { creditFailure, creditFailureMessage } from "../../../shared/creditFailu
 import { PendingTaskMessage } from "../../tasks/pending-message";
 import { OpenHandoffBrowserButton } from "../../tasks/browser";
 import { scoutAvailabilityLabels } from "#components/scout-current-activity";
-import {
-  conversationDestination,
-  engineOptions,
-  type ProductKind,
-  type ConversationSearch,
-} from "./model";
+import { conversationDestination, type ProductKind, type ConversationSearch } from "./model";
 import { gameInviteDisplayText } from "../play/invite";
 import { ConversationComposer } from "./composer";
 import { ConversationSidebar, BrowserToggle, BrowserStop, TasksToggle } from "./sidebar";
@@ -152,6 +148,10 @@ export function ConversationLobby({
   >({});
   const preferences = canRun ? savedPreferences : guestPreferences;
   const engine = preferences?.lastTaskEngine ?? "agents_api";
+  const selection: TaskSelection =
+    engine === "agents_api"
+      ? { engine, model: "gpt-5.6-luna" }
+      : { engine, model: preferences?.lastConvexModel ?? "gpt-5.6-luna" };
   const [signingIn, setSigningIn] = useState(false);
   const [request, setRequest] = useState<RequestState>({ kind: "idle" });
   const [visibility, setVisibility] = useState<ChatThread["visibility"]>(
@@ -205,7 +205,7 @@ export function ConversationLobby({
         scoutId: selectedScout._id,
         prompt,
         visibility,
-        engine,
+        selection,
       });
       await navigate(conversationDestination(kind, threadId, {}));
     } catch (error) {
@@ -349,21 +349,30 @@ export function ConversationLobby({
                   )}
                 </div>
                 <Select
-                  value={engine}
+                  value={selection.model === "gpt-5.6-luna" ? selection.engine : selection.model}
                   disabled={request.kind === "pending" || loadingScouts}
                   onValueChange={(value) => {
-                    const option = engineOptions.find((option) => option.value === value);
-                    if (option) void updatePreferences({ lastTaskEngine: option.value });
+                    const option = taskModelOptions.find((option) => option.value === value);
+                    if (option)
+                      void updatePreferences({
+                        lastTaskEngine: option.selection.engine,
+                        ...omitNullish({
+                          lastConvexModel:
+                            option.selection.engine === "convex_agent"
+                              ? option.selection.model
+                              : undefined,
+                        }),
+                      });
                   }}
                 >
                   <SelectTrigger
-                    aria-label="Task engine"
+                    aria-label="Task model"
                     className="min-h-11 shrink-0 gap-1 border-0 px-1 text-[13px] shadow-none sm:gap-1.5 sm:px-2 sm:text-sm"
                   >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent position="popper">
-                    {engineOptions.map((option) => (
+                    {taskModelOptions.map((option) => (
                       <SelectItem key={option.value} value={option.value}>
                         {option.label}
                       </SelectItem>

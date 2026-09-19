@@ -10,6 +10,8 @@ import { scoutReservation } from "../scout/availability";
 import type { chatVisibilityValidator, productKindValidator } from "../scout/chatModel";
 import { ADMIN_EMAIL, insertTestAccount } from "../testing/accounts";
 import type { taskEngine } from "./model";
+import { omitNullish } from "../../shared/omitNullish";
+import type { TaskSelection } from "../../shared/taskModels";
 
 const modules = {
   ...import.meta.glob("../**/*.ts"),
@@ -21,6 +23,12 @@ const modules = {
   ),
 };
 const engines: Array<typeof taskEngine.type> = ["agents_api", "convex_agent"];
+const selections = [
+  { engine: "agents_api", model: "gpt-5.6-luna" },
+  { engine: "convex_agent", model: "gpt-5.6-luna" },
+  { engine: "convex_agent", model: "qwen/qwen3.7-flash" },
+  { engine: "convex_agent", model: "deepseek/deepseek-v4-flash-0731" },
+] satisfies TaskSelection[];
 const products: Array<typeof productKindValidator.type> = ["play", "review"];
 const paginationOpts = { numItems: 20, cursor: null };
 const prompt = "Check https://example.test and report what works";
@@ -82,11 +90,16 @@ async function setup() {
   const member = backend.withIdentity({ subject: ids.memberId });
   const stranger = backend.withIdentity({ subject: ids.strangerId });
   const start = (engine: typeof taskEngine.type) =>
-    admin.mutation(api.tasks.sessions.start, { scoutId: ids.scoutId, prompt, engine });
+    admin.mutation(api.tasks.sessions.start, {
+      scoutId: ids.scoutId,
+      prompt,
+      selection: { engine: engine, model: "gpt-5.6-luna" },
+    });
   const read = (sessionId: Id<"agentsApiSessions">) =>
     backend.query(internal.tasks.sessions.cleanupResources, { sessionId });
   const product = async (kind: typeof productKindValidator.type) => {
     const { threadId } = await member.mutation(api.scout.chats.startProductChat, {
+      selection: { engine: "agents_api", model: "gpt-5.6-luna" },
       product: { kind },
       scoutId: ids.scoutId,
       prompt,
@@ -143,7 +156,11 @@ it.each(engines)("denies member and anonymous access to the admin %s selector", 
   const { backend, member, scoutId } = await setup();
   for (const viewer of [member, backend]) {
     await expect(
-      viewer.mutation(api.tasks.sessions.start, { scoutId, prompt, engine }),
+      viewer.mutation(api.tasks.sessions.start, {
+        scoutId,
+        prompt,
+        selection: { engine: engine, model: "gpt-5.6-luna" },
+      }),
     ).rejects.toThrow("Not authorized");
   }
   expect(await backend.run((ctx) => ctx.db.query("agentsApiSessions").take(1))).toEqual([]);
@@ -169,9 +186,9 @@ it.each(products)(
   },
 );
 
-it.each(products.flatMap((kind) => engines.map((engine) => ({ kind, engine }))))(
-  "uses the member's $engine selection for $kind",
-  async ({ kind, engine }) => {
+it.each(products.flatMap((kind) => selections.map((selection) => ({ kind, selection }))))(
+  "uses the member's $selection selection for $kind",
+  async ({ kind, selection }) => {
     const { backend, member, scoutId } = await setup();
     const visibility: typeof chatVisibilityValidator.type = "private";
     const { threadId } = await member.mutation(api.scout.chats.startProductChat, {
@@ -179,13 +196,16 @@ it.each(products.flatMap((kind) => engines.map((engine) => ({ kind, engine }))))
       scoutId,
       prompt,
       visibility,
-      engine,
+      selection,
     });
     const [session] = await backend.run((ctx) => ctx.db.query("agentsApiSessions").take(1));
-    expect(session).toMatchObject({ _id: threadId, engine });
+    expect(session).toMatchObject({ _id: threadId, ...selection });
     expect(await member.query(api.accounts.taskPreferences, {})).toEqual({
       lastScoutId: scoutId,
-      lastTaskEngine: engine,
+      lastTaskEngine: selection.engine,
+      ...omitNullish({
+        lastConvexModel: selection.engine === "convex_agent" ? selection.model : undefined,
+      }),
     });
     expect(await member.query(api.scout.activity.get, { threadId })).toMatchObject({
       canControl: true,
@@ -194,11 +214,26 @@ it.each(products.flatMap((kind) => engines.map((engine) => ({ kind, engine }))))
   },
 );
 
+it("rejects non-OpenAI models on Agents API before reserving a Scout", async () => {
+  const { backend, admin, scoutId } = await setup();
+  await expect(
+    admin.mutation(api.tasks.sessions.start, {
+      scoutId,
+      prompt,
+      // External clients can send this invalid pairing; the argument validator must reject it.
+      // @ts-expect-error Qwen cannot run through the OpenAI Agents API.
+      selection: { engine: "agents_api", model: "qwen/qwen3.7-flash" },
+    }),
+  ).rejects.toThrow();
+  expect(await backend.run((ctx) => ctx.db.query("agentsApiSessions").take(1))).toEqual([]);
+});
+
 it.each(products)("denies %s creation after membership is revoked", async (kind) => {
   const { backend, member, memberId, scoutId } = await setup();
   await backend.run((ctx) => ctx.db.patch(memberId, { isApproved: false }));
   await expect(
     member.mutation(api.scout.chats.startProductChat, {
+      selection: { engine: "agents_api", model: "gpt-5.6-luna" },
       product: { kind },
       scoutId,
       prompt,

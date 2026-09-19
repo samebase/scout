@@ -770,7 +770,7 @@ test("starts with an active scout and opens the new session without mutating on 
     expect(remote.start).toHaveBeenCalledWith({
       scoutId: "scout-1",
       prompt: "Inspect the site",
-      engine: "agents_api",
+      selection: { engine: "agents_api", model: "gpt-5.6-luna" },
     }),
   );
   await waitFor(() => expect(router.state.location.search).toEqual({ session: "session-1" }));
@@ -792,22 +792,34 @@ test("shows start failures and preserves the prompt for an explicit retry", asyn
 });
 
 test.each([
-  { engine: "agents_api", label: "Agents API" },
-  { engine: "convex_agent", label: "Convex Agent" },
-])("starts a task with the selected $label runtime", async ({ engine, label }) => {
+  { engine: "agents_api", label: "Agents API", model: "gpt-5.6-luna", value: "agents_api" },
+  { engine: "convex_agent", label: "Convex Agent", model: "gpt-5.6-luna", value: "convex_agent" },
+  {
+    engine: "convex_agent",
+    label: "Convex Agent",
+    model: "qwen/qwen3.7-flash",
+    value: "qwen/qwen3.7-flash",
+  },
+  {
+    engine: "convex_agent",
+    label: "Convex Agent",
+    model: "deepseek/deepseek-v4-flash-0731",
+    value: "deepseek/deepseek-v4-flash-0731",
+  },
+])("starts a task with $model through $label", async ({ engine, label, model, value }) => {
   remote.queries.set("tasks/sessions:get", { ...session(), engine });
   const router = await open("/agents?scout=scout-1");
-  const runtime = await screen.findByRole("combobox", { name: "Runtime" });
+  const runtime = await screen.findByRole("combobox", { name: "Model" });
   expect(runtime).toHaveProperty("value", "agents_api");
   expect(screen.getByRole("combobox", { name: "Scout" })).toHaveProperty("value", "scout-1");
-  await userEvent.setup().selectOptions(runtime, engine);
+  await userEvent.setup().selectOptions(runtime, value);
   fireEvent.change(screen.getByLabelText("Prompt"), { target: { value: " Inspect checkout " } });
   fireEvent.click(screen.getByRole("button", { name: "Start" }));
   await waitFor(() =>
     expect(remote.start).toHaveBeenCalledExactlyOnceWith({
       scoutId: "scout-1",
       prompt: "Inspect checkout",
-      engine,
+      selection: { engine, model },
     }),
   );
   expect(await screen.findByText(`Pip · ${label}`)).toBeTruthy();

@@ -35,7 +35,8 @@ Approved members can start private or public chats with an available Scout; sign
 or assign Scouts. Guests can watch public conversations and live browsers or replays.
 `/agents` provides one admin interface for tasks using OpenAI Agents API or the Convex Agent
 component. Both share task checks, research, tools, walkthroughs, and replay. Member tasks use
-Agents API by default; admins choose the engine when creating a task. See
+Luna through Agents API by default. Members and admins can also select Luna through Convex,
+Qwen 3.7 Flash, or DeepSeek V4 Flash when creating a task. See
 [`docs/play-product-direction.md`](./docs/play-product-direction.md) for the product options and research.
 
 Anyone can create an account and verify their email. `users.isApproved` is the only stored
