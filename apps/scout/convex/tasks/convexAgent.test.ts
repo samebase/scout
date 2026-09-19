@@ -9,6 +9,7 @@ import { z } from "zod";
 import { api, components, internal } from "../_generated/api";
 import schema from "../schema";
 import { createBrowserHarness } from "../scout/browserTools";
+import { createServiceAccountRecordingTool } from "../scout/serviceAccountTool";
 import { ADMIN_EMAIL, insertTestAccount } from "../testing/accounts";
 import { runtimeTools } from "./tools";
 import {
@@ -61,6 +62,7 @@ const countItems = vi.fn(async ({ count, label }: { count: number; label: string
   count,
   label,
 }));
+const recordAccount = vi.fn(async () => ({ serviceAccountId: "account-1", created: true }));
 
 beforeEach(() => {
   vi.stubEnv("FIRECRAWL_API_KEY", "test-key");
@@ -68,6 +70,7 @@ beforeEach(() => {
   provider.generate.mockReset();
   execute.mockClear();
   countItems.mockClear();
+  recordAccount.mockClear();
   vi.mocked(runtimeTools).mockImplementation(async () => ({
     tools: {
       browser_read: tool({ inputSchema: z.object({ value: z.string() }), execute }),
@@ -76,6 +79,7 @@ beforeEach(() => {
         execute: countItems,
       }),
       request_browser_handoff: tool({ inputSchema: z.object({ message: z.string() }) }),
+      record_authenticated_service_account: createServiceAccountRecordingTool(recordAccount),
     },
     browser: createBrowserHarness(),
     dispose: async () => {},
@@ -272,6 +276,78 @@ it("runs one model step, executes the shared tool separately, and projects stabl
   expect(messages.page.filter((message) => message.usage)).toHaveLength(2);
   expect(accumulatedUsage(messages.page).usage.costUsd).toBe(0.004);
 });
+
+it.each(["managed_password", "passwordless", "oauth"] as const)(
+  "persists and executes a generated %s account recording with the shared tool",
+  async (loginMethod) => {
+    const task = await setup();
+    const input = {
+      accountAccess: "created",
+      identifier: "scout@example.test",
+      verification: "Account settings shows scout@example.test after email verification.",
+      ...(loginMethod === "oauth"
+        ? {
+            loginMethod,
+            oauthProviderServiceDomain: "github.com",
+            oauthProviderIdentifier: "scout-test",
+          }
+        : { loginMethod }),
+    };
+    const callId = "record-account";
+    const name = "record_authenticated_service_account";
+    provider.stream.mockResolvedValueOnce(
+      streamed(
+        [{ type: "tool-call", toolCallId: callId, toolName: name, input: JSON.stringify(input) }],
+        "tool-calls",
+      ),
+    );
+
+    expect(await task.advance()).toBe(true);
+    expect(recordAccount).not.toHaveBeenCalled();
+    const session = await task.session();
+    if (!session?.providerId) throw new Error("Thread missing");
+    const messages = await task.backend.query(components.agent.messages.listMessagesByThreadId, {
+      threadId: session.providerId,
+      order: "asc",
+      paginationOpts: { cursor: null, numItems: 20 },
+    });
+    const pending = pendingToolCalls(messages.page);
+    const item = (await task.items()).find((item) => item.kind === "tool_call");
+
+    expect(await task.advance()).toBe(true);
+    const call = await task.backend.run((ctx) =>
+      ctx.db
+        .query("agentsApiCalls")
+        .withIndex("by_session_id_and_call_id", (q) =>
+          q.eq("sessionId", task.sessionId).eq("callId", callId),
+        )
+        .unique(),
+    );
+    expect(call?.result).toEqual({
+      kind: "success",
+      output: JSON.stringify({ serviceAccountId: "account-1", created: true }),
+    });
+    expect(pending).toEqual([{ callId, name, arguments: input }]);
+    expect(JSON.parse(item?.details ?? "null")).toMatchObject({ input });
+    expect(recordAccount).toHaveBeenCalledExactlyOnceWith(
+      {
+        accountAccess: input.accountAccess,
+        identifier: input.identifier,
+        verification: input.verification,
+        loginMethod:
+          loginMethod === "oauth"
+            ? {
+                kind: "oauth",
+                providerServiceDomain: "github.com",
+                providerIdentifier: "scout-test",
+              }
+            : { kind: loginMethod },
+      },
+      expect.any(AbortSignal),
+    );
+    expect(provider.stream).toHaveBeenCalledTimes(1);
+  },
+);
 
 it("repairs a stringified number before persisting and executing a tool call", async () => {
   const task = await setup();

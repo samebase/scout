@@ -1,6 +1,8 @@
 import { outdent } from "outdent";
 import { tool } from "ai";
+import type { Infer } from "convex/values";
 import { z } from "zod";
+import type { observedLoginMethodValidator } from "./model";
 
 const serviceAccountEvidenceFields = {
   accountAccess: z
@@ -17,54 +19,41 @@ const serviceAccountEvidenceFields = {
     ),
 };
 
-const serviceAccountEvidenceInputSchema = z
-  .discriminatedUnion("loginMethod", [
-    z
-      .object({
-        loginMethod: z.literal("managed_password"),
-        ...serviceAccountEvidenceFields,
-      })
-      .strict(),
-    z
-      .object({
-        loginMethod: z
-          .literal("passwordless")
-          .describe("Sign-in by an email code or magic link; no saved password or OAuth provider"),
-        ...serviceAccountEvidenceFields,
-      })
-      .strict(),
-    z
-      .object({
-        loginMethod: z
-          .literal("oauth")
-          .describe("The service account was authenticated with OAuth"),
-        ...serviceAccountEvidenceFields,
-        oauthProviderServiceDomain: z
-          .string()
-          .min(1)
-          .describe("The provider account service domain, such as github.com"),
-        oauthProviderIdentifier: z
-          .string()
-          .min(1)
-          .describe("The exact username or email of the provider account"),
-      })
-      .strict(),
-  ])
-  .transform((input) => ({
-    accountAccess: input.accountAccess,
-    loginMethod:
-      input.loginMethod !== "oauth"
-        ? { kind: input.loginMethod }
-        : {
-            kind: "oauth" as const,
-            providerServiceDomain: input.oauthProviderServiceDomain,
-            providerIdentifier: input.oauthProviderIdentifier,
-          },
-    identifier: input.identifier,
-    verification: input.verification,
-  }));
+const serviceAccountEvidenceInputSchema = z.discriminatedUnion("loginMethod", [
+  z
+    .object({
+      loginMethod: z.literal("managed_password"),
+      ...serviceAccountEvidenceFields,
+    })
+    .strict(),
+  z
+    .object({
+      loginMethod: z
+        .literal("passwordless")
+        .describe("Sign-in by an email code or magic link; no saved password or OAuth provider"),
+      ...serviceAccountEvidenceFields,
+    })
+    .strict(),
+  z
+    .object({
+      loginMethod: z.literal("oauth").describe("The service account was authenticated with OAuth"),
+      ...serviceAccountEvidenceFields,
+      oauthProviderServiceDomain: z
+        .string()
+        .min(1)
+        .describe("The provider account service domain, such as github.com"),
+      oauthProviderIdentifier: z
+        .string()
+        .min(1)
+        .describe("The exact username or email of the provider account"),
+    })
+    .strict(),
+]);
 
-export type ServiceAccountEvidence = z.output<typeof serviceAccountEvidenceInputSchema>;
+export type ServiceAccountEvidence = Pick<
+  z.output<typeof serviceAccountEvidenceInputSchema>,
+  "accountAccess" | "identifier" | "verification"
+> & { loginMethod: Infer<typeof observedLoginMethodValidator> };
 
 export function createServiceAccountRecordingTool(
   record: (
@@ -91,6 +80,24 @@ export function createServiceAccountRecordingTool(
       - Repeated calls update the existing account.
     `,
     inputSchema: serviceAccountEvidenceInputSchema,
-    execute: async (evidence, options) => await record(evidence, options.abortSignal),
+    // Convex Agent persists validated inputs and validates them again before execution.
+    // Keep the tool input flat until this mapping to the account model.
+    execute: async (input, options) =>
+      await record(
+        {
+          accountAccess: input.accountAccess,
+          loginMethod:
+            input.loginMethod !== "oauth"
+              ? { kind: input.loginMethod }
+              : {
+                  kind: "oauth",
+                  providerServiceDomain: input.oauthProviderServiceDomain,
+                  providerIdentifier: input.oauthProviderIdentifier,
+                },
+          identifier: input.identifier,
+          verification: input.verification,
+        },
+        options.abortSignal,
+      ),
   });
 }
