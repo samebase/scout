@@ -54,6 +54,7 @@ async function setup() {
   const admin = backend.withIdentity({ subject: adminId });
   const prompt = "Try https://example.com and tell me whether it works.";
   const { threadId } = await member.mutation(api.scout.chats.startProductChat, {
+    selection: { engine: "agents_api", model: "gpt-5.6-luna" },
     scoutId,
     prompt,
     product: { kind: "review" },

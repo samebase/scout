@@ -130,7 +130,7 @@ async function setup() {
   const sessionId = await owner.mutation(api.tasks.sessions.start, {
     scoutId: ids.scoutId,
     prompt: "Explore example.com",
-    engine: "agents_api",
+    selection: { engine: "agents_api", model: "gpt-5.6-luna" },
   });
   return { backend, owner, ...ids, sessionId };
 }
@@ -148,7 +148,7 @@ it("allows admin inspection and holds the Scout for both runtimes", async () => 
     owner.mutation(api.tasks.sessions.start, {
       scoutId,
       prompt: "Another run",
-      engine: "agents_api",
+      selection: { engine: "agents_api", model: "gpt-5.6-luna" },
     }),
   ).rejects.toThrow("already working");
   expect(await backend.run((ctx) => scoutIsWorking(ctx, scoutId))).toBe(true);
@@ -170,6 +170,7 @@ it("lists and inspects a member's private Review without granting session contro
   );
   const member = backend.withIdentity({ subject: memberId });
   const { threadId } = await member.mutation(api.scout.chats.startProductChat, {
+    selection: { engine: "agents_api", model: "gpt-5.6-luna" },
     product: { kind: "review" },
     scoutId,
     prompt: "Try example.com",
@@ -476,7 +477,7 @@ it.each(["active", "closing"] as const)(
       owner.mutation(api.tasks.sessions.start, {
         scoutId,
         prompt: "New session",
-        engine: "agents_api",
+        selection: { engine: "agents_api", model: "gpt-5.6-luna" },
       }),
     ).rejects.toThrow("existing browser");
     await expect(
@@ -616,7 +617,7 @@ it("does not retry while another task owns the Scout", async () => {
   await owner.mutation(api.tasks.sessions.start, {
     scoutId,
     prompt: "Another task",
-    engine: "agents_api",
+    selection: { engine: "agents_api", model: "gpt-5.6-luna" },
   });
   await expect(owner.mutation(api.tasks.sessions.retryMessage, { sessionId })).rejects.toThrow(
     "already working",

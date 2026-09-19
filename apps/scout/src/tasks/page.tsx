@@ -49,11 +49,7 @@ import { SessionCost } from "#components/session-cost";
 import { ScoutWorkspace } from "#components/scout-workspace";
 import { TaskWalkthrough } from "#components/task-walkthrough";
 import type { WorkspaceTarget } from "../../convex/workspaceModel";
-
-const runtimeOptions = [
-  { value: "agents_api", label: "Agents API" },
-  { value: "convex_agent", label: "Convex Agent" },
-] satisfies { value: Session["engine"]; label: string }[];
+import { taskModelOptions, type TaskSelection } from "../../shared/taskModels";
 
 const runtimeLabels: Record<Session["engine"], string> = {
   agents_api: "Agents API",
@@ -413,7 +409,10 @@ function NewSession({ initialScoutId }: { initialScoutId: string }) {
   const start = useMutation(api.tasks.sessions.start);
   const navigate = useNavigate({ from: "/agents" });
   const [scoutId, setScoutId] = useState(initialScoutId);
-  const [engine, setEngine] = useState<Session["engine"]>("agents_api");
+  const [selection, setSelection] = useState<TaskSelection>({
+    engine: "agents_api",
+    model: "gpt-5.6-luna",
+  });
   const [prompt, setPrompt] = useState("");
   const [request, setRequest] = useState<RequestState>({ kind: "idle" });
   const submitting = useRef(false);
@@ -441,7 +440,11 @@ function NewSession({ initialScoutId }: { initialScoutId: string }) {
     submitting.current = true;
     setRequest({ kind: "pending" });
     try {
-      const sessionId = await start({ scoutId: selectedScout._id, prompt: prompt.trim(), engine });
+      const sessionId = await start({
+        scoutId: selectedScout._id,
+        prompt: prompt.trim(),
+        selection,
+      });
       await navigate({ search: { session: sessionId } });
     } catch (error) {
       setRequest({
@@ -495,27 +498,27 @@ function NewSession({ initialScoutId }: { initialScoutId: string }) {
         </div>
         <div className="space-y-2">
           <label htmlFor="task-runtime" className="text-sm font-medium">
-            Runtime
+            Model
           </label>
           <select
             id="task-runtime"
             aria-describedby="task-runtime-description"
-            value={engine}
+            value={selection.model === "gpt-5.6-luna" ? selection.engine : selection.model}
             disabled={request.kind === "pending"}
             onChange={(event) => {
-              const option = runtimeOptions.find((option) => option.value === event.target.value);
-              if (option) setEngine(option.value);
+              const option = taskModelOptions.find((option) => option.value === event.target.value);
+              if (option) setSelection(option.selection);
             }}
             className="block h-11 w-full rounded-lg border border-input bg-card px-3 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/25 disabled:opacity-50"
           >
-            {runtimeOptions.map((option) => (
+            {taskModelOptions.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>
             ))}
           </select>
           <p id="task-runtime-description" className="text-xs text-muted-foreground">
-            {engine === "agents_api"
+            {selection.engine === "agents_api"
               ? "OpenAI manages conversation context and includes native web search."
               : "Scout manages conversation summaries and keeps only the latest browser snapshot. Native web search is unavailable."}
           </p>

@@ -64,6 +64,7 @@ test.each([
 ] as const)("$email starts $kind through the shared task pipeline", async ({ kind, email }) => {
   const t = await setup(email);
   const { threadId } = await t.owner.mutation(api.scout.chats.startProductChat, {
+    selection: { engine: "agents_api", model: "gpt-5.6-luna" },
     product: { kind },
     scoutId: t.scoutId,
     prompt: "  Try the game with me.  ",
@@ -117,6 +118,7 @@ test.each([
   expect(await t.backend.query(api.scout.activity.get, { threadId })).toBeNull();
   await expect(
     t.owner.mutation(api.scout.chats.startProductChat, {
+      selection: { engine: "agents_api", model: "gpt-5.6-luna" },
       product: { kind },
       scoutId: t.scoutId,
       prompt: "Second task",
@@ -133,6 +135,7 @@ test.each([true, false])(
     const prompt =
       "Check sign-up. Compare https://other.com and https://another.com.\n  Keep this indentation.";
     const { threadId } = await t.owner.mutation(api.scout.chats.startProductChat, {
+      selection: { engine: "agents_api", model: "gpt-5.6-luna" },
       product: { kind: "review", site: " EXAMPLE.COM " },
       scoutId: t.scoutId,
       prompt,
@@ -253,6 +256,7 @@ test.each(["missing.example", "example.com", "https://example.com/path", ""])(
     await seedSite(t, t.otherId);
     await expect(
       t.owner.mutation(api.scout.chats.startProductChat, {
+        selection: { engine: "agents_api", model: "gpt-5.6-luna" },
         product: { kind: "review", site: taskSite },
         scoutId: t.scoutId,
         prompt: "Check sign-up.",
@@ -268,6 +272,7 @@ test("a selected site still requires a task and cannot be passed to Play", async
   await seedSite(t);
   await expect(
     t.owner.mutation(api.scout.chats.startProductChat, {
+      selection: { engine: "agents_api", model: "gpt-5.6-luna" },
       product: { kind: "review", site: "example.com" },
       scoutId: t.scoutId,
       prompt: "   ",
@@ -276,6 +281,7 @@ test("a selected site still requires a task and cannot be passed to Play", async
   ).rejects.toThrow("Enter a task for this site");
   await expect(
     t.owner.mutation(api.scout.chats.startProductChat, {
+      selection: { engine: "agents_api", model: "gpt-5.6-luna" },
       // @ts-expect-error Exercise the runtime validator with an unsupported Play site selection.
       product: { kind: "play", site: "example.com" },
       scoutId: t.scoutId,
@@ -331,6 +337,7 @@ test.each(["review", "play"] as const)(
     await t.backend.run((ctx) => ctx.db.patch(t.userId, { isApproved: false }));
     await expect(
       t.owner.mutation(api.scout.chats.startProductChat, {
+        selection: { engine: "agents_api", model: "gpt-5.6-luna" },
         product: { kind },
         scoutId: t.scoutId,
         prompt: "Start a task",

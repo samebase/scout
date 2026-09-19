@@ -207,15 +207,18 @@ test("task preferences belong to the signed-in account and independent changes p
     backend.mutation(api.accounts.setTaskPreferences, { lastTaskEngine: "convex_agent" }),
   ).rejects.toThrow("Not authorized");
   await member.mutation(api.accounts.setTaskPreferences, { lastTaskEngine: "convex_agent" });
+  await member.mutation(api.accounts.setTaskPreferences, { lastConvexModel: "qwen/qwen3.7-flash" });
   await member.mutation(api.accounts.setTaskPreferences, { lastScoutId: scoutId });
   expect(await member.query(api.accounts.taskPreferences, {})).toEqual({
     lastTaskEngine: "convex_agent",
+    lastConvexModel: "qwen/qwen3.7-flash",
     lastScoutId: scoutId,
   });
   expect(await admin.query(api.accounts.taskPreferences, {})).toEqual({});
   await member.mutation(api.accounts.setTaskPreferences, { lastTaskEngine: "agents_api" });
   expect(await backend.run((ctx) => ctx.db.get(memberId))).toMatchObject({
     lastTaskEngine: "agents_api",
+    lastConvexModel: "qwen/qwen3.7-flash",
     lastScoutId: scoutId,
   });
   await backend.run((ctx) => ctx.db.patch(scoutId, { status: "disabled" }));

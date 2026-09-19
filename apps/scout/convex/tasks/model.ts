@@ -4,7 +4,7 @@ import { agentsApiUsageValidator } from "./cost";
 import { creditFailureCodeValidator } from "../creditsModel";
 import { taskFailureDiagnosticValidator } from "../../shared/taskFailure";
 
-export const taskEngine = v.union(v.literal("agents_api"), v.literal("convex_agent"));
+export { taskEngine } from "../../shared/taskModels";
 
 export const handoffContext = v.object({
   message: v.string(),

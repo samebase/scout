@@ -345,7 +345,7 @@ test("a site link opens the shared composer without submitting and sends the sel
     scoutId: "scout-2",
     prompt: "Check the sign-up flow.",
     visibility: "private",
-    engine: "agents_api",
+    selection: { engine: "agents_api", model: "gpt-5.6-luna" },
   });
   act(() => router.history.back());
   expect(await screen.findByRole("button", { name: "Remove example.com from task" })).toBeTruthy();
@@ -359,11 +359,11 @@ test("the composer restores saved choices and saves picker changes before any ta
   });
   await openPlay();
   expect(screen.getByRole("combobox", { name: "Your Scout" }).textContent).toContain("Moss");
-  expect(screen.getByRole("combobox", { name: "Task engine" }).textContent).toContain(
+  expect(screen.getByRole("combobox", { name: "Task model" }).textContent).toContain(
     "Luna - Convex",
   );
   const user = userEvent.setup();
-  await user.click(screen.getByRole("combobox", { name: "Task engine" }));
+  await user.click(screen.getByRole("combobox", { name: "Task model" }));
   await user.click(screen.getByRole("option", { name: "Luna - Agents API" }));
   await user.click(screen.getByRole("combobox", { name: "Your Scout" }));
   await user.click(screen.getByRole("option", { name: "Pip" }));
@@ -375,8 +375,50 @@ test("the composer restores saved choices and saves picker changes before any ta
   cleanup();
   await openPlay();
   expect(screen.getByRole("combobox", { name: "Your Scout" }).textContent).toContain("Pip");
-  expect(screen.getByRole("combobox", { name: "Task engine" }).textContent).toContain(
+  expect(screen.getByRole("combobox", { name: "Task model" }).textContent).toContain(
     "Luna - Agents API",
+  );
+});
+
+test.each([
+  { path: "/play", kind: "play", label: "Qwen 3.7 Flash", model: "qwen/qwen3.7-flash" },
+  {
+    path: "/play",
+    kind: "play",
+    label: "DeepSeek V4 Flash",
+    model: "deepseek/deepseek-v4-flash-0731",
+  },
+  { path: "/", kind: "review", label: "Qwen 3.7 Flash", model: "qwen/qwen3.7-flash" },
+  {
+    path: "/",
+    kind: "review",
+    label: "DeepSeek V4 Flash",
+    model: "deepseek/deepseek-v4-flash-0731",
+  },
+])("remembers $label and starts $kind with that model", async ({ path, kind, label, model }) => {
+  await openPlay(path);
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("combobox", { name: "Task model" }));
+  await user.click(screen.getByRole("option", { name: label }));
+  expect(remote.savePreferences).toHaveBeenCalledWith({
+    lastTaskEngine: "convex_agent",
+    lastConvexModel: model,
+  });
+  cleanup();
+  await openPlay(path);
+  expect(screen.getByRole("combobox", { name: "Task model" }).textContent).toContain(label);
+  fireEvent.change(screen.getByLabelText("Message Scout"), {
+    target: { value: "Try example.com" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+  await waitFor(() =>
+    expect(remote.createThread).toHaveBeenCalledWith({
+      product: { kind },
+      scoutId: "scout-1",
+      prompt: "Try example.com",
+      visibility: kind === "play" ? "private" : "public",
+      selection: { engine: "convex_agent", model },
+    }),
   );
 });
 
@@ -412,7 +454,7 @@ test("site selection survives feed filters and removal keeps the draft without a
       scoutId: "scout-1",
       prompt: "Check the sign-up flow.",
       visibility: "public",
-      engine: "agents_api",
+      selection: { engine: "agents_api", model: "gpt-5.6-luna" },
     }),
   );
 });
@@ -2084,7 +2126,7 @@ describe("Play invitation", () => {
         scoutId: "scout-1",
         prompt: "Review example.com",
         visibility: "public",
-        engine: "agents_api",
+        selection: { engine: "agents_api", model: "gpt-5.6-luna" },
       }),
     );
     await waitFor(() => expect(router.state.location.pathname).toBe("/tasks/game-thread"));
@@ -2111,7 +2153,7 @@ describe("Play invitation", () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole("combobox", { name: "Visibility" }));
     await user.click(screen.getByRole("option", { name: "Public" }));
-    await user.click(screen.getByRole("combobox", { name: "Task engine" }));
+    await user.click(screen.getByRole("combobox", { name: "Task model" }));
     await user.click(screen.getByRole("option", { name: "Luna - Convex" }));
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
     await waitFor(() =>
@@ -2120,7 +2162,7 @@ describe("Play invitation", () => {
         scoutId: "scout-1",
         prompt: invitation,
         visibility: "public",
-        engine: "convex_agent",
+        selection: { engine: "convex_agent", model: "gpt-5.6-luna" },
       }),
     );
     expect(
@@ -2229,7 +2271,7 @@ describe("Play invitation", () => {
       scoutId: "scout-2",
       visibility: "private",
       prompt: invitation,
-      engine: "agents_api",
+      selection: { engine: "agents_api", model: "gpt-5.6-luna" },
     });
     expect(remote.sendManaged).not.toHaveBeenCalled();
     expect(await screen.findByRole("region", { name: "Conversation with Scout" })).toBeTruthy();
@@ -2285,7 +2327,7 @@ describe("Play invitation", () => {
         scoutId: "scout-1",
         visibility: "private",
         prompt: "Find us a cooperative game for tomorrow.",
-        engine: "agents_api",
+        selection: { engine: "agents_api", model: "gpt-5.6-luna" },
       }),
     );
   });

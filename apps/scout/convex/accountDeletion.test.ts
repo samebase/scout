@@ -168,6 +168,7 @@ test("account deletion stops a managed Review before deleting the owner", async 
   const { backend, viewer, userId, scoutId } = await setup("review-deletion@example.test", true);
   await viewer.mutation(api.accounts.acceptTerms, {});
   const { threadId } = await viewer.mutation(api.scout.chats.startProductChat, {
+    selection: { engine: "agents_api", model: "gpt-5.6-luna" },
     product: { kind: "review" },
     scoutId,
     prompt: "Try a product",

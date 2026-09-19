@@ -1,10 +1,13 @@
 # Shared tasks and execution engines
 
-Open `/agents` with admin access. Choose a Scout, an execution engine, and a task.
-Both OpenAI Agents API and the Convex Agent component use `gpt-5.6-luna` with maximum
-reasoning effort. The engine is fixed for the lifetime of a task.
+Open `/agents` with admin access. Choose a Scout, a model, and a task.
+Luna runs through OpenAI Agents API or Convex Agent with maximum reasoning effort.
+Qwen 3.7 Flash and DeepSeek V4 Flash run through Convex Agent and Convex AI Gateway.
+The model and engine are fixed for the lifetime of a task.
 
-Member Review and Play offer Luna through Convex or Agents API, and their tasks also appear in `/agents`. Admins can
+Member Review and Play offer the same model choices and remember the selected Scout,
+engine, and Convex model. New accounts default to Luna through Agents API.
+Their tasks also appear in `/agents`. Admins can
 inspect all sessions, including transcripts, cost, live view, and replay. Only the
 owner can send, stop, resume, or control the live browser. The list loads older
 sessions through pagination. `/agents` replaces the separate Lab `/chats` inspector.
@@ -112,6 +115,13 @@ Use Refresh in Agents to check the current turn again. If an older turn exhauste
 three checks after a follow-up started, inspect the failed refresh job and rerun its
 captured arguments once provider usage is available. There is no reservation, settlement
 queue, or automatic reconciliation. Old sessions without a billing flag remain free.
+
+## Restored-model verification, September 19, 2026
+
+On an isolated development deployment, Qwen 3.7 Flash and DeepSeek V4 Flash each
+streamed a call using the shared account-recording schema, recalled its synthetic
+result in a follow-up, and returned per-step Gateway cost. The callback used a fixture;
+this verified provider/tool compatibility without creating an external account.
 
 ## Shared-engine verification, September 18, 2026
 

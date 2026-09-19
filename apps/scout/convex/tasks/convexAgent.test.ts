@@ -2,6 +2,7 @@
 import { createHash } from "node:crypto";
 import type { LanguageModelV4, LanguageModelV4StreamPart } from "@ai-sdk/provider";
 import agentTest from "@convex-dev/agent/test";
+import { convexGateway } from "@convex-dev/ai-sdk-provider";
 import { saveMessage, type MessageDoc } from "@convex-dev/agent";
 import { tool } from "ai";
 import { convexTest } from "convex-test";
@@ -69,6 +70,7 @@ beforeEach(() => {
   vi.stubEnv("FIRECRAWL_API_KEY", "test-key");
   provider.stream.mockReset();
   provider.generate.mockReset();
+  vi.mocked(convexGateway).mockClear();
   execute.mockClear();
   countItems.mockClear();
   recordAccount.mockClear();
@@ -223,60 +225,67 @@ it("records captured paid generations once even after the session starts a free 
   expect((await task.session())?.modelUsageIncomplete).toBe(true);
 });
 
-it("runs one model step, executes the shared tool separately, and projects stable common items", async () => {
-  const task = await setup();
-  provider.stream.mockResolvedValueOnce(
-    streamed(
-      [
-        { type: "reasoning-start", id: "r" },
-        { type: "reasoning-delta", id: "r", delta: "Inspect first." },
-        { type: "reasoning-end", id: "r" },
-        {
-          type: "tool-call",
-          toolCallId: "read-1",
-          toolName: "browser_read",
-          input: JSON.stringify({ value: "Page evidence" }),
-        },
-      ],
-      "tool-calls",
-    ),
-  );
-  provider.stream.mockResolvedValueOnce(textStream("Verified the product."));
-  expect(await task.advance()).toBe(true);
-  expect(provider.stream).toHaveBeenCalledTimes(1);
-  expect(execute).not.toHaveBeenCalled();
-  expect(await task.advance()).toBe(true);
-  expect(execute).toHaveBeenCalledTimes(1);
-  expect(provider.stream).toHaveBeenCalledTimes(1);
-  expect(await task.advance()).toBe(true);
-  expect(await task.advance()).toBe(false);
-  const session = await task.session();
-  expect(session).toMatchObject({
-    active: false,
-    state: { kind: "idle" },
-    usage: { inputTokens: 200, outputTokens: 60, cachedInputTokens: 40 },
-    reportedModelUsd: 0.004,
-  });
-  const items = await task.items();
-  expect(items.filter((item) => item.kind === "tool_call")).toHaveLength(1);
-  expect(items.filter((item) => item.kind === "assistant")).toMatchObject([
-    { text: "Verified the product.", complete: true },
-  ]);
-  expect(provider.stream.mock.calls[1][0].prompt).toEqual(
-    expect.arrayContaining([expect.objectContaining({ role: "tool" })]),
-  );
-  expect(provider.stream.mock.calls[0][0].providerOptions).toEqual({
-    convexGateway: { reasoningEffort: "max" },
-  });
-  if (!session?.providerId) throw new Error("Thread missing");
-  const messages = await task.backend.query(components.agent.messages.listMessagesByThreadId, {
-    threadId: session.providerId,
-    order: "asc",
-    paginationOpts: { cursor: null, numItems: 20 },
-  });
-  expect(messages.page.filter((message) => message.usage)).toHaveLength(2);
-  expect(accumulatedUsage(messages.page).usage.costUsd).toBe(0.004);
-});
+it.each(["gpt-5.6-luna", "qwen/qwen3.7-flash", "deepseek/deepseek-v4-flash-0731"])(
+  "%s executes shared tools and retains its transcript and reported cost",
+  async (model) => {
+    const task = await setup();
+    await task.backend.run((ctx) => ctx.db.patch(task.sessionId, { model }));
+    provider.stream.mockResolvedValueOnce(
+      streamed(
+        [
+          { type: "reasoning-start", id: "r" },
+          { type: "reasoning-delta", id: "r", delta: "Inspect first." },
+          { type: "reasoning-end", id: "r" },
+          {
+            type: "tool-call",
+            toolCallId: "read-1",
+            toolName: "browser_read",
+            input: JSON.stringify({ value: "Page evidence" }),
+          },
+        ],
+        "tool-calls",
+      ),
+    );
+    provider.stream.mockResolvedValueOnce(textStream("Verified the product."));
+    expect(await task.advance()).toBe(true);
+    expect(provider.stream).toHaveBeenCalledTimes(1);
+    expect(convexGateway).toHaveBeenCalledWith(
+      model === "gpt-5.6-luna" ? "openai/gpt-5.6-luna" : model,
+    );
+    expect(execute).not.toHaveBeenCalled();
+    expect(await task.advance()).toBe(true);
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(provider.stream).toHaveBeenCalledTimes(1);
+    expect(await task.advance()).toBe(true);
+    expect(await task.advance()).toBe(false);
+    const session = await task.session();
+    expect(session).toMatchObject({
+      active: false,
+      state: { kind: "idle" },
+      usage: { inputTokens: 200, outputTokens: 60, cachedInputTokens: 40 },
+      reportedModelUsd: 0.004,
+    });
+    const items = await task.items();
+    expect(items.filter((item) => item.kind === "tool_call")).toHaveLength(1);
+    expect(items.filter((item) => item.kind === "assistant")).toMatchObject([
+      { text: "Verified the product.", complete: true },
+    ]);
+    expect(provider.stream.mock.calls[1][0].prompt).toEqual(
+      expect.arrayContaining([expect.objectContaining({ role: "tool" })]),
+    );
+    expect(provider.stream.mock.calls[0][0].providerOptions).toEqual(
+      model === "gpt-5.6-luna" ? { convexGateway: { reasoningEffort: "max" } } : undefined,
+    );
+    if (!session?.providerId) throw new Error("Thread missing");
+    const messages = await task.backend.query(components.agent.messages.listMessagesByThreadId, {
+      threadId: session.providerId,
+      order: "asc",
+      paginationOpts: { cursor: null, numItems: 20 },
+    });
+    expect(messages.page.filter((message) => message.usage)).toHaveLength(2);
+    expect(accumulatedUsage(messages.page).usage.costUsd).toBe(0.004);
+  },
+);
 
 it.each(["managed_password", "passwordless", "oauth"] as const)(
   "persists and executes a generated %s account recording with the shared tool",

@@ -2,6 +2,7 @@ import { authTables } from "@convex-dev/auth/server";
 import { sessionRecordingConsent } from "./sessionRecordingModel";
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { convexTaskModel } from "../shared/taskModels";
 import { creditWalletValidator, creditEntryValidator, creditUsageInput } from "./creditsModel";
 import { creditPurchaseValidator } from "./creditPurchasesModel";
 import { requestCheckRecord } from "./tasks/requestCheckModel";
@@ -78,6 +79,7 @@ export const accountObservationValidator = v.union(
 
 export const taskPreferences = v.object({
   lastTaskEngine: v.optional(taskEngine),
+  lastConvexModel: v.optional(convexTaskModel),
   lastScoutId: v.optional(v.id("scouts")),
 });
 

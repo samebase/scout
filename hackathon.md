@@ -1612,9 +1612,15 @@ Convex caches the counts and check time after a read-only browser inspection, ke
 summary when refresh fails (`apps/scout/convex/scout/browserProfiles.ts`,
 `apps/scout/src/components/scout-browser-profile.tsx`).
 
-### 2026-09-19 - working tree - v258
+### 2026-09-19 - 93680d1 - v258
 
 Added PostHog pageviews with account attribution and optional session recordings.
 Signup and Settings save the recording choice in Convex; withdrawal and sign-out stop capture.
 Recordings mask text and inputs and exclude embedded browsers and account pages
 (`apps/scout/convex/accounts.ts`, `apps/scout/src/lib/posthog.ts`).
+
+### 2026-09-19 - working tree - v259
+
+Restored Qwen 3.7 Flash and DeepSeek V4 Flash in Review, Play, and the admin task picker.
+Both run through the shared Convex task engine, with the selected model retained for the task
+and remembered for later member tasks (`apps/scout/shared/taskModels.ts`, `apps/scout/convex/tasks/`).
