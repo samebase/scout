@@ -1,6 +1,6 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import { Link, Navigate, createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Authenticated, AuthLoading, Unauthenticated } from "convex/react";
+import { Authenticated, Unauthenticated } from "convex/react";
 import { LogOutIcon, ShieldCheckIcon } from "lucide-react";
 import { useState } from "react";
 import { z } from "zod";
@@ -31,9 +31,6 @@ function SettingsPage() {
         </p>
       </header>
 
-      <AuthLoading>
-        <p className="mt-8 text-muted-foreground text-sm">Loading account...</p>
-      </AuthLoading>
       <Unauthenticated>
         <Navigate to="/" replace />
       </Unauthenticated>

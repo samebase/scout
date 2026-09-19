@@ -20,12 +20,7 @@ function ProtectedRouteOutlet({ policies }: { policies: AccessKey[] }) {
   if (viewer?.kind === "deleting" || viewer?.kind === "deleted")
     return <Navigate to="/account-deletion" replace />;
   if (viewer?.kind === "terms_required") return <TermsAcceptance />;
-  if (!viewer)
-    return (
-      <main className="route-page" role="status">
-        Loading account…
-      </main>
-    );
+  if (!viewer) return <main className="route-page" aria-busy="true" />;
   if (viewer.kind === "anonymous")
     return (
       <main className="route-page max-w-md">

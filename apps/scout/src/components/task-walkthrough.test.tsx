@@ -218,7 +218,9 @@ test("keeps the walkthrough scroll position through Next, delayed image loading,
   scroller.scrollTop = 240;
 
   fireEvent.click(screen.getByRole("button", { name: "Next" }));
-  expect(screen.getByText("Loading screenshot…")).toBeTruthy();
+  const imageFrame = scroller.querySelector<HTMLElement>("[aria-busy='true']");
+  expect(imageFrame?.style.aspectRatio).toBe("1280 / 1800");
+  expect(imageFrame?.textContent).toBe("");
   expect(scroller.scrollTop).toBe(240);
   await act(async () =>
     resolveImage({
@@ -226,7 +228,10 @@ test("keeps the walkthrough scroll position through Next, delayed image loading,
       expiresAtMs: Date.now() + 60_000,
     }),
   );
-  expect(screen.getByRole("img", { name: "An empty board after undo" })).toBeTruthy();
+  expect(screen.getByRole("img", { name: "An empty board after undo" }).parentElement).toBe(
+    imageFrame,
+  );
+  expect(imageFrame?.style.aspectRatio).toBe("1280 / 1800");
   expect(scroller.scrollTop).toBe(240);
 
   fireEvent.click(screen.getByRole("button", { name: "Previous" }));
@@ -272,7 +277,8 @@ test("shares an in-flight preload when Next is clicked before its URL arrives", 
   fireEvent.load(await screen.findByRole("img", { name: "A piece in the board" }));
   await waitFor(() => expect(remote.imageUrl).toHaveBeenCalledTimes(2));
   fireEvent.click(screen.getByRole("button", { name: "Next" }));
-  expect(screen.getByText("Loading screenshot…")).toBeTruthy();
+  expect(screen.queryByRole("img", { name: "An empty board after undo" })).toBeNull();
+  expect(screen.queryByText(/Loading/)).toBeNull();
   expect(remote.imageUrl).toHaveBeenCalledTimes(2);
   await act(async () =>
     resolveImage({
@@ -356,7 +362,7 @@ test("shows notes in capture creation order while the final walkthrough is absen
 test("distinguishes loading, access denial, and an empty older task", () => {
   remote.results.set(firstSession, undefined);
   render(<TaskWalkthrough sessionId={firstSession} />);
-  expect(screen.getByRole("status").textContent).toContain("Loading walkthrough");
+  expect(screen.getByRole("region", { name: "Task walkthrough", busy: true }).textContent).toBe("");
   publish(firstSession, null);
   expect(screen.getByRole("heading", { name: "Walkthrough unavailable" })).toBeTruthy();
   publish(firstSession, { walkthrough: null, captures: [] });
@@ -373,7 +379,7 @@ test("a task switch removes the old image immediately and resets navigation", as
   await screen.findByRole("img", { name: "An empty board after undo" });
   view.rerender(<TaskWalkthrough sessionId={secondSession} />);
   expect(screen.queryByRole("img")).toBeNull();
-  expect(screen.getByRole("status").textContent).toContain("Loading walkthrough");
+  expect(screen.getByRole("region", { name: "Task walkthrough", busy: true }).textContent).toBe("");
   publish(secondSession, report());
   expect(await screen.findByRole("img", { name: "A piece in the board" })).toBeTruthy();
   expect(screen.getByText("1 of 2")).toBeTruthy();

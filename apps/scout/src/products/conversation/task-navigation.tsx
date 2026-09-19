@@ -48,7 +48,11 @@ export function TaskNavigation({
         </Link>
       }
       content={
-        <nav aria-label={`Tasks for ${site}`} className="p-3">
+        <nav
+          aria-label={`Tasks for ${site}`}
+          aria-busy={tasks.status === "LoadingFirstPage"}
+          className="p-3"
+        >
           <ul className="space-y-1">
             {!currentIsLoaded && (
               <TaskLink
@@ -74,11 +78,6 @@ export function TaskNavigation({
               />
             ))}
           </ul>
-          {tasks.status === "LoadingFirstPage" && (
-            <p role="status" className="px-3 py-4 text-sm text-muted-foreground">
-              Loading tasks…
-            </p>
-          )}
           <LoadOnScroll status={tasks.status} onLoad={() => tasks.loadMore(10)} />
         </nav>
       }

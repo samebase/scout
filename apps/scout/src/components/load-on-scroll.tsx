@@ -19,13 +19,5 @@ export function LoadOnScroll({ status, onLoad }: { status: PaginationStatus; onL
   }, [status, onLoad]);
 
   if (status === "Exhausted") return null;
-  return (
-    <div ref={sentinel} className="flex min-h-12 items-center justify-center">
-      {status === "LoadingMore" && (
-        <span role="status" className="text-sm text-muted-foreground">
-          Loading…
-        </span>
-      )}
-    </div>
-  );
+  return <div ref={sentinel} className="min-h-12" aria-busy={status === "LoadingMore"} />;
 }

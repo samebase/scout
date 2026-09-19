@@ -70,7 +70,7 @@ function SessionWalkthrough({ sessionId }: { sessionId: Id<"agentsApiSessions"> 
   }
 
   if (result === undefined) {
-    return <WalkthroughNotice title="Loading walkthrough…" loading />;
+    return <section aria-label="Task walkthrough" aria-busy="true" className="h-full min-h-0" />;
   }
   if (result === null) {
     return (
@@ -248,15 +248,7 @@ function PreloadScreenshot({
   ) : null;
 }
 
-function WalkthroughNotice({
-  title,
-  loading = false,
-  children,
-}: {
-  title: string;
-  loading?: boolean;
-  children?: ReactNode;
-}) {
+function WalkthroughNotice({ title, children }: { title: string; children?: ReactNode }) {
   return (
     <section
       aria-label="Task walkthrough"
@@ -264,9 +256,7 @@ function WalkthroughNotice({
     >
       <div className="max-w-sm space-y-3 text-center">
         <ImageIcon className="mx-auto size-6 text-muted-foreground" aria-hidden="true" />
-        <h2 className="text-base font-semibold" role={loading ? "status" : undefined}>
-          {title}
-        </h2>
+        <h2 className="text-base font-semibold">{title}</h2>
         {children && <p className="text-sm leading-relaxed text-muted-foreground">{children}</p>}
       </div>
     </section>
@@ -416,28 +406,24 @@ function OriginalImage({
         onError={refreshAfterError}
         className="block h-auto w-full @2xl/walkthrough:h-full @2xl/walkthrough:min-h-0 @2xl/walkthrough:object-contain"
       />
-    ) : (
+    ) : state.kind === "failed" ? (
       <div className="flex min-h-40 flex-col items-center justify-center gap-3 p-6 text-center text-sm text-muted-foreground">
-        <p role={state.kind === "failed" ? "alert" : "status"}>
-          {state.kind === "failed" ? state.message : "Loading screenshot…"}
-        </p>
-        {state.kind === "failed" && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              imageErrors.current = 0;
-              refreshing.current = true;
-              imageUrls.invalidate(screenshotId);
-              setState({ kind: "loading" });
-              setAttempt((value) => value + 1);
-            }}
-          >
-            Try again
-          </Button>
-        )}
+        <p role="alert">{state.message}</p>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            imageErrors.current = 0;
+            refreshing.current = true;
+            imageUrls.invalidate(screenshotId);
+            setState({ kind: "loading" });
+            setAttempt((value) => value + 1);
+          }}
+        >
+          Try again
+        </Button>
       </div>
-    );
+    ) : null;
 
   return (
     <Dialog open={expanded} onOpenChange={setExpanded}>
@@ -468,6 +454,7 @@ function OriginalImage({
           </DialogTrigger>
         </figcaption>
         <div
+          aria-busy={state.kind === "loading"}
           style={{ aspectRatio: `${metadata.width} / ${metadata.height}` }}
           className="overflow-hidden rounded-lg border bg-muted/20 @2xl/walkthrough:flex @2xl/walkthrough:aspect-auto! @2xl/walkthrough:min-h-0 @2xl/walkthrough:flex-1 @2xl/walkthrough:items-center @2xl/walkthrough:justify-center"
         >

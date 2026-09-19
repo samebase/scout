@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-19T14:07:03Z
+- **Last updated:** 2026-09-19T14:38:48Z
 
 ## Log
 
@@ -1568,3 +1568,5 @@ Public pages render without waiting for account loading or terms acceptance.
 The homepage, About, Privacy, and Terms are prerendered using the restored Samebase
 SPA + SSG setup, with matching Cloudflare and Convex static-hosting paths
 (`apps/scout/prerender.config.ts`, `apps/scout/src/components/route-access.tsx`).
+Routine data loads stay quiet, with stable pagination labels and reserved screenshot space
+(`apps/scout/src/components/tool-activity.tsx`, `apps/scout/src/products/conversation/page.tsx`).

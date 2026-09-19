@@ -28,12 +28,10 @@ export function Transcript({ sessionId }: { sessionId: Session["_id"] }) {
     <MessageScrollerProvider>
       <MessageScroller>
         <MessageScrollerViewport aria-label="Session transcript" tabIndex={0}>
-          <MessageScrollerContent className="gap-2 p-4 sm:p-6">
-            {status === "LoadingFirstPage" && (
-              <p role="status" className="text-sm text-muted-foreground">
-                Loading messages…
-              </p>
-            )}
+          <MessageScrollerContent
+            className="gap-2 p-4 sm:p-6"
+            aria-busy={status === "LoadingFirstPage" || status === "LoadingMore"}
+          >
             {(status === "CanLoadMore" || status === "LoadingMore") && (
               <Button
                 variant="ghost"
@@ -41,7 +39,7 @@ export function Transcript({ sessionId }: { sessionId: Session["_id"] }) {
                 disabled={status === "LoadingMore"}
                 onClick={() => loadMore(50)}
               >
-                {status === "LoadingMore" ? "Loading…" : "Load more"}
+                Load more
               </Button>
             )}
             {items.map((item) => (

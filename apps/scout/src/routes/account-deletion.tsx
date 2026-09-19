@@ -82,7 +82,7 @@ function AccountDeletionPage() {
             )}
           </>
         ) : isLoading || (isAuthenticated && status === undefined) ? (
-          <p role="status">Loading account…</p>
+          <div className="min-h-40" aria-busy="true" />
         ) : !isAuthenticated || status?.kind === "signed_out" ? (
           <p>
             <Link to="/settings" className="underline">

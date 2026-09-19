@@ -77,7 +77,7 @@ function ScoutsIndexPage() {
         </div>
         <div className="flex items-center gap-3 sm:pb-1">
           <p className="sr-only" aria-live="polite">
-            {scouts === undefined ? "Loading scouts..." : `Showing ${scouts.length}`}
+            {scouts !== undefined && `Showing ${scouts.length}`}
           </p>
           {canManage && (
             <Button
@@ -106,9 +106,7 @@ function ScoutsIndexPage() {
       ) : null}
 
       {scouts === undefined ? (
-        <p className="surface-panel py-16 text-center text-sm text-muted-foreground" role="status">
-          Loading scouts...
-        </p>
+        <div className="min-h-40" aria-busy="true" />
       ) : scouts.length === 0 ? (
         <div className="surface-panel border-dashed px-5 py-16 text-center">
           <p className="text-base font-semibold">No Scouts yet</p>

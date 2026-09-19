@@ -134,7 +134,8 @@ function ReplayStatus({
   onRetry: () => void;
   state: Exclude<ReplayLoadState["kind"], "ready">;
 }) {
-  const waiting = state === "loading" || state === "processing";
+  if (state === "loading") return <div className="min-h-40 flex-1" aria-busy="true" />;
+  const waiting = state === "processing";
   const message = waiting
     ? "Preparing replay"
     : state === "unavailable"
@@ -332,15 +333,13 @@ function BrowserReplayPlayer({
       <div
         className="flex items-center justify-center bg-neutral-950 px-4 text-center"
         style={{ aspectRatio: `${replay.viewport.width} / ${replay.viewport.height}` }}
+        aria-busy={playlistState.kind === "loading"}
       >
-        <p className="flex items-center gap-2 text-sm text-neutral-300" role="status">
-          {playlistState.kind === "loading" ? (
-            <LoaderCircleIcon className="size-4 animate-spin" aria-hidden="true" />
-          ) : null}
-          {playlistState.kind === "loading"
-            ? `Loading ${timeline.pages.length} recorded ${timeline.pages.length === 1 ? "tab" : "tabs"}`
-            : "The recorded tabs could not be loaded."}
-        </p>
+        {playlistState.kind !== "loading" && (
+          <p className="text-sm text-neutral-300" role="alert">
+            The recorded tabs could not be loaded.
+          </p>
+        )}
       </div>
     );
   }

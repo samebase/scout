@@ -114,6 +114,11 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
 
 ## Code guardrails
 
+- Ordinary data loading stays visually quiet. Keep the page shell, navigation, existing content,
+  and pagination labels mounted; use `aria-busy` instead of loading copy or spinners. Reserve media
+  dimensions while URLs and images load. Show empty states only after the query completes, and keep
+  progress feedback for user actions and background work such as starting a task or preparing a replay.
+
 - Use TanStack Router `Link` and `navigate` for internal navigation. When switching a selected
   task or site, keep its surrounding layout and navigation mounted; put pending states inside
   the content pane and use `resetScroll={false}` for sibling links. Navigation tests must include

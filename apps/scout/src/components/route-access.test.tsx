@@ -184,7 +184,7 @@ async function open(path: string) {
 
 test("protected children wait for access and unmount on revocation", async () => {
   await open("/agents");
-  expect((await screen.findByRole("status")).textContent).toContain("Loading account");
+  expect((await screen.findByRole("main", { busy: true })).textContent).toBe("");
   expect(remote.lab).not.toHaveBeenCalled();
   setViewer("role_staff");
   expect(await screen.findByRole("heading", { name: "Agents contents" })).toBeTruthy();
@@ -237,7 +237,7 @@ test("account controls stay above credits and history opens on its own page", as
   expect(screen.queryByRole("list", { name: "Credit history" })).toBeNull();
   await user.click(screen.getByRole("link", { name: "View credit history" }));
   expect(await screen.findByRole("heading", { level: 1, name: "Credit history" })).toBeTruthy();
-  expect(screen.getByText("Loading history…")).toBeTruthy();
+  expect(screen.getByRole("region", { name: "Credit activity", busy: true }).textContent).toBe("");
   expect(screen.queryByRole("button", { name: "Sign out" })).toBeNull();
   await user.click(screen.getByRole("link", { name: "Back to Settings" }));
   expect(await screen.findByRole("button", { name: "Sign out" })).toBeTruthy();
