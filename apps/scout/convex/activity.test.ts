@@ -708,7 +708,7 @@ test("Review owners can resume handoffs, stop, and send follow-ups while Lab rem
   expect(sendMail).toHaveBeenCalledWith(
     expect.any(String),
     expect.objectContaining({
-      body: expect.stringContaining(`http://localhost:5173/tasks/${sessionId}`),
+      body: expect.stringContaining(`http://localhost:5173/handoff/${sessionId}#access=hh1_`),
     }),
   );
   expect(sendMail).toHaveBeenCalledWith(

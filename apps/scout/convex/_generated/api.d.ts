@@ -61,6 +61,7 @@ import type * as scout_lib_firecrawlCdpUrl from "../scout/lib/firecrawlCdpUrl.js
 import type * as scout_lib_firecrawlLiveView from "../scout/lib/firecrawlLiveView.js";
 import type * as scout_lib_firecrawlReplay from "../scout/lib/firecrawlReplay.js";
 import type * as scout_lib_firecrawlScreenshot from "../scout/lib/firecrawlScreenshot.js";
+import type * as scout_lib_humanHandoffAccess from "../scout/lib/humanHandoffAccess.js";
 import type * as scout_lib_humanHandoffUrl from "../scout/lib/humanHandoffUrl.js";
 import type * as scout_lib_redaction from "../scout/lib/redaction.js";
 import type * as scout_lib_runtimeTool from "../scout/lib/runtimeTool.js";
@@ -116,6 +117,8 @@ import type * as tasks_failure from "../tasks/failure.js";
 import type * as tasks_handoff from "../tasks/handoff.js";
 import type * as tasks_handoffEvidence from "../tasks/handoffEvidence.js";
 import type * as tasks_handoffEvidenceModel from "../tasks/handoffEvidenceModel.js";
+import type * as tasks_handoffModel from "../tasks/handoffModel.js";
+import type * as tasks_handoffRecords from "../tasks/handoffRecords.js";
 import type * as tasks_instructions from "../tasks/instructions.js";
 import type * as tasks_lifecycle from "../tasks/lifecycle.js";
 import type * as tasks_model from "../tasks/model.js";
@@ -201,6 +204,7 @@ declare const fullApi: ApiFromModules<{
   "scout/lib/firecrawlLiveView": typeof scout_lib_firecrawlLiveView;
   "scout/lib/firecrawlReplay": typeof scout_lib_firecrawlReplay;
   "scout/lib/firecrawlScreenshot": typeof scout_lib_firecrawlScreenshot;
+  "scout/lib/humanHandoffAccess": typeof scout_lib_humanHandoffAccess;
   "scout/lib/humanHandoffUrl": typeof scout_lib_humanHandoffUrl;
   "scout/lib/redaction": typeof scout_lib_redaction;
   "scout/lib/runtimeTool": typeof scout_lib_runtimeTool;
@@ -256,6 +260,8 @@ declare const fullApi: ApiFromModules<{
   "tasks/handoff": typeof tasks_handoff;
   "tasks/handoffEvidence": typeof tasks_handoffEvidence;
   "tasks/handoffEvidenceModel": typeof tasks_handoffEvidenceModel;
+  "tasks/handoffModel": typeof tasks_handoffModel;
+  "tasks/handoffRecords": typeof tasks_handoffRecords;
   "tasks/instructions": typeof tasks_instructions;
   "tasks/lifecycle": typeof tasks_lifecycle;
   "tasks/model": typeof tasks_model;

@@ -535,6 +535,7 @@ export const send = mutation({
       active: true,
       state: { kind: "running" },
       cleanupJobId: undefined,
+      handoffAccess: undefined,
     });
     await startWorkflow(ctx, session._id, { kind: "send", message });
     return null;
@@ -555,6 +556,7 @@ export const retryMessage = mutation({
       active: true,
       state: { kind: "running" },
       cleanupJobId: undefined,
+      handoffAccess: undefined,
     });
     await startWorkflow(ctx, session._id, {
       kind: "send",
@@ -592,57 +594,63 @@ export const messageDelivery = internalMutation({
   },
 });
 
+export async function resumeHandoff(
+  ctx: MutationCtx,
+  session: Doc<"agentsApiSessions">,
+  args: { sessionId: Id<"agentsApiSessions">; callId: string; turnId: string },
+): Promise<null> {
+  await requireSessionPermission(ctx, session);
+  if (
+    session.state.kind !== "waiting" ||
+    session.state.callId !== args.callId ||
+    session.state.turnId !== args.turnId
+  )
+    throw new ConvexError("Session is no longer waiting for this handoff");
+  if (session.state.expiresAt !== undefined && session.state.expiresAt <= Date.now()) {
+    await ctx.runMutation(internal.tasks.sessions.expireHandoff, {
+      ...args,
+      expiresAt: session.state.expiresAt,
+    });
+    return null;
+  }
+  if (!session.browser) throw new ConvexError("Handoff browser is not available");
+  const initial = await getInitialCheck(ctx, session._id);
+  if (!initial) throw new ConvexError("Original request check not found");
+  if ((await listChecks(ctx, session._id)).length >= MAX_SESSION_CHECKS)
+    throw new ConvexError("This session reached its check limit. Stop it and start a new session.");
+  const checkId = await ctx.db.insert("agentsApiRequestChecks", {
+    kind: "resume",
+    sessionId: session._id,
+    model: REQUEST_CHECK_MODEL,
+    prompt: initial.prompt,
+    handoff: {
+      callId: session.state.callId,
+      turnId: session.state.turnId,
+      message: session.state.message,
+      ...omitNullish({ expiresAt: session.state.expiresAt }),
+    },
+    providerSessionId: session.browser.providerSessionId,
+    evidence: null,
+    state: { kind: "pending" },
+  });
+  await ctx.db.patch(session._id, { state: { kind: "checking", checkId } });
+  await startWorkflow(ctx, session._id, { kind: "resume", checkId });
+  console.info("Task resume requested", {
+    sessionId: session._id,
+    checkId,
+    callId: args.callId,
+    userId: session.userId,
+  });
+  return null;
+}
+
 export const resume = mutation({
   access: "access_account",
   args: { sessionId: v.id("agentsApiSessions"), callId: v.string(), turnId: v.string() },
   returns: v.null(),
   handler: async (ctx, args): Promise<null> => {
     const session = await owned(ctx, args.sessionId, ctx.viewer.userId);
-    await requireSessionPermission(ctx, session);
-    if (
-      session.state.kind !== "waiting" ||
-      session.state.callId !== args.callId ||
-      session.state.turnId !== args.turnId
-    )
-      throw new ConvexError("Session is no longer waiting for this handoff");
-    if (session.state.expiresAt !== undefined && session.state.expiresAt <= Date.now()) {
-      await ctx.runMutation(internal.tasks.sessions.expireHandoff, {
-        ...args,
-        expiresAt: session.state.expiresAt,
-      });
-      return null;
-    }
-    if (!session.browser) throw new ConvexError("Handoff browser is not available");
-    const initial = await getInitialCheck(ctx, session._id);
-    if (!initial) throw new ConvexError("Original request check not found");
-    if ((await listChecks(ctx, session._id)).length >= MAX_SESSION_CHECKS)
-      throw new ConvexError(
-        "This session reached its check limit. Stop it and start a new session.",
-      );
-    const checkId = await ctx.db.insert("agentsApiRequestChecks", {
-      kind: "resume",
-      sessionId: session._id,
-      model: REQUEST_CHECK_MODEL,
-      prompt: initial.prompt,
-      handoff: {
-        callId: session.state.callId,
-        turnId: session.state.turnId,
-        message: session.state.message,
-        ...omitNullish({ expiresAt: session.state.expiresAt }),
-      },
-      providerSessionId: session.browser.providerSessionId,
-      evidence: null,
-      state: { kind: "pending" },
-    });
-    await ctx.db.patch(session._id, { state: { kind: "checking", checkId } });
-    await startWorkflow(ctx, session._id, { kind: "resume", checkId });
-    console.info("Task resume requested", {
-      sessionId: session._id,
-      checkId,
-      callId: args.callId,
-      userId: ctx.viewer.userId,
-    });
-    return null;
+    return await resumeHandoff(ctx, session, args);
   },
 });
 
@@ -694,7 +702,10 @@ export const enterHandoff = internalMutation({
     if (!session.browser?.interactiveLiveViewUrl)
       throw new Error("No interactive browser is available for handoff");
     const expiresAt = await browserHandoffDeadline(ctx, session);
-    await ctx.db.patch(sessionId, { state: { kind: "waiting", ...handoff, expiresAt } });
+    await ctx.db.patch(sessionId, {
+      state: { kind: "waiting", ...handoff, expiresAt },
+      handoffAccess: undefined,
+    });
     await ctx.scheduler.runAt(expiresAt, internal.tasks.sessions.expireHandoff, {
       sessionId,
       callId: handoff.callId,
@@ -741,6 +752,8 @@ export const handoffNotification = internalQuery({
       inboxId: scout.agentMail.inboxId,
       scoutName: scout.displayName,
       expiresAt: session.state.expiresAt ?? null,
+      turnId: session.state.turnId,
+      providerSessionId: session.browser?.providerSessionId ?? null,
     };
   },
 });

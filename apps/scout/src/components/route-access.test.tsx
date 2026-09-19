@@ -20,6 +20,7 @@ import { Route as ScoutsRoute } from "../routes/scouts";
 import { Route as PrivacyRoute } from "../routes/privacy";
 import { Route as TermsRoute } from "../routes/terms";
 import { Route as AboutRoute } from "../routes/about";
+import { Route as HandoffRoute } from "../routes/handoff.$sessionId";
 import { omitNullish } from "../../shared/omitNullish";
 import { TERMS_ACCEPTANCE_LABEL } from "../../shared/terms";
 import { ConvexError } from "convex/values";
@@ -141,6 +142,12 @@ async function open(path: string) {
       }),
       createRoute({
         getParentRoute: () => root,
+        path: "/handoff/$sessionId",
+        staticData: HandoffRoute.options.staticData,
+        component: () => <h1>Handoff browser</h1>,
+      }),
+      createRoute({
+        getParentRoute: () => root,
         path: "/privacy",
         staticData: PrivacyRoute.options.staticData,
         ...omitNullish({ component: PrivacyRoute.options.component }),
@@ -196,6 +203,25 @@ test("protected children wait for access and unmount on revocation", async () =>
   expect(screen.queryByRole("link", { name: "Agents" })).toBeNull();
   expect(screen.getByRole("link", { name: "Scouts" })).toBeTruthy();
   expect(screen.getByRole("link", { name: "Reviews" })).toBeTruthy();
+});
+
+test.each(["anonymous", "loading", "terms_required", "deleted"])(
+  "handoff opens for %s viewers without account or terms gating",
+  async (state) => {
+    if (state === "anonymous") remote.authenticated = false;
+    else if (state !== "loading") remote.values.set("viewer", { kind: state });
+    await open("/handoff/session");
+    expect(await screen.findByRole("heading", { name: "Handoff browser" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Review our terms" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Sign in to Scout" })).toBeNull();
+  },
+);
+
+test("the handoff exemption does not bypass terms on other public routes", async () => {
+  remote.values.set("viewer", { kind: "terms_required", userId: "account" });
+  await open("/tasks/thread");
+  expect(await screen.findByRole("heading", { name: "Review our terms" })).toBeTruthy();
+  expect(screen.queryByRole("heading", { name: "Review contents" })).toBeNull();
 });
 
 test("a direct Agents link never mounts restricted content for a member", async () => {

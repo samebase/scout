@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-19T14:38:48Z
+- **Last updated:** 2026-09-19T14:41:43Z
 
 ## Log
 
@@ -1562,7 +1562,7 @@ The count reads existing public or account site listings, includes sites beyond 
 and shows 1,000+ above the query limit (`apps/scout/convex/scout/sites.ts`,
 `apps/scout/src/components/site-filters.tsx`).
 
-### 2026-09-19 - working tree - v251
+### 2026-09-19 - cfd7385 - v251
 
 Public pages render without waiting for account loading or terms acceptance.
 The homepage, About, Privacy, and Terms are prerendered using the restored Samebase
@@ -1570,3 +1570,10 @@ SPA + SSG setup, with matching Cloudflare and Convex static-hosting paths
 (`apps/scout/prerender.config.ts`, `apps/scout/src/components/route-access.tsx`).
 Routine data loads stay quiet, with stable pagination labels and reserved screenshot space
 (`apps/scout/src/components/tool-activity.tsx`, `apps/scout/src/products/conversation/page.tsx`).
+
+### 2026-09-19 - working tree - v252
+
+Handoff emails open a dedicated browser-control page without requiring Scout sign-in.
+The link is limited to one handoff and its deadline, and both runtimes use the same Resume checks.
+The page shows rejected checks and task failures and removes controls when the handoff ends
+(`apps/scout/convex/tasks/handoff.ts`, `apps/scout/src/components/human-handoff-page.tsx`).
