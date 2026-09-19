@@ -15,7 +15,7 @@ import { canAccess, useViewerAccess } from "#lib/access";
 const searchSchema = z.object({ view: z.literal("register").optional().catch(undefined) });
 
 export const Route = createFileRoute("/scouts/")({
-  staticData: { access: "access_scout_view" },
+  staticData: { access: "access_public" },
   validateSearch: (search) => searchSchema.parse(search),
   component: ScoutsIndexPage,
 });
@@ -139,10 +139,12 @@ function ScoutsIndexPage() {
                   </div>
 
                   <dl className="mt-5 grid gap-4 text-sm sm:grid-cols-2">
-                    <div className="min-w-0">
-                      <dt className="text-muted-foreground text-xs">Email</dt>
-                      <dd className="mt-1 wrap-break-word">{scout.agentMail.address}</dd>
-                    </div>
+                    {scout.agentMail && (
+                      <div className="min-w-0">
+                        <dt className="text-muted-foreground text-xs">Email</dt>
+                        <dd className="mt-1 wrap-break-word">{scout.agentMail.address}</dd>
+                      </div>
+                    )}
                     {services.length > 0 ? (
                       <div className="min-w-0 sm:col-span-2">
                         <dt className="text-muted-foreground text-xs">Accounts</dt>

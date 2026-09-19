@@ -79,13 +79,11 @@ describe("Scout registry", () => {
     },
   );
 
-  it("rejects unauthenticated and non-admin access", async () => {
+  it("allows public reads while rejecting unauthenticated and non-admin registration", async () => {
     const backend = testBackend();
 
-    await expect(backend.query(scoutsApi["list"], {})).rejects.toThrow("Not authorized");
-    await expect(backend.query(scoutsApi["get"], { slug: "conrad" })).rejects.toThrow(
-      "Not authorized",
-    );
+    await expect(backend.query(scoutsApi["list"], {})).resolves.toEqual([]);
+    await expect(backend.query(scoutsApi["get"], { slug: "conrad" })).resolves.toBeNull();
     await expect(
       backend.action(scoutRegistrationApi["register"], scoutRegistrationFields),
     ).rejects.toThrow("Not authorized");
@@ -147,6 +145,13 @@ describe("Scout registry", () => {
       firecrawl: scoutRegistrationFields.firecrawl,
     });
     await expect(admin.query(scoutsApi["get"], { slug: "missing" })).resolves.toBeNull();
+    await expect(backend.query(api.scout.scouts.list, {})).resolves.toEqual([
+      { ...expectedScout, agentMail: null },
+    ]);
+    await expect(backend.query(api.scout.scouts.get, { slug: "conrad" })).resolves.toEqual({
+      ...expectedScout,
+      agentMail: null,
+    });
   });
 
   it("lets members read Scout identities while restricting provider resources and account controls", async () => {
@@ -183,10 +188,13 @@ describe("Scout registry", () => {
       member.action(api.scout.scoutRegistration.register, scoutRegistrationFields),
     ).rejects.toThrow("Not authorized");
     await backend.run((ctx) => ctx.db.patch(memberId, { isApproved: false }));
-    await expect(member.query(api.scout.scouts.list, {})).rejects.toThrow("Not authorized");
-    await expect(member.query(api.scout.scouts.get, { slug: "conrad" })).rejects.toThrow(
-      "Not authorized",
-    );
+    await expect(member.query(api.scout.scouts.list, {})).resolves.toEqual([
+      { ...expected, agentMail: null },
+    ]);
+    await expect(member.query(api.scout.scouts.get, { slug: "conrad" })).resolves.toEqual({
+      ...expected,
+      agentMail: null,
+    });
     await expect(backend.query(api.scout.scouts.resources, { scoutId })).rejects.toThrow(
       "Not authorized",
     );

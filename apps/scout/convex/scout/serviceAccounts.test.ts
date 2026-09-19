@@ -299,17 +299,31 @@ describe("Scout service-account inventory", () => {
     },
   );
 
-  it("rejects unauthenticated and pending-member inventory access", async () => {
+  it("returns only service names and domains to anonymous and pending viewers", async () => {
     const backend = testBackend();
-    await expect(backend.query(api.scout.serviceAccounts.list, {})).rejects.toThrow(
-      "Not authorized",
-    );
+    const scoutId = await insertScout(backend, "conrad");
+    const accountId = await insertManagedAccount(backend, {
+      scoutId,
+      serviceName: "GitHub",
+      serviceDomain: "github.com",
+      identifier: "private-login@example.test",
+    });
     const pendingId = await insertUser(backend, "person@example.com");
     await backend.run((ctx) => ctx.db.patch(pendingId, { isApproved: false }));
     const pending = backend.withIdentity({ subject: `${pendingId}|test-session` });
-    await expect(pending.query(api.scout.serviceAccounts.list, {})).rejects.toThrow(
-      "Not authorized",
-    );
+    for (const viewer of [backend, pending]) {
+      for (const args of [{}, { scoutId }]) {
+        await expect(viewer.query(api.scout.serviceAccounts.list, args)).resolves.toEqual([
+          {
+            kind: "summary",
+            _id: accountId,
+            scoutId,
+            serviceName: "GitHub",
+            serviceDomain: "github.com",
+          },
+        ]);
+      }
+    }
   });
 
   it.each([ADMIN_EMAIL, "member@example.com"])(
@@ -616,6 +630,7 @@ describe("Scout service-account inventory", () => {
             "_id",
             "authenticationEvidence",
             "identifier",
+            "kind",
             "loginMethod",
             "scoutId",
             "serviceDomain",

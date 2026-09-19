@@ -218,18 +218,19 @@ function ReviewRow({
   const showStatus =
     !checks || ongoing || activity.status === "failed" || activity.status === "stopped";
   return (
-    <Link
-      to="/tasks/$thread"
-      params={{ thread: activity.threadId }}
-      search={{
-        ...search,
-        view: activity.walkthrough ? "walkthrough" : "chat",
-      }}
+    <div
       className={cn(
-        "group flex items-center gap-3 border-t outline-none first:border-t-0 focus-visible:ring-2 focus-visible:ring-ring",
+        "group relative flex items-center gap-3 border-t first:border-t-0",
         preview ? "py-1 sm:max-lg:py-0.5" : "py-4",
       )}
     >
+      <Link
+        to="/tasks/$thread"
+        params={{ thread: activity.threadId }}
+        search={{ ...search, view: activity.walkthrough ? "walkthrough" : "chat" }}
+        aria-label={activity.title ?? "New review"}
+        className="absolute inset-0 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      />
       <VisibilityIcon
         className="mt-0.5 size-3.5 shrink-0 self-start text-muted-foreground"
         role="img"
@@ -251,7 +252,7 @@ function ReviewRow({
             >
               {activity.title ?? "New review"}
             </h3>
-            <ScoutBadge name={activity.scout.displayName} />
+            <ScoutBadge scout={activity.scout} />
           </div>
           <div
             className={cn(
@@ -286,7 +287,7 @@ function ReviewRow({
         </div>
       </div>
       <ArrowRightIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-    </Link>
+    </div>
   );
 }
 

@@ -10,7 +10,8 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 
 type Scout = NonNullable<FunctionReturnType<typeof api.scout.scouts.get>>;
-type ServiceAccount = FunctionReturnType<typeof api.scout.serviceAccounts.list>[number];
+type ListedAccount = FunctionReturnType<typeof api.scout.serviceAccounts.list>[number];
+type ServiceAccount = Extract<ListedAccount, { kind: "details" }>;
 type AuthenticationEvidence = ServiceAccount["authenticationEvidence"];
 type PasswordArgs = FunctionArgs<typeof api.scout.serviceAccountCredentialActions.savePassword>;
 export type AccountEditor =
@@ -36,13 +37,14 @@ export function ServiceAccountsSection({
   management,
 }: {
   scout: Scout;
-  accounts: ServiceAccount[] | undefined;
+  accounts: ListedAccount[] | undefined;
   management: {
     editor: AccountEditor;
     onEdit: (editor: AccountEditor) => void;
   } | null;
 }) {
   const trigger = useRef<HTMLButtonElement | null>(null);
+  const detailedAccounts = accounts?.filter((account) => account.kind === "details") ?? [];
 
   const close = () => {
     management?.onEdit({ kind: "closed" });
@@ -77,11 +79,12 @@ export function ServiceAccountsSection({
         )}
       </div>
 
-      {management && management.editor.kind !== "closed" && (
+      {management && scout.agentMail && management.editor.kind !== "closed" && (
         <AccountForm
           key={management.editor.kind === "update" ? management.editor.account._id : "create"}
-          scout={scout}
-          accounts={accounts ?? []}
+          scoutId={scout._id}
+          defaultIdentifier={scout.agentMail.address}
+          accounts={detailedAccounts}
           account={management.editor.kind === "update" ? management.editor.account : null}
           onSaved={close}
           onCancel={close}
@@ -112,7 +115,7 @@ export function ServiceAccountsSection({
                     </p>
                   </div>
                 </div>
-                {management && (
+                {management && account.kind === "details" && (
                   <Button
                     type="button"
                     size="sm"
@@ -128,24 +131,26 @@ export function ServiceAccountsSection({
                   </Button>
                 )}
               </div>
-              <dl className="grid min-w-0 gap-4 sm:grid-cols-3">
-                <div className="min-w-0">
-                  <dt className="text-muted-foreground text-xs">Email or username</dt>
-                  <dd className="mt-1 wrap-break-word">{account.identifier}</dd>
-                </div>
-                <div className="min-w-0">
-                  <dt className="text-muted-foreground text-xs">Authentication</dt>
-                  <dd className="mt-1">
-                    <AuthenticationEvidence evidence={account.authenticationEvidence} />
-                  </dd>
-                </div>
-                <div className="min-w-0">
-                  <dt className="text-muted-foreground text-xs">Login</dt>
-                  <dd className="mt-1">
-                    <LoginMethod account={account} accounts={accounts} />
-                  </dd>
-                </div>
-              </dl>
+              {account.kind === "details" && (
+                <dl className="grid min-w-0 gap-4 sm:grid-cols-3">
+                  <div className="min-w-0">
+                    <dt className="text-muted-foreground text-xs">Email or username</dt>
+                    <dd className="mt-1 wrap-break-word">{account.identifier}</dd>
+                  </div>
+                  <div className="min-w-0">
+                    <dt className="text-muted-foreground text-xs">Authentication</dt>
+                    <dd className="mt-1">
+                      <AuthenticationEvidence evidence={account.authenticationEvidence} />
+                    </dd>
+                  </div>
+                  <div className="min-w-0">
+                    <dt className="text-muted-foreground text-xs">Login</dt>
+                    <dd className="mt-1">
+                      <LoginMethod account={account} accounts={detailedAccounts} />
+                    </dd>
+                  </div>
+                </dl>
+              )}
             </li>
           ))}
         </ul>
@@ -191,13 +196,15 @@ function LoginMethod({
 }
 
 function AccountForm({
-  scout,
+  scoutId,
+  defaultIdentifier,
   accounts,
   account,
   onSaved,
   onCancel,
 }: {
-  scout: Scout;
+  scoutId: Scout["_id"];
+  defaultIdentifier: string;
   accounts: ServiceAccount[];
   account: ServiceAccount | null;
   onSaved: () => void;
@@ -208,7 +215,7 @@ function AccountForm({
   const savePasswordless = useMutation(api.scout.serviceAccounts.savePasswordless);
   const [serviceName, setServiceName] = useState(account?.serviceName ?? "");
   const [serviceDomain, setServiceDomain] = useState(account?.serviceDomain ?? "");
-  const [identifier, setIdentifier] = useState(account?.identifier ?? scout.agentMail.address);
+  const [identifier, setIdentifier] = useState(account?.identifier ?? defaultIdentifier);
   const [login, setLogin] = useState<Login>(() => {
     const loginMethod = account?.loginMethod;
     switch (loginMethod?.kind) {
@@ -245,7 +252,7 @@ function AccountForm({
     if (submitting || (login.kind === "oauth" && !login.providerAccountId)) return;
     const target: PasswordArgs["account"] = account
       ? { kind: "update", serviceAccountId: account._id, identifier }
-      : { kind: "create", scoutId: scout._id, serviceName, serviceDomain, identifier };
+      : { kind: "create", scoutId, serviceName, serviceDomain, identifier };
     setState({ kind: "submitting" });
     try {
       switch (login.kind) {

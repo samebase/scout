@@ -540,7 +540,7 @@ function ConversationTitle({ thread, kind }: { thread: ChatThread; kind: Product
         >
           {thread.title ?? `Chat with ${thread.scout.displayName}`}
         </h1>
-        {kind === "review" && <ScoutBadge name={thread.scout.displayName} />}
+        {kind === "review" && <ScoutBadge scout={thread.scout} />}
       </div>
     </div>
   );

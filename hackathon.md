@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-19T17:43:12Z
+- **Last updated:** 2026-09-19T18:03:30Z
 
 ## Log
 
@@ -1594,5 +1594,7 @@ Convex saves the active deadline across reloads and Resume checks, and records w
 ### 2026-09-19 - working tree - v255
 
 Tasks identify the Scout who ran them in the walkthrough and chat header, site task lists,
-and homepage previews. The task sidebar keeps the name beside the timestamp, and the shared
-name pill wraps beneath long titles on narrow screens (`apps/scout/src/components/scout-badge.tsx`).
+homepage previews, and task sidebar. Each name pill links to the existing Scout page, now public
+with the same identity and service list. Convex excludes emails and account login details until
+the viewer has existing member access (`apps/scout/convex/scout/scouts.ts`,
+`apps/scout/convex/scout/serviceAccounts.ts`, `apps/scout/src/components/scout-badge.tsx`).

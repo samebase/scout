@@ -1,8 +1,7 @@
-import { Navigate, Outlet, createFileRoute } from "@tanstack/react-router";
-import { Authenticated, Unauthenticated } from "convex/react";
+import { Outlet, createFileRoute } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/scouts")({
-  staticData: { access: "access_scout_view" },
+  staticData: { access: "access_public" },
   head: () => ({ meta: [{ title: "Scouts | Scout" }] }),
   component: ScoutsLayout,
 });
@@ -10,12 +9,7 @@ export const Route = createFileRoute("/scouts")({
 function ScoutsLayout() {
   return (
     <main className="route-page flex max-w-6xl flex-col gap-8">
-      <Unauthenticated>
-        <Navigate to="/" replace />
-      </Unauthenticated>
-      <Authenticated>
-        <Outlet />
-      </Authenticated>
+      <Outlet />
     </main>
   );
 }

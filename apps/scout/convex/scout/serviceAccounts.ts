@@ -1,5 +1,5 @@
 import { requireRunnableThread } from "./chatAccess";
-import { mutation, query } from "../functions";
+import { mutation, publicQuery } from "../functions";
 import { ConvexError, v } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 import {
@@ -10,6 +10,8 @@ import {
 } from "../_generated/server";
 import { requirePermission } from "../access";
 import { canonicalServiceDomain } from "../serviceDomains";
+import { canAccess } from "../../shared/accessModel";
+import type { ViewerAccess } from "../access";
 import {
   scoutServiceAccountAuthenticationEvidenceValidator,
   scoutServiceAccountFieldsValidator,
@@ -23,9 +25,16 @@ const MAX_ACCOUNTS_PER_SCOUT = 50;
 const MAX_IDENTIFIER_LENGTH = 320;
 const MAX_OBSERVED_URL_LENGTH = 2_048;
 
-const serviceAccountPublicValidator = scoutServiceAccountFieldsValidator.extend({
+const serviceAccountDetailsValidator = scoutServiceAccountFieldsValidator.extend({
+  kind: v.literal("details"),
   _id: v.id("scoutServiceAccounts"),
 });
+const serviceAccountPublicValidator = v.union(
+  serviceAccountDetailsValidator,
+  serviceAccountDetailsValidator.pick("_id", "scoutId", "serviceName", "serviceDomain").extend({
+    kind: v.literal("summary"),
+  }),
+);
 
 const runtimeServiceAccountValidator = v.object({
   serviceAccountId: v.id("scoutServiceAccounts"),
@@ -187,12 +196,18 @@ function observedHttpsUrl(value: string) {
   return url.toString();
 }
 
-function projectServiceAccount(account: Doc<"scoutServiceAccounts">) {
-  return {
+function projectServiceAccount(account: Doc<"scoutServiceAccounts">, viewer: ViewerAccess) {
+  const summary = {
     _id: account._id,
     scoutId: account.scoutId,
     serviceName: account.serviceName,
     serviceDomain: account.serviceDomain,
+  };
+  if (viewer.kind !== "account" || !canAccess("access_scout_view", viewer.accessKeys))
+    return { ...summary, kind: "summary" as const };
+  return {
+    ...summary,
+    kind: "details" as const,
     identifier: account.identifier,
     authenticationEvidence: account.authenticationEvidence,
     loginMethod: account.loginMethod,
@@ -238,8 +253,8 @@ function loginMethodsMatch(
   );
 }
 
-export const list = query({
-  access: "access_scout_view",
+export const list = publicQuery({
+  access: "access_public",
   args: {
     scoutId: v.optional(v.id("scouts")),
   },
@@ -252,7 +267,7 @@ export const list = query({
           .withIndex("by_scout_id", (q) => q.eq("scoutId", scoutId))
           .take(MAX_ACCOUNTS_PER_SCOUT)
       : await ctx.db.query("scoutServiceAccounts").withIndex("by_scout_id").take(MAX_ACCOUNTS);
-    return accounts.map(projectServiceAccount);
+    return accounts.map((account) => projectServiceAccount(account, ctx.viewer));
   },
 });
 
