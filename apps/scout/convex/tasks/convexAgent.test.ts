@@ -1,4 +1,5 @@
 /// <reference types="vite/client" />
+import { createHash } from "node:crypto";
 import type { LanguageModelV4, LanguageModelV4StreamPart } from "@ai-sdk/provider";
 import agentTest from "@convex-dev/agent/test";
 import { saveMessage, type MessageDoc } from "@convex-dev/agent";
@@ -666,13 +667,33 @@ it("pauses an unresolved handoff without running later calls", async () => {
   expect(pendingToolCalls(messages.page).map((call) => call.callId)).toEqual(["handoff", "after"]);
   if (session.state.kind !== "waiting") throw new Error("Task is not waiting");
   const handoff = session.state;
+  if (handoff.expiresAt === undefined) throw new Error("Handoff deadline missing");
+  const expiresAt = handoff.expiresAt;
+  const accessToken = `hh1_${"a".repeat(43)}`;
+  expect(
+    await task.backend.mutation(internal.tasks.handoffRecords.issue, {
+      sessionId: task.sessionId,
+      access: {
+        callId: handoff.callId,
+        turnId: handoff.turnId,
+        expiresAt,
+        providerSessionId: "browser",
+        tokenHash: createHash("sha256").update(accessToken).digest("hex"),
+      },
+    }),
+  ).toBe(true);
   const checkId = await task.backend.run(async (ctx) => {
     const id = await ctx.db.insert("agentsApiRequestChecks", {
       sessionId: task.sessionId,
       kind: "resume",
       model: "gpt-5.6-luna",
       prompt: "Inspect the product",
-      handoff: { callId: handoff.callId, turnId: handoff.turnId, message: handoff.message },
+      handoff: {
+        callId: handoff.callId,
+        turnId: handoff.turnId,
+        message: handoff.message,
+        expiresAt,
+      },
       providerSessionId: "browser",
       evidence: {
         capturedAt: Date.now(),
@@ -698,6 +719,9 @@ it("pauses an unresolved handoff without running later calls", async () => {
   const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 46 * 60_000);
   try {
     expect(
+      await task.backend.action(api.tasks.handoff.load, { sessionId: task.sessionId, accessToken }),
+    ).toMatchObject({ status: "checking" });
+    expect(
       await task.backend.mutation(internal.tasks.convexAgentRecords.resume, {
         sessionId: task.sessionId,
         checkId,
@@ -709,6 +733,9 @@ it("pauses an unresolved handoff without running later calls", async () => {
         checkId,
       }),
     ).toBe(false);
+    expect(
+      await task.backend.action(api.tasks.handoff.load, { sessionId: task.sessionId, accessToken }),
+    ).toEqual({ status: "continued", scoutName: "Scout" });
     expect(await task.advance()).toBe(true);
     expect(execute).toHaveBeenCalledTimes(1);
     provider.stream.mockResolvedValueOnce(textStream("Continued after handoff."));

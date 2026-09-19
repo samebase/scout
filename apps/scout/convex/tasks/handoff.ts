@@ -67,7 +67,8 @@ export const notify = internalAction({
 
         ${url}
 
-        This link gives access to this browser handoff. Keep it private.
+        This link gives control of Scout's current browser. Keep it private.
+        After resuming, close any separate browser tab you opened.
 
         ${handoffDeadlineMessage(delivery.expiresAt, "UTC")}
       `,

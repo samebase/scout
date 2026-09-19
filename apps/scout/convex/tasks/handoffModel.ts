@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { taskFailureDiagnosticValidator } from "../../shared/taskFailure";
 
 export const handoffAccess = v.object({
   callId: v.string(),
@@ -18,7 +19,11 @@ export const handoffPage = v.union(
   v.object({ status: v.literal("invalid") }),
   v.object({ status: v.literal("expired") }),
   v.object({ status: v.literal("stopped") }),
-  v.object({ status: v.literal("failed"), error: v.string() }),
+  v.object({
+    status: v.literal("failed"),
+    error: v.string(),
+    diagnostic: v.union(taskFailureDiagnosticValidator, v.null()),
+  }),
   v.object({ status: v.literal("continued"), scoutName: v.string() }),
   v.object({ status: v.literal("checking"), ...activePage }),
   v.object({

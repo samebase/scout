@@ -22,20 +22,25 @@ export function HumanHandoffPage({ sessionId }: { sessionId: string }) {
       setAccess({ status: "unavailable", message: "Open the email link in its own browser tab." });
       return;
     }
-    try {
-      const accessToken = consumeHumanHandoffAccessToken(window);
-      setAccess(
-        accessToken
-          ? { status: "ready", accessToken }
-          : {
-              status: "unavailable",
-              message:
-                "This link is missing a valid access token. Open the complete link from your email.",
-            },
-      );
-    } catch (caught) {
-      setAccess({ status: "unavailable", message: requestError(caught) });
+    function readAccess() {
+      try {
+        const accessToken = consumeHumanHandoffAccessToken(window);
+        setAccess(
+          accessToken
+            ? { status: "ready", accessToken }
+            : {
+                status: "unavailable",
+                message:
+                  "This link is missing a valid access token. Open the complete link from your email.",
+              },
+        );
+      } catch (caught) {
+        setAccess({ status: "unavailable", message: requestError(caught) });
+      }
     }
+    readAccess();
+    window.addEventListener("hashchange", readAccess);
+    return () => window.removeEventListener("hashchange", readAccess);
   }, [sessionId]);
 
   return (
@@ -47,7 +52,11 @@ export function HumanHandoffPage({ sessionId }: { sessionId: string }) {
       {access.status === "loading" ? <p role="status">Opening handoff…</p> : null}
       {access.status === "unavailable" ? <p role="alert">{access.message}</p> : null}
       {access.status === "ready" ? (
-        <HandoffSession sessionId={sessionId} accessToken={access.accessToken} />
+        <HandoffSession
+          key={access.accessToken}
+          sessionId={sessionId}
+          accessToken={access.accessToken}
+        />
       ) : null}
     </main>
   );
@@ -172,9 +181,21 @@ function HandoffContent({ page, onResume }: { page: HandoffPage; onResume: () =>
       return <p role="status">This task has stopped. Browser control is no longer available.</p>;
     case "failed":
       return (
-        <p role="alert" className="whitespace-pre-wrap break-words text-destructive">
-          {page.error}
-        </p>
+        <div role="alert" className="text-destructive">
+          <p className="whitespace-pre-wrap break-words">
+            {page.diagnostic?.message ?? page.error}
+          </p>
+          {page.diagnostic ? (
+            <details className="mt-2">
+              <summary className="w-fit cursor-pointer rounded text-sm focus-visible:ring-2 focus-visible:ring-ring">
+                Details
+              </summary>
+              <pre className="mt-2 max-h-48 overflow-auto rounded-lg border bg-muted/40 p-3 text-xs whitespace-pre-wrap wrap-anywhere select-text">
+                {JSON.stringify({ ...page.diagnostic, error: page.error }, null, 2)}
+              </pre>
+            </details>
+          ) : null}
+        </div>
       );
     case "continued":
       return <p role="status">{page.scoutName} has continued. You can close this tab.</p>;

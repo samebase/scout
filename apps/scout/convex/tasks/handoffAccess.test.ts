@@ -181,6 +181,21 @@ describe.each(["agents_api", "convex_agent"] as const)("%s handoff access", (eng
     expect(await t.checks()).toEqual([]);
   });
 
+  it("returns a null diagnostic for a failure without provider details", async () => {
+    const t = await setup(engine);
+    await t.backend.mutation(internal.tasks.sessions.update, {
+      sessionId: t.sessionId,
+      state: { kind: "failed", error: "Resume was cancelled" },
+    });
+    for (const action of [api.tasks.handoff.load, api.tasks.handoff.resume]) {
+      expect(await t.backend.action(action, t.args)).toEqual({
+        status: "failed",
+        error: "Resume was cancelled",
+        diagnostic: null,
+      });
+    }
+  });
+
   it.each([
     ["stopped", "stopped"],
     ["deadline", "expired"],
@@ -347,6 +362,17 @@ describe.each(["agents_api", "convex_agent"] as const)("%s handoff access", (eng
             checkId: check._id,
           }),
         ).toEqual({ handoff: { ...handoff, expiresAt: t.access.expiresAt }, evidence });
+        for (const action of [api.tasks.handoff.load, api.tasks.handoff.resume]) {
+          expect(await t.backend.action(action, t.args)).toMatchObject({ status: "checking" });
+        }
+        const claimed = await t.backend.mutation(internal.tasks.sessions.claimCall, {
+          sessionId: t.sessionId,
+          callId: handoff.callId,
+        });
+        await t.backend.mutation(internal.tasks.sessions.finishCall, {
+          callId: claimed.call._id,
+          result: { kind: "success", output: "Browser control returned" },
+        });
       } else {
         expect((await t.read())?.state).toEqual({
           kind: "waiting",

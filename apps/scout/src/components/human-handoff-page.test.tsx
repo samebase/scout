@@ -26,6 +26,7 @@ vi.mock("convex/react", () => ({
 }));
 
 const token = `hh1_${"a".repeat(43)}`;
+const nextToken = `hh1_${"b".repeat(43)}`;
 const waiting = {
   status: "waiting",
   scoutName: "Robin",
@@ -97,6 +98,110 @@ test("an invalid fragment clears a previously stored token", async () => {
   expect(remote.load).toHaveBeenCalledOnce();
 });
 
+test.each(["continued", "request error"])(
+  "a new email fragment replaces %s on the same session and survives reload",
+  async (previous) => {
+    if (previous === "continued")
+      remote.load.mockResolvedValueOnce({ status: "continued", scoutName: "Robin" });
+    else remote.load.mockRejectedValueOnce(new Error("Previous handoff request failed"));
+    const first = render(<HumanHandoffPage sessionId="session" />);
+    if (previous === "continued")
+      await screen.findByText("Robin has continued. You can close this tab.");
+    else await screen.findByText("Previous handoff request failed");
+
+    act(() => {
+      window.location.hash = `access=${nextToken}`;
+    });
+    expect(await screen.findByTitle("Scout browser")).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText("Robin has continued. You can close this tab.")).toBeNull();
+    expect(window.location.hash).toBe("");
+    expect(remote.load).toHaveBeenLastCalledWith({ sessionId: "session", accessToken: nextToken });
+    fireEvent.click(screen.getByRole("button", { name: "Resume Scout" }));
+    expect(remote.resume).toHaveBeenCalledWith({ sessionId: "session", accessToken: nextToken });
+    await screen.findByText("Robin has continued. You can close this tab.");
+
+    first.unmount();
+    render(<HumanHandoffPage sessionId="session" />);
+    expect(await screen.findByTitle("Scout browser")).toBeTruthy();
+    expect(remote.load).toHaveBeenLastCalledWith({ sessionId: "session", accessToken: nextToken });
+  },
+);
+
+test.each(["load", "resume"])(
+  "a new email fragment starts loading while the old %s is pending and ignores its result",
+  async (operation) => {
+    let resolvePrevious: (page: Page) => void;
+    const previous = new Promise<Page>((resolve) => {
+      resolvePrevious = resolve;
+    });
+    if (operation === "load") remote.load.mockReturnValueOnce(previous);
+    else remote.resume.mockReturnValueOnce(previous);
+    await act(async () => {
+      render(<HumanHandoffPage sessionId="session" />);
+    });
+    if (operation === "resume")
+      fireEvent.click(screen.getByRole("button", { name: "Resume Scout" }));
+    remote.load.mockResolvedValue({ ...waiting, message: "Complete the next verification." });
+
+    act(() => {
+      window.location.hash = `access=${nextToken}`;
+    });
+    await screen.findByText("Complete the next verification.");
+    expect(remote.load).toHaveBeenLastCalledWith({ sessionId: "session", accessToken: nextToken });
+    await act(async () => {
+      resolvePrevious({ status: "continued", scoutName: "Robin" });
+    });
+    expect(screen.getByTitle("Scout browser")).toBeTruthy();
+    expect(screen.getByText("Complete the next verification.")).toBeTruthy();
+    expect(screen.queryByText("Robin has continued. You can close this tab.")).toBeNull();
+  },
+);
+
+test("a replacement token clears the old browser and deadline while its new request loads", async () => {
+  vi.useFakeTimers();
+  let resolveNext: (page: Page) => void;
+  remote.load
+    .mockResolvedValueOnce({ ...waiting, expiresAt: waiting.serverNow + 2_000 })
+    .mockReturnValueOnce(
+      new Promise<Page>((resolve) => {
+        resolveNext = resolve;
+      }),
+    );
+  await act(async () => {
+    render(<HumanHandoffPage sessionId="session" />);
+  });
+  expect(screen.getByTitle("Scout browser")).toBeTruthy();
+  await act(async () => {
+    window.history.replaceState({}, "", `/handoff/session#access=${nextToken}`);
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+  });
+  expect(screen.queryByTitle("Scout browser")).toBeNull();
+  expect(screen.getByRole("status").textContent).toBe("Loading handoff status…");
+  await act(() => vi.advanceTimersByTimeAsync(2_000));
+  expect(remote.load).toHaveBeenCalledTimes(2);
+  await act(async () => {
+    resolveNext(waiting);
+  });
+  expect(screen.getByTitle("Scout browser")).toBeTruthy();
+  await act(() => vi.advanceTimersByTimeAsync(5_000));
+  expect(remote.load).toHaveBeenCalledTimes(3);
+  expect(remote.load).toHaveBeenLastCalledWith({ sessionId: "session", accessToken: nextToken });
+});
+
+test("an invalid replacement fragment removes current browser access without remounting", async () => {
+  render(<HumanHandoffPage sessionId="session" />);
+  await screen.findByTitle("Scout browser");
+  act(() => {
+    window.location.hash = "access=invalid";
+  });
+  expect((await screen.findByRole("alert")).textContent).toContain("valid access token");
+  expect(screen.queryByTitle("Scout browser")).toBeNull();
+  expect(window.location.hash).toBe("");
+  expect(window.sessionStorage.length).toBe(0);
+  expect(remote.load).toHaveBeenCalledOnce();
+});
+
 test("an embedded handoff never consumes the token or contacts the backend", async () => {
   vi.spyOn(window, "top", "get").mockReturnValue(null);
   render(<HumanHandoffPage sessionId="session" />);
@@ -164,7 +269,7 @@ test("a failed poll removes previous browser access and waits for manual reload"
 test.each<Page>([
   { status: "stopped" },
   { status: "continued", scoutName: "Robin" },
-  { status: "failed", error: "Browser provider failed: 503, request req_456" },
+  { status: "failed", error: "Browser provider failed: 503, request req_456", diagnostic: null },
 ])("polling closes the browser when the task is $status", async (terminal) => {
   vi.useFakeTimers();
   remote.load.mockResolvedValueOnce(waiting).mockResolvedValue(terminal);
@@ -198,6 +303,30 @@ test("checking keeps polling until Scout continues", async () => {
   expect(screen.queryByTitle("Scout browser")).toBeNull();
   await act(() => vi.advanceTimersByTimeAsync(5_000));
   expect(screen.getByText("Robin has continued. You can close this tab.")).toBeTruthy();
+});
+
+test("failed handoffs retain the provider message and diagnostic details", async () => {
+  remote.load.mockResolvedValue({
+    status: "failed",
+    error: "Resume failed with an API error",
+    diagnostic: {
+      category: "transient_service",
+      operation: "resume",
+      occurredAtMs: waiting.serverNow,
+      provider: "openai",
+      httpStatus: 503,
+      providerCode: "service_error",
+      requestId: "req_handoff",
+      message: "The tool result could not be accepted",
+    },
+  });
+  render(<HumanHandoffPage sessionId="session" />);
+  expect(await screen.findByText("The tool result could not be accepted")).toBeTruthy();
+  expect(screen.getByText("Details")).toBeTruthy();
+  expect(screen.getByText(/"httpStatus": 503/).textContent).toContain('"requestId": "req_handoff"');
+  expect(screen.getByText(/"providerCode": "service_error"/).textContent).toContain(
+    '"error": "Resume failed with an API error"',
+  );
 });
 
 test.each([1_000, 3_000])(

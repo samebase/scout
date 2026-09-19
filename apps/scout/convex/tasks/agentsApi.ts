@@ -173,12 +173,8 @@ export async function begin(
         sessionId: session._id,
         callId,
       });
-      await ctx.runMutation(internal.tasks.sessions.finishCall, {
-        callId: claimed.call._id,
-        result: { kind: "success", output },
-      });
-      await streamOutput(ctx, api, { ...session, providerId }, () =>
-        api.beta.agents.sessions.events.create(providerId, {
+      await streamOutput(ctx, api, { ...session, providerId }, async () => {
+        await api.beta.agents.sessions.events.create(providerId, {
           "Idempotency-Key": `${session._id}:${checkId}`,
           events: [
             {
@@ -189,8 +185,12 @@ export async function begin(
               output,
             },
           ],
-        }),
-      );
+        });
+        await ctx.runMutation(internal.tasks.sessions.finishCall, {
+          callId: claimed.call._id,
+          result: { kind: "success", output },
+        });
+      });
       break;
     }
     case "observe":

@@ -29,7 +29,7 @@ async function page(
   if (state.kind === "failed")
     return Date.now() >= access.expiresAt
       ? { status: "expired" }
-      : { status: "failed", error: state.error };
+      : { status: "failed", error: state.error, diagnostic: state.diagnostic ?? null };
   const active = {
     scoutName: session.scoutName,
     expiresAt: access.expiresAt,
@@ -81,8 +81,18 @@ async function page(
       return { status: "checking", ...active };
     }
     case "running":
-    case "idle":
-      return { status: "continued", scoutName: session.scoutName };
+    case "idle": {
+      // Agents API releases the check before submission; call success confirms delivery.
+      const call = await ctx.db
+        .query("agentsApiCalls")
+        .withIndex("by_session_id_and_call_id", (q) =>
+          q.eq("sessionId", session._id).eq("callId", access.callId),
+        )
+        .unique();
+      return call?.result.kind === "success"
+        ? { status: "continued", scoutName: session.scoutName }
+        : { status: "checking", ...active };
+    }
     case "starting":
       return { status: "invalid" };
   }
