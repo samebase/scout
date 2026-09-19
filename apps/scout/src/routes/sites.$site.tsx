@@ -178,7 +178,7 @@ function SiteLayout() {
               ) : record === undefined ? (
                 <div className="min-h-full" aria-busy="true" />
               ) : (
-                <div className="flex min-h-full flex-col p-4 sm:p-6">
+                <div className="mx-auto flex min-h-full w-full min-w-0 max-w-page flex-col p-4 sm:p-6">
                   <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
                     <SiteIdentity site={record} heading="h1" />
                     <div className="flex flex-wrap items-center gap-3">

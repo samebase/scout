@@ -110,13 +110,13 @@ function SessionWalkthrough({ sessionId }: { sessionId: Id<"agentsApiSessions"> 
     <section
       ref={setDialogContainer}
       aria-label="Task walkthrough"
-      className="flex h-full min-h-0 min-w-0 flex-col"
+      className="mx-auto flex h-full min-h-0 w-full min-w-0 max-w-page flex-col"
     >
       <div
         ref={scroll}
         className="@container/walkthrough min-h-0 flex-1 overflow-auto overscroll-y-contain"
       >
-        <div className="mx-auto grid w-full max-w-6xl gap-5 p-4 @2xl/walkthrough:h-full @2xl/walkthrough:min-h-0 @2xl/walkthrough:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] @2xl/walkthrough:grid-rows-[minmax(0,1fr)] @2xl/walkthrough:gap-6 @2xl/walkthrough:p-5">
+        <div className="grid w-full gap-5 p-4 @2xl/walkthrough:h-full @2xl/walkthrough:min-h-0 @2xl/walkthrough:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] @2xl/walkthrough:grid-rows-[minmax(0,1fr)] @2xl/walkthrough:gap-6 @2xl/walkthrough:p-5">
           <div
             ref={captionScroll}
             className="min-w-0 space-y-5 @2xl/walkthrough:min-h-0 @2xl/walkthrough:overflow-auto @2xl/walkthrough:pr-1"
