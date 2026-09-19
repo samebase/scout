@@ -18,6 +18,7 @@ export const handoffPage = v.union(
   v.object({ status: v.literal("invalid") }),
   v.object({ status: v.literal("expired") }),
   v.object({ status: v.literal("stopped") }),
+  v.object({ status: v.literal("declined") }),
   v.object({
     status: v.literal("failed"),
     error: v.string(),

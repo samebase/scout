@@ -1,11 +1,76 @@
 import { PaneFrame } from "@samebase/sidebars/PaneFrame";
 import { useNavigate } from "@tanstack/react-router";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
+import { ConvexError } from "convex/values";
 import { ExternalLinkIcon } from "lucide-react";
+import { useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import { BrowserReplay } from "#components/browser-replay";
-import { Button } from "#components/ui/button";
+import { Button, buttonVariants } from "#components/ui/button";
 import type { AgentsSearch, BrowserSession, Session } from "./model";
+
+export function OpenHandoffBrowserButton({
+  sessionId,
+  label,
+  className,
+  disabled,
+}: {
+  sessionId: Session["_id"];
+  label: string;
+  className: string;
+  disabled: boolean;
+}) {
+  const openBrowser = useMutation(api.tasks.sessions.openHandoffBrowser);
+  const opening = useRef(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function open() {
+    if (disabled || opening.current) return;
+    opening.current = true;
+    setPending(true);
+    setError(null);
+    let tab: Window | null = null;
+    try {
+      tab = window.open("about:blank", "_blank");
+      if (!tab) throw new Error("Allow pop-ups to open the browser.");
+      tab.opener = null;
+      const result = await openBrowser({ sessionId });
+      if (result) tab.location.replace(result.url);
+      else tab.close();
+    } catch (caught) {
+      tab?.close();
+      setError(
+        caught instanceof ConvexError && typeof caught.data === "string"
+          ? caught.data
+          : caught instanceof Error
+            ? caught.message
+            : String(caught),
+      );
+    } finally {
+      opening.current = false;
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className="min-w-0 space-y-2">
+      <button
+        type="button"
+        disabled={disabled || pending}
+        className={className}
+        onClick={() => void open()}
+      >
+        {label} <ExternalLinkIcon size={15} aria-hidden="true" />
+      </button>
+      {error && (
+        <p role="alert" className="text-sm whitespace-pre-wrap wrap-anywhere text-destructive">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
 
 export function BrowserPanel({
   sessionId,
@@ -54,7 +119,12 @@ export function BrowserPanel({
       }
       content={
         selected ? (
-          <BrowserView key={selected._id} browser={selected} search={search} />
+          <BrowserView
+            key={selected._id}
+            sessionId={sessionId}
+            browser={selected}
+            search={search}
+          />
         ) : browsers === undefined ? (
           <div className="min-h-full" aria-busy="true" />
         ) : (
@@ -70,7 +140,15 @@ export function BrowserPanel({
   );
 }
 
-function BrowserView({ browser, search }: { browser: BrowserSession; search: AgentsSearch }) {
+function BrowserView({
+  sessionId,
+  browser,
+  search,
+}: {
+  sessionId: Session["_id"];
+  browser: BrowserSession;
+  search: AgentsSearch;
+}) {
   const navigate = useNavigate({ from: "/agents" });
   switch (browser.lifecycle.kind) {
     case "closed":
@@ -97,15 +175,21 @@ function BrowserView({ browser, search }: { browser: BrowserSession; search: Age
         </p>
       );
     case "active": {
-      const openUrl = browser.interactiveLiveViewUrl ?? browser.liveViewUrl;
       return (
         <section className="chat-browser" aria-label="Live browser">
           <div className="chat-browser-bar">
             <span className="truncate text-xs font-medium">Live · Session {browser.sequence}</span>
-            {openUrl && (
+            {browser.interactiveLiveViewUrl ? (
+              <OpenHandoffBrowserButton
+                sessionId={sessionId}
+                label="Open browser"
+                className={buttonVariants({ size: "xs", variant: "ghost" })}
+                disabled={false}
+              />
+            ) : browser.liveViewUrl ? (
               <Button asChild size="xs" variant="ghost">
                 <a
-                  href={openUrl}
+                  href={browser.liveViewUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label="Open browser"
@@ -113,14 +197,23 @@ function BrowserView({ browser, search }: { browser: BrowserSession; search: Age
                   Open <ExternalLinkIcon data-icon="inline-end" />
                 </a>
               </Button>
-            )}
+            ) : null}
           </div>
           {browser.liveViewUrl ? (
             <>
               <div className="chat-browser-narrow">
-                <a href={openUrl ?? browser.liveViewUrl} target="_blank" rel="noopener noreferrer">
-                  Open live browser
-                </a>
+                {browser.interactiveLiveViewUrl ? (
+                  <OpenHandoffBrowserButton
+                    sessionId={sessionId}
+                    label="Open live browser"
+                    className="inline-flex items-center gap-1 underline"
+                    disabled={false}
+                  />
+                ) : (
+                  <a href={browser.liveViewUrl} target="_blank" rel="noopener noreferrer">
+                    Open live browser
+                  </a>
+                )}
               </div>
               <iframe
                 src={browser.liveViewUrl}

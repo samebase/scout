@@ -4,7 +4,7 @@ import { internalMutation, type MutationCtx } from "../_generated/server";
 import { requireSessionPermission } from "./access";
 import { handoffAccess, handoffPage } from "./handoffModel";
 import { currentCheckMessage } from "./requestChecks";
-import { resumeHandoff } from "./sessions";
+import { declineBrowserHandoff, openHandoff, resumeHandoff } from "./sessions";
 import { requireFirecrawlLiveViewUrl } from "../scout/lib/firecrawlLiveView";
 
 const accessArgs = { sessionId: v.string(), tokenHash: v.string() };
@@ -25,27 +25,30 @@ async function page(
   const { session, access } = authorized;
   const state = session.state;
   if (state.kind === "stopped")
-    return { status: state.reason === "handoff_expired" ? "expired" : "stopped" };
+    return {
+      status:
+        state.reason === "handoff_expired"
+          ? "expired"
+          : state.reason === "handoff_declined"
+            ? "declined"
+            : "stopped",
+    };
   if (state.kind === "failed")
     return { status: "failed", error: state.error, diagnostic: state.diagnostic ?? null };
-  const active = {
-    scoutName: session.scoutName,
-    expiresAt: access.expiresAt,
-  };
   switch (state.kind) {
     case "waiting": {
       if (
         state.callId !== access.callId ||
         state.turnId !== access.turnId ||
-        state.expiresAt !== access.expiresAt
+        state.expiresAt === undefined
       )
         return { status: "invalid" };
-      if (Date.now() >= access.expiresAt) {
+      if (Date.now() >= state.expiresAt) {
         await ctx.runMutation(internal.tasks.sessions.expireHandoff, {
           sessionId: session._id,
           callId: access.callId,
           turnId: access.turnId,
-          expiresAt: access.expiresAt,
+          expiresAt: state.expiresAt,
         });
         return { status: "expired" };
       }
@@ -57,7 +60,8 @@ async function page(
         return { status: "stopped" };
       return {
         status: "waiting",
-        ...active,
+        scoutName: session.scoutName,
+        expiresAt: state.expiresAt,
         message: state.message,
         interactiveLiveViewUrl: requireFirecrawlLiveViewUrl(session.browser.interactiveLiveViewUrl),
         checkMessage: await currentCheckMessage(ctx, session),
@@ -71,11 +75,15 @@ async function page(
         check.sessionId !== session._id ||
         check.handoff.callId !== access.callId ||
         check.handoff.turnId !== access.turnId ||
-        check.handoff.expiresAt !== access.expiresAt ||
+        check.handoff.expiresAt === undefined ||
         check.providerSessionId !== access.providerSessionId
       )
         return { status: "invalid" };
-      return { status: "checking", ...active };
+      return {
+        status: "checking",
+        scoutName: session.scoutName,
+        expiresAt: check.handoff.expiresAt,
+      };
     }
     case "running":
     case "idle": {
@@ -88,7 +96,7 @@ async function page(
         .unique();
       return call?.result.kind === "success"
         ? { status: "continued", scoutName: session.scoutName }
-        : { status: "checking", ...active };
+        : { status: "checking", scoutName: session.scoutName, expiresAt: access.expiresAt };
     }
     case "starting":
       return { status: "invalid" };
@@ -105,12 +113,23 @@ export const issue = internalMutation({
       session.state.kind !== "waiting" ||
       session.state.callId !== access.callId ||
       session.state.turnId !== access.turnId ||
-      session.state.expiresAt !== access.expiresAt ||
-      access.expiresAt <= Date.now() ||
+      session.state.expiresAt === undefined ||
+      session.state.expiresAt <= Date.now() ||
+      (session.state.openedAt === undefined && session.state.expiresAt !== access.expiresAt) ||
       session.browser?.providerSessionId !== access.providerSessionId
     )
       return false;
     await requireSessionPermission(ctx, session);
+    const currentAccess = session.handoffAccess;
+    if (session.state.openedAt !== undefined && currentAccess) {
+      return (
+        currentAccess.callId === access.callId &&
+        currentAccess.turnId === access.turnId &&
+        currentAccess.providerSessionId === access.providerSessionId &&
+        currentAccess.expiresAt === access.expiresAt &&
+        currentAccess.tokenHash === access.tokenHash
+      );
+    }
     await ctx.db.patch(sessionId, { handoffAccess: access });
     return true;
   },
@@ -119,8 +138,31 @@ export const issue = internalMutation({
 export const load = internalMutation({
   args: accessArgs,
   returns: handoffPage,
-  handler: async (ctx, args): Promise<Infer<typeof handoffPage>> =>
-    await page(ctx, await authorizedSession(ctx, args)),
+  handler: async (ctx, args): Promise<Infer<typeof handoffPage>> => {
+    const authorized = await authorizedSession(ctx, args);
+    const current = await page(ctx, authorized);
+    if (
+      current.status !== "waiting" ||
+      !authorized ||
+      (authorized.session.state.kind === "waiting" &&
+        authorized.session.state.openedAt !== undefined)
+    )
+      return current;
+    await openHandoff(ctx, authorized.session);
+    return await page(ctx, await authorizedSession(ctx, args));
+  },
+});
+
+export const decline = internalMutation({
+  args: accessArgs,
+  returns: handoffPage,
+  handler: async (ctx, args): Promise<Infer<typeof handoffPage>> => {
+    const authorized = await authorizedSession(ctx, args);
+    const current = await page(ctx, authorized);
+    if (current.status !== "waiting" || !authorized) return current;
+    await declineBrowserHandoff(ctx, authorized.session);
+    return { status: "declined" };
+  },
 });
 
 export const resume = internalMutation({

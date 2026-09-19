@@ -12,6 +12,7 @@ export const handoffContext = v.object({
   turnId: v.string(),
   // Existing handoffs and resume checks predate saved deadlines.
   expiresAt: v.optional(v.number()),
+  openedAt: v.optional(v.number()),
 });
 
 export const pendingMessage = v.object({
@@ -26,7 +27,10 @@ export const sessionState = v.union(
   v.object({ kind: v.literal("checking"), checkId: v.id("agentsApiRequestChecks") }),
   handoffContext.extend({ kind: v.literal("waiting") }),
   v.object({ kind: v.literal("idle") }),
-  v.object({ kind: v.literal("stopped"), reason: v.optional(v.literal("handoff_expired")) }),
+  v.object({
+    kind: v.literal("stopped"),
+    reason: v.optional(v.union(v.literal("handoff_expired"), v.literal("handoff_declined"))),
+  }),
   v.object({
     kind: v.literal("failed"),
     error: v.string(),

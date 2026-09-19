@@ -23,6 +23,7 @@ export const notify = internalAction({
     if (
       !delivery ||
       delivery.expiresAt === null ||
+      delivery.tokenExpiresAt === null ||
       delivery.expiresAt <= Date.now() ||
       !delivery.providerSessionId
     )
@@ -33,7 +34,7 @@ export const notify = internalAction({
         ...args,
         turnId: delivery.turnId,
         providerSessionId: delivery.providerSessionId,
-        expiresAt: delivery.expiresAt,
+        expiresAt: delivery.tokenExpiresAt,
       },
       apiKey,
     );
@@ -45,7 +46,7 @@ export const notify = internalAction({
         callId: args.callId,
         turnId: delivery.turnId,
         providerSessionId: delivery.providerSessionId,
-        expiresAt: delivery.expiresAt,
+        expiresAt: delivery.tokenExpiresAt,
         tokenHash,
       },
     });
@@ -70,7 +71,7 @@ export const notify = internalAction({
         This link gives control of Scout's current browser. Keep it private.
         After resuming, close any separate browser tab you opened.
 
-        ${handoffDeadlineMessage(delivery.expiresAt, "UTC")}
+        ${handoffDeadlineMessage(delivery.expiresAt, "UTC", delivery.openedAt === null ? "open" : "resume")}
       `,
       idempotencyKey: `review-handoff-${args.sessionId}-${args.callId}`,
     });
@@ -99,5 +100,16 @@ export const resume = publicAction({
     const tokenHash = hashHumanHandoffAccessToken(accessToken);
     if (!tokenHash) return { status: "invalid" };
     return await ctx.runMutation(internal.tasks.handoffRecords.resume, { sessionId, tokenHash });
+  },
+});
+
+export const decline = publicAction({
+  access: "access_public",
+  args: accessArgs,
+  returns: handoffPage,
+  handler: async (ctx, { sessionId, accessToken }): Promise<Infer<typeof handoffPage>> => {
+    const tokenHash = hashHumanHandoffAccessToken(accessToken);
+    if (!tokenHash) return { status: "invalid" };
+    return await ctx.runMutation(internal.tasks.handoffRecords.decline, { sessionId, tokenHash });
   },
 });
