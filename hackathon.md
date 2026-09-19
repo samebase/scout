@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-19T15:16:00Z
+- **Last updated:** 2026-09-19T16:17:10Z
 
 ## Log
 
@@ -1571,9 +1571,15 @@ SPA + SSG setup, with matching Cloudflare and Convex static-hosting paths
 Routine data loads stay quiet, with stable pagination labels and reserved screenshot space
 (`apps/scout/src/components/tool-activity.tsx`, `apps/scout/src/products/conversation/page.tsx`).
 
-### 2026-09-19 - working tree - v252
+### 2026-09-19 - e62ca4c - v252
 
 Handoff emails open a dedicated browser-control page without requiring Scout sign-in.
 The link is limited to one handoff and its deadline, and both runtimes use the same Resume checks.
 The page shows rejected checks and task failures and removes controls when the handoff ends
 (`apps/scout/convex/tasks/handoff.ts`, `apps/scout/src/components/human-handoff-page.tsx`).
+
+### 2026-09-19 - working tree - v253
+
+The handoff page shows time remaining, gives the embedded browser full width on small screens,
+and keeps Resume as its main action. Homepage Scout and engine pickers sit together without a fixed-width gap
+(`apps/scout/src/components/human-handoff-page.tsx`, `apps/scout/src/products/conversation/page.tsx`).
