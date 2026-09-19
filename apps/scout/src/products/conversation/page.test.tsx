@@ -21,7 +21,11 @@ import { homeSearch } from "../../lib/homeSearch";
 import { api } from "../../../convex/_generated/api";
 import { ROLE_ACCESS_GRANTS } from "../../../shared/accessModel";
 import { omitNullish } from "../../../shared/omitNullish";
-import { HANDOFF_EXPIRED_REASON, handoffDeadlineMessage } from "../../../shared/handoff";
+import {
+  HANDOFF_DECLINED_REASON,
+  HANDOFF_EXPIRED_REASON,
+  handoffDeadlineMessage,
+} from "../../../shared/handoff";
 
 const remote = vi.hoisted(() => ({
   authenticated: true,
@@ -36,6 +40,8 @@ const remote = vi.hoisted(() => ({
   retryManaged: vi.fn(),
   stopManaged: vi.fn(),
   resumeManaged: vi.fn(),
+  declineManaged: vi.fn(),
+  openHandoffBrowser: vi.fn(),
   setVisibility: vi.fn(),
   savePreferences: vi.fn(),
   signIn: vi.fn(),
@@ -115,6 +121,10 @@ vi.mock("convex/react", () => ({
         return remote.stopManaged;
       case "tasks/sessions:resume":
         return remote.resumeManaged;
+      case "tasks/sessions:declineHandoff":
+        return remote.declineManaged;
+      case "tasks/sessions:openHandoffBrowser":
+        return remote.openHandoffBrowser;
       default:
         throw new Error("Unexpected mutation");
     }
@@ -200,6 +210,11 @@ beforeEach(() => {
   remote.retryManaged.mockReset().mockResolvedValue(null);
   remote.stopManaged.mockReset().mockResolvedValue(null);
   remote.resumeManaged.mockReset().mockResolvedValue(null);
+  remote.declineManaged.mockReset().mockResolvedValue(null);
+  remote.openHandoffBrowser.mockReset().mockResolvedValue({
+    url: "https://liveview.firecrawl.dev/control",
+    expiresAt: 1_000_000,
+  });
   remote.setVisibility.mockReset().mockResolvedValue(null);
   remote.signIn.mockReset();
   remote.listReplayPages.mockReset().mockResolvedValue({ status: "unavailable" });
@@ -1373,7 +1388,20 @@ test("shows the local Resume deadline and the specific reason after expiration",
   };
   remote.queries.set("tasks/sessions:controls", controls);
   await openPlay("/tasks/game-thread");
-  expect(await screen.findByText(handoffDeadlineMessage(expiresAt, undefined))).toBeTruthy();
+  expect(
+    await screen.findByText(handoffDeadlineMessage(expiresAt, undefined, "open")),
+  ).toBeTruthy();
+  act(() => {
+    remote.queries.set("tasks/sessions:controls", {
+      ...controls,
+      state: { ...controls.state, openedAt: expiresAt - 600_000 },
+    });
+    remote.revision++;
+    remote.subscribers.forEach((listener) => listener());
+  });
+  expect(
+    await screen.findByText(handoffDeadlineMessage(expiresAt, undefined, "resume")),
+  ).toBeTruthy();
   act(() => {
     remote.queries.set(
       "scout/activity:get",
@@ -1389,6 +1417,48 @@ test("shows the local Resume deadline and the specific reason after expiration",
   });
   expect(await screen.findByText(HANDOFF_EXPIRED_REASON)).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Resume Scout" })).toBeNull();
+});
+
+test("Review declines the current handoff and preserves the stopped reason", async () => {
+  remote.queries.set(
+    "scout/activity:get",
+    session({ purpose: { kind: "review" }, status: "waiting" }),
+  );
+  const controls = {
+    state: { kind: "waiting", message: "Complete verification", callId: "call", turnId: "turn" },
+    resumeAttempts: [],
+    canSend: false,
+    canStop: true,
+    active: true,
+    interactiveLiveViewUrl: "https://liveview.firecrawl.dev/control",
+  };
+  remote.queries.set("tasks/sessions:controls", controls);
+  remote.declineManaged.mockRejectedValueOnce(new ConvexError("This handoff has already changed"));
+  await openPlay("/tasks/game-thread");
+  fireEvent.click(await screen.findByRole("button", { name: "I couldn't complete this" }));
+  expect(await screen.findByText("This handoff has already changed")).toBeTruthy();
+  expect(remote.declineManaged).toHaveBeenCalledExactlyOnceWith({
+    sessionId: "managed-1",
+    callId: "call",
+    turnId: "turn",
+  });
+  fireEvent.click(screen.getByRole("button", { name: "I couldn't complete this" }));
+  await waitFor(() => expect(remote.declineManaged).toHaveBeenCalledTimes(2));
+  act(() => {
+    remote.queries.set(
+      "scout/activity:get",
+      session({ purpose: { kind: "review" }, status: "stopping" }),
+    );
+    remote.queries.set("tasks/sessions:controls", {
+      ...controls,
+      state: { kind: "stopped", reason: "handoff_declined" },
+    });
+    remote.revision++;
+    remote.subscribers.forEach((listener) => listener());
+  });
+  expect(await screen.findByText(HANDOFF_DECLINED_REASON)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "I couldn't complete this" })).toBeNull();
+  expect(remote.stopManaged).not.toHaveBeenCalled();
 });
 
 test("Review uses managed controls and keeps live view, handoff and follow-up messages on the same page", async () => {
@@ -1417,6 +1487,12 @@ test("Review uses managed controls and keeps live view, handoff and follow-up me
   remote.messages = [
     { kind: "message", id: "message-1", role: "assistant", text: "I opened the site." },
   ];
+  const tab = window.open("about:blank", "_blank");
+  if (!tab) throw new Error("Expected a test browser tab");
+  // happy-dom omits the browser's writable opener property.
+  Object.defineProperty(tab, "opener", { configurable: true, writable: true, value: window });
+  const navigate = vi.spyOn(tab.location, "replace").mockImplementation(() => {});
+  const reserve = vi.spyOn(window, "open").mockReturnValue(tab);
   await openPlay("/tasks/game-thread");
   expect(await screen.findByText("I opened the site.")).toBeTruthy();
   expect(screen.getByTitle("Scout's live browser").getAttribute("src")).toBe(
@@ -1425,6 +1501,14 @@ test("Review uses managed controls and keeps live view, handoff and follow-up me
   expect(screen.getByRole("link", { name: "Open in Agents" }).getAttribute("href")).toBe(
     "/agents?session=managed-1",
   );
+  expect(remote.openHandoffBrowser).not.toHaveBeenCalled();
+  expect(reserve).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Open browser" }));
+  expect(remote.openHandoffBrowser).toHaveBeenCalledExactlyOnceWith({ sessionId: "managed-1" });
+  await waitFor(() =>
+    expect(navigate).toHaveBeenCalledExactlyOnceWith("https://liveview.firecrawl.dev/control"),
+  );
+  tab.close();
   fireEvent.click(screen.getByRole("button", { name: "Resume Scout" }));
   await waitFor(() =>
     expect(remote.resumeManaged).toHaveBeenCalledExactlyOnceWith({
@@ -1677,9 +1761,7 @@ test.each(["chat", "walkthrough"])(
     });
     expect(screen.getByRole("alert").textContent).toBe(`Scout could not resume: ${reason}`);
     expect(screen.getByRole("alert").closest("[hidden]")).toBeNull();
-    expect(screen.getByRole("link", { name: "Open browser" }).getAttribute("href")).toBe(
-      controls.interactiveLiveViewUrl,
-    );
+    expect(screen.getByRole("button", { name: "Open browser" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Resume Scout" })).toBeTruthy();
     expect(screen.queryByText("Checking browser…")).toBeNull();
   },
@@ -2379,10 +2461,11 @@ test("keeps the live browser and handoff controls when switching views", async (
   fireEvent.click(screen.getByRole("button", { name: "Show Scout’s view" }));
   expect(screen.getByTitle("Scout's live browser")).toBe(browser);
   expect(
-    within(screen.getByRole("region", { name: "Conversation with Scout" }))
-      .getByRole("link", { name: "Open browser" })
-      .getAttribute("href"),
-  ).toBe("https://liveview.firecrawl.dev/control");
+    within(screen.getByRole("region", { name: "Conversation with Scout" })).getByRole("button", {
+      name: "Open browser",
+    }),
+  ).toBeTruthy();
+  expect(remote.openHandoffBrowser).not.toHaveBeenCalled();
   expect(screen.getAllByRole("button", { name: "Stop Scout" })).toHaveLength(2);
   fireEvent.click(screen.getByRole("button", { name: "Back to chat" }));
   expect(screen.getByTitle("Scout's live browser")).toBe(browser);
@@ -2425,9 +2508,8 @@ test("selects older replays without changing the conversation or current handoff
   expect(router.state.location.search.session).toBe("older");
   const bookmark = router.state.location.href;
   expect(screen.queryByTitle("Scout's live browser")).toBeNull();
-  expect(screen.getByRole("link", { name: "Open browser" }).getAttribute("href")).toBe(
-    "https://liveview.firecrawl.dev/control",
-  );
+  expect(screen.getByRole("button", { name: "Open browser" })).toBeTruthy();
+  expect(remote.openHandoffBrowser).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Back to chat" }));
   expect(screen.getByDisplayValue("Keep this draft.")).toBeTruthy();
   expect(remote.sendManaged).not.toHaveBeenCalled();

@@ -10,11 +10,16 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import { getFunctionName, type FunctionReference } from "convex/server";
+import { ConvexError } from "convex/values";
 import { useSyncExternalStore } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
 import { ROLE_ACCESS_GRANTS } from "../../shared/accessModel";
 import { omitNullish } from "../../shared/omitNullish";
-import { HANDOFF_EXPIRED_REASON, handoffDeadlineMessage } from "../../shared/handoff";
+import {
+  HANDOFF_DECLINED_REASON,
+  HANDOFF_EXPIRED_REASON,
+  handoffDeadlineMessage,
+} from "../../shared/handoff";
 import { AppNavigation } from "../components/app-navigation";
 import { RouteAccessOutlet } from "../components/route-access";
 import { Route as AgentsRoute } from "../routes/agents";
@@ -31,6 +36,8 @@ const remote = vi.hoisted(() => ({
   retryMessage: vi.fn(),
   stop: vi.fn(),
   resume: vi.fn(),
+  declineHandoff: vi.fn(),
+  openHandoffBrowser: vi.fn(),
   refresh: vi.fn(),
   screenshotUrl: vi.fn(),
   loadMore: vi.fn(),
@@ -79,6 +86,10 @@ vi.mock("convex/react", () => ({
         return remote.stop;
       case "tasks/sessions:resume":
         return remote.resume;
+      case "tasks/sessions:declineHandoff":
+        return remote.declineHandoff;
+      case "tasks/sessions:openHandoffBrowser":
+        return remote.openHandoffBrowser;
       default:
         throw new Error("Unexpected mutation");
     }
@@ -149,6 +160,11 @@ beforeEach(() => {
   remote.retryMessage.mockReset().mockResolvedValue(null);
   remote.stop.mockReset().mockResolvedValue(null);
   remote.resume.mockReset().mockResolvedValue(null);
+  remote.declineHandoff.mockReset().mockResolvedValue(null);
+  remote.openHandoffBrowser.mockReset().mockResolvedValue({
+    url: "https://example.test/control",
+    expiresAt: 1_000_000,
+  });
   remote.refresh.mockReset().mockResolvedValue(null);
   remote.screenshotUrl.mockReset().mockResolvedValue(null);
   remote.loadMore.mockReset();
@@ -875,7 +891,23 @@ test("shows the local handoff deadline and keeps expiration visible if cleanup f
     }),
   );
   await open("/agents?session=session-1");
-  expect(await screen.findByText(handoffDeadlineMessage(expiresAt, undefined))).toBeTruthy();
+  expect(
+    await screen.findByText(handoffDeadlineMessage(expiresAt, undefined, "open")),
+  ).toBeTruthy();
+  updateQuery(
+    "tasks/sessions:get",
+    session({
+      kind: "waiting",
+      message: "Complete verification",
+      callId: "call",
+      turnId: "turn",
+      openedAt: expiresAt - 600_000,
+      expiresAt,
+    }),
+  );
+  expect(
+    await screen.findByText(handoffDeadlineMessage(expiresAt, undefined, "resume")),
+  ).toBeTruthy();
   updateQuery("tasks/sessions:get", {
     ...session({ kind: "stopped", reason: "handoff_expired" }),
     active: true,
@@ -919,6 +951,7 @@ test("admins can inspect another user's transcript without owner controls", asyn
   expect(await screen.findByText("I opened the site.")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "I couldn't complete this" })).toBeNull();
   expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
 });
 
@@ -1001,6 +1034,126 @@ test("hides empty reasoning and collapses reasoning summaries while preserving f
   expect(screen.getByText(details).closest("details")?.open).toBe(true);
 });
 
+test.each(["Open browser", "Open live browser"])(
+  "%s reserves a tab and waits for authenticated handoff admission",
+  async (label) => {
+    remote.queries.set("tasks/sessions:listBrowsers", [browser("browser-1", 1)]);
+    const tab = window.open("about:blank", "_blank");
+    if (!tab) throw new Error("Expected a test browser tab");
+    // happy-dom omits the browser's writable opener property.
+    Object.defineProperty(tab, "opener", { configurable: true, writable: true, value: window });
+    const navigate = vi.spyOn(tab.location, "replace").mockImplementation(() => {});
+    const reserve = vi.spyOn(window, "open").mockReturnValue(tab);
+    let finishOpening = () => {};
+    const admitted = new Promise<void>((resolve) => {
+      finishOpening = resolve;
+    });
+    remote.openHandoffBrowser.mockImplementation(async () => {
+      await admitted;
+      return { url: "https://example.test/admitted", expiresAt: 1_000_000 };
+    });
+    await open("/agents?session=session-1");
+    const button = await screen.findByRole("button", { name: label });
+    expect(remote.openHandoffBrowser).not.toHaveBeenCalled();
+    expect(reserve).not.toHaveBeenCalled();
+    fireEvent.click(button);
+    expect(reserve).toHaveBeenCalledExactlyOnceWith("about:blank", "_blank");
+    expect(tab.opener).toBeNull();
+    expect(remote.openHandoffBrowser).toHaveBeenCalledExactlyOnceWith({ sessionId: "session-1" });
+    expect(navigate).not.toHaveBeenCalled();
+    fireEvent.click(button);
+    expect(remote.openHandoffBrowser).toHaveBeenCalledTimes(1);
+    await act(async () => finishOpening());
+    expect(navigate).toHaveBeenCalledExactlyOnceWith("https://example.test/admitted");
+    expect(screen.getByTitle("Live browser session 1").getAttribute("src")).toBe(
+      "about:blank#browser-1",
+    );
+    tab.close();
+  },
+);
+
+test.each(["expired", "failed"])(
+  "closes the reserved browser when handoff opening %s",
+  async (outcome) => {
+    remote.queries.set("tasks/sessions:listBrowsers", [browser("browser-1", 1)]);
+    const tab = window.open("about:blank", "_blank");
+    if (!tab) throw new Error("Expected a test browser tab");
+    // happy-dom omits the browser's writable opener property.
+    Object.defineProperty(tab, "opener", { configurable: true, writable: true, value: window });
+    const navigate = vi.spyOn(tab.location, "replace").mockImplementation(() => {});
+    const close = vi.spyOn(tab, "close");
+    vi.spyOn(window, "open").mockReturnValue(tab);
+    if (outcome === "expired") remote.openHandoffBrowser.mockResolvedValueOnce(null);
+    else
+      remote.openHandoffBrowser.mockRejectedValueOnce(
+        new ConvexError("Browser unavailable: 503 [request_id: req-open]"),
+      );
+    await open("/agents?session=session-1");
+    fireEvent.click(await screen.findByRole("button", { name: "Open browser" }));
+    await waitFor(() => expect(close).toHaveBeenCalledOnce());
+    expect(navigate).not.toHaveBeenCalled();
+    if (outcome === "failed")
+      expect(screen.getByRole("alert").textContent).toBe(
+        "Browser unavailable: 503 [request_id: req-open]",
+      );
+  },
+);
+
+test("a blocked popup does not start the handoff timer", async () => {
+  remote.queries.set("tasks/sessions:listBrowsers", [browser("browser-1", 1)]);
+  vi.spyOn(window, "open").mockReturnValue(null);
+  await open("/agents?session=session-1");
+  fireEvent.click(await screen.findByRole("button", { name: "Open browser" }));
+  expect(await screen.findByText("Allow pop-ups to open the browser.")).toBeTruthy();
+  expect(remote.openHandoffBrowser).not.toHaveBeenCalled();
+});
+
+test("read-only browser links remain passive", async () => {
+  remote.queries.set("tasks/sessions:listBrowsers", [
+    { ...browser("browser-1", 1), interactiveLiveViewUrl: null },
+  ]);
+  await open("/agents?session=session-1");
+  expect((await screen.findByRole("link", { name: "Open browser" })).getAttribute("href")).toBe(
+    "about:blank#browser-1",
+  );
+  expect(screen.getByRole("link", { name: "Open live browser" }).getAttribute("href")).toBe(
+    "about:blank#browser-1",
+  );
+  expect(remote.openHandoffBrowser).not.toHaveBeenCalled();
+});
+
+test("declines the current handoff, shows real errors, and retains the reason through cleanup failure", async () => {
+  remote.queries.set(
+    "tasks/sessions:get",
+    session({
+      kind: "waiting",
+      message: "Complete verification",
+      callId: "call",
+      turnId: "turn",
+    }),
+  );
+  remote.declineHandoff.mockRejectedValueOnce(new ConvexError("This handoff has already changed"));
+  await open("/agents?session=session-1");
+  fireEvent.click(await screen.findByRole("button", { name: "I couldn't complete this" }));
+  expect(await screen.findByText("This handoff has already changed")).toBeTruthy();
+  expect(remote.declineHandoff).toHaveBeenCalledExactlyOnceWith({
+    sessionId: "session-1",
+    callId: "call",
+    turnId: "turn",
+  });
+  fireEvent.click(screen.getByRole("button", { name: "I couldn't complete this" }));
+  await waitFor(() => expect(remote.declineHandoff).toHaveBeenCalledTimes(2));
+  updateQuery("tasks/sessions:get", {
+    ...session({ kind: "stopped", reason: "handoff_declined" }),
+    active: true,
+    cleanupError: "Browser provider unavailable",
+  });
+  expect(await screen.findByText(HANDOFF_DECLINED_REASON)).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Retry stop" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "I couldn't complete this" })).toBeNull();
+  expect(remote.stop).not.toHaveBeenCalled();
+});
+
 test("waiting sessions expose the human browser and resume, while running sessions can stop", async () => {
   remote.queries.set("tasks/sessions:listBrowsers", [
     {
@@ -1025,9 +1178,8 @@ test("waiting sessions expose the human browser and resume, while running sessio
   });
   await open("/agents?session=session-1");
   expect(await screen.findByText("Sign in to continue.")).toBeTruthy();
-  expect(screen.getByRole("link", { name: "Open browser" }).getAttribute("href")).toBe(
-    "https://example.test/control",
-  );
+  expect(screen.getByRole("button", { name: "Open browser" })).toBeTruthy();
+  expect(remote.openHandoffBrowser).not.toHaveBeenCalled();
   const browserFrame = screen.getByTitle("Live browser session 1");
   expect(browserFrame.getAttribute("src")).toBe("about:blank#preview");
   expect(browserFrame.getAttribute("allow")).toBeNull();

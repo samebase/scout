@@ -26,9 +26,14 @@ import {
 import { type FormEvent, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import { omitNullish } from "../../../shared/omitNullish";
-import { HANDOFF_EXPIRED_REASON, handoffDeadlineMessage } from "../../../shared/handoff";
+import {
+  HANDOFF_DECLINED_REASON,
+  HANDOFF_EXPIRED_REASON,
+  handoffDeadlineMessage,
+} from "../../../shared/handoff";
 import { creditFailure, creditFailureMessage } from "../../../shared/creditFailure";
 import { PendingTaskMessage } from "../../tasks/pending-message";
+import { OpenHandoffBrowserButton } from "../../tasks/browser";
 import { scoutAvailabilityLabels } from "#components/scout-current-activity";
 import {
   conversationDestination,
@@ -877,6 +882,7 @@ function ConversationSession({
   const retryManaged = useMutation(api.tasks.sessions.retryMessage);
   const stopManaged = useMutation(api.tasks.sessions.stop);
   const resumeManaged = useMutation(api.tasks.sessions.resume);
+  const declineManaged = useMutation(api.tasks.sessions.declineHandoff);
   const [draft, setDraft] = useState("");
   const [request, setRequest] = useState<RequestState>({ kind: "idle" });
   const pending = useRef(false);
@@ -937,12 +943,12 @@ function ConversationSession({
     }
   }
 
-  async function resume() {
+  async function respondToHandoff(operation: "resume" | "decline") {
     if (!managedId || managed?.state.kind !== "waiting" || pending.current) return;
     pending.current = true;
     setRequest({ kind: "pending" });
     try {
-      await resumeManaged({
+      await (operation === "resume" ? resumeManaged : declineManaged)({
         sessionId: managedId,
         callId: managed.state.callId,
         turnId: managed.state.turnId,
@@ -955,10 +961,10 @@ function ConversationSession({
           ? error.data
           : error instanceof Error
             ? error.message
-            : "The resume request failed.");
+            : String(error));
       setRequest({
         kind: "failed",
-        message: `Scout could not resume: ${reason}`,
+        message: operation === "resume" ? `Scout could not resume: ${reason}` : reason,
       });
     } finally {
       pending.current = false;
@@ -1008,7 +1014,13 @@ function ConversationSession({
         <div className={cn(playNotice, "space-y-3")}>
           <p className="whitespace-pre-wrap">{managed.state.message}</p>
           {managed.state.expiresAt !== undefined && (
-            <p>{handoffDeadlineMessage(managed.state.expiresAt, undefined)}</p>
+            <p>
+              {handoffDeadlineMessage(
+                managed.state.expiresAt,
+                undefined,
+                managed.state.openedAt === undefined ? "open" : "resume",
+              )}
+            </p>
           )}
           {managed.requestCheckMessage && (
             <p role="alert" className="whitespace-pre-wrap wrap-anywhere">
@@ -1018,24 +1030,30 @@ function ConversationSession({
           {managed.handoffEmailFailed && (
             <p role="alert">The handoff email couldn’t be sent. You can open the browser here.</p>
           )}
-          <div className="flex items-center gap-4">
-            {managed.interactiveLiveViewUrl && (
-              <a
-                href={managed.interactiveLiveViewUrl}
-                target="_blank"
-                rel="noreferrer"
+          <div className="flex flex-wrap items-center gap-4">
+            {managedId && managed.interactiveLiveViewUrl && (
+              <OpenHandoffBrowserButton
+                sessionId={managedId}
+                label="Open browser"
                 className={playTextLink}
-              >
-                Open browser <ArrowUpRightIcon size={15} aria-hidden="true" />
-              </a>
+                disabled={request.kind === "pending"}
+              />
             )}
             <button
               type="button"
               disabled={request.kind === "pending"}
               className={buttonVariants({ size: "lg" })}
-              onClick={() => void resume()}
+              onClick={() => void respondToHandoff("resume")}
             >
               Resume Scout
+            </button>
+            <button
+              type="button"
+              disabled={request.kind === "pending"}
+              className={buttonVariants({ size: "lg", variant: "outline" })}
+              onClick={() => void respondToHandoff("decline")}
+            >
+              I couldn't complete this
             </button>
           </div>
         </div>
@@ -1051,9 +1069,11 @@ function ConversationSession({
         <p role="status" className="shrink-0 border-b px-4 py-3 text-sm text-muted-foreground">
           {managed?.state.kind === "stopped" && managed.state.reason === "handoff_expired"
             ? HANDOFF_EXPIRED_REASON
-            : thread.status === "stopping"
-              ? "Stopping Scout…"
-              : "Task stopped."}
+            : managed?.state.kind === "stopped" && managed.state.reason === "handoff_declined"
+              ? HANDOFF_DECLINED_REASON
+              : thread.status === "stopping"
+                ? "Stopping Scout…"
+                : "Task stopped."}
           {thread.status === "stopped" &&
             managed?.canSend &&
             !showingWalkthrough &&

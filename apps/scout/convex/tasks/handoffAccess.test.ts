@@ -8,6 +8,7 @@ import { api, internal } from "../_generated/api";
 import type { Doc } from "../_generated/dataModel";
 import schema from "../schema";
 import { insertTestAccount } from "../testing/accounts";
+import { HANDOFF_ACTIVE_WINDOW_MS, HANDOFF_DECLINED_REASON } from "../../shared/handoff";
 
 const modules = {
   ...import.meta.glob("../**/*.ts"),
@@ -36,7 +37,10 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-async function setup(engine: NonNullable<Doc<"agentsApiSessions">["engine"]>) {
+async function setup(
+  engine: NonNullable<Doc<"agentsApiSessions">["engine"]>,
+  browserTtl = 20 * minute,
+) {
   const backend = convexTest(schema, modules);
   workflowTest.register(backend);
   const ids = await backend.run(async (ctx) => {
@@ -84,7 +88,7 @@ async function setup(engine: NonNullable<Doc<"agentsApiSessions">["engine"]>) {
   });
   const browser = {
     providerSessionId: "browser",
-    providerExpiresAtMs: Date.now() + 20 * minute,
+    providerExpiresAtMs: Date.now() + browserTtl,
     cdpUrl: "wss://example.test/private-cdp",
     liveViewUrl: null,
     interactiveLiveViewUrl: "https://liveview.firecrawl.dev/browser/control",
@@ -99,7 +103,7 @@ async function setup(engine: NonNullable<Doc<"agentsApiSessions">["engine"]>) {
     callId: handoff.callId,
     turnId: handoff.turnId,
     providerSessionId: browser.providerSessionId,
-    expiresAt: browser.providerExpiresAtMs,
+    expiresAt: Math.min(browser.providerExpiresAtMs, Date.now() + 45 * minute),
     tokenHash,
   };
   expect(
@@ -130,12 +134,144 @@ async function setup(engine: NonNullable<Doc<"agentsApiSessions">["engine"]>) {
 }
 
 describe.each(["agents_api", "convex_agent"] as const)("%s handoff access", (engine) => {
+  it("still issues the email link if the owner opens while notification is being prepared", async () => {
+    const t = await setup(engine);
+    await t.backend.run((ctx) => ctx.db.patch(t.sessionId, { handoffAccess: undefined }));
+    const delivery = await t.backend.query(internal.tasks.sessions.handoffNotification, {
+      sessionId: t.sessionId,
+      callId: handoff.callId,
+    });
+    expect(delivery?.tokenExpiresAt).toBe(t.access.expiresAt);
+    await t.owner.mutation(api.tasks.sessions.openHandoffBrowser, { sessionId: t.sessionId });
+    expect(
+      await t.backend.mutation(internal.tasks.handoffRecords.issue, {
+        sessionId: t.sessionId,
+        access: t.access,
+      }),
+    ).toBe(true);
+    expect(await t.backend.action(api.tasks.handoff.load, t.args)).toMatchObject({
+      status: "waiting",
+      expiresAt: Date.now() + HANDOFF_ACTIVE_WINDOW_MS,
+    });
+  });
+
+  it("starts ten minutes on first open, preserves it across reloads, and ignores the old expiry job", async () => {
+    const t = await setup(engine, 60 * minute);
+    await t.owner.query(api.tasks.sessions.controls, { sessionId: t.sessionId });
+    expect((await t.read())?.state).not.toHaveProperty("openedAt");
+    vi.setSystemTime(Date.now() + 44 * minute);
+    const openedAt = Date.now();
+    const expiresAt = openedAt + HANDOFF_ACTIVE_WINDOW_MS;
+    expect(await t.backend.action(api.tasks.handoff.load, t.args)).toMatchObject({
+      status: "waiting",
+      expiresAt,
+    });
+    vi.setSystemTime(t.access.expiresAt);
+    expect(
+      await t.backend.mutation(internal.tasks.sessions.expireHandoff, {
+        sessionId: t.sessionId,
+        callId: handoff.callId,
+        turnId: handoff.turnId,
+        expiresAt: t.access.expiresAt,
+      }),
+    ).toBe(false);
+    expect(
+      await t.owner.mutation(api.tasks.sessions.openHandoffBrowser, { sessionId: t.sessionId }),
+    ).toEqual({
+      url: t.browser.interactiveLiveViewUrl,
+      expiresAt,
+    });
+    expect(await t.backend.action(api.tasks.handoff.load, t.args)).toMatchObject({
+      status: "waiting",
+      expiresAt,
+    });
+    expect((await t.read())?.state).toMatchObject({ openedAt, expiresAt });
+    vi.setSystemTime(expiresAt);
+    expect(await t.backend.action(api.tasks.handoff.load, t.args)).toEqual({ status: "expired" });
+    expect((await t.read())?.state).toEqual({ kind: "stopped", reason: "handoff_expired" });
+  });
+
+  it("caps the owner's active window at browser expiry and shares it with the email link", async () => {
+    const t = await setup(engine);
+    vi.setSystemTime(Date.now() + 15 * minute);
+    expect(
+      await t.owner.mutation(api.tasks.sessions.openHandoffBrowser, { sessionId: t.sessionId }),
+    ).toEqual({
+      url: t.browser.interactiveLiveViewUrl,
+      expiresAt: t.browser.providerExpiresAtMs,
+    });
+    expect(await t.backend.action(api.tasks.handoff.load, t.args)).toMatchObject({
+      status: "waiting",
+      expiresAt: t.browser.providerExpiresAtMs,
+    });
+    vi.setSystemTime(t.browser.providerExpiresAtMs);
+    expect(
+      await t.owner.mutation(api.tasks.sessions.openHandoffBrowser, { sessionId: t.sessionId }),
+    ).toBeNull();
+  });
+
+  it("records inability to complete the check and schedules browser cleanup only once", async () => {
+    const t = await setup(engine);
+    await t.backend.action(api.tasks.handoff.load, t.args);
+    expect(await t.backend.action(api.tasks.handoff.decline, t.args)).toEqual({
+      status: "declined",
+    });
+    const stopped = await t.read();
+    expect(stopped?.state).toEqual({ kind: "stopped", reason: "handoff_declined" });
+    expect(stopped?.cleanupJobId).toBeDefined();
+    expect(await t.backend.run((ctx) => ctx.db.query("agentsApiCalls").unique())).toMatchObject({
+      callId: handoff.callId,
+      result: { kind: "interrupted", error: HANDOFF_DECLINED_REASON },
+    });
+    for (const action of [
+      api.tasks.handoff.decline,
+      api.tasks.handoff.load,
+      api.tasks.handoff.resume,
+    ]) {
+      expect(await t.backend.action(action, t.args)).toEqual({ status: "declined" });
+    }
+    expect((await t.read())?.cleanupJobId).toBe(stopped?.cleanupJobId);
+  });
+
+  it("only lets the owner decline the currently waiting handoff", async () => {
+    const t = await setup(engine);
+    const strangerId = await t.backend.run((ctx) =>
+      insertTestAccount(ctx, { email: "stranger@example.test" }),
+    );
+    const stranger = t.backend.withIdentity({ subject: strangerId });
+    await expect(
+      stranger.mutation(api.tasks.sessions.openHandoffBrowser, { sessionId: t.sessionId }),
+    ).rejects.toThrow();
+    await expect(
+      stranger.mutation(api.tasks.sessions.declineHandoff, {
+        sessionId: t.sessionId,
+        callId: handoff.callId,
+        turnId: handoff.turnId,
+      }),
+    ).rejects.toThrow();
+    await expect(
+      t.owner.mutation(api.tasks.sessions.declineHandoff, {
+        sessionId: t.sessionId,
+        callId: "old-help",
+        turnId: handoff.turnId,
+      }),
+    ).rejects.toThrow("no longer waiting");
+    await t.owner.mutation(api.tasks.sessions.declineHandoff, {
+      sessionId: t.sessionId,
+      callId: handoff.callId,
+      turnId: handoff.turnId,
+    });
+    expect((await t.read())?.state).toEqual({ kind: "stopped", reason: "handoff_declined" });
+  });
+
   it("lets an anonymous token holder use the browser and starts only one Resume check", async () => {
     const t = await setup(engine);
+    const openedAt = Date.now();
+    const expiresAt = openedAt + HANDOFF_ACTIVE_WINDOW_MS;
     expect(await t.backend.action(api.tasks.handoff.load, t.args)).toEqual({
       status: "waiting",
       scoutName: "Scout",
-      expiresAt: t.access.expiresAt,
+      expiresAt,
       message: handoff.message,
       interactiveLiveViewUrl: t.browser.interactiveLiveViewUrl,
       checkMessage: null,
@@ -144,7 +280,7 @@ describe.each(["agents_api", "convex_agent"] as const)("%s handoff access", (eng
     const checking = {
       status: "checking",
       scoutName: "Scout",
-      expiresAt: t.access.expiresAt,
+      expiresAt,
     };
     expect(await t.backend.action(api.tasks.handoff.resume, t.args)).toEqual(checking);
     const session = await t.read();
@@ -152,12 +288,13 @@ describe.each(["agents_api", "convex_agent"] as const)("%s handoff access", (eng
     expect(session?.workflowId).toBeDefined();
     expect(await t.backend.action(api.tasks.handoff.resume, t.args)).toEqual(checking);
     expect(await t.backend.action(api.tasks.handoff.load, t.args)).toEqual(checking);
+    expect(await t.backend.action(api.tasks.handoff.decline, t.args)).toEqual(checking);
     expect(await t.checks()).toMatchObject([
       {
         kind: "resume",
         prompt: "Test example.com",
         providerSessionId: t.browser.providerSessionId,
-        handoff: { ...handoff, expiresAt: t.access.expiresAt },
+        handoff: { ...handoff, expiresAt, openedAt },
         state: { kind: "pending" },
       },
     ]);
@@ -174,8 +311,15 @@ describe.each(["agents_api", "convex_agent"] as const)("%s handoff access", (eng
     ]) {
       expect(await t.backend.action(api.tasks.handoff.load, args)).toEqual({ status: "invalid" });
       expect(await t.backend.action(api.tasks.handoff.resume, args)).toEqual({ status: "invalid" });
+      expect(await t.backend.action(api.tasks.handoff.decline, args)).toEqual({
+        status: "invalid",
+      });
     }
-    expect((await t.read())?.state.kind).toBe("waiting");
+    expect((await t.read())?.state).toEqual({
+      kind: "waiting",
+      ...handoff,
+      expiresAt: t.access.expiresAt,
+    });
     expect(await t.checks()).toEqual([]);
   });
 
@@ -230,6 +374,7 @@ describe.each(["agents_api", "convex_agent"] as const)("%s handoff access", (eng
     }
     expect(await t.backend.action(api.tasks.handoff.load, t.args)).toEqual({ status });
     expect(await t.backend.action(api.tasks.handoff.resume, t.args)).toEqual({ status });
+    expect(await t.backend.action(api.tasks.handoff.decline, t.args)).toEqual({ status });
     expect(await t.checks()).toEqual([]);
     expect(
       await t.backend.mutation(internal.tasks.handoffRecords.issue, {
@@ -246,6 +391,9 @@ describe.each(["agents_api", "convex_agent"] as const)("%s handoff access", (eng
     "shows the actual %s check message and retries within the original deadline",
     async (outcome) => {
       const t = await setup(engine);
+      const openedAt = Date.now();
+      const expiresAt = openedAt + HANDOFF_ACTIVE_WINDOW_MS;
+      await t.backend.action(api.tasks.handoff.load, t.args);
       await t.backend.action(api.tasks.handoff.resume, t.args);
       const [check] = await t.checks();
       if (!check) throw new Error("Expected Resume check");
@@ -278,19 +426,19 @@ describe.each(["agents_api", "convex_agent"] as const)("%s handoff access", (eng
       ).toBe(false);
       expect(await t.backend.action(api.tasks.handoff.load, t.args)).toMatchObject({
         status: "waiting",
-        expiresAt: t.access.expiresAt,
+        expiresAt,
         interactiveLiveViewUrl: t.browser.interactiveLiveViewUrl,
         checkMessage: message,
       });
       expect(await t.backend.action(api.tasks.handoff.resume, t.args)).toMatchObject({
         status: "checking",
-        expiresAt: t.access.expiresAt,
+        expiresAt,
       });
       const checks = await t.checks();
       expect(checks).toHaveLength(2);
       expect(checks[1]).toMatchObject({
         state: { kind: "pending" },
-        handoff: { ...handoff, expiresAt: t.access.expiresAt },
+        handoff: { ...handoff, expiresAt, openedAt },
       });
     },
   );
@@ -473,7 +621,9 @@ describe.each(["agents_api", "convex_agent"] as const)("%s handoff access", (eng
     vi.stubEnv("SITE_URL", "https://example.test");
     const request = vi
       .fn<typeof fetch>()
-      .mockResolvedValue(Response.json({ message_id: "mail", thread_id: "mail-thread" }));
+      .mockImplementation(async () =>
+        Response.json({ message_id: "mail", thread_id: "mail-thread" }),
+      );
     vi.stubGlobal("fetch", request);
     await t.backend.action(internal.tasks.handoff.notify, {
       sessionId: t.sessionId,
@@ -508,6 +658,15 @@ describe.each(["agents_api", "convex_agent"] as const)("%s handoff access", (eng
       status: "waiting",
       interactiveLiveViewUrl: t.browser.interactiveLiveViewUrl,
     });
+    await t.backend.action(internal.tasks.handoff.notify, {
+      sessionId: t.sessionId,
+      callId: handoff.callId,
+    });
+    const retriedMail = z
+      .object({ text: z.string() })
+      .parse(JSON.parse(z.string().parse(request.mock.calls[1]?.[1]?.body)));
+    expect(retriedMail.text).toContain(url.toString());
+    expect((await t.read())?.handoffAccess).toEqual(session?.handoffAccess);
     const controls = await t.owner.query(api.tasks.sessions.controls, { sessionId: t.sessionId });
     for (const result of [page, controls]) {
       expect(result).not.toHaveProperty("handoffAccess");

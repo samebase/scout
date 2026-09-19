@@ -1,5 +1,9 @@
 import { PaneFrame } from "@samebase/sidebars/PaneFrame";
-import { HANDOFF_EXPIRED_REASON, handoffDeadlineMessage } from "../../shared/handoff";
+import {
+  HANDOFF_DECLINED_REASON,
+  HANDOFF_EXPIRED_REASON,
+  handoffDeadlineMessage,
+} from "../../shared/handoff";
 import { SidebarLayout } from "@samebase/sidebars/SidebarLayout";
 import { useSidebarActions, useSidebarLayoutPresentation } from "@samebase/sidebars/SidebarRuntime";
 import { Link, useNavigate, type ErrorComponentProps } from "@tanstack/react-router";
@@ -22,6 +26,7 @@ import {
 } from "lucide-react";
 import { useMemo, useRef, useState, type FormEvent } from "react";
 import { api } from "../../convex/_generated/api";
+import { ConvexError } from "convex/values";
 import { scoutAvailabilityLabels } from "#components/scout-current-activity";
 import { omitNullish } from "../../shared/omitNullish";
 import { Button } from "#components/ui/button";
@@ -608,6 +613,7 @@ function SessionView({ session, walkthrough }: { session: Session; walkthrough: 
   const retryMessage = useMutation(api.tasks.sessions.retryMessage);
   const stop = useMutation(api.tasks.sessions.stop);
   const resume = useMutation(api.tasks.sessions.resume);
+  const decline = useMutation(api.tasks.sessions.declineHandoff);
   const refresh = useAction(api.tasks.runtime.refresh);
   const [draft, setDraft] = useState("");
   const [request, setRequest] = useState<RequestState>({ kind: "idle" });
@@ -628,7 +634,7 @@ function SessionView({ session, walkthrough }: { session: Session; walkthrough: 
       : undefined) ?? error?.split(/\r?\n/, 1)[0];
   const pending = request.kind === "pending";
 
-  async function run(operation: "send" | "retry" | "stop" | "resume" | "refresh") {
+  async function run(operation: "send" | "retry" | "stop" | "resume" | "decline" | "refresh") {
     if (submitting.current || (operation !== "refresh" && !session.canControl)) return;
     if (operation === "send" && !canSend) return;
     if (operation === "refresh" && session.active) return;
@@ -647,8 +653,9 @@ function SessionView({ session, walkthrough }: { session: Session; walkthrough: 
           await stop({ sessionId: session._id });
           break;
         case "resume":
+        case "decline":
           if (session.state.kind !== "waiting") break;
-          await resume({
+          await (operation === "resume" ? resume : decline)({
             sessionId: session._id,
             callId: session.state.callId,
             turnId: session.state.turnId,
@@ -662,7 +669,12 @@ function SessionView({ session, walkthrough }: { session: Session; walkthrough: 
     } catch (error) {
       setRequest({
         kind: "failed",
-        message: error instanceof Error ? error.message : `Could not ${operation} task.`,
+        message:
+          error instanceof ConvexError && typeof error.data === "string"
+            ? error.data
+            : error instanceof Error
+              ? error.message
+              : String(error),
       });
     } finally {
       submitting.current = false;
@@ -716,7 +728,11 @@ function SessionView({ session, walkthrough }: { session: Session; walkthrough: 
             <p className="text-sm whitespace-pre-wrap wrap-anywhere">{session.state.message}</p>
             {session.state.expiresAt !== undefined && (
               <p className="text-sm">
-                {handoffDeadlineMessage(session.state.expiresAt, undefined)}
+                {handoffDeadlineMessage(
+                  session.state.expiresAt,
+                  undefined,
+                  session.state.openedAt === undefined ? "open" : "resume",
+                )}
               </p>
             )}
             {session.checkMessage && (
@@ -728,9 +744,14 @@ function SessionView({ session, walkthrough }: { session: Session; walkthrough: 
               </p>
             )}
             {session.canControl && (
-              <Button disabled={pending} onClick={() => void run("resume")}>
-                Resume
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button disabled={pending} onClick={() => void run("resume")}>
+                  Resume
+                </Button>
+                <Button variant="outline" disabled={pending} onClick={() => void run("decline")}>
+                  I couldn't complete this
+                </Button>
+              </div>
             )}
           </div>
         )}
@@ -778,16 +799,17 @@ function SessionView({ session, walkthrough }: { session: Session; walkthrough: 
               )}
           </div>
         )}
-        {session.state.kind === "stopped" &&
-          (session.state.reason === "handoff_expired" || !error) && (
-            <p className="text-sm text-muted-foreground">
-              {session.state.reason === "handoff_expired"
-                ? HANDOFF_EXPIRED_REASON
+        {session.state.kind === "stopped" && (session.state.reason !== undefined || !error) && (
+          <p className="text-sm text-muted-foreground">
+            {session.state.reason === "handoff_expired"
+              ? HANDOFF_EXPIRED_REASON
+              : session.state.reason === "handoff_declined"
+                ? HANDOFF_DECLINED_REASON
                 : session.active
                   ? "Stopping…"
                   : "Stopped"}
-            </p>
-          )}
+          </p>
+        )}
         {request.kind === "failed" && (
           <p role="alert" className="text-sm wrap-anywhere text-destructive">
             {request.message}

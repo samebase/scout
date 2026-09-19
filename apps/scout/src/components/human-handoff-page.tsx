@@ -24,11 +24,16 @@ function HandoffCountdown({ expiresAt }: { expiresAt: number }) {
   const seconds = Math.max(0, Math.ceil((expiresAt - now) / 1_000));
   return (
     <time
+      role="timer"
+      aria-label="Time remaining"
       dateTime={new Date(expiresAt).toISOString()}
       title={`Available until ${new Date(expiresAt).toLocaleString()}`}
-      className="tabular-nums"
+      className="inline-flex shrink-0 items-baseline gap-2 rounded-lg bg-muted px-3 py-2 text-3xl font-semibold tabular-nums"
     >
-      {Math.floor(seconds / 60)}:{(seconds % 60).toString().padStart(2, "0")} remaining
+      <span>
+        {Math.floor(seconds / 60)}:{(seconds % 60).toString().padStart(2, "0")}
+      </span>{" "}
+      <span className="text-sm font-medium text-muted-foreground">remaining</span>
     </time>
   );
 }
@@ -62,16 +67,10 @@ export function HumanHandoffPage({ sessionId }: { sessionId: string }) {
   }, [sessionId]);
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col gap-3 py-3 sm:gap-5 sm:px-6 sm:py-8">
-      <header className="px-3 sm:px-0">
-        <p className="text-sm font-semibold text-muted-foreground">Scout</p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Help Scout continue</h1>
-      </header>
-      {access.status === "loading" ? (
-        <p role="status" className="px-3 sm:px-0">
-          Opening handoff…
-        </p>
-      ) : null}
+    <main
+      aria-busy={access.status === "loading"}
+      className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col gap-3 py-3 sm:gap-5 sm:px-6 sm:py-8"
+    >
       {access.status === "unavailable" ? (
         <p role="alert" className="px-3 sm:px-0">
           {access.message}
@@ -91,19 +90,20 @@ export function HumanHandoffPage({ sessionId }: { sessionId: string }) {
 function HandoffSession({ sessionId, accessToken }: { sessionId: string; accessToken: string }) {
   const load = useAction(api.tasks.handoff.load);
   const resume = useAction(api.tasks.handoff.resume);
+  const decline = useAction(api.tasks.handoff.decline);
   const [page, setPage] = useState<HandoffPage | null>(null);
-  const [pending, setPending] = useState<"load" | "resume" | null>(null);
+  const [pending, setPending] = useState<"load" | "resume" | "decline" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const requestId = useRef(0);
 
   const request = useCallback(
-    async (operation: "load" | "resume") => {
+    async (operation: "load" | "resume" | "decline") => {
       const id = ++requestId.current;
       setPending(operation);
       setError(null);
-      if (operation === "resume") setPage(null);
+      if (operation !== "load") setPage(null);
       try {
-        const page = await (operation === "load" ? load : resume)({ sessionId, accessToken });
+        const page = await { load, resume, decline }[operation]({ sessionId, accessToken });
         if (id !== requestId.current) return;
         setPage(page);
       } catch (caught) {
@@ -115,7 +115,7 @@ function HandoffSession({ sessionId, accessToken }: { sessionId: string; accessT
         if (id === requestId.current) setPending(null);
       }
     },
-    [accessToken, load, resume, sessionId],
+    [accessToken, decline, load, resume, sessionId],
   );
 
   useEffect(() => {
@@ -138,7 +138,7 @@ function HandoffSession({ sessionId, accessToken }: { sessionId: string; accessT
   }, [error, pending, request, page]);
 
   return (
-    <>
+    <section aria-busy={pending !== null} className="flex flex-col gap-3 sm:gap-5">
       {error ? (
         <p role="alert" className="px-3 whitespace-pre-wrap break-words text-destructive sm:px-0">
           {error}
@@ -155,27 +155,35 @@ function HandoffSession({ sessionId, accessToken }: { sessionId: string; accessT
           Reload handoff
         </Button>
       ) : null}
-      {!page ? (
-        !error && (
-          <p role="status" className="px-3 sm:px-0">
-            {pending === "resume"
-              ? "Checking whether Scout can continue…"
-              : "Loading handoff status…"}
-          </p>
-        )
-      ) : (
+      {pending === "resume" || pending === "decline" ? (
+        <p role="status" className="px-3 sm:px-0">
+          {pending === "resume" ? "Checking whether Scout can continue…" : "Stopping Scout…"}
+        </p>
+      ) : null}
+      {page ? (
         <HandoffContent
           page={page}
           onResume={() => {
             void request("resume");
           }}
+          onDecline={() => {
+            void request("decline");
+          }}
         />
-      )}
-    </>
+      ) : null}
+    </section>
   );
 }
 
-function HandoffContent({ page, onResume }: { page: HandoffPage; onResume: () => void }) {
+function HandoffContent({
+  page,
+  onResume,
+  onDecline,
+}: {
+  page: HandoffPage;
+  onResume: () => void;
+  onDecline: () => void;
+}) {
   switch (page.status) {
     case "invalid":
       return (
@@ -193,6 +201,12 @@ function HandoffContent({ page, onResume }: { page: HandoffPage; onResume: () =>
       return (
         <p role="status" className="px-3 sm:px-0">
           This task has stopped. Browser control is no longer available.
+        </p>
+      );
+    case "declined":
+      return (
+        <p role="status" className="px-3 sm:px-0">
+          Scout has stopped because you couldn't complete this step. You can close this tab.
         </p>
       );
     case "failed":
@@ -224,14 +238,14 @@ function HandoffContent({ page, onResume }: { page: HandoffPage; onResume: () =>
       return (
         <>
           <section className="space-y-3 px-3 sm:px-0">
-            <h2 className="text-lg font-medium">{page.scoutName} needs your help</h2>
+            <header className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <h1 className="text-2xl font-semibold tracking-tight">
+                {page.scoutName} needs your help
+              </h1>
+              {page.status === "waiting" ? <HandoffCountdown expiresAt={page.expiresAt} /> : null}
+            </header>
             {page.status === "waiting" ? (
               <p className="whitespace-pre-wrap break-words">{page.message}</p>
-            ) : null}
-            {page.status === "waiting" ? (
-              <p className="text-sm text-muted-foreground">
-                <HandoffCountdown expiresAt={page.expiresAt} />
-              </p>
             ) : null}
           </section>
           {page.status === "checking" ? (
@@ -245,20 +259,13 @@ function HandoffContent({ page, onResume }: { page: HandoffPage; onResume: () =>
                   {page.checkMessage}
                 </p>
               ) : null}
-              <div className="flex flex-col gap-3 px-3 sm:flex-row sm:items-center sm:justify-between sm:px-0">
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  <p>Complete the step in the browser, then resume Scout.</p>
-                  <a
-                    href={page.interactiveLiveViewUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    referrerPolicy="no-referrer"
-                    className="inline-block rounded underline underline-offset-4 focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    Open browser in a new tab
-                  </a>
-                </div>
-                <Button onClick={onResume}>Resume Scout</Button>
+              <div className="flex flex-col gap-2 px-3 sm:flex-row sm:px-0">
+                <Button size="lg" onClick={onResume}>
+                  Resume Scout
+                </Button>
+                <Button size="lg" variant="outline" onClick={onDecline}>
+                  I couldn't complete this
+                </Button>
               </div>
               <iframe
                 title="Scout browser"

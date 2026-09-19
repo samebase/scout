@@ -288,7 +288,7 @@ it("repairs only selected legacy handoffs using browser age, and rejects a late 
   expect((await t.read())?.state).toEqual({ kind: "stopped", reason: "handoff_expired" });
 });
 
-it("emails the same actual Resume deadline used by the banner", async () => {
+it("emails the deadline to open the browser and explains the shorter active window", async () => {
   const t = await setup("convex_agent", 20 * minute);
   await t.backend.run((ctx) =>
     ctx.db.insert("scoutChats", {
@@ -315,7 +315,7 @@ it("emails the same actual Resume deadline used by the banner", async () => {
   expect(request).toHaveBeenCalledWith(
     expect.any(String),
     expect.objectContaining({
-      body: expect.stringContaining(handoffDeadlineMessage(t.expiration.expiresAt, "UTC")),
+      body: expect.stringContaining(handoffDeadlineMessage(t.expiration.expiresAt, "UTC", "open")),
     }),
   );
   vi.setSystemTime(t.expiration.expiresAt);
