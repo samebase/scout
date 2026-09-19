@@ -609,7 +609,7 @@ describe("password authentication", () => {
       isApproved: false,
       accessKeys: ["access_public", "access_account"],
     });
-    await expect(pending.query(api.scout.scouts.list, {})).rejects.toThrow("Not authorized");
+    await expect(pending.query(api.scout.scouts.list, {})).resolves.toEqual([]);
     await expect(
       pending.mutation(api.accounts.setApproval, {
         userId: user._id,

@@ -112,6 +112,7 @@ describe("Scout managed-credential persistence", () => {
 
     await expect(admin.query(serviceAccountsApi["list"], { scoutId })).resolves.toEqual([
       {
+        kind: "details",
         _id: result.serviceAccountId,
         scoutId,
         serviceName: "Example",

@@ -144,7 +144,7 @@ function session(overrides = {}) {
     purpose: { kind: "play", step: null },
     visibility: "private",
     status: "ready",
-    scout: { _id: "scout-1", displayName: "Pip", status: "active" },
+    scout: { _id: "scout-1", displayName: "Pip", slug: "pip", status: "active" },
     isOwner: true,
     canControl: true,
     sessions: [],
@@ -183,8 +183,8 @@ beforeEach(() => {
     accessKeys: ROLE_ACCESS_GRANTS.role_staff,
   });
   remote.queries.set("scout/activity:players", [
-    { _id: "scout-1", displayName: "Pip", status: "active" },
-    { _id: "scout-2", displayName: "Moss", status: "active" },
+    { _id: "scout-1", displayName: "Pip", slug: "pip", status: "active" },
+    { _id: "scout-2", displayName: "Moss", slug: "moss", status: "active" },
   ]);
   remote.queries.set("scout/activity:get", session());
   remote.queries.set("scout/activity:list", {
@@ -269,13 +269,51 @@ async function openPlay(path = "/play") {
     component: () => <h1>Credit settings</h1>,
   });
   const router = createRouter({
-    routeTree: root.addChildren([route, review, directory, site, settings]),
+    routeTree: root.addChildren([
+      route,
+      review,
+      directory,
+      site,
+      settings,
+      createRoute({
+        getParentRoute: () => root,
+        path: "/scouts/$slug",
+        staticData: { access: "access_public" },
+        component: () => <h1>Scout profile</h1>,
+      }),
+    ]),
     history: createMemoryHistory({ initialEntries: [path] }),
   });
   render(<RouterProvider router={router} />);
   await router.load();
   return router;
 }
+
+test.each(["header", "sidebar"])(
+  "the task %s scout pill opens the scout profile",
+  async (placement) => {
+    remote.queries.set(
+      "scout/activity:get",
+      session({
+        purpose: { kind: "review" },
+        primarySite: "samebase.com",
+        title: "Test signup",
+      }),
+    );
+    const router = await openPlay("/tasks/game-thread?view=chat");
+    await screen.findByRole("heading", { name: "Test signup" });
+    const nav = screen.getByRole("navigation", { name: "Tasks for samebase.com" });
+    const pill =
+      placement === "sidebar"
+        ? within(nav).getByRole("link", { name: "Scout: Pip" })
+        : screen.getAllByRole("link", { name: "Scout: Pip" }).find((link) => !nav.contains(link));
+    if (!pill) throw new Error("Expected a scout link");
+    expect(pill.parentElement?.closest("a")).toBeNull();
+    await userEvent.setup().click(pill);
+    expect(await screen.findByRole("heading", { name: "Scout profile" })).toBeTruthy();
+    expect(router.state.location.pathname).toBe("/scouts/pip");
+  },
+);
 
 test("a site link opens the shared composer without submitting and sends the selected site", async () => {
   const router = await openPlay("/?taskSite=EXAMPLE.COM&scope=mine&site=another");
@@ -2223,7 +2261,7 @@ describe("Play invitation", () => {
 
   test("points to setup when every Scout is disabled", async () => {
     remote.queries.set("scout/activity:players", [
-      { _id: "scout-1", displayName: "Pip", status: "disabled" },
+      { _id: "scout-1", displayName: "Pip", slug: "pip", status: "disabled" },
     ]);
     await openPlay();
     expect(screen.getByRole("link", { name: "Set up a Scout" }).getAttribute("href")).toBe(

@@ -9,6 +9,7 @@ import { ReviewCheckSummary } from "#components/review-checks";
 import { LoadOnScroll } from "#components/load-on-scroll";
 import { SitePreview } from "#components/site-preview";
 import { SiteIdentity } from "#components/site-identity";
+import { ScoutBadge } from "#components/scout-badge";
 import type { ReviewFeedSearch } from "#lib/reviewFeedSearch";
 import { cn } from "#lib/utils";
 import { api } from "../../convex/_generated/api";
@@ -217,18 +218,19 @@ function ReviewRow({
   const showStatus =
     !checks || ongoing || activity.status === "failed" || activity.status === "stopped";
   return (
-    <Link
-      to="/tasks/$thread"
-      params={{ thread: activity.threadId }}
-      search={{
-        ...search,
-        view: activity.walkthrough ? "walkthrough" : "chat",
-      }}
+    <div
       className={cn(
-        "group flex items-center gap-3 border-t outline-none first:border-t-0 focus-visible:ring-2 focus-visible:ring-ring",
+        "group relative flex items-center gap-3 border-t first:border-t-0",
         preview ? "py-1 sm:max-lg:py-0.5" : "py-4",
       )}
     >
+      <Link
+        to="/tasks/$thread"
+        params={{ thread: activity.threadId }}
+        search={{ ...search, view: activity.walkthrough ? "walkthrough" : "chat" }}
+        aria-label={activity.title ?? "New review"}
+        className="absolute inset-0 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      />
       <VisibilityIcon
         className="mt-0.5 size-3.5 shrink-0 self-start text-muted-foreground"
         role="img"
@@ -241,14 +243,17 @@ function ReviewRow({
             !preview && "flex-wrap",
           )}
         >
-          <h3
-            className={cn(
-              "min-w-0 text-sm leading-snug font-medium wrap-anywhere group-hover:underline",
-              preview ? "line-clamp-2 flex-1" : "min-[960px]:text-base",
-            )}
-          >
-            {activity.title ?? "New review"}
-          </h3>
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
+            <h3
+              className={cn(
+                "min-w-0 text-sm leading-snug font-medium wrap-anywhere group-hover:underline",
+                preview ? "line-clamp-2" : "min-[960px]:text-base",
+              )}
+            >
+              {activity.title ?? "New review"}
+            </h3>
+            <ScoutBadge scout={activity.scout} />
+          </div>
           <div
             className={cn(
               "flex flex-wrap items-center gap-x-3 gap-y-1",
@@ -282,7 +287,7 @@ function ReviewRow({
         </div>
       </div>
       <ArrowRightIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-    </Link>
+    </div>
   );
 }
 

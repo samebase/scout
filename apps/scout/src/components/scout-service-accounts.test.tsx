@@ -28,6 +28,7 @@ vi.mock("convex/react", () => ({
   },
 }));
 
+const scoutEmail = "magda@example.test";
 const scout: NonNullable<FunctionReturnType<typeof api.scout.scouts.get>> = {
   // @ts-expect-error This rendering fixture uses an opaque string in place of a database-issued Scout ID.
   _id: "scout-magda",
@@ -37,9 +38,13 @@ const scout: NonNullable<FunctionReturnType<typeof api.scout.scouts.get>> = {
   availability: "available",
   currentActivity: null,
   websiteIdentity: { firstName: "Magda", lastName: "Scout" },
-  agentMail: { address: "magda@example.test" },
+  agentMail: { address: scoutEmail },
 };
-const github: FunctionReturnType<typeof api.scout.serviceAccounts.list>[number] = {
+const github: Extract<
+  FunctionReturnType<typeof api.scout.serviceAccounts.list>[number],
+  { kind: "details" }
+> = {
+  kind: "details",
   // @ts-expect-error This rendering fixture uses an opaque string in place of a database-issued account ID.
   _id: "account-github",
   scoutId: scout._id,
@@ -97,7 +102,7 @@ describe("Scout profile account form", () => {
         scoutId: scout._id,
         serviceName: "Notion",
         serviceDomain: "notion.so",
-        identifier: scout.agentMail.address,
+        identifier: scoutEmail,
       },
     });
     expect(remote.savePassword).not.toHaveBeenCalled();
@@ -150,7 +155,7 @@ describe("Scout profile account form", () => {
         scoutId: scout._id,
         serviceName: "GitHub",
         serviceDomain: "github.com",
-        identifier: scout.agentMail.address,
+        identifier: scoutEmail,
       },
       credentialHost: "github.com",
       password: { kind: "provided", value: "  chosen password  " },
@@ -187,7 +192,7 @@ describe("Scout profile account form", () => {
         scoutId: scout._id,
         serviceName: "Cloudflare",
         serviceDomain: "cloudflare.com",
-        identifier: scout.agentMail.address,
+        identifier: scoutEmail,
       },
       providerAccountId: github._id,
     });

@@ -27,6 +27,7 @@ import { convexToolActivities } from "./toolActivityConvex";
 const scoutValidator = v.object({
   _id: v.id("scouts"),
   displayName: v.string(),
+  slug: v.string(),
   status: v.union(v.literal("active"), v.literal("disabled")),
 });
 const sessionFields = {
@@ -116,7 +117,12 @@ export async function currentScoutActivity(
           purpose: { kind: "general" as const },
           visibility: "private" as const,
           status: managedStatus(session),
-          scout: { _id: scout._id, displayName: scout.displayName, status: scout.status },
+          scout: {
+            _id: scout._id,
+            displayName: scout.displayName,
+            slug: scout.slug,
+            status: scout.status,
+          },
           latestSession: null,
           walkthrough: null,
         };
@@ -218,7 +224,12 @@ async function summary(ctx: QueryCtx, chat: Doc<"scoutChats">) {
       purpose: chat.purpose,
       visibility: chat.visibility,
       status: managedStatus(managed),
-      scout: { _id: scout._id, displayName: scout.displayName, status: scout.status },
+      scout: {
+        _id: scout._id,
+        displayName: scout.displayName,
+        slug: scout.slug,
+        status: scout.status,
+      },
       latestSession: browser
         ? {
             engine: "agents_api" as const,
@@ -254,7 +265,12 @@ async function summary(ctx: QueryCtx, chat: Doc<"scoutChats">) {
     purpose: chat.purpose,
     visibility: chat.visibility,
     status,
-    scout: { _id: scout._id, displayName: scout.displayName, status: scout.status },
+    scout: {
+      _id: scout._id,
+      displayName: scout.displayName,
+      slug: scout.slug,
+      status: scout.status,
+    },
     latestSession: session ? sessionSummary(session) : null,
     walkthrough: null,
   };
@@ -504,6 +520,7 @@ export const players = publicQuery({
         return {
           _id: scout._id,
           displayName: scout.displayName,
+          slug: scout.slug,
           status: scout.status,
           busy: reservation !== null,
           availability: reservation?.status ?? ("available" as const),

@@ -224,15 +224,15 @@ test("a direct Agents link never mounts restricted content for a member", async 
   expect(remote.lab).not.toHaveBeenCalled();
 });
 
-test("members can navigate to Scouts and lose access when approval is revoked", async () => {
+test("the public Scouts page stays accessible when membership is revoked", async () => {
   setViewer("role_member");
   await open("/");
   const user = userEvent.setup();
   await user.click(screen.getByRole("link", { name: "Scouts" }));
   expect(await screen.findByRole("heading", { name: "Scouts directory" })).toBeTruthy();
   setViewer("role_pending_access");
-  expect(await screen.findByRole("heading", { name: "Waiting for approval" })).toBeTruthy();
-  expect(screen.queryByRole("heading", { name: "Scouts directory" })).toBeNull();
+  expect(screen.getByRole("heading", { name: "Scouts directory" })).toBeTruthy();
+  expect(screen.queryByRole("heading", { name: "Waiting for approval" })).toBeNull();
   expect(screen.queryByRole("link", { name: "Scouts" })).toBeNull();
 });
 

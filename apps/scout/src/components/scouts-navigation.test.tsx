@@ -3,7 +3,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
-  Outlet,
   RouterProvider,
   createMemoryHistory,
   createRootRoute,
@@ -15,10 +14,13 @@ import { afterEach, expect, test, vi } from "vite-plus/test";
 import { omitNullish } from "../../shared/omitNullish";
 import { Route as ScoutsRoute } from "../routes/scouts.index";
 import { Route as ScoutRoute } from "../routes/scouts.$slug";
+import { Route as ScoutsLayoutRoute } from "../routes/scouts";
+import { RouteAccessOutlet } from "./route-access";
 import { ScoutSidebarProvider } from "../sidebars/ScoutSidebarProvider";
 import { readAccessKeysForRole } from "../../shared/accessModel";
 
 const remote = vi.hoisted(() => ({
+  authenticated: true,
   admin: true,
   action: vi.fn(),
   mutation: vi.fn(),
@@ -36,7 +38,7 @@ const remote = vi.hoisted(() => ({
 }));
 
 vi.mock("convex/react", () => ({
-  useConvexAuth: () => ({ isAuthenticated: true, isLoading: false }),
+  useConvexAuth: () => ({ isAuthenticated: remote.authenticated, isLoading: false }),
   useAction: () => remote.action,
   useMutation: () => remote.mutation,
   useQuery: (reference: FunctionReference<"query">, args?: unknown) => {
@@ -48,12 +50,25 @@ vi.mock("convex/react", () => ({
           accessKeys: readAccessKeysForRole(remote.admin ? "role_staff" : "role_member"),
         };
       case "scout/scouts:list":
-        return [remote.scout];
+        return [
+          { ...remote.scout, agentMail: remote.authenticated ? remote.scout.agentMail : null },
+        ];
       case "scout/scouts:get":
-        return remote.scout;
+        return { ...remote.scout, agentMail: remote.authenticated ? remote.scout.agentMail : null };
       case "scout/serviceAccounts:list":
+        if (!remote.authenticated)
+          return [
+            {
+              kind: "summary",
+              _id: "account-github",
+              scoutId: remote.scout._id,
+              serviceName: "GitHub",
+              serviceDomain: "github.com",
+            },
+          ];
         return [
           {
+            kind: "details",
             _id: "account-github",
             scoutId: remote.scout._id,
             serviceName: "GitHub",
@@ -73,6 +88,7 @@ vi.mock("convex/react", () => ({
 }));
 
 afterEach(() => {
+  remote.authenticated = true;
   remote.admin = true;
   remote.scout.status = "active";
   remote.scout.availability = "available";
@@ -86,19 +102,19 @@ async function openPage(path: string) {
     staticData: { access: "access_public" },
     component: () => (
       <ScoutSidebarProvider>
-        <Outlet />
+        <RouteAccessOutlet />
       </ScoutSidebarProvider>
     ),
   });
   const scouts = createRoute({
     path: "/scouts",
     getParentRoute: () => root,
-    component: Outlet,
-    staticData: { access: "access_scout_view" },
+    ...omitNullish({ component: ScoutsLayoutRoute.options.component }),
+    staticData: ScoutsLayoutRoute.options.staticData,
   });
   const index = createRoute({
     path: "/",
-    staticData: { access: "access_scout_view" },
+    staticData: ScoutsRoute.options.staticData,
     getParentRoute: () => scouts,
     ...omitNullish({
       component: ScoutsRoute.options.component,
@@ -107,7 +123,7 @@ async function openPage(path: string) {
   });
   const detail = createRoute({
     path: "$slug",
-    staticData: { access: "access_scout_view" },
+    staticData: ScoutRoute.options.staticData,
     getParentRoute: () => scouts,
     ...omitNullish({
       component: ScoutRoute.options.component,
@@ -122,6 +138,29 @@ async function openPage(path: string) {
   await router.load();
   return router;
 }
+
+test("signed-out visitors see the same Scout page with service names and domains only", async () => {
+  remote.authenticated = false;
+  const router = await openPage("/scouts/conrad?account=account-github");
+  expect(await screen.findByRole("heading", { name: "Conrad Scout", level: 1 })).toBeTruthy();
+  expect(screen.getByText("GitHub")).toBeTruthy();
+  expect(screen.getByText("github.com")).toBeTruthy();
+  expect(screen.queryByText("Email")).toBeNull();
+  expect(screen.queryByText("Email or username")).toBeNull();
+  expect(screen.queryByText("Authentication")).toBeNull();
+  expect(screen.queryByText("Login")).toBeNull();
+  expect(screen.queryByText("conrad@example.test")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Edit GitHub login" })).toBeNull();
+  expect(screen.queryByRole("heading", { name: "Runtime resources" })).toBeNull();
+  expect(screen.queryByRole("form")).toBeNull();
+  await userEvent.setup().click(screen.getByRole("link", { name: "Back to Scouts" }));
+  expect(router.state.location.pathname).toBe("/scouts");
+  expect(await screen.findByRole("heading", { name: "Scouts", level: 1 })).toBeTruthy();
+  expect(screen.getByText("GitHub")).toBeTruthy();
+  expect(screen.queryByText("conrad@example.test")).toBeNull();
+  expect(remote.action).not.toHaveBeenCalled();
+  expect(remote.mutation).not.toHaveBeenCalled();
+});
 
 test("members can read Scout accounts but cannot open management panels, including through URLs", async () => {
   remote.admin = false;

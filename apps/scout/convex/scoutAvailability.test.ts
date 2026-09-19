@@ -61,6 +61,18 @@ test("shows the reservation consistently and hides another member's private acti
   expect(await t.backend.query(api.scout.activity.players, {})).toMatchObject([
     { busy: true, availability: "waiting" },
   ]);
+  const publicScout = {
+    _id: t.scoutId,
+    displayName: "Conrad",
+    websiteIdentity: { firstName: "Conrad", lastName: "Scout" },
+    slug: "conrad",
+    status: "active",
+    availability: "waiting",
+    currentActivity: { kind: "private" },
+    agentMail: null,
+  };
+  expect(await t.backend.query(api.scout.scouts.get, { slug: "conrad" })).toEqual(publicScout);
+  expect(await t.backend.query(api.scout.scouts.list, {})).toEqual([publicScout]);
   expect(await t.member.query(api.scout.scouts.get, { slug: "conrad" })).toMatchObject({
     status: "active",
     availability: "waiting",

@@ -72,9 +72,9 @@ test("anonymous, missing, and unverified accounts cannot use protected functions
   expect(await backend.query(api.accounts.currentViewerAccess, {})).toEqual({ kind: "anonymous" });
   await backend.run((ctx) => ctx.db.patch(adminId, { emailVerificationTime: undefined }));
   expect(await admin.query(api.accounts.currentViewerAccess, {})).toEqual({ kind: "unavailable" });
-  await expect(admin.query(api.scout.scouts.list, {})).rejects.toThrow("Not authorized");
+  await expect(admin.query(api.accounts.taskPreferences, {})).rejects.toThrow("Not authorized");
   await backend.run((ctx) => ctx.db.delete(adminId));
-  await expect(admin.query(api.scout.scouts.list, {})).rejects.toThrow("Not authorized");
+  await expect(admin.query(api.accounts.taskPreferences, {})).rejects.toThrow("Not authorized");
 });
 
 test.each(["nicu.dev@gmail.com", "nicu@samebase.com", "NICU.DEV@GMAIL.COM"])(
@@ -187,7 +187,7 @@ test("approval does not bypass email verification", async () => {
   await backend.run((ctx) => ctx.db.patch(memberId, { emailVerificationTime: undefined }));
   await admin.mutation(api.accounts.setApproval, { userId: memberId, isApproved: true });
   expect(await member.query(api.accounts.currentViewerAccess, {})).toEqual({ kind: "unavailable" });
-  await expect(member.query(api.scout.scouts.list, {})).rejects.toThrow("Not authorized");
+  await expect(member.query(api.accounts.taskPreferences, {})).rejects.toThrow("Not authorized");
 });
 
 test("task preferences belong to the signed-in account and independent changes preserve each other", async () => {

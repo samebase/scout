@@ -299,7 +299,7 @@ test.each([
     confirmation: ACCOUNT_DELETION_CONFIRMATION,
   });
   expect(await viewer.query(api.accounts.currentViewerAccess, {})).toEqual({ kind: "deleting" });
-  await expect(viewer.query(api.scout.scouts.list, {})).rejects.toThrow("Not authorized");
+  await expect(viewer.query(api.accounts.taskPreferences, {})).rejects.toThrow("Not authorized");
   await expect(
     viewer.mutation(api.accounts.setApproval, { userId, isApproved: true }),
   ).rejects.toThrow("Not authorized");
@@ -325,7 +325,7 @@ test.each([
       providerId: PASSWORD_RESET_PROVIDER_ID,
     }),
   ).rejects.toThrow("Account unavailable");
-  await expect(viewer.query(api.scout.scouts.list, {})).rejects.toThrow("Not authorized");
+  await expect(viewer.query(api.accounts.taskPreferences, {})).rejects.toThrow("Not authorized");
   await backend.run(async (ctx) => {
     const user = await ctx.db.get(userId);
     expect(user).toEqual({

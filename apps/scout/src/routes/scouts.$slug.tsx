@@ -14,7 +14,7 @@ const searchSchema = z.object({
 });
 
 export const Route = createFileRoute("/scouts/$slug")({
-  staticData: { access: "access_scout_view" },
+  staticData: { access: "access_public" },
   validateSearch: (search) => searchSchema.parse(search),
   component: ScoutDetailPage,
 });
@@ -63,11 +63,13 @@ function ScoutDetailPage() {
     );
   }
 
-  const selectedAccount = serviceAccounts?.find((account) => account._id === search.account);
+  const selectedAccount = serviceAccounts?.find(
+    (account) => account.kind === "details" && account._id === search.account,
+  );
   const editor: AccountEditor =
     search.view === "add-account"
       ? { kind: "create" }
-      : selectedAccount
+      : selectedAccount?.kind === "details"
         ? { kind: "update", account: selectedAccount }
         : { kind: "closed" };
 
@@ -125,10 +127,12 @@ function ScoutDetailPage() {
             <dt className="text-muted-foreground text-xs">Last name</dt>
             <dd className="mt-1 wrap-break-word">{scout.websiteIdentity.lastName}</dd>
           </div>
-          <div className="min-w-0 sm:col-span-2">
-            <dt className="text-muted-foreground text-xs">Email</dt>
-            <dd className="mt-1 wrap-break-word">{scout.agentMail.address}</dd>
-          </div>
+          {scout.agentMail && (
+            <div className="min-w-0 sm:col-span-2">
+              <dt className="text-muted-foreground text-xs">Email</dt>
+              <dd className="mt-1 wrap-break-word">{scout.agentMail.address}</dd>
+            </div>
+          )}
         </dl>
       </section>
 

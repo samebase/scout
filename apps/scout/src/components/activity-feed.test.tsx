@@ -164,6 +164,7 @@ function task(site: string, number: number): Activity {
       // @ts-expect-error The mocked Convex transport uses a stable string instead of a database-generated scout ID.
       _id: "scout-fixture",
       displayName: "Scout",
+      slug: "scout",
       status: "active",
     },
     latestSession: null,
@@ -237,7 +238,16 @@ async function openFeed(path = "/") {
     ),
   });
   const router = createRouter({
-    routeTree: root.addChildren([home, detail]),
+    routeTree: root.addChildren([
+      home,
+      detail,
+      createRoute({
+        getParentRoute: () => root,
+        path: "/scouts/$slug",
+        staticData: { access: "access_public" },
+        component: () => <h1>Scout profile</h1>,
+      }),
+    ]),
     history: createMemoryHistory({ initialEntries: [path] }),
   });
   render(<RouterProvider router={router} />);
@@ -245,6 +255,27 @@ async function openFeed(path = "/") {
   await screen.findByRole("article", { name: "chessmerge.com" });
   return router;
 }
+
+test.each(["homepage", "site"])(
+  "%s scout pills navigate independently from task rows",
+  async (surface) => {
+    const router = await openFeed();
+    const user = userEvent.setup();
+    if (surface === "site")
+      await user.click(screen.getByRole("link", { name: "View all 7 tasks" }));
+    const pill = screen.getAllByRole("link", { name: "Scout: Scout" })[0];
+    if (!pill) throw new Error("Expected a scout link");
+    expect(pill.getAttribute("href")).toBe("/scouts/scout");
+    expect(pill.parentElement?.closest("a")).toBeNull();
+    expect(
+      screen.getByRole("link", { name: "chessmerge.com task 1" }).getAttribute("href"),
+    ).toContain("/tasks/chessmerge.com-1");
+    pill.focus();
+    await user.keyboard("{Enter}");
+    expect(await screen.findByRole("heading", { name: "Scout profile" })).toBeTruthy();
+    expect(router.state.location.pathname).toBe("/scouts/scout");
+  },
+);
 
 test("requests six sites initially and two tasks for each site", async () => {
   await openFeed();

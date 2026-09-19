@@ -6,11 +6,12 @@ import { usePaginatedQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { api } from "../../../convex/_generated/api";
 import { LoadOnScroll } from "#components/load-on-scroll";
+import { ScoutBadge } from "#components/scout-badge";
 import { cn } from "#lib/utils";
 import type { ReviewFeedSearch } from "#lib/reviewFeedSearch";
 
 type Activity = FunctionReturnType<typeof api.scout.activity.list>["page"][number];
-type Task = Pick<Activity, "threadId" | "title" | "createdAt" | "visibility">;
+type Task = Pick<Activity, "threadId" | "title" | "createdAt" | "visibility" | "scout">;
 
 export function TaskNavigation({
   site,
@@ -100,18 +101,22 @@ function TaskLink({
   const VisibilityIcon = task.visibility === "public" ? GlobeIcon : LockKeyholeIcon;
   return (
     <li>
-      <Link
-        to="/tasks/$thread"
-        params={{ thread: task.threadId }}
-        resetScroll={false}
-        search={{ ...search, view }}
-        aria-current={selected ? "page" : undefined}
-        onClick={() => setMobilePane("main")}
+      <div
         className={cn(
-          "block rounded-lg border px-3 py-3 outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          "relative rounded-lg border px-3 py-3",
           selected ? "border-primary/25 bg-primary/10" : "border-transparent hover:bg-secondary",
         )}
       >
+        <Link
+          to="/tasks/$thread"
+          params={{ thread: task.threadId }}
+          resetScroll={false}
+          search={{ ...search, view }}
+          aria-label={task.title ?? "New review"}
+          aria-current={selected ? "page" : undefined}
+          onClick={() => setMobilePane("main")}
+          className="absolute inset-0 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        />
         <span className="flex items-start gap-2">
           <VisibilityIcon
             className="mt-0.5 size-3.5 shrink-0 text-muted-foreground"
@@ -122,18 +127,21 @@ function TaskLink({
             {task.title ?? "New review"}
           </span>
         </span>
-        <time
-          dateTime={new Date(task.createdAt).toISOString()}
-          className="mt-1.5 block text-xs text-muted-foreground"
-        >
-          {new Date(task.createdAt).toLocaleString(undefined, {
-            month: "short",
-            day: "numeric",
-            hour: "numeric",
-            minute: "2-digit",
-          })}
-        </time>
-      </Link>
+        <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+          <ScoutBadge scout={task.scout} />
+          <time
+            dateTime={new Date(task.createdAt).toISOString()}
+            className="text-xs text-muted-foreground"
+          >
+            {new Date(task.createdAt).toLocaleString(undefined, {
+              month: "short",
+              day: "numeric",
+              hour: "numeric",
+              minute: "2-digit",
+            })}
+          </time>
+        </span>
+      </div>
     </li>
   );
 }

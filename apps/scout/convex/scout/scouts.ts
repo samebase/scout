@@ -1,4 +1,4 @@
-import { query } from "../functions";
+import { publicQuery, query } from "../functions";
 import { v } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 import { internalMutation, internalQuery, type QueryCtx } from "../_generated/server";
@@ -7,6 +7,7 @@ import { scoutWebsiteIdentityValidator } from "./model";
 import { availabilityValidator, scoutReservation } from "./availability";
 import { currentActivityValidator, currentScoutActivity } from "./activity";
 import type { ViewerAccess } from "../access";
+import { canAccess } from "../../shared/accessModel";
 
 const MAX_SCOUTS = 50;
 const MAX_DISPLAY_NAME_LENGTH = 100;
@@ -42,9 +43,7 @@ const scoutPublicValidator = v.object({
   status: v.union(v.literal("active"), v.literal("disabled")),
   availability: availabilityValidator,
   currentActivity: currentActivityValidator,
-  agentMail: v.object({
-    address: v.string(),
-  }),
+  agentMail: v.union(v.object({ address: v.string() }), v.null()),
 });
 
 export const registrationResultValidator = v.object({
@@ -135,7 +134,10 @@ async function projectScout(ctx: QueryCtx, scout: Doc<"scouts">, viewer: ViewerA
     status: scout.status,
     availability: reservation?.status ?? ("available" as const),
     currentActivity: await currentScoutActivity(ctx, scout, reservation, viewer),
-    agentMail: { address: scout.agentMail.address },
+    agentMail:
+      viewer.kind === "account" && canAccess("access_scout_view", viewer.accessKeys)
+        ? { address: scout.agentMail.address }
+        : null,
   };
 }
 
@@ -176,8 +178,8 @@ async function requireScoutAvailable(
   }
 }
 
-export const list = query({
-  access: "access_scout_view",
+export const list = publicQuery({
+  access: "access_public",
   args: {},
   returns: v.array(scoutPublicValidator),
   handler: async (ctx) => {
@@ -186,8 +188,8 @@ export const list = query({
   },
 });
 
-export const get = query({
-  access: "access_scout_view",
+export const get = publicQuery({
+  access: "access_public",
   args: {
     slug: v.string(),
   },

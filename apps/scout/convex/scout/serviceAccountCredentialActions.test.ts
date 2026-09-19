@@ -238,12 +238,13 @@ describe("Profile account login settings", () => {
     });
     expect(decryptRuntimeManagedPassword(credential, scoutId, key)).toBe(args.password.value);
     const accounts = await admin.query(api.scout.serviceAccounts.list, { scoutId });
-    expect(
-      accounts.find((item) => item._id === saved.serviceAccountId)?.authenticationEvidence,
-    ).toEqual({ kind: "none" });
-    expect(accounts.find((item) => item._id === linked.serviceAccountId)?.loginMethod).toEqual({
-      kind: "oauth",
-      providerAccountId: saved.serviceAccountId,
+    expect(accounts.find((item) => item._id === saved.serviceAccountId)).toMatchObject({
+      kind: "details",
+      authenticationEvidence: { kind: "none" },
+    });
+    expect(accounts.find((item) => item._id === linked.serviceAccountId)).toMatchObject({
+      kind: "details",
+      loginMethod: { kind: "oauth", providerAccountId: saved.serviceAccountId },
     });
     await expect(
       backend.run(async (ctx) => await ctx.db.query("scoutManagedCredentials").collect()),
