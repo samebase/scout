@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-19T18:03:30Z
+- **Last updated:** 2026-09-19T18:29:53Z
 
 ## Log
 
@@ -1591,10 +1591,16 @@ The page has one title, a prominent countdown, and an option to stop when help c
 Convex saves the active deadline across reloads and Resume checks, and records why a declined task stopped
 (`apps/scout/convex/tasks/sessions.ts`, `apps/scout/src/components/human-handoff-page.tsx`).
 
-### 2026-09-19 - working tree - v255
+### 2026-09-19 - 76736be - v255
 
 Tasks identify the Scout who ran them in the walkthrough and chat header, site task lists,
 homepage previews, and task sidebar. Each name pill links to the existing Scout page, now public
 with the same identity and service list. Convex excludes emails and account login details until
 the viewer has existing member access (`apps/scout/convex/scout/scouts.ts`,
 `apps/scout/convex/scout/serviceAccounts.ts`, `apps/scout/src/components/scout-badge.tsx`).
+
+### 2026-09-19 - working tree - v256
+
+The site sidebar shows the same site total as the landing page beside the review visibility selector.
+The compact count wraps below the selector in narrow sidebars and follows Public or My reviews
+(`apps/scout/src/components/site-filters.tsx`, `apps/scout/src/routes/sites.$site.tsx`).

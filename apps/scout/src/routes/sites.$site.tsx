@@ -83,6 +83,7 @@ function SiteLayout() {
   const signedIn = viewer?.kind === "account";
   const canInspect = signedIn && canAccess("access_lab", viewer.accessKeys);
   const scope = signedIn ? (search.scope ?? "public") : "public";
+  const reviewedSiteCount = useQuery(api.scout.sites.count, { scope });
   const filters = { scope, site: search.site };
   const workspace = canInspect && search.view === "workspace";
   const record = useQuery(api.scout.sites.get, parsed.success ? { site: parsed.data } : "skip");
@@ -119,6 +120,7 @@ function SiteLayout() {
                 <SiteFilters
                   search={filters}
                   layout="sidebar"
+                  reviewedSiteCount={reviewedSiteCount}
                   onChange={(filters, options) => {
                     void navigate({
                       search: (previous) => ({ ...previous, ...filters }),

@@ -12,7 +12,14 @@ afterEach(() => {
 test("typing waits for a pause and clearing cancels a pending search", () => {
   vi.useFakeTimers();
   const onChange = vi.fn();
-  render(<SiteFilters search={{ scope: "public" }} layout="sidebar" onChange={onChange} />);
+  render(
+    <SiteFilters
+      search={{ scope: "public" }}
+      layout="sidebar"
+      reviewedSiteCount={undefined}
+      onChange={onChange}
+    />,
+  );
   const input = screen.getByRole("textbox", { name: "Filter by site" });
   fireEvent.change(input, { target: { value: "pi" } });
   act(() => {
@@ -49,7 +56,12 @@ test("history navigation and unmount cancel stale search updates", () => {
   vi.useFakeTimers();
   const onChange = vi.fn();
   const { rerender, unmount } = render(
-    <SiteFilters search={{ scope: "public", site: "pika" }} layout="sidebar" onChange={onChange} />,
+    <SiteFilters
+      search={{ scope: "public", site: "pika" }}
+      layout="sidebar"
+      reviewedSiteCount={undefined}
+      onChange={onChange}
+    />,
   );
   const input = screen.getByRole("textbox", { name: "Filter by site" });
   fireEvent.change(input, { target: { value: "excalidraw" } });
@@ -60,6 +72,7 @@ test("history navigation and unmount cancel stale search updates", () => {
     <SiteFilters
       search={{ scope: "public", site: "studio" }}
       layout="sidebar"
+      reviewedSiteCount={undefined}
       onChange={onChange}
     />,
   );
