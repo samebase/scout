@@ -3,6 +3,7 @@ import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { ViewerAccess } from "../access";
 import { canAccess } from "../../shared/accessModel";
 import { isPublicChat } from "./chatAccess";
+import { updatePreviewPublication } from "./sitePreviewPublication";
 
 export async function accessibleSite(ctx: QueryCtx, hostname: string, viewer: ViewerAccess) {
   const site = await ctx.db
@@ -73,6 +74,7 @@ export async function syncChatSite(ctx: MutationCtx, before: Doc<"scoutChats">):
         Number(current === hostname && publicSiteEligible) -
         Number(previous === hostname && before.publicSiteEligible === true),
     });
+    await updatePreviewPublication(ctx, site, latest !== null);
   }
   for (const [index, { hostname, userId }] of memberships.entries()) {
     if (
