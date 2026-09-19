@@ -1,4 +1,5 @@
 /// <reference types="vite/client" />
+import { createHash } from "node:crypto";
 import workflowTest from "@convex-dev/workflow/test";
 import { tool } from "ai";
 import { convexTest } from "convex-test";
@@ -226,6 +227,12 @@ async function setup() {
 
 function reasoning(id: string, status: "in_progress" | "completed"): AgentReasoningItem {
   return { id, type: "reasoning", status, summary: [], turn_id: "turn-test" };
+}
+
+function barrier() {
+  const resolve = vi.fn<() => void>();
+  const promise = new Promise<void>((proceed) => resolve.mockImplementation(proceed));
+  return { promise, resolve };
 }
 
 const paidUsage: TokenUsage = {
@@ -1190,8 +1197,15 @@ it.each([
   },
 );
 
-it("pauses for handoff and persists the approved resume output sent to the provider", async () => {
-  const { backend, sessionId, provider, advance, session, savedCall } = await setup();
+it.each([
+  { phase: "stream", outcome: "success" },
+  { phase: "submission", outcome: "success" },
+  { phase: "stream", outcome: "failure" },
+  { phase: "submission", outcome: "failure" },
+  { phase: "stream", outcome: "stop" },
+  { phase: "submission", outcome: "stop" },
+])("keeps email Resume checking during $phase until $outcome", async ({ phase, outcome }) => {
+  const { backend, owner, sessionId, provider, advance, session, savedCall } = await setup();
   provider.call.name = "request_browser_handoff";
   provider.call.arguments = { message: "Complete the CAPTCHA" };
   await expect(advance()).resolves.toBe(false);
@@ -1201,6 +1215,23 @@ it("pauses for handoff and persists the approved resume output sent to the provi
   });
   expect(closeFirecrawlBrowserSession).not.toHaveBeenCalled();
   expect(await savedCall()).toBeNull();
+  const waiting = (await session()).state;
+  if (waiting.kind !== "waiting" || waiting.expiresAt === undefined)
+    throw new Error("Expected a handoff with a deadline");
+  const expiresAt = waiting.expiresAt;
+  const accessToken = `hh1_${"a".repeat(43)}`;
+  expect(
+    await backend.mutation(internal.tasks.handoffRecords.issue, {
+      sessionId,
+      access: {
+        callId: waiting.callId,
+        turnId: waiting.turnId,
+        expiresAt,
+        providerSessionId: "browser-test",
+        tokenHash: createHash("sha256").update(accessToken).digest("hex"),
+      },
+    }),
+  ).toBe(true);
   const evidence = {
     capturedAt: Date.now(),
     pages: [
@@ -1219,9 +1250,10 @@ it("pauses for handoff and persists the approved resume output sent to the provi
       model: "gpt-5.6-luna",
       prompt: "Continue after verification",
       handoff: {
-        callId: provider.call.call_id,
-        turnId: provider.call.turn_id,
-        message: "Complete the CAPTCHA",
+        callId: waiting.callId,
+        turnId: waiting.turnId,
+        message: waiting.message,
+        expiresAt,
       },
       providerSessionId: "browser-test",
       evidence,
@@ -1235,12 +1267,89 @@ it("pauses for handoff and persists the approved resume output sent to the provi
     await ctx.db.patch(sessionId, { state: { kind: "checking", checkId: id } });
     return id;
   });
-  await expect(
-    backend.action(internal.tasks.runtime.begin, {
-      sessionId,
-      command: { kind: "resume", checkId },
+  const providerFetch = fetch;
+  const entered = barrier();
+  const proceed = barrier();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn<typeof fetch>(async (input, init) => {
+      const request = new Request(input, init);
+      if (
+        new URL(request.url).pathname.endsWith("/sessions/session-test/events") &&
+        request.method === (phase === "stream" ? "GET" : "POST")
+      ) {
+        entered.resolve();
+        await proceed.promise;
+        if (outcome === "failure")
+          return Response.json(
+            { error: { code: "resume_forbidden", message: "Resume delivery denied" } },
+            { status: 403, headers: { "x-request-id": "req-resume-denied" } },
+          );
+      }
+      return providerFetch(input, init);
     }),
-  ).resolves.toBe(true);
+  );
+  const running = backend.action(internal.tasks.runtime.begin, {
+    sessionId,
+    command: { kind: "resume", checkId },
+  });
+  const completed =
+    outcome === "failure"
+      ? expect(running).rejects.toThrow("Resume delivery denied")
+      : expect(running).resolves.toBe(true);
+  await entered.promise;
+  try {
+    expect((await session()).state.kind).toBe("running");
+    expect((await savedCall())?.result).toEqual({ kind: "running" });
+    for (const action of [api.tasks.handoff.load, api.tasks.handoff.resume]) {
+      expect(await backend.action(action, { sessionId, accessToken })).toMatchObject({
+        status: "checking",
+      });
+    }
+    vi.setSystemTime(expiresAt + 1);
+    if (outcome === "stop") await owner.mutation(api.tasks.sessions.stop, { sessionId });
+  } finally {
+    proceed.resolve();
+    await completed;
+  }
+  if (outcome === "failure") {
+    expect((await savedCall())?.result).toEqual({ kind: "running" });
+    expect(await backend.action(api.tasks.handoff.load, { sessionId, accessToken })).toEqual({
+      status: "failed",
+      error: expect.stringContaining("Resume delivery denied"),
+      diagnostic: expect.objectContaining({
+        httpStatus: 403,
+        providerCode: "resume_forbidden",
+        requestId: "req-resume-denied",
+      }),
+    });
+    expect((await session()).state).toMatchObject({
+      kind: "failed",
+      diagnostic: {
+        httpStatus: 403,
+        providerCode: "resume_forbidden",
+        requestId: "req-resume-denied",
+      },
+    });
+    return;
+  }
+  if (outcome === "stop") {
+    expect(await backend.action(api.tasks.handoff.load, { sessionId, accessToken })).toEqual({
+      status: "stopped",
+    });
+    expect(provider.events).toHaveLength(phase === "stream" ? 0 : 1);
+    expect((await savedCall())?.result.kind).toBe(phase === "stream" ? "running" : "success");
+    expect(await advance()).toBe(false);
+    expect((await session()).cleanupJobId).toBeDefined();
+    await backend.action(internal.tasks.runtime.cleanup, { sessionId });
+    expect(await session()).toMatchObject({
+      state: { kind: "stopped" },
+      active: false,
+      browser: null,
+    });
+    expect(provider.events.at(-1)).toEqual({ events: [{ type: "agent.session.input.cancel" }] });
+    return;
+  }
   const saved = await savedCall();
   expect(saved?.result.kind).toBe("success");
   if (saved?.result.kind !== "success") throw new Error("Resume result was not persisted");
@@ -1258,7 +1367,12 @@ it("pauses for handoff and persists the approved resume output sent to the provi
       ],
     },
   ]);
+  expect(provider.inputKeys).toEqual([`${sessionId}:${checkId}`]);
   expect(await session()).toMatchObject({ state: { kind: "running" }, active: true });
+  expect(await backend.action(api.tasks.handoff.load, { sessionId, accessToken })).toEqual({
+    status: "continued",
+    scoutName: "Scout",
+  });
 });
 
 it("traverses pages past unfinished items, dispatches the tool, and later advances the durable cursor", async () => {

@@ -18,6 +18,7 @@ import {
 } from "./browserModel";
 import { humanHandoffDeliveryRecordValidator } from "./humanHandoffDeliveryModel";
 import { humanHandoffValidator } from "./humanHandoffsModel";
+import { handoffAccess } from "./tasks/handoffModel";
 import { scoutServiceAccountFieldsValidator, scoutWebsiteIdentityValidator } from "./scout/model";
 import { activeSkillsValidator } from "./scout/skills";
 import {
@@ -138,6 +139,7 @@ export default defineSchema({
     pendingMessage: v.optional(pendingMessage),
     cleanupJobId: v.optional(v.id("_scheduled_functions")),
     handoffEmailJobId: v.optional(v.id("_scheduled_functions")),
+    handoffAccess: v.optional(handoffAccess),
     itemCursor: v.optional(v.string()),
     nextSequence: v.number(),
     browser: v.union(browserHandle, v.null()),

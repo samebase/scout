@@ -1,4 +1,10 @@
-import { HeadContent, Scripts, createRootRoute, useRouterState } from "@tanstack/react-router";
+import {
+  HeadContent,
+  Scripts,
+  createRootRoute,
+  useMatches,
+  useRouterState,
+} from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { ConvexClientProvider } from "../lib/convex";
 import { ScoutSidebarProvider } from "../sidebars/ScoutSidebarProvider";
@@ -36,6 +42,9 @@ export const Route = createRootRoute({
 });
 
 function RootComponent() {
+  const isHandoff = useMatches({
+    select: (matches) => matches.some((match) => match.routeId === "/handoff/$sessionId"),
+  });
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const isProductPage =
     pathname === "/" ||
@@ -47,7 +56,7 @@ function RootComponent() {
     <RootDocument>
       <ScoutSidebarProvider>
         <ConvexClientProvider>
-          {!isProductPage && <AppNavigation />}
+          {!isProductPage && !isHandoff && <AppNavigation />}
           <RouteAccessOutlet />
         </ConvexClientProvider>
       </ScoutSidebarProvider>

@@ -20,6 +20,7 @@ import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as ScoutsRouteImport } from './routes/scouts'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as TermsRouteImport } from './routes/terms'
+import { Route as HandoffSessionIdRouteImport } from './routes/handoff.$sessionId'
 import { Route as ScoutsIndexRouteImport } from './routes/scouts.index'
 import { Route as ScoutsSlugRouteImport } from './routes/scouts.$slug'
 import { Route as SitesSiteRouteImport } from './routes/sites.$site'
@@ -80,6 +81,11 @@ const TermsRoute = TermsRouteImport.update({
   path: '/terms',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HandoffSessionIdRoute = HandoffSessionIdRouteImport.update({
+  id: '/handoff/$sessionId',
+  path: '/handoff/$sessionId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ScoutsIndexRoute = ScoutsIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -113,6 +119,7 @@ export interface FileRoutesByFullPath {
   '/scouts': typeof ScoutsRouteWithChildren
   '/settings': typeof SettingsRoute
   '/terms': typeof TermsRoute
+  '/handoff/$sessionId': typeof HandoffSessionIdRoute
   '/scouts/$slug': typeof ScoutsSlugRoute
   '/sites/$site': typeof SitesSiteRoute
   '/tasks/$thread': typeof TasksThreadRoute
@@ -129,6 +136,7 @@ export interface FileRoutesByTo {
   '/privacy': typeof PrivacyRoute
   '/settings': typeof SettingsRoute
   '/terms': typeof TermsRoute
+  '/handoff/$sessionId': typeof HandoffSessionIdRoute
   '/scouts/$slug': typeof ScoutsSlugRoute
   '/sites/$site': typeof SitesSiteRoute
   '/tasks/$thread': typeof TasksThreadRoute
@@ -147,6 +155,7 @@ export interface FileRoutesById {
   '/scouts': typeof ScoutsRouteWithChildren
   '/settings': typeof SettingsRoute
   '/terms': typeof TermsRoute
+  '/handoff/$sessionId': typeof HandoffSessionIdRoute
   '/scouts/$slug': typeof ScoutsSlugRoute
   '/sites/$site': typeof SitesSiteRoute
   '/tasks/$thread': typeof TasksThreadRoute
@@ -166,6 +175,7 @@ export interface FileRouteTypes {
     | '/scouts'
     | '/settings'
     | '/terms'
+    | '/handoff/$sessionId'
     | '/scouts/$slug'
     | '/sites/$site'
     | '/tasks/$thread'
@@ -182,6 +192,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/settings'
     | '/terms'
+    | '/handoff/$sessionId'
     | '/scouts/$slug'
     | '/sites/$site'
     | '/tasks/$thread'
@@ -199,6 +210,7 @@ export interface FileRouteTypes {
     | '/scouts'
     | '/settings'
     | '/terms'
+    | '/handoff/$sessionId'
     | '/scouts/$slug'
     | '/sites/$site'
     | '/tasks/$thread'
@@ -217,6 +229,7 @@ export interface RootRouteChildren {
   ScoutsRoute: typeof ScoutsRouteWithChildren
   SettingsRoute: typeof SettingsRoute
   TermsRoute: typeof TermsRoute
+  HandoffSessionIdRoute: typeof HandoffSessionIdRoute
   SitesSiteRoute: typeof SitesSiteRoute
   TasksThreadRoute: typeof TasksThreadRoute
 }
@@ -300,6 +313,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TermsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/handoff/$sessionId': {
+      id: '/handoff/$sessionId'
+      path: '/handoff/$sessionId'
+      fullPath: '/handoff/$sessionId'
+      preLoaderRoute: typeof HandoffSessionIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/scouts/': {
       id: '/scouts/'
       path: '/'
@@ -356,6 +376,7 @@ const rootRouteChildren: RootRouteChildren = {
   ScoutsRoute: ScoutsRouteWithChildren,
   SettingsRoute: SettingsRoute,
   TermsRoute: TermsRoute,
+  HandoffSessionIdRoute: HandoffSessionIdRoute,
   SitesSiteRoute: SitesSiteRoute,
   TasksThreadRoute: TasksThreadRoute,
 }
