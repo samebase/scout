@@ -89,9 +89,7 @@ export function ServiceAccountsSection({
       )}
 
       {accounts === undefined ? (
-        <p className="surface-panel mt-3 px-5 py-10 text-sm text-muted-foreground" role="status">
-          Loading service accounts...
-        </p>
+        <div className="surface-panel mt-3 min-h-28" aria-busy="true" />
       ) : accounts.length === 0 ? (
         <p className="surface-panel mt-3 border-dashed px-5 py-10 text-sm text-muted-foreground">
           No service accounts registered.

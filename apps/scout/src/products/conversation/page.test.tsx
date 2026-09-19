@@ -2259,8 +2259,8 @@ test("scrolling near the start loads earlier messages one page at a time", async
   expect(remote.loadEarlierMessages).not.toHaveBeenCalled();
   fireEvent.scroll(viewport, { target: { scrollTop: 240 } });
   expect(remote.loadEarlierMessages).toHaveBeenCalledExactlyOnceWith(50);
-  expect(screen.getByText("Loading earlier messages…").getAttribute("role")).toBe("status");
-  expect(within(screen.getByRole("log")).queryByText("Loading earlier messages…")).toBeNull();
+  expect(screen.getByRole("log", { busy: true }).textContent).toBe("PipRecent message");
+  expect(screen.queryByText(/Loading/)).toBeNull();
   fireEvent.scroll(viewport, { target: { scrollTop: 0 } });
   expect(remote.loadEarlierMessages).toHaveBeenCalledTimes(1);
 
@@ -2291,7 +2291,7 @@ test("scrolling near the start loads earlier messages one page at a time", async
 test("scrolling while the first message page loads does not request history", async () => {
   remote.messageStatus = "LoadingFirstPage";
   await openPlay("/play?thread=game-thread");
-  expect(await screen.findByText("Loading messages…")).toBeTruthy();
+  expect((await screen.findByRole("log", { busy: true })).textContent).toBe("");
   fireEvent.scroll(screen.getByRole("region", { name: "Session messages" }), {
     target: { scrollTop: 0 },
   });

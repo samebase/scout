@@ -130,12 +130,11 @@ function SiteLayout() {
               </div>
             }
             content={
-              <nav aria-label="Sites" className="p-2 text-sm">
-                {sites.status === "LoadingFirstPage" && (
-                  <p role="status" className="p-2 text-muted-foreground">
-                    Loading sites…
-                  </p>
-                )}
+              <nav
+                aria-label="Sites"
+                aria-busy={sites.status === "LoadingFirstPage"}
+                className="p-2 text-sm"
+              >
                 <ul className="space-y-3">
                   {sites.results.map((site) => (
                     <li
@@ -175,9 +174,7 @@ function SiteLayout() {
               !parsed.success || record === null ? (
                 <p className="p-6 text-muted-foreground">Site not found.</p>
               ) : record === undefined ? (
-                <p role="status" className="p-6 text-muted-foreground">
-                  Loading site…
-                </p>
+                <div className="min-h-full" aria-busy="true" />
               ) : (
                 <div className="flex min-h-full flex-col p-4 sm:p-6">
                   <div className="mb-5 flex flex-wrap items-center justify-between gap-3">

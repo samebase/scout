@@ -617,8 +617,10 @@ test("the filtered site sidebar retains its DOM, width, and scroll while another
   await userEvent
     .setup()
     .click(within(navigation).getByRole("link", { name: "View tasks for Papergames" }));
-  expect(await screen.findByText("Loading site…")).toBeTruthy();
-  expect(router.state.location.pathname).toBe("/sites/papergames.io");
+  await waitFor(() => expect(router.state.location.pathname).toBe("/sites/papergames.io"));
+  expect(screen.queryByRole("heading", { name: "Papergames" })).toBeNull();
+  expect(screen.queryByRole("heading", { name: "Chessmerge" })).toBeNull();
+  expect(screen.queryByText(/Loading/)).toBeNull();
   expect(router.state.location.search).toEqual({
     site: "papergames.io",
     scope: "mine",

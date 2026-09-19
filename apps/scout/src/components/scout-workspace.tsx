@@ -82,10 +82,12 @@ export function ScoutWorkspace({
     return <p className="p-4 text-muted-foreground">Site workspace not found.</p>;
 
   return (
-    <section aria-label="Workspace" className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
-      {workspace === undefined ? (
-        <p className="text-muted-foreground p-4 text-sm">Loading workspace…</p>
-      ) : !workspace.configured ? (
+    <section
+      aria-label="Workspace"
+      aria-busy={workspace === undefined}
+      className="flex h-full min-h-0 min-w-0 flex-1 flex-col"
+    >
+      {workspace !== undefined && !workspace.configured ? (
         <p role="status" className="border-b bg-muted/40 p-4 text-sm">
           Connect R2 storage to run commands and save files. Set the R2 bucket and credentials in
           this Convex deployment.
@@ -100,9 +102,9 @@ export function ScoutWorkspace({
               selectedPath={selectedPath}
               onSelect={onSelectPath}
             />
-          ) : (
+          ) : workspace !== undefined ? (
             <p className="text-muted-foreground p-2">No files yet.</p>
-          )}
+          ) : null}
         </nav>
         <div className="flex min-h-0 min-w-0 flex-col">
           {selected?.kind === "file" ? (
@@ -115,11 +117,11 @@ export function ScoutWorkspace({
             <p className="break-words p-4 font-mono text-xs">
               {selected.path} → {selected.target}
             </p>
-          ) : (
+          ) : workspace !== undefined ? (
             <div className="text-muted-foreground grid flex-1 place-content-center gap-2 p-4 text-center text-sm">
               <p>Select a file to preview it.</p>
             </div>
-          )}
+          ) : null}
         </div>
       </div>
       {target.kind === "site" && (
@@ -324,7 +326,7 @@ function WorkspaceFileViewer({ target, path }: { target: WorkspaceTarget; path: 
         ) : null}
       </div>
       {state.kind === "loading" ? (
-        <p className="p-4 text-sm text-muted-foreground">Loading file…</p>
+        <div className="min-h-0 flex-1" aria-busy="true" />
       ) : state.kind === "failed" ? (
         <div className="space-y-2 p-4">
           <p role="alert" className="text-sm text-destructive">

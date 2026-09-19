@@ -56,10 +56,12 @@ export function CreditHistoryPage() {
         </Link>
         <h1 className="route-heading mt-4">Credit history</h1>
       </header>
-      <section className="surface-panel mt-8 p-5 sm:p-6" aria-label="Credit activity">
-        {!offer || status === "LoadingFirstPage" ? (
-          <p className="text-sm text-muted-foreground">Loading history…</p>
-        ) : results.length === 0 ? (
+      <section
+        className="surface-panel mt-8 min-h-40 p-5 sm:p-6"
+        aria-label="Credit activity"
+        aria-busy={!offer || status === "LoadingFirstPage" || status === "LoadingMore"}
+      >
+        {!offer || status === "LoadingFirstPage" ? null : results.length === 0 ? (
           <p className="text-sm text-muted-foreground">No credit activity yet.</p>
         ) : (
           <ul className="divide-y divide-border" aria-label="Credit history">
@@ -81,13 +83,15 @@ export function CreditHistoryPage() {
             ))}
           </ul>
         )}
-        {status === "CanLoadMore" && (
-          <Button className="mt-3" variant="outline" onClick={() => loadMore(10)}>
+        {(status === "CanLoadMore" || status === "LoadingMore") && (
+          <Button
+            className="mt-3"
+            variant="outline"
+            disabled={status === "LoadingMore"}
+            onClick={() => loadMore(10)}
+          >
             More history
           </Button>
-        )}
-        {status === "LoadingMore" && (
-          <p className="mt-3 text-sm text-muted-foreground">Loading more history…</p>
         )}
       </section>
     </main>

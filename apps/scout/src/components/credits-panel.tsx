@@ -92,7 +92,7 @@ export function CreditsPanel({ purchaseId }: { purchaseId: string | undefined })
           Could not load your credits. Refresh to try again.
         </p>
       ) : !balance || !offer ? (
-        <p className="mt-3 text-sm text-muted-foreground">Loading credits…</p>
+        <div className="mt-4 min-h-40" aria-busy="true" />
       ) : (
         <>
           {purchaseId && purchase && (

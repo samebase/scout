@@ -73,7 +73,7 @@ function UnassignedTasks({ search }: { search: ReviewFeedSearch }) {
           disabled={tasks.status === "LoadingMore"}
           onClick={() => tasks.loadMore(2)}
         >
-          {tasks.status === "LoadingMore" ? "Loading…" : "Show more tasks"}
+          Show more tasks
         </Button>
       )}
     </section>
@@ -85,15 +85,11 @@ function SiteGroups({ search }: { search: ReviewFeedSearch }) {
   const scope = search.scope ?? "public";
   const sites = usePaginatedQuery(api.scout.sites.list, { site, scope }, { initialNumItems: 6 });
   return (
-    <div className="space-y-5">
+    <div className="min-h-60 space-y-5" aria-busy={sites.status === "LoadingFirstPage"}>
       {sites.results.map((site) => (
         <SiteCard key={site.hostname} site={site} search={search} />
       ))}
-      {sites.status === "LoadingFirstPage" ? (
-        <p role="status" className="py-12 text-muted-foreground">
-          Loading sites…
-        </p>
-      ) : sites.status === "Exhausted" && !sites.results.length ? (
+      {sites.status === "Exhausted" && !sites.results.length ? (
         <p className="py-12 text-muted-foreground">
           {site
             ? "No sites match your search."
@@ -145,15 +141,10 @@ function SiteCard({
           />
           <SiteIdentity site={site} heading="h2" />
         </header>
-        <div className="flex-1 sm:min-h-0">
+        <div className="flex-1 sm:min-h-0" aria-busy={tasks.status === "LoadingFirstPage"}>
           {tasks.results.slice(0, 2).map((activity) => (
             <ReviewRow key={activity.threadId} activity={activity} preview search={search} />
           ))}
-          {tasks.status === "LoadingFirstPage" && (
-            <p role="status" className="py-6 text-sm text-muted-foreground">
-              Loading tasks…
-            </p>
-          )}
           {tasks.status === "Exhausted" && !tasks.results.length && (
             <p className="py-6 text-sm text-muted-foreground">
               {scope === "mine" ? "You haven't reviewed this site yet." : "No public tasks yet."}
@@ -187,16 +178,15 @@ export function SiteTaskList({ site, search }: { site: string; search: ReviewFee
     { initialNumItems: 10 },
   );
   return (
-    <section aria-label={`Tasks for ${site}`} className="min-w-0">
+    <section
+      aria-label={`Tasks for ${site}`}
+      aria-busy={tasks.status === "LoadingFirstPage"}
+      className="min-h-40 min-w-0"
+    >
       <div className="rounded-lg border bg-card px-4 sm:px-5">
         {tasks.results.map((activity) => (
           <ReviewRow key={activity.threadId} activity={activity} preview={false} search={search} />
         ))}
-        {tasks.status === "LoadingFirstPage" && (
-          <p role="status" className="py-6 text-sm text-muted-foreground">
-            Loading tasks…
-          </p>
-        )}
         {tasks.status === "Exhausted" && !tasks.results.length && (
           <p className="py-6 text-sm text-muted-foreground">
             {scope === "mine" ? "You haven't reviewed this site yet." : "No public tasks yet."}

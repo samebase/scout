@@ -300,46 +300,51 @@ export function ConversationLobby({
               }
             >
               <div className="flex min-w-0 flex-wrap items-center sm:gap-x-1">
-                {loadingScouts ? (
-                  "Loading Scouts…"
-                ) : request.kind === "pending" ? (
-                  "Starting…"
-                ) : activeScouts.length > 0 ? (
-                  <div className="flex min-w-0 items-center gap-1">
-                    {isPlay && <ScoutPiece size="brand" className="scale-75" />}
-                    <Select
-                      value={selectedScout?._id ?? ""}
-                      onValueChange={(value) => {
-                        const scout = activeScouts.find((scout) => scout._id === value);
-                        if (scout) void updatePreferences({ lastScoutId: scout._id });
-                      }}
-                    >
-                      <SelectTrigger
-                        aria-label="Your Scout"
-                        className="min-h-11 max-w-[145px] gap-1 border-0 px-1 text-[13px] shadow-none sm:max-w-[190px] sm:gap-1.5 sm:px-2 sm:text-sm"
+                <div
+                  className="flex min-h-11 w-[145px] shrink-0 items-center sm:w-[190px]"
+                  aria-busy={loadingScouts}
+                >
+                  {loadingScouts ? null : request.kind === "pending" ? (
+                    "Starting…"
+                  ) : activeScouts.length > 0 ? (
+                    <div className="flex w-full min-w-0 items-center gap-1">
+                      {isPlay && <ScoutPiece size="brand" className="scale-75" />}
+                      <Select
+                        value={selectedScout?._id ?? ""}
+                        onValueChange={(value) => {
+                          const scout = activeScouts.find((scout) => scout._id === value);
+                          if (scout) void updatePreferences({ lastScoutId: scout._id });
+                        }}
                       >
-                        <SelectValue>
-                          {selectedScout?.displayName.replace(/\s.*$/, "")}
-                          {selectedScout?.busy
-                            ? ` · ${scoutAvailabilityLabels[selectedScout.availability]}`
-                            : ""}
-                        </SelectValue>
-                      </SelectTrigger>
-                      <SelectContent position="popper" align="start">
-                        {activeScouts.map((scout) => (
-                          <SelectItem key={scout._id} value={scout._id} disabled={scout.busy}>
-                            {scout.displayName}
-                            {scout.busy ? ` · ${scoutAvailabilityLabels[scout.availability]}` : ""}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                ) : isPlay ? (
-                  "Scout Play"
-                ) : (
-                  "Scout Review"
-                )}
+                        <SelectTrigger
+                          aria-label="Your Scout"
+                          className="min-h-11 min-w-0 max-w-full gap-1 border-0 px-1 text-[13px] shadow-none sm:gap-1.5 sm:px-2 sm:text-sm"
+                        >
+                          <SelectValue>
+                            {selectedScout?.displayName.replace(/\s.*$/, "")}
+                            {selectedScout?.busy
+                              ? ` · ${scoutAvailabilityLabels[selectedScout.availability]}`
+                              : ""}
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent position="popper" align="start">
+                          {activeScouts.map((scout) => (
+                            <SelectItem key={scout._id} value={scout._id} disabled={scout.busy}>
+                              {scout.displayName}
+                              {scout.busy
+                                ? ` · ${scoutAvailabilityLabels[scout.availability]}`
+                                : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ) : isPlay ? (
+                    "Scout Play"
+                  ) : (
+                    "Scout Review"
+                  )}
+                </div>
                 <Select
                   value={engine}
                   disabled={request.kind === "pending" || loadingScouts}
@@ -1083,12 +1088,10 @@ function ConversationSession({
                 role="log"
                 aria-label="Session messages"
                 aria-live="polite"
+                aria-busy={
+                  messages.status === "LoadingFirstPage" || messages.status === "LoadingMore"
+                }
               >
-                {messages.status === "LoadingFirstPage" && (
-                  <p role="status" className="text-sm text-muted-foreground">
-                    Loading messages…
-                  </p>
-                )}
                 {visibleMessages.map((message) =>
                   message.kind === "tool" ? (
                     <MessageScrollerItem
@@ -1143,14 +1146,6 @@ function ConversationSession({
                 )}
               </MessageScrollerContent>
             </MessageScrollerViewport>
-            {messages.status === "LoadingMore" && (
-              <p
-                role="status"
-                className="pointer-events-none absolute inset-x-0 top-0 bg-background/90 py-2 text-center text-sm text-muted-foreground"
-              >
-                Loading earlier messages…
-              </p>
-            )}
             <MessageScrollerButton className="size-11" />
           </MessageScroller>
         </MessageScrollerProvider>

@@ -38,11 +38,7 @@ function ScoutDetailPage() {
   );
 
   if (scout === undefined) {
-    return (
-      <section aria-busy="true" aria-live="polite">
-        <p className="text-muted-foreground py-10 text-sm">Loading scout...</p>
-      </section>
-    );
+    return <section className="min-h-40" aria-busy="true" />;
   }
 
   if (scout === null) {

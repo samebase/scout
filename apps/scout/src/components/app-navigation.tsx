@@ -71,16 +71,16 @@ export function AppNavigation() {
           )}
         </nav>
 
-        {viewer?.kind === "account" && (
+        {(viewer?.kind === "account" || viewer?.kind === "terms_required") && (
           <>
-            <CreditBalanceLink />
+            {viewer.kind === "account" && <CreditBalanceLink />}
             <Link to="/settings" className={`${navigationLinkClass} app-navigation__settings`}>
               <SettingsIcon aria-hidden="true" />
               <span className="sr-only sm:not-sr-only">Settings</span>
             </Link>
           </>
         )}
-        {viewer?.kind === "anonymous" && (
+        {(!viewer || viewer.kind === "anonymous") && (
           <Link to="/settings" className={navigationLinkClass}>
             Sign in
           </Link>

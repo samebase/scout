@@ -1,0 +1,81 @@
+diff --git a/dist/client/index.d.ts b/dist/client/index.d.ts
+index 3e4407a497acaeebe7a988e79b6264f8e79d612e..9a235cfeb9f7d070f962d483199f21c5224a4854 100644
+--- a/dist/client/index.d.ts
++++ b/dist/client/index.d.ts
+@@ -21,13 +21,15 @@ import type { ComponentApi } from "../component/_generated/component.js";
+  * export default http;
+  * ```
+  */
+-export declare function registerStaticRoutes(http: HttpRouter, component: ComponentApi, { pathPrefix, spaFallback, cdnBaseUrl, }?: {
++export declare function registerStaticRoutes(http: HttpRouter, component: ComponentApi, { pathPrefix, spaFallback, cdnBaseUrl, rewritePath, }?: {
+     /** URL prefix where the app should serve static files. */
+     pathPrefix?: string;
+     /** Override the deployment's SPA fallback setting. */
+     spaFallback?: boolean;
+     /** Optional custom base URL for convex-fs blob redirects. */
+     cdnBaseUrl?: string | ((request: Request) => string);
++    /** Rewrite the decoded request path before resolving a static asset. */
++    rewritePath?: (path: string) => string;
+ }): void;
+ /**
+  * Expose a query that clients can subscribe to for live reload on deploy.
+diff --git a/dist/client/index.js b/dist/client/index.js
+index f0c97fef71699c9a0ab940ae30dd45041ca3cb8a..c4cd8631d3c802d2ab90bb57b51c42614cc94be6 100644
+--- a/dist/client/index.js
++++ b/dist/client/index.js
+@@ -29,7 +29,7 @@ const deploymentInfoValidator = v.object({
+  * export default http;
+  * ```
+  */
+-export function registerStaticRoutes(http, component, { pathPrefix = "/", spaFallback, cdnBaseUrl, } = {}) {
++export function registerStaticRoutes(http, component, { pathPrefix = "/", spaFallback, cdnBaseUrl, rewritePath, } = {}) {
+     if (!pathPrefix.startsWith("/")) {
+         throw new Error("pathPrefix must start with /");
+     }
+@@ -47,6 +47,12 @@ export function registerStaticRoutes(http, component, { pathPrefix = "/", spaFal
+         if (normalizedPrefix && path.startsWith(normalizedPrefix)) {
+             path = path.slice(normalizedPrefix.length) || "/";
+         }
++        if (rewritePath) {
++            path = rewritePath(path);
++            if (!path.startsWith("/")) {
++                throw new Error("rewritePath must return a path that starts with /");
++            }
++        }
+         if (path === "" || path === "/") {
+             path = "/index.html";
+         }
+diff --git a/src/client/index.ts b/src/client/index.ts
+index c23f011b2b0d34702636fc9bd95cbb98a87f46eb..4092307454b6f8c1e3197dec9d488e7ec4507d1b 100644
+--- a/src/client/index.ts
++++ b/src/client/index.ts
+@@ -50,6 +50,7 @@ export function registerStaticRoutes(
+     pathPrefix = "/",
+     spaFallback,
+     cdnBaseUrl,
++    rewritePath,
+   }: {
+     /** URL prefix where the app should serve static files. */
+     pathPrefix?: string;
+@@ -57,6 +58,8 @@ export function registerStaticRoutes(
+     spaFallback?: boolean;
+     /** Optional custom base URL for convex-fs blob redirects. */
+     cdnBaseUrl?: string | ((request: Request) => string);
++    /** Rewrite the decoded request path before resolving a static asset. */
++    rewritePath?: (path: string) => string;
+   } = {},
+ ) {
+   if (!pathPrefix.startsWith("/")) {
+@@ -80,6 +83,12 @@ export function registerStaticRoutes(
+     if (normalizedPrefix && path.startsWith(normalizedPrefix)) {
+       path = path.slice(normalizedPrefix.length) || "/";
+     }
++    if (rewritePath) {
++      path = rewritePath(path);
++      if (!path.startsWith("/")) {
++        throw new Error("rewritePath must return a path that starts with /");
++      }
++    }
+     if (path === "" || path === "/") {
+       path = "/index.html";
+     }

@@ -22,7 +22,10 @@ function MembersPage() {
     <main className="route-page max-w-6xl">
       <h1 className="route-heading">Members</h1>
       <p className="mt-3 text-muted-foreground">Approve or revoke member access.</p>
-      <div className="surface-panel mt-8 overflow-x-auto">
+      <div
+        className="surface-panel mt-8 min-h-40 overflow-x-auto"
+        aria-busy={status === "LoadingFirstPage" || status === "LoadingMore"}
+      >
         <table className="w-full text-left text-sm">
           <thead>
             <tr className="border-b">
@@ -37,11 +40,6 @@ function MembersPage() {
             ))}
           </tbody>
         </table>
-        {status === "LoadingFirstPage" && (
-          <p className="p-4" role="status">
-            Loading members…
-          </p>
-        )}
         {status === "Exhausted" && results.length === 0 && <p className="p-4">No accounts yet.</p>}
       </div>
       {(status === "CanLoadMore" || status === "LoadingMore") && (
@@ -51,7 +49,7 @@ function MembersPage() {
           disabled={status === "LoadingMore"}
           onClick={() => loadMore(30)}
         >
-          {status === "LoadingMore" ? "Loading…" : "Load more"}
+          Load more
         </Button>
       )}
     </main>

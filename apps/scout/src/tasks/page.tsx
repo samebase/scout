@@ -105,12 +105,8 @@ function AgentsWorkspace({ search }: { search: AgentsSearch }) {
         <PaneFrame
           scrollRestorationId="agents-sessions"
           content={
-            <aside aria-label="Tasks">
-              {status === "LoadingFirstPage" ? (
-                <p role="status" className="p-4 text-sm text-muted-foreground">
-                  Loading tasks…
-                </p>
-              ) : sessions.length === 0 ? (
+            <aside aria-label="Tasks" aria-busy={status === "LoadingFirstPage"}>
+              {status === "LoadingFirstPage" ? null : sessions.length === 0 ? (
                 <p className="p-4 text-sm text-muted-foreground">No tasks yet.</p>
               ) : (
                 <nav className="flex flex-col gap-1 p-2" aria-label="Tasks">
@@ -251,7 +247,7 @@ function AgentsWorkspace({ search }: { search: AgentsSearch }) {
                       disabled={status === "LoadingMore"}
                       onClick={() => loadMore(50)}
                     >
-                      {status === "LoadingMore" ? "Loading…" : "Load more tasks"}
+                      Load more tasks
                     </Button>
                   )}
                 </nav>
@@ -468,9 +464,7 @@ function NewSession({ initialScoutId }: { initialScoutId: string }) {
             className="block h-11 w-full rounded-lg border border-input bg-card px-3 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/25 disabled:opacity-50"
           >
             {!selectedScout && (
-              <option value="">
-                {scouts === undefined ? "Loading scouts…" : "Select a scout"}
-              </option>
+              <option value="">{scouts === undefined ? "" : "Select a scout"}</option>
             )}
             {activeScouts?.map((scout) => (
               <option

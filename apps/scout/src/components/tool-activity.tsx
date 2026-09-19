@@ -142,32 +142,29 @@ function ToolScreenshot({ id, label }: { id: Id<"agentsApiScreenshots">; label: 
         <DialogDescription className="sr-only">
           Screenshot saved during this tool call.
         </DialogDescription>
-        {state.kind === "ready" ? (
-          <img
-            src={state.image.url}
-            alt="Screenshot saved by Scout"
-            className="max-h-[80dvh] w-full object-contain"
-            onError={() => setState({ kind: "failed" })}
-          />
-        ) : state.kind === "failed" ? (
-          <div className="space-y-3 py-8 text-center text-sm">
-            <p role="alert">Couldn't load this screenshot.</p>
-            <button
-              className="text-primary underline underline-offset-4"
-              onClick={() => void load()}
-            >
-              Try again
-            </button>
-          </div>
-        ) : (
-          <p
-            className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground"
-            role="status"
-          >
-            <LoaderCircleIcon className="size-4 animate-spin" aria-hidden="true" /> Loading
-            screenshot…
-          </p>
-        )}
+        <div
+          className="flex h-[70dvh] min-h-0 items-center justify-center"
+          aria-busy={state.kind === "idle" || state.kind === "loading"}
+        >
+          {state.kind === "ready" ? (
+            <img
+              src={state.image.url}
+              alt="Screenshot saved by Scout"
+              className="h-full w-full object-contain"
+              onError={() => setState({ kind: "failed" })}
+            />
+          ) : state.kind === "failed" ? (
+            <div className="space-y-3 py-8 text-center text-sm">
+              <p role="alert">Couldn't load this screenshot.</p>
+              <button
+                className="text-primary underline underline-offset-4"
+                onClick={() => void load()}
+              >
+                Try again
+              </button>
+            </div>
+          ) : null}
+        </div>
       </DialogContent>
     </Dialog>
   );

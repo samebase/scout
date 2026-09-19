@@ -55,12 +55,14 @@ export function BrowserPanel({
       content={
         selected ? (
           <BrowserView key={selected._id} browser={selected} search={search} />
+        ) : browsers === undefined ? (
+          <div className="min-h-full" aria-busy="true" />
         ) : (
           <p
             role="status"
             className="grid min-h-full place-items-center p-6 text-center text-sm text-muted-foreground"
           >
-            {browsers === undefined ? "Loading browser…" : "No browser session yet."}
+            No browser session yet.
           </p>
         )
       }
@@ -129,12 +131,7 @@ function BrowserView({ browser, search }: { browser: BrowserSession; search: Age
               />
             </>
           ) : (
-            <p
-              role="status"
-              className="grid flex-1 place-items-center p-6 text-sm text-muted-foreground"
-            >
-              Connecting to live browser…
-            </p>
+            <div className="flex-1" aria-busy="true" />
           )}
         </section>
       );

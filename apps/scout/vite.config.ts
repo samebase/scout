@@ -5,6 +5,7 @@ import react from "@vitejs/plugin-react";
 import typegpu from "unplugin-typegpu/vite";
 import { defineConfig } from "vite-plus";
 import { resolveWorktreeKind } from "./scripts/run-context-dev.ts";
+import { prerenderPages, prerenderPathRewrites } from "./prerender.config.ts";
 
 export default defineConfig(({ command }) => {
   const primaryCheckout = command === "serve" && resolveWorktreeKind() === "main";
@@ -23,19 +24,44 @@ export default defineConfig(({ command }) => {
       typegpu(),
       tailwindcss(),
       tanstackStart({
+        pages: prerenderPages,
         prerender: {
+          enabled: true,
           autoStaticPathsDiscovery: false,
           crawlLinks: false,
+          failOnError: true,
+          onSuccess({ page, html }) {
+            if (!prerenderPages.some(({ path }) => path === page.path)) return;
+            if (!/<h1[\s>]/.test(html) || html.includes("Loading account"))
+              throw new Error(`Public page ${page.path} did not prerender its content.`);
+          },
         },
         spa: {
           enabled: true,
-          // Both static hosts serve this shell for the landing and app routes.
-          maskPath: "/",
+          // The hash keeps the shell on the public root route while giving
+          // prerendering a distinct key from the actual homepage.
+          maskPath: "/#__spa-shell",
           prerender: {
             outputPath: "/index.html",
           },
         },
       }),
+      {
+        name: "public-page-rewrites",
+        apply: "build",
+        applyToEnvironment: (environment) => environment.name === "client",
+        generateBundle() {
+          this.emitFile({
+            type: "asset",
+            fileName: "_redirects",
+            source: [
+              ...prerenderPages.map(({ path, prerender }) => `${prerender.outputPath} ${path} 301`),
+              ...Array.from(prerenderPathRewrites, ([path, htmlPath]) => `${path} ${htmlPath} 200`),
+              "",
+            ].join("\n"),
+          });
+        },
+      },
       react(),
     ],
     test: {

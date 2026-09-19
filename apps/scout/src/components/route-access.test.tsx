@@ -19,12 +19,14 @@ import { Route as CreditHistoryRoute } from "../routes/credit-history";
 import { Route as ScoutsRoute } from "../routes/scouts";
 import { Route as PrivacyRoute } from "../routes/privacy";
 import { Route as TermsRoute } from "../routes/terms";
+import { Route as AboutRoute } from "../routes/about";
 import { omitNullish } from "../../shared/omitNullish";
 import { TERMS_ACCEPTANCE_LABEL } from "../../shared/terms";
 import { ConvexError } from "convex/values";
 
 const remote = vi.hoisted(() => ({
   authenticated: true,
+  authLoading: false,
   revision: 0,
   values: new Map<string, unknown>(),
   subscribers: new Set<() => void>(),
@@ -36,7 +38,10 @@ function subscribe(listener: () => void) {
   return () => remote.subscribers.delete(listener);
 }
 vi.mock("convex/react", () => ({
-  useConvexAuth: () => ({ isAuthenticated: remote.authenticated, isLoading: false }),
+  useConvexAuth: () => {
+    useSyncExternalStore(subscribe, () => remote.revision);
+    return { isAuthenticated: remote.authenticated, isLoading: remote.authLoading };
+  },
   AuthLoading: () => null,
   Authenticated: ({ children }: { children: ReactNode }) =>
     remote.authenticated ? children : null,
@@ -58,6 +63,7 @@ vi.mock("@convex-dev/auth/react", () => ({
 }));
 beforeEach(() => {
   remote.authenticated = true;
+  remote.authLoading = false;
   remote.values.clear();
   remote.lab.mockClear();
   remote.accept.mockReset().mockResolvedValue(null);
@@ -123,6 +129,18 @@ async function open(path: string) {
       review,
       createRoute({
         getParentRoute: () => root,
+        path: "/about",
+        staticData: AboutRoute.options.staticData,
+        ...omitNullish({ component: AboutRoute.options.component }),
+      }),
+      createRoute({
+        getParentRoute: () => root,
+        path: "/sites/$site",
+        staticData: { access: "access_public" },
+        component: () => <h1>Site contents</h1>,
+      }),
+      createRoute({
+        getParentRoute: () => root,
         path: "/privacy",
         staticData: PrivacyRoute.options.staticData,
         ...omitNullish({ component: PrivacyRoute.options.component }),
@@ -166,7 +184,7 @@ async function open(path: string) {
 
 test("protected children wait for access and unmount on revocation", async () => {
   await open("/agents");
-  expect((await screen.findByRole("status")).textContent).toContain("Loading account");
+  expect((await screen.findByRole("main", { busy: true })).textContent).toBe("");
   expect(remote.lab).not.toHaveBeenCalled();
   setViewer("role_staff");
   expect(await screen.findByRole("heading", { name: "Agents contents" })).toBeTruthy();
@@ -219,7 +237,7 @@ test("account controls stay above credits and history opens on its own page", as
   expect(screen.queryByRole("list", { name: "Credit history" })).toBeNull();
   await user.click(screen.getByRole("link", { name: "View credit history" }));
   expect(await screen.findByRole("heading", { level: 1, name: "Credit history" })).toBeTruthy();
-  expect(screen.getByText("Loading history…")).toBeTruthy();
+  expect(screen.getByRole("region", { name: "Credit activity", busy: true }).textContent).toBe("");
   expect(screen.queryByRole("button", { name: "Sign out" })).toBeNull();
   await user.click(screen.getByRole("link", { name: "Back to Settings" }));
   expect(await screen.findByRole("button", { name: "Sign out" })).toBeTruthy();
@@ -296,11 +314,17 @@ test.each(["deleting", "deleted"])(
 );
 
 for (const { path, title } of [
+  { path: "/", title: "Activity contents" },
+  { path: "/about", title: "The internet is a confusing place." },
+  { path: "/play", title: "Play contents" },
+  { path: "/tasks/public-review", title: "Review contents" },
+  { path: "/sites/example.com", title: "Site contents" },
   { path: "/privacy", title: "Privacy policy" },
   { path: "/terms", title: "Terms and conditions" },
 ]) {
   test.each([
     "anonymous",
+    "auth_loading",
     "loading",
     "pending",
     "member",
@@ -310,6 +334,10 @@ for (const { path, title } of [
     "terms_required",
   ])(`${path} remains readable for %s viewers`, async (state) => {
     switch (state) {
+      case "auth_loading":
+        remote.authenticated = false;
+        remote.authLoading = true;
+        break;
       case "anonymous":
         remote.authenticated = false;
         break;
@@ -330,12 +358,16 @@ for (const { path, title } of [
     }
     await open(path);
     expect(await screen.findByRole("heading", { level: 1, name: title })).toBeTruthy();
-    expect(screen.getByText("Effective date: September 19, 2026")).toBeTruthy();
-    expect(screen.getByRole("main").textContent).not.toMatch(
-      /\{\{[A-Z_]+\}\}|Draft for review|Not yet effective/,
-    );
+    if (path === "/privacy" || path === "/terms") {
+      expect(screen.getByText("Effective date: September 19, 2026")).toBeTruthy();
+      expect(screen.getByRole("main").textContent).not.toMatch(
+        /\{\{[A-Z_]+\}\}|Draft for review|Not yet effective/,
+      );
+    }
     expect(screen.queryByRole("heading", { name: "Account deletion" })).toBeNull();
     expect(screen.queryByLabelText("Account access")).toBeNull();
+    expect(screen.queryByText("Loading account…")).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Review our terms" })).toBeNull();
   });
 }
 
@@ -397,6 +429,26 @@ test("existing users explicitly accept before protected content mounts, and fail
   expect(remote.accept).toHaveBeenLastCalledWith({});
   setViewer("role_staff");
   expect(await screen.findByRole("heading", { name: "Agents contents" })).toBeTruthy();
+});
+
+test("the homepage stays mounted as auth resolves, and terms are requested in account settings", async () => {
+  remote.authenticated = false;
+  remote.authLoading = true;
+  await open("/");
+  const content = await screen.findByRole("heading", { name: "Activity contents" });
+  act(() => {
+    remote.authLoading = false;
+    remote.authenticated = true;
+    remote.values.set("viewer", { kind: "terms_required", userId: "account" });
+    remote.revision += 1;
+    for (const listener of remote.subscribers) listener();
+  });
+  expect(screen.getByRole("heading", { name: "Activity contents" })).toBe(content);
+  expect(screen.queryByRole("heading", { name: "Review our terms" })).toBeNull();
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("link", { name: "Settings" }));
+  expect(await screen.findByRole("heading", { name: "Review our terms" })).toBeTruthy();
+  expect(remote.accept).not.toHaveBeenCalled();
 });
 
 test("a user can close an account without accepting terms", async () => {
