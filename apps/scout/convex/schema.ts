@@ -20,6 +20,7 @@ import { humanHandoffDeliveryRecordValidator } from "./humanHandoffDeliveryModel
 import { humanHandoffValidator } from "./humanHandoffsModel";
 import { handoffAccess } from "./tasks/handoffModel";
 import { scoutServiceAccountFieldsValidator, scoutWebsiteIdentityValidator } from "./scout/model";
+import { browserProfileSummary } from "./scout/browserProfileModel";
 import { activeSkillsValidator } from "./scout/skills";
 import {
   chatPurposeValidator,
@@ -209,6 +210,7 @@ export default defineSchema({
     status: v.union(v.literal("active"), v.literal("disabled")),
     agentMail: v.object({ inboxId: v.string(), address: v.string() }),
     firecrawl: v.object({ profileName: v.string() }),
+    browserProfileSummary: v.optional(browserProfileSummary),
   })
     .index("by_status", ["status"])
     .index("by_slug", ["slug"])

@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-19T18:29:53Z
+- **Last updated:** 2026-09-19T18:39:56Z
 
 ## Log
 
@@ -1599,8 +1599,15 @@ with the same identity and service list. Convex excludes emails and account logi
 the viewer has existing member access (`apps/scout/convex/scout/scouts.ts`,
 `apps/scout/convex/scout/serviceAccounts.ts`, `apps/scout/src/components/scout-badge.tsx`).
 
-### 2026-09-19 - working tree - v256
+### 2026-09-19 - 8382098 - v256
 
 The site sidebar shows the same site total as the landing page beside the review visibility selector.
 The compact count wraps below the selector in narrow sidebars and follows Public or My reviews
 (`apps/scout/src/components/site-filters.tsx`, `apps/scout/src/routes/sites.$site.tsx`).
+
+### 2026-09-19 - working tree - v257
+
+Scout managers can refresh saved-cookie and domain counts beside each Firecrawl profile name.
+Convex caches the counts and check time after a read-only browser inspection, keeping the previous
+summary when refresh fails (`apps/scout/convex/scout/browserProfiles.ts`,
+`apps/scout/src/components/scout-browser-profile.tsx`).

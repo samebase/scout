@@ -8,6 +8,7 @@ import { availabilityValidator, scoutReservation } from "./availability";
 import { currentActivityValidator, currentScoutActivity } from "./activity";
 import type { ViewerAccess } from "../access";
 import { canAccess } from "../../shared/accessModel";
+import { browserProfileSummary } from "./browserProfileModel";
 
 const MAX_SCOUTS = 50;
 const MAX_DISPLAY_NAME_LENGTH = 100;
@@ -206,10 +207,44 @@ export const get = publicQuery({
 export const resources = query({
   access: "access_scout_manage",
   args: { scoutId: v.id("scouts") },
-  returns: v.union(scoutFieldsValidator.pick("agentMail", "firecrawl"), v.null()),
+  returns: v.union(
+    scoutFieldsValidator.pick("agentMail", "firecrawl").extend({
+      browserProfileSummary: v.union(browserProfileSummary, v.null()),
+    }),
+    v.null(),
+  ),
   handler: async (ctx, args) => {
     const scout = await ctx.db.get(args.scoutId);
-    return scout ? { agentMail: scout.agentMail, firecrawl: scout.firecrawl } : null;
+    return scout
+      ? {
+          agentMail: scout.agentMail,
+          firecrawl: scout.firecrawl,
+          browserProfileSummary: scout.browserProfileSummary ?? null,
+        }
+      : null;
+  },
+});
+
+export const saveBrowserProfileSummary = internalMutation({
+  args: {
+    scoutId: v.id("scouts"),
+    profileName: v.string(),
+    summary: browserProfileSummary,
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const scout = await ctx.db.get(args.scoutId);
+    if (!scout || scout.firecrawl.profileName !== args.profileName) {
+      throw new Error("Scout browser profile changed during inspection");
+    }
+    if (
+      scout.browserProfileSummary &&
+      scout.browserProfileSummary.checkedAt > args.summary.checkedAt
+    ) {
+      return null;
+    }
+    await ctx.db.patch(args.scoutId, { browserProfileSummary: args.summary });
+    return null;
   },
 });
 
