@@ -21,7 +21,7 @@ operational responsibilities.
 
 ## Stack
 
-- React 19 and TanStack Start, with public-homepage SSR on Convex
+- React 19 and TanStack Start, with public-page SSR on Convex
 - Convex for the real-time backend, database, and password authentication
 - Cloudflare Workers Static Assets for production delivery and branch previews
 - Convex HTTP actions for homepage HTML and Static Hosting for browser assets
@@ -159,9 +159,13 @@ uploads the same `apps/scout/dist/client` files to Convex Static Hosting. Previe
 not change the production `convex.site` app.
 
 Preview builds also upload browser assets to the matching Convex preview. On
-`convex.site`, `/` renders the first six public sites and two reviews per site
-before returning HTML. Native Convex subscriptions and pagination take over in
-the browser. Other paths retain the existing static prerenders and SPA fallback.
+`convex.site`, the homepage and public site pages render their initial data into HTML.
+The router uses the official Convex TanStack Query adapter and TanStack SSR query
+integration. Ordinary queries use `useSuspenseQuery(convexQuery(...))`; paginated
+lists use the shared `useSsrPaginatedQuery` bridge while native Convex hooks retain
+live pagination. New public routes inherit SSR without a separate server loader.
+Account, workspace, and personal views remain client-rendered.
+`TANSTACK_SERVER_ENABLED=false` still restores static prerenders and the SPA shell.
 See [Scout SSR verification](./docs/convex-ssr-experiment.md) for the PR preview
 and commands to reproduce it without a Cloudflare runtime.
 
@@ -173,7 +177,7 @@ and deploy behavior. Use the
 
 - `package.json` defines the supported development, check, build, and deploy commands.
 - `vite.config.ts` defines workspace formatting, lint rules, staged checks, and test projects.
-- `apps/scout/vite.config.ts` prerenders the homepage, About, Privacy, and Terms, plus a separate
+- `apps/scout/vite.config.ts` prerenders About, Privacy, and Terms, plus a separate
   SPA fallback shell. `apps/scout/prerender.config.ts` maps public URLs to their generated HTML;
   Cloudflare uses build-generated `_redirects`, and Convex uses the same exact path rewrites.
 - `apps/scout/wrangler.jsonc` defines Cloudflare static assets, SPA fallback, and preview URLs.

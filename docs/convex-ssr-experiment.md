@@ -21,20 +21,66 @@ browser loads the remaining sites when you scroll. Filtering and opening a task
 exercise the normal Scout app. `private review` must never appear in the public
 HTML or feed.
 
-`src/lib/homeFeed.ts` loads six public sites, the site count, and up to two reviews
-per site through existing public Convex queries. `ActivityFeed` keeps that snapshot
-visible while native subscriptions connect, then uses their results and cursors.
-The provider creates a separate Convex client for each rendered tree. No user
-credentials are passed to the server loader, and `scope=mine` skips the snapshot.
+[Open an actual site page](https://clever-vole-526.eu-west-1.convex.site/sites/ssr-8.example).
+This is Scout's `/sites/$site` route. Its site heading, public reviews, and sites
+sidebar are present in View Page Source. Direct visits work with no query string,
+with `?scope=public`, and with `?scope=public&view=tasks`. The site records are
+synthetic preview data; the route and components are the same ones Scout uses.
 
-With TanStack serving enabled, every GET that does not match an uploaded asset goes
-to the built TanStack server. TanStack owns route matching, redirects, and Not Found
-responses. The homepage, About, Privacy, and Terms routes opt into SSR; other routes
-default to client rendering through `src/start.ts`. The root layout opts into SSR
-so public child routes can render. No app-route list is registered in Convex.
-URL-dependent navigation and the browser account gate use TanStack's `ClientOnly`
-boundary so a shared SPA shell can hydrate at a different URL. Protected routes
-must retain client-only rendering; personalized SSR is outside this integration.
+## Current query integration
+
+Scout uses the [official Convex TanStack Query setup](https://docs.convex.dev/client/tanstack/tanstack-start/).
+Each router owns a Convex client and query cache. `ConvexAuthProvider` shares that
+client, and `setupRouterSsrQueryIntegration` serializes and hydrates the cache.
+Public page components use `useSuspenseQuery(convexQuery(api.module.query, args))`.
+There is no homepage loader or `initialFeed` prop.
+
+The official adapter does not implement paginated hooks. One shared
+`useSsrPaginatedQuery` hook queries the first page through the official adapter
+and preserves it until native `usePaginatedQuery` connects. Convex owns cursor
+advancement, page splitting, and live updates. Both subscriptions remain active,
+so this currently costs one additional first-page subscription per list.
+
+Every unmatched GET goes to TanStack, which owns route matching and Not Found.
+Public routes inherit SSR. The homepage and site route disable it for personal or
+workspace views; browser-dependent routes explicitly set `ssr: false`.
+No route list is registered in the HTTP action, and new ordinary public queries
+do not need custom server data plumbing. Personalized SSR is still out of scope.
+
+The Convex adapter awaits React's `renderToReadableStream(...).allReady` and passes
+the completed HTML to TanStack's `renderSsrHtmlResponse`. This is needed because
+`defaultRenderHandler` uses `renderToString`, which does not await Suspense,
+while `defaultStreamHandler` imports Node streams that Convex cannot bundle.
+Route matching, query hydration, response status, and cleanup remain framework-owned.
+Only About, Privacy, and Terms prerender. The homepage uses the universal SPA
+shell in static mode, including on the Cloudflare assets host. This keeps builds
+independent of backend data and avoids incomplete Suspense markup during rollback.
+
+Run the raw-response check against a deployment with a reviewed public site:
+
+```sh
+node apps/scout/scripts/verify-ssr.ts https://clever-vole-526.eu-west-1.convex.site ssr-8.example
+```
+
+The check parses HTML without executing JavaScript. It requires homepage cards,
+a filtered homepage, site identity and reviews, About content, private-view
+shells, and TanStack's unknown-route status. Unit tests also delay an official
+Convex query and require the renderer to wait for its HTML and hydration data.
+
+Verified on the hosted `clever-vole-526` preview on September 20, 2026:
+
+- The raw-response check passed all 14 paths. The homepage contained six site
+  cards; its filtered URL contained one. The direct site URL contained its
+  identity, public review, and eight sidebar cards with and without query parameters.
+  Private views contained no reviews.
+- Chrome hydrated the homepage and direct site page, switched sites, filtered
+  the feed, and loaded all eight fixture sites through native pagination.
+  The first About navigation retained one menu. Console warnings and errors were empty.
+- With `TANSTACK_SERVER_ENABLED=false`, the homepage and direct site returned
+  the SPA shell, loaded their content in Chrome, and reloaded without console errors.
+  The preview is left enabled. Production and the shared dev deployment were not changed.
+- `pnpm run check` passed 1,579 tests. Scout and the example app built successfully;
+  the Convex preview push passed its TypeScript and bundle checks.
 
 Static Hosting still owns uploads, storage, and serving built assets. Its patched
 `fallback(request)` callback runs after an exact asset miss, before static rewrites
@@ -68,15 +114,15 @@ pnpm --filter samebase-scout exec convex env set TANSTACK_SERVER_ENABLED true --
 
 The disabled path never imports or initializes the renderer. Static Hosting reads
 the already-published prerender or shell directly, without an HTTP request back to
-the app. Homepage requests with query parameters use `/index.html` so filters
+the app. The homepage and all data pages use `/index.html` in static mode, so filters
 initialize in the browser without a prerender hydration mismatch. With serving disabled,
 View Page Source contains the page shell without review cards; the browser still
 loads the feed. With serving enabled, the first six cards are in the response HTML.
 
 This is a manual switch, not an automatic error fallback. It does not repair
 missing static assets, shared backend failures, or a failed build. Builds still
-need to generate the server bundle before pushing Convex. New deployments default
-to static serving; enable SSR only after matching assets have been uploaded.
+need to generate the server bundle before pushing Convex. The code defaults to static serving when the variable is unset. Project environment
+defaults currently enable it; upload matching assets before verifying a new deployment.
 
 ### Build and deploy to an existing preview
 
@@ -102,7 +148,7 @@ between backend deployment and asset upload can reference missing browser files.
 The existing Static Hosting patch adds explicit `--preview-name`
 forwarding, since 0.2.1's uploader otherwise does not target a named preview.
 
-Build-time prerendering intentionally skips the live loader. Convex runs the build
+Build-time prerendering includes only data-free pages. Convex runs the build
 before pushing the backend, so a new preview may not have queries deployed yet.
 
 ### Optional preview fixtures
@@ -120,7 +166,7 @@ pnpm --filter samebase-scout exec convex env remove SSR_FIXTURE_DEPLOYMENT_URL -
 The disabled fixture Scout cannot start tasks. Use real configured Scouts to test
 agent execution separately.
 
-### Generic routing verification
+### Earlier generic routing verification
 
 The final build was deployed to `clever-vole-526` on September 20, 2026, and tested
 with `TANSTACK_SERVER_ENABLED` false, true, false, then true without rebuilding
@@ -266,15 +312,15 @@ import. The generated `.js` files are Vite output, not authored source.
 
 The stock `defaultStreamHandler` failed Convex bundling on `node:stream` and
 `node:stream/web`. The original Scout bundle also imported `node:module`. The
-working `defaultRenderHandler` buffers a complete HTML document and expects the
-data needed for that document to be awaited in loaders. Streaming Suspense was
-not demonstrated.
+original `defaultRenderHandler` buffered a complete HTML document and required
+loader data. The current adapter described above also awaits query Suspense,
+while still returning a buffered response.
 
 An intermediate Node-action attempt deployed but failed at runtime on the
 sidebar's dynamic React import. That route and action were removed from the
 final probe once direct HTTP rendering worked.
 
-Personalized SSR, streaming Suspense, TanStack server functions, production load,
+Personalized SSR, incremental response streaming, TanStack server functions, production load,
 and cold-start latency remain outside the verified scope. The initial page is
 bounded to six sites rather than rendering an unbounded collection. Private
 pages continue to authenticate and load through the existing browser queries.

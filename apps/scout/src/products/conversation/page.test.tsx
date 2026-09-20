@@ -12,6 +12,7 @@ import {
 import { getFunctionName, type FunctionReturnType, type FunctionReference } from "convex/server";
 import { ConvexError } from "convex/values";
 import { useSyncExternalStore } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { Route as TaskRoute } from "../../routes/tasks.$thread";
 import { Route as PlayRoute } from "../../routes/play";
@@ -285,7 +286,25 @@ async function openPlay(path = "/play") {
     ]),
     history: createMemoryHistory({ initialEntries: [path] }),
   });
-  render(<RouterProvider router={router} />);
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+        queryFn: ({ queryKey }) => {
+          if (queryKey[1] === "scout/sites:count") return { count: 0, hasMore: false };
+          if (queryKey[1] === "scout/sites:list" || queryKey[1] === "scout/activity:list") {
+            return { page: [], isDone: true, continueCursor: "" };
+          }
+          throw new Error("Unexpected TanStack query");
+        },
+      },
+    },
+  });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  );
   await router.load();
   return router;
 }
@@ -327,10 +346,12 @@ test("a site link opens the shared composer without submitting and sends the sel
   expect(screen.getByRole<HTMLButtonElement>("button", { name: "Send message" }).disabled).toBe(
     true,
   );
-  expect(remote.queryCalls).toHaveBeenCalledWith("scout/sites:list", {
-    scope: "mine",
-    site: "another",
-  });
+  await waitFor(() =>
+    expect(remote.queryCalls).toHaveBeenCalledWith("scout/sites:list", {
+      scope: "mine",
+      site: "another",
+    }),
+  );
 
   fireEvent.change(input, { target: { value: "Check the sign-up flow." } });
   const user = userEvent.setup();

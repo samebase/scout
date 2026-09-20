@@ -22,6 +22,11 @@ import { api } from "../../convex/_generated/api";
 import { omitNullish } from "../../shared/omitNullish";
 import { Route as SiteRoute } from "../routes/sites.$site";
 import { homeSearch } from "../lib/homeSearch";
+import { convexQuery } from "@convex-dev/react-query";
+import { QueryClient, QueryClientProvider, notifyManager } from "@tanstack/react-query";
+import { z } from "zod";
+
+let queryClient: QueryClient;
 
 type Site = NonNullable<FunctionReturnType<typeof api.scout.sites.get>>;
 type Activity = FunctionReturnType<typeof api.scout.activity.list>["page"][number];
@@ -50,6 +55,10 @@ function subscribe(listener: () => void) {
 function updateSite(site: Site) {
   act(() => {
     remote.sites.set(site.hostname, site);
+    queryClient.setQueryData(
+      convexQuery(api.scout.sites.get, { site: site.hostname }).queryKey,
+      site,
+    );
     remote.revision += 1;
     for (const listener of remote.subscribers) listener();
   });
@@ -142,6 +151,43 @@ vi.mock("convex/react", () => ({
 }));
 
 beforeEach(() => {
+  notifyManager.setScheduler((callback) => callback());
+  queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+        queryFn: ({ queryKey }) => {
+          const args = z.object({ site: z.string().nullable().optional() }).parse(queryKey[2]);
+          switch (queryKey[1]) {
+            case "scout/sites:count":
+              return { count: 9, hasMore: false };
+            case "scout/sites:list":
+              return { page: [...remote.sites.values()], isDone: true, continueCursor: "" };
+            case "scout/activity:list":
+              return {
+                page: remote.tasks.get(args.site ?? "") ?? [],
+                isDone: true,
+                continueCursor: "",
+              };
+            case "scout/sites:get": {
+              const site = args.site ?? "";
+              if (!remote.loadingSites.has(site)) return remote.sites.get(site) ?? null;
+              return new Promise<Site | null>((resolve) => {
+                const unsubscribe = subscribe(() => {
+                  if (!remote.loadingSites.has(site)) {
+                    unsubscribe();
+                    resolve(remote.sites.get(site) ?? null);
+                  }
+                });
+              });
+            }
+            default:
+              throw new Error("Unexpected TanStack query");
+          }
+        },
+      },
+    },
+  });
   window.localStorage.clear();
   remote.admin = true;
   remote.signedIn = true;
@@ -185,6 +231,8 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  queryClient.clear();
+  notifyManager.setScheduler((callback) => setTimeout(callback, 0));
   vi.clearAllMocks();
   vi.restoreAllMocks();
 });
@@ -212,7 +260,11 @@ async function openPage(path: string) {
     ]),
     history: createMemoryHistory({ initialEntries: [path] }),
   });
-  render(<RouterProvider router={router} />);
+  render(
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  );
   await router.load();
   return router;
 }
@@ -294,7 +346,7 @@ test("switches sites from the sidebar and clears the previous file and terminal 
   fireEvent.change(screen.getByRole("textbox", { name: "Bash command" }), {
     target: { value: "old draft" },
   });
-  await user.click(screen.getByRole("link", { name: "View tasks for Papergames" }));
+  await user.click(await screen.findByRole("link", { name: "View tasks for Papergames" }));
   await screen.findByRole("heading", { name: "Papergames" });
   expect(router.state.location.search.file).toBeUndefined();
   expect(screen.queryByLabelText("File contents")).toBeNull();
@@ -313,7 +365,7 @@ test("opens the mobile site list and returns to the workspace after selecting a 
   const user = userEvent.setup();
   await user.click(await screen.findByRole("button", { name: "Show sites" }));
   expect(await screen.findByRole("button", { name: "Back to site" })).toBeTruthy();
-  await user.click(screen.getByRole("link", { name: "View tasks for Papergames" }));
+  await user.click(await screen.findByRole("link", { name: "View tasks for Papergames" }));
   await screen.findByRole("heading", { name: "Papergames" });
   expect(await screen.findByRole("button", { name: "Show sites" })).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Show sites" }));
@@ -580,11 +632,13 @@ test("site sidebar filters stay editable across views and browser history", asyn
   expect(screen.getByRole("textbox", { name: "Filter by site" })).toBe(filter);
   await user.click(screen.getByRole("button", { name: "Clear site filter" }));
   await waitFor(() => expect(router.state.location.search.site).toBeUndefined());
-  expect(
-    within(screen.getByRole("navigation", { name: "Sites" })).getAllByRole("link", {
-      name: /^View tasks for/,
-    }),
-  ).toHaveLength(2);
+  await waitFor(() =>
+    expect(
+      within(screen.getByRole("navigation", { name: "Sites" })).getAllByRole("link", {
+        name: /^View tasks for/,
+      }),
+    ).toHaveLength(2),
+  );
   expect(router.state.location.search.view).toBe("workspace");
   await user.click(visibility);
   await user.click(screen.getByRole("option", { name: "Public reviews" }));
@@ -592,7 +646,7 @@ test("site sidebar filters stay editable across views and browser history", asyn
   await user.type(filter, "not-a-site");
   await waitFor(() => expect(router.state.location.search.site).toBe("not-a-site"));
   expect(screen.queryByRole("alert")).toBeNull();
-  expect(screen.getByText("No sites match these filters.")).toBeTruthy();
+  expect(await screen.findByText("No sites match these filters.")).toBeTruthy();
   await user.clear(filter);
   await user.type(filter, "Paper");
   await waitFor(() => expect(router.state.location.search.site).toBe("paper"));

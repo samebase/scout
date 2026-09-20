@@ -8,10 +8,13 @@ import {
 } from "@samebase/sidebars/SidebarRuntime";
 import type { SidebarLayoutState } from "@samebase/sidebars/SidebarLayoutState";
 import { useLocalStorageSidebarState } from "../sidebars/scoutSidebarState";
-import { useAction, usePaginatedQuery, useQuery } from "convex/react";
+import { useAction } from "convex/react";
+import { convexQuery } from "@convex-dev/react-query";
+import { useSuspenseQuery } from "@tanstack/react-query";
+import { useSsrPaginatedQuery } from "#lib/useSsrPaginatedQuery";
 import type { FunctionReturnType } from "convex/server";
 import { ArrowLeftIcon, PanelLeftIcon, PlusIcon, SearchIcon } from "lucide-react";
-import { useState } from "react";
+import { Suspense, useDeferredValue, useState } from "react";
 import { z } from "zod";
 import { api } from "../../convex/_generated/api";
 import { Button, buttonVariants } from "#components/ui/button";
@@ -34,6 +37,10 @@ const searchSchema = z.object({
 });
 
 export const Route = createFileRoute("/sites/$site")({
+  ssr: ({ search }) =>
+    search.status === "success" &&
+    search.value.scope !== "mine" &&
+    search.value.view !== "workspace",
   staticData: { access: "access_public" },
   validateSearch: searchSchema,
   head: ({ params }) => ({ meta: [{ title: `${params.site} | Scout` }] }),
@@ -68,22 +75,10 @@ function SitePage() {
 function SiteLayout() {
   const { site } = Route.useParams();
   const search = Route.useSearch();
-  const navigate = Route.useNavigate();
   const parsed = siteHostnameSchema.safeParse(site);
   const viewer = useViewerAccess();
-  const signedIn = viewer?.kind === "account";
-  const canInspect = signedIn && canAccess("access_lab", viewer.accessKeys);
-  const scope = signedIn ? (search.scope ?? "public") : "public";
-  const reviewedSiteCount = useQuery(api.scout.sites.count, { scope });
+  const scope = viewer?.kind === "account" ? (search.scope ?? "public") : "public";
   const filters = { scope, site: search.site };
-  const workspace = canInspect && search.view === "workspace";
-  const record = useQuery(api.scout.sites.get, parsed.success ? { site: parsed.data } : "skip");
-  const { setMobilePane } = useSidebarActions();
-  const sites = usePaginatedQuery(
-    api.scout.sites.list,
-    { scope, site: search.site ?? null },
-    { initialNumItems: 20 },
-  );
 
   return (
     <main id="main-content" className="h-[calc(100dvh-4rem)] min-h-[28rem]">
@@ -104,145 +99,194 @@ function SiteLayout() {
           </header>
         }
         left={
-          <PaneFrame
-            scrollRestorationId="site-navigation"
-            header={
-              <div className="site-navigation-filters mx-auto w-full max-w-page p-2">
-                <SiteFilters
-                  search={filters}
-                  layout="sidebar"
-                  reviewedSiteCount={reviewedSiteCount}
-                  onChange={(filters, options) => {
-                    void navigate({
-                      search: (previous) => ({ ...previous, ...filters }),
-                      ...options,
-                      resetScroll: false,
-                    });
-                  }}
-                />
-              </div>
-            }
-            content={
-              <nav
-                aria-label="Sites"
-                aria-busy={sites.status === "LoadingFirstPage"}
-                className="mx-auto w-full max-w-page p-2 text-sm"
-              >
-                <ul className="space-y-3">
-                  {sites.results.map((site) => (
-                    <li key={site.hostname}>
-                      <SiteCard
-                        initialTasks={null}
-                        site={site}
-                        search={filters}
-                        navigation={{
-                          selected: site.hostname === parsed.data,
-                          view: workspace ? "workspace" : "tasks",
-                          onNavigate: () => setMobilePane("main"),
-                        }}
-                      />
-                    </li>
-                  ))}
-                </ul>
-                {sites.status === "Exhausted" && sites.results.length === 0 && (
-                  <p className="p-2 text-muted-foreground">No sites match these filters.</p>
-                )}
-                <LoadOnScroll status={sites.status} onLoad={() => sites.loadMore(20)} />
-              </nav>
-            }
-          />
+          <Suspense fallback={<div aria-busy="true" />}>
+            <SiteNavigation />
+          </Suspense>
         }
         main={
           <PaneFrame
             scrollRestorationId="site-content"
             content={
-              !parsed.success || record === null ? (
+              !parsed.success ? (
                 <p className="p-6 text-muted-foreground">Site not found.</p>
-              ) : record === undefined ? (
-                <div className="min-h-full" aria-busy="true" />
               ) : (
-                <div className="mx-auto flex min-h-full w-full min-w-0 max-w-page flex-col p-4 sm:p-6">
-                  <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-                    <SiteIdentity site={record} heading="h1" />
-                    <div className="flex flex-wrap items-center gap-3">
-                      {canInspect && (
-                        <>
-                          <SiteResearchControl key={`research:${record.hostname}`} site={record} />
-                          <SitePreviewCapture key={`preview:${record.hostname}`} site={record} />
-                        </>
-                      )}
-                      <Link
-                        to="/"
-                        search={{ ...filters, taskSite: record.hostname }}
-                        className={buttonVariants()}
-                      >
-                        <PlusIcon aria-hidden="true" />
-                        New task
-                      </Link>
-                    </div>
-                  </div>
-                  {record.profile?.overview && (
-                    <p className="mb-5 max-w-3xl text-sm leading-relaxed text-muted-foreground">
-                      {record.profile.overview}
-                    </p>
-                  )}
-                  <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b">
-                    <nav aria-label="Site views" className="flex gap-6">
-                      <Link
-                        to="/sites/$site"
-                        params={{ site }}
-                        search={{ ...filters, view: "tasks" }}
-                        resetScroll={false}
-                        aria-current={!workspace ? "page" : undefined}
-                        className={`border-b-2 py-3 text-sm font-medium ${!workspace ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
-                      >
-                        Tasks
-                      </Link>
-                      {canInspect && (
-                        <Link
-                          to="/sites/$site"
-                          params={{ site }}
-                          search={{ ...filters, view: "workspace" }}
-                          resetScroll={false}
-                          aria-current={workspace ? "page" : undefined}
-                          className={`border-b-2 py-3 text-sm font-medium ${workspace ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
-                        >
-                          Workspace
-                        </Link>
-                      )}
-                    </nav>
-                  </div>
-                  {workspace ? (
-                    <div className="flex min-h-[28rem] flex-1 flex-col overflow-hidden rounded-lg border bg-card">
-                      <ScoutWorkspace
-                        key={parsed.data}
-                        target={{ kind: "site", site: parsed.data }}
-                        disabled={false}
-                        selectedPath={search.file ?? null}
-                        onSelectPath={(file) => {
-                          void navigate({ search: (previous) => ({ ...previous, file }) });
-                        }}
-                        terminalOpen={search.terminal !== "hidden"}
-                        onToggleTerminal={() => {
-                          void navigate({
-                            search: (previous) => ({
-                              ...previous,
-                              terminal: previous.terminal === "hidden" ? undefined : "hidden",
-                            }),
-                          });
-                        }}
-                      />
-                    </div>
-                  ) : (
-                    <SiteTaskList key={`${site}:${scope}`} site={parsed.data} search={filters} />
-                  )}
-                </div>
+                <Suspense fallback={<div className="min-h-full" aria-busy="true" />}>
+                  <SiteContent site={parsed.data} />
+                </Suspense>
               )
             }
           />
         }
       />
     </main>
+  );
+}
+
+function SiteNavigation() {
+  const { site } = Route.useParams();
+  const search = Route.useSearch();
+  const navigate = Route.useNavigate();
+  const parsed = siteHostnameSchema.safeParse(site);
+  const viewer = useViewerAccess();
+  const canInspect = viewer?.kind === "account" && canAccess("access_lab", viewer.accessKeys);
+  const scope = viewer?.kind === "account" ? (search.scope ?? "public") : "public";
+  const filters = { scope, site: search.site };
+  const workspace = canInspect && search.view === "workspace";
+  const deferredScope = useDeferredValue(scope);
+  const deferredSite = useDeferredValue(search.site);
+  const { data: reviewedSiteCount } = useSuspenseQuery(
+    convexQuery(api.scout.sites.count, { scope: deferredScope }),
+  );
+  const { setMobilePane } = useSidebarActions();
+  const sites = useSsrPaginatedQuery(
+    api.scout.sites.list,
+    { scope: deferredScope, site: deferredSite ?? null },
+    { initialNumItems: 20 },
+  );
+  return (
+    <PaneFrame
+      scrollRestorationId="site-navigation"
+      header={
+        <div className="site-navigation-filters mx-auto w-full max-w-page p-2">
+          <SiteFilters
+            search={filters}
+            layout="sidebar"
+            reviewedSiteCount={reviewedSiteCount}
+            onChange={(filters, options) => {
+              void navigate({
+                search: (previous) => ({ ...previous, ...filters }),
+                ...options,
+                resetScroll: false,
+              });
+            }}
+          />
+        </div>
+      }
+      content={
+        <nav
+          aria-label="Sites"
+          aria-busy={
+            sites.status === "LoadingFirstPage" ||
+            scope !== deferredScope ||
+            search.site !== deferredSite
+          }
+          className="mx-auto w-full max-w-page p-2 text-sm"
+        >
+          <ul className="space-y-3">
+            {sites.results.map((site) => (
+              <li key={site.hostname}>
+                <SiteCard
+                  site={site}
+                  search={filters}
+                  navigation={{
+                    selected: site.hostname === parsed.data,
+                    view: workspace ? "workspace" : "tasks",
+                    onNavigate: () => setMobilePane("main"),
+                  }}
+                />
+              </li>
+            ))}
+          </ul>
+          {sites.status === "Exhausted" && sites.results.length === 0 && (
+            <p className="p-2 text-muted-foreground">No sites match these filters.</p>
+          )}
+          <LoadOnScroll status={sites.status} onLoad={() => sites.loadMore(20)} />
+        </nav>
+      }
+    />
+  );
+}
+
+function SiteContent({ site }: { site: string }) {
+  const search = Route.useSearch();
+  const navigate = Route.useNavigate();
+  const viewer = useViewerAccess();
+  const canInspect = viewer?.kind === "account" && canAccess("access_lab", viewer.accessKeys);
+  const scope = viewer?.kind === "account" ? (search.scope ?? "public") : "public";
+  const filters = { scope, site: search.site };
+  const workspace = canInspect && search.view === "workspace";
+  const { data: record } = useSuspenseQuery(convexQuery(api.scout.sites.get, { site }));
+  return record === null && viewer !== undefined ? (
+    <p className="p-6 text-muted-foreground">Site not found.</p>
+  ) : record === null ? (
+    <div className="min-h-full" aria-busy="true" />
+  ) : (
+    <div className="mx-auto flex min-h-full w-full min-w-0 max-w-page flex-col p-4 sm:p-6">
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <SiteIdentity site={record} heading="h1" />
+        <div className="flex flex-wrap items-center gap-3">
+          {canInspect && (
+            <>
+              <SiteResearchControl key={`research:${record.hostname}`} site={record} />
+              <SitePreviewCapture key={`preview:${record.hostname}`} site={record} />
+            </>
+          )}
+          <Link
+            to="/"
+            search={{ ...filters, taskSite: record.hostname }}
+            className={buttonVariants()}
+          >
+            <PlusIcon aria-hidden="true" />
+            New task
+          </Link>
+        </div>
+      </div>
+      {record.profile?.overview && (
+        <p className="mb-5 max-w-3xl text-sm leading-relaxed text-muted-foreground">
+          {record.profile.overview}
+        </p>
+      )}
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b">
+        <nav aria-label="Site views" className="flex gap-6">
+          <Link
+            to="/sites/$site"
+            params={{ site }}
+            search={{ ...filters, view: "tasks" }}
+            resetScroll={false}
+            aria-current={!workspace ? "page" : undefined}
+            className={`border-b-2 py-3 text-sm font-medium ${!workspace ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+          >
+            Tasks
+          </Link>
+          {canInspect && (
+            <Link
+              to="/sites/$site"
+              params={{ site }}
+              search={{ ...filters, view: "workspace" }}
+              resetScroll={false}
+              aria-current={workspace ? "page" : undefined}
+              className={`border-b-2 py-3 text-sm font-medium ${workspace ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+            >
+              Workspace
+            </Link>
+          )}
+        </nav>
+      </div>
+      {workspace ? (
+        <div className="flex min-h-[28rem] flex-1 flex-col overflow-hidden rounded-lg border bg-card">
+          <ScoutWorkspace
+            key={site}
+            target={{ kind: "site", site: site }}
+            disabled={false}
+            selectedPath={search.file ?? null}
+            onSelectPath={(file) => {
+              void navigate({ search: (previous) => ({ ...previous, file }) });
+            }}
+            terminalOpen={search.terminal !== "hidden"}
+            onToggleTerminal={() => {
+              void navigate({
+                search: (previous) => ({
+                  ...previous,
+                  terminal: previous.terminal === "hidden" ? undefined : "hidden",
+                }),
+              });
+            }}
+          />
+        </div>
+      ) : (
+        <SiteTaskList key={`${site}:${scope}`} site={site} search={filters} />
+      )}
+    </div>
   );
 }
 

@@ -2,7 +2,7 @@ import { expect, test } from "vite-plus/test";
 import { prerenderPages, rewritePrerenderPath } from "./prerender.config";
 
 test("public URLs resolve to prerendered HTML without taking the SPA fallback", () => {
-  expect(rewritePrerenderPath("/")).toBe("/_landing.html");
+  expect(rewritePrerenderPath("/")).toBe("/");
   for (const path of ["/about", "/privacy", "/terms"]) {
     expect(rewritePrerenderPath(path)).toBe(`${path}/index.html`);
     expect(rewritePrerenderPath(`${path}/`)).toBe(`${path}/index.html`);

@@ -933,7 +933,7 @@ export function LabError({ error, reset }: ErrorComponentProps) {
     <main className="route-page max-w-2xl select-text">
       <h1 className="text-xl font-semibold">Could not open Lab</h1>
       <p role="alert" className="my-4 text-sm wrap-anywhere text-destructive">
-        {error.message}
+        {error instanceof Error ? error.message : String(error)}
       </p>
       <div className="flex gap-3">
         <Button variant="outline" onClick={reset}>

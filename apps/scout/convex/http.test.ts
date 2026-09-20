@@ -47,7 +47,6 @@ async function setup() {
   await backend.run(async (ctx) => {
     for (const asset of [
       { path: "/index.html", contentType: "text/html", body: "Scout app shell" },
-      { path: "/_landing.html", contentType: "text/html", body: "Static homepage" },
       { path: "/about/index.html", contentType: "text/html", body: "About Scout" },
       {
         path: "/assets/app-a1b2c3d4.js",
@@ -114,7 +113,7 @@ test.each([undefined, "false"])(
     });
     const backend = await setup();
     for (const { path, body } of [
-      { path: "/", body: "Static homepage" },
+      { path: "/", body: "Scout app shell" },
       { path: "/?site=example&scope=public", body: "Scout app shell" },
       { path: "/about", body: "About Scout" },
       { path: "/about/", body: "About Scout" },

@@ -5,7 +5,7 @@ action. No separate server host is required. The package contains a Vite plugin
 and a buffered server entry. It does not own tables or require `app.use(...)`.
 The existing Convex Static Hosting component serves the browser assets.
 
-Scout uses this package to render its public homepage in a Convex HTTP action.
+Scout uses this package to render its public homepage and site pages in a Convex HTTP action.
 [`apps/convex-ssr-example`](../../apps/convex-ssr-example) is a smaller runnable example.
 
 ## Integration
@@ -35,18 +35,22 @@ The example declares the generated entry's type in
 [`server-build.d.ts`](../../apps/convex-ssr-example/convex/server-build.d.ts) so
 typechecking also works before the first build.
 
-Await initial page data in a TanStack loader. The example uses `ConvexHttpClient`
-in its loader, then `useQuery` with the loader result as initial content until the
-live subscription responds. HTTP mounts, data access, authentication, and cache
-policy remain app decisions.
+For reactive queries, use the [official Convex TanStack integration](https://docs.convex.dev/client/tanstack/tanstack-start/),
+as Scout does in `src/router.tsx`. Components use `useSuspenseQuery(convexQuery(...))`;
+the adapter waits for their HTML and TanStack handles query hydration. The smaller
+example still demonstrates an ordinary route loader. HTTP mounts, authentication,
+and cache policy remain app decisions.
 
 ## Why these settings exist
 
 - `worker` selects TanStack's server exports; `browser` selects Web API adapters.
 - `react-dom/server.edge` avoids the browser renderer's `MessageChannel` dependency.
 - `ssr.noExternal` bundles dependencies instead of leaving runtime Node imports.
-- `defaultRenderHandler` buffers HTML. The default streaming handler imports Node
-  stream modules that failed Convex bundling in the tested versions.
+- React's Web Stream renderer waits for Suspense, then TanStack's
+  `renderSsrHtmlResponse` handles the buffered HTML, hydration scripts, status, and
+  cleanup. The default streaming handler imports unsupported Node stream modules.
+- Prerender only pages that do not need backend data when builds precede backend
+  deployment. Scout uses the standard SPA shell for data pages in static mode.
 - The server entry supplies the missing `URLSearchParams.size` getter on Convex.
   TanStack needs it to normalize URLs containing query parameters. Native
   implementations are left intact.
@@ -60,8 +64,8 @@ Use it with the supplied server entry and do not add Node export conditions.
 
 ## Scope
 
-Verified with Convex 1.45.0, Static Hosting 0.2.1, TanStack Start 1.168.34,
-TanStack Router 1.170.18, React 19.2.6, and the repository's Vite+ 0.2.7.
+Verified with Convex 1.45.0, Static Hosting 0.2.1, TanStack Start 1.168.56,
+TanStack Router 1.170.38, React 19.2.6, and the repository's Vite+ 0.2.7.
 Peer versions intentionally match the experiment until newer versions are tested.
 The package exports TypeScript source for workspace bundlers and is not published.
 

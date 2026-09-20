@@ -7,6 +7,7 @@ import { api } from "../../convex/_generated/api";
 import { Button } from "#components/ui/button";
 
 export const Route = createFileRoute("/members")({
+  ssr: false,
   staticData: { access: "access_members_manage" },
   head: () => ({ meta: [{ title: "Members | Scout" }] }),
   component: MembersPage,

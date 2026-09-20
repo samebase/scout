@@ -2,18 +2,18 @@ import {
   ClientOnly,
   HeadContent,
   Scripts,
-  createRootRoute,
+  createRootRouteWithContext,
   useMatches,
 } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { ConvexClientProvider } from "../lib/convex";
+import type { QueryClient } from "@tanstack/react-query";
 import { ScoutSidebarProvider } from "../sidebars/ScoutSidebarProvider";
 import appCss from "../style.css?url";
 import { RouteAccessOutlet } from "../components/route-access";
 import { AppNavigation } from "#components/app-navigation";
 import { PostHogRuntime } from "../components/posthog-runtime";
 
-export const Route = createRootRoute({
+export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   ssr: true,
   staticData: { access: "access_public" },
   head: () => ({
@@ -55,13 +55,11 @@ function RootComponent() {
   return (
     <RootDocument>
       <ScoutSidebarProvider>
-        <ConvexClientProvider>
-          <PostHogRuntime />
-          <ClientOnly fallback={<div className="h-16" aria-hidden="true" />}>
-            {!isHandoff && <AppNavigation />}
-          </ClientOnly>
-          <RouteAccessOutlet />
-        </ConvexClientProvider>
+        <PostHogRuntime />
+        <ClientOnly fallback={<div className="h-16" aria-hidden="true" />}>
+          {!isHandoff && <AppNavigation />}
+        </ClientOnly>
+        <RouteAccessOutlet />
       </ScoutSidebarProvider>
     </RootDocument>
   );

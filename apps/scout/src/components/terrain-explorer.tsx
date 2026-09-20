@@ -7,7 +7,7 @@ import {
   useSidebarLayoutPresentation,
 } from "@samebase/sidebars/SidebarRuntime";
 import { LinkIcon, PauseIcon, PlayIcon, RotateCcwIcon, SlidersHorizontalIcon } from "lucide-react";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import {
   atlasTerrainSettings,
   terrainPresets,
@@ -300,7 +300,9 @@ export function TerrainExplorer({
                     </div>
                   </DiscoveryHero>
                   <div inert className="relative mx-auto max-w-page px-8 pb-16 max-[640px]:px-4">
-                    <ActivityFeed search={{}} initialFeed={null} />
+                    <Suspense fallback={<div className="min-h-60" aria-busy="true" />}>
+                      <ActivityFeed search={{}} />
+                    </Suspense>
                   </div>
                 </div>
               ) : (
