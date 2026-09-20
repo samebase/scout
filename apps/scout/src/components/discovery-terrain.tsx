@@ -18,7 +18,10 @@ export function DiscoveryTerrain({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const refreshRef = useRef<(() => void) | null>(null);
-  const [available, setAvailable] = useState(false);
+  const [renderState, setRenderState] = useState<"initializing" | "ready" | "unavailable">(
+    "initializing",
+  );
+  const available = renderState === "ready";
   const [reducedMotion, setReducedMotion] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [compactDevice, setCompactDevice] = useState<boolean | null>(null);
@@ -56,8 +59,9 @@ export function DiscoveryTerrain({
     const canvas = canvasRef.current;
     if (!canvas || !profile) return;
     const { framesPerSecond, pixelRatio } = profile;
-    setAvailable(false);
+    setRenderState("initializing");
     if (!navigator.gpu) {
+      setRenderState("unavailable");
       reportStatus({ kind: "unavailable", message: "This browser does not support WebGPU." });
       return;
     }
@@ -83,7 +87,7 @@ export function DiscoveryTerrain({
         kind: "unavailable",
         message: error instanceof Error ? error.message : String(error),
       });
-      setAvailable(false);
+      setRenderState("unavailable");
       stop();
     }
 
@@ -103,8 +107,11 @@ export function DiscoveryTerrain({
         field.draw(timeRef.current, settings);
         if (!drawn) {
           drawn = true;
-          setAvailable(true);
-          reportStatus({ kind: "ready" });
+          void field.device.queue.onSubmittedWorkDone().then(() => {
+            if (disposed || !field) return;
+            setRenderState("ready");
+            reportStatus({ kind: "ready" });
+          }, fail);
         }
         if (moving) frame = requestAnimationFrame(draw);
       } catch (error) {
@@ -172,19 +179,18 @@ export function DiscoveryTerrain({
 
   return (
     <>
-      <picture
-        aria-hidden="true"
-        className={`pointer-events-none absolute inset-0 transition-opacity duration-700 ${available ? "opacity-0" : "opacity-100"}`}
-      >
-        <source media="(max-width: 640px)" srcSet="/discovery-terrain-mobile.webp" />
-        <img
-          src="/discovery-terrain.webp"
-          alt=""
-          width={2560}
-          height={794}
-          className="size-full object-fill"
-        />
-      </picture>
+      {renderState === "unavailable" && (
+        <picture aria-hidden="true" className="pointer-events-none absolute inset-0">
+          <source media="(max-width: 640px)" srcSet="/discovery-terrain-mobile.webp" />
+          <img
+            src="/discovery-terrain.webp"
+            alt=""
+            width={2560}
+            height={794}
+            className="size-full object-fill"
+          />
+        </picture>
+      )}
       <canvas
         ref={canvasRef}
         aria-hidden="true"

@@ -11,6 +11,7 @@ const gpu = vi.hoisted(() => ({
   initialize: vi.fn(),
   draw: vi.fn(),
   destroy: vi.fn(),
+  submitted: vi.fn(),
 }));
 
 vi.mock("#lib/discovery-field", () => ({ createDiscoveryField: gpu.initialize }));
@@ -18,10 +19,11 @@ vi.mock("#lib/discovery-field", () => ({ createDiscoveryField: gpu.initialize })
 beforeEach(() => {
   vi.stubGlobal("navigator", { gpu: {} });
   vi.useFakeTimers({ toFake: ["requestAnimationFrame", "cancelAnimationFrame"] });
+  gpu.submitted.mockResolvedValue(undefined);
   gpu.initialize.mockResolvedValue({
     draw: gpu.draw,
     destroy: gpu.destroy,
-    device: { lost: new Promise(() => {}) },
+    device: { lost: new Promise(() => {}), queue: { onSubmittedWorkDone: gpu.submitted } },
   });
 });
 
@@ -74,11 +76,40 @@ test("renders a still frame for reduced motion", async () => {
   expect(gpu.draw).toHaveBeenCalledOnce();
 });
 
+test("reveals the real terrain only after its first GPU frame, without showing an unrelated poster", async () => {
+  let finishFirstFrame: () => void;
+  gpu.submitted.mockReturnValue(
+    new Promise<void>((resolve) => {
+      finishFirstFrame = resolve;
+    }),
+  );
+  const onStatusChange = vi.fn();
+  const view = render(
+    <DiscoveryTerrain
+      paused
+      settings={{ ...atlasTerrainSettings, contrast: 1, zoom: 2 }}
+      onStatusChange={onStatusChange}
+    />,
+  );
+  expect(view.container.querySelector("picture")).toBeNull();
+  await act(() => vi.dynamicImportSettled());
+  await act(() => vi.advanceTimersToNextFrame());
+  expect(gpu.draw).toHaveBeenCalledOnce();
+  expect(view.container.querySelector("picture")).toBeNull();
+  expect(view.container.querySelector("canvas")?.className).toContain("opacity-0");
+  expect(onStatusChange).not.toHaveBeenCalled();
+
+  await act(async () => finishFirstFrame());
+  expect(view.container.querySelector("canvas")?.className).toContain("opacity-100");
+  expect(view.container.querySelector("picture")).toBeNull();
+  expect(onStatusChange).toHaveBeenCalledWith({ kind: "ready" });
+});
+
 test("keeps the headline and static field without WebGPU", async () => {
   vi.stubGlobal("navigator", {});
   const view = await openHero();
   expect(screen.getByRole("heading", { name: "See what lies beneath the pitch." })).toBeTruthy();
-  expect(view.container.querySelector("picture")?.className).toContain("opacity-100");
+  expect(view.container.querySelector("picture")).not.toBeNull();
   expect(view.container.querySelector("picture img")?.getAttribute("src")).toBe(
     "/discovery-terrain.webp",
   );
@@ -90,7 +121,7 @@ test("keeps the terrain poster visible when GPU setup fails", async () => {
   gpu.initialize.mockRejectedValue(new Error("WebGPU unavailable"));
   vi.spyOn(console, "warn").mockImplementation(() => {});
   const view = await openHero();
-  expect(view.container.querySelector("picture")?.className).toContain("opacity-100");
+  expect(view.container.querySelector("picture")).not.toBeNull();
   expect(view.container.querySelector("canvas")?.className).toContain("opacity-0");
   expect(gpu.draw).not.toHaveBeenCalled();
 });
@@ -101,7 +132,7 @@ test("discards initialization that finishes after navigation", async () => {
     return Promise.resolve({
       draw: gpu.draw,
       destroy: gpu.destroy,
-      device: { lost: new Promise(() => {}) },
+      device: { lost: new Promise(() => {}), queue: { onSubmittedWorkDone: gpu.submitted } },
     });
   });
   const view = render(
