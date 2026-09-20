@@ -433,41 +433,35 @@ export function ConversationLobby({
               </div>
             </ConversationComposer>
             {!isPlay && (
-              <div className="mt-4">
-                <div
-                  className="flex flex-wrap justify-center gap-2"
-                  aria-label="Example review prompts"
-                >
-                  {reviewExamples.map((example) => (
-                    <button
-                      key={example.label}
-                      type="button"
-                      disabled={request.kind === "pending"}
-                      onClick={() => {
-                        const urlPlaceholder = "[website URL]";
-                        setDraft(
-                          siteSelection ? example.prompt : `${urlPlaceholder}\n\n${example.prompt}`,
+              <div
+                className="mt-4 flex flex-wrap justify-center gap-2"
+                aria-label="Example review prompts"
+              >
+                {reviewExamples.map((example) => (
+                  <button
+                    key={example.label}
+                    type="button"
+                    disabled={request.kind === "pending"}
+                    onClick={() => {
+                      const urlPlaceholder = "[website URL]";
+                      setDraft(
+                        siteSelection ? example.prompt : `${urlPlaceholder}\n\n${example.prompt}`,
+                      );
+                      requestAnimationFrame(() => {
+                        const input = draftRef.current;
+                        if (!input) return;
+                        input.focus();
+                        input.setSelectionRange(
+                          siteSelection ? input.value.length : 0,
+                          siteSelection ? input.value.length : urlPlaceholder.length,
                         );
-                        requestAnimationFrame(() => {
-                          const input = draftRef.current;
-                          if (!input) return;
-                          input.focus();
-                          input.setSelectionRange(
-                            siteSelection ? input.value.length : 0,
-                            siteSelection ? input.value.length : urlPlaceholder.length,
-                          );
-                        });
-                      }}
-                      className="inline-flex min-h-10 items-center rounded-full border border-primary/15 bg-background/90 px-3.5 py-2 text-[13px] text-primary transition-colors hover:border-primary/40 hover:bg-primary/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50"
-                    >
-                      {example.label}
-                    </button>
-                  ))}
-                </div>
-                <p className="mt-3 text-center text-sm leading-relaxed text-muted-foreground">
-                  A stack of submissions? Let Scout take the first pass.{" "}
-                  <span aria-hidden="true">🫣</span>
-                </p>
+                      });
+                    }}
+                    className="inline-flex min-h-10 items-center rounded-full border border-primary/15 bg-background/90 px-3.5 py-2 text-[13px] text-primary transition-colors hover:border-primary/40 hover:bg-primary/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50"
+                  >
+                    {example.label}
+                  </button>
+                ))}
               </div>
             )}
             {isPlay && (

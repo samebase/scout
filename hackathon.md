@@ -1810,7 +1810,7 @@ The Scouts link remains visible while account access loads or changes
 
 ### 2026-09-20 - working tree - v277
 
-The homepage explains what Scout tries and why public reviews save others a repeat visit.
+The homepage introduces Scout's browser agents with a headline and one description directly below it.
 Examples prepare editable prompts for free-plan exports, signup, and hackathon entries,
 with the website link selected for replacement. A blue telescope favicon matches the navigation
 (`apps/scout/src/components/discovery-hero.tsx`, `apps/scout/src/products/conversation/page.tsx`, `apps/scout/public/favicon.svg`).

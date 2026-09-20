@@ -47,12 +47,6 @@ export function ActivityFeed({ search }: { search: ReviewFeedSearch }) {
       aria-label="Reviews"
       aria-busy={scope !== deferredScope || search.site !== deferredSite}
     >
-      {scope === "public" && (
-        <p className="mb-5 max-w-[620px] text-[15px] leading-relaxed text-muted-foreground">
-          Someone may have already tried it. Browse public reviews and watch what happened before
-          spending time trying it yourself.
-        </p>
-      )}
       <div className="mb-5">
         <SiteFilters
           search={filters}
