@@ -19,8 +19,11 @@ import { createAgentMailInboxClient, requiredAgentMailApiKey } from "../scout/li
 import { createAgentsAccountTools } from "./accounts";
 import { createWorkspaceTools } from "../scout/workspaceTools";
 import { saveScreenshot } from "./screenshots";
-import { MAX_TASK_SCREENSHOTS } from "./screenshotModel";
-import { reviewChecksSchema } from "../../shared/reviewChecks";
+import {
+  walkthroughDraftSchema,
+  walkthroughDescription,
+  reviseWalkthroughDraft,
+} from "./walkthroughReport";
 import { createPlayTools } from "../scout/play";
 import { taskBrowserBilling } from "./browserCredits";
 
@@ -187,40 +190,13 @@ export async function runtimeTools(
       },
     }),
     save_walkthrough: tool({
-      description: outdent`
-        Save this task's illustrated result using existing screenshot IDs. Lead the summary
-        with the requested outcome and what you verified, in one or two short sentences.
-        Each section explains an observed step,
-        result, or problem and references 1–3 screenshots from this task. The section order
-        is the reading order. Omit repetitive setup and distinguish findings from assumptions.
-        This replaces the previous walkthrough, so submit the complete updated report,
-        retaining earlier findings that still apply. It does not end the task.
-
-        Include 1–10 concrete checks of the requested behavior, each with a short explanation.
-        Use passed for verified success, failed for an observed product failure, and untested
-        for behavior you could not verify. A paywall, missing access, or a Scout/browser-service
-        error leaves that behavior untested; it does not establish a product failure.
-        Keep checks at the task level, such as saving a project or exporting a file.
-        Do not count navigation, screenshots, or other setup as successful product checks.
-      `,
-      inputSchema: z.object({
-        summary: z.string().trim().min(1).max(2000),
-        checks: reviewChecksSchema,
-        sections: z
-          .array(
-            z.object({
-              heading: z.string().trim().min(1).max(120),
-              explanation: z.string().trim().min(1).max(2000),
-              captureIds: z.array(z.string()).min(1).max(3),
-            }),
-          )
-          .min(1)
-          .max(MAX_TASK_SCREENSHOTS),
-      }),
+      description: walkthroughDescription,
+      inputSchema: walkthroughDraftSchema,
       execute: async (content) => {
         await beforeDispatch();
-        await ctx.runMutation(internal.tasks.walkthrough.save, { sessionId, ...content });
-        return { saved: true, sections: content.sections.length };
+        const report = await reviseWalkthroughDraft(ctx, sessionId, content);
+        await ctx.runMutation(internal.tasks.walkthrough.save, { sessionId, ...report });
+        return { saved: true, sections: report.sections.length };
       },
     }),
     ...createWorkspaceTools(

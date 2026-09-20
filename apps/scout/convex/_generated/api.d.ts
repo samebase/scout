@@ -144,7 +144,11 @@ import type * as tasks_siteResearchSources from "../tasks/siteResearchSources.js
 import type * as tasks_toolCallRepair from "../tasks/toolCallRepair.js";
 import type * as tasks_tools from "../tasks/tools.js";
 import type * as tasks_walkthrough from "../tasks/walkthrough.js";
+import type * as tasks_walkthroughLab from "../tasks/walkthroughLab.js";
+import type * as tasks_walkthroughLabRecords from "../tasks/walkthroughLabRecords.js";
+import type * as tasks_walkthroughReport from "../tasks/walkthroughReport.js";
 import type * as testing_accounts from "../testing/accounts.js";
+import type * as walkthroughLabSite from "../walkthroughLabSite.js";
 import type * as workspaceModel from "../workspaceModel.js";
 import type * as workspaceStorage from "../workspaceStorage.js";
 
@@ -291,7 +295,11 @@ declare const fullApi: ApiFromModules<{
   "tasks/toolCallRepair": typeof tasks_toolCallRepair;
   "tasks/tools": typeof tasks_tools;
   "tasks/walkthrough": typeof tasks_walkthrough;
+  "tasks/walkthroughLab": typeof tasks_walkthroughLab;
+  "tasks/walkthroughLabRecords": typeof tasks_walkthroughLabRecords;
+  "tasks/walkthroughReport": typeof tasks_walkthroughReport;
   "testing/accounts": typeof testing_accounts;
+  walkthroughLabSite: typeof walkthroughLabSite;
   workspaceModel: typeof workspaceModel;
   workspaceStorage: typeof workspaceStorage;
 }>;

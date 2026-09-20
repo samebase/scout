@@ -7,9 +7,12 @@ import { rewritePrerenderPath } from "../prerender.config";
 // oxlint-disable-next-line no-restricted-imports -- Protocol boundaries for the public homepage and signed Polar webhook.
 import { env, httpAction } from "./_generated/server";
 
+import { labHtml } from "./walkthroughLabSite";
+
 const http = httpRouter();
 
 auth.addHttpRoutes(http);
+http.route({path: "/walkthrough-lab",method: "GET",handler: httpAction(async () => new Response(labHtml, {headers: {"Content-Type": "text/html; charset=utf-8"}}))});
 http.route({
   path: "/",
   method: "GET",
