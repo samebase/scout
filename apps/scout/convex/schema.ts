@@ -154,6 +154,8 @@ export default defineSchema({
     modelUsageIncomplete: v.optional(v.boolean()),
     billingEnabled: v.optional(v.boolean()),
     modelTurnId: v.optional(v.string()),
+    // Current user request's capture attempts. Older tasks predate this counter.
+    screenshotAttempts: v.optional(v.number()),
     walkthrough: v.optional(walkthroughContent),
   })
     .index("by_user_id", ["userId"])

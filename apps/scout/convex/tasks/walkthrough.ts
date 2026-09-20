@@ -1,4 +1,5 @@
 import { v, type Infer } from "convex/values";
+import { paginationOptsValidator, paginationResultValidator } from "convex/server";
 import { internalMutation, internalQuery, type MutationCtx } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
 import { publicQuery } from "../functions";
@@ -6,7 +7,8 @@ import { readableSession } from "./access";
 import { taskScreenshots } from "./screenshotRecords";
 import { reviewChecksSchema } from "../../shared/reviewChecks";
 import {
-  MAX_TASK_SCREENSHOTS,
+  MAX_WALKTHROUGH_SECTIONS,
+  SCREENSHOT_PAGE_SIZE,
   screenshotPresentation,
   walkthroughContent,
   reviewChecksValidator,
@@ -25,7 +27,19 @@ export const get = publicQuery({
   handler: async (ctx, args) => {
     const session = await readableSession(ctx, args.sessionId, ctx.viewer);
     if (!session) return null;
-    const captures = await taskScreenshots(ctx, session._id);
+    const captures = session.walkthrough
+      ? (
+          await Promise.all(
+            [...new Set(session.walkthrough.sections.flatMap((section) => section.captureIds))].map(
+              (id) => ctx.db.get(id),
+            ),
+          )
+        )
+          .filter((capture) => capture !== null)
+          .filter((capture) => capture.sessionId === session._id)
+      : (
+          await taskScreenshots(ctx, session._id).order("desc").take(SCREENSHOT_PAGE_SIZE)
+        ).reverse();
     return {
       walkthrough: session.walkthrough ?? null,
       captures: captures.map((capture) => ({
@@ -43,19 +57,26 @@ export const get = publicQuery({
 });
 
 export const listForAgent = internalQuery({
-  args: { sessionId: v.id("agentsApiSessions") },
-  returns: v.array(screenshotPresentation),
-  handler: async (ctx, args) =>
-    (await taskScreenshots(ctx, args.sessionId)).map((capture) => ({
-      id: capture._id,
-      note: capture.note,
-      browserSequence: capture.browserSequence,
-      operationSequence: capture.operationSequence,
-      state:
-        capture.state.kind === "ready"
-          ? { kind: "ready" as const, metadata: capture.state.metadata }
-          : capture.state,
-    })),
+  args: { sessionId: v.id("agentsApiSessions"), paginationOpts: paginationOptsValidator },
+  returns: paginationResultValidator(screenshotPresentation),
+  handler: async (ctx, args) => {
+    const result = await taskScreenshots(ctx, args.sessionId)
+      .order("desc")
+      .paginate(args.paginationOpts);
+    return {
+      ...result,
+      page: result.page.map((capture) => ({
+        id: capture._id,
+        note: capture.note,
+        browserSequence: capture.browserSequence,
+        operationSequence: capture.operationSequence,
+        state:
+          capture.state.kind === "ready"
+            ? { kind: "ready" as const, metadata: capture.state.metadata }
+            : capture.state,
+      })),
+    };
+  },
 });
 
 export const walkthroughInput = v.object({
@@ -77,8 +98,8 @@ export async function saveWalkthrough(ctx: MutationCtx, args: Infer<typeof walkt
   const checks = reviewChecksSchema.parse(args.checks);
   if (!args.summary.trim() || args.summary.length > 2000)
     throw new Error("Write a summary of at most 2000 characters");
-  if (!args.sections.length || args.sections.length > MAX_TASK_SCREENSHOTS)
-    throw new Error(`Include 1–${MAX_TASK_SCREENSHOTS} walkthrough sections`);
+  if (!args.sections.length || args.sections.length > MAX_WALKTHROUGH_SECTIONS)
+    throw new Error(`Include 1–${MAX_WALKTHROUGH_SECTIONS} walkthrough sections`);
   const sections = [];
   for (const section of args.sections) {
     if (

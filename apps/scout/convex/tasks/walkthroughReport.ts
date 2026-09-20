@@ -10,7 +10,7 @@ import { internal } from "../_generated/api";
 import type { ActionCtx } from "../_generated/server";
 import type { Doc } from "../_generated/dataModel";
 import { reviewChecksSchema } from "../../shared/reviewChecks";
-import { MAX_TASK_SCREENSHOTS } from "./screenshotModel";
+import { MAX_WALKTHROUGH_SECTIONS } from "./screenshotModel";
 import { previousWalkthroughContext } from "./instructions";
 import { generationUsage } from "./convexAgentModel";
 import { diagnoseTaskFailure } from "./providerFailure";
@@ -27,7 +27,7 @@ export const walkthroughDraftSchema = z.object({
       }),
     )
     .min(1)
-    .max(MAX_TASK_SCREENSHOTS),
+    .max(MAX_WALKTHROUGH_SECTIONS),
 });
 
 export const walkthroughDescription = outdent`
@@ -36,6 +36,9 @@ export const walkthroughDescription = outdent`
   Each section explains an observed step,
   result, or problem and references 1–3 screenshots from this task. The section order
   is the reading order. Omit repetitive setup and distinguish findings from assumptions.
+  Select the fewest screenshots that substantiate the findings and explain necessary steps.
+  Do not include every captured image or repeat an image without a distinct reason.
+  Use fresh evidence for new findings; an older, unrelated screen is not proof of them.
   This replaces the previous walkthrough, so submit the complete updated report,
   retaining earlier findings that still apply. It does not end the task.
 
@@ -99,7 +102,7 @@ export async function saveWalkthroughDraft(
         }),
       )
       .min(1)
-      .max(MAX_TASK_SCREENSHOTS),
+      .max(MAX_WALKTHROUGH_SECTIONS),
   });
   const model = "openai/gpt-5.6-luna";
   const request = {

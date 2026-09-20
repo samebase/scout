@@ -105,6 +105,10 @@ function LabWorkspace({ search }: { search: LabSearch }) {
     status,
     loadMore,
   } = usePaginatedQuery(api.tasks.sessions.list, {}, { initialNumItems: 50 });
+  const sidebarSessions =
+    session && !sessions.some((item) => item._id === session._id)
+      ? [...sessions, session]
+      : sessions;
 
   return (
     <SidebarLayout
@@ -120,11 +124,13 @@ function LabWorkspace({ search }: { search: LabSearch }) {
           scrollRestorationId="lab-sessions"
           content={
             <aside aria-label="Tasks" aria-busy={status === "LoadingFirstPage"}>
-              {status === "LoadingFirstPage" ? null : sessions.length === 0 ? (
-                <p className="p-4 text-sm text-muted-foreground">No tasks yet.</p>
+              {sidebarSessions.length === 0 ? (
+                status === "LoadingFirstPage" ? null : (
+                  <p className="p-4 text-sm text-muted-foreground">No tasks yet.</p>
+                )
               ) : (
                 <nav className="flex flex-col gap-1 p-2" aria-label="Tasks">
-                  {sessions.map((item) => (
+                  {sidebarSessions.map((item) => (
                     <div key={item._id} className="pb-2">
                       <Link
                         to="/lab"

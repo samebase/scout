@@ -11,7 +11,9 @@ export const reviewChecksValidator = v.array(
   }),
 );
 
-export const MAX_TASK_SCREENSHOTS = 20;
+export const MAX_SCREENSHOTS_PER_REQUEST = 20;
+export const SCREENSHOT_PAGE_SIZE = 20;
+export const MAX_WALKTHROUGH_SECTIONS = 20;
 export const MAX_SCREENSHOT_NOTE_LENGTH = 600;
 export const MAX_SCREENSHOT_BYTES = 8 * 1024 * 1024;
 

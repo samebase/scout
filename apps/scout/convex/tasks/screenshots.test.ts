@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 import { R2 } from "@convex-dev/r2";
+import workflowTest from "@convex-dev/workflow/test";
 import { convexTest } from "convex-test";
 import { Firecrawl } from "firecrawl";
 import { chromium } from "playwright-core";
@@ -45,6 +46,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-09-15T09:00:00Z"));
   vi.stubEnv("CONVEX_CLOUD_URL", "https://screenshot-tests.convex.cloud");
+  vi.stubEnv("CREDITS_ENABLED", "false");
   vi.stubEnv("R2_BUCKET", "test-bucket");
   vi.stubEnv("R2_ENDPOINT", "https://storage.example.test");
   vi.stubEnv("R2_ACCESS_KEY_ID", "test-access-key");
@@ -65,6 +67,7 @@ afterEach(() => {
 
 async function setup(visibility: Doc<"scoutChats">["visibility"]) {
   const backend = convexTest(schema, modules);
+  workflowTest.register(backend);
   const accounts = await backend.run(async (ctx) => ({
     ownerId: await insertTestAccount(ctx, { email: "owner@example.test" }),
     otherId: await insertTestAccount(ctx, { email: "other@example.test" }),
@@ -264,7 +267,7 @@ it("does not sign pending, failed, or deleted captures even for the owner", asyn
   expect(getUrl).not.toHaveBeenCalled();
 });
 
-it("orders captures by browser and operation sequence despite reversed reservations and upload completion", async () => {
+it("lists newest captures first despite reversed reservations and upload completion", async () => {
   const t = await setup("private");
   for (const toolCallId of ["first", "second"]) {
     await t.backend.mutation(internal.tasks.browsers.prepareOperation, {
@@ -282,8 +285,9 @@ it("orders captures by browser and operation sequence despite reversed reservati
     vi.advanceTimersByTime(100);
     await t.finish(id);
   }
-  const captures = await t.backend.query(internal.tasks.walkthrough.listForAgent, {
+  const { page: captures } = await t.backend.query(internal.tasks.walkthrough.listForAgent, {
     sessionId: t.sessionId,
+    paginationOpts: { numItems: 20, cursor: null },
   });
   expect(
     captures.map(({ id, browserSequence, operationSequence }) => ({
@@ -292,13 +296,13 @@ it("orders captures by browser and operation sequence despite reversed reservati
       operationSequence,
     })),
   ).toEqual([
-    { id: first, browserSequence: 1, operationSequence: 1 },
-    { id: second, browserSequence: 1, operationSequence: 2 },
     { id: third, browserSequence: 2, operationSequence: 1 },
+    { id: second, browserSequence: 1, operationSequence: 2 },
+    { id: first, browserSequence: 1, operationSequence: 1 },
   ]);
   expect(await t.owner.query(api.tasks.walkthrough.get, { sessionId: t.sessionId })).toEqual({
     walkthrough: null,
-    captures,
+    captures: captures.toReversed(),
   });
   expect(JSON.stringify(captures)).not.toContain("private-images");
 });
@@ -320,14 +324,19 @@ it("rejects duplicate reservations without allocating another capture or replaci
     "already requested",
   );
   expect(
-    await t.backend.query(internal.tasks.walkthrough.listForAgent, { sessionId: t.sessionId }),
+    (
+      await t.backend.query(internal.tasks.walkthrough.listForAgent, {
+        sessionId: t.sessionId,
+        paginationOpts: { numItems: 20, cursor: null },
+      })
+    ).page,
   ).toMatchObject([{ id: captureId, note }]);
   expect(await t.backend.run((ctx) => ctx.db.query("agentsApiScreenshots").collect())).toHaveLength(
     1,
   );
 });
 
-it("enforces the 20-capture task cap across browsers, including pending and failed reservations", async () => {
+it("enforces the 20-capture request cap across browsers, including pending and failed reservations", async () => {
   const t = await setup("private");
   for (let index = 0; index < 20; index++) {
     const id = await t.reserve(`capture-${index}`, "browser-1");
@@ -345,6 +354,74 @@ it("enforces the 20-capture task cap across browsers, including pending and fail
     20,
   );
 });
+
+it.each(["agents_api", "convex_agent"] as const)(
+  "gives a follow-up 20 new captures in %s and keeps earlier evidence available",
+  async (engine) => {
+    const t = await setup("private");
+    const ids: Id<"agentsApiScreenshots">[] = [];
+    for (let index = 0; index < 20; index++) {
+      const id = await t.reserve(`original-${index}`, "browser-1");
+      await t.finish(id);
+      ids.push(id);
+    }
+    // Existing production tasks have no per-request counter.
+    await t.backend.run((ctx) => ctx.db.patch(t.sessionId, { screenshotAttempts: undefined }));
+    await expect(t.reserve("original-over-limit", "browser-1")).rejects.toThrow(
+      "20-screenshot limit",
+    );
+    await t.backend.run((ctx) =>
+      ctx.db.patch(t.sessionId, {
+        engine,
+        state: { kind: "idle" },
+        active: false,
+        providerId: "existing-provider-session",
+      }),
+    );
+    await t.owner.mutation(api.tasks.sessions.send, {
+      sessionId: t.sessionId,
+      message: "Check whether the result survives a reload.",
+    });
+    for (let index = 0; index < 20; index++) {
+      const id = await t.reserve(`follow-up-${index}`, "browser-1");
+      await t.finish(id);
+      ids.push(id);
+    }
+    await expect(t.reserve("follow-up-over-limit", "browser-1")).rejects.toThrow(
+      "20-screenshot limit",
+    );
+    const firstPage = await t.backend.query(internal.tasks.walkthrough.listForAgent, {
+      sessionId: t.sessionId,
+      paginationOpts: { numItems: 20, cursor: null },
+    });
+    const nextPage = await t.backend.query(internal.tasks.walkthrough.listForAgent, {
+      sessionId: t.sessionId,
+      paginationOpts: { numItems: 20, cursor: firstPage.continueCursor },
+    });
+    expect(firstPage.isDone).toBe(false);
+    expect(nextPage.isDone).toBe(true);
+    expect([...firstPage.page, ...nextPage.page].map((capture) => capture.id)).toEqual(
+      ids.toReversed(),
+    );
+
+    const preview = await t.owner.query(api.tasks.walkthrough.get, { sessionId: t.sessionId });
+    expect(preview?.captures.map((capture) => capture.id)).toEqual(ids.slice(20));
+    const first = ids[0];
+    const last = ids[39];
+    if (!first || !last) throw new Error("Expected both requests' screenshots");
+    const selectedIds = [first, last];
+    await t.backend.mutation(internal.tasks.walkthrough.save, {
+      sessionId: t.sessionId,
+      summary: "The result persisted after reloading.",
+      checks: [{ label: "Persistence", result: "passed", explanation: "The result survived." }],
+      sections: [
+        { heading: "Before and after reload", explanation: note, captureIds: selectedIds },
+      ],
+    });
+    const report = await t.owner.query(api.tasks.walkthrough.get, { sessionId: t.sessionId });
+    expect(report?.captures.map((capture) => capture.id)).toEqual(selectedIds);
+  },
+);
 
 it("keeps ready and failed states terminal when completion or failure arrives again", async () => {
   const t = await setup("private");
@@ -394,15 +471,18 @@ it("lists saved screenshots and saves their walkthrough while the browser cannot
   const listed = await execute("list_screenshots", {});
   if (listed.kind !== "success") throw new Error(listed.error);
   const captures: unknown = JSON.parse(listed.output);
-  expect(captures).toEqual([
-    {
-      id: captureId,
-      note,
-      browserSequence: 1,
-      operationSequence: 1,
-      state: { kind: "ready", metadata: image.metadata },
-    },
-  ]);
+  expect(captures).toMatchObject({
+    isDone: true,
+    page: [
+      {
+        id: captureId,
+        note,
+        browserSequence: 1,
+        operationSequence: 1,
+        state: { kind: "ready", metadata: image.metadata },
+      },
+    ],
+  });
   const report = {
     summary: "The calculator returned the expected result.",
     checks: [{ label: "Calculation", result: "passed", explanation: "The result matched." }],
@@ -526,7 +606,7 @@ it("retains report references and renewable image access after browser closure a
   expect((await t.backend.run((ctx) => ctx.db.get(t.sessionId)))?.browser).toBeNull();
   const view = await t.backend.query(api.tasks.walkthrough.get, { sessionId: t.sessionId });
   expect(view?.walkthrough).toEqual(report);
-  expect(view?.captures.map(({ id }) => id)).toEqual([first, second]);
+  expect(view?.captures.map(({ id }) => id)).toEqual([second, first]);
   expect(await t.backend.action(api.tasks.screenshots.imageUrl, { screenshotId: second })).toEqual({
     url: signedUrl,
     expiresAtMs: Date.now() + 900_000,
