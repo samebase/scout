@@ -116,7 +116,7 @@ function SessionWalkthrough({ sessionId }: { sessionId: Id<"agentsApiSessions"> 
         ref={scroll}
         className="@container/walkthrough min-h-0 flex-1 overflow-auto overscroll-y-contain"
       >
-        <div className="mx-auto grid w-full max-w-page gap-5 p-4 @2xl/walkthrough:h-full @2xl/walkthrough:min-h-0 @2xl/walkthrough:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] @2xl/walkthrough:grid-rows-[minmax(0,1fr)] @2xl/walkthrough:gap-6 @2xl/walkthrough:p-5">
+        <div className="grid w-full gap-5 p-4 @2xl/walkthrough:h-full @2xl/walkthrough:min-h-0 @2xl/walkthrough:grid-cols-[minmax(0,min(33%,24rem))_minmax(0,1fr)] @2xl/walkthrough:grid-rows-[minmax(0,1fr)] @2xl/walkthrough:gap-6 @2xl/walkthrough:p-5">
           <div
             ref={captionScroll}
             className="min-w-0 space-y-5 @2xl/walkthrough:min-h-0 @2xl/walkthrough:overflow-auto @2xl/walkthrough:pr-1"
@@ -159,7 +159,7 @@ function SessionWalkthrough({ sessionId }: { sessionId: Id<"agentsApiSessions"> 
         </div>
       </div>
       <nav aria-label="Walkthrough steps" className="shrink-0 border-t bg-background">
-        <div className="mx-auto flex w-full max-w-page items-center justify-between gap-2 px-3 py-2 sm:px-6">
+        <div className="flex w-full items-center justify-between gap-2 px-3 py-2 sm:px-6">
           <Button
             variant="ghost"
             size="sm"
