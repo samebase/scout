@@ -273,7 +273,12 @@ async function startWorkflow(
   } else {
     const billingEnabled = creditsEnabled();
     if (billingEnabled) await assertCreditAdmission(ctx, session.userId);
-    await ctx.db.patch(sessionId, { workflowId, billingEnabled, modelTurnId: undefined });
+    await ctx.db.patch(sessionId, {
+      workflowId,
+      billingEnabled,
+      modelTurnId: undefined,
+      screenshotAttempts: 0,
+    });
   }
   if (input.kind === "send")
     await ctx.db.patch(sessionId, {

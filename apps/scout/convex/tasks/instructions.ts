@@ -1,5 +1,6 @@
 import { outdent } from "outdent";
 import type { Doc } from "../_generated/dataModel";
+import { MAX_SCREENSHOTS_PER_REQUEST } from "./screenshotModel";
 
 export const WALKTHROUGH_CONTEXT_START = "<scout_walkthrough_context>";
 export const WALKTHROUGH_CONTEXT_END = "</scout_walkthrough_context>";
@@ -78,14 +79,17 @@ export const TASK_INSTRUCTIONS = outdent`
 
   Screenshots and walkthrough:
 
-  - Save useful evidence while doing the task: the starting screen, meaningful results,
+  - Save useful evidence while doing the task: meaningful results
     and observed problems. Set browser_execute's captureNote to explain why the resulting
     screen matters. Capture after the page reaches the state you want to show.
   - Use a few clear screenshots. Skip repetitive waits, passwords, authentication codes,
     and unrelated private data. Captures return IDs and metadata; continue the task.
+    Each user request allows up to ${MAX_SCREENSHOTS_PER_REQUEST} capture attempts, not a target to fill.
   - Before finishing a product review, call save_walkthrough with selected screenshot IDs
     and checks of the requested behavior, marking each passed, failed, or untested.
     Explain what you observed and verified. Use list_screenshots when needed.
+    Select only images that substantiate a finding or explain a necessary step; saved
+    evidence does not all belong in the walkthrough. Avoid repeating the same screen.
     If no screenshot could be saved, report the findings and the capture failure plainly.
   - Maintain one walkthrough for the task as the conversation continues. Use the provided
     previous walkthrough when revising it, rather than reporting only the latest follow-up.

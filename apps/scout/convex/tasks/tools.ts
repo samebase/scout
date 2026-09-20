@@ -19,6 +19,7 @@ import { createAgentMailInboxClient, requiredAgentMailApiKey } from "../scout/li
 import { createAgentsAccountTools } from "./accounts";
 import { createWorkspaceTools } from "../scout/workspaceTools";
 import { saveScreenshot } from "./screenshots";
+import { SCREENSHOT_PAGE_SIZE } from "./screenshotModel";
 import {
   walkthroughDraftSchema,
   walkthroughDescription,
@@ -179,14 +180,18 @@ export async function runtimeTools(
     },
     list_screenshots: tool({
       description: outdent`
-        List this task's saved screenshots in capture order, with IDs, notes, page URLs,
+        List a page of this task's saved screenshots, newest first, with IDs, notes, page URLs,
         and capture status. Use their IDs when saving a walkthrough. Images remain in
-        storage; this returns references and metadata.
+        storage; this returns references and metadata. Start with cursor null. If isDone
+        is false, pass continueCursor as cursor to read the next page.
       `,
-      inputSchema: z.object({}),
-      execute: async () => {
+      inputSchema: z.object({ cursor: z.string().nullable().default(null) }),
+      execute: async ({ cursor }) => {
         await beforeDispatch();
-        return await ctx.runQuery(internal.tasks.walkthrough.listForAgent, { sessionId });
+        return await ctx.runQuery(internal.tasks.walkthrough.listForAgent, {
+          sessionId,
+          paginationOpts: { cursor, numItems: SCREENSHOT_PAGE_SIZE },
+        });
       },
     }),
     save_walkthrough: tool({

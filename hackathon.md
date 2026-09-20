@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-20T16:15:38Z
+- **Last updated:** 2026-09-20T17:18:14Z
 
 ## Log
 
@@ -1716,8 +1716,15 @@ to combine previous findings with new evidence. Lab shows the request, response,
 failed updates preserve the existing walkthrough
 (`apps/scout/convex/tasks/walkthroughReport.ts`, `apps/scout/src/tasks/walkthrough-update.tsx`).
 
-### 2026-09-20 - working tree - v274
+### 2026-09-20 - faf465b - v274
 
 Convex static hosting serves Scout's app shell whenever no uploaded file matches.
 TanStack handles all routes and unknown pages, without hosting rules or request-header checks
 (`patches/@convex-dev__static-hosting@0.2.1.patch`).
+
+### 2026-09-20 - working tree - v275
+
+Each user request gets a fresh screenshot allowance while earlier evidence remains available.
+Walkthroughs select supporting images independently of the capture limit. Lab includes the
+selected task and its reporting links even when it is outside the loaded task list
+(`apps/scout/convex/tasks/screenshotRecords.ts`, `apps/scout/src/tasks/page.tsx`).

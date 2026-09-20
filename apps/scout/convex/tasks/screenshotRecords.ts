@@ -5,21 +5,16 @@ import { resolveViewer } from "../access";
 import { readableSession } from "./access";
 import {
   MAX_SCREENSHOT_NOTE_LENGTH,
-  MAX_TASK_SCREENSHOTS,
+  MAX_SCREENSHOTS_PER_REQUEST,
   screenshotMetadata,
 } from "./screenshotModel";
 
-export async function taskScreenshots(
-  ctx: Pick<QueryCtx, "db">,
-  sessionId: Id<"agentsApiSessions">,
-) {
-  return await ctx.db
+export function taskScreenshots(ctx: Pick<QueryCtx, "db">, sessionId: Id<"agentsApiSessions">) {
+  return ctx.db
     .query("agentsApiScreenshots")
     .withIndex("by_session_id_and_browser_sequence_and_operation_sequence", (q) =>
       q.eq("sessionId", sessionId),
-    )
-    .order("asc")
-    .take(MAX_TASK_SCREENSHOTS);
+    );
 }
 
 export const prepare = internalMutation({
@@ -55,10 +50,14 @@ export const prepare = internalMutation({
       .withIndex("by_operation_id", (q) => q.eq("operationId", operation._id))
       .unique();
     if (previous) throw new Error("A screenshot was already requested for this operation");
-    if ((await taskScreenshots(ctx, session._id)).length >= MAX_TASK_SCREENSHOTS)
+    const attempts =
+      session.screenshotAttempts ??
+      (await taskScreenshots(ctx, session._id).take(MAX_SCREENSHOTS_PER_REQUEST)).length;
+    if (attempts >= MAX_SCREENSHOTS_PER_REQUEST)
       throw new Error(
-        `This task has reached its ${MAX_TASK_SCREENSHOTS}-screenshot limit. Continue without capturing.`,
+        `This user request has reached its ${MAX_SCREENSHOTS_PER_REQUEST}-screenshot limit. Continue using the evidence already saved. A new user message gets a fresh allowance.`,
       );
+    await ctx.db.patch(session._id, { screenshotAttempts: attempts + 1 });
     return await ctx.db.insert("agentsApiScreenshots", {
       sessionId: session._id,
       operationId: operation._id,

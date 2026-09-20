@@ -1171,14 +1171,108 @@ test("shows the local handoff deadline and keeps expiration visible if cleanup f
   expect(screen.getByRole("button", { name: "Retry stop" })).toBeTruthy();
 });
 
-test("a saved link opens a session outside the recent list through the validated get query", async () => {
-  remote.queries.set("tasks/sessions:list", []);
-  await open("/lab?session=session-1");
-  expect(await screen.findByLabelText("Message")).toBeTruthy();
-  expect(remote.queryCalls).toHaveBeenCalledWith("tasks/sessions:get", {
-    sessionId: "session-1",
+test.each(["LoadingFirstPage", "Exhausted"])(
+  "a saved link includes its session while the sidebar is %s",
+  async (status) => {
+    remote.paginationStatus = status;
+    remote.queries.set("tasks/sessions:list", []);
+    await open("/lab?session=session-1");
+    expect(await screen.findByLabelText("Message")).toBeTruthy();
+    const navigation = within(screen.getByRole("navigation", { name: "Tasks" }));
+    expect(navigation.getByRole("link", { name: "Inspect the example site Pip" })).toBeTruthy();
+    expect(navigation.getByRole("link", { name: "Chat" })).toBeTruthy();
+    expect(navigation.getByRole("link", { name: "Walkthrough" })).toBeTruthy();
+    expect(screen.queryByText("No tasks yet.")).toBeNull();
+    expect(remote.queryCalls).toHaveBeenCalledWith("tasks/sessions:get", {
+      sessionId: "session-1",
+    });
+    expect(remote.start).not.toHaveBeenCalled();
+  },
+);
+
+test("keeps an older selected task and its walkthrough links through delayed queries and pagination", async () => {
+  const selectedSession = {
+    ...session(),
+    checks: [{ _id: "check-initial", kind: "initial", status: "approved", cost: 0.000096 }],
+  };
+  const recentSessions = Array.from({ length: 50 }, (_, index) => ({
+    ...session(),
+    _id: `recent-${index}`,
+    title: `Recent task ${index}`,
+    _creationTime: 100 - index,
+  }));
+  remote.paginationStatus = "CanLoadMore";
+  remote.queries.set("tasks/sessions:list", recentSessions);
+  remote.queries.set("tasks/sessions:get", undefined);
+  remote.queries.set("tasks/walkthroughReports:list", undefined);
+  const router = await open("/lab?session=session-1");
+  expect(await screen.findByText("Opening task…")).toBeTruthy();
+  const navigation = screen.getByRole("navigation", { name: "Tasks" });
+  const leftPane = document.querySelector<HTMLElement>('[data-pane-side="left"]');
+  if (!leftPane) throw new Error("Missing tasks pane");
+  const carousel = leftPane.closest<HTMLElement>('[data-sidebar-layout-part="carousel"]');
+  if (!carousel) throw new Error("Missing pane viewport");
+  const width = carousel.style.getPropertyValue("--sidebar-layout-left-desktop-width");
+  expect(Number.parseFloat(width)).toBeGreaterThan(0);
+  const scroller = navigation.closest("[data-scroll-restoration-id]");
+  if (!scroller) throw new Error("Session list has no scroll container");
+  scroller.scrollTop = 240;
+
+  updateQuery("tasks/sessions:get", selectedSession);
+  expect(await screen.findByRole("textbox", { name: "Message" })).toBeTruthy();
+  const selectedLink = within(navigation).getByRole("link", {
+    name: "Inspect the example site Pip",
   });
-  expect(remote.start).not.toHaveBeenCalled();
+  const selectedRow = selectedLink.parentElement;
+  if (!selectedRow) throw new Error("Missing selected task row");
+  expect(within(selectedRow).getByRole("link", { name: "Chat" })).toBeTruthy();
+  expect(within(selectedRow).getByRole("link", { name: "Walkthrough" }).getAttribute("href")).toBe(
+    "/lab?session=session-1&step=walkthrough",
+  );
+  expect(within(selectedRow).getByRole("link", { name: "Request check · approved" })).toBeTruthy();
+  const completed = walkthroughReport();
+  updateQuery("tasks/walkthroughReports:list", [
+    { callId: "report-1", startedAt: 10_000, model: completed.model, state: "completed" },
+  ]);
+  const reportLink = within(selectedRow).getByRole("link", { name: /Walkthrough update/ });
+  fireEvent.click(reportLink);
+  const conversation = await screen.findByRole("region", {
+    name: "Walkthrough update conversation",
+  });
+  expect(router.state.location.search).toMatchObject({
+    session: "session-1",
+    step: "walkthrough_update",
+    call: "report-1",
+  });
+  expect(conversation.getAttribute("aria-busy")).toBe("true");
+  expect(screen.getByRole("navigation", { name: "Tasks" })).toBe(navigation);
+  expect(document.querySelector('[data-pane-side="left"]')).toBe(leftPane);
+  expect(carousel.style.getPropertyValue("--sidebar-layout-left-desktop-width")).toBe(width);
+  expect(scroller.scrollTop).toBe(240);
+  updateQuery(reportKey("report-1"), completed);
+  expect(await screen.findByText("Export was verified")).toBeTruthy();
+  expect(reportLink.getAttribute("aria-current")).toBe("page");
+
+  const loadMore = within(navigation).getByRole("button", { name: "Load more tasks" });
+  fireEvent.click(loadMore);
+  expect(remote.loadMore).toHaveBeenCalledExactlyOnceWith(50);
+  remote.paginationStatus = "LoadingMore";
+  updateQuery("tasks/sessions:list", recentSessions);
+  expect(within(navigation).getByRole("button", { name: "Load more tasks" })).toBe(loadMore);
+  expect(loadMore).toHaveProperty("disabled", true);
+  expect(within(selectedRow).getByRole("link", { name: /Walkthrough update/ })).toBe(reportLink);
+  remote.paginationStatus = "Exhausted";
+  updateQuery("tasks/sessions:list", [...recentSessions, { ...selectedSession, _creationTime: 1 }]);
+  expect(within(navigation).getAllByRole("link", { name: "Inspect the example site Pip" })).toEqual(
+    [selectedLink],
+  );
+  expect(within(navigation).getAllByRole("link", { name: /Walkthrough update/ })).toEqual([
+    reportLink,
+  ]);
+  expect(screen.getByRole("navigation", { name: "Tasks" })).toBe(navigation);
+  expect(document.querySelector('[data-pane-side="left"]')).toBe(leftPane);
+  expect(carousel.style.getPropertyValue("--sidebar-layout-left-desktop-width")).toBe(width);
+  expect(scroller.scrollTop).toBe(240);
 });
 
 test("loads older sessions from the sidebar", async () => {

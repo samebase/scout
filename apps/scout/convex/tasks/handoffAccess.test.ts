@@ -270,6 +270,7 @@ describe.each(["agents_api", "convex_agent"] as const)("%s handoff access", (eng
 
   it("lets an anonymous token holder use the browser and starts only one Resume check", async () => {
     const t = await setup(engine);
+    await t.backend.run((ctx) => ctx.db.patch(t.sessionId, { screenshotAttempts: 19 }));
     const openedAt = Date.now();
     const expiresAt = openedAt + HANDOFF_ACTIVE_WINDOW_MS;
     expect(await t.backend.action(api.tasks.handoff.load, t.args)).toEqual({
@@ -290,6 +291,7 @@ describe.each(["agents_api", "convex_agent"] as const)("%s handoff access", (eng
     const session = await t.read();
     expect(session?.state.kind).toBe("checking");
     expect(session?.workflowId).toBeDefined();
+    expect(session?.screenshotAttempts).toBe(19);
     expect(await t.backend.action(api.tasks.handoff.resume, t.args)).toEqual(checking);
     expect(await t.backend.action(api.tasks.handoff.load, t.args)).toEqual(checking);
     expect(await t.backend.action(api.tasks.handoff.decline, t.args)).toEqual(checking);
