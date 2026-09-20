@@ -218,8 +218,12 @@ beforeEach(() => {
   ]);
 });
 
+const queryClients = new Set<QueryClient>();
+
 afterEach(() => {
   cleanup();
+  for (const client of queryClients) client.clear();
+  queryClients.clear();
   vi.restoreAllMocks();
 });
 
@@ -283,6 +287,7 @@ async function open(path = "/lab") {
       },
     },
   });
+  queryClients.add(queryClient);
   render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />

@@ -534,15 +534,13 @@ function SessionLoader({
             {viewer?.kind !== "account" && <AuthPanel />}
           </div>
         ) : (
-          <Suspense fallback={<div className="min-h-full" aria-busy="true" />}>
-            <ConversationSession
-              key={threadId}
-              thread={thread}
-              kind={kind}
-              search={search}
-              showingWalkthrough={showingWalkthrough}
-            />
-          </Suspense>
+          <ConversationSession
+            key={threadId}
+            thread={thread}
+            kind={kind}
+            search={search}
+            showingWalkthrough={showingWalkthrough}
+          />
         )
       }
     />
@@ -896,12 +894,6 @@ function ConversationSession({
     api.tasks.sessions.cost,
     thread.canControl && managedId && !showingWalkthrough ? { sessionId: managedId } : "skip",
   );
-  const messages = useSsrPaginatedQuery(
-    api.scout.activity.messages,
-    { threadId },
-    { initialNumItems: 50 },
-  );
-  const lastMessageScrollTop = useRef(0);
   const sendManaged = useMutation(api.tasks.sessions.send);
   const retryManaged = useMutation(api.tasks.sessions.retryMessage);
   const stopManaged = useMutation(api.tasks.sessions.stop);
@@ -923,13 +915,6 @@ function ConversationSession({
     scout.status === "active" &&
     managed?.canSend === true &&
     request.kind !== "pending";
-  const visibleMessages = messages.results.toReversed();
-  const phase = thread.purpose.kind === "play" ? thread.purpose.step : null;
-  const phaseLabel = phase
-    ? { research: "Researching the game", account_setup: "Setting up an account", play: "Playing" }[
-        phase
-      ]
-    : null;
 
   async function stop() {
     if (!managedId || pending.current) return;
@@ -1131,86 +1116,9 @@ function ConversationSession({
         </div>
       )}
       <div hidden={showingWalkthrough} className="min-h-0 flex-1 overflow-hidden">
-        <MessageScrollerProvider autoScroll defaultScrollPosition="end">
-          <MessageScroller>
-            <MessageScrollerViewport
-              aria-label="Session messages"
-              className="[mask-image:none]"
-              onScroll={(event) => {
-                const scrollTop = event.currentTarget.scrollTop;
-                const scrolledUp = scrollTop < lastMessageScrollTop.current;
-                lastMessageScrollTop.current = scrollTop;
-                if (scrolledUp && scrollTop <= 240 && messages.status === "CanLoadMore") {
-                  messages.loadMore(50);
-                }
-              }}
-            >
-              <MessageScrollerContent
-                className="mx-auto w-full max-w-page gap-2 px-4 pt-5 pb-7"
-                role="log"
-                aria-label="Session messages"
-                aria-live="polite"
-                aria-busy={
-                  messages.status === "LoadingFirstPage" || messages.status === "LoadingMore"
-                }
-              >
-                {visibleMessages.map((message) =>
-                  message.kind === "tool" ? (
-                    <MessageScrollerItem
-                      key={message.id}
-                      messageId={message.id}
-                      className="w-full min-w-0"
-                    >
-                      <ToolActivityRow tool={message.tool} />
-                    </MessageScrollerItem>
-                  ) : (
-                    <MessageScrollerItem
-                      key={message.id}
-                      messageId={message.id}
-                      className={cn(
-                        "my-2 min-w-0 max-w-[95%] text-[15px] [overflow-wrap:anywhere]",
-                        message.role === "user" ? "ml-auto" : "mr-auto",
-                      )}
-                    >
-                      {message.role !== "user" && (
-                        <span className="mb-2 block text-xs font-medium text-muted-foreground">
-                          {scout?.displayName ?? "Scout"}
-                        </span>
-                      )}
-                      <p
-                        className={cn(
-                          "whitespace-pre-wrap",
-                          message.role === "user" && "rounded-xl bg-secondary px-5 py-3.5",
-                        )}
-                      >
-                        {message.role === "user"
-                          ? gameInviteDisplayText(message.text)
-                          : message.text}
-                      </p>
-                    </MessageScrollerItem>
-                  ),
-                )}
-                {thread.status === "failed" && !thread.canControl && (
-                  <MessageScrollerItem messageId="turn-status" className="mr-auto max-w-[95%]">
-                    <p className={cn(playNotice, "mb-0 px-3 py-2")} role="alert">
-                      Scout couldn't finish this turn.
-                    </p>
-                  </MessageScrollerItem>
-                )}
-                {thread.status === "running" && managed?.state.kind !== "checking" && (
-                  <p
-                    role="status"
-                    className="flex items-center gap-2.5 text-sm text-muted-foreground"
-                  >
-                    <LoaderCircleIcon size={15} className="animate-spin" aria-hidden="true" />
-                    {phaseLabel ?? <span className="sr-only">Scout is working</span>}
-                  </p>
-                )}
-              </MessageScrollerContent>
-            </MessageScrollerViewport>
-            <MessageScrollerButton className="size-11" />
-          </MessageScroller>
-        </MessageScrollerProvider>
+        <Suspense fallback={<div className="min-h-full" aria-busy="true" />}>
+          <ConversationTranscript thread={thread} checking={managed?.state.kind === "checking"} />
+        </Suspense>
       </div>
       {thread.canControl && managedId ? (
         <div
@@ -1336,5 +1244,97 @@ function ConversationSession({
         )
       )}
     </section>
+  );
+}
+
+function ConversationTranscript({ thread, checking }: { thread: ChatThread; checking: boolean }) {
+  const messages = useSsrPaginatedQuery(
+    api.scout.activity.messages,
+    { threadId: thread.threadId },
+    { initialNumItems: 50 },
+  );
+  const lastMessageScrollTop = useRef(0);
+  const visibleMessages = messages.results.toReversed();
+  const phase = thread.purpose.kind === "play" ? thread.purpose.step : null;
+  const phaseLabel = phase
+    ? { research: "Researching the game", account_setup: "Setting up an account", play: "Playing" }[
+        phase
+      ]
+    : null;
+
+  return (
+    <MessageScrollerProvider autoScroll defaultScrollPosition="end">
+      <MessageScroller>
+        <MessageScrollerViewport
+          aria-label="Session messages"
+          className="[mask-image:none]"
+          onScroll={(event) => {
+            const scrollTop = event.currentTarget.scrollTop;
+            const scrolledUp = scrollTop < lastMessageScrollTop.current;
+            lastMessageScrollTop.current = scrollTop;
+            if (scrolledUp && scrollTop <= 240 && messages.status === "CanLoadMore") {
+              messages.loadMore(50);
+            }
+          }}
+        >
+          <MessageScrollerContent
+            className="mx-auto w-full max-w-page gap-2 px-4 pt-5 pb-7"
+            role="log"
+            aria-label="Session messages"
+            aria-live="polite"
+            aria-busy={messages.status === "LoadingFirstPage" || messages.status === "LoadingMore"}
+          >
+            {visibleMessages.map((message) =>
+              message.kind === "tool" ? (
+                <MessageScrollerItem
+                  key={message.id}
+                  messageId={message.id}
+                  className="w-full min-w-0"
+                >
+                  <ToolActivityRow tool={message.tool} />
+                </MessageScrollerItem>
+              ) : (
+                <MessageScrollerItem
+                  key={message.id}
+                  messageId={message.id}
+                  className={cn(
+                    "my-2 min-w-0 max-w-[95%] text-[15px] [overflow-wrap:anywhere]",
+                    message.role === "user" ? "ml-auto" : "mr-auto",
+                  )}
+                >
+                  {message.role !== "user" && (
+                    <span className="mb-2 block text-xs font-medium text-muted-foreground">
+                      {thread.scout.displayName}
+                    </span>
+                  )}
+                  <p
+                    className={cn(
+                      "whitespace-pre-wrap",
+                      message.role === "user" && "rounded-xl bg-secondary px-5 py-3.5",
+                    )}
+                  >
+                    {message.role === "user" ? gameInviteDisplayText(message.text) : message.text}
+                  </p>
+                </MessageScrollerItem>
+              ),
+            )}
+            {thread.status === "failed" && !thread.canControl && (
+              <MessageScrollerItem messageId="turn-status" className="mr-auto max-w-[95%]">
+                <p className={cn(playNotice, "mb-0 px-3 py-2")} role="alert">
+                  Scout couldn't finish this turn.
+                </p>
+              </MessageScrollerItem>
+            )}
+            {thread.status === "running" && !checking && (
+              <p role="status" className="flex items-center gap-2.5 text-sm text-muted-foreground">
+                <LoaderCircleIcon size={15} className="animate-spin" aria-hidden="true" />
+                {phaseLabel ?? <span className="sr-only">Scout is working</span>}
+              </p>
+            )}
+          </MessageScrollerContent>
+        </MessageScrollerViewport>
+        <MessageScrollerButton className="size-11" />
+      </MessageScroller>
+    </MessageScrollerProvider>
   );
 }

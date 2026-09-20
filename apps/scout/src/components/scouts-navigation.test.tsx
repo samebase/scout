@@ -90,12 +90,16 @@ function readQuery(name: string) {
   }
 }
 
+const queryClients = new Set<QueryClient>();
+
 afterEach(() => {
   remote.authenticated = true;
   remote.admin = true;
   remote.scout.status = "active";
   remote.scout.availability = "available";
   cleanup();
+  for (const client of queryClients) client.clear();
+  queryClients.clear();
   vi.clearAllMocks();
   window.localStorage.clear();
 });
@@ -149,6 +153,7 @@ async function openPage(path: string) {
       },
     },
   });
+  queryClients.add(queryClient);
   render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />

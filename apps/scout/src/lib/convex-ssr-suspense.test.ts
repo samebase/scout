@@ -131,6 +131,8 @@ test("a delayed task walkthrough renders its saved findings and checks before hy
   type Result = FunctionReturnType<typeof api.tasks.walkthrough.get>;
   // @ts-expect-error The mocked transport uses a stable fixture ID instead of a database-generated session ID.
   const sessionId: FunctionArgs<typeof api.tasks.walkthrough.get>["sessionId"] = "session-ssr";
+  // @ts-expect-error The mocked transport uses a stable fixture ID instead of a database-generated screenshot ID.
+  const captureId: NonNullable<Result>["captures"][number]["id"] = "capture-ssr";
   const saved: NonNullable<Result> = {
     walkthrough: {
       summary: "The board supports playing and undoing a move.",
@@ -145,12 +147,31 @@ test("a delayed task walkthrough renders its saved findings and checks before hy
         {
           heading: "Play a move",
           explanation: "The piece lands in the selected column.",
-          // @ts-expect-error The mocked transport uses a stable screenshot ID whose image has been removed.
-          captureIds: ["capture-ssr"],
+          captureIds: [captureId],
         },
       ],
     },
-    captures: [],
+    captures: [
+      {
+        id: captureId,
+        note: "A piece in the board",
+        browserSequence: 0,
+        operationSequence: 1,
+        state: {
+          kind: "ready",
+          metadata: {
+            tabId: "tab-1",
+            url: "https://example.com/play",
+            title: "Score Four",
+            startedAtMs: 100,
+            completedAtMs: 120,
+            width: 1280,
+            height: 1800,
+            viewport: { width: 1280, height: 800, scrollX: 0, scrollY: 0 },
+          },
+        },
+      },
+    ],
   };
   let resolveWalkthrough: (value: Result) => void = () => {
     throw new Error("Walkthrough query has not started");
@@ -185,7 +206,8 @@ test("a delayed task walkthrough renders its saved findings and checks before hy
     expect(html).toMatch(/<h2[^>]*>Play a move<\/h2>/);
     expect(html).toContain('aria-label="Review checks"');
     expect(html).toContain("</span>Undo the move</p>");
-    expect(html).toContain("No screenshot for this step.");
+    expect(html).toContain('style="aspect-ratio:1280 / 1800"');
+    expect(html).not.toContain("No screenshot for this step.");
     expect(html).not.toContain('aria-label="Task walkthrough" aria-busy="true"');
     expect(html).not.toContain("Pending fixture");
     expect(html).toContain("tasks/walkthrough:get");

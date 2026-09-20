@@ -13,7 +13,6 @@ import { getFunctionName, type FunctionReturnType, type FunctionReference } from
 import { ConvexError } from "convex/values";
 import { useSyncExternalStore } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { convexQuery } from "@convex-dev/react-query";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { Route as TaskRoute } from "../../routes/tasks.$thread";
 import { Route as PlayRoute } from "../../routes/play";
@@ -90,6 +89,7 @@ function readSsrQuery(queryKey: readonly unknown[]): unknown {
     return { page: [], isDone: true, continueCursor: "" };
   }
   if (name === "scout/activity:messages") {
+    if (remote.queries.has(name)) return remote.queries.get(name);
     return {
       page: remote.messages,
       isDone: remote.messageStatus === "Exhausted",
@@ -330,34 +330,20 @@ async function openPlay(path = "/play") {
     },
   });
   queryClients.add(queryClient);
-  const url = new URL(path, "http://localhost");
-  const threadId = url.pathname.startsWith("/tasks/")
-    ? url.pathname.slice("/tasks/".length)
-    : url.searchParams.get("thread");
-  if (threadId) {
-    const options = convexQuery(api.scout.activity.get, { threadId });
-    const initial = readSsrQuery(options.queryKey);
-    if (initial !== undefined) queryClient.setQueryData(options.queryKey, initial);
-    queryClient.setQueryData(
-      convexQuery(api.scout.activity.messages, {
-        threadId,
-        paginationOpts: { numItems: 50, cursor: null },
-      }).queryKey,
-      { page: remote.messages, isDone: remote.messageStatus === "Exhausted", continueCursor: "" },
-    );
-  }
   subscribe(() => {
     for (const query of queryClient.getQueryCache().getAll()) {
       const value = readSsrQuery(query.queryKey);
       if (value !== undefined) queryClient.setQueryData(query.queryKey, value);
     }
   });
-  render(
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>,
-  );
-  await router.load();
+  await act(async () => {
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    );
+    await router.load();
+  });
   return router;
 }
 
@@ -1077,6 +1063,34 @@ test("sends when controls allow it without credit settlement messages", async ()
       message: "Continue the game",
     }),
   );
+});
+
+test("a delayed transcript leaves the walkthrough, view links, and composer available", async () => {
+  remote.queries.set(
+    "scout/activity:get",
+    session({ purpose: { kind: "review" }, status: "finished", hasWalkthrough: true }),
+  );
+  remote.queries.set("scout/activity:messages", undefined);
+  remote.messageStatus = "LoadingFirstPage";
+  remote.queries.set("tasks/walkthrough:get", { walkthrough: null, captures: [] });
+  await openPlay("/tasks/game-thread");
+  expect(await screen.findByRole("heading", { name: "No screenshots saved" })).toBeTruthy();
+  const views = screen.getByRole("navigation", { name: "Review views" });
+  await userEvent.click(within(views).getByRole("link", { name: "Chat & replay" }));
+  const composer = screen.getByRole("textbox", { name: "Message Scout" });
+  await userEvent.type(composer, "Keep this draft");
+  expect(screen.queryByRole("log", { name: "Session messages" })).toBeNull();
+  expect(screen.getByRole("navigation", { name: "Review views" })).toBe(views);
+
+  act(() => {
+    remote.messageStatus = "Exhausted";
+    remote.queries.delete("scout/activity:messages");
+    remote.revision += 1;
+    remote.subscribers.forEach((notify) => notify());
+  });
+  expect(await screen.findByRole("log", { name: "Session messages" })).toBeTruthy();
+  expect(screen.getByRole("textbox", { name: "Message Scout" })).toBe(composer);
+  expect(composer).toHaveProperty("value", "Keep this draft");
 });
 
 test("a completed managed Review opens its walkthrough and pairs replay with Chat", async () => {
@@ -2833,7 +2847,7 @@ test("follows new browser sessions until the user chooses a session", async () =
   expect(remote.stopManaged).not.toHaveBeenCalled();
 });
 
-test("an anonymous SSR result waits for auth and live access updates on a private task", async () => {
+test("cached task data stays quiet during auth loading and reflects access updates", async () => {
   remote.authenticated = false;
   remote.authLoading = true;
   remote.queries.set("scout/activity:get", null);
