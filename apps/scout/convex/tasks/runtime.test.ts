@@ -5,6 +5,7 @@ import { tool } from "ai";
 import { convexTest } from "convex-test";
 import type {
   AgentReasoningItem,
+  AgentSessionInputMessageParam,
   AgentSessionItem,
   TokenUsage,
 } from "openai/resources/beta/agents/agents";
@@ -18,6 +19,8 @@ import { closeFirecrawlBrowserSession } from "../scout/lib/firecrawl";
 import { ADMIN_EMAIL, insertTestAccount } from "../testing/accounts";
 import { runtimeTools } from "./tools";
 import { workflow } from "./lifecycle";
+import { presentItem } from "./output";
+import { previousWalkthroughContext } from "./instructions";
 
 vi.mock("./tools", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./tools")>()),
@@ -948,6 +951,49 @@ it("waits for the follow-up turn instead of finishing against the previous cance
   await expect(advance()).resolves.toBe(false);
   expect(await session()).toMatchObject({ state: { kind: "idle" }, active: false });
   expect(closeFirecrawlBrowserSession).toHaveBeenCalledOnce();
+});
+
+it("sends the previous walkthrough with a follow-up while displaying only the user's message", async () => {
+  const { backend, sessionId, provider } = await setup();
+  const walkthrough = {
+    summary: "The budget comparison remains unverified.",
+    sections: [],
+  };
+  await backend.run((ctx) => ctx.db.patch(sessionId, { walkthrough }));
+  const stored = await backend.run((ctx) => ctx.db.get(sessionId));
+  const message = "Also add two activities.\n\nKeep  these exact spaces.";
+  await backend.action(internal.tasks.runtime.begin, {
+    sessionId,
+    command: { kind: "send", message },
+  });
+  const content = [
+    { type: "input_text", text: message },
+    { type: "input_text", text: previousWalkthroughContext(stored?.walkthrough) },
+  ] satisfies AgentSessionInputMessageParam["content"];
+  expect(provider.events).toEqual([
+    { events: [{ type: "agent.session.input.message", input: [{ role: "user", content }] }] },
+  ]);
+  const echoed: AgentSessionItem = {
+    id: "follow-up-item",
+    type: "message",
+    role: "user",
+    phase: null,
+    status: "completed",
+    turn_id: "follow-up-turn",
+    content,
+  };
+  expect(presentItem(echoed).text).toBe(message);
+  expect(presentItem(echoed).details).toBe(JSON.stringify(echoed, null, 2));
+  expect(presentItem({ ...echoed, content: content.slice(1) }).text).toBe(content[1]?.text);
+  expect(presentItem({ ...echoed, role: "assistant" }).text).toBe(
+    content.map((part) => part.text).join("\n"),
+  );
+  expect(
+    presentItem({
+      ...echoed,
+      content: [content[0], { type: "input_text", text: "More user text" }],
+    }).text,
+  ).toBe(`${message}\nMore user text`);
 });
 
 it("refreshes ended-session history and cost without restarting the agent or changing the failure", async () => {
