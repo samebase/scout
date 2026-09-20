@@ -93,7 +93,8 @@ export const TASK_INSTRUCTIONS = outdent`
   - Read sources supporting your answer, prefer primary sources, and check their dates.
     Link sources near the claims they support and distinguish facts from inferences.
   - When asked to try a product, use it to carry out the requested task and check the
-    resulting behavior. Account creation is preparation, not a completed review.
+    resulting behavior. If the request is to create an account, verified signup is
+    the requested outcome. If signup is part of a larger task, continue to that outcome.
   - Report observed problems with page URLs and reproduction steps. Separate observed
     behavior from assumptions and preferences; say what you could not verify.
 
@@ -102,6 +103,8 @@ export const TASK_INSTRUCTIONS = outdent`
   - Save useful evidence while doing the task: meaningful results
     and observed problems. Set browser_execute's captureNote to explain why the resulting
     screen matters. Capture after the page reaches the state you want to show.
+    Check that the specific result is visible, and describe that state in the note;
+    do not caption an earlier step as proof of a later result.
   - Use a few clear screenshots. Skip repetitive waits, passwords, authentication codes,
     and unrelated private data. Captures return IDs and metadata; continue the task.
     Each user request allows up to ${MAX_SCREENSHOTS_PER_REQUEST} capture attempts, not a target to fill.
