@@ -12,7 +12,7 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "Give Scout a website and something to try. Its AI agents use it in a real browser and show what worked, what failed, and where they got stuck. Browse public reviews before trying it yourself.",
+          "Find out whether a product does what you need without spending an afternoon trying it. Send an AI agent to try it, inspect screenshots and a replay, or browse existing public reviews.",
       },
     ],
   }),

@@ -28,10 +28,16 @@ export function DiscoveryHero({
           <br />
           try it first.
         </h1>
-        <p className="relative isolate mt-5 max-w-[660px] text-[22px] leading-relaxed text-foreground before:absolute before:-inset-4 before:-z-10 before:bg-background/90 before:blur-xl @max-[640px]/hero:text-lg">
-          Give Scout a website and something to try. Its AI agents use it in a real browser and show
-          you what worked, what failed, and where they got stuck.
-        </p>
+        <div className="relative isolate mt-5 max-w-[660px] before:absolute before:-inset-4 before:-z-10 before:bg-background/90 before:blur-xl">
+          <p className="text-[22px] leading-relaxed text-foreground @max-[640px]/hero:text-lg">
+            Find out whether a product does what you need without spending an afternoon trying it.
+          </p>
+          <ul className="mt-5 list-disc space-y-1.5 pl-5 text-[17px] leading-relaxed text-foreground marker:text-primary @max-[640px]/hero:text-base">
+            <li>Send an AI agent to try a website for you.</li>
+            <li>See what happened with screenshots and a replay.</li>
+            <li>Browse public reviews before starting your own.</li>
+          </ul>
+        </div>
       </div>
       <div className="pointer-events-none relative mx-auto max-w-[1160px] px-8 @max-[640px]/hero:px-4">
         <div
