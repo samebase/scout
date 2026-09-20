@@ -16,6 +16,7 @@ const app = defineApp({
     DEV_SEED_AUTH_ENABLED: v.optional(v.string()),
     DEV_SEED_AUTH_PASSWORD: v.optional(v.string()),
     FIRECRAWL_API_KEY: v.optional(v.string()),
+    HOMEPAGE_SSR_ENABLED: v.optional(v.union(v.literal("true"), v.literal("false"))),
     OPENAI_API_KEY: v.optional(v.string()),
     POLAR_ACCESS_TOKEN: v.optional(v.string()),
     POLAR_CHECKOUT_ENABLED: v.optional(v.string()),
@@ -36,6 +37,7 @@ const app = defineApp({
     SCOUT_CREDENTIAL_MASTER_KEY_V1: v.optional(v.string()),
     SCOUT_COMPACTION_TOKENS: v.optional(v.string()),
     SITE_URL: v.optional(v.string()),
+    SSR_FIXTURE_DEPLOYMENT_URL: v.optional(v.string()),
   },
 });
 app.use(agent);

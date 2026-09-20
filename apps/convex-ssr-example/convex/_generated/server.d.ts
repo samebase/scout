@@ -30,36 +30,6 @@ import type { DataModel } from "./dataModel.js";
 type Env = {
   readonly CONVEX_CLOUD_URL: string;
   readonly CONVEX_SITE_URL: string;
-  readonly AGENTMAIL_API_KEY: string | undefined;
-  readonly CLOUDFLARE_EMAIL_ACCOUNT_ID: string | undefined;
-  readonly CLOUDFLARE_EMAIL_API_TOKEN: string | undefined;
-  readonly CREDITS_ENABLED: string | undefined;
-  readonly DEV_SEED_AUTH_EMAIL: string | undefined;
-  readonly DEV_SEED_AUTH_ENABLED: string | undefined;
-  readonly DEV_SEED_AUTH_PASSWORD: string | undefined;
-  readonly FIRECRAWL_API_KEY: string | undefined;
-  readonly HOMEPAGE_SSR_ENABLED: "true" | "false" | undefined;
-  readonly OPENAI_API_KEY: string | undefined;
-  readonly POLAR_ACCESS_TOKEN: string | undefined;
-  readonly POLAR_CHECKOUT_ENABLED: string | undefined;
-  readonly POLAR_CREDIT_PRODUCT_ID: string | undefined;
-  readonly POLAR_ORGANIZATION_ID: string | undefined;
-  readonly POLAR_SERVER: string | undefined;
-  readonly POLAR_WEBHOOK_SECRET: string | undefined;
-  readonly PUBLIC_MEDIA_ACCESS_KEY_ID: string | undefined;
-  readonly PUBLIC_MEDIA_BUCKET: string | undefined;
-  readonly PUBLIC_MEDIA_CACHE_PURGE_TOKEN: string | undefined;
-  readonly PUBLIC_MEDIA_ORIGIN: string | undefined;
-  readonly PUBLIC_MEDIA_SECRET_ACCESS_KEY: string | undefined;
-  readonly PUBLIC_MEDIA_ZONE_ID: string | undefined;
-  readonly R2_ACCESS_KEY_ID: string | undefined;
-  readonly R2_BUCKET: string | undefined;
-  readonly R2_ENDPOINT: string | undefined;
-  readonly R2_SECRET_ACCESS_KEY: string | undefined;
-  readonly SCOUT_COMPACTION_TOKENS: string | undefined;
-  readonly SCOUT_CREDENTIAL_MASTER_KEY_V1: string | undefined;
-  readonly SITE_URL: string | undefined;
-  readonly SSR_FIXTURE_DEPLOYMENT_URL: string | undefined;
 };
 
 /**

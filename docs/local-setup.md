@@ -30,14 +30,22 @@ pnpm install
 The app lives in `apps/scout/`. Its `.env.local` and other app environment files belong there.
 When updating a checkout from the previous layout, move its root `.env.local` into `apps/scout/`.
 
-From the repository root:
+Before the first run, select a cloud development deployment from the repository
+root. This writes the Convex URL needed by the server build to the app's env file:
+
+```sh
+pnpm --filter samebase-scout exec convex deployment select <development-deployment>
+```
+
+Then start the app:
 
 ```sh
 pnpm run dev
 ```
 
-`pnpm run dev` starts Convex and TanStack Start together. On the first run,
-Convex may ask you to sign in and choose or create a development deployment.
+`pnpm run dev` first builds the server imported by the homepage HTTP action,
+then starts Convex and TanStack Start together. Selecting a deployment may ask
+you to sign in. To create a new cloud dev deployment, use the creation command below.
 The dev script also creates Convex Auth JWT keys in that development deployment
 if they are missing. Scout uses Convex AI Gateway, which requires a cloud backend;
 anonymous and local backends cannot run its model calls.

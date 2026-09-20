@@ -11,6 +11,7 @@ import { SitePreview } from "#components/site-preview";
 import { SiteIdentity } from "#components/site-identity";
 import { ScoutBadge } from "#components/scout-badge";
 import type { ReviewFeedSearch } from "#lib/reviewFeedSearch";
+import type { HomeFeed } from "#lib/homeFeed";
 import { cn } from "#lib/utils";
 import { api } from "../../convex/_generated/api";
 import { useViewerAccess } from "../lib/access";
@@ -29,11 +30,19 @@ const activityLabels: Record<Activity["status"], string> = {
   failed: "Interrupted",
 };
 
-export function ActivityFeed({ search }: { search: ReviewFeedSearch }) {
+export function ActivityFeed({
+  search,
+  initialFeed,
+}: {
+  search: ReviewFeedSearch;
+  initialFeed: HomeFeed;
+}) {
   const viewer = useViewerAccess();
   const navigate = useNavigate();
   const scope = viewer?.kind === "account" ? (search.scope ?? "public") : "public";
   const reviewedSiteCount = useQuery(api.scout.sites.count, { scope });
+  const initial =
+    scope === "public" && initialFeed?.site === (search.site ?? null) ? initialFeed : null;
   const filters = { site: search.site, scope };
   return (
     <section aria-label="Reviews">
@@ -41,7 +50,7 @@ export function ActivityFeed({ search }: { search: ReviewFeedSearch }) {
         <SiteFilters
           search={filters}
           layout="toolbar"
-          reviewedSiteCount={reviewedSiteCount}
+          reviewedSiteCount={reviewedSiteCount ?? initial?.count}
           onChange={(search, options) => {
             void navigate({
               to: "/",
@@ -53,7 +62,7 @@ export function ActivityFeed({ search }: { search: ReviewFeedSearch }) {
         />
       </div>
       {scope === "mine" && !search.site && <UnassignedTasks search={filters} />}
-      <SiteGroups key={`${scope}:${search.site ?? ""}`} search={filters} />
+      <SiteGroups key={`${scope}:${search.site ?? ""}`} search={filters} initialFeed={initial} />
     </section>
   );
 }
@@ -81,16 +90,27 @@ function UnassignedTasks({ search }: { search: ReviewFeedSearch }) {
   );
 }
 
-function SiteGroups({ search }: { search: ReviewFeedSearch }) {
+function SiteGroups({ search, initialFeed }: { search: ReviewFeedSearch; initialFeed: HomeFeed }) {
   const site = search.site ?? null;
   const scope = search.scope ?? "public";
   const sites = usePaginatedQuery(api.scout.sites.list, { site, scope }, { initialNumItems: 6 });
+  const initial = sites.status === "LoadingFirstPage" ? initialFeed : null;
+  const rows = initial ? initial.groups.map((group) => group.site) : sites.results;
+  const exhausted = sites.status === "Exhausted" || initial?.isDone === true;
   return (
     <div className="min-h-60 space-y-5" aria-busy={sites.status === "LoadingFirstPage"}>
-      {sites.results.map((site) => (
-        <SiteCard key={site.hostname} site={site} search={search} />
+      {rows.map((site) => (
+        <SiteCard
+          key={site.hostname}
+          site={site}
+          search={search}
+          initialTasks={
+            initialFeed?.groups.find((group) => group.site.hostname === site.hostname)?.tasks ??
+            null
+          }
+        />
       ))}
-      {sites.status === "Exhausted" && !sites.results.length ? (
+      {exhausted && !rows.length ? (
         <p className="py-12 text-muted-foreground">
           {site
             ? "No sites match your search."
@@ -107,9 +127,11 @@ function SiteGroups({ search }: { search: ReviewFeedSearch }) {
 function SiteCard({
   site,
   search,
+  initialTasks,
 }: {
   site: FunctionReturnType<typeof api.scout.sites.list>["page"][number];
   search: ReviewFeedSearch;
+  initialTasks: FunctionReturnType<typeof api.scout.activity.list> | null;
 }) {
   const scope = search.scope ?? "public";
   const tasks = usePaginatedQuery(
@@ -117,6 +139,9 @@ function SiteCard({
     { site: site.hostname, scope },
     { initialNumItems: 2 },
   );
+  const initial = tasks.status === "LoadingFirstPage" ? initialTasks : null;
+  const rows = initial?.page ?? tasks.results;
+  const exhausted = tasks.status === "Exhausted" || initial?.isDone === true;
   return (
     <article
       aria-label={site.hostname}
@@ -143,10 +168,10 @@ function SiteCard({
           <SiteIdentity site={site} heading="h2" />
         </header>
         <div className="flex-1 sm:min-h-0" aria-busy={tasks.status === "LoadingFirstPage"}>
-          {tasks.results.slice(0, 2).map((activity) => (
+          {rows.slice(0, 2).map((activity) => (
             <ReviewRow key={activity.threadId} activity={activity} preview search={search} />
           ))}
-          {tasks.status === "Exhausted" && !tasks.results.length && (
+          {exhausted && !rows.length && (
             <p className="py-6 text-sm text-muted-foreground">
               {scope === "mine" ? "You haven't reviewed this site yet." : "No public tasks yet."}
             </p>

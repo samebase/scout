@@ -21,10 +21,10 @@ operational responsibilities.
 
 ## Stack
 
-- React 19 and TanStack Start in SPA mode
+- React 19 and TanStack Start, with public-homepage SSR on Convex
 - Convex for the real-time backend, database, and password authentication
 - Cloudflare Workers Static Assets for production delivery and branch previews
-- Convex Static Hosting for the hackathon `convex.site` deployment
+- Convex HTTP actions for homepage HTML and Static Hosting for browser assets
 - shadcn/ui primitives for the user interface
 - Vite+ for development, formatting, linting, tests, and builds
 - Node.js 24 for application and automation code
@@ -78,11 +78,21 @@ Install [Vite+](https://viteplus.dev/guide/) and use it to supply the Node.js ve
 ```sh
 corepack enable
 pnpm install
+```
+
+Before the first build, select a cloud development deployment so Convex writes
+the app's URL to `apps/scout/.env.local`, then start development:
+
+```sh
+pnpm --filter samebase-scout exec convex deployment select <development-deployment>
 pnpm run dev
 ```
 
 Run these commands from the repository root. Development starts Convex and TanStack Start
 together, using port 5173 for the primary checkout and ports starting at 5174 for linked worktrees.
+It first builds the server imported by Convex's homepage HTTP action. Rebuild with
+`pnpm run build:app` to update that hosted renderer after frontend changes; local Vite
+development keeps its usual hot reload.
 Worktrees must select their own cloud dev deployment. Convex writes its selected deployment and
 `VITE_CONVEX_URL` to `apps/scout/.env.local`. Move an existing root `.env.local` there when
 updating an older checkout.
@@ -147,6 +157,13 @@ Set each Convex preview's `SITE_URL` to its frontend origin for signup verificat
 For an automatic `main` deployment, the Cloudflare deploy command publishes the Worker first, then
 uploads the same `apps/scout/dist/client` files to Convex Static Hosting. Preview and dry-run deployments do
 not change the production `convex.site` app.
+
+Preview builds also upload browser assets to the matching Convex preview. On
+`convex.site`, `/` renders the first six public sites and two reviews per site
+before returning HTML. Native Convex subscriptions and pagination take over in
+the browser. Other paths retain the existing static prerenders and SPA fallback.
+See [Scout SSR verification](./docs/convex-ssr-experiment.md) for the PR preview
+and commands to reproduce it without a Cloudflare runtime.
 
 See [`docs/cloudflare-workers-builds.md`](./docs/cloudflare-workers-builds.md) for the detailed build
 and deploy behavior. Use the

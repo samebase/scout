@@ -1,10 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ProductHome } from "#components/product-home";
 import { homeSearch } from "#lib/homeSearch";
+import { loadHomeFeed } from "#lib/homeFeed";
 
 export const Route = createFileRoute("/")({
   staticData: { access: "access_public" },
   validateSearch: homeSearch,
+  loaderDeps: ({ search }) => ({ site: search.site ?? null, scope: search.scope ?? "public" }),
+  loader: ({ deps }) => loadHomeFeed(deps),
   head: () => ({
     meta: [
       { title: "Scout | Website reviews" },
@@ -15,5 +18,5 @@ export const Route = createFileRoute("/")({
       },
     ],
   }),
-  component: () => <ProductHome search={Route.useSearch()} />,
+  component: () => <ProductHome search={Route.useSearch()} initialFeed={Route.useLoaderData()} />,
 });

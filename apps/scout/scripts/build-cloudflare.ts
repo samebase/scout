@@ -21,6 +21,7 @@ type ConvexDeployPlan =
       deployKeyName: typeof PREVIEW_CONVEX_DEPLOY_KEY;
       args: readonly string[];
       seedArgs: readonly string[];
+      uploadArgs: readonly string[];
     }
   | {
       kind: "frontendOnly";
@@ -109,6 +110,15 @@ export function selectConvexDeployPlan(env: NodeJS.ProcessEnv): ConvexDeployPlan
       }),
       args: ["exec", "convex", "deploy", "--preview-name", branch, "--cmd", WORKERS_BUILD_COMMAND],
       seedArgs: ["exec", "convex", "run", "devAuth:seedPasswordAccount", "--preview-name", branch],
+      uploadArgs: [
+        "exec",
+        "static-hosting",
+        "upload",
+        "--dist",
+        "./dist/client",
+        "--preview-name",
+        branch,
+      ],
     };
   }
 
@@ -147,6 +157,7 @@ export async function main(
   await ensureAuth(convexEnv);
   if (plan.kind === "previewDeploy") {
     await runCommand("vp", plan.seedArgs, convexEnv);
+    await runCommand("vp", plan.uploadArgs, convexEnv);
   }
 }
 
