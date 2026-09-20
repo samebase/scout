@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-20T21:52:30Z
+- **Last updated:** 2026-09-20T22:53:15Z
 
 ## Log
 
@@ -1774,9 +1774,16 @@ Walkthrough step controls sit together in the center, leaving more room for scre
 Costs and usage appear in Chat & replay, and completed walkthroughs no longer leave an empty footer
 (`apps/scout/src/components/task-walkthrough.tsx`, `apps/scout/src/products/conversation/page.tsx`).
 
-### 2026-09-20 - working tree - v283
+### 2026-09-20 - 1e42d52 - v283
 
 Public site pages now render their identity and reviews before JavaScript loads.
 The homepage and site pages share the official Convex TanStack query integration,
 with native Convex pagination and one shared first-page handoff. Disabling SSR
 returns data pages to the SPA shell (`apps/scout/src/router.tsx`, `packages/convex-tanstack-start/src/server.ts`).
+
+### 2026-09-20 - working tree - v284
+
+Public task reviews and Scout profiles now render through the same Convex TanStack query cache.
+Review transcripts and saved walkthrough text arrive in HTML; private tasks wait for browser
+authentication, and the existing switch still restores the SPA
+(`apps/scout/src/products/conversation/page.tsx`, `apps/scout/src/routes/scouts.$slug.tsx`).

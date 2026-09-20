@@ -9,8 +9,11 @@ import {
 import { accountAccessMessage, canAccess, useViewerAccess } from "../../lib/access";
 import { useSidebarActions } from "@samebase/sidebars/SidebarRuntime";
 import { SidebarLayout } from "@samebase/sidebars/SidebarLayout";
-import { Link, useNavigate } from "@tanstack/react-router";
-import { useConvexAuth, useMutation, usePaginatedQuery, useQuery } from "convex/react";
+import { ClientOnly, Link, useNavigate } from "@tanstack/react-router";
+import { useConvexAuth, useMutation, useQuery } from "convex/react";
+import { convexQuery } from "@convex-dev/react-query";
+import { useSuspenseQuery } from "@tanstack/react-query";
+import { useSsrPaginatedQuery } from "#lib/useSsrPaginatedQuery";
 import type { FunctionReturnType } from "convex/server";
 import { ConvexError } from "convex/values";
 import {
@@ -23,7 +26,7 @@ import {
   MonitorIcon,
   XIcon,
 } from "lucide-react";
-import { type FormEvent, useRef, useState } from "react";
+import { type FormEvent, Suspense, useDeferredValue, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import { omitNullish } from "../../../shared/omitNullish";
 import { taskModelOptions, type TaskSelection } from "../../../shared/taskModels";
@@ -96,7 +99,9 @@ export function ConversationPage({
     <ProductShell>
       <main id="main-content" className="flex h-[calc(100dvh-4rem)] min-h-0 flex-col">
         <ConversationSidebar>
-          <SessionLoader threadId={threadId} kind={kind} search={search} />
+          <Suspense fallback={<div className="min-h-full" aria-busy="true" />}>
+            <SessionLoader threadId={threadId} kind={kind} search={search} />
+          </Suspense>
         </ConversationSidebar>
       </main>
     </ProductShell>
@@ -439,7 +444,11 @@ function SessionLoader({
   search: ConversationSearch;
 }) {
   const viewer = useViewerAccess();
-  const thread = useQuery(api.scout.activity.get, { threadId });
+  const deferredThreadId = useDeferredValue(threadId);
+  const { data: result } = useSuspenseQuery(
+    convexQuery(api.scout.activity.get, { threadId: deferredThreadId }),
+  );
+  const thread = deferredThreadId === threadId ? result : undefined;
   const [opened, setOpened] = useState<{
     thread: ChatThread;
     defaultView: "walkthrough" | "chat";
@@ -489,7 +498,9 @@ function SessionLoader({
             />
           ) : undefined,
         right: showingWalkthrough ? undefined : available ? (
-          <ConversationBrowser key={threadId} thread={thread} kind={kind} search={search} />
+          <ClientOnly fallback={<div aria-busy="true" />}>
+            <ConversationBrowser key={threadId} thread={thread} kind={kind} search={search} />
+          </ClientOnly>
         ) : (
           <div aria-busy="true" />
         ),
@@ -511,10 +522,8 @@ function SessionLoader({
         </header>
       }
       main={
-        thread === undefined ? (
-          <div className="p-3" role="status">
-            Opening task…
-          </div>
+        thread === undefined || (thread === null && viewer === undefined) ? (
+          <div className="min-h-full" aria-busy="true" />
         ) : !available ? (
           <div className={playRouteMessage}>
             <h1 className="text-[30px]">Session unavailable</h1>
@@ -525,13 +534,15 @@ function SessionLoader({
             {viewer?.kind !== "account" && <AuthPanel />}
           </div>
         ) : (
-          <ConversationSession
-            key={threadId}
-            thread={thread}
-            kind={kind}
-            search={search}
-            showingWalkthrough={showingWalkthrough}
-          />
+          <Suspense fallback={<div className="min-h-full" aria-busy="true" />}>
+            <ConversationSession
+              key={threadId}
+              thread={thread}
+              kind={kind}
+              search={search}
+              showingWalkthrough={showingWalkthrough}
+            />
+          </Suspense>
         )
       }
     />
@@ -885,7 +896,7 @@ function ConversationSession({
     api.tasks.sessions.cost,
     thread.canControl && managedId && !showingWalkthrough ? { sessionId: managedId } : "skip",
   );
-  const messages = usePaginatedQuery(
+  const messages = useSsrPaginatedQuery(
     api.scout.activity.messages,
     { threadId },
     { initialNumItems: 50 },

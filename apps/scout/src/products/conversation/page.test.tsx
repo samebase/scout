@@ -13,6 +13,7 @@ import { getFunctionName, type FunctionReturnType, type FunctionReference } from
 import { ConvexError } from "convex/values";
 import { useSyncExternalStore } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { convexQuery } from "@convex-dev/react-query";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { Route as TaskRoute } from "../../routes/tasks.$thread";
 import { Route as PlayRoute } from "../../routes/play";
@@ -30,6 +31,7 @@ import {
 
 const remote = vi.hoisted(() => ({
   authenticated: true,
+  authLoading: false,
   messages: Array<FunctionReturnType<typeof api.scout.activity.messages>["page"][number]>(),
   messageStatus: "Exhausted",
   loadEarlierMessages: vi.fn(),
@@ -56,37 +58,55 @@ function subscribe(listener: () => void) {
   return () => remote.subscribers.delete(listener);
 }
 
+function readQuery(name: string, args: unknown): unknown {
+  remote.queryCalls(name, args);
+  if (args === "skip") return undefined;
+  if (name === "scout/activity:get" && args && typeof args === "object" && "threadId" in args) {
+    const scopedKey = `scout/activity:get:${String(args.threadId)}`;
+    if (remote.queries.has(scopedKey)) return remote.queries.get(scopedKey);
+  }
+  if (
+    name === "scout/activity:get" &&
+    args &&
+    typeof args === "object" &&
+    "threadId" in args &&
+    args.threadId === "missing-thread"
+  )
+    return null;
+  if (args && typeof args === "object" && "sessionId" in args) {
+    const scopedKey = `${name}:${String(args.sessionId)}`;
+    if (remote.queries.has(scopedKey)) return remote.queries.get(scopedKey);
+  }
+  return remote.queries.get(name);
+}
+
+const queryClients = new Set<QueryClient>();
+
+function readSsrQuery(queryKey: readonly unknown[]): unknown {
+  const name = queryKey[1];
+  if (typeof name !== "string") throw new Error("Expected a Convex query key");
+  if (name === "scout/sites:count") return { count: 0, hasMore: false };
+  if (name === "scout/sites:list" || name === "scout/activity:list") {
+    return { page: [], isDone: true, continueCursor: "" };
+  }
+  if (name === "scout/activity:messages") {
+    return {
+      page: remote.messages,
+      isDone: remote.messageStatus === "Exhausted",
+      continueCursor: "",
+    };
+  }
+  return readQuery(name, queryKey[2]);
+}
+
 vi.mock("convex/react", () => ({
   useConvexAuth: () => {
     useSyncExternalStore(subscribe, () => remote.revision);
-    return { isAuthenticated: remote.authenticated, isLoading: false };
+    return { isAuthenticated: remote.authenticated, isLoading: remote.authLoading };
   },
   useQuery: (reference: FunctionReference<"query">, args: unknown) => {
     useSyncExternalStore(subscribe, () => remote.revision);
-    remote.queryCalls(getFunctionName(reference), args);
-    if (args === "skip") return undefined;
-    if (
-      getFunctionName(reference) === "scout/activity:get" &&
-      args &&
-      typeof args === "object" &&
-      "threadId" in args
-    ) {
-      const scopedKey = `scout/activity:get:${String(args.threadId)}`;
-      if (remote.queries.has(scopedKey)) return remote.queries.get(scopedKey);
-    }
-    if (
-      getFunctionName(reference) === "scout/activity:get" &&
-      args &&
-      typeof args === "object" &&
-      "threadId" in args &&
-      args.threadId === "missing-thread"
-    )
-      return null;
-    if (args && typeof args === "object" && "sessionId" in args) {
-      const scopedKey = `${getFunctionName(reference)}:${String(args.sessionId)}`;
-      if (remote.queries.has(scopedKey)) return remote.queries.get(scopedKey);
-    }
-    return remote.queries.get(getFunctionName(reference));
+    return readQuery(getFunctionName(reference), args);
   },
   useAction: (reference: FunctionReference<"action">) => {
     if (getFunctionName(reference) === "tasks/screenshots:imageUrl") return remote.screenshotUrl;
@@ -162,6 +182,7 @@ beforeEach(() => {
   remote.messageStatus = "Exhausted";
   remote.loadEarlierMessages.mockReset();
   remote.authenticated = true;
+  remote.authLoading = false;
   remote.queryCalls.mockClear();
   remote.screenshotUrl.mockReset().mockResolvedValue(null);
   remote.revision = 0;
@@ -226,6 +247,9 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  for (const client of queryClients) client.clear();
+  queryClients.clear();
+  remote.subscribers.clear();
   vi.restoreAllMocks();
 });
 
@@ -291,14 +315,42 @@ async function openPlay(path = "/play") {
       queries: {
         retry: false,
         queryFn: ({ queryKey }) => {
-          if (queryKey[1] === "scout/sites:count") return { count: 0, hasMore: false };
-          if (queryKey[1] === "scout/sites:list" || queryKey[1] === "scout/activity:list") {
-            return { page: [], isDone: true, continueCursor: "" };
-          }
-          throw new Error("Unexpected TanStack query");
+          const current = readSsrQuery(queryKey);
+          if (current !== undefined) return current;
+          return new Promise<unknown>((resolve) => {
+            const unsubscribe = subscribe(() => {
+              const next = readSsrQuery(queryKey);
+              if (next === undefined) return;
+              unsubscribe();
+              resolve(next);
+            });
+          });
         },
       },
     },
+  });
+  queryClients.add(queryClient);
+  const url = new URL(path, "http://localhost");
+  const threadId = url.pathname.startsWith("/tasks/")
+    ? url.pathname.slice("/tasks/".length)
+    : url.searchParams.get("thread");
+  if (threadId) {
+    const options = convexQuery(api.scout.activity.get, { threadId });
+    const initial = readSsrQuery(options.queryKey);
+    if (initial !== undefined) queryClient.setQueryData(options.queryKey, initial);
+    queryClient.setQueryData(
+      convexQuery(api.scout.activity.messages, {
+        threadId,
+        paginationOpts: { numItems: 50, cursor: null },
+      }).queryKey,
+      { page: remote.messages, isDone: remote.messageStatus === "Exhausted", continueCursor: "" },
+    );
+  }
+  subscribe(() => {
+    for (const query of queryClient.getQueryCache().getAll()) {
+      const value = readSsrQuery(query.queryKey);
+      if (value !== undefined) queryClient.setQueryData(query.queryKey, value);
+    }
   });
   render(
     <QueryClientProvider client={queryClient}>
@@ -2046,7 +2098,7 @@ test.each([
         site: "samebase.com",
       }),
     );
-    expect(await screen.findByText("Opening task…")).toBeTruthy();
+    expect(document.querySelector('[aria-busy="true"]')).toBeTruthy();
     expect(screen.getByRole("navigation", { name: "Tasks for samebase.com" })).toBe(nav);
     expect(scrollport.scrollTop).toBe(180);
     expect(screen.queryByRole("textbox", { name: "Message Scout" })).toBeNull();
@@ -2779,4 +2831,37 @@ test("follows new browser sessions until the user chooses a session", async () =
   expect(screen.getByTitle("Scout's live browser").getAttribute("src")).toBe("about:blank#second");
   expect(remote.sendManaged).not.toHaveBeenCalled();
   expect(remote.stopManaged).not.toHaveBeenCalled();
+});
+
+test("an anonymous SSR result waits for auth and live access updates on a private task", async () => {
+  remote.authenticated = false;
+  remote.authLoading = true;
+  remote.queries.set("scout/activity:get", null);
+  await openPlay("/tasks/game-thread?view=chat");
+  expect(screen.queryByText("Session unavailable")).toBeNull();
+  expect(screen.queryByRole("textbox", { name: "Message Scout" })).toBeNull();
+  expect(document.querySelector('[aria-busy="true"]')).toBeTruthy();
+
+  act(() => {
+    remote.authLoading = false;
+    remote.authenticated = true;
+    remote.queries.set(
+      "scout/activity:get",
+      session({ title: "Private account review", purpose: { kind: "review" } }),
+    );
+    remote.revision += 1;
+    remote.subscribers.forEach((notify) => notify());
+  });
+  expect(await screen.findByRole("heading", { name: "Private account review" })).toBeTruthy();
+  expect(await screen.findByRole("textbox", { name: "Message Scout" })).toBeTruthy();
+
+  act(() => {
+    remote.authenticated = false;
+    remote.queries.set("scout/activity:get", null);
+    remote.revision += 1;
+    remote.subscribers.forEach((notify) => notify());
+  });
+  expect(await screen.findByText("Session unavailable")).toBeTruthy();
+  expect(screen.queryByRole("heading", { name: "Private account review" })).toBeNull();
+  expect(screen.queryByRole("textbox", { name: "Message Scout" })).toBeNull();
 });

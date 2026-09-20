@@ -2,6 +2,7 @@
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   RouterProvider,
   createMemoryHistory,
@@ -43,49 +44,51 @@ vi.mock("convex/react", () => ({
   useMutation: () => remote.mutation,
   useQuery: (reference: FunctionReference<"query">, args?: unknown) => {
     if (args === "skip") return undefined;
-    switch (getFunctionName(reference)) {
-      case "accounts:currentViewerAccess":
-        return {
-          kind: "account",
-          accessKeys: readAccessKeysForRole(remote.admin ? "role_staff" : "role_member"),
-        };
-      case "scout/scouts:list":
-        return [
-          { ...remote.scout, agentMail: remote.authenticated ? remote.scout.agentMail : null },
-        ];
-      case "scout/scouts:get":
-        return { ...remote.scout, agentMail: remote.authenticated ? remote.scout.agentMail : null };
-      case "scout/serviceAccounts:list":
-        if (!remote.authenticated)
-          return [
-            {
-              kind: "summary",
-              _id: "account-github",
-              scoutId: remote.scout._id,
-              serviceName: "GitHub",
-              serviceDomain: "github.com",
-            },
-          ];
+    return readQuery(getFunctionName(reference));
+  },
+}));
+
+function readQuery(name: string) {
+  switch (name) {
+    case "accounts:currentViewerAccess":
+      return {
+        kind: "account",
+        accessKeys: readAccessKeysForRole(remote.admin ? "role_staff" : "role_member"),
+      };
+    case "scout/scouts:list":
+      return [{ ...remote.scout, agentMail: remote.authenticated ? remote.scout.agentMail : null }];
+    case "scout/scouts:get":
+      return { ...remote.scout, agentMail: remote.authenticated ? remote.scout.agentMail : null };
+    case "scout/serviceAccounts:list":
+      if (!remote.authenticated)
         return [
           {
-            kind: "details",
+            kind: "summary",
             _id: "account-github",
             scoutId: remote.scout._id,
             serviceName: "GitHub",
             serviceDomain: "github.com",
-            identifier: "conrad-scout",
-            authenticationEvidence: { kind: "succeeded", checkedAt: 1 },
-            loginMethod: { kind: "managed_password", credentialHost: "github.com", createdAt: 1 },
           },
         ];
-      case "scout/scouts:resources":
-        if (!remote.admin) throw new Error("Member queried private resources");
-        return { agentMail: remote.scout.agentMail, firecrawl: remote.scout.firecrawl };
-      default:
-        throw new Error("Unexpected query: " + getFunctionName(reference));
-    }
-  },
-}));
+      return [
+        {
+          kind: "details",
+          _id: "account-github",
+          scoutId: remote.scout._id,
+          serviceName: "GitHub",
+          serviceDomain: "github.com",
+          identifier: "conrad-scout",
+          authenticationEvidence: { kind: "succeeded", checkedAt: 1 },
+          loginMethod: { kind: "managed_password", credentialHost: "github.com", createdAt: 1 },
+        },
+      ];
+    case "scout/scouts:resources":
+      if (!remote.admin) throw new Error("Member queried private resources");
+      return { agentMail: remote.scout.agentMail, firecrawl: remote.scout.firecrawl };
+    default:
+      throw new Error("Unexpected query: " + name);
+  }
+}
 
 afterEach(() => {
   remote.authenticated = true;
@@ -134,7 +137,23 @@ async function openPage(path: string) {
     routeTree: root.addChildren([scouts.addChildren([index, detail])]),
     history: createMemoryHistory({ initialEntries: [path] }),
   });
-  render(<RouterProvider router={router} />);
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+        queryFn: ({ queryKey }) => {
+          const name = queryKey[1];
+          if (typeof name !== "string") throw new Error("Missing Convex query name");
+          return readQuery(name);
+        },
+      },
+    },
+  });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  );
   await router.load();
   return router;
 }

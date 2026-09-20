@@ -1,4 +1,6 @@
-import { useAction, useQuery } from "convex/react";
+import { useAction } from "convex/react";
+import { convexQuery } from "@convex-dev/react-query";
+import { useSuspenseQuery } from "@tanstack/react-query";
 import type { FunctionReturnType } from "convex/server";
 import {
   ArrowLeftIcon,
@@ -8,6 +10,7 @@ import {
   MaximizeIcon,
 } from "lucide-react";
 import {
+  Suspense,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -38,11 +41,19 @@ type ImageState =
   | { kind: "failed"; message: string };
 
 export function TaskWalkthrough({ sessionId }: { sessionId: Id<"agentsApiSessions"> }) {
-  return <SessionWalkthrough key={sessionId} sessionId={sessionId} />;
+  return (
+    <Suspense
+      fallback={
+        <section aria-label="Task walkthrough" aria-busy="true" className="h-full min-h-0" />
+      }
+    >
+      <SessionWalkthrough key={sessionId} sessionId={sessionId} />
+    </Suspense>
+  );
 }
 
 function SessionWalkthrough({ sessionId }: { sessionId: Id<"agentsApiSessions"> }) {
-  const result = useQuery(api.tasks.walkthrough.get, { sessionId });
+  const { data: result } = useSuspenseQuery(convexQuery(api.tasks.walkthrough.get, { sessionId }));
   const imageUrls = useScreenshotUrls();
   const [selection, setSelection] = useState(0);
   const [loadedCaptureId, setLoadedCaptureId] = useState<Capture["id"] | null>(null);
@@ -69,9 +80,6 @@ function SessionWalkthrough({ sessionId }: { sessionId: Id<"agentsApiSessions"> 
     if (captionScroll.current) captionScroll.current.scrollTop = 0;
   }
 
-  if (result === undefined) {
-    return <section aria-label="Task walkthrough" aria-busy="true" className="h-full min-h-0" />;
-  }
   if (result === null) {
     return (
       <WalkthroughNotice title="Walkthrough unavailable">

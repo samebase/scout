@@ -2,6 +2,7 @@
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   createMemoryHistory,
   createRootRoute,
@@ -263,7 +264,30 @@ async function open(path = "/lab") {
     ]),
     history: createMemoryHistory({ initialEntries: [path] }),
   });
-  render(<RouterProvider router={router} />);
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+        queryFn: ({ queryKey }) => {
+          const name = queryKey[1];
+          if (typeof name !== "string") throw new Error("Missing Convex query name");
+          const args = queryKey[2];
+          remote.queryCalls(name, args);
+          const key = `${name}:${JSON.stringify(args)}`;
+          const value = remote.queries.has(key)
+            ? remote.queries.get(key)
+            : remote.queries.get(name);
+          if (value instanceof Error) throw value;
+          return value;
+        },
+      },
+    },
+  });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  );
   await router.load();
   return router;
 }

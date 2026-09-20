@@ -1,6 +1,6 @@
 # TanStack Start inside a Convex HTTP action
 
-Tested on September 20, 2026. TanStack Start can render directly in a hosted Convex
+Tested on September 21, 2026. TanStack Start can render directly in a hosted Convex
 HTTP action with the versions Scout currently uses. Scout's real public homepage
 now uses this renderer. No Cloudflare server, Node action, or stream polyfill is
 needed at runtime.
@@ -26,6 +26,14 @@ This is Scout's `/sites/$site` route. Its site heading, public reviews, and site
 sidebar are present in View Page Source. Direct visits work with no query string,
 with `?scope=public`, and with `?scope=public&view=tasks`. The site records are
 synthetic preview data; the route and components are the same ones Scout uses.
+
+Public task reviews also render their title, task navigation, initial transcript,
+and saved walkthrough text through the same query integration. Screenshot URLs and
+interactive browser controls load in the browser. `/scouts` and `/scouts/$slug`
+render the public directory and profile, including service names. Account identifiers
+and runtime resources still require authenticated queries. Task URLs with
+`scope=mine` use the SPA shell; a private task opened without that parameter also
+returns no private data and waits for browser authentication.
 
 ## Current query integration
 
@@ -64,8 +72,27 @@ node apps/scout/scripts/verify-ssr.ts https://clever-vole-526.eu-west-1.convex.s
 
 The check parses HTML without executing JavaScript. It requires homepage cards,
 a filtered homepage, site identity and reviews, About content, private-view
-shells, and TanStack's unknown-route status. Unit tests also delay an official
+shells, and TanStack's unknown-route status. It follows a public review and Scout
+profile from the site HTML to check their content, transcript, and walkthrough.
+Unit tests also delay an official
 Convex query and require the renderer to wait for its HTML and hydration data.
+
+Verified for public task and Scout routes on the hosted preview on September 21, 2026:
+
+- All 20 raw-response checks passed, including a task URL without search parameters,
+  its transcript, walkthrough, personal-scope shell, and Scout directory/profile.
+- Separate checks found no private fixture titles, Scout email, inbox IDs, or browser
+  profile names in anonymous HTML or serialized query data, including a real private task URL.
+- Chrome loaded and reloaded the task and profile, switched review views, and navigated
+  back to the directory without warnings or errors. The private task showed sign-in.
+- With SSR disabled, direct task and Scout URLs returned the SPA shell and loaded in
+  Chrome. The preview is left enabled. Production was not changed.
+- The hosted walkthrough fixture has no screenshots. Its empty notice renders on the
+  server; a separate delayed-query test uses the real walkthrough component to verify
+  summary, check, and step HTML and that screenshot actions run only in the browser.
+
+The authenticated transition is covered by component tests using the real query cache.
+No signed-in preview browser session was used for this pass.
 
 Verified on the hosted `clever-vole-526` preview on September 20, 2026:
 

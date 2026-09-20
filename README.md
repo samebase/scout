@@ -159,7 +159,8 @@ uploads the same `apps/scout/dist/client` files to Convex Static Hosting. Previe
 not change the production `convex.site` app.
 
 Preview builds also upload browser assets to the matching Convex preview. On
-`convex.site`, the homepage and public site pages render their initial data into HTML.
+`convex.site`, the homepage, public site and task pages, and Scout directory and
+profiles render their initial data into HTML.
 The router uses the official Convex TanStack Query adapter and TanStack SSR query
 integration. Ordinary queries use `useSuspenseQuery(convexQuery(...))`; paginated
 lists use the shared `useSsrPaginatedQuery` bridge while native Convex hooks retain

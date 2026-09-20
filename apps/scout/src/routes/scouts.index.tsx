@@ -1,5 +1,7 @@
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useAction, useQuery } from "convex/react";
+import { useAction } from "convex/react";
+import { convexQuery } from "@convex-dev/react-query";
+import { useSuspenseQuery } from "@tanstack/react-query";
 import { ConvexError } from "convex/values";
 import type { FunctionReturnType } from "convex/server";
 import { LoaderCircleIcon, PlusIcon, XIcon } from "lucide-react";
@@ -53,13 +55,14 @@ function ScoutsIndexPage() {
     viewer?.kind === "account" && canAccess("access_scout_manage", viewer.accessKeys);
   const search = Route.useSearch();
   const navigate = useNavigate({ from: "/scouts/" });
-  const scouts = useQuery(api.scout.scouts.list);
-  const serviceAccounts = useQuery(api.scout.serviceAccounts.list, {});
+  const { data: scouts } = useSuspenseQuery(convexQuery(api.scout.scouts.list, {}));
+  const { data: serviceAccounts } = useSuspenseQuery(
+    convexQuery(api.scout.serviceAccounts.list, {}),
+  );
   const registrationOpen = canManage && search.view === "register";
   const [registrationSubmitting, setRegistrationSubmitting] = useState(false);
   const registrationButton = useRef<HTMLButtonElement>(null);
-  const servicesByScout =
-    serviceAccounts === undefined ? undefined : groupServicesByScout(serviceAccounts);
+  const servicesByScout = groupServicesByScout(serviceAccounts);
 
   const closeRegistration = () => {
     if (registrationSubmitting) {
@@ -77,7 +80,7 @@ function ScoutsIndexPage() {
         </div>
         <div className="flex items-center gap-3 sm:pb-1">
           <p className="sr-only" aria-live="polite">
-            {scouts !== undefined && `Showing ${scouts.length}`}
+            {`Showing ${scouts.length}`}
           </p>
           {canManage && (
             <Button
@@ -105,9 +108,7 @@ function ScoutsIndexPage() {
         />
       ) : null}
 
-      {scouts === undefined ? (
-        <div className="min-h-40" aria-busy="true" />
-      ) : scouts.length === 0 ? (
+      {scouts.length === 0 ? (
         <div className="surface-panel border-dashed px-5 py-16 text-center">
           <p className="text-base font-semibold">No Scouts yet</p>
           {canManage && (
@@ -119,7 +120,7 @@ function ScoutsIndexPage() {
       ) : (
         <ul className="grid gap-4" aria-label="Scouts">
           {scouts.map((scout) => {
-            const services = servicesByScout?.get(scout._id) ?? [];
+            const services = servicesByScout.get(scout._id) ?? [];
 
             return (
               <li key={scout._id} className="surface-panel overflow-hidden">

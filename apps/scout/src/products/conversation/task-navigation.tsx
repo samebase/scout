@@ -1,8 +1,8 @@
 import { PaneFrame } from "@samebase/sidebars/PaneFrame";
 import { useSidebarActions } from "@samebase/sidebars/SidebarRuntime";
-import { Link } from "@tanstack/react-router";
+import { ClientOnly, Link } from "@tanstack/react-router";
 import { ArrowLeftIcon, EarthIcon, LockKeyholeIcon } from "lucide-react";
-import { usePaginatedQuery } from "convex/react";
+import { useSsrPaginatedQuery } from "#lib/useSsrPaginatedQuery";
 import type { FunctionReturnType } from "convex/server";
 import { api } from "../../../convex/_generated/api";
 import { LoadOnScroll } from "#components/load-on-scroll";
@@ -27,7 +27,7 @@ export function TaskNavigation({
   view: "walkthrough" | "chat";
 }) {
   const scope = search.scope ?? "public";
-  const tasks = usePaginatedQuery(
+  const tasks = useSsrPaginatedQuery(
     api.scout.activity.list,
     { site, scope },
     { initialNumItems: 10 },
@@ -133,12 +133,14 @@ function TaskLink({
             dateTime={new Date(task.createdAt).toISOString()}
             className="text-xs text-muted-foreground"
           >
-            {new Date(task.createdAt).toLocaleString(undefined, {
-              month: "short",
-              day: "numeric",
-              hour: "numeric",
-              minute: "2-digit",
-            })}
+            <ClientOnly fallback={new Date(task.createdAt).toISOString().slice(0, 10)}>
+              {new Date(task.createdAt).toLocaleString(undefined, {
+                month: "short",
+                day: "numeric",
+                hour: "numeric",
+                minute: "2-digit",
+              })}
+            </ClientOnly>
           </time>
         </span>
       </div>
