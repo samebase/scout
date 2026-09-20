@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-20T11:54:00Z
+- **Last updated:** 2026-09-20T13:49:43Z
 
 ## Log
 
@@ -1659,8 +1659,14 @@ Task headers, status rows, and footer dividers extend across the main pane on wi
 Chat and walkthrough content retain the shared centered width, including their controls
 (`apps/scout/src/products/conversation/page.tsx`, `apps/scout/src/components/task-walkthrough.tsx`).
 
-### 2026-09-20 - working tree - v266
+### 2026-09-20 - 227e930 - v266
 
 Moved production to US Convex while preserving reviews, accounts, credits, and stored files.
 The submission site, Cloudflare build, Polar webhook, checkout returns, and handoff links
 now use the US deployment. Existing R2 media and workspace files remain in the same buckets.
+
+### 2026-09-20 - working tree - v267
+
+Walkthrough screenshots use the available task width while the explanation column stays compact.
+The view tabs, step controls, and task costs align with the wider layout
+(`apps/scout/src/components/task-walkthrough.tsx`, `apps/scout/src/products/conversation/page.tsx`).

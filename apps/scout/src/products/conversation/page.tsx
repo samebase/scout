@@ -1008,7 +1008,12 @@ function ConversationSession({
     >
       {kind === "review" && (
         <div data-sidebar-layout-part="pane-header">
-          <div className="mx-auto flex w-full min-w-0 max-w-page items-center justify-between gap-2 px-3">
+          <div
+            className={cn(
+              "mx-auto flex w-full min-w-0 items-center justify-between gap-2 px-3",
+              !showingWalkthrough && "max-w-page",
+            )}
+          >
             {managedId && (
               <ReviewViews
                 threadId={threadId}
@@ -1198,7 +1203,7 @@ function ConversationSession({
       </div>
       {thread.canControl && managedId ? (
         <div className="shrink-0 border-t">
-          <div className="mx-auto w-full max-w-page p-3">
+          <div className={cn("mx-auto w-full p-3", !showingWalkthrough && "max-w-page")}>
             {cost && <SessionCost session={cost} />}
             <PendingTaskMessage
               pendingMessage={pendingMessage}
