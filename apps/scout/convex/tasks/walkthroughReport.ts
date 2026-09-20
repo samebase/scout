@@ -39,8 +39,10 @@ export const walkthroughDescription = outdent`
   Select the fewest screenshots that substantiate the findings and explain necessary steps.
   Do not include every captured image or repeat an image without a distinct reason.
   Use fresh evidence for new findings; an older, unrelated screen is not proof of them.
-  This replaces the previous walkthrough, so submit the complete updated report,
-  retaining earlier findings that still apply. It does not end the task.
+  This replaces the previous walkthrough, so submit the complete cumulative report,
+  not just the latest follow-up. Keep earlier findings unless evidence about the same
+  behavior corrects them or the user explicitly asks to remove them or replace the
+  review's scope. It does not end the task.
 
   Include 1–10 concrete checks of the requested behavior, each with a short explanation.
   Use passed for verified success, failed for an observed product failure, and untested
@@ -58,7 +60,13 @@ export function reportInstructions(previous: Doc<"agentsApiSessions">["walkthrou
 
     ${previousWalkthroughContext(previous)}
 
-    Judge whether the user's requested behavior worked. Attempting or inspecting something
+    The review covers the accumulated findings, not only the latest user request.
+    Use findings from both the previous report and the new draft. A narrower draft or an
+    omitted check is not evidence that an earlier issue was resolved. Keep unresolved
+    failures and limitations when adding unrelated successful checks. Apply the same
+    correction and explicit scope-change rules to findings supplied only in the draft.
+
+    Judge whether the behavior covered by this review worked. Attempting or inspecting something
     is not a successful outcome. A missing product capability is a limitation, not a passed
     check merely because you confirmed it was missing. Distinguish an observed product
     failure from a task you could not verify because of access or an external service.
