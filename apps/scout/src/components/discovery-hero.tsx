@@ -32,7 +32,7 @@ export function DiscoveryHero({
           </p>
           <ul className="mt-5 list-disc space-y-1.5 pl-5 text-[17px] leading-relaxed text-foreground marker:text-primary @max-[640px]/hero:text-base">
             <li>Send an AI agent to try a website for you.</li>
-            <li>See what happened with screenshots and a replay.</li>
+            <li>See what happened with screenshots and a video replay.</li>
             <li>Browse public reviews before starting your own.</li>
           </ul>
         </div>
