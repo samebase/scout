@@ -1,6 +1,8 @@
 /// <reference types="vite/client" />
 import { R2 } from "@convex-dev/r2";
 import { convexTest } from "convex-test";
+import { Firecrawl } from "firecrawl";
+import { chromium } from "playwright-core";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
@@ -9,6 +11,7 @@ import type { BrowserScreenshot } from "../scout/playwrightBrowser";
 import { ADMIN_EMAIL, insertTestAccount } from "../testing/accounts";
 import { MAX_SCREENSHOT_BYTES } from "./screenshotModel";
 import { saveScreenshot } from "./screenshots";
+import { executeTaskTool } from "./execution";
 
 const modules = {
   ...import.meta.glob("../**/*.ts"),
@@ -366,6 +369,53 @@ it("keeps ready and failed states terminal when completion or failure arrives ag
   expect(await t.backend.run((ctx) => ctx.db.get(failed))).toMatchObject({
     state: { kind: "failed", message: "Original failure" },
   });
+});
+
+it("lists saved screenshots and saves their walkthrough while the browser cannot reconnect", async () => {
+  vi.stubEnv("FIRECRAWL_API_KEY", "test-firecrawl-key");
+  const t = await setup("private");
+  const captureId = await t.reserve("capture-1", "browser-1");
+  await t.finish(captureId);
+  const connect = vi.spyOn(chromium, "connectOverCDP").mockRejectedValue(new Error("CDP timeout"));
+  const recovery = vi
+    .spyOn(Firecrawl.prototype, "listBrowsers")
+    .mockRejectedValue(new Error("Browser recovery unavailable"));
+  const execute = (name: string, input: unknown) =>
+    t.backend.action(async (ctx) => {
+      const current = await ctx.runQuery(internal.tasks.sessions.runtime, {
+        sessionId: t.sessionId,
+      });
+      return await executeTaskTool(ctx, {
+        ...current,
+        call: { name, callId: name, arguments: input },
+      });
+    });
+  const listed = await execute("list_screenshots", {});
+  if (listed.kind !== "success") throw new Error(listed.error);
+  const captures: unknown = JSON.parse(listed.output);
+  expect(captures).toEqual([
+    {
+      id: captureId,
+      note,
+      browserSequence: 1,
+      operationSequence: 1,
+      state: { kind: "ready", metadata: image.metadata },
+    },
+  ]);
+  const report = {
+    summary: "The calculator returned the expected result.",
+    checks: [{ label: "Calculation", result: "passed", explanation: "The result matched." }],
+    sections: [{ heading: "Result", explanation: note, captureIds: [captureId] }],
+  };
+  await expect(execute("save_walkthrough", report)).resolves.toEqual({
+    kind: "success",
+    output: JSON.stringify({ saved: true, sections: 1 }),
+  });
+  const session = await t.backend.run((ctx) => ctx.db.get(t.sessionId));
+  expect(session?.walkthrough).toEqual(report);
+  expect(session?.browser?.providerSessionId).toBe("browser-1");
+  expect(connect).not.toHaveBeenCalled();
+  expect(recovery).not.toHaveBeenCalled();
 });
 
 it("rejects invalid walkthrough references atomically and keeps the previous report", async () => {

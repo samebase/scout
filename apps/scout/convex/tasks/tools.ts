@@ -159,6 +159,24 @@ export async function runtimeTools(
   const tools: ToolSet = {
     ...browser.tools,
     create_new_firecrawl_session: createSessionToolWithBilling,
+    browser_close: {
+      ...browser.tools.browser_close,
+      execute: async (_, execution) => {
+        await beforeDispatch();
+        execution.abortSignal?.throwIfAborted();
+        if (!handle) return { success: true, alreadyClosed: true };
+        const result = await browserBilling.dependencies.deleteBrowser(handle.providerSessionId);
+        if (!result.success)
+          throw new Error(result.error?.trim() || "Firecrawl did not stop the browser session");
+        handle = null;
+        browserBilling.closed();
+        return {
+          success: true,
+          sessionDurationMs: result.sessionDurationMs ?? null,
+          creditsBilled: result.creditsBilled ?? null,
+        };
+      },
+    },
     list_screenshots: tool({
       description: outdent`
         List this task's saved screenshots in capture order, with IDs, notes, page URLs,
@@ -253,6 +271,10 @@ export async function runtimeTools(
     if (
       handle &&
       requestedTool !== null &&
+      requestedTool !== "create_new_firecrawl_session" &&
+      requestedTool !== "browser_close" &&
+      requestedTool !== "list_screenshots" &&
+      requestedTool !== "save_walkthrough" &&
       requestedTool !== "bash" &&
       requestedTool !== "set_review_site" &&
       requestedTool !== "set_activity_step" &&
