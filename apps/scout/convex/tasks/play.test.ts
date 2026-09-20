@@ -3,6 +3,7 @@ import workflowTest from "@convex-dev/workflow/test";
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { api, internal } from "../_generated/api";
+import type { Doc } from "../_generated/dataModel";
 import schema from "../schema";
 import { requireRuntimeTool } from "../scout/lib/runtimeTool";
 import { insertTestAccount } from "../testing/accounts";
@@ -125,4 +126,29 @@ it("keeps Play guidance and activity updates off review tasks", async () => {
   expect(await t.member.query(api.scout.activity.get, { threadId: t.sessionId })).toMatchObject({
     purpose: { kind: "review" },
   });
+});
+
+it("supplies the current saved walkthrough without relying on conversation history", async () => {
+  const t = await setup("review");
+  expect(await t.instructions()).not.toContain("<scout_walkthrough_context>");
+  const walkthrough = {
+    summary: "The budget comparison could not be completed.",
+    checks: [{ label: "Set budget", result: "untested", explanation: "No control found." }],
+    sections: [],
+  } satisfies NonNullable<Doc<"agentsApiSessions">["walkthrough"]>;
+  await t.backend.run((ctx) => ctx.db.patch(t.sessionId, { walkthrough }));
+  const stored = await t.backend.run((ctx) => ctx.db.get(t.sessionId));
+  expect(stored?.walkthrough).toEqual(walkthrough);
+  expect(await t.instructions()).toContain(JSON.stringify(stored?.walkthrough));
+
+  const revised = {
+    ...walkthrough,
+    summary: "Activities persisted; the budget remains unverified.",
+  };
+  await t.backend.run((ctx) => ctx.db.patch(t.sessionId, { walkthrough: revised }));
+  const instructions = await t.instructions();
+  const updated = await t.backend.run((ctx) => ctx.db.get(t.sessionId));
+  expect(updated?.walkthrough).toEqual(revised);
+  expect(instructions).toContain(JSON.stringify(updated?.walkthrough));
+  expect(instructions).not.toContain(walkthrough.summary);
 });

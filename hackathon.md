@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-20T13:49:43Z
+- **Last updated:** 2026-09-20T14:17:22Z
 
 ## Log
 
@@ -1665,8 +1665,15 @@ Moved production to US Convex while preserving reviews, accounts, credits, and s
 The submission site, Cloudflare build, Polar webhook, checkout returns, and handoff links
 now use the US deployment. Existing R2 media and workspace files remain in the same buckets.
 
-### 2026-09-20 - working tree - v267
+### 2026-09-20 - 5497ece - v267
 
 Walkthrough screenshots use the available task width while the explanation column stays compact.
 The view tabs, step controls, and task costs align with the wider layout
 (`apps/scout/src/components/task-walkthrough.tsx`, `apps/scout/src/products/conversation/page.tsx`).
+
+### 2026-09-20 - working tree - v268
+
+Both task engines receive the saved walkthrough when continuing a review, with guidance to
+retain relevant findings and revise conclusions as evidence changes. Follow-ups maintain one
+current report, while the visible chat keeps the user's original message
+(`apps/scout/convex/tasks/instructions.ts`, `apps/scout/convex/tasks/agentsApi.ts`).

@@ -193,7 +193,8 @@ export async function runtimeTools(
         Each section explains an observed step,
         result, or problem and references 1–3 screenshots from this task. The section order
         is the reading order. Omit repetitive setup and distinguish findings from assumptions.
-        This replaces the previous walkthrough; it does not end the task.
+        This replaces the previous walkthrough, so submit the complete updated report,
+        retaining earlier findings that still apply. It does not end the task.
 
         Include 1–10 concrete checks of the requested behavior, each with a short explanation.
         Use passed for verified success, failed for an observed product failure, and untested

@@ -14,7 +14,7 @@ import {
 } from "../scout/runtimeInstructions";
 import { REVIEW_INSTRUCTIONS } from "../scout/review";
 import { playInstructions } from "../scout/play";
-import { TASK_INSTRUCTIONS } from "./instructions";
+import { previousWalkthroughContext, TASK_INSTRUCTIONS } from "./instructions";
 import { runtimeTools } from "./tools";
 
 export async function taskInstructions(
@@ -38,6 +38,8 @@ export async function taskInstructions(
     ${serviceAccountLoginInstructions(accounts)}
 
     ${TASK_INSTRUCTIONS}
+
+    ${previousWalkthroughContext(session.walkthrough)}
 
     ${
       research?.state.kind === "completed"
