@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-19T21:40:43Z
+- **Last updated:** 2026-09-20T01:01:37Z
 
 ## Log
 
@@ -1632,9 +1632,16 @@ verification codes stay hidden; existing account and remote-browser exclusions r
 The recording choice now describes this capture and uses a new consent version
 (`apps/scout/src/lib/posthog.ts`, `apps/scout/shared/sessionRecording.ts`).
 
-### 2026-09-19 - working tree - v261
+### 2026-09-19 - 4e38b00 - v261
 
 Site details, task views, and general pages share a centered 1,200px content limit.
 Walkthrough navigation and task costs stay within that width; smaller screens remain fluid,
 and narrower page layouts retain their own limits (`apps/scout/src/style.css`,
 `apps/scout/src/components/task-walkthrough.tsx`, `apps/scout/src/products/conversation/page.tsx`).
+
+### 2026-09-20 - working tree - v262
+
+Saved screenshots can be listed and used in walkthroughs when the browser connection fails.
+Explicit browser closure deletes the remote session and records its closure in Convex;
+replacement creation still requires the previous browser to be closed
+(`apps/scout/convex/tasks/tools.ts`, `apps/scout/convex/tasks/browserCredits.ts`).

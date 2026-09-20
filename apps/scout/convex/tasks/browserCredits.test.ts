@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
 import { Firecrawl } from "firecrawl";
+import { chromium } from "playwright-core";
 import { afterEach, expect, it, vi } from "vite-plus/test";
 import { internal } from "../_generated/api";
 import schema from "../schema";
@@ -51,29 +52,110 @@ async function setup() {
     });
     return { sessionId, userId };
   });
-  const open = async () =>
+  const execute = async (name: string, input: unknown) =>
     await backend.action(async (ctx) => {
       const { session, scout, purpose } = await ctx.runQuery(internal.tasks.sessions.runtime, {
         sessionId,
       });
-      const resource = await runtimeTools(
-        ctx,
-        session,
-        scout,
-        "create_new_firecrawl_session",
-        purpose,
-      );
+      const resource = await runtimeTools(ctx, session, scout, name, purpose);
       try {
-        return await requireRuntimeTool(resource.tools, "create_new_firecrawl_session").execute(
-          { url: "https://example.com" },
-          { toolCallId: "open-1", messages: [], context: undefined },
-        );
+        return await requireRuntimeTool(resource.tools, name).execute(input, {
+          toolCallId: name,
+          messages: [],
+          context: undefined,
+        });
       } finally {
         await resource.dispose();
       }
     });
-  return { backend, open, userId };
+  const open = () => execute("create_new_firecrawl_session", { url: "https://example.com" });
+  return { backend, open, execute, sessionId, userId };
 }
+
+async function setupBrokenBrowser() {
+  const t = await setup();
+  await t.backend.mutation(internal.credits.grantOnSignIn, { userId: t.userId });
+  await t.backend.mutation(internal.tasks.browsers.open, {
+    sessionId: t.sessionId,
+    browser: {
+      providerSessionId: "broken-browser",
+      cdpUrl: "wss://browser.firecrawl.dev/cdp?token=broken",
+      liveViewUrl: null,
+      interactiveLiveViewUrl: null,
+      currentUrl: null,
+    },
+  });
+  const connect = vi.spyOn(chromium, "connectOverCDP").mockRejectedValue(new Error("CDP timeout"));
+  const recovery = vi
+    .spyOn(Firecrawl.prototype, "listBrowsers")
+    .mockRejectedValue(new Error("Browser recovery unavailable"));
+  const create = vi
+    .spyOn(Firecrawl.prototype, "browser")
+    .mockResolvedValue({ success: false, error: "New browser unavailable" });
+  return { ...t, connect, recovery, create };
+}
+
+it("explicitly closes a broken browser without CDP, bills once, and permits replacement only afterward", async () => {
+  const t = await setupBrokenBrowser();
+  const deletion = vi.spyOn(Firecrawl.prototype, "deleteBrowser").mockResolvedValue({
+    success: true,
+    sessionDurationMs: 10_000,
+    creditsBilled: 2,
+  });
+  await expect(t.open()).rejects.toThrow("Close the current browser before opening another");
+  expect(t.create).not.toHaveBeenCalled();
+  expect(deletion).not.toHaveBeenCalled();
+
+  await expect(t.execute("browser_close", {})).resolves.toEqual({
+    success: true,
+    sessionDurationMs: 10_000,
+    creditsBilled: 2,
+  });
+  expect(deletion).toHaveBeenCalledExactlyOnceWith("broken-browser");
+  expect((await t.backend.run((ctx) => ctx.db.get(t.sessionId)))?.browser).toBeNull();
+  const browser = await t.backend.run((ctx) => ctx.db.query("agentsApiBrowserSessions").unique());
+  expect(browser?.lifecycle).toMatchObject({
+    kind: "closed",
+    providerDurationMs: 10_000,
+    creditsBilled: 2,
+  });
+  await expect(t.execute("browser_close", {})).resolves.toEqual({
+    success: true,
+    alreadyClosed: true,
+  });
+  expect(deletion).toHaveBeenCalledOnce();
+  const wallet = await t.backend.run((ctx) => ctx.db.query("creditWallets").unique());
+  expect(wallet?.balanceUnits).toBe(490_000);
+
+  await expect(t.open()).rejects.toThrow("New browser unavailable");
+  expect(t.create).toHaveBeenCalledOnce();
+  expect(t.connect).not.toHaveBeenCalled();
+  expect(t.recovery).not.toHaveBeenCalled();
+});
+
+it.each(["throw", "rejection"])(
+  "retains the browser handle and blocks replacement after deletion %s",
+  async (failure) => {
+    const t = await setupBrokenBrowser();
+    const deletion = vi.spyOn(Firecrawl.prototype, "deleteBrowser");
+    if (failure === "throw") deletion.mockRejectedValue(new Error("Deletion failed"));
+    else deletion.mockResolvedValue({ success: false, error: "Deletion failed" });
+
+    await expect(t.execute("browser_close", {})).rejects.toThrow("Deletion failed");
+    expect(deletion).toHaveBeenCalledExactlyOnceWith("broken-browser");
+    expect((await t.backend.run((ctx) => ctx.db.get(t.sessionId)))?.browser).toMatchObject({
+      providerSessionId: "broken-browser",
+    });
+    const browser = await t.backend.run((ctx) => ctx.db.query("agentsApiBrowserSessions").unique());
+    expect(browser?.lifecycle).toMatchObject({ kind: "active", cleanupError: "Deletion failed" });
+    const wallet = await t.backend.run((ctx) => ctx.db.query("creditWallets").unique());
+    expect(wallet?.balanceUnits).toBe(500_000);
+    await expect(t.open()).rejects.toThrow("Close the current browser before opening another");
+    expect(t.create).not.toHaveBeenCalled();
+    expect(t.connect).not.toHaveBeenCalled();
+    expect(t.recovery).not.toHaveBeenCalled();
+  },
+);
 
 it("charges a created browser with no CDP URL after compensating deletion", async () => {
   const { backend, open, userId } = await setup();
