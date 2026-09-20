@@ -59,9 +59,9 @@ export function AppNavigation() {
             </Link>
           )}
           {canAccess("access_lab", permissions) && (
-            <Link to="/agents" search={{}} className={navigationLinkClass}>
+            <Link to="/lab" search={{}} className={navigationLinkClass}>
               <BotIcon aria-hidden="true" />
-              <span>Agents</span>
+              <span>Lab</span>
             </Link>
           )}
           {canAccess("access_members_manage", permissions) && (

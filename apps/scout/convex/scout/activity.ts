@@ -78,7 +78,7 @@ export const currentActivityValidator = v.union(
     activity: activityValidator,
     destination: v.union(
       v.object({
-        to: v.literal("/agents"),
+        to: v.literal("/lab"),
         search: v.object({ session: v.id("agentsApiSessions") }),
       }),
       v.object({ to: v.literal("/tasks/$thread"), params: v.object({ thread: v.string() }) }),
@@ -130,7 +130,7 @@ export async function currentScoutActivity(
       kind: "visible",
       activity: { ...activity, latestSession: visible ? activity.latestSession : null },
       destination: canInspect
-        ? { to: "/agents", search: { session: session._id } }
+        ? { to: "/lab", search: { session: session._id } }
         : chat?.purpose.kind === "play"
           ? { to: "/play", search: { thread: threadId } }
           : { to: "/tasks/$thread", params: { thread: threadId } },

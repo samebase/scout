@@ -7,7 +7,7 @@ import { useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import { BrowserReplay } from "#components/browser-replay";
 import { Button, buttonVariants } from "#components/ui/button";
-import type { AgentsSearch, BrowserSession, Session } from "./model";
+import type { LabSearch, BrowserSession, Session } from "./model";
 
 export function OpenHandoffBrowserButton({
   sessionId,
@@ -77,10 +77,10 @@ export function BrowserPanel({
   search,
 }: {
   sessionId: Session["_id"];
-  search: AgentsSearch;
+  search: LabSearch;
 }) {
   const browsers = useQuery(api.tasks.sessions.listBrowsers, { sessionId });
-  const navigate = useNavigate({ from: "/agents" });
+  const navigate = useNavigate({ from: "/lab" });
   const selected = browsers?.find((browser) => browser._id === search.browser) ?? browsers?.at(-1);
 
   return (
@@ -147,9 +147,9 @@ function BrowserView({
 }: {
   sessionId: Session["_id"];
   browser: BrowserSession;
-  search: AgentsSearch;
+  search: LabSearch;
 }) {
-  const navigate = useNavigate({ from: "/agents" });
+  const navigate = useNavigate({ from: "/lab" });
   switch (browser.lifecycle.kind) {
     case "closed":
       return (

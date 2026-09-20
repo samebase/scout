@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-20T15:34:40Z
+- **Last updated:** 2026-09-20T16:09:06Z
 
 ## Log
 
@@ -1700,7 +1700,7 @@ Review visibility and site search share one row when their container has room an
 in compact navigation (`apps/scout/src/components/site-filters.tsx`,
 `apps/scout/src/routes/sites.$site.tsx`).
 
-### 2026-09-20 - working tree - v272
+### 2026-09-20 - 181060a - v272
 
 The landing page opens on a low-angle atlas of slowly changing 3D terraces under a blue light sweep.
 The terrain explorer provides drag camera controls and a resizable sidebar for field size, width, depth, peaks, and motion,
@@ -1708,3 +1708,10 @@ with presets, the actual homepage hero as a preview, discrete terrace heights, a
 Denser meshes and higher pixel density smooth the curves, with a 24 fps cap and a smaller mesh on phones.
 The white hero retains static posters and reduced-motion support
 (`apps/scout/src/routes/terrain.tsx`, `apps/scout/src/components/discovery-terrain.tsx`).
+
+### 2026-09-20 - working tree - v273
+
+Renamed the admin task area to Lab at `/lab`. Follow-up walkthroughs use one reporting call
+to combine previous findings with new evidence. Lab shows the request, response, cost, and errors;
+failed updates preserve the existing walkthrough
+(`apps/scout/convex/tasks/walkthroughReport.ts`, `apps/scout/src/tasks/walkthrough-update.tsx`).

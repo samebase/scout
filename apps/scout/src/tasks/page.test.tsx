@@ -22,9 +22,15 @@ import {
 } from "../../shared/handoff";
 import { AppNavigation } from "../components/app-navigation";
 import { RouteAccessOutlet } from "../components/route-access";
-import { Route as AgentsRoute } from "../routes/agents";
+import { Route as LabRoute } from "../routes/lab";
 import { ScoutSidebarProvider } from "../sidebars/ScoutSidebarProvider";
-import { agentsSearch, type BrowserSession, type RequestCheck, type Session } from "./model";
+import {
+  labSearch,
+  type BrowserSession,
+  type RequestCheck,
+  type Session,
+  type WalkthroughReport,
+} from "./model";
 
 const remote = vi.hoisted(() => ({
   queries: new Map<string, unknown>(),
@@ -203,6 +209,7 @@ beforeEach(() => {
   remote.queries.set("tasks/sessions:get", session());
   remote.queries.set("tasks/sessions:listItems", []);
   remote.queries.set("tasks/sessions:listBrowsers", []);
+  remote.queries.set("tasks/walkthroughReports:list", []);
   remote.queries.set("scout/scouts:list", [
     { _id: "disabled-scout", displayName: "Disabled", status: "disabled" },
     { _id: "scout-1", displayName: "Pip", status: "active", availability: "available" },
@@ -223,7 +230,7 @@ function updateQuery(name: string, value: unknown) {
   });
 }
 
-async function open(path = "/agents") {
+async function open(path = "/lab") {
   const root = createRootRoute({
     staticData: { access: "access_public" },
     component: () => (
@@ -235,12 +242,12 @@ async function open(path = "/agents") {
   });
   const route = createRoute({
     getParentRoute: () => root,
-    path: "/agents",
-    staticData: AgentsRoute.options.staticData,
+    path: "/lab",
+    staticData: LabRoute.options.staticData,
     ...omitNullish({
-      component: AgentsRoute.options.component,
-      validateSearch: AgentsRoute.options.validateSearch,
-      errorComponent: AgentsRoute.options.errorComponent,
+      component: LabRoute.options.component,
+      validateSearch: LabRoute.options.validateSearch,
+      errorComponent: LabRoute.options.errorComponent,
     }),
   });
   const router = createRouter({
@@ -268,7 +275,7 @@ test.each(["loading", "cached"])(
     const secondSessionQuery = 'tasks/sessions:get:{"sessionId":"session-2"}';
     remote.queries.set("tasks/sessions:list", [session(), secondSession]);
     remote.queries.set(secondSessionQuery, queryState === "cached" ? secondSession : undefined);
-    const router = await open("/agents?session=session-1");
+    const router = await open("/lab?session=session-1");
     fireEvent.change(await screen.findByRole("textbox", { name: "Message" }), {
       target: { value: "First chat draft" },
     });
@@ -323,7 +330,7 @@ test.each(["loading", "cached"])(
 
 test("keeps navigation available for a missing session and the new session form", async () => {
   remote.queries.set("tasks/sessions:get", null);
-  await open("/agents?session=session-1");
+  await open("/lab?session=session-1");
   expect(await screen.findByText("Task not found.")).toBeTruthy();
   const navigation = screen.getByRole("navigation", { name: "Tasks" });
   fireEvent.click(screen.getByRole("link", { name: "New task" }));
@@ -332,7 +339,7 @@ test("keeps navigation available for a missing session and the new session form"
 });
 
 test("opens session files through a shareable URL and preserves the conversation draft", async () => {
-  const router = await open("/agents?session=session-1");
+  const router = await open("/lab?session=session-1");
   fireEvent.change(await screen.findByRole("textbox", { name: "Message" }), {
     target: { value: "Keep this draft" },
   });
@@ -359,7 +366,7 @@ test("opens session files through a shareable URL and preserves the conversation
 test("opens Walkthrough alongside Chat with Workspace, active controls, and router history intact", async () => {
   remote.queries.set("tasks/sessions:get", session({ kind: "running" }));
   remote.queries.set("tasks/walkthrough:get", { walkthrough: null, captures: [] });
-  const router = await open("/agents?session=session-1");
+  const router = await open("/lab?session=session-1");
   fireEvent.change(await screen.findByRole("textbox", { name: "Message" }), {
     target: { value: "Keep this draft" },
   });
@@ -400,7 +407,7 @@ test("walkthrough remains discoverable before Chat exists and can stop the start
   remote.queries.set("tasks/sessions:get", starting);
   remote.queries.set("tasks/sessions:list", [starting]);
   remote.queries.set("tasks/walkthrough:get", { walkthrough: null, captures: [] });
-  await open("/agents?session=session-1&step=walkthrough");
+  await open("/lab?session=session-1&step=walkthrough");
   expect(await screen.findByRole("heading", { name: "No screenshots saved" })).toBeTruthy();
   expect(screen.queryByRole("link", { name: "Chat" })).toBeNull();
   expect(screen.getByRole("link", { name: "Walkthrough" })).toBeTruthy();
@@ -409,6 +416,237 @@ test("walkthrough remains discoverable before Chat exists and can stop the start
     expect(remote.stop).toHaveBeenCalledExactlyOnceWith({ sessionId: "session-1" }),
   );
 });
+
+function walkthroughReport(): WalkthroughReport {
+  return {
+    billable: true,
+    startedAt: 10_000,
+    model: "openai/gpt-5.6-luna",
+    request: '{"instructions":"Update the saved walkthrough","draft":{"summary":"Export attempt"}}',
+    state: {
+      kind: "completed",
+      finishedAt: 12_500,
+      response: '{"toolCalls":[{"toolName":"save_walkthrough","summary":"Export was verified"}]}',
+      usage: {
+        inputTokens: 120,
+        outputTokens: 80,
+        cachedInputTokens: 20,
+        reasoningTokens: 10,
+        costUsd: 0.002,
+      },
+      report: {
+        summary: "Export was verified",
+        checks: [
+          {
+            label: "Export a file",
+            result: "passed",
+            explanation: "The downloaded file contains the expected data.",
+          },
+        ],
+        sections: [
+          {
+            heading: "Export result",
+            explanation: "The export finished and the file opened.",
+            captureIds: [],
+          },
+        ],
+      },
+    },
+  };
+}
+
+function reportKey(callId: string) {
+  return `tasks/walkthroughReports:inspect:${JSON.stringify({ sessionId: "session-1", callId })}`;
+}
+
+test("opens walkthrough calls beside checks and preserves the Lab sidebar during a delayed call query", async () => {
+  const completed = walkthroughReport();
+  remote.queries.set("tasks/sessions:list", [
+    {
+      ...session(),
+      checks: [{ _id: "check-initial", kind: "initial", status: "approved", cost: 0.000096 }],
+    },
+  ]);
+  remote.queries.set("tasks/walkthroughReports:list", [
+    { callId: "report-1", startedAt: 10_000, model: completed.model, state: "completed" },
+    { callId: "report-2", startedAt: 20_000, model: completed.model, state: "failed" },
+  ]);
+  remote.queries.set(reportKey("report-2"), {
+    ...completed,
+    startedAt: 20_000,
+    state: {
+      kind: "failed",
+      finishedAt: 21_000,
+      error: "Too many requests\nHTTP 429\nCode: rate_limit_exceeded\nRequest ID: req-report-2",
+      response: "Rate limit reached",
+      usage: null,
+    },
+  } satisfies WalkthroughReport);
+  const router = await open("/lab?session=session-1");
+  fireEvent.change(await screen.findByRole("textbox", { name: "Message" }), {
+    target: { value: "Keep this draft" },
+  });
+  const navigation = screen.getByRole("navigation", { name: "Tasks" });
+  const leftPane = document.querySelector<HTMLElement>('[data-pane-side="left"]');
+  if (!leftPane) throw new Error("Missing tasks pane");
+  const carousel = leftPane.closest<HTMLElement>('[data-sidebar-layout-part="carousel"]');
+  if (!carousel) throw new Error("Missing pane viewport");
+  const width = carousel.style.getPropertyValue("--sidebar-layout-left-desktop-width");
+  expect(Number.parseFloat(width)).toBeGreaterThan(0);
+  const scroller = navigation.closest("[data-scroll-restoration-id]");
+  if (!scroller) throw new Error("Session list has no scroll container");
+  scroller.scrollTop = 240;
+  const firstCall = within(navigation).getByRole("link", { name: /Walkthrough update.*completed/ });
+  expect(firstCall.getAttribute("href")).toBe(
+    "/lab?session=session-1&step=walkthrough_update&call=report-1",
+  );
+  expect(within(navigation).getByRole("link", { name: /Request check/ })).toBeTruthy();
+  fireEvent.click(firstCall);
+  const conversation = await screen.findByRole("region", {
+    name: "Walkthrough update conversation",
+  });
+  expect(conversation.getAttribute("aria-busy")).toBe("true");
+  expect(screen.queryByText("Walkthrough update not found.")).toBeNull();
+  expect(screen.queryByText(/Opening|Loading/)).toBeNull();
+  expect(screen.getByRole("navigation", { name: "Tasks" })).toBe(navigation);
+  expect(document.querySelector('[data-pane-side="left"]')).toBe(leftPane);
+  expect(carousel.style.getPropertyValue("--sidebar-layout-left-desktop-width")).toBe(width);
+  expect(scroller.scrollTop).toBe(240);
+
+  updateQuery(reportKey("report-1"), completed);
+  expect(await screen.findByText("Export was verified")).toBeTruthy();
+  expect(conversation.getAttribute("aria-busy")).toBe("false");
+  expect(within(conversation).getByText("View request").closest("details")?.open).toBe(false);
+  expect(within(conversation).getByRole("list", { name: "Review checks" }).textContent).toContain(
+    "Passed: Export a file",
+  );
+  expect(within(conversation).getByRole("heading", { name: "Export result" })).toBeTruthy();
+  expect(conversation.querySelectorAll('[data-slot="message"]')).toHaveLength(2);
+  expect(screen.getByRole("heading", { name: "Call details" })).toBeTruthy();
+  expect(screen.getByText("2.5s")).toBeTruthy();
+  expect(screen.getByText("$0.002000 reported")).toBeTruthy();
+  expect(screen.getByText("Reasoning tokens")).toBeTruthy();
+  const inspector = document.querySelector<HTMLElement>('[data-pane-side="right"]');
+  if (!inspector) throw new Error("Missing call details pane");
+  fireEvent.click(within(inspector).getByText("Request", { exact: true }));
+  fireEvent.click(within(inspector).getByText("Response", { exact: true }));
+  expect(
+    within(inspector).getByText(/"instructions": "Update the saved walkthrough"/),
+  ).toBeTruthy();
+  expect(within(inspector).getByText(/"toolName": "save_walkthrough"/)).toBeTruthy();
+  expect(firstCall.getAttribute("aria-current")).toBe("page");
+  expect(remote.queryCalls).toHaveBeenCalledWith("tasks/walkthroughReports:inspect", {
+    sessionId: "session-1",
+    callId: "report-1",
+  });
+  expect(screen.getByRole("navigation", { name: "Tasks" })).toBe(navigation);
+  expect(document.querySelector('[data-pane-side="left"]')).toBe(leftPane);
+  expect(carousel.style.getPropertyValue("--sidebar-layout-left-desktop-width")).toBe(width);
+  expect(scroller.scrollTop).toBe(240);
+
+  fireEvent.click(screen.getByRole("button", { name: "Workspace" }));
+  fireEvent.click(await screen.findByRole("button", { name: "notes.md" }));
+  expect((await screen.findByLabelText("File contents")).textContent).toBe("Saved research");
+  expect(router.state.location.search).toMatchObject({
+    step: "walkthrough_update",
+    call: "report-1",
+    view: "workspace",
+  });
+  expect(screen.getByRole("heading", { name: "Call details" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Workspace" }));
+  expect(await screen.findByText("Export was verified")).toBeTruthy();
+  fireEvent.click(within(navigation).getByRole("link", { name: /Walkthrough update.*failed/ }));
+  expect((await screen.findByRole("alert")).textContent).toBe(
+    "Too many requests\nHTTP 429\nCode: rate_limit_exceeded\nRequest ID: req-report-2",
+  );
+  expect(screen.queryByText("Export was verified")).toBeNull();
+  fireEvent.click(within(inspector).getByText("Response", { exact: true }));
+  expect(within(inspector).getByText("Rate limit reached")).toBeTruthy();
+  act(() => router.history.back());
+  expect(await screen.findByText("Export was verified")).toBeTruthy();
+  fireEvent.click(within(navigation).getByRole("link", { name: "Chat" }));
+  expect(await screen.findByRole("textbox", { name: "Message" })).toHaveProperty(
+    "value",
+    "Keep this draft",
+  );
+  expect(router.state.location.search.call).toBeUndefined();
+});
+
+test("a running walkthrough update streams its completed report into the same call view", async () => {
+  const completed = walkthroughReport();
+  remote.queries.set(reportKey("report-1"), {
+    ...completed,
+    state: { kind: "running" },
+  } satisfies WalkthroughReport);
+  await open("/lab?session=session-1&step=walkthrough_update&call=report-1");
+  expect(await screen.findByText("Updating walkthrough…")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Hide call details" })).toBeTruthy();
+  expect(screen.getByText("Not reported")).toBeTruthy();
+  expect(screen.queryByText("Input tokens")).toBeNull();
+  updateQuery(reportKey("report-1"), completed);
+  expect(await screen.findByText("Export was verified")).toBeTruthy();
+  expect(screen.queryByText("Updating walkthrough…")).toBeNull();
+  expect(screen.getByText("$0.002000 reported")).toBeTruthy();
+});
+
+test("waits for the call list before selecting its latest report, including missing usage and checks", async () => {
+  remote.queries.delete("tasks/walkthroughReports:list");
+  remote.queries.set(reportKey("report-2"), {
+    ...walkthroughReport(),
+    state: {
+      kind: "completed",
+      finishedAt: 12_500,
+      response: '{"summary":"Report without usage"}',
+      usage: null,
+      report: { summary: "Report without usage", sections: [] },
+    },
+  } satisfies WalkthroughReport);
+  await open("/lab?session=session-1&step=walkthrough_update");
+  expect(
+    (await screen.findByRole("region", { name: "Walkthrough update conversation" })).getAttribute(
+      "aria-busy",
+    ),
+  ).toBe("true");
+  expect(screen.queryByText("Walkthrough update not found.")).toBeNull();
+  updateQuery("tasks/walkthroughReports:list", [
+    { callId: "report-1", startedAt: 5_000, model: "openai/gpt-5.6-luna", state: "completed" },
+    { callId: "report-2", startedAt: 10_000, model: "openai/gpt-5.6-luna", state: "completed" },
+  ]);
+  expect(await screen.findByText("Report without usage")).toBeTruthy();
+  expect(screen.getByText("Not reported")).toBeTruthy();
+  expect(screen.queryByText("Input tokens")).toBeNull();
+  expect(screen.queryByRole("list", { name: "Review checks" })).toBeNull();
+  expect(remote.queryCalls).toHaveBeenCalledWith("tasks/walkthroughReports:inspect", {
+    sessionId: "session-1",
+    callId: "report-2",
+  });
+  expect(remote.queryCalls).not.toHaveBeenCalledWith("tasks/walkthroughReports:inspect", {
+    sessionId: "session-1",
+    callId: "report-1",
+  });
+});
+
+test.each([null, new Error("Call does not belong to this session")])(
+  "an explicit missing walkthrough call never falls back to another call: %s",
+  async (result) => {
+    remote.queries.set("tasks/walkthroughReports:list", [
+      { callId: "report-1", startedAt: 10_000, model: "openai/gpt-5.6-luna", state: "completed" },
+    ]);
+    remote.queries.set(reportKey("report-1"), walkthroughReport());
+    remote.queries.set(reportKey("foreign-report"), result);
+    await open("/lab?session=session-1&step=walkthrough_update&call=foreign-report");
+    expect(
+      await screen.findByText(
+        result instanceof Error ? result.message : "Walkthrough update not found.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText("Export was verified")).toBeNull();
+    expect(remote.queryCalls).not.toHaveBeenCalledWith("tasks/walkthroughReports:inspect", {
+      sessionId: "session-1",
+      callId: "report-1",
+    });
+  },
+);
 
 function initialCheck() {
   return {
@@ -527,7 +765,7 @@ test("keeps one full Chat and chronological sibling checks with independent sele
     { _id: "message-1", kind: "user", sequence: 1, text: "Before the handoff", details: null },
     { _id: "message-2", kind: "assistant", sequence: 2, text: "After the handoff", details: null },
   ]);
-  const router = await open("/agents?session=session-1");
+  const router = await open("/lab?session=session-1");
   fireEvent.change(await screen.findByRole("textbox", { name: "Message" }), {
     target: { value: "Keep my draft" },
   });
@@ -623,7 +861,7 @@ test.each(["", "&step=request_check"])(
     });
     remote.queries.set("tasks/sessions:list", [{ ...session(), checks, hasChat: false }]);
     remote.queries.set(inspectKey(check._id), check);
-    await open(`/agents?session=session-1${search}`);
+    await open(`/lab?session=session-1${search}`);
     expect(await screen.findByRole("heading", { name: "Request check" })).toBeTruthy();
     expect(screen.queryByRole("link", { name: "Chat" })).toBeNull();
     expect(screen.getByText("Original review request")).toBeTruthy();
@@ -642,7 +880,7 @@ test.each([null, new Error("Check does not belong to this session")])(
     });
     remote.queries.set(inspectKey(initial._id), initial);
     remote.queries.set(inspectKey("foreign-check"), result);
-    await open("/agents?session=session-1&step=request_check&check=foreign-check");
+    await open("/lab?session=session-1&step=request_check&check=foreign-check");
     expect(
       await screen.findByText(result instanceof Error ? result.message : "Check not found."),
     ).toBeTruthy();
@@ -674,7 +912,7 @@ test("a bookmarked resume check loads its own evidence capture failure without a
     ...session(),
     checks: [{ _id: check._id, kind: "resume", status: "failed", cost: null }],
   });
-  await open(`/agents?session=session-1&step=request_check&check=${check._id}`);
+  await open(`/lab?session=session-1&step=request_check&check=${check._id}`);
   expect(await screen.findByText("Opening check…")).toBeTruthy();
   updateQuery(inspectKey(check._id), check);
   expect(await screen.findByRole("heading", { name: "Resume check" })).toBeTruthy();
@@ -701,7 +939,7 @@ test("failed model calls retain their stored request and plain-text response", a
     } satisfies RequestCheck["state"],
   };
   remote.queries.set(inspectKey(check._id), check);
-  await open(`/agents?session=session-1&step=request_check&check=${check._id}`);
+  await open(`/lab?session=session-1&step=request_check&check=${check._id}`);
   expect(await screen.findByRole("heading", { name: "Resume check" })).toBeTruthy();
   fireEvent.click(screen.getByText("Request", { exact: true }));
   fireEvent.click(screen.getByText("Response", { exact: true }));
@@ -719,7 +957,7 @@ test("waiting keeps the blocked check reason and checking prevents resume and se
     }),
     checkMessage: "Finish verification before resuming.",
   });
-  await open("/agents?session=session-1");
+  await open("/lab?session=session-1");
   expect((await screen.findByRole("alert")).textContent).toBe(
     "Finish verification before resuming.",
   );
@@ -752,7 +990,7 @@ test("waiting keeps the blocked check reason and checking prevents resume and se
 
 test("admins can open member session files directly without gaining session controls", async () => {
   remote.queries.set("tasks/sessions:get", { ...session(), canControl: false });
-  await open("/agents?session=session-1&view=workspace&file=%2Fworkspace%2Fnotes.md");
+  await open("/lab?session=session-1&view=workspace&file=%2Fworkspace%2Fnotes.md");
   expect((await screen.findByLabelText("File contents")).textContent).toBe("Saved research");
   expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
   expect(screen.queryByRole("textbox", { name: "Bash command" })).toBeNull();
@@ -808,7 +1046,7 @@ test.each([
   },
 ])("starts a task with $model through $label", async ({ engine, label, model, value }) => {
   remote.queries.set("tasks/sessions:get", { ...session(), engine });
-  const router = await open("/agents?scout=scout-1");
+  const router = await open("/lab?scout=scout-1");
   const runtime = await screen.findByRole("combobox", { name: "Model" });
   expect(runtime).toHaveProperty("value", "agents_api");
   expect(screen.getByRole("combobox", { name: "Scout" })).toHaveProperty("value", "scout-1");
@@ -823,7 +1061,7 @@ test.each([
     }),
   );
   expect(await screen.findByText(`Pip · ${label}`)).toBeTruthy();
-  expect(router.state.location.pathname).toBe("/agents");
+  expect(router.state.location.pathname).toBe("/lab");
   expect(router.state.location.search).toEqual({ session: "session-1" });
 });
 
@@ -837,11 +1075,11 @@ test("has one admin task navigation entry", async () => {
     "Reviews",
     "About",
     "Scouts",
-    "Agents",
+    "Lab",
     "Members",
   ]);
-  expect(links.filter((link) => link.getAttribute("href") === "/agents")).toHaveLength(1);
-  expect(screen.queryByRole("link", { name: "Lab" })).toBeNull();
+  expect(links.filter((link) => link.getAttribute("href") === "/lab")).toHaveLength(1);
+  expect(screen.queryByRole("link", { name: "Agents" })).toBeNull();
 });
 
 test("Convex Agent tasks use shared chat readiness and controls", async () => {
@@ -852,7 +1090,7 @@ test("Convex Agent tasks use shared chat readiness and controls", async () => {
     hasChat: true,
     checks: [{ _id: "check-1", kind: "initial", status: "approved" }],
   });
-  await open("/agents?session=session-1");
+  await open("/lab?session=session-1");
   expect(await screen.findByText("Pip · Convex Agent")).toBeTruthy();
   fireEvent.change(screen.getByRole("textbox", { name: "Message" }), {
     target: { value: "Continue" },
@@ -878,7 +1116,7 @@ test("provider-reported model costs use the shared cost details without OpenAI e
       knownSubtotalUsd: 0.25,
     },
   });
-  await open("/agents?session=session-1");
+  await open("/lab?session=session-1");
   fireEvent.click(await screen.findByText("Cost · $0.25 subtotal"));
   expect(screen.getByText("Model cost")).toBeTruthy();
   expect(
@@ -906,7 +1144,7 @@ test("shows the local handoff deadline and keeps expiration visible if cleanup f
       expiresAt,
     }),
   );
-  await open("/agents?session=session-1");
+  await open("/lab?session=session-1");
   expect(
     await screen.findByText(handoffDeadlineMessage(expiresAt, undefined, "open")),
   ).toBeTruthy();
@@ -935,7 +1173,7 @@ test("shows the local handoff deadline and keeps expiration visible if cleanup f
 
 test("a saved link opens a session outside the recent list through the validated get query", async () => {
   remote.queries.set("tasks/sessions:list", []);
-  await open("/agents?session=session-1");
+  await open("/lab?session=session-1");
   expect(await screen.findByLabelText("Message")).toBeTruthy();
   expect(remote.queryCalls).toHaveBeenCalledWith("tasks/sessions:get", {
     sessionId: "session-1",
@@ -963,7 +1201,7 @@ test("admins can inspect another user's transcript without owner controls", asyn
   remote.queries.set("tasks/sessions:listItems", [
     { _id: "reply", sequence: 1, kind: "assistant", text: "I opened the site.", details: "" },
   ]);
-  await open("/agents?session=session-1");
+  await open("/lab?session=session-1");
   expect(await screen.findByText("I opened the site.")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
@@ -975,22 +1213,22 @@ test("invalid session IDs surface the query error without mounting the transcrip
   vi.spyOn(console, "error").mockImplementation(() => {});
   vi.spyOn(console, "warn").mockImplementation(() => {});
   remote.queries.set("tasks/sessions:get", new Error("Invalid session ID"));
-  await open("/agents?session=invalid");
-  expect(await screen.findByRole("heading", { name: "Could not open Agents" })).toBeTruthy();
+  await open("/lab?session=invalid");
+  expect(await screen.findByRole("heading", { name: "Could not open Lab" })).toBeTruthy();
   expect(screen.getByRole("alert").textContent).toBe("Invalid session ID");
   expect(remote.queryCalls).not.toHaveBeenCalledWith("tasks/sessions:listItems", expect.anything());
-  expect(agentsSearch.safeParse({ session: 123 }).success).toBe(false);
+  expect(labSearch.safeParse({ session: 123 }).success).toBe(false);
 });
 
-test("members cannot mount Agents or see its navigation link", async () => {
+test("members cannot mount Lab or see its navigation link", async () => {
   remote.queries.set("accounts:currentViewerAccess", {
     kind: "account",
     role: "role_member",
     accessKeys: ROLE_ACCESS_GRANTS.role_member,
   });
-  await open("/agents?session=session-1");
+  await open("/lab?session=session-1");
   expect(await screen.findByRole("heading", { name: "Access unavailable" })).toBeTruthy();
-  expect(screen.queryByRole("link", { name: "Agents" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "Lab" })).toBeNull();
   expect(remote.queryCalls).not.toHaveBeenCalledWith("tasks/sessions:list", expect.anything());
   expect(remote.queryCalls).not.toHaveBeenCalledWith("tasks/sessions:get", expect.anything());
 });
@@ -1007,7 +1245,7 @@ test("renders transcript order, expandable tool details, and manual pagination",
     },
     { _id: "item-1", sequence: 1, kind: "user", text: "Inspect the site", details: "" },
   ]);
-  await open("/agents?session=session-1");
+  await open("/lab?session=session-1");
   const transcript = await screen.findByLabelText("Session transcript");
   const items = within(transcript).getAllByRole("article");
   expect(items[0]?.textContent).toContain("Inspect the site");
@@ -1031,7 +1269,7 @@ test("hides empty reasoning and collapses reasoning summaries while preserving f
     { _id: "item-4", sequence: 4, kind: "reasoning", text: summary, details },
     { _id: "item-5", sequence: 5, kind: "assistant", text: "The page is open.", details: "" },
   ]);
-  await open("/agents?session=session-1");
+  await open("/lab?session=session-1");
   const transcript = await screen.findByLabelText("Session transcript");
   expect(within(transcript).getAllByRole("article")).toHaveLength(3);
   expect(screen.queryByText("Empty reasoning payload")).toBeNull();
@@ -1068,7 +1306,7 @@ test.each(["Open browser", "Open live browser"])(
       await admitted;
       return { url: "https://example.test/admitted", expiresAt: 1_000_000 };
     });
-    await open("/agents?session=session-1");
+    await open("/lab?session=session-1");
     const button = await screen.findByRole("button", { name: label });
     expect(remote.openHandoffBrowser).not.toHaveBeenCalled();
     expect(reserve).not.toHaveBeenCalled();
@@ -1104,7 +1342,7 @@ test.each(["expired", "failed"])(
       remote.openHandoffBrowser.mockRejectedValueOnce(
         new ConvexError("Browser unavailable: 503 [request_id: req-open]"),
       );
-    await open("/agents?session=session-1");
+    await open("/lab?session=session-1");
     fireEvent.click(await screen.findByRole("button", { name: "Open browser" }));
     await waitFor(() => expect(close).toHaveBeenCalledOnce());
     expect(navigate).not.toHaveBeenCalled();
@@ -1118,7 +1356,7 @@ test.each(["expired", "failed"])(
 test("a blocked popup does not start the handoff timer", async () => {
   remote.queries.set("tasks/sessions:listBrowsers", [browser("browser-1", 1)]);
   vi.spyOn(window, "open").mockReturnValue(null);
-  await open("/agents?session=session-1");
+  await open("/lab?session=session-1");
   fireEvent.click(await screen.findByRole("button", { name: "Open browser" }));
   expect(await screen.findByText("Allow pop-ups to open the browser.")).toBeTruthy();
   expect(remote.openHandoffBrowser).not.toHaveBeenCalled();
@@ -1128,7 +1366,7 @@ test("read-only browser links remain passive", async () => {
   remote.queries.set("tasks/sessions:listBrowsers", [
     { ...browser("browser-1", 1), interactiveLiveViewUrl: null },
   ]);
-  await open("/agents?session=session-1");
+  await open("/lab?session=session-1");
   expect((await screen.findByRole("link", { name: "Open browser" })).getAttribute("href")).toBe(
     "about:blank#browser-1",
   );
@@ -1149,7 +1387,7 @@ test("declines the current handoff, shows real errors, and retains the reason th
     }),
   );
   remote.declineHandoff.mockRejectedValueOnce(new ConvexError("This handoff has already changed"));
-  await open("/agents?session=session-1");
+  await open("/lab?session=session-1");
   fireEvent.click(await screen.findByRole("button", { name: "I couldn't complete this" }));
   expect(await screen.findByText("This handoff has already changed")).toBeTruthy();
   expect(remote.declineHandoff).toHaveBeenCalledExactlyOnceWith({
@@ -1192,7 +1430,7 @@ test("waiting sessions expose the human browser and resume, while running sessio
       interactiveLiveViewUrl: "https://example.test/control",
     },
   });
-  await open("/agents?session=session-1");
+  await open("/lab?session=session-1");
   expect(await screen.findByText("Sign in to continue.")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Open browser" })).toBeTruthy();
   expect(remote.openHandoffBrowser).not.toHaveBeenCalled();
@@ -1220,7 +1458,7 @@ test("waiting sessions expose the human browser and resume, while running sessio
 
 test("send failures preserve drafts and IME Enter does not send", async () => {
   remote.send.mockRejectedValueOnce(new Error("The provider is unavailable"));
-  await open("/agents?session=session-1");
+  await open("/lab?session=session-1");
   const draft = await screen.findByLabelText<HTMLTextAreaElement>("Message");
   fireEvent.change(draft, { target: { value: "  Keep going  " } });
   fireEvent.keyDown(draft, { key: "Enter", isComposing: true });
@@ -1253,7 +1491,7 @@ test("retries an unsent message from the admin view and shows provider diagnosti
     }),
     pendingMessage: { message: "Keep going", workflowId: "workflow-1", status: "queued" },
   });
-  await open("/agents?session=session-1");
+  await open("/lab?session=session-1");
   expect(await screen.findByText("Your message wasn’t sent.")).toBeTruthy();
   expect(screen.getByText("Keep going")).toBeTruthy();
   expect(
@@ -1290,7 +1528,7 @@ test("admins inspecting another member's task see the actual API error without o
     }),
     canControl: false,
   });
-  await open("/agents?session=session-1");
+  await open("/lab?session=session-1");
   expect((await screen.findByRole("alert")).textContent).toBe(
     "400 Unknown model: requested-model.",
   );
@@ -1319,7 +1557,7 @@ test("older diagnostic metadata does not replace the persisted API error with ge
       },
     }),
   );
-  await open("/agents?session=session-1");
+  await open("/lab?session=session-1");
   expect((await screen.findByRole("alert")).textContent).toBe("Error: 429 quota exhausted");
   const details = screen.getByText("Failure details").closest("details");
   expect(details?.open).toBe(false);
@@ -1329,7 +1567,7 @@ test("older diagnostic metadata does not replace the persisted API error with ge
 
 test("stopped sessions block button and keyboard sends until cleanup releases active", async () => {
   remote.queries.set("tasks/sessions:get", { ...session({ kind: "stopped" }), active: true });
-  await open("/agents?session=session-1");
+  await open("/lab?session=session-1");
   const draft = await screen.findByLabelText<HTMLTextAreaElement>("Message");
   fireEvent.change(draft, { target: { value: "Continue after cleanup" } });
   const sendButton = screen.getByRole<HTMLButtonElement>("button", { name: "Send message" });
@@ -1356,7 +1594,7 @@ test("a failed cleanup remains visible and can be retried after Stop", async () 
     active: true,
     cleanupError: "OpenAI cancellation unavailable",
   });
-  await open("/agents?session=session-1");
+  await open("/lab?session=session-1");
 
   expect((await screen.findByRole("alert")).textContent).toBe("OpenAI cancellation unavailable");
   fireEvent.click(screen.getByRole("button", { name: "Retry stop" }));
@@ -1367,7 +1605,7 @@ test("a failed cleanup remains visible and can be retried after Stop", async () 
 test("failed sessions holding active allow a manual stop retry and block sends", async () => {
   const failedSession = session({ kind: "failed", error: "Browser cleanup failed" });
   remote.queries.set("tasks/sessions:get", { ...failedSession, active: true });
-  await open("/agents?session=session-1");
+  await open("/lab?session=session-1");
   expect((await screen.findByRole("alert")).textContent).toBe("Browser cleanup failed");
   fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Continue" } });
   expect(screen.getByRole<HTMLButtonElement>("button", { name: "Send message" }).disabled).toBe(
@@ -1389,7 +1627,7 @@ test("failed sessions show the first error line with the full stack collapsed", 
   const error =
     "Error: Browser cleanup failed\n\n    at run (workflow.ts:321:9)\n    at handler (lifecycle.ts:17:35)";
   remote.queries.set("tasks/sessions:get", session({ kind: "failed", error }));
-  await open("/agents?session=session-1");
+  await open("/lab?session=session-1");
   expect((await screen.findByRole("alert")).textContent).toBe("Error: Browser cleanup failed");
   const details = screen.getByText("Details").closest("details");
   expect(details?.open).toBe(false);
@@ -1425,7 +1663,7 @@ test("selects historical replay through the URL, restores browser history, and p
     browser("browser-1", 1, closedLifecycle),
     browser("browser-2", 2),
   ]);
-  const router = await open("/agents?session=session-1");
+  const router = await open("/lab?session=session-1");
   const picker = await screen.findByRole<HTMLSelectElement>("combobox", {
     name: "Browser session",
   });
@@ -1463,7 +1701,7 @@ test("selects historical replay through the URL, restores browser history, and p
 
 test("switches a live browser through closing into the shared replay without losing the conversation", async () => {
   remote.queries.set("tasks/sessions:listBrowsers", [browser("browser-1", 1)]);
-  await open("/agents?session=session-1&browser=browser-1");
+  await open("/lab?session=session-1&browser=browser-1");
   expect(await screen.findByTitle("Live browser session 1")).toBeTruthy();
   expect(screen.queryByRole("combobox", { name: "Browser session" })).toBeNull();
   const draft = screen.getByLabelText<HTMLTextAreaElement>("Message");
@@ -1500,7 +1738,7 @@ test("restores recorded page selection on reload and clears it when choosing ano
     ],
     operations: [],
   });
-  const router = await open("/agents?session=session-1&browser=browser-1&replayPage=page-2");
+  const router = await open("/lab?session=session-1&browser=browser-1&replayPage=page-2");
   const secondPage = await screen.findByRole("button", { name: "second.test" });
   expect(secondPage.getAttribute("aria-pressed")).toBe("true");
   const bookmark = router.state.location.href;
@@ -1520,7 +1758,7 @@ test("restores recorded page selection on reload and clears it when choosing ano
 
 test("restores desktop sidebar visibility through history while retaining the browser and draft", async () => {
   remote.queries.set("tasks/sessions:listBrowsers", [browser("browser-1", 1)]);
-  const router = await open("/agents?session=session-1&browser=browser-1");
+  const router = await open("/lab?session=session-1&browser=browser-1");
   const draft = await screen.findByLabelText<HTMLTextAreaElement>("Message");
   fireEvent.change(draft, { target: { value: "Still writing" } });
   const user = userEvent.setup();
@@ -1542,7 +1780,7 @@ test("restores desktop sidebar visibility through history while retaining the br
 
 test("keeps mobile conversation selected when a browser arrives and restores pane history", async () => {
   vi.spyOn(window, "innerWidth", "get").mockReturnValue(390);
-  const router = await open("/agents?session=session-1");
+  const router = await open("/lab?session=session-1");
   const draft = await screen.findByLabelText<HTMLTextAreaElement>("Message");
   fireEvent.change(draft, { target: { value: "Still writing" } });
   updateQuery("tasks/sessions:listBrowsers", [browser("browser-1", 1)]);
@@ -1561,16 +1799,16 @@ test("keeps mobile conversation selected when a browser arrives and restores pan
   expect(draft.value).toBe("Still writing");
 });
 
-test("navigates sidebar panes on Agents after leaving Scouts at 675px without a stale route scope", async () => {
+test("navigates sidebar panes on Lab after leaving Scouts at 675px without a stale route scope", async () => {
   vi.spyOn(window, "innerWidth", "get").mockReturnValue(675);
   const warnings = vi.spyOn(console, "warn");
   const router = await open("/scouts");
   expect(await screen.findByText("Scouts fixture")).toBeTruthy();
-  await act(() => router.navigate({ to: "/agents", search: { session: "session-1" } }));
+  await act(() => router.navigate({ to: "/lab", search: { session: "session-1" } }));
   expect(await screen.findByText("Cost pending")).toBeTruthy();
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: "Show browser" }));
-  expect(router.state.location.pathname).toBe("/agents");
+  expect(router.state.location.pathname).toBe("/lab");
   expect(router.state.location.search).toEqual({ session: "session-1", pane: "right" });
   await user.click(screen.getByRole("button", { name: "Show tasks" }));
   expect(router.state.location.search).toEqual({ session: "session-1", pane: "left" });
@@ -1579,7 +1817,7 @@ test("navigates sidebar panes on Agents after leaving Scouts at 675px without a 
 
 test("an unknown browser link defaults to the latest record without mounting an unrelated replay", async () => {
   remote.queries.set("tasks/sessions:listBrowsers", [browser("browser-1", 1)]);
-  await open("/agents?session=session-1&browser=another-session-browser");
+  await open("/lab?session=session-1&browser=another-session-browser");
   expect(await screen.findByTitle("Live browser session 1")).toBeTruthy();
   expect(remote.listReplayPages).not.toHaveBeenCalled();
   expect(remote.queryCalls).toHaveBeenCalledWith("tasks/sessions:listBrowsers", {
@@ -1604,7 +1842,7 @@ test("shows an estimated subtotal with priced providers, unpriced browser credit
       missing: ["browser_credits", "firecrawl_credit_price"],
     } satisfies Session["cost"],
   });
-  await open("/agents?session=session-1");
+  await open("/lab?session=session-1");
   const summary = await screen.findByText("Cost · $0.1434 subtotal");
   const details = summary.closest("details");
   expect(details?.open).toBe(false);
@@ -1634,7 +1872,7 @@ test("distinguishes a known zero estimate from missing provider usage", async ()
     missing: [],
   } satisfies Session["cost"];
   remote.queries.set("tasks/sessions:get", { ...session(), cost });
-  await open("/agents?session=session-1");
+  await open("/lab?session=session-1");
   expect(await screen.findByText("Cost · $0.00 estimated")).toBeTruthy();
   updateQuery("tasks/sessions:get", {
     ...session(),
@@ -1654,7 +1892,7 @@ test("distinguishes a known zero estimate from missing provider usage", async ()
 });
 
 test("updates missing model usage to its estimate while keeping unknown rates unpriced", async () => {
-  await open("/agents?session=session-1");
+  await open("/lab?session=session-1");
   await userEvent.setup().click(await screen.findByText("Cost pending"));
   expect(screen.getByText("Usage pending")).toBeTruthy();
   const current = session();
@@ -1694,7 +1932,7 @@ test("sums all checks once and marks incomplete check pricing as a subtotal", as
     { _id: "resume-2", kind: "resume", status: "approved", cost: 0.03 },
   ];
   remote.queries.set("tasks/sessions:get", { ...session(), cost, checks });
-  await open("/agents?session=session-1");
+  await open("/lab?session=session-1");
   const summary = await screen.findByText("Cost · $0.16 estimated");
   await userEvent.setup().click(summary);
   expect(screen.getByText("Checks", { exact: true })).toBeTruthy();
@@ -1716,7 +1954,7 @@ test("sums all checks once and marks incomplete check pricing as a subtotal", as
 test("refreshes an ended session without sending, preserves drafts on failure, and hides refresh while active", async () => {
   remote.queries.set("tasks/sessions:get", session({ kind: "stopped" }));
   remote.refresh.mockRejectedValueOnce(new Error("Could not read provider usage"));
-  await open("/agents?session=session-1");
+  await open("/lab?session=session-1");
   const draft = await screen.findByLabelText<HTMLTextAreaElement>("Message");
   fireEvent.change(draft, { target: { value: "Keep this follow-up" } });
   const user = userEvent.setup();
@@ -1764,7 +2002,7 @@ test.each([undefined, false, true])(
     remote.queries.set("tasks/sessions:get", { ...session(), research: summary });
     remote.queries.set("tasks/sessions:list", [{ ...session(), research: summary }]);
     remote.queries.set("tasks/siteResearchRecords:inspect", research);
-    const router = await open("/agents?session=session-1&step=site_research");
+    const router = await open("/lab?session=session-1&step=site_research");
     expect(await screen.findByRole("heading", { name: "Site research" })).toBeTruthy();
     expect(screen.getByText("A public calculator.")).toBeTruthy();
     expect(screen.getByText("1.0s")).toBeTruthy();
@@ -1831,7 +2069,7 @@ test.each(["running", "waiting"])(
       credits: 0,
       state: kind === "waiting" ? { kind, researchId: "source-research", reused: true } : { kind },
     });
-    await open("/agents?session=session-1");
+    await open("/lab?session=session-1");
     expect(
       await screen.findByText(
         kind === "waiting" ? "Waiting for site research…" : "Gathering site information…",

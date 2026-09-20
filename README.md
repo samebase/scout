@@ -33,7 +33,7 @@ The public home page shows one activity feed with All, Play, and Review filters.
 `/play` and `/review` use the same conversation interface, opening existing chats with `?thread=...`.
 Approved members can start private or public chats with an available Scout; signup does not create
 or assign Scouts. Guests can watch public conversations and live browsers or replays.
-`/agents` provides one admin interface for tasks using OpenAI Agents API or the Convex Agent
+`/lab` provides one admin interface for tasks using OpenAI Agents API or the Convex Agent
 component. Both share task checks, research, tools, walkthroughs, and replay. Member tasks use
 Luna through Agents API by default. Members and admins can also select Luna through Convex,
 Qwen 3.7 Flash, or DeepSeek V4 Flash when creating a task. See

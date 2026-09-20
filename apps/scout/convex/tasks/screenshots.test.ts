@@ -410,7 +410,12 @@ it("lists saved screenshots and saves their walkthrough while the browser cannot
   };
   await expect(execute("save_walkthrough", report)).resolves.toEqual({
     kind: "success",
-    output: JSON.stringify({ saved: true, sections: 1 }),
+    output: JSON.stringify({
+      saved: true,
+      summary: report.summary,
+      checks: report.checks,
+      sections: 1,
+    }),
   });
   const session = await t.backend.run((ctx) => ctx.db.get(t.sessionId));
   expect(session?.walkthrough).toEqual(report);

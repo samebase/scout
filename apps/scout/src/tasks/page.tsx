@@ -35,13 +35,15 @@ import {
   selectedCheckId,
   selectedStep,
   sessionControls,
-  type AgentsSearch,
+  type LabSearch,
   type RequestCheck,
   type Session,
   type SiteResearch,
+  type WalkthroughReport,
 } from "./model";
 import { RequestCheckView, RequestCheckInspector } from "./request-check";
 import { SiteResearchView, SiteResearchInspector } from "./site-research";
+import { WalkthroughUpdateView, WalkthroughUpdateInspector } from "./walkthrough-update";
 import { Transcript } from "./transcript";
 import { PendingTaskMessage } from "./pending-message";
 import { BrowserPanel } from "./browser";
@@ -58,15 +60,15 @@ const runtimeLabels: Record<Session["engine"], string> = {
 
 type RequestState = { kind: "idle" } | { kind: "pending" } | { kind: "failed"; message: string };
 
-export function AgentsPage({ search }: { search: AgentsSearch }) {
+export function LabPage({ search }: { search: LabSearch }) {
   return (
     <main className="flex h-[calc(100dvh-4rem)] min-h-0 w-full flex-col select-text">
-      <AgentsWorkspace search={search} />
+      <LabWorkspace search={search} />
     </main>
   );
 }
 
-function AgentsWorkspace({ search }: { search: AgentsSearch }) {
+function LabWorkspace({ search }: { search: LabSearch }) {
   const session = useQuery(
     api.tasks.sessions.get,
     // @ts-expect-error The server validates this URL string with v.id("agentsApiSessions"); downstream calls use the returned typed _id.
@@ -78,6 +80,16 @@ function AgentsWorkspace({ search }: { search: AgentsSearch }) {
   );
   const checking = Boolean(session && selectedStep(session, search) === "request_check");
   const researching = Boolean(session && selectedStep(session, search) === "site_research");
+  const updatingWalkthrough = search.step === "walkthrough_update";
+  const reports = useQuery(
+    api.tasks.walkthroughReports.list,
+    session ? { sessionId: session._id } : "skip",
+  );
+  const callId = updatingWalkthrough ? (search.call ?? reports?.at(-1)?.callId) : undefined;
+  const report = useQuery(
+    api.tasks.walkthroughReports.inspect,
+    session && callId !== undefined ? { sessionId: session._id, callId } : "skip",
+  );
   const research = useQuery(
     api.tasks.siteResearchRecords.inspect,
     session && researching ? { sessionId: session._id } : "skip",
@@ -96,15 +108,16 @@ function AgentsWorkspace({ search }: { search: AgentsSearch }) {
 
   return (
     <SidebarLayout
-      addressChrome={<AgentsChrome session={session ?? null} search={search} />}
+      addressChrome={<LabChrome session={session ?? null} search={search} />}
       resizeHandleLabels={{
         left: "Resize tasks",
-        right: checking || researching ? "Resize call details" : "Resize browser",
+        right:
+          checking || researching || updatingWalkthrough ? "Resize call details" : "Resize browser",
       }}
       formatResizeHandleValueText={({ widthPx }) => `${widthPx} pixels wide`}
       left={
         <PaneFrame
-          scrollRestorationId="agents-sessions"
+          scrollRestorationId="lab-sessions"
           content={
             <aside aria-label="Tasks" aria-busy={status === "LoadingFirstPage"}>
               {status === "LoadingFirstPage" ? null : sessions.length === 0 ? (
@@ -114,7 +127,7 @@ function AgentsWorkspace({ search }: { search: AgentsSearch }) {
                   {sessions.map((item) => (
                     <div key={item._id} className="pb-2">
                       <Link
-                        to="/agents"
+                        to="/lab"
                         resetScroll={false}
                         search={{
                           session: item._id,
@@ -132,7 +145,7 @@ function AgentsWorkspace({ search }: { search: AgentsSearch }) {
                         {item.checks.map((itemCheck) => (
                           <li key={itemCheck._id}>
                             <Link
-                              to="/agents"
+                              to="/lab"
                               resetScroll={false}
                               search={{
                                 session: item._id,
@@ -163,10 +176,51 @@ function AgentsWorkspace({ search }: { search: AgentsSearch }) {
                             </Link>
                           </li>
                         ))}
+                        {search.session === item._id &&
+                          reports?.map((call) => (
+                            <li key={call.callId}>
+                              <Link
+                                to="/lab"
+                                resetScroll={false}
+                                search={{
+                                  session: item._id,
+                                  step: "walkthrough_update",
+                                  call: call.callId,
+                                  sessions: search.sessions,
+                                  inspector: search.inspector,
+                                }}
+                                aria-current={
+                                  updatingWalkthrough && callId === call.callId ? "page" : undefined
+                                }
+                                className="flex items-center gap-2 rounded-md px-2 py-1.5 text-muted-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:bg-muted aria-[current=page]:text-foreground"
+                              >
+                                {call.state === "running" ? (
+                                  <LoaderCircleIcon
+                                    className="size-3.5 animate-spin"
+                                    aria-hidden="true"
+                                  />
+                                ) : call.state === "completed" ? (
+                                  <CheckIcon className="size-3.5" aria-hidden="true" />
+                                ) : (
+                                  <XIcon className="size-3.5" aria-hidden="true" />
+                                )}
+                                <span>
+                                  Walkthrough update
+                                  <time
+                                    className="block text-xs"
+                                    dateTime={new Date(call.startedAt).toISOString()}
+                                  >
+                                    {new Date(call.startedAt).toLocaleString()}
+                                  </time>
+                                </span>
+                                <span className="sr-only"> · {call.state}</span>
+                              </Link>
+                            </li>
+                          ))}
                         {item.research && (
                           <li>
                             <Link
-                              to="/agents"
+                              to="/lab"
                               resetScroll={false}
                               search={{
                                 session: item._id,
@@ -196,7 +250,7 @@ function AgentsWorkspace({ search }: { search: AgentsSearch }) {
                         {(item.hasChat || item.checks.length === 0) && (
                           <li>
                             <Link
-                              to="/agents"
+                              to="/lab"
                               resetScroll={false}
                               search={{
                                 session: item._id,
@@ -220,7 +274,7 @@ function AgentsWorkspace({ search }: { search: AgentsSearch }) {
                         )}
                         <li>
                           <Link
-                            to="/agents"
+                            to="/lab"
                             resetScroll={false}
                             search={{
                               session: item._id,
@@ -281,13 +335,16 @@ function AgentsWorkspace({ search }: { search: AgentsSearch }) {
             search={search}
             check={checkId === undefined ? null : check}
             research={research}
+            report={callId === undefined && reports !== undefined ? null : report}
           />
         )
       }
       {...omitNullish({
         right:
           search.session === undefined ? undefined : session ? (
-            checking ? (
+            updatingWalkthrough ? (
+              <WalkthroughUpdateInspector key={callId} report={report} />
+            ) : checking ? (
               <RequestCheckInspector key={checkId} check={check} />
             ) : researching ? (
               <SiteResearchInspector research={research} sessionId={session._id} />
@@ -302,11 +359,12 @@ function AgentsWorkspace({ search }: { search: AgentsSearch }) {
   );
 }
 
-function AgentsChrome({ session, search }: { session: Session | null; search: AgentsSearch }) {
+function LabChrome({ session, search }: { session: Session | null; search: LabSearch }) {
   const step = session && selectedStep(session, search);
   const review = useQuery(api.scout.activity.get, session ? { threadId: session._id } : "skip");
-  const checking = step === "request_check" || step === "site_research";
-  const navigate = useNavigate({ from: "/agents" });
+  const checking =
+    step === "request_check" || step === "site_research" || step === "walkthrough_update";
+  const navigate = useNavigate({ from: "/lab" });
   const { setMobilePane, toggleLeftPane, toggleRightPane } = useSidebarActions();
   const { isMobile, mobilePane, leftDesktopOpen, rightDesktopOpen } =
     useSidebarLayoutPresentation();
@@ -395,7 +453,7 @@ function AgentsChrome({ session, search }: { session: Session | null; search: Ag
         </Button>
       )}
       <Button asChild variant="ghost" size="sm">
-        <Link to="/agents" search={{}} resetScroll={false}>
+        <Link to="/lab" search={{}} resetScroll={false}>
           <PlusIcon aria-hidden="true" />
           New task
         </Link>
@@ -407,7 +465,7 @@ function AgentsChrome({ session, search }: { session: Session | null; search: Ag
 function NewSession({ initialScoutId }: { initialScoutId: string }) {
   const scouts = useQuery(api.scout.scouts.list, {});
   const start = useMutation(api.tasks.sessions.start);
-  const navigate = useNavigate({ from: "/agents" });
+  const navigate = useNavigate({ from: "/lab" });
   const [scoutId, setScoutId] = useState(initialScoutId);
   const [selection, setSelection] = useState<TaskSelection>({
     engine: "agents_api",
@@ -461,11 +519,11 @@ function NewSession({ initialScoutId }: { initialScoutId: string }) {
       <h2 className="mb-6 text-2xl font-semibold tracking-tight">New task</h2>
       <form onSubmit={(event) => void submit(event)} className="space-y-4">
         <div className="space-y-2">
-          <label htmlFor="agents-scout" className="text-sm font-medium">
+          <label htmlFor="lab-scout" className="text-sm font-medium">
             Scout
           </label>
           <select
-            id="agents-scout"
+            id="lab-scout"
             value={selectedScout?._id ?? ""}
             onChange={(event) => setScoutId(event.target.value)}
             disabled={request.kind === "pending" || !activeScouts?.length}
@@ -523,11 +581,11 @@ function NewSession({ initialScoutId }: { initialScoutId: string }) {
               : "Scout manages conversation summaries and keeps only the latest browser snapshot. Native web search is unavailable."}
           </p>
         </div>
-        <label htmlFor="agents-prompt" className="sr-only">
+        <label htmlFor="lab-prompt" className="sr-only">
           Prompt
         </label>
         <Textarea
-          id="agents-prompt"
+          id="lab-prompt"
           value={prompt}
           onChange={(event) => setPrompt(event.target.value)}
           placeholder="What should Scout do?"
@@ -563,15 +621,18 @@ function SessionContent({
   search,
   check,
   research,
+  report,
 }: {
   session: Session;
-  search: AgentsSearch;
+  search: LabSearch;
   check: RequestCheck | null | undefined;
   research: SiteResearch | null | undefined;
+  report: WalkthroughReport | null | undefined;
 }) {
   const checking = selectedStep(session, search) === "request_check";
   const researching = selectedStep(session, search) === "site_research";
-  const navigate = useNavigate({ from: "/agents" });
+  const updatingWalkthrough = selectedStep(session, search) === "walkthrough_update";
+  const navigate = useNavigate({ from: "/lab" });
   const target = useMemo(
     () => ({ kind: "agent_session", sessionId: session._id }) satisfies WorkspaceTarget,
     [session._id],
@@ -579,7 +640,7 @@ function SessionContent({
   return (
     <div className="h-full min-h-0">
       <div
-        hidden={checking || researching || search.view === "workspace"}
+        hidden={checking || researching || updatingWalkthrough || search.view === "workspace"}
         className="h-full min-h-0"
       >
         {(session.hasChat || session.checks.length === 0 || search.step === "walkthrough") && (
@@ -594,6 +655,9 @@ function SessionContent({
       )}
       {researching && search.view !== "workspace" && (
         <SiteResearchView session={session} research={research} />
+      )}
+      {updatingWalkthrough && search.view !== "workspace" && (
+        <WalkthroughUpdateView key={search.call} report={report} />
       )}
       {search.view === "workspace" && (
         <ScoutWorkspace
@@ -858,10 +922,10 @@ function SessionView({ session, walkthrough }: { session: Session; walkthrough: 
   );
 }
 
-export function AgentsError({ error, reset }: ErrorComponentProps) {
+export function LabError({ error, reset }: ErrorComponentProps) {
   return (
     <main className="route-page max-w-2xl select-text">
-      <h1 className="text-xl font-semibold">Could not open Agents</h1>
+      <h1 className="text-xl font-semibold">Could not open Lab</h1>
       <p role="alert" className="my-4 text-sm wrap-anywhere text-destructive">
         {error.message}
       </p>
@@ -870,7 +934,7 @@ export function AgentsError({ error, reset }: ErrorComponentProps) {
           Try again
         </Button>
         <Button asChild variant="ghost">
-          <Link to="/agents" search={{}}>
+          <Link to="/lab" search={{}}>
             New task
           </Link>
         </Button>

@@ -24,6 +24,7 @@ import { omitNullish } from "../../shared/omitNullish";
 import { MAX_BROWSER_SESSIONS_PER_THREAD } from "../scout/browserSessions";
 import { browserSessionLifecycleValidator } from "../browserModel";
 import { agentsApiCostValidator, estimateAgentsApiCost } from "./cost";
+import { reportingCalls } from "./walkthroughReports";
 import {
   getInitialCheck,
   listChecks,
@@ -328,7 +329,7 @@ export const list = query({
 });
 
 async function estimateSessionCost(ctx: QueryCtx, session: Doc<"agentsApiSessions">) {
-  const [browsers, searches] = await Promise.all([
+  const [browsers, searches, reports] = await Promise.all([
     ctx.db
       .query("agentsApiBrowserSessions")
       .withIndex("by_agents_session_id_and_sequence", (q) => q.eq("agentsSessionId", session._id))
@@ -340,8 +341,9 @@ async function estimateSessionCost(ctx: QueryCtx, session: Doc<"agentsApiSession
         q.eq("sessionId", session._id).eq("kind", "web_search_call"),
       )
       .take(1_000),
+    reportingCalls(ctx, session._id),
   ]);
-  return estimateAgentsApiCost({
+  const cost = estimateAgentsApiCost({
     model: session.model,
     reportedModelUsd: session.reportedModelUsd ?? null,
     modelUsageIncomplete: session.modelUsageIncomplete ?? false,
@@ -359,6 +361,31 @@ async function estimateSessionCost(ctx: QueryCtx, session: Doc<"agentsApiSession
     firecrawlUsdPerCredit: null,
     now: Date.now(),
   });
+  let reportingUsd = 0;
+  for (const { reporting } of reports) {
+    if (reporting === undefined) continue;
+    const state = reporting.state;
+    switch (state.kind) {
+      case "running":
+        break;
+      case "completed":
+      case "failed":
+        if (state.usage?.costUsd == null) {
+          if (!cost.missing.includes("model_usage")) cost.missing.push("model_usage");
+        } else {
+          reportingUsd += state.usage.costUsd;
+        }
+        break;
+      default: {
+        const exhaustive: never = state;
+        return exhaustive;
+      }
+    }
+  }
+  if (cost.modelEstimateUsd !== null) cost.modelEstimateUsd += reportingUsd;
+  cost.knownSubtotalUsd += reportingUsd;
+  cost.totalEstimateUsd = cost.missing.length === 0 ? cost.knownSubtotalUsd : null;
+  return cost;
 }
 
 export const cost = query({

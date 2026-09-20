@@ -12,8 +12,8 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as AccountDeletionRouteImport } from './routes/account-deletion'
-import { Route as AgentsRouteImport } from './routes/agents'
 import { Route as CreditHistoryRouteImport } from './routes/credit-history'
+import { Route as LabRouteImport } from './routes/lab'
 import { Route as MembersRouteImport } from './routes/members'
 import { Route as PlayRouteImport } from './routes/play'
 import { Route as PrivacyRouteImport } from './routes/privacy'
@@ -42,14 +42,14 @@ const AccountDeletionRoute = AccountDeletionRouteImport.update({
   path: '/account-deletion',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AgentsRoute = AgentsRouteImport.update({
-  id: '/agents',
-  path: '/agents',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const CreditHistoryRoute = CreditHistoryRouteImport.update({
   id: '/credit-history',
   path: '/credit-history',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LabRoute = LabRouteImport.update({
+  id: '/lab',
+  path: '/lab',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MembersRoute = MembersRouteImport.update({
@@ -117,8 +117,8 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/account-deletion': typeof AccountDeletionRoute
-  '/agents': typeof AgentsRoute
   '/credit-history': typeof CreditHistoryRoute
+  '/lab': typeof LabRoute
   '/members': typeof MembersRoute
   '/play': typeof PlayRoute
   '/privacy': typeof PrivacyRoute
@@ -136,8 +136,8 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/account-deletion': typeof AccountDeletionRoute
-  '/agents': typeof AgentsRoute
   '/credit-history': typeof CreditHistoryRoute
+  '/lab': typeof LabRoute
   '/members': typeof MembersRoute
   '/play': typeof PlayRoute
   '/privacy': typeof PrivacyRoute
@@ -155,8 +155,8 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/account-deletion': typeof AccountDeletionRoute
-  '/agents': typeof AgentsRoute
   '/credit-history': typeof CreditHistoryRoute
+  '/lab': typeof LabRoute
   '/members': typeof MembersRoute
   '/play': typeof PlayRoute
   '/privacy': typeof PrivacyRoute
@@ -176,8 +176,8 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/account-deletion'
-    | '/agents'
     | '/credit-history'
+    | '/lab'
     | '/members'
     | '/play'
     | '/privacy'
@@ -195,8 +195,8 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/account-deletion'
-    | '/agents'
     | '/credit-history'
+    | '/lab'
     | '/members'
     | '/play'
     | '/privacy'
@@ -213,8 +213,8 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/account-deletion'
-    | '/agents'
     | '/credit-history'
+    | '/lab'
     | '/members'
     | '/play'
     | '/privacy'
@@ -233,8 +233,8 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
   AccountDeletionRoute: typeof AccountDeletionRoute
-  AgentsRoute: typeof AgentsRoute
   CreditHistoryRoute: typeof CreditHistoryRoute
+  LabRoute: typeof LabRoute
   MembersRoute: typeof MembersRoute
   PlayRoute: typeof PlayRoute
   PrivacyRoute: typeof PrivacyRoute
@@ -270,18 +270,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AccountDeletionRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/agents': {
-      id: '/agents'
-      path: '/agents'
-      fullPath: '/agents'
-      preLoaderRoute: typeof AgentsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/credit-history': {
       id: '/credit-history'
       path: '/credit-history'
       fullPath: '/credit-history'
       preLoaderRoute: typeof CreditHistoryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/lab': {
+      id: '/lab'
+      path: '/lab'
+      fullPath: '/lab'
+      preLoaderRoute: typeof LabRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/members': {
@@ -388,8 +388,8 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
   AccountDeletionRoute: AccountDeletionRoute,
-  AgentsRoute: AgentsRoute,
   CreditHistoryRoute: CreditHistoryRoute,
+  LabRoute: LabRoute,
   MembersRoute: MembersRoute,
   PlayRoute: PlayRoute,
   PrivacyRoute: PrivacyRoute,

@@ -92,7 +92,7 @@ test("shows the reservation consistently and hides another member's private acti
   expect(await t.admin.query(api.scout.scouts.get, { slug: "conrad" })).toMatchObject({
     currentActivity: {
       kind: "visible",
-      destination: { to: "/agents", search: { session: t.sessionId } },
+      destination: { to: "/lab", search: { session: t.sessionId } },
     },
   });
 });
@@ -187,7 +187,7 @@ test("links a standalone Agents session for an admin without exposing it to memb
     currentActivity: {
       kind: "visible",
       activity: { title: "Test Samebase signup" },
-      destination: { to: "/agents", search: { session: t.sessionId } },
+      destination: { to: "/lab", search: { session: t.sessionId } },
     },
   });
   expect(await t.member.query(api.scout.scouts.get, { slug: "conrad" })).toMatchObject({

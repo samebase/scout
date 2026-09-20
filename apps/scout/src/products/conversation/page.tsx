@@ -631,13 +631,13 @@ function ConversationInspectorLink({ thread }: { thread: ChatThread }) {
     return null;
   return (
     <Link
-      to="/agents"
+      to="/lab"
       search={{ session: thread.runtime.sessionId }}
-      aria-label="Open in Agents"
+      aria-label="Open in Lab"
       className={cn(playTextLink, "min-h-11 shrink-0 text-muted-foreground")}
     >
       <span className="whitespace-nowrap">
-        <span className="max-[760px]:hidden">Open in </span>Agents
+        <span className="max-[760px]:hidden">Open in </span>Lab
       </span>{" "}
       <ArrowUpRightIcon size={15} aria-hidden="true" />
     </Link>

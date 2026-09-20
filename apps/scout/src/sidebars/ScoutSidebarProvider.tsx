@@ -6,14 +6,14 @@ import { useScoutSidebarController } from "./scoutSidebarState";
 
 export function ScoutSidebarProvider({ children }: { children: ReactNode }) {
   const controller = useScoutSidebarController();
-  const agentsSearch = useSearch({ from: "/agents", shouldThrow: false });
+  const labSearch = useSearch({ from: "/lab", shouldThrow: false });
   const navigate = useNavigate();
-  const state = agentsSearch
+  const state = labSearch
     ? {
         ...controller.state,
-        leftDesktopOpen: agentsSearch.sessions !== "hidden",
-        rightDesktopOpen: agentsSearch.inspector !== "hidden",
-        mobilePane: agentsSearch.pane ?? "main",
+        leftDesktopOpen: labSearch.sessions !== "hidden",
+        rightDesktopOpen: labSearch.inspector !== "hidden",
+        mobilePane: labSearch.pane ?? "main",
       }
     : controller.state;
   const latestState = useRef(state);
@@ -27,14 +27,14 @@ export function ScoutSidebarProvider({ children }: { children: ReactNode }) {
       latestState.current = next;
       controller.setState(() => next, persistenceMode);
       if (
-        agentsSearch &&
+        labSearch &&
         (next.leftDesktopOpen !== current.leftDesktopOpen ||
           next.rightDesktopOpen !== current.rightDesktopOpen ||
           next.mobilePane !== current.mobilePane)
       ) {
         void navigate({
-          from: "/agents",
-          to: "/agents",
+          from: "/lab",
+          to: "/lab",
           search: (previous) => ({
             ...previous,
             sessions: next.leftDesktopOpen ? undefined : "hidden",
