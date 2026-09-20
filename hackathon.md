@@ -3,16 +3,16 @@
 - **Project:** Scout
 - **Event:** Convex All Gas Hackathon
 - **What it does:** Offers browser play and product reviews with persistent Scouts, public activity, connected accounts, and replay.
-- **Live app:** https://usable-spider-599.eu-west-1.convex.site
+- **Live app:** https://doting-crab-687.convex.site
 - **Repo:** private
 - **Frontend:** Convex static hosting
-- **Convex deployment:** https://usable-spider-599.eu-west-1.convex.cloud
+- **Convex deployment:** https://doting-crab-687.convex.cloud
 - **Components:** @convex-dev/agent, @convex-dev/r2, @convex-dev/static-hosting, @convex-dev/workflow
 - **Convex features:** schema, tables, indexes, queries, paginated queries, realtime queries, mutations, actions, scheduled functions, HTTP actions, AI Gateway
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-20T10:01:34Z
+- **Last updated:** 2026-09-20T11:54:00Z
 
 ## Log
 
@@ -1653,8 +1653,14 @@ Convex saves each job's billing choice so later setting changes preserve its ori
 Settings explains the inclusion, and task costs distinguish Firecrawl credits from Scout credits
 (`apps/scout/convex/creditPolicy.ts`, `apps/scout/convex/tasks/`, `apps/scout/src/components/credits-panel.tsx`).
 
-### 2026-09-20 - working tree - v265
+### 2026-09-20 - 30d511a - v265
 
 Task headers, status rows, and footer dividers extend across the main pane on wide screens.
 Chat and walkthrough content retain the shared centered width, including their controls
 (`apps/scout/src/products/conversation/page.tsx`, `apps/scout/src/components/task-walkthrough.tsx`).
+
+### 2026-09-20 - working tree - v266
+
+Moved production to US Convex while preserving reviews, accounts, credits, and stored files.
+The submission site, Cloudflare build, Polar webhook, checkout returns, and handoff links
+now use the US deployment. Existing R2 media and workspace files remain in the same buckets.
