@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-20T15:16:12Z
+- **Last updated:** 2026-09-20T15:29:05Z
 
 ## Log
 
@@ -1686,9 +1686,16 @@ A private workspace package supplies the renderer, and Static Hosting serves the
 A deployment setting switches the homepage back to static serving without loading the renderer
 (`packages/convex-tanstack-start/`, `apps/scout/src/lib/homeFeed.ts`, `apps/scout/convex/http.ts`).
 
-### 2026-09-20 - working tree - v270
+### 2026-09-20 - c11e21d - v270
 
 Widening the sites sidebar reveals each site's first two tasks and its full task count.
 Compact navigation and the landing feed share the same site card while keeping their
 existing browsing behavior (`apps/scout/src/components/activity-feed.tsx`,
+`apps/scout/src/routes/sites.$site.tsx`).
+
+### 2026-09-20 - working tree - v271
+
+Wide site sidebars keep cards and filters within the landing page's centered 1,200px limit.
+Review visibility and site search share one row when their container has room and stack
+in compact navigation (`apps/scout/src/components/site-filters.tsx`,
 `apps/scout/src/routes/sites.$site.tsx`).

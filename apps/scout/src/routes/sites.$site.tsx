@@ -101,7 +101,7 @@ function SiteLayout() {
           <PaneFrame
             scrollRestorationId="site-navigation"
             header={
-              <div className="site-navigation-filters p-2">
+              <div className="site-navigation-filters mx-auto w-full max-w-page p-2">
                 <SiteFilters
                   search={filters}
                   layout="sidebar"
@@ -120,7 +120,7 @@ function SiteLayout() {
               <nav
                 aria-label="Sites"
                 aria-busy={sites.status === "LoadingFirstPage"}
-                className="p-2 text-sm"
+                className="mx-auto w-full max-w-page p-2 text-sm"
               >
                 <ul className="space-y-3">
                   {sites.results.map((site) => (

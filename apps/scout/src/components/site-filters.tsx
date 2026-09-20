@@ -45,89 +45,81 @@ export function SiteFilters({
   }, [draft, search.site]);
 
   return (
-    <div
-      className={cn(
-        "flex gap-2",
-        layout === "sidebar"
-          ? "flex-col"
-          : "flex-wrap items-center justify-between gap-3 max-[500px]:flex-col max-[500px]:items-stretch",
-      )}
-    >
-      <div
-        aria-busy={reviewedSiteCount === undefined}
-        className={cn(
-          "flex flex-wrap items-center gap-x-3 gap-y-1",
-          layout === "sidebar" ? "min-h-5 justify-between" : "min-h-11",
-        )}
-      >
-        {signedIn && (
-          <Select
-            value={scope}
-            onValueChange={(value) =>
-              onChange(
-                { site: search.site, scope: reviewFeedSearch.shape.scope.parse(value) },
-                { replace: false },
-              )
-            }
-          >
-            <SelectTrigger
-              aria-label="Review visibility"
-              className="min-h-11 min-w-40 shrink-0 bg-card"
+    <div className="@container/site-filters">
+      <div className="flex flex-col gap-2 @min-[500px]/site-filters:flex-row @min-[500px]/site-filters:flex-wrap @min-[500px]/site-filters:items-center @min-[500px]/site-filters:justify-between @min-[500px]/site-filters:gap-3">
+        <div
+          aria-busy={reviewedSiteCount === undefined}
+          className={cn(
+            "flex flex-wrap items-center gap-x-3 gap-y-1",
+            layout === "sidebar"
+              ? "min-h-5 justify-between @min-[500px]/site-filters:min-h-11 @min-[500px]/site-filters:justify-start"
+              : "min-h-11",
+          )}
+        >
+          {signedIn && (
+            <Select
+              value={scope}
+              onValueChange={(value) =>
+                onChange(
+                  { site: search.site, scope: reviewFeedSearch.shape.scope.parse(value) },
+                  { replace: false },
+                )
+              }
             >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent position="popper" align="start">
-              <SelectItem value="public">Public reviews</SelectItem>
-              <SelectItem value="mine">My reviews</SelectItem>
-            </SelectContent>
-          </Select>
-        )}
-        {reviewedSiteCount !== undefined && (
-          <span
-            className={cn(
-              "whitespace-nowrap text-muted-foreground",
-              layout === "sidebar" ? "text-xs" : "text-sm",
-            )}
-          >
-            {reviewedSiteCount.count.toLocaleString()}
-            {reviewedSiteCount.hasMore ? "+" : ""}
-            {layout === "toolbar" ? " reviewed " : " "}
-            {reviewedSiteCount.count === 1 ? "site" : "sites"}
-          </span>
-        )}
-      </div>
-      <div
-        className={cn(
-          "relative min-w-0",
-          layout === "toolbar" && "ml-auto w-64 max-w-full max-[500px]:ml-0 max-[500px]:w-full",
-        )}
-      >
-        <SearchIcon
-          aria-hidden="true"
-          className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-        />
-        <Input
-          aria-label="Filter by site"
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          placeholder="Search sites"
-          className="min-h-11 w-full bg-card pr-9 pl-9"
-        />
-        {draft && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="absolute top-1/2 right-1 size-7 -translate-y-1/2"
-            aria-label="Clear site filter"
-            onClick={() => {
-              setDraft("");
-              onChange({ scope, site: undefined }, { replace: true });
-            }}
-          >
-            <XIcon aria-hidden="true" />
-          </Button>
-        )}
+              <SelectTrigger
+                aria-label="Review visibility"
+                className="min-h-11 min-w-40 shrink-0 bg-card"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper" align="start">
+                <SelectItem value="public">Public reviews</SelectItem>
+                <SelectItem value="mine">My reviews</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+          {reviewedSiteCount !== undefined && (
+            <span
+              className={cn(
+                "whitespace-nowrap text-muted-foreground",
+                layout === "sidebar" ? "text-xs" : "text-sm",
+              )}
+            >
+              {reviewedSiteCount.count.toLocaleString()}
+              {reviewedSiteCount.hasMore ? "+" : ""}
+              {layout === "toolbar" ? " reviewed " : " "}
+              {reviewedSiteCount.count === 1 ? "site" : "sites"}
+            </span>
+          )}
+        </div>
+        <div className="relative w-full min-w-0 max-w-full @min-[500px]/site-filters:ml-auto @min-[500px]/site-filters:w-64">
+          <SearchIcon
+            aria-hidden="true"
+            className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+          />
+          <Input
+            aria-label="Filter by site"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            placeholder="Search sites"
+            className="min-h-11 w-full bg-card pr-9 pl-9"
+          />
+          {draft && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="absolute top-1/2 right-1 size-7 -translate-y-1/2"
+              aria-label="Clear site filter"
+              onClick={() => {
+                setDraft("");
+                onChange({ scope, site: undefined }, { replace: true });
+              }}
+            >
+              <XIcon aria-hidden="true" />
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   );
