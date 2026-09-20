@@ -49,8 +49,8 @@ and cache policy remain app decisions.
 - React's Web Stream renderer waits for Suspense, then TanStack's
   `renderSsrHtmlResponse` handles the buffered HTML, hydration scripts, status, and
   cleanup. The default streaming handler imports unsupported Node stream modules.
-- Static prerendering uses `defaultRenderHandler` to keep data placeholders when
-  a new deployment's queries are not available yet.
+- Prerender only pages that do not need backend data when builds precede backend
+  deployment. Scout uses the standard SPA shell for data pages in static mode.
 - The server entry supplies the missing `URLSearchParams.size` getter on Convex.
   TanStack needs it to normalize URLs containing query parameters. Native
   implementations are left intact.

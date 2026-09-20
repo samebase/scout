@@ -1,8 +1,4 @@
-import {
-  createStartHandler,
-  defaultRenderHandler,
-  StartServer,
-} from "@tanstack/react-start/server";
+import { createStartHandler, StartServer } from "@tanstack/react-start/server";
 import { renderSsrHtmlResponse } from "@tanstack/react-router/ssr/server";
 import { createElement } from "react";
 import { renderToReadableStream } from "react-dom/server";
@@ -19,8 +15,6 @@ if (new URLSearchParams().size === undefined) {
 
 export default {
   fetch: createStartHandler((context) => {
-    // Static builds precede backend deployment; retain Suspense shells there.
-    if (process.env["TSS_PRERENDERING"] === "true") return defaultRenderHandler(context);
     const { router, responseHeaders, request } = context;
     return renderSsrHtmlResponse({
       router,

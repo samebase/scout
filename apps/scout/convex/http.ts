@@ -13,8 +13,7 @@ auth.addHttpRoutes(http);
 http.route({ path: "/polar/events", method: "POST", handler: httpAction(handlePolarEvent) });
 registerStaticRoutes(http, components.staticHosting, {
   spaFallback: true,
-  rewritePath: (path, request) =>
-    path === "/" && new URL(request.url).search ? "/index.html" : rewritePrerenderPath(path),
+  rewritePath: rewritePrerenderPath,
   fallback: async (request) => {
     if (env.TANSTACK_SERVER_ENABLED !== "true") return null;
     const { default: app } = await import("../dist/server/server.js");

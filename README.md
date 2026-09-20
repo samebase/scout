@@ -177,7 +177,7 @@ and deploy behavior. Use the
 
 - `package.json` defines the supported development, check, build, and deploy commands.
 - `vite.config.ts` defines workspace formatting, lint rules, staged checks, and test projects.
-- `apps/scout/vite.config.ts` prerenders the homepage, About, Privacy, and Terms, plus a separate
+- `apps/scout/vite.config.ts` prerenders About, Privacy, and Terms, plus a separate
   SPA fallback shell. `apps/scout/prerender.config.ts` maps public URLs to their generated HTML;
   Cloudflare uses build-generated `_redirects`, and Convex uses the same exact path rewrites.
 - `apps/scout/wrangler.jsonc` defines Cloudflare static assets, SPA fallback, and preview URLs.

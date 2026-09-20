@@ -46,8 +46,9 @@ the completed HTML to TanStack's `renderSsrHtmlResponse`. This is needed because
 `defaultRenderHandler` uses `renderToString`, which does not await Suspense,
 while `defaultStreamHandler` imports Node streams that Convex cannot bundle.
 Route matching, query hydration, response status, and cleanup remain framework-owned.
-Static prerendering keeps `defaultRenderHandler` so builds can emit marketing
-content and data placeholders before a new preview's backend has been deployed.
+Only About, Privacy, and Terms prerender. The homepage uses the universal SPA
+shell in static mode, including on the Cloudflare assets host. This keeps builds
+independent of backend data and avoids incomplete Suspense markup during rollback.
 
 Run the raw-response check against a deployment with a reviewed public site:
 
@@ -59,6 +60,20 @@ The check parses HTML without executing JavaScript. It requires homepage cards,
 a filtered homepage, site identity and reviews, About content, private-view
 shells, and TanStack's unknown-route status. Unit tests also delay an official
 Convex query and require the renderer to wait for its HTML and hydration data.
+
+Verified on the hosted `clever-vole-526` preview on September 20, 2026:
+
+- The raw-response check passed all 12 paths. The homepage contained six site
+  cards; its filtered URL contained one. The direct site URL contained its
+  identity, public review, and eight sidebar cards. Private views contained no reviews.
+- Chrome hydrated the homepage and direct site page, switched sites, filtered
+  the feed, and loaded all eight fixture sites through native pagination.
+  The first About navigation retained one menu. Console warnings and errors were empty.
+- With `TANSTACK_SERVER_ENABLED=false`, the homepage and direct site returned
+  the SPA shell, loaded their content in Chrome, and reloaded without console errors.
+  The preview is left enabled. Production and the shared dev deployment were not changed.
+- `pnpm run check` passed 1,579 tests. Scout and the example app built successfully;
+  the Convex preview push passed its TypeScript and bundle checks.
 
 Static Hosting still owns uploads, storage, and serving built assets. Its patched
 `fallback(request)` callback runs after an exact asset miss, before static rewrites
@@ -92,7 +107,7 @@ pnpm --filter samebase-scout exec convex env set TANSTACK_SERVER_ENABLED true --
 
 The disabled path never imports or initializes the renderer. Static Hosting reads
 the already-published prerender or shell directly, without an HTTP request back to
-the app. Homepage requests with query parameters use `/index.html` so filters
+the app. The homepage and all data pages use `/index.html` in static mode, so filters
 initialize in the browser without a prerender hydration mismatch. With serving disabled,
 View Page Source contains the page shell without review cards; the browser still
 loads the feed. With serving enabled, the first six cards are in the response HTML.
@@ -126,7 +141,7 @@ between backend deployment and asset upload can reference missing browser files.
 The existing Static Hosting patch adds explicit `--preview-name`
 forwarding, since 0.2.1's uploader otherwise does not target a named preview.
 
-Build-time prerendering retains Suspense placeholders for data. Convex runs the build
+Build-time prerendering includes only data-free pages. Convex runs the build
 before pushing the backend, so a new preview may not have queries deployed yet.
 
 ### Optional preview fixtures

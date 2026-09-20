@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-20T21:22:12Z
+- **Last updated:** 2026-09-20T21:52:30Z
 
 ## Log
 
@@ -1768,8 +1768,15 @@ Verified signup counts as a useful outcome, and screenshot descriptions must mat
 (`apps/scout/convex/scout/review.ts`, `apps/scout/convex/tasks/instructions.ts`,
 `apps/scout/convex/tasks/walkthroughReport.ts`).
 
-### 2026-09-20 - working tree - v282
+### 2026-09-20 - a15c3c7 - v282
 
 Walkthrough step controls sit together in the center, leaving more room for screenshots.
 Costs and usage appear in Chat & replay, and completed walkthroughs no longer leave an empty footer
 (`apps/scout/src/components/task-walkthrough.tsx`, `apps/scout/src/products/conversation/page.tsx`).
+
+### 2026-09-20 - working tree - v283
+
+Public site pages now render their identity and reviews before JavaScript loads.
+The homepage and site pages share the official Convex TanStack query integration,
+with native Convex pagination and one shared first-page handoff. Disabling SSR
+returns data pages to the SPA shell (`apps/scout/src/router.tsx`, `packages/convex-tanstack-start/src/server.ts`).

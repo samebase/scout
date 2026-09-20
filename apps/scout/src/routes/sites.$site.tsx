@@ -165,7 +165,11 @@ function SiteNavigation() {
       content={
         <nav
           aria-label="Sites"
-          aria-busy={sites.status === "LoadingFirstPage"}
+          aria-busy={
+            sites.status === "LoadingFirstPage" ||
+            scope !== deferredScope ||
+            search.site !== deferredSite
+          }
           className="mx-auto w-full max-w-page p-2 text-sm"
         >
           <ul className="space-y-3">

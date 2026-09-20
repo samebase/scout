@@ -43,7 +43,10 @@ export function ActivityFeed({ search }: { search: ReviewFeedSearch }) {
   );
   const filters = { site: search.site, scope };
   return (
-    <section aria-label="Reviews">
+    <section
+      aria-label="Reviews"
+      aria-busy={scope !== deferredScope || search.site !== deferredSite}
+    >
       <div className="mb-5">
         <SiteFilters
           search={filters}
