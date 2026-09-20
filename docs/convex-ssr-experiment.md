@@ -21,12 +21,11 @@ browser loads the remaining sites when you scroll. Filtering and opening a task
 exercise the normal Scout app. `private review` must never appear in the public
 HTML or feed.
 
-[Open the SSR check route](https://clever-vole-526.eu-west-1.convex.site/ssr-check)
-for a smaller example. It uses `useSuspenseQuery(convexQuery(...))` to render up to
-three public site links and their review counts. Find those links in View Page
-Source or disable JavaScript and reload. With JavaScript enabled, the hydration
-button increments on each click. The route inherits SSR without a loader,
-pagination helper, hosting rule, or entry in the prerender configuration.
+[Open an actual site page](https://clever-vole-526.eu-west-1.convex.site/sites/ssr-8.example).
+This is Scout's `/sites/$site` route. Its site heading, public reviews, and sites
+sidebar are present in View Page Source. Direct visits work with no query string,
+with `?scope=public`, and with `?scope=public&view=tasks`. The site records are
+synthetic preview data; the route and components are the same ones Scout uses.
 
 ## Current query integration
 
@@ -64,20 +63,16 @@ node apps/scout/scripts/verify-ssr.ts https://clever-vole-526.eu-west-1.convex.s
 ```
 
 The check parses HTML without executing JavaScript. It requires homepage cards,
-a filtered homepage, site identity and reviews, About content, the SSR check's
-site links, private-view shells, and TanStack's unknown-route status. Unit tests
-also delay an official Convex query and require the renderer to wait for its HTML
-and hydration data.
+a filtered homepage, site identity and reviews, About content, private-view
+shells, and TanStack's unknown-route status. Unit tests also delay an official
+Convex query and require the renderer to wait for its HTML and hydration data.
 
 Verified on the hosted `clever-vole-526` preview on September 20, 2026:
 
-- The raw-response check passed all 13 paths. The homepage contained six site
+- The raw-response check passed all 14 paths. The homepage contained six site
   cards; its filtered URL contained one. The direct site URL contained its
-  identity, public review, and eight sidebar cards. Private views contained no reviews.
-- `/ssr-check` contained three public site links and review counts in the raw HTML.
-  Its button incremented after hydration, navigation back to the homepage worked,
-  and Chrome reported no warnings or errors. The same route and button worked
-  through the SPA shell with SSR disabled.
+  identity, public review, and eight sidebar cards with and without query parameters.
+  Private views contained no reviews.
 - Chrome hydrated the homepage and direct site page, switched sites, filtered
   the feed, and loaded all eight fixture sites through native pagination.
   The first About navigation retained one menu. Console warnings and errors were empty.
