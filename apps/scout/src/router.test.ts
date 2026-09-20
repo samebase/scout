@@ -2,6 +2,15 @@
 
 import { expect, test } from "vite-plus/test";
 import { getRouter } from "./router";
+import { startInstance } from "./start";
+
+test("protected routes stay client-only behind the browser account gate", async () => {
+  expect((await startInstance.getOptions()).defaultSsr).toBe(false);
+  for (const route of Object.values(getRouter().routesById)) {
+    if (route.options.staticData?.access === "access_public") continue;
+    expect(route.options.ssr ?? false, route.id).toBe(false);
+  }
+});
 
 test("the generated routes expose the shared Lab interface and retire Chats", () => {
   const router = getRouter();

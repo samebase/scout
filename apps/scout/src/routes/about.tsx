@@ -2,6 +2,7 @@ import { Link, createFileRoute } from "@tanstack/react-router";
 import { ArrowRightIcon } from "lucide-react";
 
 export const Route = createFileRoute("/about")({
+  ssr: true,
   staticData: { access: "access_public" },
   head: () => ({
     meta: [

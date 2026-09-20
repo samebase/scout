@@ -1,26 +1,35 @@
-/// <reference types="vite/client" />
+import staticHosting from "@convex-dev/static-hosting/test";
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
-import schema from "./schema";
 
-const hosting = vi.hoisted(() => ({
-  register: vi.fn(),
-  auth: vi.fn(),
-  loadRenderer: vi.fn(),
-  render: vi.fn(),
-}));
-vi.mock("@convex-dev/static-hosting", () => ({ registerStaticRoutes: hosting.register }));
-vi.mock("./auth", () => ({ auth: { addHttpRoutes: hosting.auth } }));
-vi.mock("../dist/server/server.js", () => ({ default: { fetch: hosting.render } }));
+const renderer = vi.hoisted(() => ({ load: vi.fn(), fetch: vi.fn() }));
+
+// Run the real component queries in the test root alongside Scout's HTTP router.
+vi.mock("./_generated/api", async (importOriginal) => {
+  const original = await importOriginal<typeof import("./_generated/api")>();
+  const { anyApi } = await import("convex/server");
+  return {
+    ...original,
+    components: {
+      ...original.components,
+      staticHosting: {
+        lib: {
+          getCurrentDeployment: anyApi["lib"]["getCurrentDeployment"],
+          resolveAssetForHttp: anyApi["lib"]["resolveAssetForHttp"],
+        },
+      },
+    },
+  };
+});
 
 beforeEach(() => {
   vi.resetModules();
   vi.resetAllMocks();
-  vi.stubEnv("HOMEPAGE_SSR_ENABLED", undefined);
+  vi.stubEnv("TANSTACK_SERVER_ENABLED", undefined);
   vi.stubEnv("CONVEX_SITE_URL", "https://preview.convex.site");
   vi.doMock("../dist/server/server.js", () => {
-    hosting.loadRenderer();
-    return { default: { fetch: hosting.render } };
+    renderer.load();
+    return { default: { fetch: renderer.fetch } };
   });
 });
 
@@ -29,100 +38,161 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-test("serves public prerenders with an app fallback and keeps auth routes", async () => {
-  const { default: http } = await import("./http");
-  const { rewritePrerenderPath } = await import("../prerender.config");
-  expect(hosting.register).toHaveBeenCalledExactlyOnceWith(http, expect.anything(), {
-    spaFallback: true,
-    rewritePath: rewritePrerenderPath,
+async function setup() {
+  const backend = convexTest(staticHosting.schema, {
+    ...staticHosting.modules,
+    "./component/http.ts": () => import("./http"),
   });
-  expect(hosting.auth).toHaveBeenCalledExactlyOnceWith(http);
-});
+  const bodies = new Map<string, string>();
+  await backend.run(async (ctx) => {
+    for (const asset of [
+      { path: "/index.html", contentType: "text/html", body: "Scout app shell" },
+      { path: "/_landing.html", contentType: "text/html", body: "Static homepage" },
+      { path: "/about/index.html", contentType: "text/html", body: "About Scout" },
+      {
+        path: "/assets/app-a1b2c3d4.js",
+        contentType: "text/javascript",
+        body: "console.log('Scout')",
+      },
+    ]) {
+      const storageId = await ctx.storage.store(new Blob([asset.body]));
+      await ctx.db.insert("staticAssets", {
+        path: asset.path,
+        contentType: asset.contentType,
+        storageId,
+        deploymentId: "test",
+      });
+      const url = await ctx.storage.getUrl(storageId);
+      if (!url) throw new Error("Fixture storage URL is missing");
+      bodies.set(url, asset.body);
+    }
+  });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn<typeof fetch>(async (input) => {
+      const url = new Request(input).url;
+      const body = bodies.get(url);
+      if (body === undefined) throw new Error(`Unexpected fetch: ${url}`);
+      return new Response(body);
+    }),
+  );
+  return backend;
+}
 
-test("renders homepage requests through TanStack and disables document caching", async () => {
-  vi.stubEnv("HOMEPAGE_SSR_ENABLED", "true");
-  hosting.render.mockResolvedValue(
-    new Response("<html>Rendered reviews</html>", {
+test.each([
+  "/",
+  "/?site=example",
+  "/about",
+  "/sites/example.com?scope=public",
+  "/future/customer.v2",
+  "/missing.png",
+])("TanStack receives unmatched URL %s before static rewrites and shell fallback", async (path) => {
+  vi.stubEnv("TANSTACK_SERVER_ENABLED", "true");
+  renderer.fetch.mockResolvedValue(
+    new Response("Rendered document", {
       headers: { "Content-Type": "text/html", "Cache-Control": "public, max-age=3600" },
     }),
   );
-  const backend = convexTest(schema, import.meta.glob("./**/*.ts"));
-  const response = await backend.fetch("/?site=example");
+  const backend = await setup();
+  const response = await backend.fetch(path);
   expect(response.status).toBe(200);
   expect(response.headers.get("Cache-Control")).toBe("no-store");
-  expect(await response.text()).toBe("<html>Rendered reviews</html>");
-  expect(hosting.render).toHaveBeenCalledExactlyOnceWith(
+  expect(await response.text()).toBe("Rendered document");
+  expect(renderer.fetch).toHaveBeenCalledExactlyOnceWith(
     expect.objectContaining({
-      url: expect.stringContaining("/?site=example"),
+      url: expect.stringContaining(path),
     }),
   );
-  expect(hosting.loadRenderer).toHaveBeenCalledExactlyOnceWith();
 });
 
-test.each([
-  { setting: undefined, path: "/", asset: "/_landing.html" },
-  { setting: "false", path: "/", asset: "/_landing.html" },
-  { setting: "false", path: "/?site=example&scope=public", asset: "/index.html" },
-  { setting: "false", path: "/?scope=mine", asset: "/index.html" },
-])(
-  "serves static HTML without loading the renderer when SSR is $setting at $path",
-  async ({ setting, path, asset }) => {
-    vi.stubEnv("HOMEPAGE_SSR_ENABLED", setting);
-    hosting.loadRenderer.mockImplementation(() => {
+test.each([undefined, "false"])(
+  "static mode %s bypasses even a broken renderer",
+  async (setting) => {
+    vi.stubEnv("TANSTACK_SERVER_ENABLED", setting);
+    renderer.load.mockImplementation(() => {
       throw new Error("Renderer cannot initialize");
     });
-    const fetchStatic = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response("<html>Static Scout homepage</html>", {
-        headers: { "Content-Type": "text/html", "Cache-Control": "public, max-age=3600" },
-      }),
-    );
-    vi.stubGlobal("fetch", fetchStatic);
-    const backend = convexTest(schema, import.meta.glob("./**/*.ts"));
-    const response = await backend.fetch(path);
-    expect(response.status).toBe(200);
-    expect(response.headers.get("Content-Type")).toBe("text/html");
-    expect(response.headers.get("Cache-Control")).toBe("no-store");
-    expect(await response.text()).toBe("<html>Static Scout homepage</html>");
-    expect(fetchStatic).toHaveBeenCalledExactlyOnceWith(
-      new URL(asset, "https://preview.convex.site"),
-    );
-    expect(hosting.loadRenderer).not.toHaveBeenCalled();
-    expect(hosting.render).not.toHaveBeenCalled();
+    const backend = await setup();
+    for (const { path, body } of [
+      { path: "/", body: "Static homepage" },
+      { path: "/?site=example&scope=public", body: "Scout app shell" },
+      { path: "/about", body: "About Scout" },
+      { path: "/about/", body: "About Scout" },
+      { path: "/sites/example.com?scope=public", body: "Scout app shell" },
+      { path: "/future/customer.v2", body: "Scout app shell" },
+      { path: "/missing.png", body: "Scout app shell" },
+    ]) {
+      const response = await backend.fetch(path);
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe(body);
+    }
+    expect(renderer.load).not.toHaveBeenCalled();
   },
 );
 
-test("disabling SSR recovers after the renderer fails to initialize", async () => {
-  vi.stubEnv("HOMEPAGE_SSR_ENABLED", "true");
-  hosting.loadRenderer.mockImplementation(() => {
+test("assets and existing Convex endpoints bypass TanStack", async () => {
+  vi.stubEnv("TANSTACK_SERVER_ENABLED", "true");
+  renderer.load.mockImplementation(() => {
     throw new Error("Renderer cannot initialize");
   });
-  const backend = convexTest(schema, import.meta.glob("./**/*.ts"));
-  await expect(backend.fetch("/")).rejects.toThrow();
-  expect(hosting.loadRenderer).toHaveBeenCalledExactlyOnceWith();
-  vi.stubEnv("HOMEPAGE_SSR_ENABLED", "false");
-  vi.stubGlobal(
-    "fetch",
-    vi.fn<typeof fetch>().mockResolvedValue(new Response("Static Scout homepage")),
-  );
-  const response = await backend.fetch("/");
-  expect(response.status).toBe(200);
-  expect(await response.text()).toBe("Static Scout homepage");
-  expect(hosting.loadRenderer).toHaveBeenCalledTimes(1);
+  const backend = await setup();
+  const asset = await backend.fetch("/assets/app-a1b2c3d4.js");
+  expect(asset.headers.get("Cache-Control")).toBe("public, max-age=31536000, immutable");
+  expect(await asset.text()).toBe("console.log('Scout')");
+  const auth = await backend.fetch("/.well-known/openid-configuration");
+  expect(auth.status).toBe(200);
+  expect(await auth.json()).toMatchObject({ issuer: "https://preview.convex.site" });
+  const { default: http } = await import("./http");
+  expect(http.lookup("/polar/events", "POST")?.[2]).toBe("/polar/events");
+  expect(renderer.load).not.toHaveBeenCalled();
 });
 
-test("preserves static hosting errors while SSR is disabled", async () => {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn<typeof fetch>().mockResolvedValue(
-      new Response("Static assets unavailable", {
-        status: 503,
-        headers: { "Content-Type": "text/plain", "Retry-After": "5" },
-      }),
-    ),
+test.each([404, 500, 307])("preserves TanStack status %s and response headers", async (status) => {
+  vi.stubEnv("TANSTACK_SERVER_ENABLED", "true");
+  renderer.fetch.mockResolvedValue(
+    new Response("TanStack response", {
+      status,
+      headers: { Location: "/about", "Set-Cookie": "example=value; HttpOnly; SameSite=Lax" },
+    }),
   );
-  const backend = convexTest(schema, import.meta.glob("./**/*.ts"));
-  const response = await backend.fetch("/");
-  expect(response.status).toBe(503);
-  expect(response.headers.get("Retry-After")).toBe("5");
-  expect(await response.text()).toBe("Static assets unavailable");
+  const backend = await setup();
+  const response = await backend.fetch("/unknown/route.pdf");
+  expect(response.status).toBe(status);
+  expect(response.headers.get("Location")).toBe("/about");
+  expect(response.headers.get("Set-Cookie")).toBe("example=value; HttpOnly; SameSite=Lax");
+  expect(await response.text()).toBe("TanStack response");
+});
+
+test("switching off recovers from initialization failure without rebuilding", async () => {
+  vi.stubEnv("TANSTACK_SERVER_ENABLED", "true");
+  renderer.load.mockImplementation(() => {
+    throw new Error("Renderer cannot initialize");
+  });
+  const backend = await setup();
+  await expect(backend.fetch("/sites/example.com")).rejects.toThrow();
+  vi.stubEnv("TANSTACK_SERVER_ENABLED", "false");
+  const response = await backend.fetch("/sites/example.com");
+  expect(response.status).toBe(200);
+  expect(await response.text()).toBe("Scout app shell");
+  expect(renderer.load).toHaveBeenCalledTimes(1);
+});
+
+test("accepts TanStack redirects with immutable headers", async () => {
+  vi.stubEnv("TANSTACK_SERVER_ENABLED", "true");
+  renderer.fetch.mockResolvedValue(Response.redirect("https://preview.convex.site/about", 308));
+  const backend = await setup();
+  const response = await backend.fetch("//about");
+  expect(response.status).toBe(308);
+  expect(response.headers.get("Location")).toBe("https://preview.convex.site/about");
+  expect(response.headers.get("Cache-Control")).toBe("no-store");
+});
+
+test("switching off and back on changes the next request", async () => {
+  const backend = await setup();
+  renderer.fetch.mockImplementation(() => new Response("TanStack document"));
+  for (const enabled of [true, false, true]) {
+    vi.stubEnv("TANSTACK_SERVER_ENABLED", String(enabled));
+    const response = await backend.fetch("/sites/example.com");
+    expect(await response.text()).toBe(enabled ? "TanStack document" : "Scout app shell");
+  }
 });

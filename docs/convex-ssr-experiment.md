@@ -27,40 +27,51 @@ visible while native subscriptions connect, then uses their results and cursors.
 The provider creates a separate Convex client for each rendered tree. No user
 credentials are passed to the server loader, and `scope=mine` skips the snapshot.
 
-Only exact `GET /` uses dynamic SSR when enabled. Static public pages, SPA navigation, and
-authenticated routes keep their existing behavior. The Cloudflare static frontend
-still uses a prerendered shell; test SSR at the Convex URL above.
+With TanStack serving enabled, every GET that does not match an uploaded asset goes
+to the built TanStack server. TanStack owns route matching, redirects, and Not Found
+responses. The homepage, About, Privacy, and Terms routes opt into SSR; other routes
+default to client rendering through `src/start.ts`. The root layout opts into SSR
+so public child routes can render. No app-route list is registered in Convex.
+URL-dependent navigation and the browser account gate use TanStack's `ClientOnly`
+boundary so a shared SPA shell can hydrate at a different URL. Protected routes
+must retain client-only rendering; personalized SSR is outside this integration.
 
-TanStack owns app routes. Convex static hosting serves uploaded files first, then
-falls back to `/index.html` for every unmatched path, regardless of file extensions
-or request headers. TanStack renders the matching page or its Not Found view.
-New app routes need no hosting rules. The existing Static Hosting dependency patch
-removes the extension check and sets `Cache-Control: no-store` on HTML responses.
+Static Hosting still owns uploads, storage, and serving built assets. Its patched
+`fallback(request)` callback runs after an exact asset miss, before static rewrites
+and SPA fallback. A response is returned unchanged; `null` continues normal static
+serving. Callback errors propagate instead of silently switching modes. The callback
+does not run for uploaded files or more-specific Convex auth and webhook endpoints.
+This hook handles GET documents; it does not add POST server-function support.
+
+With TanStack serving disabled, public prerenders and the universal `/index.html`
+fallback work as before. Dots and Accept headers do not affect shell fallback.
+HTML responses set `Cache-Control: no-store`.
 In hosted preview checks, Convex preserves that header for site URLs but overrides
-it with `public, max-age=14400` on missing `.js`, `.png`, and `.pdf` URLs. Those URLs
-still receive the shell, but browsers can cache it for four hours.
+it with `public, max-age=14400` on missing `.js`, `.png`, and `.pdf` URLs. Browsers
+can cache the static shell or TanStack Not Found response there for four hours.
 
-### Enable or disable homepage SSR
+### Enable or disable TanStack serving
 
-Set `HOMEPAGE_SSR_ENABLED` in the target Convex deployment's environment settings.
-`true` enables SSR; `false` or an unset value serves the existing static homepage,
-whose list loads through browser subscriptions. The HTTP handler reads the setting
-on each request, so changing it does not require a rebuild or code deployment.
+Set `TANSTACK_SERVER_ENABLED` in the target Convex deployment's environment settings.
+`true` enables TanStack's server handler; `false` or an unset value restores static
+prerenders and the SPA shell for all pages. The HTTP handler reads the setting on
+each request, so changing it does not require a rebuild or code deployment.
+This replaces `HOMEPAGE_SSR_ENABLED`, which no longer controls serving. A deployment
+with only the old variable set starts in static mode until the new variable is enabled.
 
 For this PR preview, run either command from the repository root:
 
 ```sh
-pnpm --filter samebase-scout exec convex env set HOMEPAGE_SSR_ENABLED false --deployment clever-vole-526
-pnpm --filter samebase-scout exec convex env set HOMEPAGE_SSR_ENABLED true --deployment clever-vole-526
+pnpm --filter samebase-scout exec convex env set TANSTACK_SERVER_ENABLED false --deployment clever-vole-526
+pnpm --filter samebase-scout exec convex env set TANSTACK_SERVER_ENABLED true --deployment clever-vole-526
 ```
 
-The disabled path never imports or initializes the renderer. It fetches the
-already-published `/_landing.html` through Static Hosting while preserving the
-visitor's URL. Requests with query parameters use the existing `/index.html` SPA
-shell so filters initialize in the browser without a prerender hydration mismatch.
-Both modes return `Cache-Control: no-store`. With SSR disabled,
+The disabled path never imports or initializes the renderer. Static Hosting reads
+the already-published prerender or shell directly, without an HTTP request back to
+the app. Homepage requests with query parameters use `/index.html` so filters
+initialize in the browser without a prerender hydration mismatch. With serving disabled,
 View Page Source contains the page shell without review cards; the browser still
-loads the feed. With SSR enabled, the first six cards are in the response HTML.
+loads the feed. With serving enabled, the first six cards are in the response HTML.
 
 This is a manual switch, not an automatic error fallback. It does not repair
 missing static assets, shared backend failures, or a failed build. Builds still
@@ -75,16 +86,20 @@ After selecting a preview, run these platform-neutral commands from the root:
 pnpm --filter samebase-scout exec convex deployment select clever-vole-526
 pnpm run check
 pnpm run build
+pnpm --filter samebase-scout exec convex env set TANSTACK_SERVER_ENABLED false --deployment clever-vole-526
 pnpm --filter samebase-scout exec convex dev --once --typecheck enable
 pnpm --filter samebase-scout exec static-hosting upload --dist ./dist/client --preview-name nicu-convex-tanstack-ssr
-pnpm --filter samebase-scout exec convex env set HOMEPAGE_SSR_ENABLED true --deployment clever-vole-526
+pnpm --filter samebase-scout exec convex env set TANSTACK_SERVER_ENABLED true --deployment clever-vole-526
 ```
 
 The backend imports the generated server, so the build must precede its push.
 Normal `pnpm run dev` now does this initial build automatically. Rebuild after
 frontend edits to refresh the hosted renderer; Vite still hot-reloads locally.
 The CI preview path builds before deploying and uploads matching browser assets
-afterwards. The existing Static Hosting patch adds explicit `--preview-name`
+afterwards. It does not toggle this setting automatically. If TanStack serving is
+already enabled, use the manual sequence above for releases: otherwise the interval
+between backend deployment and asset upload can reference missing browser files.
+The existing Static Hosting patch adds explicit `--preview-name`
 forwarding, since 0.2.1's uploader otherwise does not target a named preview.
 
 Build-time prerendering intentionally skips the live loader. Convex runs the build
@@ -105,7 +120,37 @@ pnpm --filter samebase-scout exec convex env remove SSR_FIXTURE_DEPLOYMENT_URL -
 The disabled fixture Scout cannot start tasks. Use real configured Scouts to test
 agent execution separately.
 
-### Hosted Scout verification
+### Generic routing verification
+
+The final build was deployed to `clever-vole-526` on September 20, 2026, and tested
+with `TANSTACK_SERVER_ENABLED` false, true, false, then true without rebuilding
+between switch changes. The preview is left enabled.
+
+| Request                             | TanStack enabled                              | Static rollback                   |
+| ----------------------------------- | --------------------------------------------- | --------------------------------- |
+| `/`                                 | 200; six public review cards in HTML          | 200; prerender without live cards |
+| `/?scope=mine`                      | 200; no public or private review titles       | 200; SPA shell                    |
+| `/about`                            | 200; page content in HTML                     | 200; prerender                    |
+| `/sites/ssr-8.example?scope=public` | 200; native client-rendered route             | 200; SPA shell                    |
+| Unknown URL                         | 404; router renders Not Found after hydration | 200; SPA renders Not Found        |
+| `//about`                           | 308; Location points to `/about`              | Not part of rollback check        |
+| Built JavaScript and auth discovery | 200; correct content types                    | 200; correct content types        |
+
+Browser checks covered the homepage, About, direct site and task links, sign-in,
+and an unknown route. The final checks reported no console warnings or errors.
+Rollback checks caught and fixed shared-shell hydration mismatches in navigation,
+the account gate, and Not Found. These use native `ClientOnly` boundaries; public
+page content still renders on the server. No signed-in session or paid task was
+created during verification.
+
+Two independent reviews checked runtime behavior and the dependency/deployment
+patch. A real TanStack redirect exposed immutable response headers; the HTTP
+adapter now copies the response before applying cache policy. The full check passed
+1,560 tests, and the production build and hosted Convex type check passed. Tests
+exercise the real patched Static Hosting adapter, preserve redirect/error statuses,
+verify renderer-import failure rollback, and keep protected routes client-only.
+
+### Earlier homepage-only verification
 
 - `GET /` returned 200 and 58,328 bytes of HTML containing six `<article>` cards
   and six public review headings, with `Cache-Control: no-store`.
@@ -197,7 +242,7 @@ Use `src/server.ts` for automatic entry discovery. If explicitly configuring
 `server.entry`, the installed Start plugin resolves it relative to `srcDirectory`;
 an absolute path silently fell back to the default entry during this experiment.
 
-The HTTP integration follows this shape:
+The initial prototype used this HTTP integration:
 
 ```ts
 http.route({
