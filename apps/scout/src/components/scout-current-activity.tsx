@@ -1,4 +1,4 @@
-import { Link } from "@tanstack/react-router";
+import { ClientOnly, Link } from "@tanstack/react-router";
 import type { FunctionReturnType } from "convex/server";
 import { ArrowUpRightIcon, LockKeyholeIcon, MonitorIcon } from "lucide-react";
 import { useState } from "react";
@@ -72,10 +72,12 @@ export function ScoutCurrentActivity({
         <div className="mt-1 flex flex-wrap gap-x-3 text-xs text-muted-foreground">
           {session.primarySite && <span>{session.primarySite}</span>}
           <time dateTime={new Date(session.createdAt).toISOString()}>
-            {new Date(session.createdAt).toLocaleDateString(undefined, {
-              month: "short",
-              day: "numeric",
-            })}
+            <ClientOnly fallback={new Date(session.createdAt).toISOString().slice(0, 10)}>
+              {new Date(session.createdAt).toLocaleDateString(undefined, {
+                month: "short",
+                day: "numeric",
+              })}
+            </ClientOnly>
           </time>
         </div>
       </div>

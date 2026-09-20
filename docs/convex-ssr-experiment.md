@@ -1,6 +1,6 @@
 # TanStack Start inside a Convex HTTP action
 
-Tested on September 20, 2026. TanStack Start can render directly in a hosted Convex
+Tested on September 21, 2026. TanStack Start can render directly in a hosted Convex
 HTTP action with the versions Scout currently uses. Scout's real public homepage
 now uses this renderer. No Cloudflare server, Node action, or stream polyfill is
 needed at runtime.
@@ -26,6 +26,14 @@ This is Scout's `/sites/$site` route. Its site heading, public reviews, and site
 sidebar are present in View Page Source. Direct visits work with no query string,
 with `?scope=public`, and with `?scope=public&view=tasks`. The site records are
 synthetic preview data; the route and components are the same ones Scout uses.
+
+Public task reviews also render their title, task navigation, initial transcript,
+and saved walkthrough text through the same query integration. Screenshot URLs and
+interactive browser controls load in the browser. `/scouts` and `/scouts/$slug`
+render the public directory and profile, including service names. Account identifiers
+and runtime resources still require authenticated queries. Task URLs with
+`scope=mine` use the SPA shell; a private task opened without that parameter also
+returns no private data and waits for browser authentication.
 
 ## Current query integration
 
@@ -56,16 +64,35 @@ Only About, Privacy, and Terms prerender. The homepage uses the universal SPA
 shell in static mode, including on the Cloudflare assets host. This keeps builds
 independent of backend data and avoids incomplete Suspense markup during rollback.
 
-Run the raw-response check against a deployment with a reviewed public site:
+Run `pnpm run check` for the automated coverage. The renderer tests delay an
+official Convex query and require its content and hydration data in the completed
+response. Component tests cover private access, authentication transitions, and
+navigation while queries are pending.
 
-```sh
-node apps/scout/scripts/verify-ssr.ts https://clever-vole-526.eu-west-1.convex.site ssr-8.example
-```
+For a hosted smoke check, disable JavaScript in the browser and reload a public
+site, task, or Scout URL. Its content should already be visible. Re-enable
+JavaScript and check navigation and a direct reload. Check private URLs while
+signed out, including their response HTML and serialized data. The hosted results
+below record the release checks; they are not a separate test runner.
 
-The check parses HTML without executing JavaScript. It requires homepage cards,
-a filtered homepage, site identity and reviews, About content, private-view
-shells, and TanStack's unknown-route status. Unit tests also delay an official
-Convex query and require the renderer to wait for its HTML and hydration data.
+Verified for public task and Scout routes on the hosted preview on September 21, 2026:
+
+- All 20 raw-response checks passed, including a task URL without search parameters,
+  its transcript, walkthrough, personal-scope shell, and Scout directory/profile.
+- Separate checks found no private fixture titles, Scout email, inbox IDs, or browser
+  profile names in anonymous HTML or serialized query data, including a real private task URL.
+- Chrome loaded and reloaded the task and profile, switched review views, and navigated
+  back to the directory without warnings or errors. The private task showed sign-in.
+- With SSR disabled, direct task and Scout URLs returned the SPA shell and loaded in
+  Chrome. The preview is left enabled. Production was not changed.
+- The hosted walkthrough fixture has no screenshots. Its empty notice renders on the
+  server; a separate delayed-query test uses the real walkthrough component to verify
+  summary, check, and step HTML and that screenshot actions run only in the browser.
+
+Component tests use the real query cache to check UI responses to seeded query results
+and simulated authentication updates. They do not exercise the full transition from
+SSR hydration to authenticated Convex subscriptions. No signed-in preview browser
+session was used for this pass.
 
 Verified on the hosted `clever-vole-526` preview on September 20, 2026:
 
@@ -252,15 +279,13 @@ integration above.
 
 ## Working configuration
 
-The custom TanStack server entry uses:
+Scout's `src/server.ts` uses the shared server entry:
 
 ```ts
-import { createStartHandler, defaultRenderHandler } from "@tanstack/react-start/server";
-
-export default { fetch: createStartHandler(defaultRenderHandler) };
+export { default } from "@samebase/convex-tanstack-start/server";
 ```
 
-It also installs `URLSearchParams.size` when the runtime lacks that getter.
+The shared entry also installs `URLSearchParams.size` when the runtime lacks that getter.
 The hosted Convex runtime returned `undefined` for it. Without the getter,
 TanStack normalizes `/?site=ssr-8` into `/site=ssr-8` and returns 404. A regression
 test reproduces that behavior using TanStack's actual URL normalizer and verifies
@@ -329,23 +354,22 @@ The full Scout build and hosted push succeeded with an existing `outdent`
 CommonJS-in-ESM warning in a workspace chunk. The homepage request did not hit an
 error, but this is not evidence that every authenticated route can be rendered.
 
-Installed versions: Convex 1.45.0, Static Hosting 0.2.1, TanStack Start 1.168.34,
-TanStack Router 1.170.18, React and React DOM 19.2.6.
+Current dependency versions are recorded in the [Scout manifest](../apps/scout/package.json)
+and the [integration package manifest](../packages/convex-tanstack-start/package.json).
 
 ## Workspace extraction
 
 The reusable code now lives in the private workspace package
 [`@samebase/convex-tanstack-start`](../packages/convex-tanstack-start/README.md).
-Its Vite plugin is 17 lines and its buffered server entry is 13 lines, including
-the URLSearchParams compatibility getter.
+It contains the Vite plugin and buffered server entry, including the
+URLSearchParams compatibility getter.
 It needs no component schema because it owns no persistent state.
 
 The [runnable example](../apps/convex-ssr-example/README.md) keeps its page loader,
 synthetic database, subscriptions, and HTTP mounts separate from the library.
-The complete `convex/http.ts` is 19 lines. All authored source is visible in the
-repository; generated server bundles remain ignored. Scout consumes the same
-package, with its own loader and HTTP routing. This branch is deployed to the
-Scout preview, not production.
+All authored source is visible in the repository; generated server bundles remain
+ignored. Scout consumes the same package, with component queries and its own HTTP
+routing. This branch is deployed to the Scout preview, not production.
 
 The extracted example replaced the scratch implementation on the same temporary
 development deployment. Both document routes returned 200 with `no-store` and

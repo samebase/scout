@@ -3,7 +3,7 @@ import { ConversationPage, ConversationError } from "../products/conversation/pa
 import { conversationSearch } from "../products/conversation/model";
 
 export const Route = createFileRoute("/tasks/$thread")({
-  ssr: false,
+  ssr: ({ search }) => search.status === "success" && search.value.scope !== "mine",
   staticData: { access: "access_public" },
   validateSearch: conversationSearch,
   head: () => ({ meta: [{ title: "Task | Scout" }] }),

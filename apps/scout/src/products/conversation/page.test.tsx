@@ -30,6 +30,7 @@ import {
 
 const remote = vi.hoisted(() => ({
   authenticated: true,
+  authLoading: false,
   messages: Array<FunctionReturnType<typeof api.scout.activity.messages>["page"][number]>(),
   messageStatus: "Exhausted",
   loadEarlierMessages: vi.fn(),
@@ -56,37 +57,56 @@ function subscribe(listener: () => void) {
   return () => remote.subscribers.delete(listener);
 }
 
+function readQuery(name: string, args: unknown): unknown {
+  remote.queryCalls(name, args);
+  if (args === "skip") return undefined;
+  if (name === "scout/activity:get" && args && typeof args === "object" && "threadId" in args) {
+    const scopedKey = `scout/activity:get:${String(args.threadId)}`;
+    if (remote.queries.has(scopedKey)) return remote.queries.get(scopedKey);
+  }
+  if (
+    name === "scout/activity:get" &&
+    args &&
+    typeof args === "object" &&
+    "threadId" in args &&
+    args.threadId === "missing-thread"
+  )
+    return null;
+  if (args && typeof args === "object" && "sessionId" in args) {
+    const scopedKey = `${name}:${String(args.sessionId)}`;
+    if (remote.queries.has(scopedKey)) return remote.queries.get(scopedKey);
+  }
+  return remote.queries.get(name);
+}
+
+const queryClients = new Set<QueryClient>();
+
+function readSsrQuery(queryKey: readonly unknown[]): unknown {
+  const name = queryKey[1];
+  if (typeof name !== "string") throw new Error("Expected a Convex query key");
+  if (name === "scout/sites:count") return { count: 0, hasMore: false };
+  if (name === "scout/sites:list" || name === "scout/activity:list") {
+    return { page: [], isDone: true, continueCursor: "" };
+  }
+  if (name === "scout/activity:messages") {
+    if (remote.queries.has(name)) return remote.queries.get(name);
+    return {
+      page: remote.messages,
+      isDone: remote.messageStatus === "Exhausted",
+      continueCursor: "",
+    };
+  }
+  return readQuery(name, queryKey[2]);
+}
+
 vi.mock("convex/react", () => ({
   useConvexAuth: () => {
     useSyncExternalStore(subscribe, () => remote.revision);
-    return { isAuthenticated: remote.authenticated, isLoading: false };
+    return { isAuthenticated: remote.authenticated, isLoading: remote.authLoading };
   },
   useQuery: (reference: FunctionReference<"query">, args: unknown) => {
     useSyncExternalStore(subscribe, () => remote.revision);
-    remote.queryCalls(getFunctionName(reference), args);
-    if (args === "skip") return undefined;
-    if (
-      getFunctionName(reference) === "scout/activity:get" &&
-      args &&
-      typeof args === "object" &&
-      "threadId" in args
-    ) {
-      const scopedKey = `scout/activity:get:${String(args.threadId)}`;
-      if (remote.queries.has(scopedKey)) return remote.queries.get(scopedKey);
-    }
-    if (
-      getFunctionName(reference) === "scout/activity:get" &&
-      args &&
-      typeof args === "object" &&
-      "threadId" in args &&
-      args.threadId === "missing-thread"
-    )
-      return null;
-    if (args && typeof args === "object" && "sessionId" in args) {
-      const scopedKey = `${getFunctionName(reference)}:${String(args.sessionId)}`;
-      if (remote.queries.has(scopedKey)) return remote.queries.get(scopedKey);
-    }
-    return remote.queries.get(getFunctionName(reference));
+    return readQuery(getFunctionName(reference), args);
   },
   useAction: (reference: FunctionReference<"action">) => {
     if (getFunctionName(reference) === "tasks/screenshots:imageUrl") return remote.screenshotUrl;
@@ -162,6 +182,7 @@ beforeEach(() => {
   remote.messageStatus = "Exhausted";
   remote.loadEarlierMessages.mockReset();
   remote.authenticated = true;
+  remote.authLoading = false;
   remote.queryCalls.mockClear();
   remote.screenshotUrl.mockReset().mockResolvedValue(null);
   remote.revision = 0;
@@ -226,6 +247,9 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  for (const client of queryClients) client.clear();
+  queryClients.clear();
+  remote.subscribers.clear();
   vi.restoreAllMocks();
 });
 
@@ -291,21 +315,35 @@ async function openPlay(path = "/play") {
       queries: {
         retry: false,
         queryFn: ({ queryKey }) => {
-          if (queryKey[1] === "scout/sites:count") return { count: 0, hasMore: false };
-          if (queryKey[1] === "scout/sites:list" || queryKey[1] === "scout/activity:list") {
-            return { page: [], isDone: true, continueCursor: "" };
-          }
-          throw new Error("Unexpected TanStack query");
+          const current = readSsrQuery(queryKey);
+          if (current !== undefined) return current;
+          return new Promise<unknown>((resolve) => {
+            const unsubscribe = subscribe(() => {
+              const next = readSsrQuery(queryKey);
+              if (next === undefined) return;
+              unsubscribe();
+              resolve(next);
+            });
+          });
         },
       },
     },
   });
-  render(
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>,
-  );
-  await router.load();
+  queryClients.add(queryClient);
+  subscribe(() => {
+    for (const query of queryClient.getQueryCache().getAll()) {
+      const value = readSsrQuery(query.queryKey);
+      if (value !== undefined) queryClient.setQueryData(query.queryKey, value);
+    }
+  });
+  await act(async () => {
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    );
+    await router.load();
+  });
   return router;
 }
 
@@ -1025,6 +1063,34 @@ test("sends when controls allow it without credit settlement messages", async ()
       message: "Continue the game",
     }),
   );
+});
+
+test("a delayed transcript leaves the walkthrough, view links, and composer available", async () => {
+  remote.queries.set(
+    "scout/activity:get",
+    session({ purpose: { kind: "review" }, status: "finished", hasWalkthrough: true }),
+  );
+  remote.queries.set("scout/activity:messages", undefined);
+  remote.messageStatus = "LoadingFirstPage";
+  remote.queries.set("tasks/walkthrough:get", { walkthrough: null, captures: [] });
+  await openPlay("/tasks/game-thread");
+  expect(await screen.findByRole("heading", { name: "No screenshots saved" })).toBeTruthy();
+  const views = screen.getByRole("navigation", { name: "Review views" });
+  await userEvent.click(within(views).getByRole("link", { name: "Chat & replay" }));
+  const composer = screen.getByRole("textbox", { name: "Message Scout" });
+  await userEvent.type(composer, "Keep this draft");
+  expect(screen.queryByRole("log", { name: "Session messages" })).toBeNull();
+  expect(screen.getByRole("navigation", { name: "Review views" })).toBe(views);
+
+  act(() => {
+    remote.messageStatus = "Exhausted";
+    remote.queries.delete("scout/activity:messages");
+    remote.revision += 1;
+    remote.subscribers.forEach((notify) => notify());
+  });
+  expect(await screen.findByRole("log", { name: "Session messages" })).toBeTruthy();
+  expect(screen.getByRole("textbox", { name: "Message Scout" })).toBe(composer);
+  expect(composer).toHaveProperty("value", "Keep this draft");
 });
 
 test("a completed managed Review opens its walkthrough and pairs replay with Chat", async () => {
@@ -2046,7 +2112,7 @@ test.each([
         site: "samebase.com",
       }),
     );
-    expect(await screen.findByText("Opening task…")).toBeTruthy();
+    expect(document.querySelector('[aria-busy="true"]')).toBeTruthy();
     expect(screen.getByRole("navigation", { name: "Tasks for samebase.com" })).toBe(nav);
     expect(scrollport.scrollTop).toBe(180);
     expect(screen.queryByRole("textbox", { name: "Message Scout" })).toBeNull();
@@ -2779,4 +2845,37 @@ test("follows new browser sessions until the user chooses a session", async () =
   expect(screen.getByTitle("Scout's live browser").getAttribute("src")).toBe("about:blank#second");
   expect(remote.sendManaged).not.toHaveBeenCalled();
   expect(remote.stopManaged).not.toHaveBeenCalled();
+});
+
+test("cached task data stays quiet during auth loading and reflects access updates", async () => {
+  remote.authenticated = false;
+  remote.authLoading = true;
+  remote.queries.set("scout/activity:get", null);
+  await openPlay("/tasks/game-thread?view=chat");
+  expect(screen.queryByText("Session unavailable")).toBeNull();
+  expect(screen.queryByRole("textbox", { name: "Message Scout" })).toBeNull();
+  expect(document.querySelector('[aria-busy="true"]')).toBeTruthy();
+
+  act(() => {
+    remote.authLoading = false;
+    remote.authenticated = true;
+    remote.queries.set(
+      "scout/activity:get",
+      session({ title: "Private account review", purpose: { kind: "review" } }),
+    );
+    remote.revision += 1;
+    remote.subscribers.forEach((notify) => notify());
+  });
+  expect(await screen.findByRole("heading", { name: "Private account review" })).toBeTruthy();
+  expect(await screen.findByRole("textbox", { name: "Message Scout" })).toBeTruthy();
+
+  act(() => {
+    remote.authenticated = false;
+    remote.queries.set("scout/activity:get", null);
+    remote.revision += 1;
+    remote.subscribers.forEach((notify) => notify());
+  });
+  expect(await screen.findByText("Session unavailable")).toBeTruthy();
+  expect(screen.queryByRole("heading", { name: "Private account review" })).toBeNull();
+  expect(screen.queryByRole("textbox", { name: "Message Scout" })).toBeNull();
 });

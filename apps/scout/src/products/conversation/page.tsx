@@ -9,8 +9,11 @@ import {
 import { accountAccessMessage, canAccess, useViewerAccess } from "../../lib/access";
 import { useSidebarActions } from "@samebase/sidebars/SidebarRuntime";
 import { SidebarLayout } from "@samebase/sidebars/SidebarLayout";
-import { Link, useNavigate } from "@tanstack/react-router";
-import { useConvexAuth, useMutation, usePaginatedQuery, useQuery } from "convex/react";
+import { ClientOnly, Link, useNavigate } from "@tanstack/react-router";
+import { useConvexAuth, useMutation, useQuery } from "convex/react";
+import { convexQuery } from "@convex-dev/react-query";
+import { useSuspenseQuery } from "@tanstack/react-query";
+import { useSsrPaginatedQuery } from "#lib/useSsrPaginatedQuery";
 import type { FunctionReturnType } from "convex/server";
 import { ConvexError } from "convex/values";
 import {
@@ -23,7 +26,7 @@ import {
   MonitorIcon,
   XIcon,
 } from "lucide-react";
-import { type FormEvent, useRef, useState } from "react";
+import { type FormEvent, Suspense, useDeferredValue, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import { omitNullish } from "../../../shared/omitNullish";
 import { taskModelOptions, type TaskSelection } from "../../../shared/taskModels";
@@ -96,7 +99,9 @@ export function ConversationPage({
     <ProductShell>
       <main id="main-content" className="flex h-[calc(100dvh-4rem)] min-h-0 flex-col">
         <ConversationSidebar>
-          <SessionLoader threadId={threadId} kind={kind} search={search} />
+          <Suspense fallback={<div className="min-h-full" aria-busy="true" />}>
+            <SessionLoader threadId={threadId} kind={kind} search={search} />
+          </Suspense>
         </ConversationSidebar>
       </main>
     </ProductShell>
@@ -439,7 +444,11 @@ function SessionLoader({
   search: ConversationSearch;
 }) {
   const viewer = useViewerAccess();
-  const thread = useQuery(api.scout.activity.get, { threadId });
+  const deferredThreadId = useDeferredValue(threadId);
+  const { data: result } = useSuspenseQuery(
+    convexQuery(api.scout.activity.get, { threadId: deferredThreadId }),
+  );
+  const thread = deferredThreadId === threadId ? result : undefined;
   const [opened, setOpened] = useState<{
     thread: ChatThread;
     defaultView: "walkthrough" | "chat";
@@ -489,7 +498,9 @@ function SessionLoader({
             />
           ) : undefined,
         right: showingWalkthrough ? undefined : available ? (
-          <ConversationBrowser key={threadId} thread={thread} kind={kind} search={search} />
+          <ClientOnly fallback={<div aria-busy="true" />}>
+            <ConversationBrowser key={threadId} thread={thread} kind={kind} search={search} />
+          </ClientOnly>
         ) : (
           <div aria-busy="true" />
         ),
@@ -511,10 +522,8 @@ function SessionLoader({
         </header>
       }
       main={
-        thread === undefined ? (
-          <div className="p-3" role="status">
-            Opening task…
-          </div>
+        thread === undefined || (thread === null && viewer === undefined) ? (
+          <div className="min-h-full" aria-busy="true" />
         ) : !available ? (
           <div className={playRouteMessage}>
             <h1 className="text-[30px]">Session unavailable</h1>
@@ -885,12 +894,6 @@ function ConversationSession({
     api.tasks.sessions.cost,
     thread.canControl && managedId && !showingWalkthrough ? { sessionId: managedId } : "skip",
   );
-  const messages = usePaginatedQuery(
-    api.scout.activity.messages,
-    { threadId },
-    { initialNumItems: 50 },
-  );
-  const lastMessageScrollTop = useRef(0);
   const sendManaged = useMutation(api.tasks.sessions.send);
   const retryManaged = useMutation(api.tasks.sessions.retryMessage);
   const stopManaged = useMutation(api.tasks.sessions.stop);
@@ -912,13 +915,6 @@ function ConversationSession({
     scout.status === "active" &&
     managed?.canSend === true &&
     request.kind !== "pending";
-  const visibleMessages = messages.results.toReversed();
-  const phase = thread.purpose.kind === "play" ? thread.purpose.step : null;
-  const phaseLabel = phase
-    ? { research: "Researching the game", account_setup: "Setting up an account", play: "Playing" }[
-        phase
-      ]
-    : null;
 
   async function stop() {
     if (!managedId || pending.current) return;
@@ -1120,86 +1116,9 @@ function ConversationSession({
         </div>
       )}
       <div hidden={showingWalkthrough} className="min-h-0 flex-1 overflow-hidden">
-        <MessageScrollerProvider autoScroll defaultScrollPosition="end">
-          <MessageScroller>
-            <MessageScrollerViewport
-              aria-label="Session messages"
-              className="[mask-image:none]"
-              onScroll={(event) => {
-                const scrollTop = event.currentTarget.scrollTop;
-                const scrolledUp = scrollTop < lastMessageScrollTop.current;
-                lastMessageScrollTop.current = scrollTop;
-                if (scrolledUp && scrollTop <= 240 && messages.status === "CanLoadMore") {
-                  messages.loadMore(50);
-                }
-              }}
-            >
-              <MessageScrollerContent
-                className="mx-auto w-full max-w-page gap-2 px-4 pt-5 pb-7"
-                role="log"
-                aria-label="Session messages"
-                aria-live="polite"
-                aria-busy={
-                  messages.status === "LoadingFirstPage" || messages.status === "LoadingMore"
-                }
-              >
-                {visibleMessages.map((message) =>
-                  message.kind === "tool" ? (
-                    <MessageScrollerItem
-                      key={message.id}
-                      messageId={message.id}
-                      className="w-full min-w-0"
-                    >
-                      <ToolActivityRow tool={message.tool} />
-                    </MessageScrollerItem>
-                  ) : (
-                    <MessageScrollerItem
-                      key={message.id}
-                      messageId={message.id}
-                      className={cn(
-                        "my-2 min-w-0 max-w-[95%] text-[15px] [overflow-wrap:anywhere]",
-                        message.role === "user" ? "ml-auto" : "mr-auto",
-                      )}
-                    >
-                      {message.role !== "user" && (
-                        <span className="mb-2 block text-xs font-medium text-muted-foreground">
-                          {scout?.displayName ?? "Scout"}
-                        </span>
-                      )}
-                      <p
-                        className={cn(
-                          "whitespace-pre-wrap",
-                          message.role === "user" && "rounded-xl bg-secondary px-5 py-3.5",
-                        )}
-                      >
-                        {message.role === "user"
-                          ? gameInviteDisplayText(message.text)
-                          : message.text}
-                      </p>
-                    </MessageScrollerItem>
-                  ),
-                )}
-                {thread.status === "failed" && !thread.canControl && (
-                  <MessageScrollerItem messageId="turn-status" className="mr-auto max-w-[95%]">
-                    <p className={cn(playNotice, "mb-0 px-3 py-2")} role="alert">
-                      Scout couldn't finish this turn.
-                    </p>
-                  </MessageScrollerItem>
-                )}
-                {thread.status === "running" && managed?.state.kind !== "checking" && (
-                  <p
-                    role="status"
-                    className="flex items-center gap-2.5 text-sm text-muted-foreground"
-                  >
-                    <LoaderCircleIcon size={15} className="animate-spin" aria-hidden="true" />
-                    {phaseLabel ?? <span className="sr-only">Scout is working</span>}
-                  </p>
-                )}
-              </MessageScrollerContent>
-            </MessageScrollerViewport>
-            <MessageScrollerButton className="size-11" />
-          </MessageScroller>
-        </MessageScrollerProvider>
+        <Suspense fallback={<div className="min-h-full" aria-busy="true" />}>
+          <ConversationTranscript thread={thread} checking={managed?.state.kind === "checking"} />
+        </Suspense>
       </div>
       {thread.canControl && managedId ? (
         <div
@@ -1325,5 +1244,97 @@ function ConversationSession({
         )
       )}
     </section>
+  );
+}
+
+function ConversationTranscript({ thread, checking }: { thread: ChatThread; checking: boolean }) {
+  const messages = useSsrPaginatedQuery(
+    api.scout.activity.messages,
+    { threadId: thread.threadId },
+    { initialNumItems: 50 },
+  );
+  const lastMessageScrollTop = useRef(0);
+  const visibleMessages = messages.results.toReversed();
+  const phase = thread.purpose.kind === "play" ? thread.purpose.step : null;
+  const phaseLabel = phase
+    ? { research: "Researching the game", account_setup: "Setting up an account", play: "Playing" }[
+        phase
+      ]
+    : null;
+
+  return (
+    <MessageScrollerProvider autoScroll defaultScrollPosition="end">
+      <MessageScroller>
+        <MessageScrollerViewport
+          aria-label="Session messages"
+          className="[mask-image:none]"
+          onScroll={(event) => {
+            const scrollTop = event.currentTarget.scrollTop;
+            const scrolledUp = scrollTop < lastMessageScrollTop.current;
+            lastMessageScrollTop.current = scrollTop;
+            if (scrolledUp && scrollTop <= 240 && messages.status === "CanLoadMore") {
+              messages.loadMore(50);
+            }
+          }}
+        >
+          <MessageScrollerContent
+            className="mx-auto w-full max-w-page gap-2 px-4 pt-5 pb-7"
+            role="log"
+            aria-label="Session messages"
+            aria-live="polite"
+            aria-busy={messages.status === "LoadingFirstPage" || messages.status === "LoadingMore"}
+          >
+            {visibleMessages.map((message) =>
+              message.kind === "tool" ? (
+                <MessageScrollerItem
+                  key={message.id}
+                  messageId={message.id}
+                  className="w-full min-w-0"
+                >
+                  <ToolActivityRow tool={message.tool} />
+                </MessageScrollerItem>
+              ) : (
+                <MessageScrollerItem
+                  key={message.id}
+                  messageId={message.id}
+                  className={cn(
+                    "my-2 min-w-0 max-w-[95%] text-[15px] [overflow-wrap:anywhere]",
+                    message.role === "user" ? "ml-auto" : "mr-auto",
+                  )}
+                >
+                  {message.role !== "user" && (
+                    <span className="mb-2 block text-xs font-medium text-muted-foreground">
+                      {thread.scout.displayName}
+                    </span>
+                  )}
+                  <p
+                    className={cn(
+                      "whitespace-pre-wrap",
+                      message.role === "user" && "rounded-xl bg-secondary px-5 py-3.5",
+                    )}
+                  >
+                    {message.role === "user" ? gameInviteDisplayText(message.text) : message.text}
+                  </p>
+                </MessageScrollerItem>
+              ),
+            )}
+            {thread.status === "failed" && !thread.canControl && (
+              <MessageScrollerItem messageId="turn-status" className="mr-auto max-w-[95%]">
+                <p className={cn(playNotice, "mb-0 px-3 py-2")} role="alert">
+                  Scout couldn't finish this turn.
+                </p>
+              </MessageScrollerItem>
+            )}
+            {thread.status === "running" && !checking && (
+              <p role="status" className="flex items-center gap-2.5 text-sm text-muted-foreground">
+                <LoaderCircleIcon size={15} className="animate-spin" aria-hidden="true" />
+                {phaseLabel ?? <span className="sr-only">Scout is working</span>}
+              </p>
+            )}
+          </MessageScrollerContent>
+        </MessageScrollerViewport>
+        <MessageScrollerButton className="size-11" />
+      </MessageScroller>
+    </MessageScrollerProvider>
   );
 }

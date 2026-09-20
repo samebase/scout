@@ -1,5 +1,8 @@
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
+import { convexQuery } from "@convex-dev/react-query";
+import { useSuspenseQuery } from "@tanstack/react-query";
+import type { FunctionReturnType } from "convex/server";
 import { ArrowLeftIcon, PlusIcon } from "lucide-react";
 import { z } from "zod";
 import { api } from "../../convex/_generated/api";
@@ -21,26 +24,8 @@ export const Route = createFileRoute("/scouts/$slug")({
 });
 
 function ScoutDetailPage() {
-  const viewer = useViewerAccess();
-  const canManage =
-    viewer?.kind === "account" && canAccess("access_scout_manage", viewer.accessKeys);
-  const canStartTask = viewer?.kind === "account" && canAccess("access_lab", viewer.accessKeys);
   const { slug } = Route.useParams();
-  const search = Route.useSearch();
-  const navigate = useNavigate({ from: "/scouts/$slug" });
-  const scout = useQuery(api.scout.scouts.get, { slug });
-  const resources = useQuery(
-    api.scout.scouts.resources,
-    canManage && scout ? { scoutId: scout._id } : "skip",
-  );
-  const serviceAccounts = useQuery(
-    api.scout.serviceAccounts.list,
-    scout ? { scoutId: scout._id } : "skip",
-  );
-
-  if (scout === undefined) {
-    return <section className="min-h-40" aria-busy="true" />;
-  }
+  const { data: scout } = useSuspenseQuery(convexQuery(api.scout.scouts.get, { slug }));
 
   if (scout === null) {
     return (
@@ -64,7 +49,29 @@ function ScoutDetailPage() {
     );
   }
 
-  const selectedAccount = serviceAccounts?.find(
+  return <ScoutProfile scout={scout} />;
+}
+
+function ScoutProfile({
+  scout,
+}: {
+  scout: NonNullable<FunctionReturnType<typeof api.scout.scouts.get>>;
+}) {
+  const viewer = useViewerAccess();
+  const canManage =
+    viewer?.kind === "account" && canAccess("access_scout_manage", viewer.accessKeys);
+  const canStartTask = viewer?.kind === "account" && canAccess("access_lab", viewer.accessKeys);
+  const search = Route.useSearch();
+  const navigate = useNavigate({ from: "/scouts/$slug" });
+  const resources = useQuery(
+    api.scout.scouts.resources,
+    canManage ? { scoutId: scout._id } : "skip",
+  );
+  const { data: serviceAccounts } = useSuspenseQuery(
+    convexQuery(api.scout.serviceAccounts.list, { scoutId: scout._id }),
+  );
+
+  const selectedAccount = serviceAccounts.find(
     (account) => account.kind === "details" && account._id === search.account,
   );
   const editor: AccountEditor =
@@ -162,7 +169,7 @@ function ScoutDetailPage() {
         </section>
       )}
 
-      {canManage && search.account && serviceAccounts !== undefined && !selectedAccount ? (
+      {canManage && search.account && !selectedAccount ? (
         <p role="alert">Account not found.</p>
       ) : null}
       <ServiceAccountsSection

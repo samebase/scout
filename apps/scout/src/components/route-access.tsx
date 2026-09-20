@@ -12,7 +12,7 @@ export function RouteAccessOutlet() {
     select: (matches) => matches.map((match) => match.staticData.access),
   });
   if (policies.every((access) => access === "access_public")) return <Outlet />;
-  // Protected routes use defaultSsr: false. Keep their native pending outlet
+  // Protected routes use ssr: false. Keep their native pending outlet
   // during shell hydration; account access is resolved only in the browser.
   return (
     <ClientOnly fallback={<Outlet />}>

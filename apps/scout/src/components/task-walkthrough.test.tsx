@@ -1,11 +1,21 @@
 // @vitest-environment happy-dom
 
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render as renderView,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { convexQuery } from "@convex-dev/react-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { FunctionArgs, FunctionReturnType } from "convex/server";
-import { useSyncExternalStore } from "react";
+import type { PropsWithChildren, ReactElement } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
-import type { api } from "../../convex/_generated/api";
+import { api } from "../../convex/_generated/api";
 import { TaskWalkthrough } from "./task-walkthrough";
 
 type Result = FunctionReturnType<typeof api.tasks.walkthrough.get>;
@@ -25,27 +35,42 @@ const thirdId: Capture["id"] = "capture-third";
 const remote = vi.hoisted(() => ({
   results: new Map<string, Result | undefined>(),
   listeners: new Set<() => void>(),
-  revision: 0,
   imageUrl:
     vi.fn<(args: FunctionArgs<typeof api.tasks.screenshots.imageUrl>) => Promise<ImageResult>>(),
 }));
 
 vi.mock("convex/react", () => ({
-  useQuery: (
-    _reference: unknown,
-    { sessionId }: FunctionArgs<typeof api.tasks.walkthrough.get>,
-  ) => {
-    useSyncExternalStore(
-      (listener) => {
-        remote.listeners.add(listener);
-        return () => remote.listeners.delete(listener);
-      },
-      () => remote.revision,
-    );
-    return remote.results.get(sessionId);
-  },
   useAction: () => remote.imageUrl,
 }));
+
+let queryClient: QueryClient;
+
+function render(element: ReactElement) {
+  for (const sessionId of [firstSession, secondSession]) {
+    const options = convexQuery(api.tasks.walkthrough.get, { sessionId });
+    queryClient.setQueryDefaults(options.queryKey, {
+      queryFn: () => {
+        const result = remote.results.get(sessionId);
+        if (result !== undefined) return result;
+        return new Promise<Result>((resolve) => {
+          const listener = () => {
+            const value = remote.results.get(sessionId);
+            if (value === undefined) return;
+            remote.listeners.delete(listener);
+            resolve(value);
+          };
+          remote.listeners.add(listener);
+        });
+      },
+    });
+    queryClient.setQueryData(options.queryKey, remote.results.get(sessionId));
+  }
+  return renderView(element, {
+    wrapper: ({ children }: PropsWithChildren) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    ),
+  });
+}
 
 function capture(id: Capture["id"], note: string): Capture {
   return {
@@ -93,17 +118,24 @@ function report(): NonNullable<Result> {
   };
 }
 
-function publish(sessionId: string, result: Result | undefined) {
+function publish(
+  sessionId: FunctionArgs<typeof api.tasks.walkthrough.get>["sessionId"],
+  result: Result,
+) {
   act(() => {
     remote.results.set(sessionId, result);
-    remote.revision += 1;
+    queryClient.setQueryData(
+      convexQuery(api.tasks.walkthrough.get, { sessionId }).queryKey,
+      result,
+    );
     remote.listeners.forEach((listener) => listener());
   });
 }
 
 beforeEach(() => {
   remote.results.clear();
-  remote.revision = 0;
+  remote.listeners.clear();
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   remote.imageUrl.mockReset().mockImplementation(async ({ screenshotId }) => ({
     url: `https://images.example.com/${screenshotId}.png`,
     expiresAtMs: Date.now() + 60_000,
@@ -113,6 +145,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  queryClient.clear();
   vi.useRealTimers();
   vi.restoreAllMocks();
 });
@@ -359,14 +392,14 @@ test("shows notes in capture creation order while the final walkthrough is absen
   expect(remote.imageUrl).toHaveBeenCalledExactlyOnceWith({ screenshotId: secondId });
 });
 
-test("distinguishes loading, access denial, and an empty older task", () => {
+test("distinguishes loading, access denial, and an empty older task", async () => {
   remote.results.set(firstSession, undefined);
   render(<TaskWalkthrough sessionId={firstSession} />);
   expect(screen.getByRole("region", { name: "Task walkthrough", busy: true }).textContent).toBe("");
   publish(firstSession, null);
-  expect(screen.getByRole("heading", { name: "Walkthrough unavailable" })).toBeTruthy();
+  expect(await screen.findByRole("heading", { name: "Walkthrough unavailable" })).toBeTruthy();
   publish(firstSession, { walkthrough: null, captures: [] });
-  expect(screen.getByRole("heading", { name: "No screenshots saved" })).toBeTruthy();
+  expect(await screen.findByRole("heading", { name: "No screenshots saved" })).toBeTruthy();
   expect(screen.getByText("Read the chat for this task’s findings.")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Next" })).toBeNull();
   expect(remote.imageUrl).not.toHaveBeenCalled();
