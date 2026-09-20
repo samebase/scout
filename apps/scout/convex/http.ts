@@ -3,7 +3,7 @@ import { httpRouter } from "convex/server";
 import { components } from "./_generated/api";
 import { auth } from "./auth";
 import { handlePolarEvent } from "./polar";
-import { rewriteStaticPath } from "../prerender.config";
+import { rewritePrerenderPath } from "../prerender.config";
 // oxlint-disable-next-line no-restricted-imports -- Protocol boundaries for the public homepage and signed Polar webhook.
 import { env, httpAction } from "./_generated/server";
 
@@ -34,7 +34,7 @@ http.route({
 http.route({ path: "/polar/events", method: "POST", handler: httpAction(handlePolarEvent) });
 registerStaticRoutes(http, components.staticHosting, {
   spaFallback: true,
-  rewritePath: rewriteStaticPath,
+  rewritePath: rewritePrerenderPath,
 });
 
 export default http;

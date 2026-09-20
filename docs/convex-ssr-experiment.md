@@ -31,6 +31,12 @@ Only exact `GET /` uses dynamic SSR when enabled. Static public pages, SPA navig
 authenticated routes keep their existing behavior. The Cloudflare static frontend
 still uses a prerendered shell; test SSR at the Convex URL above.
 
+TanStack owns app routes. Convex static hosting serves uploaded files first, then
+falls back to `/index.html` for unresolved HTML requests (`Accept: text/html`),
+including paths containing dots. New app routes need no hosting rules. The existing
+Static Hosting dependency patch supplies this fallback; asset requests retain their
+404 behavior, and the response varies by `Accept` for caching.
+
 ### Enable or disable homepage SSR
 
 Set `HOMEPAGE_SSR_ENABLED` in the target Convex deployment's environment settings.

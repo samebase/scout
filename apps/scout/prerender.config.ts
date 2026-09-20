@@ -16,8 +16,6 @@ export const prerenderPathRewrites = new Map(
   ),
 );
 
-export function rewriteStaticPath(path: string) {
-  // Hostnames contain dots, which static hosting otherwise treats as file extensions.
-  if (/^\/sites\/[^/]+\/?$/.test(path)) return "/index.html";
+export function rewritePrerenderPath(path: string) {
   return prerenderPathRewrites.get(path) ?? path;
 }

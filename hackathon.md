@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-20T15:42:18Z
+- **Last updated:** 2026-09-20T15:57:51Z
 
 ## Log
 
@@ -1718,6 +1718,6 @@ failed updates preserve the existing walkthrough
 
 ### 2026-09-20 - working tree - v273
 
-Direct site links and reloads serve Scout's app shell on Convex static hosting.
-Hostname dots no longer send site pages through the missing-file path
-(`apps/scout/prerender.config.ts`, `apps/scout/convex/http.ts`).
+Convex static hosting serves Scout's app shell for HTML navigation when no uploaded file matches.
+Dotted URLs and future app routes share this fallback without individual hosting rules
+(`patches/@convex-dev__static-hosting@0.2.1.patch`).
