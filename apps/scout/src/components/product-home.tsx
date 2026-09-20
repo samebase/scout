@@ -5,16 +5,10 @@ import { ConversationLobby } from "../products/conversation/page";
 import type { homeSearch } from "#lib/homeSearch";
 import { ActivityFeed } from "./activity-feed";
 import { DiscoveryHero } from "./discovery-hero";
-import type { HomeFeed } from "#lib/homeFeed";
+import { Suspense } from "react";
 import { atlasTerrainSettings } from "#lib/terrain-settings";
 
-export function ProductHome({
-  search,
-  initialFeed,
-}: {
-  search: z.infer<typeof homeSearch>;
-  initialFeed: HomeFeed;
-}) {
+export function ProductHome({ search }: { search: z.infer<typeof homeSearch> }) {
   const navigate = useNavigate({ from: "/" });
   return (
     <ProductShell>
@@ -39,10 +33,9 @@ export function ProductHome({
           />
         </DiscoveryHero>
         <div className="relative mx-auto max-w-page px-8 pb-16 max-[640px]:px-4">
-          <ActivityFeed
-            search={{ site: search.site, scope: search.scope }}
-            initialFeed={initialFeed}
-          />
+          <Suspense fallback={<div className="min-h-60" aria-busy="true" />}>
+            <ActivityFeed search={{ site: search.site, scope: search.scope }} />
+          </Suspense>
         </div>
       </main>
     </ProductShell>

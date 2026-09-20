@@ -8,6 +8,7 @@ import { playSearch } from "../products/conversation/model";
 import { ProductShell } from "../products/shell";
 
 export const Route = createFileRoute("/play")({
+  ssr: false,
   staticData: { access: "access_public" },
   validateSearch: playSearch,
   head: () => ({ meta: [{ title: "Play with Scout" }] }),

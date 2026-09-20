@@ -12,6 +12,7 @@ import { SessionRecordingSettings } from "../components/session-recording-settin
 import { resetAnalytics } from "../lib/posthog";
 
 export const Route = createFileRoute("/settings")({
+  ssr: false,
   staticData: { access: "access_account" },
   validateSearch: (search) => z.object({ purchase: z.string().optional() }).parse(search),
   head: () => ({

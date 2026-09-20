@@ -21,7 +21,7 @@ operational responsibilities.
 
 ## Stack
 
-- React 19 and TanStack Start, with public-homepage SSR on Convex
+- React 19 and TanStack Start, with public-page SSR on Convex
 - Convex for the real-time backend, database, and password authentication
 - Cloudflare Workers Static Assets for production delivery and branch previews
 - Convex HTTP actions for homepage HTML and Static Hosting for browser assets
@@ -159,9 +159,13 @@ uploads the same `apps/scout/dist/client` files to Convex Static Hosting. Previe
 not change the production `convex.site` app.
 
 Preview builds also upload browser assets to the matching Convex preview. On
-`convex.site`, `/` renders the first six public sites and two reviews per site
-before returning HTML. Native Convex subscriptions and pagination take over in
-the browser. Other paths retain the existing static prerenders and SPA fallback.
+`convex.site`, the homepage and public site pages render their initial data into HTML.
+The router uses the official Convex TanStack Query adapter and TanStack SSR query
+integration. Ordinary queries use `useSuspenseQuery(convexQuery(...))`; paginated
+lists use the shared `useSsrPaginatedQuery` bridge while native Convex hooks retain
+live pagination. New public routes inherit SSR without a separate server loader.
+Account, workspace, and personal views remain client-rendered.
+`TANSTACK_SERVER_ENABLED=false` still restores static prerenders and the SPA shell.
 See [Scout SSR verification](./docs/convex-ssr-experiment.md) for the PR preview
 and commands to reproduce it without a Cloudflare runtime.
 

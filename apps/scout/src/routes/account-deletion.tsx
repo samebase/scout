@@ -10,6 +10,7 @@ import { Input } from "#components/ui/input";
 import { LegalLinks } from "#components/legal-links";
 
 export const Route = createFileRoute("/account-deletion")({
+  ssr: false,
   staticData: { access: "access_public" },
   head: () => ({ meta: [{ title: "Delete account | Scout" }] }),
   component: AccountDeletionPage,

@@ -4,6 +4,7 @@ import { afterEach, expect, test, vi } from "vite-plus/test";
 vi.mock("@tanstack/react-start/server", () => ({
   createStartHandler: vi.fn(),
   defaultRenderHandler: vi.fn(),
+  StartServer: vi.fn(),
 }));
 
 const nativeSize = Object.getOwnPropertyDescriptor(URLSearchParams.prototype, "size");

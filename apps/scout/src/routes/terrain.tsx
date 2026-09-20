@@ -4,6 +4,7 @@ import { TerrainExplorer } from "#components/terrain-explorer";
 import { terrainSettingsSchema } from "#lib/terrain-settings";
 
 export const Route = createFileRoute("/terrain")({
+  ssr: false,
   staticData: { access: "access_public" },
   validateSearch: terrainSettingsSchema.extend({
     view: z.enum(["terrain", "landing"]).default("terrain"),

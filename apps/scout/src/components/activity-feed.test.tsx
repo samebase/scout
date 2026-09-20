@@ -22,7 +22,15 @@ import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
 import { api } from "../../convex/_generated/api";
 import { reviewFeedSearch } from "../lib/reviewFeedSearch";
 import { ActivityFeed, SiteTaskList } from "./activity-feed";
-import type { HomeFeed } from "../lib/homeFeed";
+import { convexQuery } from "@convex-dev/react-query";
+import {
+  QueryClient,
+  QueryClientProvider,
+  dehydrate,
+  hydrate,
+  type DehydratedState,
+} from "@tanstack/react-query";
+import { z } from "zod";
 
 type Sites = UsePaginatedQueryReturnType<typeof api.scout.sites.list>;
 type Tasks = UsePaginatedQueryReturnType<typeof api.scout.activity.list>;
@@ -236,14 +244,54 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function openFeed(path = "/", initialFeed: HomeFeed = null) {
+function createQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+        queryFn: ({ queryKey }) => {
+          const args = z
+            .object({ scope: z.enum(["public", "mine"]), site: z.string().nullable().optional() })
+            .parse(queryKey[2]);
+          switch (queryKey[1]) {
+            case "scout/sites:count":
+              return remote.count(args.scope);
+            case "scout/sites:list":
+              return {
+                page: remote.sites.filter(
+                  (site) =>
+                    !args.site ||
+                    site.hostname.includes(args.site) ||
+                    site.profile?.name.toLowerCase().includes(args.site),
+                ),
+                isDone: false,
+                continueCursor: "sites-next",
+              };
+            case "scout/activity:list":
+              return {
+                page: remote.tasks.get(args.site ?? "")?.results ?? [],
+                isDone: true,
+                continueCursor: "",
+              };
+            default:
+              throw new Error("Unexpected TanStack query");
+          }
+        },
+      },
+    },
+  });
+}
+
+async function openFeed(path = "/", dehydrated?: DehydratedState) {
+  const queryClient = createQueryClient();
+  if (dehydrated) hydrate(queryClient, dehydrated);
   const root = createRootRoute({ staticData: { access: "access_public" }, component: Outlet });
   const home = createRoute({
     path: "/",
     getParentRoute: () => root,
     staticData: { access: "access_public" },
     validateSearch: reviewFeedSearch,
-    component: () => <ActivityFeed search={home.useSearch()} initialFeed={initialFeed} />,
+    component: () => <ActivityFeed search={home.useSearch()} />,
   });
   const detail = createRoute({
     path: "/sites/$site",
@@ -270,22 +318,40 @@ async function openFeed(path = "/", initialFeed: HomeFeed = null) {
     ]),
     history: createMemoryHistory({ initialEntries: [path] }),
   });
-  render(<RouterProvider router={router} />);
+  render(
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  );
   await router.load();
   await screen.findByRole("article", { name: "chessmerge.com" });
-  return router;
+  return { router, queryClient };
 }
 
 test("keeps server-rendered cards and reviews visible until live subscriptions arrive", async () => {
-  const initialFeed: HomeFeed = {
-    site: null,
-    count: { count: 2, hasMore: false },
-    isDone: true,
-    groups: remote.sites.map((site) => ({
-      site,
-      tasks: { page: [task(site.hostname, 1)], isDone: true, continueCursor: "" },
-    })),
-  };
+  const serverCache = createQueryClient();
+  serverCache.setQueryData(convexQuery(api.scout.sites.count, { scope: "public" }).queryKey, {
+    count: 2,
+    hasMore: false,
+  });
+  serverCache.setQueryData(
+    convexQuery(api.scout.sites.list, {
+      site: null,
+      scope: "public",
+      paginationOpts: { numItems: 6, cursor: null },
+    }).queryKey,
+    { page: remote.sites, isDone: true, continueCursor: "" },
+  );
+  for (const site of remote.sites) {
+    serverCache.setQueryData(
+      convexQuery(api.scout.activity.list, {
+        site: site.hostname,
+        scope: "public",
+        paginationOpts: { numItems: 2, cursor: null },
+      }).queryKey,
+      { page: [task(site.hostname, 1)], isDone: true, continueCursor: "" },
+    );
+  }
   remote.loadingSites = true;
   remote.count.mockReturnValue(undefined);
   for (const site of remote.sites)
@@ -295,13 +361,16 @@ test("keeps server-rendered cards and reviews visible until live subscriptions a
       isLoading: true,
       loadMore: remote.loadChessTasks,
     });
-  await openFeed("/", initialFeed);
+  const { queryClient } = await openFeed("/", dehydrate(serverCache));
   const originalCard = screen.getByRole("article", { name: "chessmerge.com" });
   expect(screen.getByText("2 reviewed sites")).toBeTruthy();
   expect(within(originalCard).getByRole("heading", { name: "chessmerge.com task 1" })).toBeTruthy();
   expect(screen.queryByText("No public tasks yet.")).toBeNull();
   remote.loadingSites = false;
-  remote.count.mockReturnValue({ count: 3, hasMore: false });
+  queryClient.setQueryData(convexQuery(api.scout.sites.count, { scope: "public" }).queryKey, {
+    count: 3,
+    hasMore: false,
+  });
   remote.tasks.set("chessmerge.com", {
     results: [{ ...task("chessmerge.com", 1), title: "Live updated review" }],
     status: "Exhausted",
@@ -319,37 +388,35 @@ test("keeps server-rendered cards and reviews visible until live subscriptions a
 });
 
 test.each(["/?scope=mine", "/?site=chess"])(
-  "ignores initial public data for a different filter: %s",
+  "keeps cached first pages isolated by scope and filter: %s",
   async (path) => {
-    const initialFeed: HomeFeed = {
-      site: null,
-      count: { count: 999, hasMore: false },
-      isDone: true,
-      groups: [
-        {
-          site: remote.sites[0],
-          tasks: {
-            page: [{ ...task("chessmerge.com", 1), title: "Stale SSR review" }],
-            isDone: true,
-            continueCursor: "",
-          },
-        },
-      ],
-    };
-    await openFeed(path, initialFeed);
-    expect(screen.queryByText("999 reviewed sites")).toBeNull();
-    expect(screen.queryByText("Stale SSR review")).toBeNull();
+    const serverCache = createQueryClient();
+    serverCache.setQueryData(
+      convexQuery(api.scout.sites.list, {
+        site: null,
+        scope: "public",
+        paginationOpts: { numItems: 6, cursor: null },
+      }).queryKey,
+      {
+        page: [{ ...remote.sites[0], hostname: "stale.example" }],
+        isDone: true,
+        continueCursor: "",
+      },
+    );
+    remote.loadingSites = true;
+    await openFeed(path, dehydrate(serverCache));
+    expect(screen.queryByRole("article", { name: "stale.example" })).toBeNull();
   },
 );
 
 test.each(["homepage", "site"])(
   "%s scout pills navigate independently from task rows",
   async (surface) => {
-    const router = await openFeed();
+    const { router } = await openFeed();
     const user = userEvent.setup();
     if (surface === "site")
       await user.click(screen.getByRole("link", { name: "View all 7 tasks" }));
-    const pill = screen.getAllByRole("link", { name: "Scout: Scout" })[0];
+    const pill = (await screen.findAllByRole("link", { name: "Scout: Scout" }))[0];
     if (!pill) throw new Error("Expected a scout link");
     expect(pill.getAttribute("href")).toBe("/scouts/scout");
     expect(pill.parentElement?.closest("a")).toBeNull();
@@ -402,7 +469,7 @@ test("a site with one task uses a singular link", async () => {
 test.each(["public", "mine"])(
   "View all tasks opens the site's task page and preserves the %s scope",
   async (scope) => {
-    const router = await openFeed(`/?scope=${scope}`);
+    const { router } = await openFeed(`/?scope=${scope}`);
     expect(
       screen.getByText(scope === "public" ? "1,000+ reviewed sites" : "1 reviewed site"),
     ).toBeTruthy();
@@ -449,7 +516,7 @@ test("loads the next six sites when the sentinel intersects, without a More site
 });
 
 test.each(["public", "mine"])("site heading links preserve the %s scope", async (scope) => {
-  const router = await openFeed(`/?scope=${scope}`);
+  const { router } = await openFeed(`/?scope=${scope}`);
   const user = userEvent.setup();
 
   for (const site of ["chessmerge.com", "papergames.io"]) {
@@ -498,15 +565,15 @@ test("site groups put the researched product name above its hostname", async () 
 });
 
 test("the site filter is bookmarked, restored by history, and carried through every card link", async () => {
-  const router = await openFeed("/?scope=mine");
+  const { router } = await openFeed("/?scope=mine");
   const user = userEvent.setup();
   const filter = screen.getByRole("textbox", { name: "Filter by site" });
   await user.type(filter, "Chess");
   await waitFor(() =>
     expect(router.state.location.search).toEqual({ scope: "mine", site: "chess" }),
   );
-  expect(filter).toHaveProperty("value", "chess");
-  expect(screen.queryByRole("article", { name: "papergames.io" })).toBeNull();
+  await waitFor(() => expect(filter).toHaveProperty("value", "chess"));
+  await waitFor(() => expect(screen.queryByRole("article", { name: "papergames.io" })).toBeNull());
   const card = within(screen.getByRole("article", { name: "chessmerge.com" }));
   for (const name of [
     "View Chess Merge details",
@@ -530,7 +597,7 @@ test("the site filter is bookmarked, restored by history, and carried through ev
   await user.click(screen.getByRole("link", { name: "View all 7 tasks" }));
   await waitFor(() => expect(router.state.location.pathname).toBe("/sites/chessmerge.com"));
   expect(router.state.location.search).toEqual({ scope: "mine", site: "chess" });
-  const detailTask = screen.getByRole("link", { name: /chessmerge.com task 1/ });
+  const detailTask = await screen.findByRole("link", { name: /chessmerge.com task 1/ });
   expect(detailTask.getAttribute("href")).toContain("scope=mine");
   expect(detailTask.getAttribute("href")).toContain("site=chess");
   act(() => router.history.back());

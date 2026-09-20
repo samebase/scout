@@ -8,7 +8,7 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { QueryClient } from "@tanstack/react-query";
 import { afterEach, expect, test, vi } from "vite-plus/test";
 import { ProductShell } from "./products/shell";
 import { Route as RootRoute } from "./routes/__root";
@@ -16,9 +16,6 @@ import { Route as AboutRoute } from "./routes/about";
 import { omitNullish } from "../shared/omitNullish";
 
 vi.mock("./style.css?url", () => ({ default: "data:text/css," }));
-vi.mock("./lib/convex", () => ({
-  ConvexClientProvider: ({ children }: { children: ReactNode }) => children,
-}));
 vi.mock("./components/posthog-runtime", () => ({ PostHogRuntime: () => null }));
 vi.mock("convex/react", async (importOriginal) => ({
   ...(await importOriginal<typeof import("convex/react")>()),
@@ -66,6 +63,7 @@ test.each([
       loader: () => (to === "/about" ? routeReady : undefined),
     });
     const router = createRouter({
+      context: { queryClient: new QueryClient() },
       routeTree: RootRoute.addChildren([home, about]),
       history: createMemoryHistory({ initialEntries: [from] }),
       defaultPreload: false,
@@ -102,6 +100,7 @@ test.each([
     component: () => <h1>Route fixture</h1>,
   });
   const router = createRouter({
+    context: { queryClient: new QueryClient() },
     routeTree: RootRoute.addChildren([page]),
     history: createMemoryHistory({ initialEntries: [url] }),
   });
