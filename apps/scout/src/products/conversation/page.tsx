@@ -1004,27 +1004,35 @@ function ConversationSession({
   return (
     <section
       aria-label={showingWalkthrough ? "Walkthrough with Scout" : "Conversation with Scout"}
-      className="mx-auto flex h-full min-h-0 w-full min-w-0 max-w-page flex-col"
+      className="flex h-full min-h-0 w-full min-w-0 flex-col"
     >
       {kind === "review" && (
-        <div data-sidebar-layout-part="pane-header" className="justify-between gap-2 px-3">
-          {managedId && (
-            <ReviewViews
-              threadId={threadId}
-              search={search}
-              showingWalkthrough={showingWalkthrough}
-            />
-          )}
-          <ConversationActions thread={thread} kind={kind} />
+        <div data-sidebar-layout-part="pane-header">
+          <div className="mx-auto flex w-full min-w-0 max-w-page items-center justify-between gap-2 px-3">
+            {managedId && (
+              <ReviewViews
+                threadId={threadId}
+                search={search}
+                showingWalkthrough={showingWalkthrough}
+              />
+            )}
+            <ConversationActions thread={thread} kind={kind} />
+          </div>
         </div>
       )}
       {request.kind === "failed" && (
-        <p role="alert" className={cn(playError, "shrink-0 whitespace-pre-wrap wrap-anywhere")}>
+        <p
+          role="alert"
+          className={cn(
+            playError,
+            "mx-auto w-full max-w-page shrink-0 whitespace-pre-wrap wrap-anywhere",
+          )}
+        >
           {request.message}
         </p>
       )}
       {managed?.state.kind === "waiting" && (
-        <div className={cn(playNotice, "space-y-3")}>
+        <div className={cn(playNotice, "mx-auto w-full max-w-page space-y-3")}>
           <p className="whitespace-pre-wrap">{managed.state.message}</p>
           {managed.state.expiresAt !== undefined && (
             <p>
@@ -1072,26 +1080,34 @@ function ConversationSession({
         </div>
       )}
       {managed?.state.kind === "checking" && (
-        <p role="status" className={cn(playNotice, "flex shrink-0 items-center gap-2.5")}>
+        <p
+          role="status"
+          className={cn(playNotice, "mx-auto flex w-full max-w-page shrink-0 items-center gap-2.5")}
+        >
           <LoaderCircleIcon size={15} className="animate-spin" aria-hidden="true" />
           Checking browser…
         </p>
       )}
       {managed && <TaskResumeHistory attempts={managed.resumeAttempts} state={managed.state} />}
       {(thread.status === "stopped" || thread.status === "stopping") && (
-        <p role="status" className="shrink-0 border-b px-4 py-3 text-sm text-muted-foreground">
-          {managed?.state.kind === "stopped" && managed.state.reason === "handoff_expired"
-            ? HANDOFF_EXPIRED_REASON
-            : managed?.state.kind === "stopped" && managed.state.reason === "handoff_declined"
-              ? HANDOFF_DECLINED_REASON
-              : thread.status === "stopping"
-                ? "Stopping Scout…"
-                : "Task stopped."}
-          {thread.status === "stopped" &&
-            managed?.canSend &&
-            !showingWalkthrough &&
-            " Send a message to continue."}
-        </p>
+        <div className="shrink-0 border-b">
+          <p
+            role="status"
+            className="mx-auto w-full max-w-page px-4 py-3 text-sm text-muted-foreground"
+          >
+            {managed?.state.kind === "stopped" && managed.state.reason === "handoff_expired"
+              ? HANDOFF_EXPIRED_REASON
+              : managed?.state.kind === "stopped" && managed.state.reason === "handoff_declined"
+                ? HANDOFF_DECLINED_REASON
+                : thread.status === "stopping"
+                  ? "Stopping Scout…"
+                  : "Task stopped."}
+            {thread.status === "stopped" &&
+              managed?.canSend &&
+              !showingWalkthrough &&
+              " Send a message to continue."}
+          </p>
+        </div>
       )}
       {showingWalkthrough && managedId && (
         <div className="min-h-0 flex-1 overflow-hidden">
@@ -1114,7 +1130,7 @@ function ConversationSession({
               }}
             >
               <MessageScrollerContent
-                className="gap-2 px-4 pt-5 pb-7"
+                className="mx-auto w-full max-w-page gap-2 px-4 pt-5 pb-7"
                 role="log"
                 aria-label="Session messages"
                 aria-live="polite"
@@ -1181,119 +1197,123 @@ function ConversationSession({
         </MessageScrollerProvider>
       </div>
       {thread.canControl && managedId ? (
-        <div className="shrink-0 border-t p-3">
-          {cost && <SessionCost session={cost} />}
-          <PendingTaskMessage
-            pendingMessage={pendingMessage}
-            active={sendingMessage}
-            canRetry={canRetryMessage}
-            onRetry={() => void retryMessage()}
-            retrying={request.kind === "pending"}
-          />
-          {failure && (
-            <div role="alert" className={cn(playNotice, "mb-3")}>
-              <p className="whitespace-pre-wrap wrap-anywhere">
-                {failedCreditCode ? (
-                  <>
-                    {creditFailureMessage(failedCreditCode)}{" "}
-                    <Link to="/settings" className={playTextLink}>
-                      View credits
-                    </Link>
-                  </>
-                ) : (
-                  (managed?.requestCheckMessage ??
-                  failure.diagnostic?.message ??
-                  failure.error.split(/\r?\n/, 1)[0])
-                )}
-              </p>
-              {!failedCreditCode &&
-                !managed?.requestCheckMessage &&
-                (failure.diagnostic || failure.error.trimEnd().includes("\n")) && (
-                  <details className="mt-2">
-                    <summary className="w-fit cursor-pointer rounded text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                      Details
-                    </summary>
-                    <pre className="mt-2 max-h-48 overflow-auto rounded-lg border bg-muted/40 p-3 text-xs whitespace-pre-wrap wrap-anywhere select-text">
-                      {failure.diagnostic
-                        ? JSON.stringify({ ...failure.diagnostic, error: failure.error }, null, 2)
-                        : failure.error}
-                    </pre>
-                  </details>
-                )}
-              {!pendingMessage &&
-                !failedCreditCode &&
-                !managed?.requestCheckMessage &&
-                managed?.canSend && (
-                  <p className="mt-1">
-                    {showingWalkthrough ? (
-                      <Link
-                        to="/tasks/$thread"
-                        params={{ thread: threadId }}
-                        search={{ ...search, view: "chat" }}
-                        resetScroll={false}
-                        className={playTextLink}
-                      >
-                        Send a follow-up to continue.
+        <div className="shrink-0 border-t">
+          <div className="mx-auto w-full max-w-page p-3">
+            {cost && <SessionCost session={cost} />}
+            <PendingTaskMessage
+              pendingMessage={pendingMessage}
+              active={sendingMessage}
+              canRetry={canRetryMessage}
+              onRetry={() => void retryMessage()}
+              retrying={request.kind === "pending"}
+            />
+            {failure && (
+              <div role="alert" className={cn(playNotice, "mb-3")}>
+                <p className="whitespace-pre-wrap wrap-anywhere">
+                  {failedCreditCode ? (
+                    <>
+                      {creditFailureMessage(failedCreditCode)}{" "}
+                      <Link to="/settings" className={playTextLink}>
+                        View credits
                       </Link>
-                    ) : (
-                      "Send a follow-up to continue."
-                    )}
-                  </p>
-                )}
-              {!failedCreditCode &&
-                !managed?.requestCheckMessage &&
-                !managed?.canSend &&
-                !managed?.active &&
-                !managed?.busy && (
-                  <Link to={kind === "play" ? "/play" : "/"} className={cn(playTextLink, "mt-1")}>
-                    Start a new task
-                  </Link>
-                )}
-            </div>
-          )}
-          {!showingWalkthrough && (
-            <ConversationComposer
-              autoFocus={false}
-              context={null}
-              value={draft}
-              onChange={setDraft}
-              onSubmit={(event) => {
-                void send(event);
-              }}
-              disabled={request.kind === "pending"}
-              canSend={canSend}
-              onStop={
-                canStop
-                  ? () => {
-                      void stop();
-                    }
-                  : null
-              }
-              placeholder="Message Scout…"
-            >
-              <span role="status">
-                {scout?.status !== "active"
-                  ? "This Scout is unavailable."
-                  : managed?.busy
-                    ? "This Scout is busy in another chat."
-                    : thread.status === "stopping"
-                      ? "Stopping Scout…"
-                      : null}
-              </span>
-            </ConversationComposer>
-          )}
+                    </>
+                  ) : (
+                    (managed?.requestCheckMessage ??
+                    failure.diagnostic?.message ??
+                    failure.error.split(/\r?\n/, 1)[0])
+                  )}
+                </p>
+                {!failedCreditCode &&
+                  !managed?.requestCheckMessage &&
+                  (failure.diagnostic || failure.error.trimEnd().includes("\n")) && (
+                    <details className="mt-2">
+                      <summary className="w-fit cursor-pointer rounded text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                        Details
+                      </summary>
+                      <pre className="mt-2 max-h-48 overflow-auto rounded-lg border bg-muted/40 p-3 text-xs whitespace-pre-wrap wrap-anywhere select-text">
+                        {failure.diagnostic
+                          ? JSON.stringify({ ...failure.diagnostic, error: failure.error }, null, 2)
+                          : failure.error}
+                      </pre>
+                    </details>
+                  )}
+                {!pendingMessage &&
+                  !failedCreditCode &&
+                  !managed?.requestCheckMessage &&
+                  managed?.canSend && (
+                    <p className="mt-1">
+                      {showingWalkthrough ? (
+                        <Link
+                          to="/tasks/$thread"
+                          params={{ thread: threadId }}
+                          search={{ ...search, view: "chat" }}
+                          resetScroll={false}
+                          className={playTextLink}
+                        >
+                          Send a follow-up to continue.
+                        </Link>
+                      ) : (
+                        "Send a follow-up to continue."
+                      )}
+                    </p>
+                  )}
+                {!failedCreditCode &&
+                  !managed?.requestCheckMessage &&
+                  !managed?.canSend &&
+                  !managed?.active &&
+                  !managed?.busy && (
+                    <Link to={kind === "play" ? "/play" : "/"} className={cn(playTextLink, "mt-1")}>
+                      Start a new task
+                    </Link>
+                  )}
+              </div>
+            )}
+            {!showingWalkthrough && (
+              <ConversationComposer
+                autoFocus={false}
+                context={null}
+                value={draft}
+                onChange={setDraft}
+                onSubmit={(event) => {
+                  void send(event);
+                }}
+                disabled={request.kind === "pending"}
+                canSend={canSend}
+                onStop={
+                  canStop
+                    ? () => {
+                        void stop();
+                      }
+                    : null
+                }
+                placeholder="Message Scout…"
+              >
+                <span role="status">
+                  {scout?.status !== "active"
+                    ? "This Scout is unavailable."
+                    : managed?.busy
+                      ? "This Scout is busy in another chat."
+                      : thread.status === "stopping"
+                        ? "Stopping Scout…"
+                        : null}
+                </span>
+              </ConversationComposer>
+            )}
+          </div>
         </div>
       ) : (
         !showingWalkthrough && (
-          <p className="shrink-0 border-t p-3 text-sm text-muted-foreground">
-            {thread.runtime.kind === "convex_agent"
-              ? "This older chat is read-only. Its transcript and replay are still available."
-              : !isAuthenticated
-                ? "Sign in with the account that started this chat to continue it."
-                : thread.isOwner
-                  ? "Your account doesn't currently have access to continue this chat."
-                  : "Only the account that started this chat can send follow-up messages."}
-          </p>
+          <div className="shrink-0 border-t">
+            <p className="mx-auto w-full max-w-page p-3 text-sm text-muted-foreground">
+              {thread.runtime.kind === "convex_agent"
+                ? "This older chat is read-only. Its transcript and replay are still available."
+                : !isAuthenticated
+                  ? "Sign in with the account that started this chat to continue it."
+                  : thread.isOwner
+                    ? "Your account doesn't currently have access to continue this chat."
+                    : "Only the account that started this chat can send follow-up messages."}
+            </p>
+          </div>
         )
       )}
     </section>

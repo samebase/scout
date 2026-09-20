@@ -23,12 +23,15 @@ export function TaskResumeHistory({
       open={
         latest.outcome.kind !== "approved" && (state.kind === "stopped" || state.kind === "failed")
       }
-      className="shrink-0 border-b px-4 py-3 text-sm"
+      className="shrink-0 border-b py-3 text-sm"
     >
-      <summary className="w-fit cursor-pointer rounded outline-none focus-visible:ring-2 focus-visible:ring-ring">
+      <summary className="mx-auto w-full max-w-page cursor-pointer rounded px-4 outline-none focus-visible:ring-2 focus-visible:ring-ring">
         Resume attempts ({attempts.length}) · {labels[latest.outcome.kind]}
       </summary>
-      <ol className="mt-3 max-h-48 space-y-3 overflow-y-auto" aria-label="Resume attempts">
+      <ol
+        className="mx-auto mt-3 w-full max-w-page max-h-48 space-y-3 overflow-y-auto px-4"
+        aria-label="Resume attempts"
+      >
         {attempts.map((attempt) => (
           <li key={attempt.id} className="space-y-1">
             <div className="flex flex-wrap items-baseline gap-x-2">
