@@ -20,6 +20,7 @@ import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as ScoutsRouteImport } from './routes/scouts'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as TermsRouteImport } from './routes/terms'
+import { Route as TerrainRouteImport } from './routes/terrain'
 import { Route as HandoffSessionIdRouteImport } from './routes/handoff.$sessionId'
 import { Route as ScoutsIndexRouteImport } from './routes/scouts.index'
 import { Route as ScoutsSlugRouteImport } from './routes/scouts.$slug'
@@ -81,6 +82,11 @@ const TermsRoute = TermsRouteImport.update({
   path: '/terms',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TerrainRoute = TerrainRouteImport.update({
+  id: '/terrain',
+  path: '/terrain',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const HandoffSessionIdRoute = HandoffSessionIdRouteImport.update({
   id: '/handoff/$sessionId',
   path: '/handoff/$sessionId',
@@ -119,6 +125,7 @@ export interface FileRoutesByFullPath {
   '/scouts': typeof ScoutsRouteWithChildren
   '/settings': typeof SettingsRoute
   '/terms': typeof TermsRoute
+  '/terrain': typeof TerrainRoute
   '/handoff/$sessionId': typeof HandoffSessionIdRoute
   '/scouts/$slug': typeof ScoutsSlugRoute
   '/sites/$site': typeof SitesSiteRoute
@@ -136,6 +143,7 @@ export interface FileRoutesByTo {
   '/privacy': typeof PrivacyRoute
   '/settings': typeof SettingsRoute
   '/terms': typeof TermsRoute
+  '/terrain': typeof TerrainRoute
   '/handoff/$sessionId': typeof HandoffSessionIdRoute
   '/scouts/$slug': typeof ScoutsSlugRoute
   '/sites/$site': typeof SitesSiteRoute
@@ -155,6 +163,7 @@ export interface FileRoutesById {
   '/scouts': typeof ScoutsRouteWithChildren
   '/settings': typeof SettingsRoute
   '/terms': typeof TermsRoute
+  '/terrain': typeof TerrainRoute
   '/handoff/$sessionId': typeof HandoffSessionIdRoute
   '/scouts/$slug': typeof ScoutsSlugRoute
   '/sites/$site': typeof SitesSiteRoute
@@ -175,6 +184,7 @@ export interface FileRouteTypes {
     | '/scouts'
     | '/settings'
     | '/terms'
+    | '/terrain'
     | '/handoff/$sessionId'
     | '/scouts/$slug'
     | '/sites/$site'
@@ -192,6 +202,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/settings'
     | '/terms'
+    | '/terrain'
     | '/handoff/$sessionId'
     | '/scouts/$slug'
     | '/sites/$site'
@@ -210,6 +221,7 @@ export interface FileRouteTypes {
     | '/scouts'
     | '/settings'
     | '/terms'
+    | '/terrain'
     | '/handoff/$sessionId'
     | '/scouts/$slug'
     | '/sites/$site'
@@ -229,6 +241,7 @@ export interface RootRouteChildren {
   ScoutsRoute: typeof ScoutsRouteWithChildren
   SettingsRoute: typeof SettingsRoute
   TermsRoute: typeof TermsRoute
+  TerrainRoute: typeof TerrainRoute
   HandoffSessionIdRoute: typeof HandoffSessionIdRoute
   SitesSiteRoute: typeof SitesSiteRoute
   TasksThreadRoute: typeof TasksThreadRoute
@@ -313,6 +326,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TermsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/terrain': {
+      id: '/terrain'
+      path: '/terrain'
+      fullPath: '/terrain'
+      preLoaderRoute: typeof TerrainRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/handoff/$sessionId': {
       id: '/handoff/$sessionId'
       path: '/handoff/$sessionId'
@@ -376,6 +396,7 @@ const rootRouteChildren: RootRouteChildren = {
   ScoutsRoute: ScoutsRouteWithChildren,
   SettingsRoute: SettingsRoute,
   TermsRoute: TermsRoute,
+  TerrainRoute: TerrainRoute,
   HandoffSessionIdRoute: HandoffSessionIdRoute,
   SitesSiteRoute: SitesSiteRoute,
   TasksThreadRoute: TasksThreadRoute,

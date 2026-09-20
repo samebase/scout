@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-20T15:29:05Z
+- **Last updated:** 2026-09-20T15:23:42Z
 
 ## Log
 
@@ -1693,9 +1693,17 @@ Compact navigation and the landing feed share the same site card while keeping t
 existing browsing behavior (`apps/scout/src/components/activity-feed.tsx`,
 `apps/scout/src/routes/sites.$site.tsx`).
 
-### 2026-09-20 - working tree - v271
+### 2026-09-20 - cc85f36 - v271
 
 Wide site sidebars keep cards and filters within the landing page's centered 1,200px limit.
 Review visibility and site search share one row when their container has room and stack
 in compact navigation (`apps/scout/src/components/site-filters.tsx`,
 `apps/scout/src/routes/sites.$site.tsx`).
+
+### 2026-09-20 - working tree - v271
+
+The landing page opens on a low-angle atlas of slowly changing 3D terraces under a blue light sweep.
+The terrain explorer provides drag camera controls and a resizable sidebar for field size, width, depth, peaks, and motion,
+with presets, the actual homepage hero as a preview, discrete terrace heights, and settings saved in the URL.
+Mobile and touch devices use a smaller mesh and a 30 fps target; the white hero retains static posters and reduced-motion support
+(`apps/scout/src/routes/terrain.tsx`, `apps/scout/src/components/discovery-terrain.tsx`).
