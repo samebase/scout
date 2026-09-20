@@ -87,6 +87,29 @@ test.each([
     }
 
     expect(await screen.findByRole("heading", { name: after })).toBeTruthy();
-    expect(screen.getAllByRole("navigation", { name: "Primary navigation" })).toHaveLength(1);
+    expect(screen.getAllByRole("navigation", { name: "Primary navigation" })).toEqual([menu]);
   },
 );
+
+test.each([
+  { path: "/new-page", url: "/new-page", menuCount: 1 },
+  { path: "/handoff/$sessionId", url: "/handoff/session", menuCount: 0 },
+])("renders $menuCount menus on a direct visit to $url", async ({ path, url, menuCount }) => {
+  const page = createRoute({
+    getParentRoute: () => RootRoute,
+    path,
+    staticData: { access: "access_public" },
+    component: () => <h1>Route fixture</h1>,
+  });
+  const router = createRouter({
+    routeTree: RootRoute.addChildren([page]),
+    history: createMemoryHistory({ initialEntries: [url] }),
+  });
+  await router.load();
+  render(<RouterProvider router={router} />, { container: document });
+
+  expect(await screen.findByRole("heading", { name: "Route fixture" })).toBeTruthy();
+  expect(screen.queryAllByRole("navigation", { name: "Primary navigation" })).toHaveLength(
+    menuCount,
+  );
+});

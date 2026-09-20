@@ -52,24 +52,14 @@ function RootComponent() {
   const isHandoff = useMatches({
     select: (matches) => matches.some((match) => match.routeId === "/handoff/$sessionId"),
   });
-  // Keep the menu with the rendered page while the next route is loading.
-  const isProductPage = useMatches({
-    select: (matches) =>
-      matches.some(
-        ({ routeId }) =>
-          routeId === "/" ||
-          routeId === "/play" ||
-          routeId.startsWith("/play/") ||
-          routeId.startsWith("/tasks/") ||
-          routeId.startsWith("/sites/"),
-      ),
-  });
   return (
     <RootDocument>
       <ScoutSidebarProvider>
         <ConvexClientProvider>
           <PostHogRuntime />
-          <ClientOnly>{!isProductPage && !isHandoff && <AppNavigation />}</ClientOnly>
+          <ClientOnly fallback={<div className="h-16" aria-hidden="true" />}>
+            {!isHandoff && <AppNavigation />}
+          </ClientOnly>
           <RouteAccessOutlet />
         </ConvexClientProvider>
       </ScoutSidebarProvider>
