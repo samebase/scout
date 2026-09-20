@@ -35,7 +35,8 @@ TanStack owns app routes. Convex static hosting serves uploaded files first, the
 falls back to `/index.html` for every unmatched path, regardless of file extensions
 or request headers. TanStack renders the matching page or its Not Found view.
 New app routes need no hosting rules. The existing Static Hosting dependency patch
-removes the extension check and keeps fallback HTML on the shell's revalidation policy.
+removes the extension check and serves HTML with `Cache-Control: no-cache` so the shell
+revalidates even when its URL looks like a cacheable asset.
 
 ### Enable or disable homepage SSR
 

@@ -76,7 +76,7 @@ test.each([
   const response = await backend.fetch(path);
   expect(response.status).toBe(200);
   expect(response.headers.get("Content-Type")).toBe("text/html");
-  expect(response.headers.get("Cache-Control")).toBe("public, max-age=0, must-revalidate");
+  expect(response.headers.get("Cache-Control")).toBe("no-cache");
   expect(await response.text()).toBe("Scout app shell");
 });
 
@@ -120,7 +120,7 @@ test("conditional requests revalidate the shell", async () => {
     headers: { Accept: "text/html", "If-None-Match": etag },
   });
   expect(unchanged.status).toBe(304);
-  expect(unchanged.headers.get("Cache-Control")).toBe("public, max-age=0, must-revalidate");
+  expect(unchanged.headers.get("Cache-Control")).toBe("no-cache");
 });
 
 test("uploaded hashed assets keep their immutable caching", async () => {
@@ -136,6 +136,6 @@ test("component-owned HTTP serving uses the same fallback and shell caching", as
   const response = await backend.fetch("/assets/missing-b5e0f667.js");
   expect(response.status).toBe(200);
   expect(response.headers.get("Content-Type")).toBe("text/html");
-  expect(response.headers.get("Cache-Control")).toBe("public, max-age=0, must-revalidate");
+  expect(response.headers.get("Cache-Control")).toBe("no-cache");
   expect(await response.text()).toBe("Scout app shell");
 });

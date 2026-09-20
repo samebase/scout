@@ -21,7 +21,7 @@ overrides:
   vitest: 4.1.10
 
 patchedDependencies:
-  '@convex-dev/static-hosting@0.2.1': f9e24b50261b1061d7f0d5998db2586659cc09c49c8fd2b420e9196b8d8e2bfd
+  '@convex-dev/static-hosting@0.2.1': 49152ab6e7e98dc91d8cb2d849a93a135b9c7102fe3ff560101420222640c718
 
 importers:
 
@@ -47,7 +47,7 @@ importers:
     dependencies:
       '@convex-dev/static-hosting':
         specifier: 0.2.1
-        version: 0.2.1(patch_hash=f9e24b50261b1061d7f0d5998db2586659cc09c49c8fd2b420e9196b8d8e2bfd)(convex@1.45.0(react@19.2.6))(react@19.2.6)
+        version: 0.2.1(patch_hash=49152ab6e7e98dc91d8cb2d849a93a135b9c7102fe3ff560101420222640c718)(convex@1.45.0(react@19.2.6))(react@19.2.6)
       '@samebase/convex-tanstack-start':
         specifier: workspace:*
         version: link:../../packages/convex-tanstack-start
@@ -117,7 +117,7 @@ importers:
         version: 0.10.2(@standard-schema/spec@1.1.0)(convex@1.45.0(react@19.2.6))(hono@4.13.7)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(typescript@6.0.3)(zod@4.4.3)
       '@convex-dev/static-hosting':
         specifier: ^0.2.1
-        version: 0.2.1(patch_hash=f9e24b50261b1061d7f0d5998db2586659cc09c49c8fd2b420e9196b8d8e2bfd)(convex@1.45.0(react@19.2.6))(react@19.2.6)
+        version: 0.2.1(patch_hash=49152ab6e7e98dc91d8cb2d849a93a135b9c7102fe3ff560101420222640c718)(convex@1.45.0(react@19.2.6))(react@19.2.6)
       '@convex-dev/workflow':
         specifier: ^0.4.6
         version: 0.4.6(@convex-dev/workpool@0.4.10(convex-helpers@0.1.123(@standard-schema/spec@1.1.0)(convex@1.45.0(react@19.2.6))(hono@4.13.7)(react@19.2.6)(typescript@6.0.3)(zod@4.4.3))(convex@1.45.0(react@19.2.6))(react@19.2.6))(convex-helpers@0.1.123(@standard-schema/spec@1.1.0)(convex@1.45.0(react@19.2.6))(hono@4.13.7)(react@19.2.6)(typescript@6.0.3)(zod@4.4.3))(convex@1.45.0(react@19.2.6))
@@ -6047,7 +6047,7 @@ snapshots:
       - typescript
       - zod
 
-  '@convex-dev/static-hosting@0.2.1(patch_hash=f9e24b50261b1061d7f0d5998db2586659cc09c49c8fd2b420e9196b8d8e2bfd)(convex@1.45.0(react@19.2.6))(react@19.2.6)':
+  '@convex-dev/static-hosting@0.2.1(patch_hash=49152ab6e7e98dc91d8cb2d849a93a135b9c7102fe3ff560101420222640c718)(convex@1.45.0(react@19.2.6))(react@19.2.6)':
     dependencies:
       convex: 1.45.0(react@19.2.6)
       react: 19.2.6
