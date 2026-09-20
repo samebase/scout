@@ -608,6 +608,7 @@ test("managed Reviews share the feed and expose only conversation text and watch
   });
   expect(next.page.map((item) => item.threadId)).toEqual([oldReview.threadId]);
   await t.backend.mutation(internal.tasks.browsers.open, {
+    billable: false,
     sessionId,
     browser: {
       providerSessionId: "private-provider-id",
@@ -674,6 +675,7 @@ test("Review owners can resume handoffs, stop, and send follow-ups while Lab rem
     providerId: "provider",
   });
   await t.backend.mutation(internal.tasks.browsers.open, {
+    billable: false,
     sessionId,
     browser: {
       providerSessionId: "provider-browser",

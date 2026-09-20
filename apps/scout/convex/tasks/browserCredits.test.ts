@@ -8,6 +8,7 @@ import schema from "../schema";
 import { ADMIN_EMAIL, insertTestAccount } from "../testing/accounts";
 import { requireRuntimeTool } from "../scout/lib/runtimeTool";
 import { runtimeTools } from "./tools";
+import { taskBrowserBilling } from "./browserCredits";
 
 const modules = {
   ...import.meta.glob("../**/*.ts"),
@@ -77,6 +78,7 @@ async function setupBrokenBrowser() {
   await t.backend.mutation(internal.credits.grantOnSignIn, { userId: t.userId });
   await t.backend.mutation(internal.tasks.browsers.open, {
     sessionId: t.sessionId,
+    billable: true,
     browser: {
       providerSessionId: "broken-browser",
       cdpUrl: "wss://browser.firecrawl.dev/cdp?token=broken",
@@ -157,30 +159,81 @@ it.each(["throw", "rejection"])(
   },
 );
 
-it("charges a created browser with no CDP URL after compensating deletion", async () => {
-  const { backend, open, userId } = await setup();
-  await backend.mutation(internal.credits.grantOnSignIn, { userId });
-  const create = vi.spyOn(Firecrawl.prototype, "browser").mockResolvedValue({
-    success: true,
-    id: "orphan-1",
-  });
-  const deletion = vi.spyOn(Firecrawl.prototype, "deleteBrowser").mockResolvedValue({
-    success: true,
-    creditsBilled: 2,
-  });
-  await expect(open()).rejects.toThrow("CDP URL");
-  expect(create).toHaveBeenCalledWith(expect.objectContaining({ ttl: 3_600, activityTtl: 3_600 }));
-  expect(deletion).toHaveBeenCalledWith("orphan-1");
-  const { browsers, entries, wallet } = await backend.run(async (ctx) => ({
-    browsers: await ctx.db.query("agentsApiBrowserSessions").take(1),
-    entries: await ctx.db.query("creditEntries").take(3),
-    wallet: await ctx.db.query("creditWallets").unique(),
-  }));
-  expect(browsers).toMatchObject([
-    { providerSessionId: "orphan-1", lifecycle: { kind: "closed", creditsBilled: 2 } },
-  ]);
-  expect(entries.filter((entry) => entry.detail.kind === "usage")).toHaveLength(1);
-  expect(wallet?.balanceUnits).toBe(490_000);
+it.each([true, false])(
+  "retains the billing choice (%s) when a browser without a CDP URL is deleted",
+  async (billable) => {
+    const { backend, open, userId } = await setup();
+    vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", String(billable));
+    await backend.mutation(internal.credits.grantOnSignIn, { userId });
+    const create = vi.spyOn(Firecrawl.prototype, "browser").mockImplementation(async () => {
+      vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", String(!billable));
+      return { success: true, id: "orphan-1" };
+    });
+    const deletion = vi.spyOn(Firecrawl.prototype, "deleteBrowser").mockResolvedValue({
+      success: true,
+      creditsBilled: 2,
+    });
+    await expect(open()).rejects.toThrow("CDP URL");
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({ ttl: 3_600, activityTtl: 3_600 }),
+    );
+    expect(deletion).toHaveBeenCalledWith("orphan-1");
+    const { browsers, entries, wallet } = await backend.run(async (ctx) => ({
+      browsers: await ctx.db.query("agentsApiBrowserSessions").take(1),
+      entries: await ctx.db.query("creditEntries").take(3),
+      wallet: await ctx.db.query("creditWallets").unique(),
+    }));
+    expect(browsers).toMatchObject([
+      { providerSessionId: "orphan-1", lifecycle: { kind: "closed", creditsBilled: 2 } },
+    ]);
+    expect(entries.filter((entry) => entry.detail.kind === "usage")).toHaveLength(billable ? 1 : 0);
+    expect(wallet?.balanceUnits).toBe(billable ? 490_000 : 500_000);
+  },
+);
+
+it.each([true, false])(
+  "registers a browser with its original billing choice (%s) after the setting changes",
+  async (billable) => {
+    const { backend, sessionId } = await setup();
+    vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", String(billable));
+    vi.spyOn(Firecrawl.prototype, "browser").mockImplementation(async () => {
+      vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", String(!billable));
+      return { success: true, id: "browser-1" };
+    });
+    vi.spyOn(Firecrawl.prototype, "deleteBrowser").mockResolvedValue({
+      success: true,
+      creditsBilled: 2,
+    });
+    await backend.action(async (ctx) => {
+      const billing = taskBrowserBilling(ctx, sessionId);
+      await billing.dependencies.browser({ ttl: 60 });
+      await billing.opened({
+        providerSessionId: "browser-1",
+        cdpUrl: "wss://browser.example.com/private",
+        liveViewUrl: null,
+        interactiveLiveViewUrl: null,
+        currentUrl: null,
+      });
+      await billing.dependencies.deleteBrowser("browser-1");
+    });
+    const result = await backend.run(async (ctx) => ({
+      browser: await ctx.db.query("agentsApiBrowserSessions").unique(),
+      wallet: await ctx.db.query("creditWallets").unique(),
+    }));
+    expect(result.browser).toMatchObject({
+      billable,
+      lifecycle: { kind: "closed", creditsBilled: 2 },
+    });
+    expect(result.wallet?.balanceUnits).toBe(billable ? 490_000 : 500_000);
+  },
+);
+
+it("rejects an invalid Firecrawl billing setting before calling the provider", async () => {
+  const { open } = await setup();
+  vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", "tru");
+  const create = vi.spyOn(Firecrawl.prototype, "browser");
+  await expect(open()).rejects.toThrow();
+  expect(create).not.toHaveBeenCalled();
 });
 
 it("keeps a failed compensating deletion visible without freezing credits", async () => {

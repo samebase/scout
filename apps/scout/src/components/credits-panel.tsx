@@ -123,6 +123,12 @@ export function CreditsPanel({ purchaseId }: { purchaseId: string | undefined })
                 : `Add ${credits.format(offer.packCredits)} credits for ${dollars.format(offer.packPriceCents / 100)}`}
             </Button>
           </div>
+          {offer.firecrawlIncluded && (
+            <p className="mt-3 text-sm text-muted-foreground">
+              Firecrawl browsing and site research are included for new tasks during the beta.
+              Credits cover AI and web search.
+            </p>
+          )}
           {balance.hold.kind === "held" && (
             <p role="alert" className="mt-3 text-sm text-destructive">
               {balance.hold.reason}

@@ -882,11 +882,15 @@ test("provider-reported model costs use the shared cost details without OpenAI e
   fireEvent.click(await screen.findByText("Cost · $0.25 subtotal"));
   expect(screen.getByText("Model cost")).toBeTruthy();
   expect(
-    screen.getByText("Provider-reported model cost; Firecrawl billed separately in credits."),
+    screen.getByText(
+      "Provider-reported model cost. The dollar subtotal excludes Firecrawl browsing and research.",
+    ),
   ).toBeTruthy();
   expect(screen.queryByText("Model estimate")).toBeNull();
   expect(
-    screen.queryByText("Estimated OpenAI cost; Firecrawl billed separately in credits."),
+    screen.queryByText(
+      "Estimated OpenAI cost. The dollar subtotal excludes Firecrawl browsing and research.",
+    ),
   ).toBeNull();
 });
 
@@ -1608,7 +1612,7 @@ test("shows an estimated subtotal with priced providers, unpriced browser credit
   expect(details?.open).toBe(true);
   expect(screen.getByText("$0.1234")).toBeTruthy();
   expect(screen.getByText("$0.02")).toBeTruthy();
-  expect(screen.getByText("3 credits + pending")).toBeTruthy();
+  expect(screen.getByText("3 Firecrawl credits + pending")).toBeTruthy();
   expect(screen.getByText("126s")).toBeTruthy();
   expect(screen.getByText("12,000")).toBeTruthy();
   expect(screen.getByText("2,000")).toBeTruthy();

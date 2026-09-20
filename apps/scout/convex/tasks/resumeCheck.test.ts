@@ -146,7 +146,11 @@ async function setup() {
     });
     return { ownerId, otherId, adminId, scoutId, sessionId, initialCheckId };
   });
-  await backend.mutation(internal.tasks.browsers.open, { sessionId: ids.sessionId, browser });
+  await backend.mutation(internal.tasks.browsers.open, {
+    billable: false,
+    sessionId: ids.sessionId,
+    browser,
+  });
   await backend.mutation(internal.tasks.sessions.update, {
     sessionId: ids.sessionId,
     state: { kind: "waiting", ...handoff },
@@ -723,6 +727,7 @@ it("cannot use an old approval for a later handoff or another browser", async ()
   });
   const replacement = { ...browser, providerSessionId: "browser-2" };
   await t.backend.mutation(internal.tasks.browsers.open, {
+    billable: false,
     sessionId: t.sessionId,
     browser: replacement,
   });

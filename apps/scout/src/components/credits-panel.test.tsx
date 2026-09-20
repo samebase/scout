@@ -34,6 +34,7 @@ const remote = vi.hoisted(() => {
     approved: true,
     usageEnabled: true,
     checkoutEnabled: true,
+    firecrawlIncluded: true,
     history: vi.fn(),
     historyStatus: "Exhausted",
     ensureWallet: vi.fn(),
@@ -65,6 +66,7 @@ vi.mock("convex/react", () => ({
           packPriceCents: 500,
           usageEnabled: remote.usageEnabled,
           checkoutEnabled: remote.checkoutEnabled,
+          firecrawlIncluded: remote.firecrawlIncluded,
         };
       case "creditPurchases:status":
         return remote.purchase;
@@ -99,6 +101,7 @@ beforeEach(() => {
   remote.approved = true;
   remote.usageEnabled = true;
   remote.checkoutEnabled = true;
+  remote.firecrawlIncluded = true;
   remote.purchase = null;
   remote.historyStatus = "Exhausted";
   remote.history.mockReset().mockReturnValue([]);
@@ -135,6 +138,18 @@ test("shows a compact balance with a link to history without loading the ledger"
   expect(screen.queryByRole("list", { name: "Credit history" })).toBeNull();
   expect(remote.history).not.toHaveBeenCalled();
 });
+
+test.each([true, false])(
+  "shows the Firecrawl inclusion notice only when included (%s)",
+  (included) => {
+    remote.firecrawlIncluded = included;
+    render(<CreditsPanel purchaseId={undefined} />);
+    expect(Boolean(screen.queryByText(/Firecrawl browsing and site research are included/))).toBe(
+      included,
+    );
+    expect(screen.getByRole("button", { name: "Add 400 credits for $5.00" })).toBeTruthy();
+  },
+);
 
 test("shows ledger history on its own page and loads more entries", () => {
   remote.historyStatus = "CanLoadMore";

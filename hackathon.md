@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-20T01:01:37Z
+- **Last updated:** 2026-09-20T09:53:22Z
 
 ## Log
 
@@ -1639,9 +1639,16 @@ Walkthrough navigation and task costs stay within that width; smaller screens re
 and narrower page layouts retain their own limits (`apps/scout/src/style.css`,
 `apps/scout/src/components/task-walkthrough.tsx`, `apps/scout/src/products/conversation/page.tsx`).
 
-### 2026-09-20 - working tree - v262
+### 2026-09-20 - dd88d0a - v262
 
 Saved screenshots can be listed and used in walkthroughs when the browser connection fails.
 Explicit browser closure deletes the remote session and records its closure in Convex;
 replacement creation still requires the previous browser to be closed
 (`apps/scout/convex/tasks/tools.ts`, `apps/scout/convex/tasks/browserCredits.ts`).
+
+### 2026-09-20 - working tree - v264
+
+New Firecrawl browsing and site research are included during the beta while the $5 pack stays at 400 credits.
+Convex saves each job's billing choice so later setting changes preserve its original terms.
+Settings explains the inclusion, and task costs distinguish Firecrawl credits from Scout credits
+(`apps/scout/convex/creditPolicy.ts`, `apps/scout/convex/tasks/`, `apps/scout/src/components/credits-panel.tsx`).

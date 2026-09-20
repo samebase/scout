@@ -3,7 +3,12 @@ import { v } from "convex/values";
 import { internalMutation } from "./_generated/server";
 import { mutation, query } from "./functions";
 import schema from "./schema";
-import { CREDIT_POLICY, creditsEnabled, signedInteger } from "./creditPolicy";
+import {
+  CREDIT_POLICY,
+  creditsEnabled,
+  firecrawlCreditsEnabled,
+  signedInteger,
+} from "./creditPolicy";
 import {
   assertCreditAdmission,
   ensureCreditWallet,
@@ -152,6 +157,7 @@ export const offer = query({
     packCredits: v.number(),
     packPriceCents: v.number(),
     checkoutEnabled: v.boolean(),
+    firecrawlIncluded: v.boolean(),
   }),
   handler: () => ({
     unitsPerCredit: CREDIT_POLICY.unitsPerCredit,
@@ -160,5 +166,6 @@ export const offer = query({
     packCredits: CREDIT_POLICY.packCredits,
     packPriceCents: CREDIT_POLICY.packPriceCents,
     checkoutEnabled: creditsEnabled() && checkoutEnabled(),
+    firecrawlIncluded: !firecrawlCreditsEnabled(),
   }),
 });

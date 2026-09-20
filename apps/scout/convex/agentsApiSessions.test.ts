@@ -194,6 +194,7 @@ it("lists and inspects a member's private Review without granting session contro
     ],
   });
   await backend.mutation(internal.tasks.browsers.open, {
+    billable: false,
     sessionId,
     browser: {
       providerSessionId: "browser-1",

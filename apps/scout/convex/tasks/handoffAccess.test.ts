@@ -94,7 +94,11 @@ async function setup(
     interactiveLiveViewUrl: "https://liveview.firecrawl.dev/browser/control",
     currentUrl: null,
   };
-  await backend.mutation(internal.tasks.browsers.open, { sessionId: ids.sessionId, browser });
+  await backend.mutation(internal.tasks.browsers.open, {
+    billable: false,
+    sessionId: ids.sessionId,
+    browser,
+  });
   await backend.mutation(internal.tasks.sessions.enterHandoff, {
     sessionId: ids.sessionId,
     ...handoff,

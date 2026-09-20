@@ -81,10 +81,7 @@ export async function runtimeTools(
           liveViewUrl: null,
           currentUrl: null,
         };
-        await ctx.runMutation(internal.tasks.browsers.open, {
-          sessionId,
-          browser: handle,
-        });
+        await browserBilling.opened(handle);
         return { captureOperations: true };
       },
       onLiveViewAvailable: async (liveViewUrl) => {

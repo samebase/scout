@@ -372,6 +372,7 @@ it("lets concurrent tasks share one paid job and attributes its credits only onc
 it("charges one shared research job to its initiating owner and never charges cached readers", async () => {
   const t = await setup();
   vi.stubEnv("CREDITS_ENABLED", "true");
+  vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", "true");
   const second = await t.addTask();
   expect(await Promise.all([t.run(), second.run()])).toEqual([true, true]);
   const shared = await t.sharedJob();
@@ -414,9 +415,32 @@ it("charges one shared research job to its initiating owner and never charges ca
   expect(startAgent).toHaveBeenCalledTimes(1);
 });
 
+it.each([undefined, "false", "true"])(
+  "retains provider usage and the starting research billing choice when charging is %s",
+  async (setting) => {
+    const t = await setup();
+    vi.stubEnv("CREDITS_ENABLED", "true");
+    vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", setting);
+    expect(await t.run()).toBe(true);
+    const shared = await t.sharedJob();
+    expect(shared).toMatchObject({ billable: setting === "true" });
+    vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", setting === "true" ? "false" : "true");
+    await t.process(shared._id);
+    await t.process(shared._id);
+    await t.advance();
+    expect(await t.sharedJob()).toMatchObject({ credits: 12, state: { kind: "completed" } });
+    expect(await t.inspect()).toMatchObject({ credits: 12 });
+    expect(await t.admin.query(api.credits.balance, {})).toMatchObject({
+      balanceUnits: setting === "true" ? 440_000 : 500_000,
+    });
+    expect(startAgent).toHaveBeenCalledTimes(1);
+  },
+);
+
 it("keeps missing provider usage visible without charging or locking the owner", async () => {
   const t = await setup();
   vi.stubEnv("CREDITS_ENABLED", "true");
+  vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", "true");
   await t.run();
   const shared = await t.sharedJob();
   await t.process(shared._id);
@@ -437,6 +461,7 @@ it("keeps missing provider usage visible without charging or locking the owner",
 it("charges reported credits even when the research result fails", async () => {
   const t = await setup();
   vi.stubEnv("CREDITS_ENABLED", "true");
+  vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", "true");
   await t.run();
   const shared = await t.sharedJob();
   await t.process(shared._id);
@@ -455,6 +480,7 @@ it("charges reported credits even when the research result fails", async () => {
 it("charges known provider usage when the returned profile is invalid", async () => {
   const t = await setup();
   vi.stubEnv("CREDITS_ENABLED", "true");
+  vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", "true");
   await t.run();
   const shared = await t.sharedJob();
   await t.process(shared._id);
@@ -469,6 +495,7 @@ it("charges known provider usage when the returned profile is invalid", async ()
 it("records a failed submission without inventing a provider charge", async () => {
   const t = await setup();
   vi.stubEnv("CREDITS_ENABLED", "true");
+  vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", "true");
   await t.run();
   const shared = await t.sharedJob();
   startAgent.mockResolvedValueOnce({
@@ -484,6 +511,7 @@ it("records a failed submission without inventing a provider charge", async () =
 it("does not charge when work fails before the Firecrawl request", async () => {
   const t = await setup();
   vi.stubEnv("CREDITS_ENABLED", "true");
+  vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", "true");
   await t.run();
   const shared = await t.sharedJob();
   vi.mocked(saveWorkspaceFile).mockRejectedValueOnce(new Error("Workspace unavailable"));
@@ -497,6 +525,7 @@ it("does not charge when work fails before the Firecrawl request", async () => {
 it("blocks new paid research on a nonpositive wallet before Firecrawl", async () => {
   const t = await setup();
   vi.stubEnv("CREDITS_ENABLED", "true");
+  vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", "true");
   await t.backend.run((ctx) =>
     ctx.db.insert("creditWallets", {
       userId: t.userId,
@@ -513,6 +542,7 @@ it("blocks new paid research on a nonpositive wallet before Firecrawl", async ()
 it("allows a positive wallet below the research maximum, then records the actual overrun", async () => {
   const t = await setup();
   vi.stubEnv("CREDITS_ENABLED", "true");
+  vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", "true");
   await t.backend.run((ctx) =>
     ctx.db.insert("creditWallets", {
       userId: t.userId,
@@ -536,6 +566,7 @@ it("allows a positive wallet below the research maximum, then records the actual
 it("charges site research discovered by Scout after the task starts", async () => {
   const t = await setup("Find a public calculator and try it.");
   vi.stubEnv("CREDITS_ENABLED", "true");
+  vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", "true");
   expect(await t.run()).toBe(false);
   await t.backend.run((ctx) => ctx.db.patch(t.sessionId, { state: { kind: "running" } }));
   await t.backend.mutation(internal.scout.reviewSites.identify, {
@@ -556,6 +587,7 @@ it("charges site research discovered by Scout after the task starts", async () =
 it("assigns site research to the task user even when another task knows the site", async () => {
   const t = await setup("Find a public calculator and try it.");
   vi.stubEnv("CREDITS_ENABLED", "true");
+  vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", "true");
   expect(await t.run()).toBe(false);
   await t.backend.run(async (ctx) => {
     const first = await ctx.db.get(t.sessionId);
@@ -688,6 +720,7 @@ it("preserves a failed workflow's error while its shared research finishes indep
 
 it("refreshes completed research once without changing historical or already waiting task briefs", async () => {
   vi.stubEnv("CREDITS_ENABLED", "true");
+  vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", "true");
   const t = await setup();
   await t.run();
   const original = await t.sharedJob();

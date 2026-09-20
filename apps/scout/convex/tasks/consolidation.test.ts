@@ -248,7 +248,7 @@ it.each(engines)(
   async (engine) => {
     const { backend, admin, inspector, member, start } = await setup();
     const sessionId = await start(engine);
-    await backend.mutation(internal.tasks.browsers.open, { sessionId, browser });
+    await backend.mutation(internal.tasks.browsers.open, { billable: false, sessionId, browser });
     await backend.mutation(internal.tasks.sessions.update, {
       sessionId,
       state: { kind: "running" },
@@ -363,7 +363,7 @@ it.each(engines)(
       sessionId,
       state: { kind: "running" },
     });
-    await backend.mutation(internal.tasks.browsers.open, { sessionId, browser });
+    await backend.mutation(internal.tasks.browsers.open, { billable: false, sessionId, browser });
     await backend.mutation(internal.tasks.sessions.enterHandoff, { sessionId, ...handoff });
     await admin.mutation(api.tasks.sessions.stop, { sessionId });
     const stopped = await read(sessionId);
@@ -399,7 +399,7 @@ it.each(engines)(
       sessionId,
       state: { kind: "running" },
     });
-    await backend.mutation(internal.tasks.browsers.open, { sessionId, browser });
+    await backend.mutation(internal.tasks.browsers.open, { billable: false, sessionId, browser });
     await backend.mutation(internal.tasks.sessions.enterHandoff, { sessionId, ...handoff });
     await admin.mutation(api.tasks.sessions.resume, {
       sessionId,
