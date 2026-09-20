@@ -1,0 +1,30 @@
+{
+  "name": "@samebase/convex-ssr-example",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vp dev --port 5180 --strictPort",
+    "build": "vp build",
+    "typecheck": "tsc --project tsconfig.json && tsc --project convex/tsconfig.json"
+  },
+  "dependencies": {
+    "@convex-dev/static-hosting": "0.2.1",
+    "@samebase/convex-tanstack-start": "workspace:*",
+    "@tanstack/react-router": "1.170.18",
+    "@tanstack/react-start": "1.168.34",
+    "convex": "1.45.0",
+    "react": "19.2.6",
+    "react-dom": "19.2.6"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "typescript": "~6.0.2",
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}
