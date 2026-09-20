@@ -32,10 +32,10 @@ authenticated routes keep their existing behavior. The Cloudflare static fronten
 still uses a prerendered shell; test SSR at the Convex URL above.
 
 TanStack owns app routes. Convex static hosting serves uploaded files first, then
-falls back to `/index.html` for unresolved HTML requests (`Accept: text/html`),
-including paths containing dots. New app routes need no hosting rules. The existing
-Static Hosting dependency patch supplies this fallback; asset requests retain their
-404 behavior, and the response varies by `Accept` for caching.
+falls back to `/index.html` for every unmatched path, regardless of file extensions
+or request headers. TanStack renders the matching page or its Not Found view.
+New app routes need no hosting rules. The existing Static Hosting dependency patch
+removes the extension check and keeps fallback HTML on the shell's revalidation policy.
 
 ### Enable or disable homepage SSR
 

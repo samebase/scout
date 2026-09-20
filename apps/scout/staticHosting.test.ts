@@ -7,7 +7,7 @@ import { rewritePrerenderPath } from "./prerender.config";
 
 afterEach(() => vi.unstubAllGlobals());
 
-async function setup(spaFallback = true) {
+async function setup(spaFallback = true, serving: "app" | "component" = "app") {
   const http = httpRouter();
   // Run the component's real functions in the test root alongside its HTTP adapter.
   registerStaticRoutes(
@@ -22,14 +22,18 @@ async function setup(spaFallback = true) {
   );
   const backend = convexTest(staticHosting.schema, {
     ...staticHosting.modules,
-    "./component/http.ts": async () => ({ default: http }),
+    ...(serving === "app" ? { "./component/http.ts": async () => ({ default: http }) } : {}),
   });
   const storedBodies = new Map<string, string>();
   await backend.run(async (ctx) => {
     for (const asset of [
       { path: "/index.html", contentType: "text/html", body: "Scout app shell" },
       { path: "/about/index.html", contentType: "text/html", body: "About Scout" },
-      { path: "/assets/app.js", contentType: "text/javascript", body: "console.log('Scout')" },
+      {
+        path: "/assets/app-a1b2c3d4.js",
+        contentType: "text/javascript",
+        body: "console.log('Scout')",
+      },
       { path: "/robots.txt", contentType: "text/plain", body: "User-agent: *" },
     ]) {
       const storageId = await ctx.storage.store(new Blob([asset.body]));
@@ -64,19 +68,20 @@ test.each([
   "/scouts/scout-name",
   "/future-route/nested/customer.v2?tab=details",
   "/another-new-route/report.pdf",
-])("HTML navigation to %s loads the app without a hosting route rule", async (path) => {
+  "/assets/missing-b5e0f667.js",
+  "/missing.png",
+  "/sites/example.com/data.json",
+])("unmatched path %s loads the app shell", async (path) => {
   const backend = await setup();
-  const response = await backend.fetch(path, {
-    headers: { Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" },
-  });
+  const response = await backend.fetch(path);
   expect(response.status).toBe(200);
   expect(response.headers.get("Content-Type")).toBe("text/html");
-  expect(response.headers.get("Vary")).toBe("Accept");
+  expect(response.headers.get("Cache-Control")).toBe("public, max-age=0, must-revalidate");
   expect(await response.text()).toBe("Scout app shell");
 });
 
 test.each([
-  { path: "/assets/app.js", body: "console.log('Scout')", contentType: "text/javascript" },
+  { path: "/assets/app-a1b2c3d4.js", body: "console.log('Scout')", contentType: "text/javascript" },
   { path: "/robots.txt", body: "User-agent: *", contentType: "text/plain" },
   { path: "/about", body: "About Scout", contentType: "text/html" },
 ])(
@@ -90,25 +95,23 @@ test.each([
   },
 );
 
-test.each([
-  { path: "/assets/missing.js", accept: "*/*" },
-  { path: "/missing.png", accept: "image/avif,image/webp,image/*,*/*;q=0.8" },
-  { path: "/sites/example.com/data.json", accept: "application/json" },
-])("missing resources return 404 at $path", async ({ path, accept }) => {
-  const backend = await setup();
-  const response = await backend.fetch(path, { headers: { Accept: accept } });
-  expect(response.status).toBe(404);
-  expect(response.headers.get("Vary")).toBe("Accept");
-  expect(await response.text()).toBe("Not Found");
-});
+test.each(["text/html", "*/*", "image/*", "application/json"])(
+  "fallback ignores Accept: %s",
+  async (accept) => {
+    const backend = await setup();
+    const response = await backend.fetch("/future/customer.v2", { headers: { Accept: accept } });
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("Scout app shell");
+  },
+);
 
-test("the hosting SPA setting disables HTML navigation fallback", async () => {
+test("the hosting SPA setting disables shell fallback", async () => {
   const backend = await setup(false);
   const response = await backend.fetch("/future/customer.v2", { headers: { Accept: "text/html" } });
   expect(response.status).toBe(404);
 });
 
-test("conditional HTML requests preserve the navigation cache variation", async () => {
+test("conditional requests revalidate the shell", async () => {
   const backend = await setup();
   const response = await backend.fetch("/future/customer.v2", { headers: { Accept: "text/html" } });
   const etag = response.headers.get("ETag");
@@ -117,5 +120,22 @@ test("conditional HTML requests preserve the navigation cache variation", async 
     headers: { Accept: "text/html", "If-None-Match": etag },
   });
   expect(unchanged.status).toBe(304);
-  expect(unchanged.headers.get("Vary")).toBe("Accept");
+  expect(unchanged.headers.get("Cache-Control")).toBe("public, max-age=0, must-revalidate");
+});
+
+test("uploaded hashed assets keep their immutable caching", async () => {
+  const backend = await setup();
+  const response = await backend.fetch("/assets/app-a1b2c3d4.js");
+  expect(response.status).toBe(200);
+  expect(response.headers.get("Cache-Control")).toBe("public, max-age=31536000, immutable");
+  expect(await response.text()).toBe("console.log('Scout')");
+});
+
+test("component-owned HTTP serving uses the same fallback and shell caching", async () => {
+  const backend = await setup(true, "component");
+  const response = await backend.fetch("/assets/missing-b5e0f667.js");
+  expect(response.status).toBe(200);
+  expect(response.headers.get("Content-Type")).toBe("text/html");
+  expect(response.headers.get("Cache-Control")).toBe("public, max-age=0, must-revalidate");
+  expect(await response.text()).toBe("Scout app shell");
 });

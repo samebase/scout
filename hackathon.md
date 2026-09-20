@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-20T15:57:51Z
+- **Last updated:** 2026-09-20T16:15:38Z
 
 ## Log
 
@@ -1718,6 +1718,6 @@ failed updates preserve the existing walkthrough
 
 ### 2026-09-20 - working tree - v273
 
-Convex static hosting serves Scout's app shell for HTML navigation when no uploaded file matches.
-Dotted URLs and future app routes share this fallback without individual hosting rules
+Convex static hosting serves Scout's app shell whenever no uploaded file matches.
+TanStack handles all routes and unknown pages, without hosting rules or request-header checks
 (`patches/@convex-dev__static-hosting@0.2.1.patch`).
