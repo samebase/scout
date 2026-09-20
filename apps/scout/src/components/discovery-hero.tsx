@@ -24,9 +24,7 @@ export function DiscoveryHero({
           id="discovery-heading"
           className="font-display text-[64px] leading-[1.02] font-medium tracking-[-0.05em] @max-[760px]/hero:text-[52px] @max-[640px]/hero:text-[40px]"
         >
-          Let Scout
-          <br />
-          try it first.
+          Let Scout try it first.
         </h1>
         <div className="relative isolate mt-5 max-w-[660px] before:absolute before:-inset-4 before:-z-10 before:bg-background/90 before:blur-xl">
           <p className="text-[22px] leading-relaxed text-foreground @max-[640px]/hero:text-lg">
