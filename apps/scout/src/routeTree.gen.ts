@@ -19,6 +19,7 @@ import { Route as PlayRouteImport } from './routes/play'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as ScoutsRouteImport } from './routes/scouts'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as SsrCheckRouteImport } from './routes/ssr-check'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as TerrainRouteImport } from './routes/terrain'
 import { Route as HandoffSessionIdRouteImport } from './routes/handoff.$sessionId'
@@ -77,6 +78,11 @@ const SettingsRoute = SettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SsrCheckRoute = SsrCheckRouteImport.update({
+  id: '/ssr-check',
+  path: '/ssr-check',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TermsRoute = TermsRouteImport.update({
   id: '/terms',
   path: '/terms',
@@ -124,6 +130,7 @@ export interface FileRoutesByFullPath {
   '/privacy': typeof PrivacyRoute
   '/scouts': typeof ScoutsRouteWithChildren
   '/settings': typeof SettingsRoute
+  '/ssr-check': typeof SsrCheckRoute
   '/terms': typeof TermsRoute
   '/terrain': typeof TerrainRoute
   '/handoff/$sessionId': typeof HandoffSessionIdRoute
@@ -142,6 +149,7 @@ export interface FileRoutesByTo {
   '/play': typeof PlayRoute
   '/privacy': typeof PrivacyRoute
   '/settings': typeof SettingsRoute
+  '/ssr-check': typeof SsrCheckRoute
   '/terms': typeof TermsRoute
   '/terrain': typeof TerrainRoute
   '/handoff/$sessionId': typeof HandoffSessionIdRoute
@@ -162,6 +170,7 @@ export interface FileRoutesById {
   '/privacy': typeof PrivacyRoute
   '/scouts': typeof ScoutsRouteWithChildren
   '/settings': typeof SettingsRoute
+  '/ssr-check': typeof SsrCheckRoute
   '/terms': typeof TermsRoute
   '/terrain': typeof TerrainRoute
   '/handoff/$sessionId': typeof HandoffSessionIdRoute
@@ -183,6 +192,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/scouts'
     | '/settings'
+    | '/ssr-check'
     | '/terms'
     | '/terrain'
     | '/handoff/$sessionId'
@@ -201,6 +211,7 @@ export interface FileRouteTypes {
     | '/play'
     | '/privacy'
     | '/settings'
+    | '/ssr-check'
     | '/terms'
     | '/terrain'
     | '/handoff/$sessionId'
@@ -220,6 +231,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/scouts'
     | '/settings'
+    | '/ssr-check'
     | '/terms'
     | '/terrain'
     | '/handoff/$sessionId'
@@ -240,6 +252,7 @@ export interface RootRouteChildren {
   PrivacyRoute: typeof PrivacyRoute
   ScoutsRoute: typeof ScoutsRouteWithChildren
   SettingsRoute: typeof SettingsRoute
+  SsrCheckRoute: typeof SsrCheckRoute
   TermsRoute: typeof TermsRoute
   TerrainRoute: typeof TerrainRoute
   HandoffSessionIdRoute: typeof HandoffSessionIdRoute
@@ -319,6 +332,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/ssr-check': {
+      id: '/ssr-check'
+      path: '/ssr-check'
+      fullPath: '/ssr-check'
+      preLoaderRoute: typeof SsrCheckRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/terms': {
       id: '/terms'
       path: '/terms'
@@ -395,6 +415,7 @@ const rootRouteChildren: RootRouteChildren = {
   PrivacyRoute: PrivacyRoute,
   ScoutsRoute: ScoutsRouteWithChildren,
   SettingsRoute: SettingsRoute,
+  SsrCheckRoute: SsrCheckRoute,
   TermsRoute: TermsRoute,
   TerrainRoute: TerrainRoute,
   HandoffSessionIdRoute: HandoffSessionIdRoute,

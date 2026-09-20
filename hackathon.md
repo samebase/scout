@@ -1780,3 +1780,4 @@ Public site pages now render their identity and reviews before JavaScript loads.
 The homepage and site pages share the official Convex TanStack query integration,
 with native Convex pagination and one shared first-page handoff. Disabling SSR
 returns data pages to the SPA shell (`apps/scout/src/router.tsx`, `packages/convex-tanstack-start/src/server.ts`).
+An independent `/ssr-check` route shows public data and a button to verify hydration using the same setup.
