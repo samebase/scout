@@ -4,23 +4,29 @@ import {
   useSidebarLayoutPresentation,
 } from "@samebase/sidebars/SidebarRuntime";
 import type { SidebarLayoutState } from "@samebase/sidebars/SidebarLayoutState";
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { MonitorIcon, PanelLeftIcon, SquareIcon, XIcon } from "lucide-react";
+import { useLocalStorageSidebarState } from "../../sidebars/scoutSidebarState";
+
+const defaults = {
+  leftDesktopOpen: true,
+  leftDesktopWidthPx: 260,
+  leftMobileWidthPx: 300,
+  mobilePane: "main",
+  mobileSurface: { kind: "unmerged" },
+  rightDesktopOpen: true,
+  rightDesktopWidthPx: 560,
+  rightMobileWidthPx: 768,
+} satisfies SidebarLayoutState;
 
 export function ConversationSidebar({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<SidebarLayoutState>({
-    leftDesktopOpen: true,
-    leftDesktopWidthPx: 260,
-    leftMobileWidthPx: 300,
-    mobilePane: "main",
-    mobileSurface: { kind: "unmerged" },
-    rightDesktopOpen: true,
-    rightDesktopWidthPx: 560,
-    rightMobileWidthPx: 768,
+  const controller = useLocalStorageSidebarState({
+    defaults,
+    storageKey: "scout_conversation_sidebar_state",
   });
 
   return (
-    <SidebarRuntimeProvider controller={{ isHydrated: true, state, setState }}>
+    <SidebarRuntimeProvider controller={controller}>
       <div className="play-session-layout flex min-h-0 flex-1 flex-col">{children}</div>
     </SidebarRuntimeProvider>
   );

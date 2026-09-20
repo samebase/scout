@@ -19,6 +19,18 @@ import { DiscoveryHero } from "./discovery-hero";
 import { ActivityFeed } from "./activity-feed";
 import { ConversationLobby } from "../products/conversation/page";
 import { Button } from "./ui/button";
+import { useLocalStorageSidebarState } from "../sidebars/scoutSidebarState";
+
+const sidebarDefaults = {
+  leftDesktopOpen: true,
+  leftDesktopWidthPx: 288,
+  leftMobileWidthPx: 288,
+  mobilePane: "main",
+  mobileSurface: { kind: "unmerged" },
+  rightDesktopOpen: false,
+  rightDesktopWidthPx: 0,
+  rightMobileWidthPx: 0,
+} satisfies SidebarLayoutState;
 
 const controlGroups = [
   {
@@ -85,15 +97,9 @@ export function TerrainExplorer({
   onChange: (settings: TerrainSettings) => void;
   onViewChange: (view: "terrain" | "landing") => void;
 }) {
-  const [sidebar, setSidebar] = useState<SidebarLayoutState>({
-    leftDesktopOpen: true,
-    leftDesktopWidthPx: 288,
-    leftMobileWidthPx: 288,
-    mobilePane: "main",
-    mobileSurface: { kind: "unmerged" },
-    rightDesktopOpen: false,
-    rightDesktopWidthPx: 0,
-    rightMobileWidthPx: 0,
+  const sidebar = useLocalStorageSidebarState({
+    defaults: sidebarDefaults,
+    storageKey: "scout_terrain_sidebar_state",
   });
   const [paused, setPaused] = useState(false);
   const [status, setStatus] = useState<TerrainStatus | null>(null);
@@ -114,7 +120,7 @@ export function TerrainExplorer({
   }
 
   return (
-    <SidebarRuntimeProvider controller={{ isHydrated: true, state: sidebar, setState: setSidebar }}>
+    <SidebarRuntimeProvider controller={sidebar}>
       <main id="main-content" className="h-[calc(100dvh-4rem)] min-h-[28rem] bg-background">
         <SidebarLayout
           mobileMinResizeBehavior="min_resize_to_slide"

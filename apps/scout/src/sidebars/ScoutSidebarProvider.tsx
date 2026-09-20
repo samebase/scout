@@ -1,11 +1,28 @@
 import { SidebarRuntimeProvider } from "@samebase/sidebars/SidebarRuntime";
-import type { SidebarLayoutStateController } from "@samebase/sidebars/SidebarLayoutState";
+import type {
+  SidebarLayoutState,
+  SidebarLayoutStateController,
+} from "@samebase/sidebars/SidebarLayoutState";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useRef, type ReactNode } from "react";
-import { useScoutSidebarController } from "./scoutSidebarState";
+import { useLocalStorageSidebarState } from "./scoutSidebarState";
+
+const defaults = {
+  leftDesktopOpen: true,
+  leftDesktopWidthPx: 240,
+  leftMobileWidthPx: 280,
+  mobilePane: "right",
+  mobileSurface: { kind: "unmerged" },
+  rightDesktopOpen: true,
+  rightDesktopWidthPx: 480,
+  rightMobileWidthPx: 480,
+} satisfies SidebarLayoutState;
 
 export function ScoutSidebarProvider({ children }: { children: ReactNode }) {
-  const controller = useScoutSidebarController();
+  const controller = useLocalStorageSidebarState({
+    defaults,
+    storageKey: "scout_sidebar_layout_state",
+  });
   const labSearch = useSearch({ from: "/lab", shouldThrow: false });
   const navigate = useNavigate();
   const state = labSearch

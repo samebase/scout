@@ -1,11 +1,4 @@
 import { SIDEBAR_LAYOUT_MOBILE_MAIN_MIN_WIDTH_PX } from "@samebase/sidebars/SidebarLayoutGeometry";
-import {
-  buildSidebarLayoutDesktopPrehydrationScript,
-  buildSidebarLayoutMobilePanePrehydrationScript,
-  clearSidebarLayoutDesktopPrehydrationStyle,
-  type SidebarLayoutPrehydrationArgs,
-  type SidebarLayoutPrehydrationState,
-} from "@samebase/sidebars/SidebarLayoutPrehydration";
 import type {
   SidebarLayoutState,
   SidebarLayoutStateController,
@@ -13,254 +6,116 @@ import type {
   SidebarLayoutStateUpdate,
 } from "@samebase/sidebars/SidebarLayoutState";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { z } from "zod";
 
-const SCOUT_SIDEBAR_STORAGE_KEY = "scout_sidebar_layout_state";
-const SCOUT_SIDEBAR_STORAGE_VERSION = 2;
+const SIDEBAR_STORAGE_VERSION = 2;
 const SIDEBAR_WIDTH_PERSIST_DELAY_MS = 160;
-const SCOUT_SIDEBAR_PREHYDRATION_ARGS = {
-  desktopStyleElementId: "scout-sidebar-layout-prehydration",
-} satisfies SidebarLayoutPrehydrationArgs;
-const SCOUT_SIDEBAR_DEFAULT_STATE = {
-  leftDesktopOpen: true,
-  leftDesktopWidthPx: 240,
-  leftMobileWidthPx: 280,
-  mobilePane: "right",
-  mobileSurface: { kind: "unmerged" },
-  rightDesktopOpen: true,
-  rightDesktopWidthPx: 480,
-  rightMobileWidthPx: 480,
-} satisfies SidebarLayoutState;
+const storedSidebarStateSchema = z.object({
+  version: z.literal(SIDEBAR_STORAGE_VERSION),
+  state: z.object({
+    leftDesktopOpen: z.boolean(),
+    leftDesktopWidthPx: z.number(),
+    leftMobileWidthPx: z.number(),
+    mobilePane: z.enum(["left", "main", "right"]),
+    mobileSurface: z.discriminatedUnion("kind", [
+      z.object({ kind: z.literal("unmerged") }),
+      z.object({
+        kind: z.literal("merged"),
+        mainWidthPx: z.number().min(SIDEBAR_LAYOUT_MOBILE_MAIN_MIN_WIDTH_PX),
+        side: z.enum(["left", "right"]),
+      }),
+    ]),
+    rightDesktopOpen: z.boolean(),
+    rightDesktopWidthPx: z.number(),
+    rightMobileWidthPx: z.number(),
+  }),
+});
 
-function readScoutSidebarPrehydrationState(): SidebarLayoutPrehydrationState | null {
-  function readFiniteNumber(value: unknown) {
-    return typeof value === "number" && Number.isFinite(value) ? value : null;
-  }
-
-  function readMobilePane(value: unknown) {
-    return value === "left" || value === "main" || value === "right" ? value : null;
-  }
-
-  function readMobileSurface(
-    value: unknown,
-  ): SidebarLayoutPrehydrationState["mobileSurface"] | null {
-    if (value === null || typeof value !== "object" || !("kind" in value)) {
-      return null;
-    }
-
-    if (value.kind === "unmerged") {
-      return { kind: "unmerged" };
-    }
-
-    if (
-      value.kind !== "merged" ||
-      !("mainWidthPx" in value) ||
-      !("side" in value) ||
-      (value.side !== "left" && value.side !== "right")
-    ) {
-      return null;
-    }
-
-    const mainWidthPx = readFiniteNumber(value.mainWidthPx);
-    return mainWidthPx === null ? null : { kind: "merged", mainWidthPx, side: value.side };
-  }
-
-  function readState(value: unknown): SidebarLayoutPrehydrationState | null {
-    if (
-      value === null ||
-      typeof value !== "object" ||
-      !("leftDesktopOpen" in value) ||
-      !("leftDesktopWidthPx" in value) ||
-      !("leftMobileWidthPx" in value) ||
-      !("mobilePane" in value) ||
-      !("mobileSurface" in value) ||
-      !("rightDesktopOpen" in value) ||
-      !("rightDesktopWidthPx" in value) ||
-      !("rightMobileWidthPx" in value)
-    ) {
-      return null;
-    }
-
-    const leftDesktopWidthPx = readFiniteNumber(value.leftDesktopWidthPx);
-    const leftMobileWidthPx = readFiniteNumber(value.leftMobileWidthPx);
-    const mobilePane = readMobilePane(value.mobilePane);
-    const mobileSurface = readMobileSurface(value.mobileSurface);
-    const rightDesktopWidthPx = readFiniteNumber(value.rightDesktopWidthPx);
-    const rightMobileWidthPx = readFiniteNumber(value.rightMobileWidthPx);
-    if (
-      typeof value.leftDesktopOpen !== "boolean" ||
-      leftDesktopWidthPx === null ||
-      leftMobileWidthPx === null ||
-      mobilePane === null ||
-      mobileSurface === null ||
-      typeof value.rightDesktopOpen !== "boolean" ||
-      rightDesktopWidthPx === null ||
-      rightMobileWidthPx === null
-    ) {
-      return null;
-    }
-
-    return {
-      leftDesktopOpen: value.leftDesktopOpen,
-      leftDesktopWidthPx,
-      leftMobileWidthPx,
-      mobilePane,
-      mobileSurface,
-      rightDesktopOpen: value.rightDesktopOpen,
-      rightDesktopWidthPx,
-      rightMobileWidthPx,
-    };
-  }
-
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  try {
-    const serializedState = window.localStorage.getItem("scout_sidebar_layout_state");
-    if (serializedState === null) {
-      return null;
-    }
-
-    const storedValue: unknown = JSON.parse(serializedState);
-    if (
-      storedValue === null ||
-      typeof storedValue !== "object" ||
-      !("version" in storedValue) ||
-      storedValue.version !== 2 ||
-      !("state" in storedValue)
-    ) {
-      return null;
-    }
-
-    return readState(storedValue.state);
-  } catch {
-    return null;
-  }
-}
-
-function readScoutSidebarState(): SidebarLayoutState {
-  const storedState = readScoutSidebarPrehydrationState();
-  if (
-    storedState === null ||
-    (storedState.mobileSurface.kind === "merged" &&
-      storedState.mobileSurface.mainWidthPx < SIDEBAR_LAYOUT_MOBILE_MAIN_MIN_WIDTH_PX)
-  ) {
-    return SCOUT_SIDEBAR_DEFAULT_STATE;
-  }
-
-  return storedState;
-}
-
-function writeScoutSidebarState(state: SidebarLayoutState) {
+function writeSidebarState(storageKey: string, state: SidebarLayoutState) {
   try {
     window.localStorage.setItem(
-      SCOUT_SIDEBAR_STORAGE_KEY,
-      JSON.stringify({
-        state,
-        version: SCOUT_SIDEBAR_STORAGE_VERSION,
-      }),
+      storageKey,
+      JSON.stringify({ state, version: SIDEBAR_STORAGE_VERSION }),
     );
-  } catch {}
+  } catch (error) {
+    console.warn("Failed to save sidebar state:", error);
+  }
 }
 
-export const scoutSidebarDesktopPrehydrationScript = buildSidebarLayoutDesktopPrehydrationScript(
-  SCOUT_SIDEBAR_PREHYDRATION_ARGS,
-  readScoutSidebarPrehydrationState,
-);
-
-export const scoutSidebarMobilePrehydrationScript = buildSidebarLayoutMobilePanePrehydrationScript(
-  SCOUT_SIDEBAR_PREHYDRATION_ARGS,
-  readScoutSidebarPrehydrationState,
-);
-
-export function useScoutSidebarController(): SidebarLayoutStateController {
-  const [sidebarState, setSidebarState] = useState<SidebarLayoutState>(SCOUT_SIDEBAR_DEFAULT_STATE);
-  const latestSidebarStateRef = useRef<SidebarLayoutState>(sidebarState);
-  const pendingWidthPersistStateRef = useRef<SidebarLayoutState | null>(null);
+export function useLocalStorageSidebarState({
+  defaults,
+  storageKey,
+}: {
+  defaults: SidebarLayoutState;
+  storageKey: string;
+}): SidebarLayoutStateController {
+  const [sidebarState, setSidebarState] = useState(defaults);
+  const latestSidebarStateRef = useRef(sidebarState);
+  const pendingWidthPersistRef = useRef<{
+    state: SidebarLayoutState;
+    storageKey: string;
+  } | null>(null);
   const pendingWidthPersistTimeoutRef = useRef<number | null>(null);
-  const hasAppliedStoredStateRef = useRef(false);
-
-  const clearPendingWidthPersist = useCallback(() => {
-    if (pendingWidthPersistTimeoutRef.current !== null) {
-      window.clearTimeout(pendingWidthPersistTimeoutRef.current);
-    }
-
-    pendingWidthPersistTimeoutRef.current = null;
-    pendingWidthPersistStateRef.current = null;
-  }, []);
 
   const flushPendingWidthPersist = useCallback(() => {
-    const pendingState = pendingWidthPersistStateRef.current;
-    clearPendingWidthPersist();
-    if (pendingState !== null) {
-      writeScoutSidebarState(pendingState);
+    if (pendingWidthPersistTimeoutRef.current !== null) {
+      window.clearTimeout(pendingWidthPersistTimeoutRef.current);
+      pendingWidthPersistTimeoutRef.current = null;
     }
-  }, [clearPendingWidthPersist]);
-
-  const persistSidebarState = useCallback(
-    (nextState: SidebarLayoutState) => {
-      clearPendingWidthPersist();
-      writeScoutSidebarState(nextState);
-    },
-    [clearPendingWidthPersist],
-  );
-
-  const scheduleWidthPersist = useCallback(
-    (nextState: SidebarLayoutState) => {
-      clearPendingWidthPersist();
-      pendingWidthPersistStateRef.current = nextState;
-      pendingWidthPersistTimeoutRef.current = window.setTimeout(() => {
-        pendingWidthPersistTimeoutRef.current = null;
-        pendingWidthPersistStateRef.current = null;
-        writeScoutSidebarState(nextState);
-      }, SIDEBAR_WIDTH_PERSIST_DELAY_MS);
-    },
-    [clearPendingWidthPersist],
-  );
+    const pending = pendingWidthPersistRef.current;
+    pendingWidthPersistRef.current = null;
+    if (pending !== null) {
+      writeSidebarState(pending.storageKey, pending.state);
+    }
+  }, []);
 
   const applySidebarState = useCallback(
     (updateState: SidebarLayoutStateUpdate, persistenceMode: SidebarLayoutStatePersistenceMode) => {
       const currentState = latestSidebarStateRef.current;
       const nextState = updateState(currentState);
-      if (nextState === currentState) {
-        return;
-      }
+      if (nextState === currentState) return;
 
       latestSidebarStateRef.current = nextState;
       setSidebarState(nextState);
+      pendingWidthPersistRef.current = { state: nextState, storageKey };
       if (persistenceMode === "immediate") {
-        persistSidebarState(nextState);
-        return;
+        flushPendingWidthPersist();
+      } else {
+        if (pendingWidthPersistTimeoutRef.current !== null) {
+          window.clearTimeout(pendingWidthPersistTimeoutRef.current);
+        }
+        pendingWidthPersistTimeoutRef.current = window.setTimeout(
+          flushPendingWidthPersist,
+          SIDEBAR_WIDTH_PERSIST_DELAY_MS,
+        );
       }
-
-      scheduleWidthPersist(nextState);
     },
-    [persistSidebarState, scheduleWidthPersist],
+    [flushPendingWidthPersist, storageKey],
   );
 
   useLayoutEffect(() => {
-    const storedState = readScoutSidebarState();
-    latestSidebarStateRef.current = storedState;
-    hasAppliedStoredStateRef.current = true;
-    setSidebarState(storedState);
-  }, []);
-
-  useLayoutEffect(() => {
-    if (!hasAppliedStoredStateRef.current || sidebarState !== latestSidebarStateRef.current) {
-      return;
+    let state = defaults;
+    try {
+      const stored = window.localStorage.getItem(storageKey);
+      if (stored !== null) {
+        const parsed = storedSidebarStateSchema.safeParse(JSON.parse(stored));
+        if (parsed.success) state = parsed.data.state;
+      }
+    } catch (error) {
+      console.warn("Failed to read sidebar state:", error);
     }
+    latestSidebarStateRef.current = state;
+    setSidebarState(state);
+    return flushPendingWidthPersist;
+  }, [defaults, flushPendingWidthPersist, storageKey]);
 
-    clearSidebarLayoutDesktopPrehydrationStyle(SCOUT_SIDEBAR_PREHYDRATION_ARGS);
-  }, [sidebarState]);
-
-  useEffect(() => flushPendingWidthPersist, [flushPendingWidthPersist]);
+  useEffect(() => {
+    window.addEventListener("pagehide", flushPendingWidthPersist);
+    return () => window.removeEventListener("pagehide", flushPendingWidthPersist);
+  }, [flushPendingWidthPersist]);
 
   return useMemo(
-    () => ({
-      isHydrated: true,
-      setState: applySidebarState,
-      state: sidebarState,
-    }),
+    () => ({ isHydrated: true, state: sidebarState, setState: applySidebarState }),
     [applySidebarState, sidebarState],
   );
 }
