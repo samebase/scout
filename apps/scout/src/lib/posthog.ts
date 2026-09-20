@@ -112,7 +112,7 @@ function canRecord() {
       "/handoff/",
       "/members",
       "/scouts",
-      "/agents",
+      "/lab",
       "/settings",
       "/credit-history",
       "/account-deletion",

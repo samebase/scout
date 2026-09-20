@@ -9,6 +9,7 @@ import { requestCheckRecord } from "./tasks/requestCheckModel";
 import { convexContextRecord } from "./tasks/convexAgentModel";
 import { siteProfile, siteResearchRecord } from "./tasks/siteResearchModel";
 import { screenshotRecord, walkthroughContent } from "./tasks/screenshotModel";
+import { walkthroughReporting } from "./tasks/walkthroughReportModel";
 import { vWorkflowId } from "@convex-dev/workflow";
 import {
   browserActionValidator,
@@ -170,7 +171,10 @@ export default defineSchema({
     sessionId: v.id("agentsApiSessions"),
     callId: v.string(),
     result: callResult,
-  }).index("by_session_id_and_call_id", ["sessionId", "callId"]),
+    reporting: v.optional(walkthroughReporting),
+  })
+    .index("by_session_id_and_call_id", ["sessionId", "callId"])
+    .index("by_session_id_and_reporting_started_at", ["sessionId", "reporting.startedAt"]),
   agentsApiBrowserSessions: defineTable({
     agentsSessionId: v.id("agentsApiSessions"),
     billable: v.optional(v.boolean()),

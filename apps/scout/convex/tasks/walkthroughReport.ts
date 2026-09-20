@@ -1,15 +1,19 @@
 "use node";
 
 import { convexGateway } from "@convex-dev/ai-sdk-provider";
-import { generateText, tool } from "ai";
+import { asSchema } from "@ai-sdk/provider-utils";
+import { APICallError, generateText, tool } from "ai";
+import { setTimeout as delay } from "node:timers/promises";
 import { outdent } from "outdent";
 import { z } from "zod";
 import { internal } from "../_generated/api";
 import type { ActionCtx } from "../_generated/server";
-import type { Doc, Id } from "../_generated/dataModel";
+import type { Doc } from "../_generated/dataModel";
 import { reviewChecksSchema } from "../../shared/reviewChecks";
 import { MAX_TASK_SCREENSHOTS } from "./screenshotModel";
 import { previousWalkthroughContext } from "./instructions";
+import { generationUsage } from "./convexAgentModel";
+import { diagnoseTaskFailure } from "./providerFailure";
 
 export const walkthroughDraftSchema = z.object({
   summary: z.string().trim().min(1).max(2000),
@@ -55,6 +59,7 @@ export function reportInstructions(previous: Doc<"agentsApiSessions">["walkthrou
     is not a successful outcome. A missing product capability is a limitation, not a passed
     check merely because you confirmed it was missing. Distinguish an observed product
     failure from a task you could not verify because of access or an external service.
+    Mark an unsupported capability untested and explain that the product does not offer it.
     Each check must answer whether a requested product outcome worked. A draft's check
     about performing an inspection is evidence for that outcome, not a separate passed
     result. Fold that evidence into the relevant outcome check instead of preserving
@@ -62,14 +67,25 @@ export function reportInstructions(previous: Doc<"agentsApiSessions">["walkthrou
   `;
 }
 
-// Development prototype. Usage is logged, but production cost integration is not added yet.
-export async function reviseWalkthroughDraft(
+export class WalkthroughReportingError extends Error {
+  constructor(cause: unknown) {
+    super("Walkthrough reporting failed", { cause });
+  }
+}
+
+export async function saveWalkthroughDraft(
   ctx: ActionCtx,
-  sessionId: Id<"agentsApiSessions">,
+  session: Doc<"agentsApiSessions">,
+  callId: string,
   draft: z.infer<typeof walkthroughDraftSchema>,
+  abortSignal: AbortSignal | undefined,
 ) {
-  const context = await ctx.runQuery(internal.tasks.walkthroughLabRecords.context, { sessionId });
-  if (!context.previous) return draft;
+  const sessionId = session._id;
+  const context = await ctx.runQuery(internal.tasks.walkthroughReports.context, { sessionId });
+  if (!context.previous) {
+    await ctx.runMutation(internal.tasks.walkthrough.save, { sessionId, ...draft });
+    return draft;
+  }
   const captureIds = [
     ...new Set(
       [...context.previous.sections, ...draft.sections].flatMap((section) => section.captureIds),
@@ -85,35 +101,115 @@ export async function reviseWalkthroughDraft(
       .min(1)
       .max(MAX_TASK_SCREENSHOTS),
   });
-  const startedAt = Date.now();
-  const result = await generateText({
-    model: convexGateway("openai/gpt-5.6-luna"),
+  const model = "openai/gpt-5.6-luna";
+  const request = {
+    model,
     instructions: reportInstructions(context.previous),
     prompt: JSON.stringify({ userRequests: context.requests, draft }),
     tools: {
-      save_walkthrough: tool({
+      save_walkthrough: {
         description: walkthroughDescription,
-        inputSchema: reportSchema,
+        inputSchema: await asSchema(reportSchema).jsonSchema,
         strict: true,
-      }),
+      },
     },
-    toolChoice: { type: "tool", toolName: "save_walkthrough" },
+    toolChoice: { type: "tool", toolName: "save_walkthrough" } as const,
     providerOptions: { convexGateway: { reasoningEffort: "max" } },
     maxRetries: 0,
-    abortSignal: AbortSignal.timeout(240_000),
-  });
-  const call = result.toolCalls[0];
-  if (result.toolCalls.length !== 1 || !call)
-    throw new Error("Walkthrough reporting did not return one report");
-  if (call.dynamic)
-    throw call.error ?? new Error("Walkthrough reporting returned an unknown tool call");
-  console.info("Development walkthrough reporting", {
-    sessionId,
-    durationMs: Date.now() - startedAt,
-    usage: result.usage,
-    previousChecks: context.previous.checks?.length ?? 0,
-    draftChecks: draft.checks.length,
-    savedChecks: call.input.checks.length,
-  });
-  return call.input;
+  };
+  try {
+    await ctx.runMutation(internal.tasks.walkthroughReports.start, {
+      sessionId,
+      callId,
+      model,
+      request: JSON.stringify(request),
+      startedAt: Date.now(),
+    });
+  } catch (error) {
+    throw new WalkthroughReportingError(error);
+  }
+  const stopped = new AbortController();
+  const finished = new AbortController();
+  const signal = AbortSignal.any([stopped.signal, abortSignal ?? AbortSignal.timeout(180_000)]);
+  const watch = (async () => {
+    try {
+      while (!finished.signal.aborted) {
+        await delay(1_000, undefined, { signal: finished.signal });
+        const current = await ctx.runQuery(internal.tasks.sessions.cleanupResources, { sessionId });
+        if (current.state.kind !== "running") {
+          stopped.abort(new Error("Task stopped during walkthrough reporting"));
+          return;
+        }
+      }
+    } catch (error) {
+      if (!finished.signal.aborted) stopped.abort(error);
+    }
+  })();
+  let response: string | null = null;
+  let usage: ReturnType<typeof generationUsage> = null;
+  try {
+    signal.throwIfAborted();
+    const result = await generateText({
+      ...request,
+      model: convexGateway(model),
+      tools: {
+        save_walkthrough: tool({
+          description: walkthroughDescription,
+          inputSchema: reportSchema,
+          strict: true,
+        }),
+      },
+      abortSignal: signal,
+    });
+    response = JSON.stringify(
+      result.response.body ?? { content: result.content, finishReason: result.finishReason },
+    );
+    const step = result.steps[0];
+    if (step) usage = generationUsage(step.usage);
+    if (!step || result.steps.length !== 1)
+      throw new Error("Walkthrough reporting did not produce exactly one model step");
+    signal.throwIfAborted();
+    const call = result.toolCalls[0];
+    if (result.toolCalls.length !== 1 || !call)
+      throw new Error("Walkthrough reporting did not return one report");
+    if (call.dynamic)
+      throw call.error ?? new Error("Walkthrough reporting returned an unknown tool call");
+    await ctx.runMutation(internal.tasks.walkthroughReports.finish, {
+      sessionId,
+      callId,
+      response,
+      usage,
+      outcome: { kind: "completed", report: call.input },
+    });
+    return call.input;
+  } catch (error) {
+    const diagnostic = diagnoseTaskFailure(error, "advance", "convex_agent");
+    const message = [
+      diagnostic.message,
+      diagnostic.httpStatus === undefined ? null : `HTTP ${diagnostic.httpStatus}`,
+      diagnostic.providerCode === undefined ? null : `Code: ${diagnostic.providerCode}`,
+      diagnostic.requestId === undefined ? null : `Request ID: ${diagnostic.requestId}`,
+    ]
+      .filter((value) => value != null)
+      .join("\n");
+    console.error("Walkthrough reporting failed", {
+      sessionId,
+      callId,
+      diagnostic,
+      ...(APICallError.isInstance(error)
+        ? { method: "POST", path: new URL(error.url).pathname }
+        : {}),
+    });
+    await ctx.runMutation(internal.tasks.walkthroughReports.finish, {
+      sessionId,
+      callId,
+      response: response ?? (APICallError.isInstance(error) ? (error.responseBody ?? null) : null),
+      usage,
+      outcome: { kind: "failed", error: message },
+    });
+    throw new WalkthroughReportingError(error);
+  } finally {
+    finished.abort();
+    await watch;
+  }
 }

@@ -98,11 +98,11 @@ async function open(path: string) {
   });
   const lab = createRoute({
     getParentRoute: () => root,
-    path: "/agents",
+    path: "/lab",
     staticData: { access: "access_lab" },
     component: () => {
       remote.lab();
-      return <h1>Agents contents</h1>;
+      return <h1>Lab contents</h1>;
     },
   });
   const settings = createRoute({
@@ -190,17 +190,17 @@ async function open(path: string) {
 }
 
 test("protected children wait for access and unmount on revocation", async () => {
-  await open("/agents");
+  await open("/lab");
   expect((await screen.findByRole("main", { busy: true })).textContent).toBe("");
   expect(remote.lab).not.toHaveBeenCalled();
   setViewer("role_staff");
-  expect(await screen.findByRole("heading", { name: "Agents contents" })).toBeTruthy();
+  expect(await screen.findByRole("heading", { name: "Lab contents" })).toBeTruthy();
   expect(screen.getByRole("link", { name: "Members" })).toBeTruthy();
   setViewer("role_member");
   expect(await screen.findByRole("heading", { name: "Access unavailable" })).toBeTruthy();
-  expect(screen.queryByRole("heading", { name: "Agents contents" })).toBeNull();
+  expect(screen.queryByRole("heading", { name: "Lab contents" })).toBeNull();
   expect(screen.queryByRole("link", { name: "Members" })).toBeNull();
-  expect(screen.queryByRole("link", { name: "Agents" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "Lab" })).toBeNull();
   expect(screen.getByRole("link", { name: "Scouts" })).toBeTruthy();
   expect(screen.getByRole("link", { name: "Reviews" })).toBeTruthy();
 });
@@ -217,9 +217,9 @@ test.each(["anonymous", "loading", "terms_required", "deleted"])(
   },
 );
 
-test("a direct Agents link never mounts restricted content for a member", async () => {
+test("a direct Lab link never mounts restricted content for a member", async () => {
   setViewer("role_member");
-  await open("/agents");
+  await open("/lab");
   expect(await screen.findByRole("heading", { name: "Access unavailable" })).toBeTruthy();
   expect(remote.lab).not.toHaveBeenCalled();
 });
@@ -269,7 +269,7 @@ test("guests must sign in before opening credit history", async () => {
   expect(screen.queryByRole("heading", { name: "Credit history" })).toBeNull();
 });
 
-test("staff keep Agents and settings admin access without approval", async () => {
+test("staff keep Lab and settings admin access without approval", async () => {
   setViewer("role_staff", false);
   await open("/settings");
   expect(await screen.findByRole("heading", { name: "Admin access" })).toBeTruthy();
@@ -298,7 +298,7 @@ test("guests can navigate public pages and sign in without seeing admin links", 
   const user = userEvent.setup();
   expect(screen.getByRole("link", { name: "Reviews" }).getAttribute("aria-current")).toBe("page");
   expect(screen.queryByRole("link", { name: "Settings" })).toBeNull();
-  for (const name of ["Agents", "Scouts", "Sites", "Members"]) {
+  for (const name of ["Lab", "Scouts", "Sites", "Members"]) {
     expect(screen.queryByRole("link", { name })).toBeNull();
   }
 
@@ -309,10 +309,10 @@ test("guests can navigate public pages and sign in without seeing admin links", 
   expect(remote.lab).not.toHaveBeenCalled();
 });
 
-test("staff can mount Agents content before member approval", async () => {
+test("staff can mount Lab content before member approval", async () => {
   setViewer("role_staff", false);
-  await open("/agents");
-  expect(await screen.findByRole("heading", { name: "Agents contents" })).toBeTruthy();
+  await open("/lab");
+  expect(await screen.findByRole("heading", { name: "Lab contents" })).toBeTruthy();
   expect(screen.getByRole("link", { name: "Members" })).toBeTruthy();
 });
 
@@ -320,15 +320,15 @@ test.each(["deleting", "deleted"])(
   "%s accounts leave protected content for the deletion page",
   async (kind) => {
     setViewer("role_staff");
-    await open("/agents");
-    expect(await screen.findByRole("heading", { name: "Agents contents" })).toBeTruthy();
+    await open("/lab");
+    expect(await screen.findByRole("heading", { name: "Lab contents" })).toBeTruthy();
     act(() => {
       remote.values.set("viewer", { kind });
       remote.revision += 1;
       for (const listener of remote.subscribers) listener();
     });
     expect(await screen.findByRole("heading", { name: "Account deletion" })).toBeTruthy();
-    expect(screen.queryByRole("heading", { name: "Agents contents" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Lab contents" })).toBeNull();
   },
 );
 
@@ -433,7 +433,7 @@ test("guests can read policies from signup before submitting account information
 
 test("existing users explicitly accept before protected content mounts, and failed saves remain visible", async () => {
   remote.values.set("viewer", { kind: "terms_required", userId: "account" });
-  await open("/agents");
+  await open("/lab");
   const user = userEvent.setup();
   expect(await screen.findByRole("heading", { name: "Review our terms" })).toBeTruthy();
   expect(remote.lab).not.toHaveBeenCalled();
@@ -447,7 +447,7 @@ test("existing users explicitly accept before protected content mounts, and fail
   await user.click(screen.getByRole("button", { name: "Accept and continue" }));
   expect(remote.accept).toHaveBeenLastCalledWith({});
   setViewer("role_staff");
-  expect(await screen.findByRole("heading", { name: "Agents contents" })).toBeTruthy();
+  expect(await screen.findByRole("heading", { name: "Lab contents" })).toBeTruthy();
 });
 
 test("the homepage stays mounted as auth resolves, and terms are requested in account settings", async () => {
@@ -472,7 +472,7 @@ test("the homepage stays mounted as auth resolves, and terms are requested in ac
 
 test("a user can close an account without accepting terms", async () => {
   remote.values.set("viewer", { kind: "terms_required", userId: "account" });
-  await open("/agents");
+  await open("/lab");
   const user = userEvent.setup();
   await user.click(await screen.findByRole("link", { name: "Close account" }));
   expect(await screen.findByRole("heading", { name: "Account deletion" })).toBeTruthy();

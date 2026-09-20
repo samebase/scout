@@ -22,7 +22,7 @@ import { saveScreenshot } from "./screenshots";
 import {
   walkthroughDraftSchema,
   walkthroughDescription,
-  reviseWalkthroughDraft,
+  saveWalkthroughDraft,
 } from "./walkthroughReport";
 import { createPlayTools } from "../scout/play";
 import { taskBrowserBilling } from "./browserCredits";
@@ -192,11 +192,15 @@ export async function runtimeTools(
     save_walkthrough: tool({
       description: walkthroughDescription,
       inputSchema: walkthroughDraftSchema,
-      execute: async (content) => {
+      execute: async (content, { toolCallId, abortSignal }) => {
         await beforeDispatch();
-        const report = await reviseWalkthroughDraft(ctx, sessionId, content);
-        await ctx.runMutation(internal.tasks.walkthrough.save, { sessionId, ...report });
-        return { saved: true, sections: report.sections.length };
+        const report = await saveWalkthroughDraft(ctx, session, toolCallId, content, abortSignal);
+        return {
+          saved: true,
+          summary: report.summary,
+          checks: report.checks,
+          sections: report.sections.length,
+        };
       },
     }),
     ...createWorkspaceTools(

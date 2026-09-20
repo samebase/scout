@@ -1345,7 +1345,7 @@ test("resizing Review keeps its title, pane controls, chat draft, and replay mou
   expect(visibility.closest("[data-pane-side]")?.getAttribute("data-pane-side")).toBe("main");
   expect(
     screen
-      .getByRole("link", { name: "Open in Agents" })
+      .getByRole("link", { name: "Open in Lab" })
       .closest('[data-sidebar-layout-part="address-chrome"]'),
   ).toBe(header);
   expect(
@@ -1377,7 +1377,7 @@ test("resizing Review keeps its title, pane controls, chat draft, and replay mou
   }
 });
 
-test("admins can open another member's Review in the Agents inspector", async () => {
+test("admins can open another member's Review in the Lab inspector", async () => {
   remote.queries.set(
     "scout/activity:get",
     session({
@@ -1389,20 +1389,20 @@ test("admins can open another member's Review in the Agents inspector", async ()
     }),
   );
   await openPlay("/tasks/game-thread");
-  expect((await screen.findByRole("link", { name: "Open in Agents" })).getAttribute("href")).toBe(
-    "/agents?session=managed-1",
+  expect((await screen.findByRole("link", { name: "Open in Lab" })).getAttribute("href")).toBe(
+    "/lab?session=managed-1",
   );
   expect(remote.queryCalls).toHaveBeenCalledWith("tasks/sessions:controls", "skip");
 });
 
-test("legacy threads without shared task IDs do not offer an Agents inspector link", async () => {
+test("legacy threads without shared task IDs do not offer an Lab inspector link", async () => {
   remote.queries.set(
     "scout/activity:get",
     session({ purpose: { kind: "review" }, runtime: { kind: "convex_agent" }, canControl: false }),
   );
   await openPlay("/tasks/game-thread");
   await screen.findByRole("region", { name: "Conversation with Scout" });
-  expect(screen.queryByRole("link", { name: "Open in Agents" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "Open in Lab" })).toBeNull();
   expect(screen.queryByRole("textbox", { name: "Message Scout" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Stop Scout" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Resume Scout" })).toBeNull();
@@ -1438,7 +1438,7 @@ test("legacy Convex sessions keep transcript and replay without mounting executi
     expect(remote.listReplayPages).toHaveBeenCalledWith({ sessionId: "legacy-browser" }),
   );
   expect(screen.queryByRole("textbox", { name: "Message Scout" })).toBeNull();
-  expect(screen.queryByRole("link", { name: "Open in Agents" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "Open in Lab" })).toBeNull();
   expect(remote.queryCalls).not.toHaveBeenCalledWith(
     "scout/chats:getScoutActivity",
     expect.anything(),
@@ -1578,8 +1578,8 @@ test("Review uses managed controls and keeps live view, handoff and follow-up me
   expect(screen.getByTitle("Scout's live browser").getAttribute("src")).toBe(
     "about:blank#watch-only",
   );
-  expect(screen.getByRole("link", { name: "Open in Agents" }).getAttribute("href")).toBe(
-    "/agents?session=managed-1",
+  expect(screen.getByRole("link", { name: "Open in Lab" }).getAttribute("href")).toBe(
+    "/lab?session=managed-1",
   );
   expect(remote.openHandoffBrowser).not.toHaveBeenCalled();
   expect(reserve).not.toHaveBeenCalled();
@@ -2174,7 +2174,7 @@ describe("Play invitation", () => {
           ),
       ),
     ).toBe(false);
-    expect(screen.queryByRole("link", { name: "Open in Agents" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Open in Lab" })).toBeNull();
   });
 
   test("pending accounts cannot start games", async () => {
@@ -2200,7 +2200,7 @@ describe("Play invitation", () => {
     expect(await screen.findByRole("region", { name: "Conversation with Scout" })).toBeTruthy();
     expect(screen.queryByRole("textbox", { name: "Message Scout" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Stop Scout" })).toBeNull();
-    expect(screen.queryByRole("link", { name: "Open in Agents" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Open in Lab" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Play with Scout" })).toBeNull();
     expect(
       screen.getByText("Sign in with the account that started this chat to continue it."),
@@ -2668,7 +2668,7 @@ test("members can inspect tool results directly in the conversation", async () =
     { kind: "message", id: "request", role: "user", text: "Try the export." },
   ];
   await openPlay("/tasks/game-thread?view=chat");
-  expect(screen.queryByRole("link", { name: "Open in Agents" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "Open in Lab" })).toBeNull();
   const messages = screen.getByRole("log", { name: "Session messages" });
   expect(messages.textContent?.indexOf("Try the export.")).toBeLessThan(
     messages.textContent?.indexOf("capture_screenshot") ?? 0,

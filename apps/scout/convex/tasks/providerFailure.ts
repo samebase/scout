@@ -4,12 +4,17 @@ import { vWorkflowId } from "@convex-dev/workflow";
 import { APICallError } from "ai";
 import type { Infer } from "convex/values";
 import { APIConnectionError, APIError } from "openai";
+import { z } from "zod";
 import { taskEngine } from "./model";
 import { omitNullish } from "../../shared/omitNullish";
 import type { TaskFailureDiagnostic } from "../../shared/taskFailure";
 
 type TaskEngine = Infer<typeof taskEngine>;
 type Operation = TaskFailureDiagnostic["operation"];
+
+const gatewayErrorData = z.object({
+  error: z.object({ code: z.union([z.string(), z.number()]).nullish() }),
+});
 
 function boundedIdentifier(value: string | null | undefined) {
   return value && value.length <= 128 && /^[A-Za-z0-9_.:-]+$/.test(value) ? value : undefined;
@@ -18,13 +23,13 @@ function boundedIdentifier(value: string | null | undefined) {
 export function diagnoseTaskFailure(
   error: unknown,
   operation: Operation,
-  engine: TaskEngine | null,
+  _engine: TaskEngine | null,
   occurredAtMs: number = Date.now(),
 ): TaskFailureDiagnostic {
   const provider =
     error instanceof APIError
       ? "openai"
-      : APICallError.isInstance(error) && engine === "convex_agent"
+      : APICallError.isInstance(error)
         ? "convex_gateway"
         : "unknown";
   if (!(error instanceof APIError) && !APICallError.isInstance(error))
@@ -37,7 +42,17 @@ export function diagnoseTaskFailure(
     };
 
   const status = error instanceof APIError ? error.status : error.statusCode;
-  const code = error instanceof APIError ? boundedIdentifier(error.code) : undefined;
+  const gatewayData = APICallError.isInstance(error)
+    ? gatewayErrorData.safeParse(error.data)
+    : null;
+  const code =
+    error instanceof APIError
+      ? boundedIdentifier(error.code)
+      : gatewayData?.success
+        ? boundedIdentifier(gatewayData.data.error.code?.toString())
+        : undefined;
+  const path =
+    APICallError.isInstance(error) && URL.canParse(error.url) ? new URL(error.url).pathname : null;
   const category =
     code === "insufficient_quota" ||
     code === "usage_limit_exceeded" ||
@@ -65,7 +80,8 @@ export function diagnoseTaskFailure(
     operation,
     occurredAtMs,
     provider,
-    message: error.message,
+    // Convex's OpenAI-compatible chat provider sends model calls with POST.
+    message: path === null ? error.message : `POST ${path}: ${error.message}`,
     ...omitNullish({
       httpStatus:
         status !== undefined && Number.isInteger(status) && status >= 100 && status <= 599

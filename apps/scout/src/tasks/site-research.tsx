@@ -78,7 +78,7 @@ export function SiteResearchView({
                     a: ({ href, children }) =>
                       href?.startsWith("/workspace/") ? (
                         <Link
-                          to="/agents"
+                          to="/lab"
                           search={{
                             session: session._id,
                             step: "site_research",
@@ -100,7 +100,7 @@ export function SiteResearchView({
                 </Markdown>
               </div>
               <Link
-                to="/agents"
+                to="/lab"
                 search={{
                   session: session._id,
                   step: "site_research",
@@ -171,7 +171,7 @@ export function SiteResearchInspector({
           <div className="flex flex-wrap gap-3">
             {research.requestPath && (
               <Link
-                to="/agents"
+                to="/lab"
                 search={{
                   session: sessionId,
                   step: "site_research",
@@ -185,7 +185,7 @@ export function SiteResearchInspector({
             )}
             {research.responsePath && (
               <Link
-                to="/agents"
+                to="/lab"
                 search={{
                   session: sessionId,
                   step: "site_research",
@@ -199,7 +199,7 @@ export function SiteResearchInspector({
             )}
             {research.state.kind === "completed" && (
               <Link
-                to="/agents"
+                to="/lab"
                 search={{ session: sessionId, step: "site_research" }}
                 className="underline"
               >

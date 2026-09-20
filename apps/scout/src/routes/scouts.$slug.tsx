@@ -94,7 +94,7 @@ function ScoutDetailPage() {
             {canStartTask &&
               (scout.status === "active" && scout.availability === "available" ? (
                 <Button asChild>
-                  <Link to="/agents" search={{ scout: scout._id }}>
+                  <Link to="/lab" search={{ scout: scout._id }}>
                     <PlusIcon aria-hidden="true" />
                     New task
                   </Link>

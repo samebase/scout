@@ -206,7 +206,7 @@ test("members can read Scout accounts but cannot open management panels, includi
 test("a Scout's new task opens the shared composer with that Scout selected", async () => {
   await openPage("/scouts/conrad");
   expect((await screen.findByRole("link", { name: "New task" })).getAttribute("href")).toBe(
-    "/agents?scout=scout-1",
+    "/lab?scout=scout-1",
   );
   expect(remote.mutation).not.toHaveBeenCalled();
 });

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { api } from "../../convex/_generated/api";
 import { Button } from "#components/ui/button";
 import type { RequestCheck, Session } from "./model";
+import { CallDetails } from "./call-details";
 
 export function RequestCheckView({
   session,
@@ -154,55 +155,22 @@ export function RequestCheckInspector({ check }: { check: RequestCheck | null | 
   const call = finished?.call;
   const request = state.kind === "running" ? state.request : call?.request;
   return (
-    <PaneFrame
-      header={<h2 className="border-b px-4 py-3 text-sm font-medium">Call details</h2>}
-      content={
-        <div className="space-y-5 p-4 text-sm">
-          <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2">
-            <dt className="text-muted-foreground">Model</dt>
-            <dd className="break-words">{check.model}</dd>
-            <dt className="text-muted-foreground">Created</dt>
-            <dd>
-              <time dateTime={new Date(check._creationTime).toISOString()}>
-                {new Date(check._creationTime).toLocaleString()}
-              </time>
-            </dd>
-            {finished && (
-              <>
-                <dt className="text-muted-foreground">Duration</dt>
-                <dd>{((finished.finishedAt - check._creationTime) / 1000).toFixed(1)}s</dd>
-              </>
-            )}
-            <dt className="text-muted-foreground">Cost</dt>
-            <dd>{check.cost === null ? "Not reported" : `$${check.cost.toFixed(6)} estimated`}</dd>
-            {call?.usage && (
-              <>
-                <dt className="text-muted-foreground">Input tokens</dt>
-                <dd>{call.usage.inputTokens}</dd>
-                <dt className="text-muted-foreground">Output tokens</dt>
-                <dd>{call.usage.outputTokens}</dd>
-              </>
-            )}
-          </dl>
-          {request && <CallData title="Request" value={request} />}
-          {call?.response != null && <CallData title="Response" value={call.response} />}
-        </div>
+    <CallDetails
+      model={check.model}
+      startedAt={check._creationTime}
+      finishedAt={finished?.finishedAt ?? null}
+      cost={check.cost === null ? null : { kind: "estimated", usd: check.cost }}
+      usage={
+        call?.usage
+          ? {
+              ...call.usage,
+              cachedInputTokens: call.usage.cachedInputTokens ?? null,
+              reasoningTokens: null,
+            }
+          : null
       }
+      request={request ?? null}
+      response={call?.response ?? null}
     />
-  );
-}
-
-function CallData({ title, value }: { title: string; value: string }) {
-  let formatted = value;
-  try {
-    formatted = JSON.stringify(JSON.parse(value), null, 2);
-  } catch {
-    // Failed provider calls may store a plain-text response.
-  }
-  return (
-    <details className="border-t pt-3">
-      <summary className="cursor-pointer font-medium">{title}</summary>
-      <pre className="mt-3 whitespace-pre-wrap break-words text-xs">{formatted}</pre>
-    </details>
   );
 }

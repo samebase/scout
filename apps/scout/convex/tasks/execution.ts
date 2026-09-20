@@ -16,6 +16,7 @@ import { REVIEW_INSTRUCTIONS } from "../scout/review";
 import { playInstructions } from "../scout/play";
 import { previousWalkthroughContext, TASK_INSTRUCTIONS } from "./instructions";
 import { runtimeTools } from "./tools";
+import { WalkthroughReportingError } from "./walkthroughReport";
 
 export async function taskInstructions(
   ctx: ActionCtx,
@@ -114,6 +115,7 @@ export async function executeTaskTool(
   }
   let resource: Awaited<ReturnType<typeof runtimeTools>> | null = null;
   let result: { kind: "success"; output: string } | { kind: "error"; error: string };
+  let reportingFailure: WalkthroughReportingError | null = null;
   try {
     resource = await runtimeTools(ctx, session, scout, call.name, purpose);
     const tool = requireRuntimeTool(resource.tools, call.name);
@@ -128,12 +130,19 @@ export async function executeTaskTool(
       : output;
     result = { kind: "success", output: JSON.stringify(modelOutput ?? null) };
   } catch (error) {
-    result = { kind: "error", error: diagnosticMessage(error) };
+    if (error instanceof WalkthroughReportingError) {
+      reportingFailure = error;
+      result = {
+        kind: "error",
+        error: `Walkthrough reporting failed: ${error.cause instanceof Error ? error.cause.message : String(error.cause)}`,
+      };
+    } else result = { kind: "error", error: diagnosticMessage(error) };
   }
   try {
     await ctx.runMutation(internal.tasks.sessions.finishCall, { callId: claimed.call._id, result });
   } finally {
     await resource?.dispose();
   }
+  if (reportingFailure) throw reportingFailure.cause;
   return result;
 }

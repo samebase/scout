@@ -1,16 +1,16 @@
 # Shared tasks and execution engines
 
-Open `/agents` with admin access. Choose a Scout, a model, and a task.
+Open `/lab` with admin access. Choose a Scout, a model, and a task.
 Luna runs through OpenAI Agents API or Convex Agent with maximum reasoning effort.
 Qwen 3.7 Flash and DeepSeek V4 Flash run through Convex Agent and Convex AI Gateway.
 The model and engine are fixed for the lifetime of a task.
 
 Member Review and Play offer the same model choices and remember the selected Scout,
 engine, and Convex model. New accounts default to Luna through Agents API.
-Their tasks also appear in `/agents`. Admins can
+Their tasks also appear in `/lab`. Admins can
 inspect all sessions, including transcripts, cost, live view, and replay. Only the
 owner can send, stop, resume, or control the live browser. The list loads older
-sessions through pagination. `/agents` replaces the separate Lab `/chats` inspector.
+sessions through pagination.
 
 Both execution engines share
 Scout identity, inbox access, encrypted account credentials, and Firecrawl browser
@@ -78,7 +78,7 @@ credits when credit billing is enabled.
 - A browser handoff retains the browser and Scout reservation until Resume or Stop.
   Browser control links are visible only to the session owner with Lab access.
 - Browser sessions and operations are retained independently of the active connection.
-  The Agents page uses the shared sidebar layout and replay player, including
+  The Lab page uses the shared sidebar layout and replay player, including
   tab selection, click overlays, seeking, and MP4 export. Earlier experimental runs
   did not retain browser recording IDs and cannot show a replay here.
 - Cost shows estimated OpenAI model/search charges, reported Gateway model charges when
@@ -95,7 +95,7 @@ then again after 30 seconds and another two minutes. These bounded checks replac
 cumulative snapshot, including older partial totals, without reserving the Scout or changing
 the transcript. Writes from an older workflow are discarded. Missing usage stays pending;
 after the last check, missing usage records a failed scheduled action. Admins can use Refresh
-in Agents to fetch it again manually. Missing token counts display as “Usage pending”; an
+in Lab to fetch it again manually. Missing token counts display as “Usage pending”; an
 unknown model rate still displays as “Unpriced”.
 
 Errors remain visible. Interrupted side effects are not automatically replayed.
@@ -111,10 +111,17 @@ snapshots are display data. Convex Agent bills reported Gateway cost by prompt/s
 separate keys for summaries. Repeated reports of the same cumulative cost do not charge
 again. Missing cached-token details or Gateway cost never become an uncached estimate.
 
-Use Refresh in Agents to check the current turn again. If an older turn exhausted its
+Use Refresh in Lab to check the current turn again. If an older turn exhausted its
 three checks after a follow-up started, inspect the failed refresh job and rerun its
 captured arguments once provider usage is available. There is no reservation, settlement
 queue, or automatic reconciliation. Old sessions without a billing flag remain free.
+
+Walkthrough follow-ups use one Luna reporting call with the previous walkthrough, user requests,
+and the browser agent’s new draft. The call has no browser tools. Lab shows its request, response,
+model, duration, usage, cost, and failure alongside the other task calls. Valid results replace
+the current walkthrough atomically; a failed or stopped update preserves the previous report.
+The accepted summary and checks are returned to the browser agent. Reporting cost is charged
+once per tool call and included in the task total. Initial walkthroughs do not need this extra call.
 
 ## Restored-model verification, September 19, 2026
 
@@ -128,7 +135,7 @@ this verified provider/tool compatibility without creating an external account.
 On the personal development deployment, the same admin task opened example.com,
 verified its heading, saved a screenshot and walkthrough, and closed the browser
 using each engine. Both runs retained their transcript and replay records in the
-shared Agents UI. A Convex follow-up recalled the heading without reopening the browser.
+shared Lab UI. A Convex follow-up recalled the heading without reopening the browser.
 The Agents API run encountered a provider-side `no active turn` error on its first
 browser request; the error remained visible and the agent's next request succeeded.
 
