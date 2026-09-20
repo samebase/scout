@@ -1,5 +1,10 @@
 import type { AgentSessionItem } from "openai/resources/beta/agents/agents";
-import { WALKTHROUGH_CONTEXT_END, WALKTHROUGH_CONTEXT_START } from "./instructions";
+import {
+  FOLLOW_UP_CONTEXT_END,
+  FOLLOW_UP_CONTEXT_START,
+  WALKTHROUGH_CONTEXT_END,
+  WALKTHROUGH_CONTEXT_START,
+} from "./instructions";
 
 export function itemIsComplete(item: AgentSessionItem) {
   return (
@@ -26,8 +31,10 @@ export function presentItem(item: AgentSessionItem) {
               item.content[0]?.type === "input_text" &&
               index === 1 &&
               part.type === "input_text" &&
-              part.text.startsWith(WALKTHROUGH_CONTEXT_START) &&
-              part.text.endsWith(WALKTHROUGH_CONTEXT_END)
+              ((part.text.startsWith(WALKTHROUGH_CONTEXT_START) &&
+                part.text.endsWith(WALKTHROUGH_CONTEXT_END)) ||
+                (part.text.startsWith(FOLLOW_UP_CONTEXT_START) &&
+                  part.text.endsWith(FOLLOW_UP_CONTEXT_END)))
             ),
         )
         .map((part) => (part.type === "input_image" ? "[Image]" : part.text))

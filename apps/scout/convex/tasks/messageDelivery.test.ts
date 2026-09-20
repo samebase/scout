@@ -10,6 +10,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { api, components, internal } from "../_generated/api";
 import schema from "../schema";
 import { ADMIN_EMAIL, insertTestAccount } from "../testing/accounts";
+import { followUpContext } from "./instructions";
 
 const modules = {
   ...import.meta.glob("../**/*.ts"),
@@ -21,6 +22,10 @@ const modules = {
   ),
 };
 const message = 'Try again.\n\nKeep  these "exact words".';
+const messageContent = [
+  { type: "input_text", text: message },
+  { type: "input_text", text: followUpContext(undefined) },
+];
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -159,7 +164,7 @@ it.each(["turns", "stream", "post", "post_400", "post_408", "post_429", "after_a
               events: [
                 {
                   type: "agent.session.input.message",
-                  input: [{ role: "user", content: [{ type: "input_text", text: message }] }],
+                  input: [{ role: "user", content: messageContent }],
                 },
               ],
             },
@@ -244,7 +249,7 @@ it("cancels a newly accepted Agents turn when Stop and cleanup finish before its
     events: [
       {
         type: "agent.session.input.message",
-        input: [{ role: "user", content: [{ type: "input_text", text: message }] }],
+        input: [{ role: "user", content: messageContent }],
       },
     ],
   };
@@ -400,7 +405,7 @@ it.each(["idle", "reconnected", "failed_twice"] as const)(
         events: [
           {
             type: "agent.session.input.message",
-            input: [{ role: "user", content: [{ type: "input_text", text: message }] }],
+            input: [{ role: "user", content: messageContent }],
           },
         ],
       },

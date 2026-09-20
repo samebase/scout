@@ -1,5 +1,6 @@
 import { validateTypes } from "@ai-sdk/provider-utils";
-import type { ToolExecutionOptions, ToolSet } from "ai";
+import { TypeValidationError, type ToolExecutionOptions, type ToolSet } from "ai";
+import { ZodError } from "zod";
 
 type RuntimeTool = ToolSet[string];
 
@@ -12,7 +13,14 @@ export function requireRuntimeTool(tools: Partial<ToolSet>, name: string) {
 
   return {
     execute: async (input: unknown, options: ToolExecutionOptions<unknown>): Promise<unknown> => {
-      const parsed = await validateTypes({ value: input, schema: tool.inputSchema });
+      const parsed = await validateTypes({ value: input, schema: tool.inputSchema }).catch(
+        (error: unknown) => {
+          if (TypeValidationError.isInstance(error) && error.cause instanceof ZodError) {
+            throw error.cause;
+          }
+          throw error;
+        },
+      );
       return await execute(parsed, options);
     },
     toModelOutput: tool.toModelOutput,
