@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-20T16:09:06Z
+- **Last updated:** 2026-09-20T15:42:18Z
 
 ## Log
 
@@ -1709,9 +1709,15 @@ Denser meshes and higher pixel density smooth the curves, with a 24 fps cap and 
 The white hero retains static posters and reduced-motion support
 (`apps/scout/src/routes/terrain.tsx`, `apps/scout/src/components/discovery-terrain.tsx`).
 
-### 2026-09-20 - working tree - v273
+### 2026-09-20 - b840d70 - v273
 
 Renamed the admin task area to Lab at `/lab`. Follow-up walkthroughs use one reporting call
 to combine previous findings with new evidence. Lab shows the request, response, cost, and errors;
 failed updates preserve the existing walkthrough
 (`apps/scout/convex/tasks/walkthroughReport.ts`, `apps/scout/src/tasks/walkthrough-update.tsx`).
+
+### 2026-09-20 - working tree - v273
+
+Direct site links and reloads serve Scout's app shell on Convex static hosting.
+Hostname dots no longer send site pages through the missing-file path
+(`apps/scout/prerender.config.ts`, `apps/scout/convex/http.ts`).

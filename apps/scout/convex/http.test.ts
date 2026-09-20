@@ -31,10 +31,10 @@ afterEach(() => {
 
 test("serves public prerenders with an app fallback and keeps auth routes", async () => {
   const { default: http } = await import("./http");
-  const { rewritePrerenderPath } = await import("../prerender.config");
+  const { rewriteStaticPath } = await import("../prerender.config");
   expect(hosting.register).toHaveBeenCalledExactlyOnceWith(http, expect.anything(), {
     spaFallback: true,
-    rewritePath: rewritePrerenderPath,
+    rewritePath: rewriteStaticPath,
   });
   expect(hosting.auth).toHaveBeenCalledExactlyOnceWith(http);
 });
