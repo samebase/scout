@@ -1,7 +1,7 @@
 import { PaneFrame } from "@samebase/sidebars/PaneFrame";
 import { useSidebarActions } from "@samebase/sidebars/SidebarRuntime";
 import { Link } from "@tanstack/react-router";
-import { ArrowLeftIcon, GlobeIcon, LockKeyholeIcon } from "lucide-react";
+import { ArrowLeftIcon, EarthIcon, LockKeyholeIcon } from "lucide-react";
 import { usePaginatedQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { api } from "../../../convex/_generated/api";
@@ -98,7 +98,7 @@ function TaskLink({
   search: ReviewFeedSearch;
 }) {
   const { setMobilePane } = useSidebarActions();
-  const VisibilityIcon = task.visibility === "public" ? GlobeIcon : LockKeyholeIcon;
+  const VisibilityIcon = task.visibility === "public" ? EarthIcon : LockKeyholeIcon;
   return (
     <li>
       <div
