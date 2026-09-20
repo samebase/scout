@@ -130,7 +130,7 @@ index 3e4407a497acaeebe7a988e79b6264f8e79d612e..9a235cfeb9f7d070f962d483199f21c5
  /**
   * Expose a query that clients can subscribe to for live reload on deploy.
 diff --git a/dist/client/index.js b/dist/client/index.js
-index f0c97fef71699c9a0ab940ae30dd45041ca3cb8a..c4cd8631d3c802d2ab90bb57b51c42614cc94be6 100644
+index f0c97fef71699c9a0ab940ae30dd45041ca3cb8a..a54f23948b0110120a62af8fa2535a43af9eb733 100644
 --- a/dist/client/index.js
 +++ b/dist/client/index.js
 @@ -29,7 +29,7 @@ const deploymentInfoValidator = v.object({
@@ -155,6 +155,68 @@ index f0c97fef71699c9a0ab940ae30dd45041ca3cb8a..c4cd8631d3c802d2ab90bb57b51c4261
          if (path === "" || path === "/") {
              path = "/index.html";
          }
+@@ -71,7 +77,7 @@ export function registerStaticRoutes(http, component, { pathPrefix = "/", spaFal
+             });
+         }
+         const contentType = asset.contentType || getMimeType(path);
+-        const cacheControl = cacheControlFor(path);
++        const cacheControl = isHtmlContentType(contentType) ? "no-store" : cacheControlFor(path);
+         if (asset.blobId && !isHtmlContentType(contentType)) {
+             const configuredBase = typeof cdnBaseUrl === "function" ? cdnBaseUrl(request) : cdnBaseUrl;
+             const baseUrl = configuredBase ?? `${url.origin}/fs/blobs`;
+diff --git a/dist/component/http.js b/dist/component/http.js
+index 4faa12bcfe7f7fe50d0bcb7f5e16b93e95f6dd1a..77c1c2819e5f0b6bffcdf478f5f53c7e97f94250 100644
+--- a/dist/component/http.js
++++ b/dist/component/http.js
+@@ -37,8 +37,8 @@ const serveStaticFile = httpAction(async (ctx, request) => {
+         path = "/index.html";
+     }
+     // One query resolves the asset: an exact match, or, when SPA fallback is
+-    // enabled for the current deployment, the index.html asset for an
+-    // extension-less miss. The fallback lookup happens inside the query so the
++    // enabled for the current deployment, the index.html asset for any missing
++    // path. The fallback lookup happens inside the query so the
+     // HTTP action never makes a second round-trip.
+     const asset = await ctx.runQuery(internal.lib.resolveAsset, { path });
+     if (!asset) {
+@@ -66,7 +66,7 @@ const serveStaticFile = httpAction(async (ctx, request) => {
+             status: 302,
+             headers: {
+                 Location: redirectUrl,
+-                "Cache-Control": cacheControlFor(path),
++                "Cache-Control": cacheControlFor(asset.path),
+             },
+         });
+     }
+@@ -78,7 +78,7 @@ const serveStaticFile = httpAction(async (ctx, request) => {
+     }
+     const etag = `"${asset.storageId}"`;
+     const ifNoneMatch = request.headers.get("If-None-Match");
+-    const cacheControl = cacheControlFor(path);
++    const cacheControl = isHtmlContentType(contentType) ? "no-store" : cacheControlFor(asset.path);
+     if (etagMatches(ifNoneMatch, etag)) {
+         return new Response(null, {
+             status: 304,
+diff --git a/dist/component/lib.js b/dist/component/lib.js
+index 7fa00e8f0ec3e68d69136d11c3390ee6c84bc791..7963791fc3da67d67396797a87ead0950003e206 100644
+--- a/dist/component/lib.js
++++ b/dist/component/lib.js
+@@ -1,6 +1,5 @@
+ import { v } from "convex/values";
+ import { internalMutation, internalQuery, query, } from "./_generated/server.js";
+-import { hasFileExtension } from "./serving.js";
+ const staticAssetValidator = v.object({
+     _id: v.id("staticAssets"),
+     _creationTime: v.number(),
+@@ -46,8 +45,6 @@ async function resolveAssetDocument(ctx, path, spaFallbackOverride) {
+         .unique();
+     if (exact)
+         return exact;
+-    if (hasFileExtension(path))
+-        return null;
+     const info = await ctx.db.query("deploymentInfo").first();
+     const spaFallback = spaFallbackOverride ?? info?.spaFallback ?? true;
+     if (!spaFallback)
 diff --git a/src/cli/args.ts b/src/cli/args.ts
 index b12a21bf6e77b0aa5de3665adf7e7ccc6b631910..7caf508c93ff088302d7bcb96eef153760b9e6c4 100644
 --- a/src/cli/args.ts
@@ -248,7 +310,7 @@ index 9c2f9c1fccedb954b845c7599a2e8d5d132c0087..b87b41e5ed1cfc7ecf4f6d67e4a6739a
    if (useCdn) {
      console.log("☁️  CDN mode: non-HTML assets will be uploaded to convex-fs");
 diff --git a/src/client/index.ts b/src/client/index.ts
-index c23f011b2b0d34702636fc9bd95cbb98a87f46eb..4092307454b6f8c1e3197dec9d488e7ec4507d1b 100644
+index c23f011b2b0d34702636fc9bd95cbb98a87f46eb..3e0918b8ffada6c0f002231ded738ee135e30f16 100644
 --- a/src/client/index.ts
 +++ b/src/client/index.ts
 @@ -50,6 +50,7 @@ export function registerStaticRoutes(
@@ -281,3 +343,66 @@ index c23f011b2b0d34702636fc9bd95cbb98a87f46eb..4092307454b6f8c1e3197dec9d488e7e
      if (path === "" || path === "/") {
        path = "/index.html";
      }
+@@ -107,7 +116,7 @@ export function registerStaticRoutes(
+     }
+ 
+     const contentType = asset.contentType || getMimeType(path);
+-    const cacheControl = cacheControlFor(path);
++    const cacheControl = isHtmlContentType(contentType) ? "no-store" : cacheControlFor(path);
+ 
+     if (asset.blobId && !isHtmlContentType(contentType)) {
+       const configuredBase =
+diff --git a/src/component/http.ts b/src/component/http.ts
+index a804cb5ca268953f7cdedc68138c5332be4ae6c4..56aae65217071269d863e2f47e115b198fe5d4b5 100644
+--- a/src/component/http.ts
++++ b/src/component/http.ts
+@@ -46,8 +46,8 @@ const serveStaticFile = httpAction(async (ctx, request) => {
+   }
+ 
+   // One query resolves the asset: an exact match, or, when SPA fallback is
+-  // enabled for the current deployment, the index.html asset for an
+-  // extension-less miss. The fallback lookup happens inside the query so the
++  // enabled for the current deployment, the index.html asset for any missing
++  // path. The fallback lookup happens inside the query so the
+   // HTTP action never makes a second round-trip.
+   const asset = await ctx.runQuery(internal.lib.resolveAsset, { path });
+ 
+@@ -78,7 +78,7 @@ const serveStaticFile = httpAction(async (ctx, request) => {
+       status: 302,
+       headers: {
+         Location: redirectUrl,
+-        "Cache-Control": cacheControlFor(path),
++        "Cache-Control": cacheControlFor(asset.path),
+       },
+     });
+   }
+@@ -92,7 +92,7 @@ const serveStaticFile = httpAction(async (ctx, request) => {
+ 
+   const etag = `"${asset.storageId}"`;
+   const ifNoneMatch = request.headers.get("If-None-Match");
+-  const cacheControl = cacheControlFor(path);
++  const cacheControl = isHtmlContentType(contentType) ? "no-store" : cacheControlFor(asset.path);
+ 
+   if (etagMatches(ifNoneMatch, etag)) {
+     return new Response(null, {
+diff --git a/src/component/lib.ts b/src/component/lib.ts
+index 6923814a4d88119beaf44a8200744c752b185f97..9a559a49bbf4b01de46b125955698f882d68ba80 100644
+--- a/src/component/lib.ts
++++ b/src/component/lib.ts
+@@ -7,7 +7,6 @@ import {
+   type QueryCtx,
+ } from "./_generated/server.js";
+ import type { Id } from "./_generated/dataModel.js";
+-import { hasFileExtension } from "./serving.js";
+ 
+ const staticAssetValidator = v.object({
+   _id: v.id("staticAssets"),
+@@ -62,8 +61,6 @@ async function resolveAssetDocument(
+     .unique();
+   if (exact) return exact;
+ 
+-  if (hasFileExtension(path)) return null;
+-
+   const info = await ctx.db.query("deploymentInfo").first();
+   const spaFallback = spaFallbackOverride ?? info?.spaFallback ?? true;
+   if (!spaFallback) return null;
