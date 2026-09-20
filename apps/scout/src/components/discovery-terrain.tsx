@@ -180,8 +180,8 @@ export function DiscoveryTerrain({
         <img
           src="/discovery-terrain.webp"
           alt=""
-          width={1920}
-          height={596}
+          width={2560}
+          height={794}
           className="size-full object-fill"
         />
       </picture>

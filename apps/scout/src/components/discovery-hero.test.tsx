@@ -138,7 +138,7 @@ test("zero speed holds a frame and resumes when speed increases", async () => {
   view.rerender(<DiscoveryTerrain paused={false} settings={atlasTerrainSettings} />);
   await act(() => vi.advanceTimersToNextFrame());
   gpu.draw.mockClear();
-  await act(() => vi.advanceTimersToNextFrame());
+  await act(() => vi.advanceTimersByTime(48));
   expect(gpu.draw).toHaveBeenCalledOnce();
   expect(gpu.draw.mock.lastCall?.[0]).toBeGreaterThan(4);
 });
@@ -189,8 +189,8 @@ test("automatic quality limits work on touch devices and keeps animation time wh
   expect(gpu.initialize.mock.lastCall?.[2]).toEqual(terrainRenderProfiles.low);
   gpu.draw.mockClear();
   await act(() => vi.advanceTimersByTime(192));
-  expect(gpu.draw.mock.calls.length).toBeGreaterThanOrEqual(5);
-  expect(gpu.draw.mock.calls.length).toBeLessThanOrEqual(7);
+  expect(gpu.draw.mock.calls.length).toBeGreaterThanOrEqual(3);
+  expect(gpu.draw.mock.calls.length).toBeLessThanOrEqual(5);
   const elapsedTime = gpu.draw.mock.lastCall?.[0];
   expect(elapsedTime).toBeGreaterThan(4.5);
 
@@ -202,5 +202,6 @@ test("automatic quality limits work on touch devices and keeps animation time wh
   expect(gpu.draw.mock.lastCall?.[0]).toBeGreaterThanOrEqual(elapsedTime);
   gpu.draw.mockClear();
   await act(() => vi.advanceTimersByTime(192));
-  expect(gpu.draw.mock.calls.length).toBeGreaterThanOrEqual(10);
+  expect(gpu.draw.mock.calls.length).toBeGreaterThanOrEqual(3);
+  expect(gpu.draw.mock.calls.length).toBeLessThanOrEqual(5);
 });

@@ -261,13 +261,14 @@ export function TerrainExplorer({
                         className="h-9 w-full rounded-md border bg-background px-2 text-xs"
                       >
                         <option value="auto">Automatic</option>
-                        <option value="low">Low power · 30 fps</option>
-                        <option value="high">High detail · 60 fps</option>
+                        <option value="low">Balanced curves</option>
+                        <option value="high">Fine curves</option>
                       </select>
                     </label>
                     <p className="text-xs leading-relaxed text-muted-foreground">
-                      Automatic uses lower detail on phones and touch devices. Field size adds more
-                      terrain; Width and Depth stretch it.
+                      Both modes are capped at 24 fps. Automatic uses balanced curves on phones and
+                      touch devices, and fine curves on desktop. Field size adds more terrain; Width
+                      and Depth stretch it.
                     </p>
                   </fieldset>
                   <p className="text-xs leading-relaxed text-muted-foreground">

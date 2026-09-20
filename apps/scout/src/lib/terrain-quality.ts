@@ -1,6 +1,6 @@
 export const terrainRenderProfiles = {
-  low: { columns: 128, rows: 80, pixelRatio: 1, framesPerSecond: 30 },
-  high: { columns: 256, rows: 160, pixelRatio: 1.5, framesPerSecond: 60 },
+  low: { columns: 256, rows: 160, pixelRatio: 1.5, framesPerSecond: 24 },
+  high: { columns: 512, rows: 320, pixelRatio: 2, framesPerSecond: 24 },
 };
 
 export type TerrainRenderProfile =
