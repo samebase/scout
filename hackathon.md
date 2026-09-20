@@ -1749,8 +1749,14 @@ Reporting instructions retain earlier failures from the saved report or browser 
 allowing corrections supported by new evidence (`apps/scout/convex/tasks/instructions.ts`,
 `apps/scout/convex/tasks/walkthroughReport.ts`).
 
-### 2026-09-20 - working tree - v279
+### 2026-09-20 - 76a3499 - v279
 
 Task/play, site, terrain, and Lab sidebars remember their widths and pane state in local storage.
 Each layout keeps separate settings through one shared controller, with pending resizes saved when leaving the page
 (`apps/scout/src/sidebars/scoutSidebarState.ts`).
+
+### 2026-09-20 - working tree - v280
+
+Navigation keeps one menu visible while the next page loads, including the first visit to About.
+The root layout follows TanStack's rendered routes when choosing the menu
+(`apps/scout/src/routes/__root.tsx`).

@@ -4,7 +4,6 @@ import {
   Scripts,
   createRootRoute,
   useMatches,
-  useRouterState,
 } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { ConvexClientProvider } from "../lib/convex";
@@ -53,13 +52,18 @@ function RootComponent() {
   const isHandoff = useMatches({
     select: (matches) => matches.some((match) => match.routeId === "/handoff/$sessionId"),
   });
-  const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const isProductPage =
-    pathname === "/" ||
-    pathname === "/play" ||
-    pathname.startsWith("/play/") ||
-    pathname.startsWith("/tasks/") ||
-    pathname.startsWith("/sites/");
+  // Keep the menu with the rendered page while the next route is loading.
+  const isProductPage = useMatches({
+    select: (matches) =>
+      matches.some(
+        ({ routeId }) =>
+          routeId === "/" ||
+          routeId === "/play" ||
+          routeId.startsWith("/play/") ||
+          routeId.startsWith("/tasks/") ||
+          routeId.startsWith("/sites/"),
+      ),
+  });
   return (
     <RootDocument>
       <ScoutSidebarProvider>
