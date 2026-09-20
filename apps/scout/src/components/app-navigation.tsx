@@ -1,14 +1,7 @@
 import { canAccess, useViewerAccess } from "../lib/access";
 import { CreditBalanceLink } from "./credits-panel";
 import { Link, useRouterState } from "@tanstack/react-router";
-import {
-  BotIcon,
-  EllipsisIcon,
-  FocusIcon,
-  SettingsIcon,
-  TelescopeIcon,
-  UsersIcon,
-} from "lucide-react";
+import { BotIcon, EllipsisIcon, FocusIcon, SettingsIcon, UsersIcon } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import { Button } from "./ui/button";
 
@@ -34,7 +27,7 @@ export function AppNavigation() {
           aria-label="Scout home"
         >
           <span className="app-navigation__mark" aria-hidden="true">
-            <TelescopeIcon />
+            <img src="/favicon.svg" width={32} height={32} alt="" />
           </span>
           <span className="hidden font-semibold tracking-[-0.02em] sm:inline">Scout</span>
         </Link>

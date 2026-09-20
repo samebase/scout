@@ -108,7 +108,11 @@ test("reveals the real terrain only after its first GPU frame, without showing a
 test("keeps the headline and static field without WebGPU", async () => {
   vi.stubGlobal("navigator", {});
   const view = await openHero();
-  expect(screen.getByRole("heading", { name: "Let Scout try it first." })).toBeTruthy();
+  expect(
+    screen.getByRole("heading", {
+      name: "Check if a product does what you need.",
+    }),
+  ).toBeTruthy();
   expect(view.container.querySelector("picture")).not.toBeNull();
   expect(view.container.querySelector("picture img")?.getAttribute("src")).toBe(
     "/discovery-terrain.webp",

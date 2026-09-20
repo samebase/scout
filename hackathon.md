@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-21T11:31:15Z
+- **Last updated:** 2026-09-21T13:03:12Z
 
 ## Log
 
@@ -1800,17 +1800,15 @@ Site headings and tabs stay visible while changing review visibility, and conver
 available while a newly discovered site's task navigation loads
 (`apps/scout/src/routes/sites.$site.tsx`, `apps/scout/src/products/conversation/page.tsx`).
 
-
 ### 2026-09-21 - 579069c - v288
 
 Public visitors can open the Scout directory from the main navigation and browse account sites.
 The Scouts link remains visible while account access loads or changes
 (`apps/scout/src/components/app-navigation.tsx`).
 
+### 2026-09-21 - working tree - v289
 
-### 2026-09-20 - working tree - v277
-
-The homepage explains the time saved by sending Scout first, with three points about browser agents, evidence, and public reviews.
+The homepage leads with checking whether a product does what you need, with larger points about browser agents, evidence, and public accountability.
 Examples prepare editable prompts for free-plan exports, signup, and hackathon entries,
-with the website link selected for replacement. A blue telescope favicon matches the navigation
+with the website link selected for replacement. A white scarf on blue matches the navigation and favicon, with attribution on About
 (`apps/scout/src/components/discovery-hero.tsx`, `apps/scout/src/products/conversation/page.tsx`, `apps/scout/public/favicon.svg`).

@@ -90,6 +90,16 @@ function AboutPage() {
           <ArrowRightIcon className="size-4" aria-hidden="true" />
         </Link>
       </article>
+      <p className="mt-16 text-sm text-muted-foreground">
+        Scarf icon by{" "}
+        <a
+          href="https://www.flaticon.com/free-icon/scarf_12736059"
+          className="underline underline-offset-4"
+        >
+          andinur on Flaticon
+        </a>
+        .
+      </p>
     </main>
   );
 }
