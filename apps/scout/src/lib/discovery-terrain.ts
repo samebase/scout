@@ -67,7 +67,13 @@ export function terrainHeight(x: number, z: number, time: number, peaks: number,
   return (relief + peaks * summit * summit) * edge;
 }
 
-export function projectTerrain(point: d.v3f, viewport: d.v2f, camera: d.v3f, offset: d.v2f) {
+export function projectTerrain(
+  point: d.v3f,
+  viewport: d.v2f,
+  camera: d.v3f,
+  offset: d.v2f,
+  frameHeight: number,
+) {
   "use gpu";
   const yaw = camera.y;
   const pitch = camera.x;
@@ -75,10 +81,11 @@ export function projectTerrain(point: d.v3f, viewport: d.v2f, camera: d.v3f, off
   const z = point.x * std.sin(yaw) + point.z * std.cos(yaw);
   const vertical = point.y * std.cos(pitch) - z * std.sin(pitch);
   const depth = z * std.cos(pitch) + point.y * std.sin(pitch);
-  const scale = std.min(std.min(viewport.x / 8.5, viewport.y / 6.25), 96) * camera.z;
+  const scale = std.min(std.min(viewport.x / 8.5, frameHeight / 6.25), 96) * camera.z;
+  const frameRatio = frameHeight / viewport.y;
   return d.vec3f(
     offset.x + (x * scale * 2) / viewport.x,
-    offset.y + (vertical * scale * 2) / viewport.y,
+    1 - frameRatio + offset.y * frameRatio + (vertical * scale * 2) / viewport.y,
     0.5 - depth / 256,
   );
 }

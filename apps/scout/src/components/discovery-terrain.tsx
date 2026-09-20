@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState, type RefObject } from "react";
 import type { createDiscoveryField } from "#lib/discovery-field";
 import type { TerrainSettings } from "#lib/terrain-settings";
 import { terrainRenderProfiles } from "#lib/terrain-quality";
@@ -10,11 +10,13 @@ export function DiscoveryTerrain({
   settings,
   onStatusChange,
   onCameraChange,
+  framingRef,
 }: {
   paused: boolean;
   settings: TerrainSettings;
   onStatusChange?: (status: TerrainStatus) => void;
   onCameraChange?: (tilt: number, rotation: number) => void;
+  framingRef?: RefObject<HTMLElement | null>;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const refreshRef = useRef<(() => void) | null>(null);
@@ -73,6 +75,7 @@ export function DiscoveryTerrain({
     let frame = 0;
     let visible = true;
     let last = 0;
+    let frameHeight = 0;
 
     function stop() {
       cancelAnimationFrame(frame);
@@ -104,7 +107,7 @@ export function DiscoveryTerrain({
       }
       last = now;
       try {
-        field.draw(timeRef.current, settings);
+        field.draw(timeRef.current, settings, frameHeight);
         if (!drawn) {
           drawn = true;
           void field.device.queue.onSubmittedWorkDone().then(() => {
@@ -130,6 +133,7 @@ export function DiscoveryTerrain({
       const ratio = Math.min(window.devicePixelRatio, pixelRatio);
       canvas.width = Math.max(1, Math.round(canvas.clientWidth * ratio));
       canvas.height = Math.max(1, Math.round(canvas.clientHeight * ratio));
+      frameHeight = framingRef?.current?.clientHeight ?? canvas.clientHeight;
       refresh();
     }
 
@@ -171,7 +175,7 @@ export function DiscoveryTerrain({
       document.removeEventListener("visibilitychange", refresh);
       stop();
     };
-  }, [profile]);
+  }, [profile, framingRef]);
 
   useEffect(() => {
     refreshRef.current?.();
@@ -180,7 +184,10 @@ export function DiscoveryTerrain({
   return (
     <>
       {renderState === "unavailable" && (
-        <picture aria-hidden="true" className="pointer-events-none absolute inset-0">
+        <picture
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 top-0 h-[calc(100%_-_var(--terrain-tail,0px))] mask-[linear-gradient(to_bottom,black_45%,transparent_100%)]"
+        >
           <source media="(max-width: 640px)" srcSet="/discovery-terrain-mobile.webp" />
           <img
             src="/discovery-terrain.webp"

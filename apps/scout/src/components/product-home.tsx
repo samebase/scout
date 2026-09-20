@@ -18,7 +18,7 @@ export function ProductHome({
   const navigate = useNavigate({ from: "/" });
   return (
     <ProductShell>
-      <main id="main-content">
+      <main id="main-content" className="relative isolate">
         <DiscoveryHero paused={false} settings={atlasTerrainSettings}>
           <ConversationLobby
             kind="review"
@@ -38,7 +38,7 @@ export function ProductHome({
             }
           />
         </DiscoveryHero>
-        <div className="mx-auto max-w-page px-8 pb-16 max-[640px]:px-4">
+        <div className="relative mx-auto max-w-page px-8 pb-16 max-[640px]:px-4">
           <ActivityFeed
             search={{ site: search.site, scope: search.scope }}
             initialFeed={initialFeed}

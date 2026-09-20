@@ -33,6 +33,7 @@ export async function createDiscoveryField(
   }
   try {
     const params = root.createUniform(d.vec4f);
+    const framingHeight = root.createUniform(d.f32);
     const camera = root.createUniform(d.vec3f);
     const shape = root.createUniform(d.vec4f);
     const landscape = root.createUniform(d.vec4f);
@@ -114,7 +115,7 @@ export async function createDiscoveryField(
           normal = std.normalize(d.vec3f(slope.x / landscape.$.x, 0, slope.z / landscape.$.y));
           if (slope.y < 0) normal = std.mul(normal, -1);
         }
-        const projected = projectTerrain(world, params.$.yz, camera.$, shape.$.yz);
+        const projected = projectTerrain(world, params.$.yz, camera.$, shape.$.yz, framingHeight.$);
         return {
           $position: d.vec4f(projected, 1),
           surface,
@@ -158,7 +159,7 @@ export async function createDiscoveryField(
 
     return {
       device: root.device,
-      draw(time: number, settings: TerrainSettings) {
+      draw(time: number, settings: TerrainSettings, frameHeight: number) {
         if (
           attachments.depth.props.size[0] !== canvas.width ||
           attachments.depth.props.size[1] !== canvas.height
@@ -168,6 +169,7 @@ export async function createDiscoveryField(
           attachments = createAttachments();
         }
         params.write(d.vec4f(time, canvas.clientWidth, canvas.clientHeight, canvas.width));
+        framingHeight.write(frameHeight);
         camera.write(
           d.vec3f(
             (settings.tilt * Math.PI) / 180,

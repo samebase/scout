@@ -152,7 +152,7 @@ test("updates a paused preview without rebuilding the GPU or advancing its anima
   await act(() => vi.advanceTimersToNextFrame());
   expect(gpu.initialize).toHaveBeenCalledOnce();
   expect(gpu.destroy).not.toHaveBeenCalled();
-  expect(gpu.draw).toHaveBeenLastCalledWith(4, changed);
+  expect(gpu.draw).toHaveBeenLastCalledWith(4, changed, 0);
   gpu.draw.mockClear();
   await act(() => vi.advanceTimersByTime(200));
   expect(gpu.draw).not.toHaveBeenCalled();

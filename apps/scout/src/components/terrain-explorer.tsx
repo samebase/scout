@@ -16,6 +16,7 @@ import {
 } from "#lib/terrain-settings";
 import { DiscoveryTerrain, type TerrainStatus } from "./discovery-terrain";
 import { DiscoveryHero } from "./discovery-hero";
+import { ActivityFeed } from "./activity-feed";
 import { ConversationLobby } from "../products/conversation/page";
 import { Button } from "./ui/button";
 
@@ -292,6 +293,9 @@ export function TerrainExplorer({
                       <ConversationLobby kind="review" siteSelection={null} />
                     </div>
                   </DiscoveryHero>
+                  <div inert className="relative mx-auto max-w-page px-8 pb-16 max-[640px]:px-4">
+                    <ActivityFeed search={{}} initialFeed={null} />
+                  </div>
                 </div>
               ) : (
                 <DiscoveryTerrain
@@ -307,7 +311,7 @@ export function TerrainExplorer({
                     ? `${status.message} Showing a static preview.`
                     : view === "terrain"
                       ? "Drag the landscape to turn the camera. Use the sidebar to adjust the terrain."
-                      : "Homepage hero at this preview width. Hide the controls to see it at full width."}
+                      : "Homepage at this preview width. Hide the controls to see it at full width."}
                 </p>
                 <p role="status" className="rounded-lg bg-background/85 px-3 py-2 empty:hidden">
                   {copyMessage}
