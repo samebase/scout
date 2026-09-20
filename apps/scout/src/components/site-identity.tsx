@@ -28,7 +28,7 @@ export function SiteIdentity({
     <div className="min-w-0 space-y-1">
       <Heading
         className={cn(
-          "block font-semibold",
+          "site-identity-name block font-semibold",
           Heading === "span"
             ? "truncate text-sm"
             : "text-2xl leading-tight tracking-tight wrap-anywhere",

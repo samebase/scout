@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-20T14:52:07Z
+- **Last updated:** 2026-09-20T15:16:12Z
 
 ## Log
 
@@ -1678,10 +1678,17 @@ retain relevant findings and revise conclusions as evidence changes. Follow-ups 
 current report, while the visible chat keeps the user's original message
 (`apps/scout/convex/tasks/instructions.ts`, `apps/scout/convex/tasks/agentsApi.ts`).
 
-### 2026-09-20 - working tree - v269
+### 2026-09-20 - 4b6c108 - v269
 
 Scout's public homepage renders its first site and review cards inside a Convex HTTP action.
 Live subscriptions and pagination take over after hydration; private reviews stay out of the public HTML.
 A private workspace package supplies the renderer, and Static Hosting serves the matching browser assets.
 A deployment setting switches the homepage back to static serving without loading the renderer
 (`packages/convex-tanstack-start/`, `apps/scout/src/lib/homeFeed.ts`, `apps/scout/convex/http.ts`).
+
+### 2026-09-20 - working tree - v270
+
+Widening the sites sidebar reveals each site's first two tasks and its full task count.
+Compact navigation and the landing feed share the same site card while keeping their
+existing browsing behavior (`apps/scout/src/components/activity-feed.tsx`,
+`apps/scout/src/routes/sites.$site.tsx`).
