@@ -16,6 +16,7 @@ const app = defineApp({
     DEV_SEED_AUTH_ENABLED: v.optional(v.string()),
     DEV_SEED_AUTH_PASSWORD: v.optional(v.string()),
     FIRECRAWL_API_KEY: v.optional(v.string()),
+    HOMEPAGE_SSR_ENABLED: v.optional(v.union(v.literal("true"), v.literal("false"))),
     OPENAI_API_KEY: v.optional(v.string()),
     POLAR_ACCESS_TOKEN: v.optional(v.string()),
     POLAR_CHECKOUT_ENABLED: v.optional(v.string()),

@@ -63,6 +63,10 @@ export default defineConfig(({ command }) => {
     ],
     test: {
       name: "scout",
+      // Give renderer mocks a resolvable entry before the first build.
+      alias: {
+        "../dist/server/server.js": fileURLToPath(new URL("./src/server.ts", import.meta.url)),
+      },
       // Keep hoisted dependencies inside the test root. Vitest's /@fs/ loader
       // reads global process while Convex Workflow temporarily removes it.
       root: fileURLToPath(new URL("../..", import.meta.url)),

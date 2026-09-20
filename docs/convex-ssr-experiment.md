@@ -27,9 +27,36 @@ visible while native subscriptions connect, then uses their results and cursors.
 The provider creates a separate Convex client for each rendered tree. No user
 credentials are passed to the server loader, and `scope=mine` skips the snapshot.
 
-Only exact `GET /` uses dynamic SSR. Static public pages, SPA navigation, and
+Only exact `GET /` uses dynamic SSR when enabled. Static public pages, SPA navigation, and
 authenticated routes keep their existing behavior. The Cloudflare static frontend
 still uses a prerendered shell; test SSR at the Convex URL above.
+
+### Enable or disable homepage SSR
+
+Set `HOMEPAGE_SSR_ENABLED` in the target Convex deployment's environment settings.
+`true` enables SSR; `false` or an unset value serves the existing static homepage,
+whose list loads through browser subscriptions. The HTTP handler reads the setting
+on each request, so changing it does not require a rebuild or code deployment.
+
+For this PR preview, run either command from the repository root:
+
+```sh
+pnpm --filter samebase-scout exec convex env set HOMEPAGE_SSR_ENABLED false --deployment clever-vole-526
+pnpm --filter samebase-scout exec convex env set HOMEPAGE_SSR_ENABLED true --deployment clever-vole-526
+```
+
+The disabled path never imports or initializes the renderer. It fetches the
+already-published `/_landing.html` through Static Hosting while preserving the
+visitor's URL. Requests with query parameters use the existing `/index.html` SPA
+shell so filters initialize in the browser without a prerender hydration mismatch.
+Both modes return `Cache-Control: no-store`. With SSR disabled,
+View Page Source contains the page shell without review cards; the browser still
+loads the feed. With SSR enabled, the first six cards are in the response HTML.
+
+This is a manual switch, not an automatic error fallback. It does not repair
+missing static assets, shared backend failures, or a failed build. Builds still
+need to generate the server bundle before pushing Convex. New deployments default
+to static serving; enable SSR only after matching assets have been uploaded.
 
 ### Build and deploy to an existing preview
 
@@ -41,6 +68,7 @@ pnpm run check
 pnpm run build
 pnpm --filter samebase-scout exec convex dev --once --typecheck enable
 pnpm --filter samebase-scout exec static-hosting upload --dist ./dist/client --preview-name nicu-convex-tanstack-ssr
+pnpm --filter samebase-scout exec convex env set HOMEPAGE_SSR_ENABLED true --deployment clever-vole-526
 ```
 
 The backend imports the generated server, so the build must precede its push.
@@ -80,6 +108,10 @@ agent execution separately.
   Fresh SSR loads hydrated, site filtering worked, and native pagination exposed
   all eight sites. Public task navigation and a direct task reload also worked.
 - No browser warnings or errors were reported during those checks.
+- The homepage switch was exercised on the preview with unset, `false`, and `true`
+  settings. Static mode returned HTML without review cards, then loaded the feed
+  in the browser. A filtered reload worked without hydration errors. Re-enabling
+  SSR restored six cards in the initial response without a rebuild or deployment.
 
 ## Hosted evidence
 

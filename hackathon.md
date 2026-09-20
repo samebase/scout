@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-20T14:22:00Z
+- **Last updated:** 2026-09-20T14:52:07Z
 
 ## Log
 
@@ -1682,5 +1682,6 @@ current report, while the visible chat keeps the user's original message
 
 Scout's public homepage renders its first site and review cards inside a Convex HTTP action.
 Live subscriptions and pagination take over after hydration; private reviews stay out of the public HTML.
-A private workspace package supplies the renderer, and Static Hosting serves the matching browser assets
+A private workspace package supplies the renderer, and Static Hosting serves the matching browser assets.
+A deployment setting switches the homepage back to static serving without loading the renderer
 (`packages/convex-tanstack-start/`, `apps/scout/src/lib/homeFeed.ts`, `apps/scout/convex/http.ts`).
