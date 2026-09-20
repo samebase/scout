@@ -20,7 +20,7 @@ import { ADMIN_EMAIL, insertTestAccount } from "../testing/accounts";
 import { runtimeTools } from "./tools";
 import { workflow } from "./lifecycle";
 import { presentItem } from "./output";
-import { previousWalkthroughContext } from "./instructions";
+import { followUpContext, previousWalkthroughContext } from "./instructions";
 
 vi.mock("./tools", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./tools")>()),
@@ -953,10 +953,10 @@ it("waits for the follow-up turn instead of finishing against the previous cance
   expect(closeFirecrawlBrowserSession).toHaveBeenCalledOnce();
 });
 
-it("sends the previous walkthrough with a follow-up while displaying only the user's message", async () => {
+it("refreshes the screenshot allowance beside the previous walkthrough without changing the visible message", async () => {
   const { backend, sessionId, provider } = await setup();
   const walkthrough = {
-    summary: "The budget comparison remains unverified.",
+    summary: "No new screenshot was available because the task reached its screenshot limit.",
     sections: [],
   };
   await backend.run((ctx) => ctx.db.patch(sessionId, { walkthrough }));
@@ -968,11 +968,14 @@ it("sends the previous walkthrough with a follow-up while displaying only the us
   });
   const content = [
     { type: "input_text", text: message },
-    { type: "input_text", text: previousWalkthroughContext(stored?.walkthrough) },
+    { type: "input_text", text: followUpContext(stored?.walkthrough) },
   ] satisfies AgentSessionInputMessageParam["content"];
   expect(provider.events).toEqual([
     { events: [{ type: "agent.session.input.message", input: [{ role: "user", content }] }] },
   ]);
+  expect(content[1]?.text).toContain("fresh allowance of 20 screenshot attempts");
+  expect(content[1]?.text).toContain("Screenshot-limit errors from earlier requests do not apply");
+  expect(content[1]?.text).toContain(walkthrough.summary);
   const echoed: AgentSessionItem = {
     id: "follow-up-item",
     type: "message",
@@ -984,6 +987,12 @@ it("sends the previous walkthrough with a follow-up while displaying only the us
   };
   expect(presentItem(echoed).text).toBe(message);
   expect(presentItem(echoed).details).toBe(JSON.stringify(echoed, null, 2));
+  expect(
+    presentItem({
+      ...echoed,
+      content: [content[0], { type: "input_text", text: previousWalkthroughContext(walkthrough) }],
+    }).text,
+  ).toBe(message);
   expect(presentItem({ ...echoed, content: content.slice(1) }).text).toBe(content[1]?.text);
   expect(presentItem({ ...echoed, role: "assistant" }).text).toBe(
     content.map((part) => part.text).join("\n"),
@@ -994,6 +1003,33 @@ it("sends the previous walkthrough with a follow-up while displaying only the us
       content: [content[0], { type: "input_text", text: "More user text" }],
     }).text,
   ).toBe(`${message}\nMore user text`);
+});
+
+it("sends a fresh screenshot allowance even when no walkthrough was saved", async () => {
+  const { backend, sessionId, provider } = await setup();
+  await backend.action(internal.tasks.runtime.begin, {
+    sessionId,
+    command: { kind: "send", message: "Try again." },
+  });
+  expect(provider.events).toEqual([
+    {
+      events: [
+        {
+          type: "agent.session.input.message",
+          input: [
+            {
+              role: "user",
+              content: [
+                { type: "input_text", text: "Try again." },
+                { type: "input_text", text: followUpContext(undefined) },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ]);
+  expect(followUpContext(undefined)).toContain("fresh allowance of 20 screenshot attempts");
 });
 
 it("refreshes ended-session history and cost without restarting the agent or changing the failure", async () => {

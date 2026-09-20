@@ -21,7 +21,7 @@ import { SessionOutput } from "./events";
 import { closeBrowser, taskInstructions, executeTaskTool } from "./execution";
 import { costMicrodollars } from "../creditPolicy";
 import { diagnoseTaskFailure } from "./providerFailure";
-import { previousWalkthroughContext } from "./instructions";
+import { followUpContext } from "./instructions";
 
 async function latestRootTurn(api: OpenAI, providerId: string) {
   let scanned = 0;
@@ -94,9 +94,10 @@ export async function begin(
         });
       const providerId = session.providerId;
       const message = args.command.message;
-      const content: InputContentParam[] = [{ type: "input_text", text: message }];
-      const walkthroughContext = previousWalkthroughContext(session.walkthrough);
-      if (walkthroughContext) content.push({ type: "input_text", text: walkthroughContext });
+      const content: InputContentParam[] = [
+        { type: "input_text", text: message },
+        { type: "input_text", text: followUpContext(session.walkthrough) },
+      ];
       await streamOutput(
         ctx,
         api,

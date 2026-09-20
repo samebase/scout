@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-20T17:18:40Z
+- **Last updated:** 2026-09-20T17:57:00Z
 
 ## Log
 
@@ -1729,8 +1729,15 @@ Walkthroughs select supporting images independently of the capture limit. Lab in
 selected task and its reporting links even when it is outside the loaded task list
 (`apps/scout/convex/tasks/screenshotRecords.ts`, `apps/scout/src/tasks/page.tsx`).
 
-### 2026-09-20 - working tree - v276
+### 2026-09-20 - a164aac - v276
 
 TanStack handles page requests through Static Hosting's asset-miss callback, with public pages opting into SSR.
 The deployment switch restores prerenders and the SPA shell without rebuilding or loading the renderer
 (`apps/scout/convex/http.ts`, `apps/scout/src/start.ts`).
+
+### 2026-09-20 - working tree - v277
+
+Agents API follow-ups receive the renewed screenshot allowance beside their previous findings.
+Tool argument errors show the invalid field and constraint instead of burying them after the
+submitted input (`apps/scout/convex/tasks/instructions.ts`,
+`apps/scout/convex/scout/lib/runtimeTool.ts`).

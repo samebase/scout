@@ -4,6 +4,21 @@ import { MAX_SCREENSHOTS_PER_REQUEST } from "./screenshotModel";
 
 export const WALKTHROUGH_CONTEXT_START = "<scout_walkthrough_context>";
 export const WALKTHROUGH_CONTEXT_END = "</scout_walkthrough_context>";
+export const FOLLOW_UP_CONTEXT_START = "<scout_follow_up_context>";
+export const FOLLOW_UP_CONTEXT_END = "</scout_follow_up_context>";
+
+export function followUpContext(walkthrough: Doc<"agentsApiSessions">["walkthrough"]) {
+  return outdent`
+    ${FOLLOW_UP_CONTEXT_START}
+    This new user request has a fresh allowance of ${MAX_SCREENSHOTS_PER_REQUEST} screenshot attempts.
+    Screenshot-limit errors from earlier requests do not apply to this request.
+    Save fresh evidence for new findings using browser_execute's captureNote.
+    Select only useful evidence for the walkthrough; the allowance is not a target.
+
+    ${previousWalkthroughContext(walkthrough)}
+    ${FOLLOW_UP_CONTEXT_END}
+  `;
+}
 
 export function previousWalkthroughContext(walkthrough: Doc<"agentsApiSessions">["walkthrough"]) {
   if (!walkthrough) return "";
