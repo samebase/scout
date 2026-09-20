@@ -1,7 +1,7 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useAction, usePaginatedQuery, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
-import { ArrowRightIcon, GlobeIcon, LockKeyholeIcon } from "lucide-react";
+import { ArrowRightIcon, EarthIcon, LockKeyholeIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "#components/ui/button";
 import { SiteFilters } from "#components/site-filters";
@@ -209,7 +209,7 @@ function ReviewRow({
   search: ReviewFeedSearch;
 }) {
   const checks = activity.walkthrough?.checks;
-  const VisibilityIcon = activity.visibility === "public" ? GlobeIcon : LockKeyholeIcon;
+  const VisibilityIcon = activity.visibility === "public" ? EarthIcon : LockKeyholeIcon;
   const ongoing =
     activity.status === "ready" ||
     activity.status === "running" ||

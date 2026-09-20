@@ -17,7 +17,7 @@ import {
   ArrowLeftIcon,
   ArrowRightIcon,
   ArrowUpRightIcon,
-  GlobeIcon,
+  EarthIcon,
   LoaderCircleIcon,
   LockKeyholeIcon,
   MonitorIcon,
@@ -393,7 +393,7 @@ export function ConversationLobby({
                       {visibility === "private" ? (
                         <LockKeyholeIcon className="size-4 sm:hidden" aria-hidden="true" />
                       ) : (
-                        <GlobeIcon className="size-4 sm:hidden" aria-hidden="true" />
+                        <EarthIcon className="size-4 sm:hidden" aria-hidden="true" />
                       )}
                       <span className="sr-only sm:not-sr-only">
                         {visibility === "private" ? "Private" : "Public"}
