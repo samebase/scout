@@ -496,6 +496,26 @@
   align-items: center;
 }
 
+.discovery-terrain-backdrop {
+  --terrain-tail: 280px;
+  position: absolute;
+  inset: 0 0 auto;
+  height: calc(100% + var(--terrain-tail));
+  mask-image:
+    linear-gradient(
+      to bottom,
+      black calc((100% - var(--terrain-tail)) * 0.45),
+      transparent calc(100% - var(--terrain-tail))
+    ),
+    radial-gradient(ellipse 45% 70% at 100% 20%, black 25%, transparent 90%);
+}
+
+@container hero (max-width: 640px) {
+  .discovery-terrain-backdrop {
+    --terrain-tail: 120px;
+  }
+}
+
 .chat-composer {
   max-height: 75%;
 }

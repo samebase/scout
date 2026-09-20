@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import type { z } from "zod";
 import { ProductShell } from "../products/shell";
@@ -7,6 +6,7 @@ import type { homeSearch } from "#lib/homeSearch";
 import { ActivityFeed } from "./activity-feed";
 import { DiscoveryHero } from "./discovery-hero";
 import type { HomeFeed } from "#lib/homeFeed";
+import { atlasTerrainSettings } from "#lib/terrain-settings";
 
 export function ProductHome({
   search,
@@ -15,39 +15,30 @@ export function ProductHome({
   search: z.infer<typeof homeSearch>;
   initialFeed: HomeFeed;
 }) {
-  const [composing, setComposing] = useState(false);
   const navigate = useNavigate({ from: "/" });
   return (
     <ProductShell>
-      <main id="main-content">
-        <DiscoveryHero composing={composing}>
-          <div
-            className="mx-auto mt-5 max-w-[660px] pb-8"
-            onFocusCapture={() => setComposing(true)}
-            onBlurCapture={(event) => {
-              if (!event.currentTarget.contains(event.relatedTarget)) setComposing(false);
-            }}
-          >
-            <ConversationLobby
-              kind="review"
-              siteSelection={
-                search.taskSite
-                  ? {
-                      hostname: search.taskSite,
-                      onRemove: () => {
-                        void navigate({
-                          search: (previous) => ({ ...previous, taskSite: undefined }),
-                          replace: true,
-                          resetScroll: false,
-                        });
-                      },
-                    }
-                  : null
-              }
-            />
-          </div>
+      <main id="main-content" className="relative isolate">
+        <DiscoveryHero paused={false} settings={atlasTerrainSettings}>
+          <ConversationLobby
+            kind="review"
+            siteSelection={
+              search.taskSite
+                ? {
+                    hostname: search.taskSite,
+                    onRemove: () => {
+                      void navigate({
+                        search: (previous) => ({ ...previous, taskSite: undefined }),
+                        replace: true,
+                        resetScroll: false,
+                      });
+                    },
+                  }
+                : null
+            }
+          />
         </DiscoveryHero>
-        <div className="mx-auto max-w-page px-8 pb-16 max-[640px]:px-4">
+        <div className="relative mx-auto max-w-page px-8 pb-16 max-[640px]:px-4">
           <ActivityFeed
             search={{ site: search.site, scope: search.scope }}
             initialFeed={initialFeed}
