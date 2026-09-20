@@ -35,8 +35,10 @@ TanStack owns app routes. Convex static hosting serves uploaded files first, the
 falls back to `/index.html` for every unmatched path, regardless of file extensions
 or request headers. TanStack renders the matching page or its Not Found view.
 New app routes need no hosting rules. The existing Static Hosting dependency patch
-removes the extension check and serves HTML with `Cache-Control: no-cache` so the shell
-revalidates even when its URL looks like a cacheable asset.
+removes the extension check and sets `Cache-Control: no-store` on HTML responses.
+In hosted preview checks, Convex preserves that header for site URLs but overrides
+it with `public, max-age=14400` on missing `.js`, `.png`, and `.pdf` URLs. Those URLs
+still receive the shell, but browsers can cache it for four hours.
 
 ### Enable or disable homepage SSR
 

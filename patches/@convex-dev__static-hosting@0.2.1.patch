@@ -130,7 +130,7 @@ index 3e4407a497acaeebe7a988e79b6264f8e79d612e..9a235cfeb9f7d070f962d483199f21c5
  /**
   * Expose a query that clients can subscribe to for live reload on deploy.
 diff --git a/dist/client/index.js b/dist/client/index.js
-index f0c97fef71699c9a0ab940ae30dd45041ca3cb8a..800b69ccf0a8ca0052a045b1d1b2887623c0909e 100644
+index f0c97fef71699c9a0ab940ae30dd45041ca3cb8a..a54f23948b0110120a62af8fa2535a43af9eb733 100644
 --- a/dist/client/index.js
 +++ b/dist/client/index.js
 @@ -29,7 +29,7 @@ const deploymentInfoValidator = v.object({
@@ -160,12 +160,12 @@ index f0c97fef71699c9a0ab940ae30dd45041ca3cb8a..800b69ccf0a8ca0052a045b1d1b28876
          }
          const contentType = asset.contentType || getMimeType(path);
 -        const cacheControl = cacheControlFor(path);
-+        const cacheControl = isHtmlContentType(contentType) ? "no-cache" : cacheControlFor(path);
++        const cacheControl = isHtmlContentType(contentType) ? "no-store" : cacheControlFor(path);
          if (asset.blobId && !isHtmlContentType(contentType)) {
              const configuredBase = typeof cdnBaseUrl === "function" ? cdnBaseUrl(request) : cdnBaseUrl;
              const baseUrl = configuredBase ?? `${url.origin}/fs/blobs`;
 diff --git a/dist/component/http.js b/dist/component/http.js
-index 4faa12bcfe7f7fe50d0bcb7f5e16b93e95f6dd1a..365f68588f5794acc65ae64dc57f1eec0d1433ec 100644
+index 4faa12bcfe7f7fe50d0bcb7f5e16b93e95f6dd1a..77c1c2819e5f0b6bffcdf478f5f53c7e97f94250 100644
 --- a/dist/component/http.js
 +++ b/dist/component/http.js
 @@ -37,8 +37,8 @@ const serveStaticFile = httpAction(async (ctx, request) => {
@@ -193,7 +193,7 @@ index 4faa12bcfe7f7fe50d0bcb7f5e16b93e95f6dd1a..365f68588f5794acc65ae64dc57f1eec
      const etag = `"${asset.storageId}"`;
      const ifNoneMatch = request.headers.get("If-None-Match");
 -    const cacheControl = cacheControlFor(path);
-+    const cacheControl = isHtmlContentType(contentType) ? "no-cache" : cacheControlFor(asset.path);
++    const cacheControl = isHtmlContentType(contentType) ? "no-store" : cacheControlFor(asset.path);
      if (etagMatches(ifNoneMatch, etag)) {
          return new Response(null, {
              status: 304,
@@ -310,7 +310,7 @@ index 9c2f9c1fccedb954b845c7599a2e8d5d132c0087..b87b41e5ed1cfc7ecf4f6d67e4a6739a
    if (useCdn) {
      console.log("☁️  CDN mode: non-HTML assets will be uploaded to convex-fs");
 diff --git a/src/client/index.ts b/src/client/index.ts
-index c23f011b2b0d34702636fc9bd95cbb98a87f46eb..725a9ad48461baf1e20269136587126296604e8e 100644
+index c23f011b2b0d34702636fc9bd95cbb98a87f46eb..3e0918b8ffada6c0f002231ded738ee135e30f16 100644
 --- a/src/client/index.ts
 +++ b/src/client/index.ts
 @@ -50,6 +50,7 @@ export function registerStaticRoutes(
@@ -348,12 +348,12 @@ index c23f011b2b0d34702636fc9bd95cbb98a87f46eb..725a9ad48461baf1e202691365871262
  
      const contentType = asset.contentType || getMimeType(path);
 -    const cacheControl = cacheControlFor(path);
-+    const cacheControl = isHtmlContentType(contentType) ? "no-cache" : cacheControlFor(path);
++    const cacheControl = isHtmlContentType(contentType) ? "no-store" : cacheControlFor(path);
  
      if (asset.blobId && !isHtmlContentType(contentType)) {
        const configuredBase =
 diff --git a/src/component/http.ts b/src/component/http.ts
-index a804cb5ca268953f7cdedc68138c5332be4ae6c4..86da3911929ef44782e729ff2c07db51a5249731 100644
+index a804cb5ca268953f7cdedc68138c5332be4ae6c4..56aae65217071269d863e2f47e115b198fe5d4b5 100644
 --- a/src/component/http.ts
 +++ b/src/component/http.ts
 @@ -46,8 +46,8 @@ const serveStaticFile = httpAction(async (ctx, request) => {
@@ -381,7 +381,7 @@ index a804cb5ca268953f7cdedc68138c5332be4ae6c4..86da3911929ef44782e729ff2c07db51
    const etag = `"${asset.storageId}"`;
    const ifNoneMatch = request.headers.get("If-None-Match");
 -  const cacheControl = cacheControlFor(path);
-+  const cacheControl = isHtmlContentType(contentType) ? "no-cache" : cacheControlFor(asset.path);
++  const cacheControl = isHtmlContentType(contentType) ? "no-store" : cacheControlFor(asset.path);
  
    if (etagMatches(ifNoneMatch, etag)) {
      return new Response(null, {

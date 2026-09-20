@@ -1716,7 +1716,7 @@ to combine previous findings with new evidence. Lab shows the request, response,
 failed updates preserve the existing walkthrough
 (`apps/scout/convex/tasks/walkthroughReport.ts`, `apps/scout/src/tasks/walkthrough-update.tsx`).
 
-### 2026-09-20 - working tree - v273
+### 2026-09-20 - working tree - v274
 
 Convex static hosting serves Scout's app shell whenever no uploaded file matches.
 TanStack handles all routes and unknown pages, without hosting rules or request-header checks
