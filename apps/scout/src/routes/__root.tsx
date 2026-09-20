@@ -4,7 +4,6 @@ import {
   Scripts,
   createRootRoute,
   useMatches,
-  useRouterState,
 } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { ConvexClientProvider } from "../lib/convex";
@@ -53,19 +52,14 @@ function RootComponent() {
   const isHandoff = useMatches({
     select: (matches) => matches.some((match) => match.routeId === "/handoff/$sessionId"),
   });
-  const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const isProductPage =
-    pathname === "/" ||
-    pathname === "/play" ||
-    pathname.startsWith("/play/") ||
-    pathname.startsWith("/tasks/") ||
-    pathname.startsWith("/sites/");
   return (
     <RootDocument>
       <ScoutSidebarProvider>
         <ConvexClientProvider>
           <PostHogRuntime />
-          <ClientOnly>{!isProductPage && !isHandoff && <AppNavigation />}</ClientOnly>
+          <ClientOnly fallback={<div className="h-16" aria-hidden="true" />}>
+            {!isHandoff && <AppNavigation />}
+          </ClientOnly>
           <RouteAccessOutlet />
         </ConvexClientProvider>
       </ScoutSidebarProvider>

@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-20T18:45:24Z
+- **Last updated:** 2026-09-20T18:57:08Z
 
 ## Log
 
@@ -1749,8 +1749,14 @@ Reporting instructions retain earlier failures from the saved report or browser 
 allowing corrections supported by new evidence (`apps/scout/convex/tasks/instructions.ts`,
 `apps/scout/convex/tasks/walkthroughReport.ts`).
 
-### 2026-09-20 - working tree - v279
+### 2026-09-20 - 76a3499 - v279
 
 Task/play, site, terrain, and Lab sidebars remember their widths and pane state in local storage.
 Each layout keeps separate settings through one shared controller, with pending resizes saved when leaving the page
 (`apps/scout/src/sidebars/scoutSidebarState.ts`).
+
+### 2026-09-20 - working tree - v280
+
+Navigation keeps one menu visible while the next page loads, including the first visit to About.
+The root owns navigation for every page except handoff; product pages no longer mount another menu
+(`apps/scout/src/routes/__root.tsx`, `apps/scout/src/products/shell.tsx`).
