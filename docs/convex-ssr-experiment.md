@@ -64,18 +64,16 @@ Only About, Privacy, and Terms prerender. The homepage uses the universal SPA
 shell in static mode, including on the Cloudflare assets host. This keeps builds
 independent of backend data and avoids incomplete Suspense markup during rollback.
 
-Run the raw-response check against a deployment with a reviewed public site:
+Run `pnpm run check` for the automated coverage. The renderer tests delay an
+official Convex query and require its content and hydration data in the completed
+response. Component tests cover private access, authentication transitions, and
+navigation while queries are pending.
 
-```sh
-node apps/scout/scripts/verify-ssr.ts https://clever-vole-526.eu-west-1.convex.site ssr-8.example
-```
-
-The check parses HTML without executing JavaScript. It requires homepage cards,
-a filtered homepage, site identity and reviews, About content, private-view
-shells, and TanStack's unknown-route status. It follows a public review and Scout
-profile from the site HTML to check their content, transcript, and walkthrough.
-Unit tests also delay an official
-Convex query and require the renderer to wait for its HTML and hydration data.
+For a hosted smoke check, disable JavaScript in the browser and reload a public
+site, task, or Scout URL. Its content should already be visible. Re-enable
+JavaScript and check navigation and a direct reload. Check private URLs while
+signed out, including their response HTML and serialized data. The hosted results
+below record the release checks; they are not a separate test runner.
 
 Verified for public task and Scout routes on the hosted preview on September 21, 2026:
 
