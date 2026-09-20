@@ -155,6 +155,7 @@ function session(overrides = {}) {
 }
 
 beforeEach(() => {
+  window.localStorage.clear();
   vi.spyOn(window, "innerWidth", "get").mockReturnValue(390);
   remote.messages = [];
   remote.messageStatus = "Exhausted";
@@ -1909,6 +1910,46 @@ test.each(["chat", "walkthrough"])(
 );
 
 const invitation = "Play with me at https://example.com/room/blue. Wait for me to start.";
+
+test.each([
+  {
+    path: "/tasks/game-thread",
+    kind: "review",
+    label: "Resize task navigation",
+    direction: "ArrowRight",
+    defaultWidth: 260,
+  },
+  {
+    path: "/play?thread=game-thread",
+    kind: "play",
+    label: "Resize Scout’s view",
+    direction: "ArrowLeft",
+    defaultWidth: 560,
+  },
+])(
+  "restores the resized sidebar after reopening $path",
+  async ({ path, kind, label, direction, defaultWidth }) => {
+    vi.spyOn(window, "innerWidth", "get").mockReturnValue(1280);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
+      new DOMRect(0, 0, 1280, 720),
+    );
+    remote.queries.set(
+      "scout/activity:get",
+      session({ purpose: { kind }, primarySite: "samebase.com" }),
+    );
+    await openPlay(path);
+    const resize = await screen.findByRole("separator", { name: label });
+    fireEvent.keyDown(resize, { key: direction, shiftKey: true });
+    const width = resize.getAttribute("aria-valuenow");
+    expect(Number(width)).toBeGreaterThan(defaultWidth);
+
+    cleanup();
+    await openPlay(path);
+    const restored = await screen.findByRole("separator", { name: label });
+    expect(restored.getAttribute("aria-valuenow")).toBe(width);
+  },
+);
+
 function fillInvite() {
   fireEvent.change(screen.getByLabelText("Message Scout"), { target: { value: invitation } });
 }

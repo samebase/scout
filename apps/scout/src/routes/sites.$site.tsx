@@ -7,6 +7,7 @@ import {
   useSidebarLayoutPresentation,
 } from "@samebase/sidebars/SidebarRuntime";
 import type { SidebarLayoutState } from "@samebase/sidebars/SidebarLayoutState";
+import { useLocalStorageSidebarState } from "../sidebars/scoutSidebarState";
 import { useAction, usePaginatedQuery, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { ArrowLeftIcon, PanelLeftIcon, PlusIcon, SearchIcon } from "lucide-react";
@@ -39,20 +40,25 @@ export const Route = createFileRoute("/sites/$site")({
   component: SitePage,
 });
 
+const sidebarDefaults = {
+  leftDesktopOpen: true,
+  leftDesktopWidthPx: 240,
+  leftMobileWidthPx: 280,
+  mobilePane: "main",
+  mobileSurface: { kind: "unmerged" },
+  rightDesktopOpen: false,
+  rightDesktopWidthPx: 0,
+  rightMobileWidthPx: 0,
+} satisfies SidebarLayoutState;
+
 function SitePage() {
-  const [state, setState] = useState<SidebarLayoutState>({
-    leftDesktopOpen: true,
-    leftDesktopWidthPx: 240,
-    leftMobileWidthPx: 280,
-    mobilePane: "main",
-    mobileSurface: { kind: "unmerged" },
-    rightDesktopOpen: false,
-    rightDesktopWidthPx: 0,
-    rightMobileWidthPx: 0,
+  const controller = useLocalStorageSidebarState({
+    defaults: sidebarDefaults,
+    storageKey: "scout_site_sidebar_state",
   });
   return (
     <ProductShell>
-      <SidebarRuntimeProvider controller={{ isHydrated: true, state, setState }}>
+      <SidebarRuntimeProvider controller={controller}>
         <SiteLayout />
       </SidebarRuntimeProvider>
     </ProductShell>

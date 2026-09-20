@@ -142,6 +142,7 @@ vi.mock("convex/react", () => ({
 }));
 
 beforeEach(() => {
+  window.localStorage.clear();
   remote.admin = true;
   remote.signedIn = true;
   remote.revision = 0;
@@ -650,6 +651,23 @@ test("the filtered site sidebar retains its DOM, width, and scroll while another
   expect(screen.getByRole("navigation", { name: "Sites" })).toBe(navigation);
   expect(scroller.scrollTop).toBe(120);
   expect(resize.getAttribute("aria-valuenow")).toBe(width);
+});
+
+test("restores the site sidebar width after reopening a different site", async () => {
+  vi.spyOn(window, "innerWidth", "get").mockReturnValue(1280);
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
+    new DOMRect(0, 0, 1280, 720),
+  );
+  await openPage("/sites/chessmerge.com");
+  const resize = await screen.findByRole("separator", { name: "Resize sites navigation" });
+  fireEvent.keyDown(resize, { key: "ArrowRight", shiftKey: true });
+  const width = resize.getAttribute("aria-valuenow");
+  expect(Number(width)).toBeGreaterThan(240);
+
+  cleanup();
+  await openPage("/sites/papergames.io");
+  const restored = await screen.findByRole("separator", { name: "Resize sites navigation" });
+  expect(restored.getAttribute("aria-valuenow")).toBe(width);
 });
 
 test.each(["public", "mine"])(
