@@ -45,11 +45,18 @@ export const walkthroughDescription = outdent`
   review's scope. It does not end the task.
 
   Include 1–10 concrete checks of the requested behavior, each with a short explanation.
-  Use passed for verified success, failed for an observed product failure, and untested
-  for behavior you could not verify. A paywall, missing access, or a Scout/browser-service
+  Use passed when the observed result meets the requested outcome, not merely when
+  an action completes or output appears. Include material inaccuracies and unmet
+  requirements in the relevant check and summary. Use failed for an observed product
+  failure, and untested for behavior you could not verify. A paywall, missing access, or a Scout/browser-service
   error leaves that behavior untested; it does not establish a product failure.
   Keep checks at the task level, such as saving a project or exporting a file.
   Do not count navigation, screenshots, or other setup as successful product checks.
+  Verified signup or sign-in can be reported as a successful capability. If the
+  request includes further outcomes, signup alone does not complete it.
+  Each referenced screenshot must show the state described in its section. If the
+  result was verified without a matching capture, say so rather than claiming an
+  earlier screenshot shows that result.
 `;
 
 export function reportInstructions(previous: Doc<"agentsApiSessions">["walkthrough"]) {
