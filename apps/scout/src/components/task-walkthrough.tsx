@@ -159,7 +159,7 @@ function SessionWalkthrough({ sessionId }: { sessionId: Id<"agentsApiSessions"> 
         </div>
       </div>
       <nav aria-label="Walkthrough steps" className="shrink-0 border-t bg-background">
-        <div className="flex w-full items-center justify-between gap-2 px-3 py-2 sm:px-6">
+        <div className="mx-auto grid w-fit grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-2 sm:gap-4">
           <Button
             variant="ghost"
             size="sm"

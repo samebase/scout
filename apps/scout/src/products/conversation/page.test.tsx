@@ -1180,7 +1180,7 @@ test("a direct walkthrough link shows an older task's empty state without forcin
   expect(remote.sendManaged).not.toHaveBeenCalled();
 });
 
-test("a finished review keeps costs and usage visible across Walkthrough and Chat", async () => {
+test("a finished review shows costs and usage only in Chat", async () => {
   remote.queries.set(
     "scout/activity:get",
     session({ purpose: { kind: "review" }, status: "finished", hasWalkthrough: true }),
@@ -1206,20 +1206,27 @@ test("a finished review keeps costs and usage visible across Walkthrough and Cha
   remote.queries.set("tasks/walkthrough:get", { walkthrough: null, captures: [] });
   await openPlay("/tasks/game-thread");
   await screen.findByRole("region", { name: "Walkthrough with Scout" });
+  expect(screen.queryByText("Cost · $0.25 subtotal")).toBeNull();
+  expect(screen.queryByText("Input tokens")).toBeNull();
+  expect(screen.queryByRole("textbox", { name: "Message Scout" })).toBeNull();
+  expect(remote.queryCalls).toHaveBeenCalledWith("tasks/sessions:cost", "skip");
+
+  await userEvent.setup().click(screen.getByRole("link", { name: "Chat & replay" }));
+  expect(await screen.findByRole("textbox", { name: "Message Scout" })).toBeTruthy();
   const cost = screen.getByText("Cost · $0.25 subtotal");
   await userEvent.setup().click(cost);
   expect(cost.closest("details")?.open).toBe(true);
   expect(screen.getByText("Input tokens").nextElementSibling?.textContent).toBe("1,200");
   expect(screen.getByText("Firecrawl").nextElementSibling?.textContent).toBe("2 Firecrawl credits");
-  expect(screen.queryByRole("textbox", { name: "Message Scout" })).toBeNull();
   expect(remote.queryCalls).toHaveBeenCalledWith("tasks/sessions:cost", {
     sessionId: "managed-1",
   });
-  await userEvent.setup().click(screen.getByRole("link", { name: "Chat & replay" }));
-  expect(await screen.findByRole("textbox", { name: "Message Scout" })).toBeTruthy();
-  expect(screen.getByText("Cost · $0.25 subtotal")).toBe(cost);
-  expect(cost.closest("details")?.open).toBe(true);
   expect(screen.queryByRole("link", { name: "Review with Scout" })).toBeNull();
+
+  await userEvent.setup().click(screen.getByRole("link", { name: "Walkthrough" }));
+  await screen.findByRole("region", { name: "Walkthrough with Scout" });
+  expect(screen.queryByText("Cost · $0.25 subtotal")).toBeNull();
+  expect(screen.queryByText("Input tokens")).toBeNull();
 });
 
 test.each([

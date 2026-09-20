@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-20T20:23:51Z
+- **Last updated:** 2026-09-20T21:22:12Z
 
 ## Log
 
@@ -1761,9 +1761,15 @@ Navigation keeps one menu visible while the next page loads, including the first
 The root owns navigation for every page except handoff; product pages no longer mount another menu
 (`apps/scout/src/routes/__root.tsx`, `apps/scout/src/products/shell.tsx`).
 
-### 2026-09-20 - working tree - v281
+### 2026-09-20 - 8b0bd68 - v281
 
 Scout's review guidance checks whether the result meets the request and preserves the user's meaning.
 Verified signup counts as a useful outcome, and screenshot descriptions must match the captured state
 (`apps/scout/convex/scout/review.ts`, `apps/scout/convex/tasks/instructions.ts`,
 `apps/scout/convex/tasks/walkthroughReport.ts`).
+
+### 2026-09-20 - working tree - v282
+
+Walkthrough step controls sit together in the center, leaving more room for screenshots.
+Costs and usage appear in Chat & replay, and completed walkthroughs no longer leave an empty footer
+(`apps/scout/src/components/task-walkthrough.tsx`, `apps/scout/src/products/conversation/page.tsx`).

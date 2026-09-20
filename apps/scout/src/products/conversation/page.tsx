@@ -883,7 +883,7 @@ function ConversationSession({
   );
   const cost = useQuery(
     api.tasks.sessions.cost,
-    thread.canControl && managedId ? { sessionId: managedId } : "skip",
+    thread.canControl && managedId && !showingWalkthrough ? { sessionId: managedId } : "skip",
   );
   const messages = usePaginatedQuery(
     api.scout.activity.messages,
@@ -1202,9 +1202,12 @@ function ConversationSession({
         </MessageScrollerProvider>
       </div>
       {thread.canControl && managedId ? (
-        <div className="shrink-0 border-t">
-          <div className={cn("mx-auto w-full p-3", !showingWalkthrough && "max-w-page")}>
-            {cost && <SessionCost session={cost} />}
+        <div
+          hidden={showingWalkthrough && !pendingMessage && !failure}
+          className="shrink-0 border-t"
+        >
+          <div className="mx-auto w-full max-w-page p-3">
+            {!showingWalkthrough && cost && <SessionCost session={cost} />}
             <PendingTaskMessage
               pendingMessage={pendingMessage}
               active={sendingMessage}

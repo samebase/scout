@@ -778,7 +778,7 @@ function SessionView({ session, walkthrough }: { session: Session; walkthrough: 
           onRetry={() => void run("retry")}
         />
         <div className="flex items-start justify-between gap-3">
-          <SessionCost session={session} />
+          {!walkthrough && <SessionCost session={session} />}
           {!session.active && (
             <Button
               variant="ghost"
