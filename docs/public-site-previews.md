@@ -28,11 +28,16 @@ Verified on September 19, 2026: the custom domain returned `max-age=60` and a CD
 hit on the second request. CDN purging cannot clear an already cached browser copy.
 
 The account tokens `Scout public previews - Convex` and `Scout public previews - cache purge`
-are configured in production (`usable-spider-599`) and the isolated `wry-canary-235` dev
+are configured in production (`doting-crab-687`) and the isolated `wry-canary-235` dev
 deployment. A real dev review verified publication to the public bucket, a stable URL in
 the anonymous site query, and a CDN cache hit with the requested headers. Making the review
 private changed the previously cached URL to `404`; the owner could still fetch the private
 original, and anonymous site and signed-URL queries returned `null`. The fixture was removed.
+
+Production moved to US on September 20, 2026. The R2 buckets and credentials are unchanged.
+Existing object keys retain their `deployments/usable-spider-599.eu-west-1.convex.cloud/`
+prefix and remain in use by the US deployment. Keep those objects when retiring the old
+Convex deployment; the prefix is an object name, not a dependency on the EU backend.
 
 ## Convex configuration and rollout
 

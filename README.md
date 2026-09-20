@@ -3,7 +3,7 @@
 Explore Scout Play for browser games, Scout Review for testing products, and Agents
 for inspecting tasks and comparing execution engines.
 
-Live app: [usable-spider-599.eu-west-1.convex.site](https://usable-spider-599.eu-west-1.convex.site)
+Live app: [doting-crab-687.convex.site](https://doting-crab-687.convex.site)
 
 This pnpm workspace follows the Samebase monorepo layout. `apps/scout/` contains the current
 frontend, Convex backend, and app scripts. New services go under `apps/`; shared libraries
