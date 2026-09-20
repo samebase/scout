@@ -1,4 +1,5 @@
 import {
+  ClientOnly,
   HeadContent,
   Scripts,
   createRootRoute,
@@ -14,6 +15,7 @@ import { AppNavigation } from "#components/app-navigation";
 import { PostHogRuntime } from "../components/posthog-runtime";
 
 export const Route = createRootRoute({
+  ssr: true,
   staticData: { access: "access_public" },
   head: () => ({
     meta: [
@@ -39,6 +41,11 @@ export const Route = createRootRoute({
       },
     ],
   }),
+  notFoundComponent: () => (
+    <ClientOnly>
+      <p>Not Found</p>
+    </ClientOnly>
+  ),
   component: RootComponent,
 });
 
@@ -58,7 +65,7 @@ function RootComponent() {
       <ScoutSidebarProvider>
         <ConvexClientProvider>
           <PostHogRuntime />
-          {!isProductPage && !isHandoff && <AppNavigation />}
+          <ClientOnly>{!isProductPage && !isHandoff && <AppNavigation />}</ClientOnly>
           <RouteAccessOutlet />
         </ConvexClientProvider>
       </ScoutSidebarProvider>

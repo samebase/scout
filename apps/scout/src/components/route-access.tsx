@@ -1,5 +1,5 @@
 import { useAuthActions } from "@convex-dev/auth/react";
-import { Link, Navigate, Outlet, useMatches } from "@tanstack/react-router";
+import { ClientOnly, Link, Navigate, Outlet, useMatches } from "@tanstack/react-router";
 import { useState } from "react";
 import { accountAccessMessage, canAccess, useViewerAccess } from "../lib/access";
 import { AuthPanel } from "./auth-panel";
@@ -12,7 +12,13 @@ export function RouteAccessOutlet() {
     select: (matches) => matches.map((match) => match.staticData.access),
   });
   if (policies.every((access) => access === "access_public")) return <Outlet />;
-  return <ProtectedRouteOutlet policies={policies} />;
+  // Protected routes use defaultSsr: false. Keep their native pending outlet
+  // during shell hydration; account access is resolved only in the browser.
+  return (
+    <ClientOnly fallback={<Outlet />}>
+      <ProtectedRouteOutlet policies={policies} />
+    </ClientOnly>
+  );
 }
 
 function ProtectedRouteOutlet({ policies }: { policies: AccessKey[] }) {

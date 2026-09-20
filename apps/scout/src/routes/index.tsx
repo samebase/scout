@@ -4,6 +4,7 @@ import { homeSearch } from "#lib/homeSearch";
 import { loadHomeFeed } from "#lib/homeFeed";
 
 export const Route = createFileRoute("/")({
+  ssr: true,
   staticData: { access: "access_public" },
   validateSearch: homeSearch,
   loaderDeps: ({ search }) => ({ site: search.site ?? null, scope: search.scope ?? "public" }),
