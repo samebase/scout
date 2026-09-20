@@ -70,6 +70,24 @@ type ChatThread = NonNullable<FunctionReturnType<typeof api.scout.activity.get>>
 const visibilitySchema = z.enum(["public", "private"]);
 type RequestState = { kind: "idle" } | { kind: "pending" } | { kind: "failed"; message: string };
 
+const reviewExamples = [
+  {
+    label: "Can I export for free?",
+    prompt:
+      "Create a project and try to export it on the free plan. Show me what works and where payment is required.",
+  },
+  {
+    label: "Does signup work?",
+    prompt:
+      "Sign up as a new user and try the main feature. Show me any broken steps or confusing parts.",
+  },
+  {
+    label: "Review a hackathon entry",
+    prompt:
+      "Review this hackathon submission. Try its main feature, check the claims on its homepage, and show what works, what fails, and what you couldn't test.",
+  },
+];
+
 export function ConversationError() {
   return (
     <ProductShell>
@@ -148,6 +166,7 @@ export function ConversationLobby({
   const startChat = useMutation(api.scout.chats.startProductChat);
   const navigate = useNavigate();
   const [draft, setDraft] = useState("");
+  const draftRef = useRef<HTMLTextAreaElement>(null);
   const [guestPreferences, setGuestPreferences] = useState<
     FunctionReturnType<typeof api.accounts.taskPreferences>
   >({});
@@ -277,6 +296,7 @@ export function ConversationLobby({
               </div>
             )}
             <ConversationComposer
+              inputRef={draftRef}
               autoFocus={siteSelection !== null}
               context={
                 siteSelection && (
@@ -412,6 +432,44 @@ export function ConversationLobby({
                 </Select>
               </div>
             </ConversationComposer>
+            {!isPlay && (
+              <div className="mt-4">
+                <div
+                  className="flex flex-wrap justify-center gap-2"
+                  aria-label="Example review prompts"
+                >
+                  {reviewExamples.map((example) => (
+                    <button
+                      key={example.label}
+                      type="button"
+                      disabled={request.kind === "pending"}
+                      onClick={() => {
+                        const urlPlaceholder = "[website URL]";
+                        setDraft(
+                          siteSelection ? example.prompt : `${urlPlaceholder}\n\n${example.prompt}`,
+                        );
+                        requestAnimationFrame(() => {
+                          const input = draftRef.current;
+                          if (!input) return;
+                          input.focus();
+                          input.setSelectionRange(
+                            siteSelection ? input.value.length : 0,
+                            siteSelection ? input.value.length : urlPlaceholder.length,
+                          );
+                        });
+                      }}
+                      className="inline-flex min-h-10 items-center rounded-full border border-primary/15 bg-background/90 px-3.5 py-2 text-[13px] text-primary transition-colors hover:border-primary/40 hover:bg-primary/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50"
+                    >
+                      {example.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-3 text-center text-sm leading-relaxed text-muted-foreground">
+                  A stack of submissions? Let Scout take the first pass.{" "}
+                  <span aria-hidden="true">🫣</span>
+                </p>
+              </div>
+            )}
             {isPlay && (
               <div className="mt-5 flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm text-muted-foreground">
                 {["Find a game for us", "Help me learn a game"].map((suggestion) => (
@@ -1199,6 +1257,7 @@ function ConversationSession({
             )}
             {!showingWalkthrough && (
               <ConversationComposer
+                inputRef={null}
                 autoFocus={false}
                 context={null}
                 value={draft}

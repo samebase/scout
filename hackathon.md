@@ -1800,8 +1800,17 @@ Site headings and tabs stay visible while changing review visibility, and conver
 available while a newly discovered site's task navigation loads
 (`apps/scout/src/routes/sites.$site.tsx`, `apps/scout/src/products/conversation/page.tsx`).
 
-### 2026-09-21 - working tree - v288
+
+### 2026-09-21 - 579069c - v288
 
 Public visitors can open the Scout directory from the main navigation and browse account sites.
 The Scouts link remains visible while account access loads or changes
 (`apps/scout/src/components/app-navigation.tsx`).
+
+
+### 2026-09-20 - working tree - v277
+
+The homepage explains what Scout tries and why public reviews save others a repeat visit.
+Examples prepare editable prompts for free-plan exports, signup, and hackathon entries,
+with the website link selected for replacement. A blue telescope favicon matches the navigation
+(`apps/scout/src/components/discovery-hero.tsx`, `apps/scout/src/products/conversation/page.tsx`, `apps/scout/public/favicon.svg`).

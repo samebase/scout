@@ -8,11 +8,11 @@ export const Route = createFileRoute("/")({
   validateSearch: homeSearch,
   head: () => ({
     meta: [
-      { title: "Scout | Website reviews" },
+      { title: "Scout | Let Scout try it first" },
       {
         name: "description",
         content:
-          "Ask Scout to try a website and watch what happens. Explore reviews from other users.",
+          "Give Scout a website and something to try. Its AI agents use it in a real browser and show what worked, what failed, and where they got stuck. Browse public reviews before trying it yourself.",
       },
     ],
   }),
