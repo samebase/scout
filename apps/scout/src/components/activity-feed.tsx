@@ -104,6 +104,7 @@ function SiteGroups({ search, initialFeed }: { search: ReviewFeedSearch; initial
           key={site.hostname}
           site={site}
           search={search}
+          navigation={null}
           initialTasks={
             initialFeed?.groups.find((group) => group.site.hostname === site.hostname)?.tasks ??
             null
@@ -124,14 +125,20 @@ function SiteGroups({ search, initialFeed }: { search: ReviewFeedSearch; initial
   );
 }
 
-function SiteCard({
+export function SiteCard({
   site,
   search,
   initialTasks,
+  navigation,
 }: {
   site: FunctionReturnType<typeof api.scout.sites.list>["page"][number];
   search: ReviewFeedSearch;
   initialTasks: FunctionReturnType<typeof api.scout.activity.list> | null;
+  navigation: {
+    selected: boolean;
+    view: "tasks" | "workspace";
+    onNavigate: () => void;
+  } | null;
 }) {
   const scope = search.scope ?? "public";
   const tasks = usePaginatedQuery(
@@ -145,52 +152,72 @@ function SiteCard({
   return (
     <article
       aria-label={site.hostname}
-      className="w-full overflow-hidden rounded-lg border bg-card sm:grid sm:grid-cols-[auto_minmax(0,1fr)] sm:grid-rows-[minmax(0,1fr)]"
+      data-active={navigation?.selected}
+      className={cn(
+        "site-card w-full overflow-hidden rounded-lg border bg-card",
+        navigation
+          ? "site-card-sidebar border-transparent hover:border-muted-foreground/40 data-[active=true]:border-primary data-[active=true]:bg-primary/5"
+          : "site-card-feed",
+      )}
     >
-      <Link
-        to="/sites/$site"
-        params={{ site: site.hostname }}
-        search={search}
-        aria-label={`View ${site.profile?.name ?? site.hostname} details`}
-        className="relative block min-w-0 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:border-r"
-      >
-        <SitePreview site={site} className="sm:w-[clamp(18rem,calc(25vw+8rem),24rem)]" />
-      </Link>
-      <div className="flex min-h-60 min-w-0 flex-col p-3 sm:min-h-0">
-        <header className="relative shrink-0 border-b pb-2">
-          <Link
-            to="/sites/$site"
-            params={{ site: site.hostname }}
-            search={search}
-            aria-label={`View tasks for ${site.profile?.name ?? site.hostname}`}
-            className="absolute inset-0 z-10 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          />
-          <SiteIdentity site={site} heading="h2" />
-        </header>
-        <div className="flex-1 sm:min-h-0" aria-busy={tasks.status === "LoadingFirstPage"}>
-          {rows.slice(0, 2).map((activity) => (
-            <ReviewRow key={activity.threadId} activity={activity} preview search={search} />
-          ))}
-          {exhausted && !rows.length && (
-            <p className="py-6 text-sm text-muted-foreground">
-              {scope === "mine" ? "You haven't reviewed this site yet." : "No public tasks yet."}
-            </p>
-          )}
-        </div>
-        <Button
-          asChild
-          variant="ghost"
-          className="w-full shrink-0 rounded-none border-t text-xs font-normal text-primary"
+      <div className="site-card-layout">
+        <Link
+          to="/sites/$site"
+          params={{ site: site.hostname }}
+          search={navigation ? { ...search, view: navigation.view } : search}
+          resetScroll={navigation === null}
+          onClick={navigation?.onNavigate}
+          aria-current={navigation?.selected ? "page" : undefined}
+          aria-label={`View ${site.profile?.name ?? site.hostname} details`}
+          className="site-card-preview-link relative block min-w-0 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         >
-          <Link to="/sites/$site" params={{ site: site.hostname }} search={search}>
-            {site.taskCount === 0
-              ? "View site details"
-              : site.taskCount === 1
-                ? "View 1 task"
-                : `View all ${site.taskCount} tasks`}
-            <ArrowRightIcon aria-hidden="true" />
-          </Link>
-        </Button>
+          <SitePreview site={site} className="site-card-preview" />
+        </Link>
+        <div className="site-card-content flex min-w-0 flex-col p-3">
+          <header className="site-card-header relative shrink-0 border-b pb-2">
+            <Link
+              to="/sites/$site"
+              params={{ site: site.hostname }}
+              search={navigation ? { ...search, view: navigation.view } : search}
+              resetScroll={navigation === null}
+              onClick={navigation?.onNavigate}
+              aria-current={navigation?.selected ? "page" : undefined}
+              aria-label={`View tasks for ${site.profile?.name ?? site.hostname}`}
+              className="absolute inset-0 z-10 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+            <SiteIdentity site={site} heading={navigation ? "span" : "h2"} />
+          </header>
+          <div className="site-card-tasks flex-1" aria-busy={tasks.status === "LoadingFirstPage"}>
+            {rows.slice(0, 2).map((activity) => (
+              <ReviewRow key={activity.threadId} activity={activity} preview search={search} />
+            ))}
+            {exhausted && !rows.length && (
+              <p className="py-6 text-sm text-muted-foreground">
+                {scope === "mine" ? "You haven't reviewed this site yet." : "No public tasks yet."}
+              </p>
+            )}
+          </div>
+          <Button
+            asChild
+            variant="ghost"
+            className="site-card-footer w-full shrink-0 rounded-none border-t text-xs font-normal text-primary"
+          >
+            <Link
+              to="/sites/$site"
+              params={{ site: site.hostname }}
+              search={navigation ? { ...search, view: "tasks" } : search}
+              resetScroll={navigation === null}
+              onClick={navigation?.onNavigate}
+            >
+              {site.taskCount === 0
+                ? "View site details"
+                : site.taskCount === 1
+                  ? "View 1 task"
+                  : `View all ${site.taskCount} tasks`}
+              <ArrowRightIcon aria-hidden="true" />
+            </Link>
+          </Button>
+        </div>
       </div>
     </article>
   );
@@ -246,12 +273,13 @@ function ReviewRow({
     <div
       className={cn(
         "group relative flex items-center gap-3 border-t first:border-t-0",
-        preview ? "py-1 sm:max-lg:py-0.5" : "py-4",
+        preview ? "review-row-preview py-1 sm:max-lg:py-0.5" : "py-4",
       )}
     >
       <Link
         to="/tasks/$thread"
         params={{ thread: activity.threadId }}
+        resetScroll={false}
         search={{ ...search, view: activity.walkthrough ? "walkthrough" : "chat" }}
         aria-label={activity.title ?? "New review"}
         className="absolute inset-0 outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -302,7 +330,7 @@ function ReviewRow({
               className={cn(
                 "text-sm wrap-anywhere text-muted-foreground",
                 preview
-                  ? "mt-1 min-w-0 flex-1 line-clamp-2 leading-5 sm:max-lg:hidden"
+                  ? "review-row-summary mt-1 min-w-0 flex-1 line-clamp-2 leading-5 sm:max-lg:hidden"
                   : "mt-1.5 line-clamp-2 leading-relaxed",
               )}
             >

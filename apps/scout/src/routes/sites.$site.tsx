@@ -15,8 +15,8 @@ import { z } from "zod";
 import { api } from "../../convex/_generated/api";
 import { Button, buttonVariants } from "#components/ui/button";
 import { ScoutWorkspace } from "#components/scout-workspace";
-import { SiteTaskList } from "#components/activity-feed";
-import { SitePreview, SitePreviewCapture } from "#components/site-preview";
+import { SiteCard, SiteTaskList } from "#components/activity-feed";
+import { SitePreviewCapture } from "#components/site-preview";
 import { SiteIdentity } from "#components/site-identity";
 import { SiteFilters } from "#components/site-filters";
 import { LoadOnScroll } from "#components/load-on-scroll";
@@ -52,22 +52,7 @@ function SitePage() {
   });
   return (
     <ProductShell>
-      <SidebarRuntimeProvider
-        controller={{
-          isHydrated: true,
-          state,
-          setState: (update) => {
-            setState((previous) => {
-              const next = update(previous);
-              return {
-                ...next,
-                leftDesktopWidthPx: Math.min(next.leftDesktopWidthPx, 368),
-                leftMobileWidthPx: Math.min(next.leftMobileWidthPx, 368),
-              };
-            });
-          },
-        }}
-      >
+      <SidebarRuntimeProvider controller={{ isHydrated: true, state, setState }}>
         <SiteLayout />
       </SidebarRuntimeProvider>
     </ProductShell>
@@ -139,25 +124,17 @@ function SiteLayout() {
               >
                 <ul className="space-y-3">
                   {sites.results.map((site) => (
-                    <li
-                      key={site.hostname}
-                      data-active={site.hostname === parsed.data}
-                      className="group relative overflow-hidden rounded-md border border-transparent bg-card hover:border-muted-foreground/40 data-[active=true]:border-primary data-[active=true]:bg-primary/5 data-[active=true]:font-medium"
-                    >
-                      <Link
-                        to="/sites/$site"
-                        resetScroll={false}
-                        params={{ site: site.hostname }}
-                        activeOptions={{ includeSearch: false }}
-                        search={{ ...filters, view: workspace ? "workspace" : "tasks" }}
-                        onClick={() => setMobilePane("main")}
-                        aria-label={`View tasks for ${site.profile?.name ?? site.hostname}`}
-                        className="absolute inset-0 z-10 rounded-md focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+                    <li key={site.hostname}>
+                      <SiteCard
+                        initialTasks={null}
+                        site={site}
+                        search={filters}
+                        navigation={{
+                          selected: site.hostname === parsed.data,
+                          view: workspace ? "workspace" : "tasks",
+                          onNavigate: () => setMobilePane("main"),
+                        }}
                       />
-                      <SitePreview site={site} />
-                      <div className="p-2.5">
-                        <SiteIdentity site={site} heading="span" />
-                      </div>
                     </li>
                   ))}
                 </ul>

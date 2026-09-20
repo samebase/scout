@@ -24,6 +24,7 @@ import { Route as SiteRoute } from "../routes/sites.$site";
 import { homeSearch } from "../lib/homeSearch";
 
 type Site = NonNullable<FunctionReturnType<typeof api.scout.sites.get>>;
+type Activity = FunctionReturnType<typeof api.scout.activity.list>["page"][number];
 
 const remote = vi.hoisted(() => ({
   read: vi.fn(),
@@ -31,6 +32,8 @@ const remote = vi.hoisted(() => ({
   manual: vi.fn(),
   query: vi.fn(),
   paginated: vi.fn(),
+  activityQueries: vi.fn(),
+  tasks: new Map<string, Activity[]>(),
   refresh: vi.fn(),
   sites: new Map<string, Site>(),
   loadingSites: new Set<string>(),
@@ -60,23 +63,31 @@ vi.mock("../lib/access", async (importOriginal) => ({
       : { kind: "anonymous" },
 }));
 vi.mock("./site-preview", () => ({ SitePreview: () => <div />, SitePreviewCapture: () => null }));
-vi.mock("./activity-feed", () => ({
+vi.mock("./activity-feed", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./activity-feed")>()),
   SiteTaskList: ({ site }: { site: string }) => <p>Tasks for {site}</p>,
 }));
 vi.mock("convex/react", () => ({
   usePaginatedQuery: (
-    _ref: FunctionReference<"query">,
+    ref: FunctionReference<"query">,
     args: Omit<FunctionArgs<typeof api.scout.sites.list>, "paginationOpts">,
+    options: { initialNumItems: number },
   ) => {
     useSyncExternalStore(subscribe, () => remote.revision);
+    if (getFunctionName(ref) === "scout/activity:list") {
+      remote.activityQueries(args, options);
+      return { results: remote.tasks.get(args.site ?? "") ?? [], status: "Exhausted" };
+    }
     remote.paginated(args);
     return {
-      results: [...remote.sites.values()].filter(
-        (site) =>
-          !args.site ||
-          site.hostname.includes(args.site) ||
-          site.profile?.name.toLowerCase().includes(args.site),
-      ),
+      results: [...remote.sites.values()]
+        .filter(
+          (site) =>
+            !args.site ||
+            site.hostname.includes(args.site) ||
+            site.profile?.name.toLowerCase().includes(args.site),
+        )
+        .map((site) => ({ ...site, taskCount: remote.tasks.get(site.hostname)?.length ?? 0 })),
       status: "Exhausted",
     };
   },
@@ -135,6 +146,7 @@ beforeEach(() => {
   remote.signedIn = true;
   remote.revision = 0;
   remote.sites.clear();
+  remote.tasks.clear();
   remote.loadingSites.clear();
   remote.sites.set("papergames.io", {
     hostname: "papergames.io",
@@ -604,14 +616,11 @@ test("the filtered site sidebar retains its DOM, width, and scroll while another
   const navigation = await screen.findByRole("navigation", { name: "Sites" });
   const filter = screen.getByRole("textbox", { name: "Filter by site" });
   const resize = screen.getByRole("separator", { name: "Resize sites navigation" });
-  fireEvent.keyDown(resize, { key: "ArrowRight", shiftKey: true });
-  fireEvent.keyDown(resize, { key: "ArrowRight", shiftKey: true });
-  expect(resize.getAttribute("aria-valuenow")).toBe("368");
-  fireEvent.keyDown(resize, { key: "ArrowRight" });
-  expect(resize.getAttribute("aria-valuenow")).toBe("368");
-  fireEvent.keyDown(resize, { key: "ArrowLeft" });
+  for (let step = 0; step < 6; step += 1) {
+    fireEvent.keyDown(resize, { key: "ArrowRight", shiftKey: true });
+  }
   const width = resize.getAttribute("aria-valuenow");
-  expect(Number(width)).toBeGreaterThan(240);
+  expect(Number(width)).toBeGreaterThan(640);
   const scroller = navigation.closest<HTMLElement>("[data-sidebar-layout-part='pane-scrollport']");
   if (!scroller) throw new Error("Missing sidebar scroller");
   scroller.scrollTop = 120;
@@ -642,3 +651,54 @@ test("the filtered site sidebar retains its DOM, width, and scroll while another
   expect(scroller.scrollTop).toBe(120);
   expect(resize.getAttribute("aria-valuenow")).toBe(width);
 });
+
+test.each(["public", "mine"])(
+  "sidebar previews link to the first two tasks and the full list with scope %s",
+  async (scope) => {
+    remote.tasks.set(
+      "papergames.io",
+      [1, 2, 3].map(
+        (number): Activity => ({
+          threadId: `paper-task-${number}`,
+          title: `Paper task ${number}`,
+          primarySite: "papergames.io",
+          createdAt: number,
+          purpose: { kind: "review" },
+          visibility: scope === "mine" ? "private" : "public",
+          status: "finished",
+          scout: {
+            // @ts-expect-error The mocked Convex transport uses a stable string instead of a database-generated scout ID.
+            _id: "scout-fixture",
+            displayName: "Scout",
+            slug: "scout",
+            status: "active",
+          },
+          latestSession: null,
+          walkthrough: null,
+        }),
+      ),
+    );
+    const router = await openPage(`/sites/chessmerge.com?scope=${scope}&site=paper&view=workspace`);
+    const navigation = await screen.findByRole("navigation", { name: "Sites" });
+    const card = within(navigation).getByRole("article", { name: "papergames.io" });
+    expect(remote.activityQueries).toHaveBeenCalledWith(
+      { site: "papergames.io", scope },
+      { initialNumItems: 2 },
+    );
+    for (const number of [1, 2]) {
+      const link = within(card).getByRole("link", { name: `Paper task ${number}` });
+      const url = new URL(link.getAttribute("href") ?? "", "http://localhost");
+      expect(url.pathname).toBe(`/tasks/paper-task-${number}`);
+      expect(Object.fromEntries(url.searchParams)).toEqual({ scope, site: "paper", view: "chat" });
+    }
+    expect(within(card).queryByRole("link", { name: "Paper task 3" })).toBeNull();
+    const siteLink = within(card).getByRole("link", { name: "View tasks for Papergames" });
+    expect(siteLink.getAttribute("href")).toContain("view=workspace");
+    await userEvent.setup().click(within(card).getByRole("link", { name: "View all 3 tasks" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/sites/papergames.io"));
+    expect(router.state.location.search).toEqual({ scope, site: "paper", view: "tasks" });
+    expect(screen.getByRole("navigation", { name: "Sites" })).toBe(navigation);
+    expect(within(navigation).getByRole("article", { name: "papergames.io" })).toBe(card);
+    expect(siteLink.getAttribute("aria-current")).toBe("page");
+  },
+);
