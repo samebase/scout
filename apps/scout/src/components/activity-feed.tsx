@@ -225,9 +225,9 @@ export function SiteTaskList({ site, search }: { site: string; search: ReviewFee
     <section
       aria-label={`Tasks for ${site}`}
       aria-busy={tasks.status === "LoadingFirstPage"}
-      className="min-h-40 min-w-0"
+      className="@container/task-list min-h-40 min-w-0"
     >
-      <div className="rounded-lg border bg-card px-4 sm:px-5">
+      <div className="rounded-lg border bg-card px-2 @xs/task-list:px-4 @sm/task-list:px-5">
         {tasks.results.map((activity) => (
           <ReviewRow key={activity.threadId} activity={activity} preview={false} search={search} />
         ))}
@@ -263,7 +263,7 @@ function ReviewRow({
   return (
     <div
       className={cn(
-        "group relative flex items-center gap-3 border-t first:border-t-0",
+        "group relative flex items-center gap-3 border-t first:border-t-0 @max-xs/task-list:flex-wrap @max-xs/task-list:gap-2",
         preview ? "review-row-preview py-1 sm:max-lg:py-0.5" : "py-4",
       )}
     >
@@ -280,14 +280,14 @@ function ReviewRow({
         role="img"
         aria-label={activity.visibility === "public" ? "Public" : "Private"}
       />
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 @max-xs/task-list:order-last @max-xs/task-list:basis-full">
         <div
           className={cn(
             "flex items-start justify-between gap-x-3 gap-y-1.5",
             !preview && "flex-wrap",
           )}
         >
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 @max-xs/task-list:basis-full">
             <h3
               className={cn(
                 "min-w-0 text-sm leading-snug font-medium wrap-anywhere group-hover:underline",
@@ -330,7 +330,10 @@ function ReviewRow({
           )}
         </div>
       </div>
-      <ArrowRightIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <ArrowRightIcon
+        className="size-4 shrink-0 text-muted-foreground @max-xs/task-list:ml-auto"
+        aria-hidden="true"
+      />
     </div>
   );
 }
