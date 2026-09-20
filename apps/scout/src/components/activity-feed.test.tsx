@@ -11,6 +11,7 @@ import {
   createRouter,
 } from "@tanstack/react-router";
 import type { PaginatedQueryArgs, UsePaginatedQueryReturnType } from "convex/react";
+import { useSyncExternalStore } from "react";
 import {
   getFunctionName,
   type FunctionArgs,
@@ -21,6 +22,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
 import { api } from "../../convex/_generated/api";
 import { reviewFeedSearch } from "../lib/reviewFeedSearch";
 import { ActivityFeed, SiteTaskList } from "./activity-feed";
+import type { HomeFeed } from "../lib/homeFeed";
 
 type Sites = UsePaginatedQueryReturnType<typeof api.scout.sites.list>;
 type Tasks = UsePaginatedQueryReturnType<typeof api.scout.activity.list>;
@@ -38,6 +40,14 @@ const remote = vi.hoisted(() => ({
   loadUnassigned: vi.fn<(count: number) => void>(),
   tasks: new Map<string, Tasks>(),
   sites: new Array<Sites["results"][number]>(),
+  loadingSites: false,
+  revision: 0,
+  subscribe: (listener: () => void) => {
+    remote.listeners.add(listener);
+    return () => remote.listeners.delete(listener);
+  },
+  listeners: new Set<() => void>(),
+  getSnapshot: () => remote.revision,
 }));
 
 vi.mock("../lib/access", () => ({
@@ -51,6 +61,7 @@ vi.mock("convex/react", () => ({
     reference: FunctionReference<"query">,
     args: FunctionArgs<typeof api.scout.sites.count>,
   ) => {
+    useSyncExternalStore(remote.subscribe, remote.getSnapshot);
     const name = getFunctionName(reference);
     if (name !== "scout/sites:count") throw new Error(`Unexpected query: ${name}`);
     return remote.count(args.scope);
@@ -62,10 +73,18 @@ vi.mock("convex/react", () => ({
       | PaginatedQueryArgs<typeof api.scout.activity.unassigned>,
     options: { initialNumItems: number },
   ): Sites | Tasks => {
+    useSyncExternalStore(remote.subscribe, remote.getSnapshot);
     const name = getFunctionName(reference);
     remote.paginated(name, args, options);
     switch (name) {
       case "scout/sites:list":
+        if (remote.loadingSites)
+          return {
+            results: [],
+            status: "LoadingFirstPage",
+            isLoading: true,
+            loadMore: remote.loadSites,
+          };
         return {
           results:
             "site" in args && args.site
@@ -173,6 +192,7 @@ function task(site: string, number: number): Activity {
 }
 
 beforeEach(() => {
+  remote.loadingSites = false;
   remote.count.mockImplementation((scope) => ({
     count: scope === "public" ? 1000 : 1,
     hasMore: scope === "public",
@@ -216,14 +236,14 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function openFeed(path = "/") {
+async function openFeed(path = "/", initialFeed: HomeFeed = null) {
   const root = createRootRoute({ staticData: { access: "access_public" }, component: Outlet });
   const home = createRoute({
     path: "/",
     getParentRoute: () => root,
     staticData: { access: "access_public" },
     validateSearch: reviewFeedSearch,
-    component: () => <ActivityFeed search={home.useSearch()} />,
+    component: () => <ActivityFeed search={home.useSearch()} initialFeed={initialFeed} />,
   });
   const detail = createRoute({
     path: "/sites/$site",
@@ -255,6 +275,72 @@ async function openFeed(path = "/") {
   await screen.findByRole("article", { name: "chessmerge.com" });
   return router;
 }
+
+test("keeps server-rendered cards and reviews visible until live subscriptions arrive", async () => {
+  const initialFeed: HomeFeed = {
+    site: null,
+    count: { count: 2, hasMore: false },
+    isDone: true,
+    groups: remote.sites.map((site) => ({
+      site,
+      tasks: { page: [task(site.hostname, 1)], isDone: true, continueCursor: "" },
+    })),
+  };
+  remote.loadingSites = true;
+  remote.count.mockReturnValue(undefined);
+  for (const site of remote.sites)
+    remote.tasks.set(site.hostname, {
+      results: [],
+      status: "LoadingFirstPage",
+      isLoading: true,
+      loadMore: remote.loadChessTasks,
+    });
+  await openFeed("/", initialFeed);
+  const originalCard = screen.getByRole("article", { name: "chessmerge.com" });
+  expect(screen.getByText("2 reviewed sites")).toBeTruthy();
+  expect(within(originalCard).getByRole("heading", { name: "chessmerge.com task 1" })).toBeTruthy();
+  expect(screen.queryByText("No public tasks yet.")).toBeNull();
+  remote.loadingSites = false;
+  remote.count.mockReturnValue({ count: 3, hasMore: false });
+  remote.tasks.set("chessmerge.com", {
+    results: [{ ...task("chessmerge.com", 1), title: "Live updated review" }],
+    status: "Exhausted",
+    isLoading: false,
+    loadMore: remote.loadChessTasks,
+  });
+  act(() => {
+    remote.revision++;
+    for (const listener of remote.listeners) listener();
+  });
+  expect(await screen.findByRole("heading", { name: "Live updated review" })).toBeTruthy();
+  expect(screen.getByRole("article", { name: "chessmerge.com" })).toBe(originalCard);
+  expect(screen.getByText("3 reviewed sites")).toBeTruthy();
+  expect(screen.queryByRole("heading", { name: "chessmerge.com task 1" })).toBeNull();
+});
+
+test.each(["/?scope=mine", "/?site=chess"])(
+  "ignores initial public data for a different filter: %s",
+  async (path) => {
+    const initialFeed: HomeFeed = {
+      site: null,
+      count: { count: 999, hasMore: false },
+      isDone: true,
+      groups: [
+        {
+          site: remote.sites[0],
+          tasks: {
+            page: [{ ...task("chessmerge.com", 1), title: "Stale SSR review" }],
+            isDone: true,
+            continueCursor: "",
+          },
+        },
+      ],
+    };
+    await openFeed(path, initialFeed);
+    expect(screen.queryByText("999 reviewed sites")).toBeNull();
+    expect(screen.queryByText("Stale SSR review")).toBeNull();
+  },
+);
 
 test.each(["homepage", "site"])(
   "%s scout pills navigate independently from task rows",

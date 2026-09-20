@@ -3,6 +3,7 @@ import type { Plugin } from "vite";
 export function convexSsr(): Plugin {
   return {
     name: "convex-tanstack-start",
+    apply: "build",
     config: () => ({
       ssr: {
         noExternal: true,

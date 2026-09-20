@@ -58,6 +58,7 @@ type Env = {
   readonly SCOUT_COMPACTION_TOKENS: string | undefined;
   readonly SCOUT_CREDENTIAL_MASTER_KEY_V1: string | undefined;
   readonly SITE_URL: string | undefined;
+  readonly SSR_FIXTURE_DEPLOYMENT_URL: string | undefined;
 };
 
 /**

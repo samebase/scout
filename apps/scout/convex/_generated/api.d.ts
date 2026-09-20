@@ -27,6 +27,7 @@ import type * as credits from "../credits.js";
 import type * as creditsModel from "../creditsModel.js";
 import type * as devAuth from "../devAuth.js";
 import type * as devAuthConfig from "../devAuthConfig.js";
+import type * as devSsr from "../devSsr.js";
 import type * as email from "../email.js";
 import type * as functions from "../functions.js";
 import type * as http from "../http.js";
@@ -173,6 +174,7 @@ declare const fullApi: ApiFromModules<{
   creditsModel: typeof creditsModel;
   devAuth: typeof devAuth;
   devAuthConfig: typeof devAuthConfig;
+  devSsr: typeof devSsr;
   email: typeof email;
   functions: typeof functions;
   http: typeof http;

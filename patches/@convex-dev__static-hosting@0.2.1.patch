@@ -1,3 +1,113 @@
+diff --git a/dist/cli/args.d.ts b/dist/cli/args.d.ts
+index 49cc75cfed936742c87d445b35c290d881402cb4..699bceb9c8095b19926b6273ca66b58c63715c84 100644
+--- a/dist/cli/args.d.ts
++++ b/dist/cli/args.d.ts
+@@ -2,6 +2,7 @@ export interface UploadArgs {
+     dist: string;
+     component: string;
+     prod: boolean;
++    previewName: string | null;
+     build: boolean;
+     buildCommand: string;
+     cdn: boolean;
+diff --git a/dist/cli/args.js b/dist/cli/args.js
+index d4681a0493412e012cb3472bc257585716650aac..3022d67aac2abe8783a826585de7c1eff3e4398d 100644
+--- a/dist/cli/args.js
++++ b/dist/cli/args.js
+@@ -10,6 +10,7 @@ export function parseUploadArgs(args) {
+         dist: "./dist",
+         component: "staticHosting",
+         prod: false,
++        previewName: null,
+         build: false,
+         buildCommand: "npm run build",
+         cdn: false,
+@@ -31,6 +32,10 @@ export function parseUploadArgs(args) {
+             result.component = optionValue(args, i, arg);
+             i++;
+         }
++        else if (arg === "--preview-name") {
++            result.previewName = optionValue(args, i, arg);
++            i++;
++        }
+         else if (arg === "--prod") {
+             result.prod = true;
+         }
+@@ -71,6 +76,8 @@ export function parseUploadArgs(args) {
+             throw new Error(`Unknown upload option: ${arg}`);
+         }
+     }
++    if (result.prod && result.previewName !== null)
++        throw new Error("--prod and --preview-name cannot be combined");
+     return result;
+ }
+ export function parseDeployArgs(args) {
+@@ -145,4 +152,3 @@ export function buildDeployUploadArgs(args) {
+         uploadArgs.push("--no-spa");
+     return uploadArgs;
+ }
+-//# sourceMappingURL=args.js.map
+\ No newline at end of file
+diff --git a/dist/cli/upload.js b/dist/cli/upload.js
+index c56bea2295e25496a1f89abcc6c48e94754a8fb3..fe4d9f316d505465e40b248b0a8f8cac0763a6c8 100644
+--- a/dist/cli/upload.js
++++ b/dist/cli/upload.js
+@@ -59,6 +59,7 @@ Options:
+   -d, --dist <path>           Path to dist directory (default: ./dist)
+   -c, --component <name>      Static-hosting component instance name (default: staticHosting)
+       --prod                  Deploy to production deployment
++      --preview-name <name>   Upload to the named preview deployment
+   -b, --build                 Run the build command with VITE_CONVEX_URL +
+                               STATIC_HOSTING_BASE_PATH set before uploading
+       --build-command <cmd>   Build command to run (default: 'npm run build').
+@@ -83,6 +84,7 @@ Examples:
+ }
+ // Global flag for production mode
+ let useProd = true;
++let previewName = null;
+ const MAX_ASSETS_PER_DEPLOYMENT = 1800;
+ const MAX_MANIFEST_SERIALIZED_BYTES = 2 * 1024 * 1024;
+ // A Convex CLI function result can be truncated around 64 KiB. Signed upload
+@@ -137,6 +139,7 @@ function convexRunAsync(componentName, functionPath, args = {}, options = {}) {
+         "--typecheck=disable",
+         "--codegen=disable",
+         ...(useProd ? ["--prod"] : []),
++        ...(previewName === null ? [] : ["--preview-name", previewName]),
+     ], options);
+ }
+ function errorMessage(error) {
+@@ -540,6 +543,7 @@ async function main() {
+     }
+     // Set global prod flag
+     useProd = args.prod;
++    previewName = args.previewName;
+     // The component knows both its CONVEX_SITE_URL (where the app is served,
+     // including the mount prefix) and CONVEX_CLOUD_URL (what the frontend
+     // connects to). We fetch both in one call and trust neither hostname. This
+@@ -548,7 +552,7 @@ async function main() {
+     // Run build if requested
+     if (args.build) {
+         const basePath = new URL(componentSiteUrl).pathname || "/";
+-        const envLabel = useProd ? "production" : "development";
++        const envLabel = previewName === null ? (useProd ? "production" : "development") : `preview (${previewName})`;
+         console.log(`🔨 Building for ${envLabel}...`);
+         console.log(`   Build command: ${args.buildCommand}`);
+         console.log(`   VITE_CONVEX_URL=${convexUrl}`);
+@@ -601,7 +605,7 @@ async function main() {
+         process.exit(1);
+     }
+     await cleanUpAbandonedUploads(componentName, args.cdnDeleteFunction);
+-    const envLabel = useProd ? "production" : "development";
++    const envLabel = previewName === null ? (useProd ? "production" : "development") : `preview (${previewName})`;
+     console.log(`🚀 Deploying to ${envLabel} environment`);
+     if (useCdn) {
+         console.log("☁️  CDN mode: non-HTML assets will be uploaded to convex-fs");
+@@ -653,4 +657,3 @@ main().catch((error) => {
+     console.error("Upload failed:", error);
+     process.exit(1);
+ });
+-//# sourceMappingURL=upload.js.map
+\ No newline at end of file
 diff --git a/dist/client/index.d.ts b/dist/client/index.d.ts
 index 3e4407a497acaeebe7a988e79b6264f8e79d612e..9a235cfeb9f7d070f962d483199f21c5224a4854 100644
 --- a/dist/client/index.d.ts
@@ -45,6 +155,98 @@ index f0c97fef71699c9a0ab940ae30dd45041ca3cb8a..c4cd8631d3c802d2ab90bb57b51c4261
          if (path === "" || path === "/") {
              path = "/index.html";
          }
+diff --git a/src/cli/args.ts b/src/cli/args.ts
+index b12a21bf6e77b0aa5de3665adf7e7ccc6b631910..7caf508c93ff088302d7bcb96eef153760b9e6c4 100644
+--- a/src/cli/args.ts
++++ b/src/cli/args.ts
+@@ -2,6 +2,7 @@ export interface UploadArgs {
+   dist: string;
+   component: string;
+   prod: boolean;
++  previewName: string | null;
+   build: boolean;
+   buildCommand: string;
+   cdn: boolean;
+@@ -36,6 +37,7 @@ export function parseUploadArgs(args: string[]): UploadArgs {
+     dist: "./dist",
+     component: "staticHosting",
+     prod: false,
++    previewName: null,
+     build: false,
+     buildCommand: "npm run build",
+     cdn: false,
+@@ -55,6 +57,9 @@ export function parseUploadArgs(args: string[]): UploadArgs {
+     } else if (arg === "--component" || arg === "-c") {
+       result.component = optionValue(args, i, arg);
+       i++;
++    } else if (arg === "--preview-name") {
++      result.previewName = optionValue(args, i, arg);
++      i++;
+     } else if (arg === "--prod") {
+       result.prod = true;
+     } else if (arg === "--no-prod" || arg === "--dev") {
+@@ -86,6 +91,7 @@ export function parseUploadArgs(args: string[]): UploadArgs {
+       throw new Error(`Unknown upload option: ${arg}`);
+     }
+   }
++  if (result.prod && result.previewName !== null) throw new Error("--prod and --preview-name cannot be combined");
+   return result;
+ }
+ 
+diff --git a/src/cli/upload.ts b/src/cli/upload.ts
+index 9c2f9c1fccedb954b845c7599a2e8d5d132c0087..b87b41e5ed1cfc7ecf4f6d67e4a6739a603a8f50 100644
+--- a/src/cli/upload.ts
++++ b/src/cli/upload.ts
+@@ -70,6 +70,7 @@ Options:
+   -d, --dist <path>           Path to dist directory (default: ./dist)
+   -c, --component <name>      Static-hosting component instance name (default: staticHosting)
+       --prod                  Deploy to production deployment
++      --preview-name <name>   Upload to the named preview deployment
+   -b, --build                 Run the build command with VITE_CONVEX_URL +
+                               STATIC_HOSTING_BASE_PATH set before uploading
+       --build-command <cmd>   Build command to run (default: 'npm run build').
+@@ -95,6 +96,7 @@ Examples:
+ 
+ // Global flag for production mode
+ let useProd = true;
++let previewName: string | null = null;
+ const MAX_ASSETS_PER_DEPLOYMENT = 1800;
+ const MAX_MANIFEST_SERIALIZED_BYTES = 2 * 1024 * 1024;
+ // A Convex CLI function result can be truncated around 64 KiB. Signed upload
+@@ -175,6 +177,7 @@ function convexRunAsync(
+       "--typecheck=disable",
+       "--codegen=disable",
+       ...(useProd ? ["--prod"] : []),
++      ...(previewName === null ? [] : ["--preview-name", previewName]),
+     ],
+     options,
+   );
+@@ -802,6 +805,7 @@ async function main(): Promise<void> {
+ 
+   // Set global prod flag
+   useProd = args.prod;
++  previewName = args.previewName;
+ 
+   // The component knows both its CONVEX_SITE_URL (where the app is served,
+   // including the mount prefix) and CONVEX_CLOUD_URL (what the frontend
+@@ -816,7 +820,7 @@ async function main(): Promise<void> {
+   if (args.build) {
+     const basePath = new URL(componentSiteUrl).pathname || "/";
+ 
+-    const envLabel = useProd ? "production" : "development";
++    const envLabel = previewName === null ? (useProd ? "production" : "development") : `preview (${previewName})`;
+     console.log(`🔨 Building for ${envLabel}...`);
+     console.log(`   Build command: ${args.buildCommand}`);
+     console.log(`   VITE_CONVEX_URL=${convexUrl}`);
+@@ -889,7 +893,7 @@ async function main(): Promise<void> {
+ 
+   await cleanUpAbandonedUploads(componentName, args.cdnDeleteFunction);
+ 
+-  const envLabel = useProd ? "production" : "development";
++  const envLabel = previewName === null ? (useProd ? "production" : "development") : `preview (${previewName})`;
+   console.log(`🚀 Deploying to ${envLabel} environment`);
+   if (useCdn) {
+     console.log("☁️  CDN mode: non-HTML assets will be uploaded to convex-fs");
 diff --git a/src/client/index.ts b/src/client/index.ts
 index c23f011b2b0d34702636fc9bd95cbb98a87f46eb..4092307454b6f8c1e3197dec9d488e7ec4507d1b 100644
 --- a/src/client/index.ts

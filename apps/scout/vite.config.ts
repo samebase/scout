@@ -4,6 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import typegpu from "unplugin-typegpu/vite";
 import { defineConfig } from "vite-plus";
+import { convexSsr } from "@samebase/convex-tanstack-start/vite";
 import { resolveWorktreeKind } from "./scripts/run-context-dev.ts";
 import { prerenderPages, prerenderPathRewrites } from "./prerender.config.ts";
 
@@ -14,13 +15,9 @@ export default defineConfig(({ command }) => {
       port: primaryCheckout ? 5173 : 5174,
       strictPort: primaryCheckout,
     },
-    ssr: {
-      // The published sidebar package imports its structural CSS from its JS
-      // entrypoint. Bundle it for SSR so Vite handles that import instead of
-      // leaving Node to load the CSS file directly.
-      noExternal: ["@samebase/sidebars"],
-    },
+    ssr: { noExternal: ["@samebase/sidebars"] },
     plugins: [
+      convexSsr(),
       typegpu(),
       tailwindcss(),
       tanstackStart({

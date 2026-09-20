@@ -6,8 +6,15 @@ import { ConversationLobby } from "../products/conversation/page";
 import type { homeSearch } from "#lib/homeSearch";
 import { ActivityFeed } from "./activity-feed";
 import { DiscoveryHero } from "./discovery-hero";
+import type { HomeFeed } from "#lib/homeFeed";
 
-export function ProductHome({ search }: { search: z.infer<typeof homeSearch> }) {
+export function ProductHome({
+  search,
+  initialFeed,
+}: {
+  search: z.infer<typeof homeSearch>;
+  initialFeed: HomeFeed;
+}) {
   const [composing, setComposing] = useState(false);
   const navigate = useNavigate({ from: "/" });
   return (
@@ -41,7 +48,10 @@ export function ProductHome({ search }: { search: z.infer<typeof homeSearch> }) 
           </div>
         </DiscoveryHero>
         <div className="mx-auto max-w-page px-8 pb-16 max-[640px]:px-4">
-          <ActivityFeed search={{ site: search.site, scope: search.scope }} />
+          <ActivityFeed
+            search={{ site: search.site, scope: search.scope }}
+            initialFeed={initialFeed}
+          />
         </div>
       </main>
     </ProductShell>

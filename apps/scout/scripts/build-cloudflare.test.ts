@@ -46,7 +46,7 @@ describe("build-cloudflare", () => {
   it("seeds after a successful preview deploy and auth setup", async () => {
     const invocations: string[] = [];
     const runCommand = (_command: string, args: readonly string[]) => {
-      invocations.push(args[2] === "deploy" ? "deploy" : (args[3] ?? "build"));
+      invocations.push(args[2] === "run" ? (args[3] ?? "run") : (args[2] ?? "build"));
       return Promise.resolve();
     };
     const ensureAuth = () => {
@@ -64,7 +64,7 @@ describe("build-cloudflare", () => {
       ensureAuth,
     );
 
-    expect(invocations).toEqual(["deploy", "ensureAuth", "devAuth:seedPasswordAccount"]);
+    expect(invocations).toEqual(["deploy", "ensureAuth", "devAuth:seedPasswordAccount", "upload"]);
   });
 
   it("does not seed when the preview deploy fails", async () => {
@@ -143,6 +143,15 @@ describe("build-cloudflare", () => {
         "convex",
         "run",
         "devAuth:seedPasswordAccount",
+        "--preview-name",
+        "feature-branch",
+      ],
+      uploadArgs: [
+        "exec",
+        "static-hosting",
+        "upload",
+        "--dist",
+        "./dist/client",
         "--preview-name",
         "feature-branch",
       ],

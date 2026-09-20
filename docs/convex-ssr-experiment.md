@@ -1,8 +1,85 @@
 # TanStack Start inside a Convex HTTP action
 
 Tested on September 20, 2026. TanStack Start can render directly in a hosted Convex
-HTTP action with the versions Scout currently uses. No Cloudflare server, Node
-action, stream polyfill, or fork of Static Hosting is needed for this approach.
+HTTP action with the versions Scout currently uses. Scout's real public homepage
+now uses this renderer. No Cloudflare server, Node action, or stream polyfill is
+needed at runtime.
+
+## Try Scout on this pull request
+
+[Open Scout's Convex preview](https://clever-vole-526.eu-west-1.convex.site/).
+The region is part of its URL; `clever-vole-526.convex.site` is not this deployment.
+
+The preview uses Scout's actual frontend, schema, queries, authentication, and
+Static Hosting component. Its eight `ssr-*.example` sites contain labeled synthetic
+reviews because the preview database was empty. Each has one public and one
+private review. No browser session or model was started to create them.
+
+To check server rendering, open View Page Source and search for `public review`.
+The six initial site cards and review headings should already be HTML. The live
+browser loads the remaining sites when you scroll. Filtering and opening a task
+exercise the normal Scout app. `private review` must never appear in the public
+HTML or feed.
+
+`src/lib/homeFeed.ts` loads six public sites, the site count, and up to two reviews
+per site through existing public Convex queries. `ActivityFeed` keeps that snapshot
+visible while native subscriptions connect, then uses their results and cursors.
+The provider creates a separate Convex client for each rendered tree. No user
+credentials are passed to the server loader, and `scope=mine` skips the snapshot.
+
+Only exact `GET /` uses dynamic SSR. Static public pages, SPA navigation, and
+authenticated routes keep their existing behavior. The Cloudflare static frontend
+still uses a prerendered shell; test SSR at the Convex URL above.
+
+### Build and deploy to an existing preview
+
+After selecting a preview, run these platform-neutral commands from the root:
+
+```sh
+pnpm --filter samebase-scout exec convex deployment select clever-vole-526
+pnpm run check
+pnpm run build
+pnpm --filter samebase-scout exec convex dev --once --typecheck enable
+pnpm --filter samebase-scout exec static-hosting upload --dist ./dist/client --preview-name nicu-convex-tanstack-ssr
+```
+
+The backend imports the generated server, so the build must precede its push.
+Normal `pnpm run dev` now does this initial build automatically. Rebuild after
+frontend edits to refresh the hosted renderer; Vite still hot-reloads locally.
+The CI preview path builds before deploying and uploads matching browser assets
+afterwards. The existing Static Hosting patch adds explicit `--preview-name`
+forwarding, since 0.2.1's uploader otherwise does not target a named preview.
+
+Build-time prerendering intentionally skips the live loader. Convex runs the build
+before pushing the backend, so a new preview may not have queries deployed yet.
+
+### Optional preview fixtures
+
+The internal `devSsr:seed` mutation is opt-in and idempotent. It requires the
+existing approved development seed account and an exact deployment URL match.
+To populate an empty preview, enable it for that preview, seed, and disable it:
+
+```sh
+pnpm --filter samebase-scout exec convex env set SSR_FIXTURE_DEPLOYMENT_URL https://clever-vole-526.eu-west-1.convex.cloud --deployment clever-vole-526
+pnpm --filter samebase-scout exec convex run devSsr:seed '{}' --deployment clever-vole-526
+pnpm --filter samebase-scout exec convex env remove SSR_FIXTURE_DEPLOYMENT_URL --deployment clever-vole-526
+```
+
+The disabled fixture Scout cannot start tasks. Use real configured Scouts to test
+agent execution separately.
+
+### Hosted Scout verification
+
+- `GET /` returned 200 and 58,328 bytes of HTML containing six `<article>` cards
+  and six public review headings, with `Cache-Control: no-store`.
+- Concurrent requests for `/`, `/?site=ssr-8`, `/?scope=mine`, and
+  `/?site=missing` returned 200 with six, one, zero, and zero server-rendered cards.
+  None contained the private review titles. These requests took 432–623 ms from
+  the test machine; they are not load-test or cold-start guarantees.
+- The open Scout browser received newly seeded reviews without a reload.
+  Fresh SSR loads hydrated, site filtering worked, and native pagination exposed
+  all eight sites. Public task navigation and a direct task reload also worked.
+- No browser warnings or errors were reported during those checks.
 
 ## Hosted evidence
 
@@ -38,19 +115,24 @@ Verified against the hosted deployment:
 Scout's actual frontend was also built with the same renderer and dependency
 settings, imported into the probe's HTTP router, and requested at `/scout-shell`.
 It returned 200 with 16,163 bytes of HTML containing Scout's heading and Reviews
-section. This was an HTML-only check of the existing homepage shell. Scout's
-browser assets and full backend were not deployed there, and its real feed has
-not yet been converted to server loading.
+section. That earlier shell-only experiment is superseded by the real Scout
+integration above.
 
 ## Working configuration
 
-The custom TanStack server entry is only:
+The custom TanStack server entry uses:
 
 ```ts
 import { createStartHandler, defaultRenderHandler } from "@tanstack/react-start/server";
 
 export default { fetch: createStartHandler(defaultRenderHandler) };
 ```
+
+It also installs `URLSearchParams.size` when the runtime lacks that getter.
+The hosted Convex runtime returned `undefined` for it. Without the getter,
+TanStack normalizes `/?site=ssr-8` into `/site=ssr-8` and returns 404. A regression
+test reproduces that behavior using TanStack's actual URL normalizer and verifies
+the fix, including duplicate parameters and native-runtime preservation.
 
 The relevant Vite settings are:
 
@@ -106,19 +188,10 @@ An intermediate Node-action attempt deployed but failed at runtime on the
 sidebar's dynamic React import. That route and action were removed from the
 final probe once direct HTTP rendering worked.
 
-Turning this into Scout's submission still requires:
-
-1. A bounded public-homepage loader containing the initial sites and review
-   summaries, with a stable handoff to subscriptions and pagination.
-2. A request-scoped Convex client for SSR. The application's current module-level
-   client should not become shared server authentication state.
-3. Build and deployment ordering that bundles the server before the Convex push
-   and publishes matching browser assets. The Static Hosting uploader requires
-   an `index.html` even with SPA fallback disabled; the probe generated one, while
-   the exact HTTP route served the dynamic homepage.
-4. Verification of public/private scopes, authentication transitions, pagination,
-   concurrent requests, larger responses, and the rest of the application's
-   browser behavior. Personalized SSR and TanStack server functions were not tested.
+Personalized SSR, streaming Suspense, TanStack server functions, production load,
+and cold-start latency remain outside the verified scope. The initial page is
+bounded to six sites rather than rendering an unbounded collection. Private
+pages continue to authenticate and load through the existing browser queries.
 
 The full Scout build and hosted push succeeded with an existing `outdent`
 CommonJS-in-ESM warning in a workspace chunk. The homepage request did not hit an
@@ -131,14 +204,16 @@ TanStack Router 1.170.18, React and React DOM 19.2.6.
 
 The reusable code now lives in the private workspace package
 [`@samebase/convex-tanstack-start`](../packages/convex-tanstack-start/README.md).
-Its Vite plugin is 16 lines and its buffered server entry is three lines.
+Its Vite plugin is 17 lines and its buffered server entry is 13 lines, including
+the URLSearchParams compatibility getter.
 It needs no component schema because it owns no persistent state.
 
 The [runnable example](../apps/convex-ssr-example/README.md) keeps its page loader,
 synthetic database, subscriptions, and HTTP mounts separate from the library.
 The complete `convex/http.ts` is 19 lines. All authored source is visible in the
-repository; generated server bundles remain ignored. Scout's production frontend
-has not been migrated.
+repository; generated server bundles remain ignored. Scout consumes the same
+package, with its own loader and HTTP routing. This branch is deployed to the
+Scout preview, not production.
 
 The extracted example replaced the scratch implementation on the same temporary
 development deployment. Both document routes returned 200 with `no-store` and
@@ -146,11 +221,13 @@ the homepage contained its database records in the HTML. Hydration and a live
 mutation were rechecked; the new title appeared while the counter retained its
 value. The experimental `/scout-shell` mount is no longer installed there.
 
-Repository validation passed with `pnpm run check`: 103 test files passed, one
-skipped; 1,460 tests passed and 11 skipped. `pnpm run build`, the example build,
-and Convex's TypeScript check and hosted push also passed. No production or
-pre-existing development deployment was changed. The original scratch builds and
-raw response evidence remain locally in the ignored `apps/scout/ssr-probe.local/`.
+Repository validation includes `pnpm run check`, the Scout and example builds,
+and Convex's TypeScript check and hosted push. Tests cover the initial-to-live
+handoff, public filtering, seed isolation, HTTP cache policy, and URL normalization
+without `URLSearchParams.size`. The HTTP test also passed with the generated server
+directory temporarily absent, matching a clean CI checkout. Production was not
+changed. The original probe evidence remains in the ignored
+`apps/scout/ssr-probe.local/`; the real Scout checks above used the PR preview.
 
 References: [TanStack server entry](https://tanstack.com/start/latest/docs/framework/react/guide/server-entry-point),
 [Convex runtimes](https://docs.convex.dev/functions/runtimes), and

@@ -36,6 +36,7 @@ const app = defineApp({
     SCOUT_CREDENTIAL_MASTER_KEY_V1: v.optional(v.string()),
     SCOUT_COMPACTION_TOKENS: v.optional(v.string()),
     SITE_URL: v.optional(v.string()),
+    SSR_FIXTURE_DEPLOYMENT_URL: v.optional(v.string()),
   },
 });
 app.use(agent);

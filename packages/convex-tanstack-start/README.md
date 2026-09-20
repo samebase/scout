@@ -5,8 +5,8 @@ action. No separate server host is required. The package contains a Vite plugin
 and a buffered server entry. It does not own tables or require `app.use(...)`.
 The existing Convex Static Hosting component serves the browser assets.
 
-The runnable consumer is [`apps/convex-ssr-example`](../../apps/convex-ssr-example).
-Scout's production frontend has not switched to this renderer.
+Scout uses this package to render its public homepage in a Convex HTTP action.
+[`apps/convex-ssr-example`](../../apps/convex-ssr-example) is a smaller runnable example.
 
 ## Integration
 
@@ -47,6 +47,12 @@ policy remain app decisions.
 - `ssr.noExternal` bundles dependencies instead of leaving runtime Node imports.
 - `defaultRenderHandler` buffers HTML. The default streaming handler imports Node
   stream modules that failed Convex bundling in the tested versions.
+- The server entry supplies the missing `URLSearchParams.size` getter on Convex.
+  TanStack needs it to normalize URLs containing query parameters. Native
+  implementations are left intact.
+
+These settings apply to builds. Development and Node-based tests retain their
+normal dependency resolution.
 
 The built server still uses `node:async_hooks`, which the Convex runtime supports.
 The plugin does not make arbitrary Node-only dependencies compatible with Convex.
@@ -68,5 +74,5 @@ The integration has no persistent state, so a regular package is sufficient.
 A future component could own an HTML cache or deployment metadata if those become
 requirements. Static Hosting already owns asset storage.
 
-See the [experiment report](../../docs/convex-ssr-experiment.md) for hosted evidence
-and the remaining work to populate Scout's actual homepage during SSR.
+See the [experiment report](../../docs/convex-ssr-experiment.md) for the Scout
+preview, reproduction commands, and hosted evidence.

@@ -1,11 +1,19 @@
 /// <reference types="node" />
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const vitePlusEntrypoint = fileURLToPath(import.meta.resolve("vite-plus/bin"));
 
 export function runPrimaryDev() {
+  // HTTP actions import the generated server, so it must exist before Convex starts.
+  const build = spawnSync(process.execPath, [vitePlusEntrypoint, "run", "build:app"], {
+    stdio: "inherit",
+  });
+  if (build.error) throw build.error;
+  if (build.status !== 0) {
+    process.exit(build.status ?? 1);
+  }
   const child = spawn(
     process.execPath,
     [
