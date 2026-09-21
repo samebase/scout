@@ -45,6 +45,18 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
 - Prefer the simpler current design and a targeted development-data reset over migration scaffolding.
   Never apply this shortcut to production or user data without explicit authorization.
 
+## About and submission copy
+
+- Keep the About page as hand-written JSX in `apps/scout/src/routes/about.tsx` so its HTML and
+  layout can be edited directly.
+- Keep its product story, capabilities, technical explanation, and shared links synchronized with
+  `docs/hackathon-submission.md`. When changing that content in either file, update the other in
+  the same change. Verify feature claims against the implementation before adding them to either.
+- Presentation can differ between JSX and Markdown. A layout-only or formatting-only change does
+  not require a matching edit to the other file.
+- Do not add automatic Markdown rendering, content extraction, or generation between these files
+  unless the user asks for it.
+
 ## Simplicity and manual repair
 
 - Keep the schema and logic easy to understand, inspect, and repair manually. Optimize for a

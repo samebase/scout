@@ -62,7 +62,7 @@ import { SessionCost } from "#components/session-cost";
 import { TaskResumeHistory } from "#components/task-resume-history";
 import { Button, buttonVariants } from "#components/ui/button";
 import { ProductShell } from "../shell";
-import { ScoutPiece } from "../play/scout-piece";
+import { ScoutMark } from "../../components/scout-mark";
 import { cn } from "#lib/utils";
 import { playError, playNotice, playRouteMessage, playTextLink } from "./ui";
 
@@ -71,11 +71,6 @@ const visibilitySchema = z.enum(["public", "private"]);
 type RequestState = { kind: "idle" } | { kind: "pending" } | { kind: "failed"; message: string };
 
 const reviewExamples = [
-  {
-    label: "Can I export for free?",
-    prompt:
-      "Create a project and try to export it on the free plan. Show me what works and where payment is required.",
-  },
   {
     label: "Does signup work?",
     prompt:
@@ -252,7 +247,7 @@ export function ConversationLobby({
         <div className="mb-7 flex flex-col items-center text-center">
           <div className="relative mb-8 flex h-[110px] w-[152px] items-center justify-center">
             <span className="absolute inset-x-0 bottom-0 h-14 -rotate-6 rounded-[50%] bg-muted" />
-            <ScoutPiece className="-rotate-6" />
+            <ScoutMark className="size-[73px] -rotate-6" />
           </div>
           <h1 className="text-[52px] leading-[1.08] font-semibold tracking-[-2px] max-[760px]:text-[40px]">
             What are we playing?
@@ -336,7 +331,7 @@ export function ConversationLobby({
                     "Starting…"
                   ) : activeScouts.length > 0 ? (
                     <div className="flex min-w-0 items-center gap-1">
-                      {isPlay && <ScoutPiece size="brand" className="scale-75" />}
+                      {isPlay && <ScoutMark className="size-[30px] scale-75" />}
                       <Select
                         value={selectedScout?._id ?? ""}
                         onValueChange={(value) => {
@@ -604,7 +599,7 @@ function SessionLoader({
 function ConversationTitle({ thread, kind }: { thread: ChatThread; kind: ProductKind }) {
   return (
     <div className="flex min-w-0 flex-1 items-center gap-4">
-      {kind === "play" && <ScoutPiece size="brand" className="max-[760px]:hidden" />}
+      {kind === "play" && <ScoutMark className="size-[30px] max-[760px]:hidden" />}
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
         <h1
           className="line-clamp-2 min-w-0 text-[28px] leading-tight font-semibold tracking-[-0.8px] wrap-anywhere max-[760px]:text-[24px]"
@@ -902,7 +897,7 @@ function ConversationBrowser({
             <div className="flex flex-1 flex-col items-center justify-center gap-6 p-7 text-center">
               {kind === "play" ? (
                 <div className="grid size-32 place-items-center rounded-full bg-muted/80">
-                  <ScoutPiece className="-rotate-6" />
+                  <ScoutMark className="size-[73px] -rotate-6" />
                 </div>
               ) : (
                 <MonitorIcon

@@ -2,7 +2,7 @@
 
 - **Project:** Scout
 - **Event:** Convex All Gas Hackathon
-- **What it does:** Offers browser play and product reviews with persistent Scouts, public activity, connected accounts, and replay.
+- **What it does:** Sends persistent AI Scouts to try web products and record walkthroughs, screenshots, and browser replays, with public reviews by default.
 - **Live app:** https://doting-crab-687.convex.site
 - **Repo:** private
 - **Frontend:** Convex static hosting
@@ -10,9 +10,9 @@
 - **Components:** @convex-dev/agent, @convex-dev/r2, @convex-dev/static-hosting, @convex-dev/workflow
 - **Convex features:** schema, tables, indexes, queries, paginated queries, realtime queries, mutations, actions, scheduled functions, HTTP actions, AI Gateway
 - **Auth:** Convex Auth
-- **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
+- **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-21T15:46:30Z
+- **Last updated:** 2026-09-21T15:48:52Z
 
 ## Log
 
@@ -1820,10 +1820,19 @@ and independent source checks. The same evidence standard applies to criticism, 
 causes and unverified outcomes left explicit
 (`apps/scout/convex/tasks/instructions.ts`, `apps/scout/convex/tasks/walkthroughReport.ts`).
 
-### 2026-09-21 - working tree - v291
+### 2026-09-21 - 42af0fd - v291
 
 The homepage and terrain explorer now let visitors drag checkpoints and see routes adjust around changing hills.
 The line stretches during a drag, then settles at a chosen horizontal speed while staying above the ground.
 Separate motion controls, simple hill scenes, and route diagnostics make the experiment easier to inspect.
 The homepage keeps a fixed camera and leaves chat input and scrolling available.
 (`apps/scout/src/components/discovery-terrain.tsx`, `apps/scout/src/components/terrain-explorer.tsx`, `apps/scout/src/lib/terrain-trail-routing.ts`).
+
+### 2026-09-21 - working tree - v292
+
+Scout uses an original blue-and-orange scarf across navigation, the favicon, and Scout illustrations.
+Signup and hackathon review prompts lead the homepage examples. About now explains persistent Scouts,
+research, human help, workspaces, and the services behind a review. The submission draft shares that
+copy and records the builder's product, agent, replay, and integration decisions. Repository guidance
+keeps the hand-written About page and Markdown synchronized
+(`apps/scout/src/routes/about.tsx`, `docs/hackathon-submission.md`, `AGENTS.md`).

@@ -33,8 +33,8 @@ function AboutPage() {
             signing up, learning your way around, and trying it yourself.
           </p>
           <p className="mt-5">
-            Scout is a project about doing that exploration for you, and leaving enough evidence for
-            you to make up your own mind.
+            Scout sends AI agents to do that exploration for you. They use the product and leave a
+            walkthrough, screenshots, and a replay so you can make up your own mind.
           </p>
         </header>
 
@@ -47,11 +47,73 @@ function AboutPage() {
               about.
             </p>
             <blockquote className="my-6 border-l-2 border-primary/40 py-1 pl-6">
-              “Can I make a screenshot and export it without paying?”
+              “Can I sign up and create my first project?”
             </blockquote>
             <p>
               You can watch the visit as it happens, or come back to see how far Scout got and what
               it found along the way.
+            </p>
+          </section>
+
+          <section aria-labelledby="about-scout-identity">
+            <h2 id="about-scout-identity">A Scout has its own identity.</h2>
+            <p>
+              Each Scout has a name, its own email inbox, and a browser profile that stays with it
+              across tasks. It can sign up for services, read verification emails, and return using
+              the accounts it has already created.
+            </p>
+            <p>
+              You can{" "}
+              <Link
+                to="/scouts"
+                className="text-primary underline decoration-primary/30 underline-offset-4 hover:decoration-primary"
+              >
+                meet the Scouts
+              </Link>{" "}
+              and see their public work and the sites where they have accounts.
+            </p>
+          </section>
+
+          <section aria-labelledby="about-workspace">
+            <h2 id="about-workspace">Files for each conversation and each site.</h2>
+            <p>
+              A workspace is a saved collection of files that a Scout can read, edit, and use to run
+              code. Every conversation has a private workspace for its research, notes, scripts, and
+              task data.
+            </p>
+            <p>
+              Site workspaces are separate. Each belongs to a website's hostname and is shared
+              across conversations and Scouts visiting that site. Reusable research, guides, and
+              scripts go there, so later visits can build on earlier work. Private task data stays
+              in the conversation workspace.
+            </p>
+          </section>
+
+          <section aria-labelledby="about-before-starting">
+            <h2 id="about-before-starting">Before the browser work starts.</h2>
+            <p>
+              Before testing a product, Scout can use Firecrawl to research its public pages and
+              documentation. It saves a briefing with source links, product details, and unanswered
+              questions, then uses that context during the browser visit. Existing research and site
+              guides can be reused on later visits.
+            </p>
+            <p>
+              Each new task also goes through a request check for disallowed activity, including
+              fraud, credential theft, and unauthorized access.
+            </p>
+          </section>
+
+          <section aria-labelledby="about-human-help">
+            <h2 id="about-human-help">A Scout can ask for help.</h2>
+            <p>
+              If a CAPTCHA or another step needs a person, Scout can pause and email you from its
+              own inbox. A private link lets you take over the browser without another Scout
+              sign-in. The handoff page explains what needs your attention.
+            </p>
+            <p>
+              When you resume, Scout checks the current browser pages against the original task
+              before continuing. The help window has a deadline; if it expires, the task stops and
+              the browser closes.
             </p>
           </section>
 
@@ -62,23 +124,209 @@ function AboutPage() {
               with screenshots, a browser replay, and findings tied to the steps it took.
             </p>
             <p>
-              You can see what passed, what failed, and what it couldn’t finish. A blocked sign-up
-              or an interrupted task stays visible in the result.
+              Reviews show what passed, what failed, and what remains untested. Follow-up questions
+              can extend the same walkthrough, keeping earlier findings alongside new evidence. A
+              blocked signup or an interrupted task stays visible.
             </p>
           </section>
 
           <section aria-labelledby="about-shared-reviews">
             <h2 id="about-shared-reviews">Useful beyond one visit.</h2>
             <p>
-              Public explorations make the results reusable. Browse what other people asked Scout to
-              try, open a review, and inspect the evidence before sending it on another task. You
-              can also keep a task private.
+              Reviews are public by default, with a private option. Browse what other people asked
+              Scout to try, open a review, and inspect the evidence before sending it on another
+              task. Public reviews make product claims checkable.
             </p>
             <p>
-              Scout is still an experiment. A run shows what happened on a particular visit. Sites
-              change, and an agent can get stuck or miss something. The point is to help you decide
-              what to try, with a clearer view of what you’re getting into.
+              Anyone can read public reviews. Starting a task currently requires an approved
+              account.
             </p>
+          </section>
+
+          <section aria-labelledby="about-how-it-is-built" className="border-t border-border pt-12">
+            <h2 id="about-how-it-is-built">How Scout is built.</h2>
+            <div className="mt-7 space-y-8 [&_h3]:text-[22px] [&_h3]:leading-snug [&_h3]:font-semibold">
+              <section aria-labelledby="about-convex">
+                <h3 id="about-convex">Convex</h3>
+                <p>
+                  Scout started with the Convex Agent component. It still powers one of the two
+                  execution engines, with conversation threads, persisted messages, and model calls
+                  through Convex AI Gateway. Scout supplies the browser, email, and workspace tools.
+                </p>
+                <ul className="mt-4 list-disc space-y-3 pl-5 marker:text-primary">
+                  <li>
+                    The Workflow component coordinates request checks, site research, agent turns,
+                    and human handoffs.
+                  </li>
+                  <li>
+                    The R2 component handles file storage for workspaces, screenshots, and site
+                    previews in Cloudflare R2.
+                  </li>
+                  <li>
+                    The Static Hosting component serves frontend assets. The TanStack Start
+                    integration renders public pages through Convex HTTP actions.
+                  </li>
+                </ul>
+                <p>
+                  Convex Auth handles sign-in. The database keeps Scout identities, accounts, review
+                  evidence, and credit balances alongside the task history.
+                </p>
+              </section>
+              <section aria-labelledby="about-openai">
+                <h3 id="about-openai">OpenAI</h3>
+                <p>
+                  Luna is the default model and runs through the OpenAI Agents API. OpenAI also
+                  handles the request and post-handoff checks and turns review evidence into the
+                  final walkthrough. Scout offers Luna through Convex Agent too, alongside Qwen 3.7
+                  Flash and DeepSeek V4 Flash through Convex AI Gateway.
+                </p>
+                <p>
+                  I used Luna for most development reviews because it produced better reviews in my
+                  testing.
+                </p>
+              </section>
+              <section aria-labelledby="about-firecrawl">
+                <h3 id="about-firecrawl">Firecrawl</h3>
+                <p>
+                  Firecrawl Agent, using Spark 2, researches public pages and returns the briefing
+                  with citations. Firecrawl Browser supplies the remote sessions and persistent
+                  profiles that Scouts use to test products. Scout connects through Playwright over
+                  CDP to navigate, fill forms, manage tabs, and capture screenshots.
+                </p>
+                <p>
+                  The sessions also provide live views for watching and taking over, plus recordings
+                  for replay. A separate Firecrawl Scrape call captures public homepage previews
+                  without using a Scout's signed-in browser profile.
+                </p>
+              </section>
+              <section aria-labelledby="about-agentmail">
+                <h3 id="about-agentmail">AgentMail</h3>
+                <p>
+                  Each Scout gets its own AgentMail inbox. Its email tools let it read threads,
+                  retrieve verification codes and links, and send email as part of a task. When a
+                  Scout needs a person to take over the browser, the help email comes from that same
+                  inbox.
+                </p>
+              </section>
+              <section aria-labelledby="about-just-bash">
+                <h3 id="about-just-bash">just-bash</h3>
+                <p>
+                  Both workspace types use just-bash inside Convex Node actions. Scouts use shell
+                  commands to search and edit files, and js-exec to run JavaScript or TypeScript in
+                  QuickJS WebAssembly with a virtual filesystem. Files persist between commands, so
+                  a Scout can write a script, run it, and use its output later in the task.
+                </p>
+              </section>
+              <section aria-labelledby="about-cloudflare">
+                <h3 id="about-cloudflare">Cloudflare R2</h3>
+                <p>
+                  A private R2 bucket stores workspace files and review screenshots. Convex checks
+                  access to the review before issuing a signed image URL. A separate public bucket
+                  and cached media domain serve homepage previews for public sites.
+                </p>
+              </section>
+              <section aria-labelledby="about-polar">
+                <h3 id="about-polar">Polar</h3>
+                <p>
+                  Verified accounts get 50 free Scout credits to get started. I use the available
+                  Firecrawl allowance to include browser sessions and site research during the beta.
+                  AI model calls, request checks, and hosted web search consume Scout credits to
+                  help cover their cost.
+                </p>
+                <p>
+                  Members can buy more credits through Polar checkout. Signed payment and refund
+                  webhooks update the Convex credit ledger. Credit history shows purchases, usage,
+                  and the remaining balance.
+                </p>
+              </section>
+              <section aria-labelledby="about-posthog">
+                <h3 id="about-posthog">PostHog</h3>
+                <p>
+                  PostHog helps me understand how people use Scout through product analytics and
+                  optional recordings of Scout's own interface. Session recording requires opt-in
+                  and can be turned off in Settings. Passwords and marked private content are
+                  masked, and embedded remote browsers are excluded.
+                </p>
+              </section>
+            </div>
+            <p>The frontend uses TypeScript, React, and TanStack Start.</p>
+          </section>
+
+          <section aria-labelledby="about-challenges" className="border-t border-border pt-12">
+            <h2 id="about-challenges">What was difficult.</h2>
+            <div className="mt-7 space-y-8 [&_h3]:text-[22px] [&_h3]:leading-snug [&_h3]:font-semibold">
+              <section aria-labelledby="about-direction-challenge">
+                <h3 id="about-direction-challenge">Choosing what Scout should be</h3>
+                <p>
+                  The hardest part was deciding what Scout should be. I started with a general
+                  direction, but no clear picture of the product. I had to work that out as I built.
+                </p>
+                <p>
+                  For a while, I considered making one product for playing browser games with a
+                  Scout and another for reviewing websites. I eventually focused on trying websites
+                  for people and showing what happened. That focus was still taking shape in the
+                  last few days, even with much of the technical work already in place.
+                </p>
+              </section>
+              <section aria-labelledby="about-agent-challenge">
+                <h3 id="about-agent-challenge">Building and guiding the agent</h3>
+                <p>
+                  I had usually relied on existing agent tools and left agent infrastructure to
+                  others. Scout meant building one myself. The Convex Agent component made getting
+                  started straightforward, but there was still a lot to learn about directing the
+                  agent and managing what it could see.
+                </p>
+                <p>
+                  Browser observations and tool results fill the context quickly. I added summaries
+                  of older turns and removed outdated browser snapshots from model input, while
+                  keeping the full history as evidence. I also had to make my expectations explicit:
+                  research the product, try the requested behavior, check the result, and support
+                  findings with evidence.
+                </p>
+                <p>
+                  When OpenAI released the Agents API during the build, I tried that too. I then put
+                  both engines behind a common interface, sharing the browser, email, and workspace
+                  tools, checks, and walkthroughs. New tasks can use either engine. The Convex
+                  runtime manages its context compaction; the Agents API manages its own.
+                </p>
+              </section>
+              <section aria-labelledby="about-replay-challenge">
+                <h3 id="about-replay-challenge">Making the evidence readable</h3>
+                <p>
+                  I first explored turning each browser recording into an automatically edited video
+                  with MediaBunny. I found Firecrawl's replay endpoints in its source code; they
+                  were not exposed in the SDK or public API documentation I was using.
+                </p>
+                <p>
+                  In my trials, the recordings were lower quality than direct screenshots, and their
+                  timing did not consistently match the browser actions. Parts appeared faster or
+                  slower, which made automatic cuts and click alignment unreliable.
+                </p>
+                <p>
+                  I set aside the automatic editing plan and made high-resolution screenshot
+                  walkthroughs the main way to read a review. Scout captures PNGs directly from the
+                  live browser at twice the viewport resolution and pairs them with the steps and
+                  findings. Replay remains available, and MediaBunny still powers MP4 export.
+                </p>
+              </section>
+              <section aria-labelledby="about-technical-choices">
+                <h3 id="about-technical-choices">Technical choices and tradeoffs</h3>
+                <p>
+                  I wanted the homepage's initial product list to arrive in the first HTML response,
+                  so visitors could start browsing without waiting for client-side queries. I ran
+                  TanStack Start's server renderer inside a Convex HTTP action and patched the
+                  Static Hosting component to route page requests to it. The tradeoff is maintaining
+                  that adapter and patch as dependencies change.
+                </p>
+                <p>
+                  I also built the workspace from an in-memory just-bash filesystem, with file
+                  contents saved in R2 between commands and metadata in Convex. This gave the agent
+                  a persistent place to write scripts and process research within the existing
+                  backend. I had to teach it when to save material, how to read it back, and which
+                  files belonged in the private conversation workspace or the shared site workspace.
+                </p>
+              </section>
+            </div>
           </section>
         </div>
 
@@ -90,16 +338,6 @@ function AboutPage() {
           <ArrowRightIcon className="size-4" aria-hidden="true" />
         </Link>
       </article>
-      <p className="mt-16 text-sm text-muted-foreground">
-        Scarf icon by{" "}
-        <a
-          href="https://www.flaticon.com/free-icon/scarf_12736059"
-          className="underline underline-offset-4"
-        >
-          andinur on Flaticon
-        </a>
-        .
-      </p>
     </main>
   );
 }

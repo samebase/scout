@@ -213,27 +213,22 @@
 .app-navigation__brand {
   display: inline-flex;
   flex: none;
+  min-height: 2.75rem;
   align-items: center;
   gap: 0.625rem;
+  padding: 0.375rem;
+  border-radius: var(--radius);
   color: var(--foreground);
   outline: none;
+  transition: background-color 150ms;
+}
+
+.app-navigation__brand:hover {
+  background: var(--muted);
 }
 
 .app-navigation__brand:focus-visible {
-  border-radius: var(--radius);
   box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 35%, transparent);
-}
-
-.app-navigation__mark {
-  display: inline-flex;
-  width: 2rem;
-  height: 2rem;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius);
-  background: var(--primary);
-  color: var(--primary-foreground);
-  box-shadow: 0 7px 18px color-mix(in oklch, var(--primary) 24%, transparent);
 }
 
 .app-navigation__routes svg,
