@@ -707,6 +707,48 @@ test("the filtered site sidebar retains its DOM, width, and scroll while another
   expect(resize.getAttribute("aria-valuenow")).toBe(width);
 });
 
+test("new task previews keep the site sidebar visible with its width and scroll intact", async () => {
+  vi.spyOn(window, "innerWidth", "get").mockReturnValue(1280);
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
+    new DOMRect(0, 0, 1280, 720),
+  );
+  await openPage("/sites/chessmerge.com");
+  const navigation = await screen.findByRole("navigation", { name: "Sites" });
+  const filter = screen.getByRole("textbox", { name: "Filter by site" });
+  const resize = screen.getByRole("separator", { name: "Resize sites navigation" });
+  fireEvent.keyDown(resize, { key: "ArrowRight", shiftKey: true });
+  const width = resize.getAttribute("aria-valuenow");
+  const scroller = navigation.closest<HTMLElement>("[data-sidebar-layout-part='pane-scrollport']");
+  if (!scroller) throw new Error("Missing sidebar scroller");
+  scroller.scrollTop = 120;
+  let resolvePending: (page: FunctionReturnType<typeof api.scout.activity.list>) => void;
+  const pending = new Promise<FunctionReturnType<typeof api.scout.activity.list>>((resolve) => {
+    resolvePending = resolve;
+  });
+  const { queryKey } = convexQuery(api.scout.activity.list, {
+    site: "next.example",
+    scope: "public",
+    paginationOpts: { numItems: 2, cursor: null },
+  });
+  queryClient.setQueryDefaults(queryKey, { queryFn: () => pending });
+
+  updateSite({ hostname: "next.example", preview: null, profile: null, research: null });
+  const card = await within(navigation).findByRole("article", { name: "next.example" });
+  expect(queryClient.isFetching({ queryKey })).toBe(1);
+  expect(screen.getByRole("navigation", { name: "Sites" })).toBe(navigation);
+  expect(screen.getByRole("textbox", { name: "Filter by site" })).toBe(filter);
+  expect(resize.getAttribute("aria-valuenow")).toBe(width);
+  expect(scroller.scrollTop).toBe(120);
+  expect(within(card).getByRole("link", { name: "View tasks for next.example" })).toBeTruthy();
+  expect(within(card).queryByText("No public tasks yet.")).toBeNull();
+
+  await act(async () => resolvePending({ page: [], isDone: true, continueCursor: "" }));
+  expect(await within(card).findByText("No public tasks yet.")).toBeTruthy();
+  expect(screen.getByRole("navigation", { name: "Sites" })).toBe(navigation);
+  expect(scroller.scrollTop).toBe(120);
+  expect(resize.getAttribute("aria-valuenow")).toBe(width);
+});
+
 test("restores the site sidebar width after reopening a different site", async () => {
   vi.spyOn(window, "innerWidth", "get").mockReturnValue(1280);
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(

@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-20T22:53:15Z
+- **Last updated:** 2026-09-21T00:22:17Z
 
 ## Log
 
@@ -1781,9 +1781,15 @@ The homepage and site pages share the official Convex TanStack query integration
 with native Convex pagination and one shared first-page handoff. Disabling SSR
 returns data pages to the SPA shell (`apps/scout/src/router.tsx`, `packages/convex-tanstack-start/src/server.ts`).
 
-### 2026-09-20 - working tree - v284
+### 2026-09-20 - 35c3b27 - v284
 
 Public task reviews and Scout profiles now render through the same Convex TanStack query cache.
 Review transcripts and saved walkthrough text arrive in HTML; private tasks wait for browser
 authentication, and the existing switch still restores the SPA
 (`apps/scout/src/products/conversation/page.tsx`, `apps/scout/src/routes/scouts.$slug.tsx`).
+
+### 2026-09-21 - working tree - v286
+
+Infinite scrolling keeps the existing feed and site navigation visible while new task previews load.
+Cards retain their images and links during loading, and the first page still renders on the server
+(`apps/scout/src/components/activity-feed.tsx`).

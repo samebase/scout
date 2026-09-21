@@ -11,7 +11,7 @@ import {
   createRouter,
 } from "@tanstack/react-router";
 import type { PaginatedQueryArgs, UsePaginatedQueryReturnType } from "convex/react";
-import { useSyncExternalStore } from "react";
+import { Suspense, useSyncExternalStore } from "react";
 import {
   getFunctionName,
   type FunctionArgs,
@@ -127,6 +127,7 @@ vi.mock("convex/react", () => ({
 }));
 
 const observers: TestIntersectionObserver[] = [];
+const queryClients: QueryClient[] = [];
 
 class TestIntersectionObserver implements IntersectionObserver {
   readonly root;
@@ -238,6 +239,8 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  for (const client of queryClients) client.clear();
+  queryClients.length = 0;
   observers.length = 0;
   remote.tasks.clear();
   vi.clearAllMocks();
@@ -245,7 +248,7 @@ afterEach(() => {
 });
 
 function createQueryClient() {
-  return new QueryClient({
+  const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
         retry: false,
@@ -280,6 +283,8 @@ function createQueryClient() {
       },
     },
   });
+  queryClients.push(queryClient);
+  return queryClient;
 }
 
 async function openFeed(path = "/", dehydrated?: DehydratedState) {
@@ -291,7 +296,11 @@ async function openFeed(path = "/", dehydrated?: DehydratedState) {
     getParentRoute: () => root,
     staticData: { access: "access_public" },
     validateSearch: reviewFeedSearch,
-    component: () => <ActivityFeed search={home.useSearch()} />,
+    component: () => (
+      <Suspense fallback={<div className="min-h-60" aria-busy="true" />}>
+        <ActivityFeed search={home.useSearch()} />
+      </Suspense>
+    ),
   });
   const detail = createRoute({
     path: "/sites/$site",
@@ -513,6 +522,65 @@ test("loads the next six sites when the sentinel intersects, without a More site
 
   act(() => sentinel.intersect(true));
   expect(remote.loadSites).toHaveBeenCalledTimes(1);
+});
+
+test("keeps the feed and new card shells visible while next-page task previews load", async () => {
+  const { queryClient } = await openFeed();
+  const feed = screen.getByRole("region", { name: "Reviews" });
+  const originalCards = screen.getAllByRole("article");
+  const nextSites = Array.from({ length: 6 }, (_, index) => ({
+    ...remote.sites[1],
+    hostname: `next-${index}.example`,
+  }));
+  const pendingSite = nextSites[0].hostname;
+  let resolvePending: (page: FunctionReturnType<typeof api.scout.activity.list>) => void;
+  const pending = new Promise<FunctionReturnType<typeof api.scout.activity.list>>((resolve) => {
+    resolvePending = resolve;
+  });
+  const { queryKey } = convexQuery(api.scout.activity.list, {
+    site: pendingSite,
+    scope: "public",
+    paginationOpts: { numItems: 2, cursor: null },
+  });
+  queryClient.setQueryDefaults(queryKey, { queryFn: () => pending });
+  for (const site of nextSites) {
+    remote.tasks.set(site.hostname, {
+      results: [],
+      status: "LoadingFirstPage",
+      isLoading: true,
+      loadMore: vi.fn(),
+    });
+  }
+  remote.loadSites.mockImplementationOnce(() => {
+    remote.sites.push(...nextSites);
+    remote.revision++;
+    for (const listener of remote.listeners) listener();
+  });
+  const sentinel = observers.find((observer) => observer.targets.size > 0);
+  if (!sentinel) throw new Error("Missing site pagination sentinel");
+
+  await act(async () => sentinel.intersect(true));
+  expect(remote.loadSites).toHaveBeenCalledExactlyOnceWith(6);
+  expect(queryClient.isFetching({ queryKey })).toBe(1);
+  expect(screen.getByRole("region", { name: "Reviews" })).toBe(feed);
+  originalCards.forEach((card, index) => expect(screen.getAllByRole("article")[index]).toBe(card));
+  expect(screen.getAllByRole("article")).toHaveLength(8);
+  const pendingCard = screen.getByRole("article", { name: pendingSite });
+  expect(within(pendingCard).getByRole("heading", { name: pendingSite })).toBeTruthy();
+  expect(within(pendingCard).getByTestId("site-preview")).toBeTruthy();
+  expect(pendingCard.querySelector('[aria-busy="true"]')).toBeTruthy();
+  expect(within(pendingCard).queryByText("No public tasks yet.")).toBeNull();
+  expect(within(pendingCard).queryByRole("heading", { level: 3 })).toBeNull();
+
+  await act(async () => {
+    resolvePending({ page: [task(pendingSite, 1)], isDone: true, continueCursor: "" });
+  });
+  expect(
+    await within(pendingCard).findByRole("heading", { name: `${pendingSite} task 1` }),
+  ).toBeTruthy();
+  expect(screen.getByRole("region", { name: "Reviews" })).toBe(feed);
+  originalCards.forEach((card, index) => expect(screen.getAllByRole("article")[index]).toBe(card));
+  expect(screen.getByRole("article", { name: pendingSite })).toBe(pendingCard);
 });
 
 test.each(["public", "mine"])("site heading links preserve the %s scope", async (scope) => {
