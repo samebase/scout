@@ -3,7 +3,7 @@ import { expect, test } from "vite-plus/test";
 import { terrainHeight } from "./discovery-terrain";
 import {
   routeExperimentSettings,
-  atlasTerrainSettings,
+  defaultTerrainSettings,
   terrainSceneIndex,
   type TerrainSettings,
 } from "./terrain-settings";
@@ -30,7 +30,7 @@ test("the first visible frame already contains a planned detour", () => {
   expect(observed.climb.route).toBeLessThan(observed.climb.direct * 0.3);
 });
 
-test.each([routeExperimentSettings, { ...atlasTerrainSettings, trail: 1 }])(
+test.each([routeExperimentSettings, { ...defaultTerrainSettings, trail: 1 }])(
   "$scene dragging solves a new curve on the next paused frame (reduced motion)",
   (settings) => {
     const state = createTrailState();
@@ -113,7 +113,7 @@ test("reset connects the current dragged endpoints directly without rewinding th
 });
 
 test("fixed checkpoints and terrain leave the entire route unchanged, with no settling", () => {
-  const options = { ...atlasTerrainSettings, trail: 1, checkpointMotion: false };
+  const options = { ...defaultTerrainSettings, trail: 1, checkpointMotion: false };
   const state = createTrailState();
   advanceTrail(state, { checkpoints: 0, terrain: 12, shimmer: 0 }, options, view);
   const original = structuredClone(state.nodes);
@@ -127,7 +127,7 @@ test("fixed checkpoints and terrain leave the entire route unchanged, with no se
 });
 
 test("terrain updates reroute immediately with checkpoint animation switched off", () => {
-  const options = { ...atlasTerrainSettings, trail: 1, checkpointMotion: false };
+  const options = { ...defaultTerrainSettings, trail: 1, checkpointMotion: false };
   const state = createTrailState();
   advanceTrail(state, { checkpoints: 0, terrain: 12, shimmer: 0 }, options, view);
   const original = structuredClone(state.nodes);

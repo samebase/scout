@@ -33,9 +33,8 @@ export const terrainSettingsSchema = z.object({
 export type TerrainSettings = z.infer<typeof terrainSettingsSchema>;
 export const terrainSceneIndex = { landscape: 0, "one-hill": 1, "two-hills": 2 };
 export const defaultTerrainSettings = terrainSettingsSchema.parse({});
-export const atlasTerrainSettings = { ...defaultTerrainSettings, trail: 0 };
 export const routeExperimentSettings: TerrainSettings = {
-  ...atlasTerrainSettings,
+  ...defaultTerrainSettings,
   scene: "one-hill",
   trail: 1,
   checkpointMotion: false,
@@ -62,11 +61,10 @@ export const terrainPresets = [
     name: "Two hills · 2 points",
     settings: { ...routeExperimentSettings, scene: "two-hills" },
   },
-  { name: "Landing default", settings: atlasTerrainSettings },
   {
     name: "Overhead",
     settings: {
-      ...atlasTerrainSettings,
+      ...defaultTerrainSettings,
       tilt: 76,
       rotation: -20,
       zoom: 0.8,
@@ -79,7 +77,7 @@ export const terrainPresets = [
   {
     name: "Open landscape",
     settings: {
-      ...atlasTerrainSettings,
+      ...defaultTerrainSettings,
       tilt: 26.6,
       rotation: -4.3,
       zoom: 1.65,

@@ -1,10 +1,11 @@
 // @vitest-environment happy-dom
 
+import { omitNullish } from "../../shared/omitNullish";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, assert, beforeEach, expect, test, vi } from "vite-plus/test";
 import { DiscoveryHero } from "./discovery-hero";
 import { DiscoveryTerrain } from "./discovery-terrain";
-import { atlasTerrainSettings, routeExperimentSettings } from "#lib/terrain-settings";
+import { defaultTerrainSettings, routeExperimentSettings } from "#lib/terrain-settings";
 import { terrainRenderProfiles } from "#lib/terrain-quality";
 import { createTerrainAnimation } from "#lib/terrain-motion";
 import { advanceTrail, projectTrailNode } from "#lib/terrain-trail-motion";
@@ -43,7 +44,7 @@ afterEach(() => {
 
 async function openHero() {
   const view = render(
-    <DiscoveryHero paused={false} settings={atlasTerrainSettings}>
+    <DiscoveryHero paused={false} settings={defaultTerrainSettings}>
       <textarea aria-label="Message Scout" />
     </DiscoveryHero>,
   );
@@ -93,7 +94,7 @@ test("reveals the real terrain only after its first GPU frame, without showing a
   const view = render(
     <DiscoveryTerrain
       paused
-      settings={{ ...atlasTerrainSettings, contrast: 1, zoom: 2 }}
+      settings={{ ...defaultTerrainSettings, contrast: 1, zoom: 2 }}
       onStatusChange={onStatusChange}
     />,
   );
@@ -146,7 +147,7 @@ test("discards initialization that finishes after navigation", async () => {
     });
   });
   const view = render(
-    <DiscoveryHero paused={false} settings={atlasTerrainSettings} children={null} />,
+    <DiscoveryHero paused={false} settings={defaultTerrainSettings} children={null} />,
   );
   await act(() => vi.dynamicImportSettled());
   expect(gpu.draw).not.toHaveBeenCalled();
@@ -154,10 +155,10 @@ test("discards initialization that finishes after navigation", async () => {
 });
 
 test("updates a paused preview without rebuilding the GPU or advancing its animation", async () => {
-  const view = render(<DiscoveryTerrain paused settings={atlasTerrainSettings} />);
+  const view = render(<DiscoveryTerrain paused settings={defaultTerrainSettings} />);
   await act(() => vi.dynamicImportSettled());
   await act(() => vi.advanceTimersToNextFrame());
-  const changed = { ...atlasTerrainSettings, tilt: 76, zoom: 2, extent: 2.5 };
+  const changed = { ...defaultTerrainSettings, tilt: 76, zoom: 2, extent: 2.5 };
   view.rerender(<DiscoveryTerrain paused settings={changed} />);
   await act(() => vi.advanceTimersToNextFrame());
   expect(gpu.initialize).toHaveBeenCalledOnce();
@@ -174,12 +175,12 @@ test("updates a paused preview without rebuilding the GPU or advancing its anima
 });
 
 test("redraws a reset connection while paused without restarting the renderer or clock", async () => {
-  const animationRef = { current: createTerrainAnimation(atlasTerrainSettings) };
+  const animationRef = { current: createTerrainAnimation(defaultTerrainSettings) };
   animationRef.current.time = { checkpoints: 8, terrain: 14, shimmer: 9 };
   const view = render(
     <DiscoveryHero
       paused
-      settings={atlasTerrainSettings}
+      settings={defaultTerrainSettings}
       animationRef={animationRef}
       frameRevision={0}
       children={null}
@@ -191,7 +192,7 @@ test("redraws a reset connection while paused without restarting the renderer or
   view.rerender(
     <DiscoveryHero
       paused
-      settings={atlasTerrainSettings}
+      settings={defaultTerrainSettings}
       animationRef={animationRef}
       frameRevision={1}
       children={null}
@@ -206,13 +207,16 @@ test("redraws a reset connection while paused without restarting the renderer or
 
 test("zero speed holds a frame and resumes when speed increases", async () => {
   const view = render(
-    <DiscoveryTerrain paused={false} settings={{ ...atlasTerrainSettings, speed: 0 }} />,
+    <DiscoveryTerrain
+      paused={false}
+      settings={{ ...defaultTerrainSettings, speed: 0, checkpointMotion: false }}
+    />,
   );
   await act(() => vi.dynamicImportSettled());
   await act(() => vi.advanceTimersToNextFrame());
   await act(() => vi.advanceTimersByTimeAsync(200));
   expect(gpu.draw).toHaveBeenCalledOnce();
-  view.rerender(<DiscoveryTerrain paused={false} settings={atlasTerrainSettings} />);
+  view.rerender(<DiscoveryTerrain paused={false} settings={defaultTerrainSettings} />);
   await act(() => vi.advanceTimersToNextFrame());
   gpu.draw.mockClear();
   await act(() => vi.advanceTimersByTimeAsync(48));
@@ -274,7 +278,7 @@ test("moves the camera only during a captured drag, including when animation is 
   const view = render(
     <DiscoveryTerrain
       paused
-      settings={{ ...atlasTerrainSettings, tilt: 58, rotation: -12 }}
+      settings={{ ...defaultTerrainSettings, tilt: 58, rotation: -12 }}
       onCameraChange={onCameraChange}
     />,
   );
@@ -301,10 +305,15 @@ test("moves the camera only during a captured drag, including when animation is 
   expect(gpu.initialize).toHaveBeenCalledOnce();
 });
 
-test.each([true, false])(
-  "drags a checkpoint without rotating the camera, paused=%s",
-  async (paused) => {
-    const settings = { ...atlasTerrainSettings, trail: 1 };
+test.each([
+  { paused: true, camera: true, pointerType: "mouse" },
+  { paused: false, camera: true, pointerType: "mouse" },
+  { paused: false, camera: false, pointerType: "mouse" },
+  { paused: false, camera: false, pointerType: "touch" },
+])(
+  "drags a checkpoint without rotating the camera, paused=$paused camera=$camera pointer=$pointerType",
+  async ({ paused, camera: allowCamera, pointerType }) => {
+    const settings = { ...defaultTerrainSettings, trail: 1 };
     const animationRef = { current: createTerrainAnimation(settings) };
     const camera = {
       width: 1100,
@@ -321,7 +330,7 @@ test.each([true, false])(
         paused={paused}
         settings={settings}
         animationRef={animationRef}
-        onCameraChange={onCameraChange}
+        {...omitNullish({ onCameraChange: allowCamera ? onCameraChange : undefined })}
       />,
     );
     await act(() => vi.dynamicImportSettled());
@@ -330,13 +339,22 @@ test.each([true, false])(
     assert.isNotNull(canvas);
     vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue(new DOMRect(10, 20, 1100, 760));
     vi.spyOn(canvas, "clientHeight", "get").mockReturnValue(760);
-    canvas.setPointerCapture = vi.fn();
+    const target = allowCamera ? canvas : view.getByLabelText("Move checkpoint 2");
+    target.setPointerCapture = vi.fn();
+    if (!allowCamera) {
+      expect(canvas.className).toContain("pointer-events-none");
+      expect(canvas.className).not.toContain("touch-none");
+      expect(target.className).toContain("touch-none");
+      fireEvent.pointerDown(canvas, { pointerId: 1, button: 0, clientX: 300, clientY: 300 });
+      expect(gpu.draw.mock.lastCall?.[3].interacting).toBe(false);
+    }
     const releasePointerCapture = vi.fn();
-    canvas.releasePointerCapture = releasePointerCapture;
+    target.releasePointerCapture = releasePointerCapture;
     const point = animationRef.current.trail.nodes[trailNodesPerLeg];
     const screen = projectTrailNode(point, animationRef.current.time.terrain, settings, camera);
     const frozen = { ...animationRef.current.time };
-    fireEvent.pointerDown(canvas, {
+    fireEvent.pointerDown(target, {
+      pointerType,
       pointerId: 1,
       button: 0,
       clientX: screen.x + 17,
@@ -344,7 +362,12 @@ test.each([true, false])(
     });
     await act(() => vi.advanceTimersByTimeAsync(200));
     expect(animationRef.current.time).toEqual(frozen);
-    fireEvent.pointerMove(canvas, { pointerId: 1, clientX: screen.x + 47, clientY: screen.y + 39 });
+    fireEvent.pointerMove(target, {
+      pointerType,
+      pointerId: 1,
+      clientX: screen.x + 47,
+      clientY: screen.y + 39,
+    });
     await act(() => vi.advanceTimersToNextFrame());
     const moved = projectTrailNode(
       animationRef.current.trail.display.nodes[trailNodesPerLeg],
@@ -356,7 +379,7 @@ test.each([true, false])(
     expect(moved.y).toBeCloseTo(screen.y + 15, 1);
     expect(onCameraChange).not.toHaveBeenCalled();
     expect(gpu.draw.mock.lastCall?.[3].interacting).toBe(true);
-    fireEvent.pointerUp(canvas, { pointerId: 1 });
+    fireEvent.pointerUp(target, { pointerType, pointerId: 1 });
     expect(releasePointerCapture).toHaveBeenCalledWith(1);
     await act(() => vi.advanceTimersByTimeAsync(200));
     if (paused) expect(animationRef.current.time).toEqual(frozen);
@@ -372,7 +395,7 @@ test("automatic quality limits work on touch devices and keeps animation time wh
     if (query.includes("pointer: coarse")) Object.defineProperty(media, "matches", { value: true });
     return media;
   });
-  const settings = { ...atlasTerrainSettings, speed: 1 };
+  const settings = { ...defaultTerrainSettings, speed: 1 };
   const view = render(<DiscoveryTerrain paused={false} settings={settings} />);
   await act(() => vi.dynamicImportSettled());
   await act(() => vi.advanceTimersToNextFrame());
@@ -400,10 +423,10 @@ test("automatic quality limits work on touch devices and keeps animation time wh
 });
 
 test("the landing and terrain previews can share the same rope and animation clocks", async () => {
-  const animationRef = { current: createTerrainAnimation(atlasTerrainSettings) };
+  const animationRef = { current: createTerrainAnimation(defaultTerrainSettings) };
   animationRef.current.time = { terrain: 25, shimmer: 12, checkpoints: 42 };
   const view = render(
-    <DiscoveryTerrain paused settings={atlasTerrainSettings} animationRef={animationRef} />,
+    <DiscoveryTerrain paused settings={defaultTerrainSettings} animationRef={animationRef} />,
   );
   await act(() => vi.dynamicImportSettled());
   await act(() => vi.advanceTimersToNextFrame());
@@ -411,7 +434,7 @@ test("the landing and terrain previews can share the same rope and animation clo
   view.rerender(
     <DiscoveryHero
       paused
-      settings={atlasTerrainSettings}
+      settings={defaultTerrainSettings}
       animationRef={animationRef}
       children={null}
     />,
@@ -451,4 +474,51 @@ test("waits for a busy GPU instead of accumulating frames, then resumes renderin
   await act(async () => releaseGpu());
   await act(() => vi.advanceTimersByTimeAsync(64));
   expect(gpu.draw.mock.calls.length).toBeGreaterThan(2);
+});
+
+test("homepage checkpoint handles follow the visible line and support arrow keys", async () => {
+  const settings = { ...routeExperimentSettings, tilt: 85, zoom: 0.7, offsetY: 0 };
+  const camera = {
+    width: 1100,
+    height: 760,
+    frameHeight: 760,
+    bounds: { left: 0, top: 0, right: 1100, bottom: 760 },
+    obstacles: [],
+    interacting: false,
+  };
+  vi.spyOn(HTMLCanvasElement.prototype, "clientWidth", "get").mockReturnValue(camera.width);
+  vi.spyOn(HTMLCanvasElement.prototype, "clientHeight", "get").mockReturnValue(camera.height);
+  vi.spyOn(HTMLCanvasElement.prototype, "getBoundingClientRect").mockReturnValue(
+    new DOMRect(0, 0, camera.width, camera.height),
+  );
+  const animationRef = { current: createTerrainAnimation(settings) };
+  gpu.draw.mockImplementation((time, options, _, motion) => {
+    advanceTrail(motion.state, time, options, camera);
+    advanceTrailDisplay(motion.state, options, motion.elapsed, motion.animateTransition);
+  });
+  render(<DiscoveryTerrain paused settings={settings} animationRef={animationRef} />);
+  await act(() => vi.dynamicImportSettled());
+  await act(() => vi.advanceTimersToNextFrame());
+  const checkpoint = screen.getByRole("button", { name: "Move checkpoint 1" });
+  const before = projectTrailNode(
+    animationRef.current.trail.display.nodes[0],
+    animationRef.current.time.terrain,
+    settings,
+    camera,
+  );
+  expect(parseFloat(checkpoint.style.left)).toBeCloseTo(before.x);
+  expect(parseFloat(checkpoint.style.top)).toBeCloseTo(before.y);
+  fireEvent.focus(checkpoint);
+  fireEvent.keyDown(checkpoint, { key: "ArrowRight" });
+  await act(() => vi.advanceTimersToNextFrame());
+  const after = projectTrailNode(
+    animationRef.current.trail.display.nodes[0],
+    animationRef.current.time.terrain,
+    settings,
+    camera,
+  );
+  expect(after.x - before.x).toBeCloseTo(12, 1);
+  expect(after.y).toBeCloseTo(before.y, 1);
+  expect(parseFloat(checkpoint.style.left)).toBeCloseTo(after.x);
+  expect(parseFloat(checkpoint.style.top)).toBeCloseTo(after.y);
 });

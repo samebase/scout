@@ -1,11 +1,11 @@
 import { d } from "typegpu";
 import { expect, test } from "vite-plus/test";
-import { atlasTerrainSettings } from "./terrain-settings";
+import { defaultTerrainSettings } from "./terrain-settings";
 import { trailNodesPerLeg, trailSpline } from "./terrain-trail";
 import { createTrailSurface, planTrail } from "./terrain-trail-routing";
 import { terrainHeight } from "./discovery-terrain";
 
-const settings = { ...atlasTerrainSettings, spread: 1, depth: 1 };
+const settings = { ...defaultTerrainSettings, spread: 1, depth: 1 };
 const endpoints = [
   { x: 0, z: -3 },
   { x: 0, z: 3 },
@@ -112,7 +112,7 @@ test("the four landing checkpoints have rounded approaches and still avoid unnec
     { x: -0.19212154335907672, z: 1.4543662907836017 },
     { x: 0.4637745916296544, z: 4.37086610875293 },
   ];
-  const scale = atlasTerrainSettings;
+  const scale = defaultTerrainSettings;
   const height = (x: number, z: number) =>
     terrainHeight(x, z, 12, scale.peaks, scale.extent, 0) * scale.elevation;
   const route = plan(height, points, scale);

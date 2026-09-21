@@ -2,7 +2,7 @@ import { d } from "typegpu";
 import { expect, test } from "vite-plus/test";
 import {
   routeExperimentSettings,
-  atlasTerrainSettings,
+  defaultTerrainSettings,
   terrainSceneIndex,
   type TerrainSettings,
 } from "./terrain-settings";
@@ -204,7 +204,7 @@ test("height and slope cannot slow movement toward the same horizontal target", 
 
 test("middle checkpoints keep smooth approaches throughout a dragged reroute", () => {
   const settings = {
-    ...atlasTerrainSettings,
+    ...defaultTerrainSettings,
     trail: 1,
     checkpointMotion: false,
     routeMaxSpeed: 1.5,

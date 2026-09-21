@@ -23,14 +23,14 @@ export function DiscoveryHero({
         <h1
           id="discovery-heading"
           data-terrain-obstacle
-          className="max-w-[940px] text-balance font-display text-[56px] leading-[1.08] font-medium tracking-[-0.045em] @max-[760px]/hero:text-[44px] @max-[640px]/hero:text-[34px]"
+          className="pointer-events-auto max-w-[940px] text-balance font-display text-[56px] leading-[1.08] font-medium tracking-[-0.045em] @max-[760px]/hero:text-[44px] @max-[640px]/hero:text-[34px]"
         >
           Check if a product does what you need.
         </h1>
         <div className="relative isolate mt-5 max-w-[660px] before:absolute before:-inset-4 before:-z-10 before:bg-background/90 before:blur-xl">
           <ul
             data-terrain-obstacle
-            className="list-disc space-y-2 pl-6 text-xl leading-relaxed text-foreground marker:text-primary @max-[640px]/hero:text-lg"
+            className="pointer-events-auto list-disc space-y-2 pl-6 text-xl leading-relaxed text-foreground marker:text-primary @max-[640px]/hero:text-lg"
           >
             <li>Send an AI agent to try a website for you.</li>
             <li>Get a walkthrough, screenshots, and a video replay.</li>

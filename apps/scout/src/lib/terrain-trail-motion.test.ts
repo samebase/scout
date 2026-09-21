@@ -9,11 +9,11 @@ import {
 } from "./terrain-trail-motion";
 import { inspectTrail } from "./terrain-trail-diagnostics";
 import { advanceTrailDisplay } from "./terrain-trail-transition";
-import { atlasTerrainSettings } from "./terrain-settings";
+import { defaultTerrainSettings } from "./terrain-settings";
 import { trailNodesPerLeg, trailSpline } from "./terrain-trail";
 import { moveTrailCheckpoint } from "./terrain-trail-drag";
 
-const settings = { ...atlasTerrainSettings, trail: 1 };
+const settings = { ...defaultTerrainSettings, trail: 1 };
 const view: TrailView = {
   width: 1100,
   height: 760,
@@ -174,30 +174,29 @@ test("moving checkpoints retain a shared direction without waiting for neighbori
 test("terrain changes bend the route when checkpoint movement is disabled", () => {
   const options = {
     ...settings,
+    checkpointMotion: false,
     checkpointAvoidance: false,
-    checkpointDrift: 0,
     elevation: 1,
     peaks: 1.5,
   };
-  const state = simulate(30, 24, options);
+  const state = simulate(0, 24, options);
   const before = structuredClone(state.nodes);
-  for (let frame = 1; frame <= 20 * 24; frame++)
-    advanceTrail(
-      state,
-      { checkpoints: 30 + frame / 24, terrain: 12 + (frame / 24) * 0.3, shimmer: 4 },
-      options,
-      view,
-    );
-  expect(state.nodes[0]).toEqual(before[0]);
-  expect(state.nodes.at(-1)).toEqual(before.at(-1));
-  expect(
-    Math.max(
+  let movement = 0;
+  for (const terrain of [12.3, 13, 15, 18]) {
+    advanceTrail(state, { checkpoints: 0, terrain, shimmer: 4 }, options, view);
+    for (let checkpoint = 0; checkpoint < state.homes.length; checkpoint++) {
+      const index = checkpoint * trailNodesPerLeg;
+      expect(state.nodes[index]).toEqual(before[index]);
+    }
+    movement = Math.max(
+      movement,
       ...state.nodes.map((node, index) =>
         Math.hypot(node.x - before[index].x, node.z - before[index].z),
       ),
-    ),
-  ).toBeGreaterThan(0.02);
-}, 10000);
+    );
+  }
+  expect(movement).toBeGreaterThan(0.02);
+});
 
 test("stationary checkpoints and terrain have no independent traveling wave", () => {
   const state = simulate(90, 12, { ...settings, checkpointAvoidance: false, checkpointDrift: 0 });
@@ -227,14 +226,14 @@ test("the open route stays visible at the user's rotated landing angle", () => {
   const state = createTrailState();
   let closest = Infinity;
   let worstOutside = 0;
-  for (let frame = 0; frame <= 120 * 12; frame++) {
-    const seconds = frame / 12;
+  for (let frame = 0; frame <= 120 * 8; frame++) {
+    const seconds = frame / 8;
     const time = { checkpoints: seconds, terrain: 12 + seconds * 0.3, shimmer: 4 + seconds * 0.1 };
     advanceTrail(state, time, options, camera);
     const first = state.nodes[0];
     const last = state.nodes[state.nodes.length - 1];
     closest = Math.min(closest, Math.hypot(last.x - first.x, last.z - first.z));
-    if (seconds < 20 || frame % 3 !== 0) continue;
+    if (seconds < 20 || frame % 2 !== 0) continue;
     advanceTrailDisplay(state, options, 0, false);
     const observed = inspectTrail(state, time.terrain, options, camera, "positions");
     worstOutside = Math.max(worstOutside, ...observed.checkpoints.map((point) => point.outside));
@@ -287,11 +286,11 @@ test("checkpoints stay within the user's landing preview after settling, while t
   let worstOutside = 0;
   let localMotion = 0;
   let groupMotion = 0;
-  for (let frame = 0; frame <= 90 * 24; frame++) {
-    const seconds = frame / 24;
+  for (let frame = 0; frame <= 90 * 8; frame++) {
+    const seconds = frame / 8;
     const time = { checkpoints: seconds, terrain: 12 + seconds * 0.3, shimmer: 4 + seconds * 0.1 };
     advanceTrail(state, time, options, camera);
-    if (seconds < 20 || frame % 6 !== 0) continue;
+    if (seconds < 20 || frame % 2 !== 0) continue;
     advanceTrailDisplay(state, options, 0, false);
     const observed = inspectTrail(state, time.terrain, options, camera, "positions");
     worstOutside = Math.max(worstOutside, ...observed.checkpoints.map((point) => point.outside));

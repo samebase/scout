@@ -1,12 +1,12 @@
 import { expect, test } from "vite-plus/test";
 import { advanceTerrainTime } from "./terrain-motion";
-import { atlasTerrainSettings } from "./terrain-settings";
+import { defaultTerrainSettings } from "./terrain-settings";
 
 const start = { terrain: 12, shimmer: 4, checkpoints: 1 };
 
 test("checkpoints can animate while the terrain is frozen", () => {
   const next = advanceTerrainTime(start, 0.1, {
-    ...atlasTerrainSettings,
+    ...defaultTerrainSettings,
     trail: 1,
     terrainMotion: false,
     checkpointSpeed: 2,
@@ -16,7 +16,7 @@ test("checkpoints can animate while the terrain is frozen", () => {
 
 test("pausing checkpoints leaves the landscape free to change", () => {
   const next = advanceTerrainTime(start, 0.1, {
-    ...atlasTerrainSettings,
+    ...defaultTerrainSettings,
     trail: 1,
     checkpointMotion: false,
   });
@@ -28,7 +28,7 @@ test("pausing checkpoints leaves the landscape free to change", () => {
 test("changing speeds preserves the current terrain and checkpoint position", () => {
   expect(
     advanceTerrainTime(start, 0, {
-      ...atlasTerrainSettings,
+      ...defaultTerrainSettings,
       speed: 1,
       evolution: 0,
       checkpointSpeed: 3,

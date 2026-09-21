@@ -1,5 +1,5 @@
 import { expect, test } from "vite-plus/test";
-import { atlasTerrainSettings } from "./terrain-settings";
+import { defaultTerrainSettings } from "./terrain-settings";
 import {
   advanceTrail,
   createTrailState,
@@ -13,7 +13,7 @@ import {
   trailGroundAtPointer,
 } from "./terrain-trail-drag";
 
-const settings = { ...atlasTerrainSettings, trail: 1 };
+const settings = { ...defaultTerrainSettings, trail: 1 };
 const view: TrailView = {
   width: 1100,
   height: 856,
