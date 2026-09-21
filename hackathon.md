@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-21T15:48:52Z
+- **Last updated:** 2026-09-21T17:39:13Z
 
 ## Log
 
@@ -1828,7 +1828,7 @@ Separate motion controls, simple hill scenes, and route diagnostics make the exp
 The homepage keeps a fixed camera and leaves chat input and scrolling available.
 (`apps/scout/src/components/discovery-terrain.tsx`, `apps/scout/src/components/terrain-explorer.tsx`, `apps/scout/src/lib/terrain-trail-routing.ts`).
 
-### 2026-09-21 - working tree - v292
+### 2026-09-21 - 29e81b1 - v292
 
 Scout uses an original blue-and-orange scarf across navigation, the favicon, and Scout illustrations.
 Signup and hackathon review prompts lead the homepage examples. About now explains persistent Scouts,
@@ -1836,3 +1836,10 @@ research, human help, workspaces, and the services behind a review. The submissi
 copy and records the builder's product, agent, replay, and integration decisions. Repository guidance
 keeps the hand-written About page and Markdown synchronized
 (`apps/scout/src/routes/about.tsx`, `docs/hackathon-submission.md`, `AGENTS.md`).
+
+### 2026-09-21 - working tree - v293
+
+Scouts can reread the original saved page text behind a screenshot before writing a walkthrough,
+recovering observations removed from the running conversation. The tool reads only completed
+captures from the same task and identifies the returned evidence as text rather than image contents
+(`apps/scout/convex/tasks/screenshotRecords.ts`, `apps/scout/convex/tasks/tools.ts`).

@@ -116,6 +116,10 @@ export const TASK_INSTRUCTIONS = outdent`
   - Before finishing a product review, call save_walkthrough with selected screenshot IDs
     and checks of the requested behavior, marking each passed, failed, or untested.
     Explain what you observed and verified. Use list_screenshots when needed.
+    Reopen the evidence for material findings with read_screenshot_evidence before
+    saving; older browser snapshots may have been removed from your context. Compare
+    the observations from the relevant page state, not a later navigation or a caption.
+    Saved page text does not establish what was visible within the screenshot's viewport.
     Select only images that substantiate a finding or explain a necessary step; saved
     evidence does not all belong in the walkthrough. Avoid repeating the same screen.
     If no screenshot could be saved, report the findings and the capture failure plainly.
