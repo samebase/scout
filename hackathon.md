@@ -10,9 +10,9 @@
 - **Components:** @convex-dev/agent, @convex-dev/r2, @convex-dev/static-hosting, @convex-dev/workflow
 - **Convex features:** schema, tables, indexes, queries, paginated queries, realtime queries, mutations, actions, scheduled functions, HTTP actions, AI Gateway
 - **Auth:** Convex Auth
-- **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
+- **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-21T15:46:30Z
+- **Last updated:** 2026-09-21T15:48:52Z
 
 ## Log
 
@@ -1831,6 +1831,8 @@ The homepage keeps a fixed camera and leaves chat input and scrolling available.
 ### 2026-09-21 - working tree - v292
 
 Scout uses an original blue-and-orange scarf across navigation, the favicon, and Scout illustrations.
-The homepage explains the review evidence, and About describes each Scout's persistent identity,
-inbox, browser profile, and accounts. Signup and hackathon review prompts lead the examples
-(`apps/scout/src/components/scout-mark.tsx`, `apps/scout/src/routes/about.tsx`, `docs/hackathon-submission.md`).
+Signup and hackathon review prompts lead the homepage examples. About now explains persistent Scouts,
+research, human help, workspaces, and the services behind a review. The submission draft shares that
+copy and records the builder's product, agent, replay, and integration decisions. Repository guidance
+keeps the hand-written About page and Markdown synchronized
+(`apps/scout/src/routes/about.tsx`, `docs/hackathon-submission.md`, `AGENTS.md`).
