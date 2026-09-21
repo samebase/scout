@@ -649,8 +649,7 @@ test("manual backfill uses bounded resumable pages and is idempotent for existin
   expect(c.isDone).toBe(true);
 });
 
-// More than one cleanup batch also runs a durable workflow step for every retained task and chat.
-test("account deletion removes all owner listings in batches and keeps retained public task history", async () => {
+test("account deletion finishes owner-listing batches without removing public task history", async () => {
   const t = await setup();
   for (let i = 0; i < 70; i++) {
     const task = await t.review(`site-${i}.test`, i);
@@ -667,7 +666,10 @@ test("account deletion removes all owner listings in batches and keeps retained 
     confirmation: ACCOUNT_DELETION_CONFIRMATION,
   });
   await expect(t.list("mine")).rejects.toThrow("Not authorized");
-  await t.backend.finishAllScheduledFunctions(vi.runAllTimers, 1000);
+  const cleanup = { userId: t.userId, sessionId };
+  expect(await t.backend.mutation(internal.accountDeletionCleanup.finish, cleanup)).toBe(false);
+  expect(await t.backend.run((ctx) => ctx.db.get(t.userId))).toMatchObject({ state: "deleting" });
+  expect(await t.backend.mutation(internal.accountDeletionCleanup.finish, cleanup)).toBe(true);
   expect(await deleting.query(api.accountDeletion.status, {})).toEqual({ kind: "deleted" });
   expect(
     await t.backend.run((ctx) =>
@@ -703,7 +705,7 @@ test("account deletion removes all owner listings in batches and keeps retained 
   ).toEqual([
     { hostname: "shared.test", taskCount: 1, preview: null, profile: null, research: null },
   ]);
-}, 15_000);
+});
 
 test.each([undefined, "A public calculator."])(
   "site details expose overview=%s, lists stay lightweight, and diagnostics stay private",

@@ -339,7 +339,7 @@ test.each([
     target.releasePointerCapture = releasePointerCapture;
     const point = animationRef.current.trail.nodes[trailNodesPerLeg];
     const screen = projectTrailNode(point, animationRef.current.time.terrain, settings, camera);
-    const frozen = { ...animationRef.current.time };
+    const beforeDrag = { ...animationRef.current.time };
     fireEvent.pointerDown(target, {
       pointerType,
       pointerId: 1,
@@ -348,14 +348,19 @@ test.each([
       clientY: screen.y + 24,
     });
     await act(() => vi.advanceTimersByTimeAsync(200));
-    expect(animationRef.current.time).toEqual(frozen);
-    fireEvent.pointerMove(target, {
-      pointerType,
-      pointerId: 1,
-      clientX: screen.x + 47,
-      clientY: screen.y + 39,
-    });
-    await act(() => vi.advanceTimersToNextFrame());
+    if (paused) expect(animationRef.current.time).toEqual(beforeDrag);
+    else expect(animationRef.current.time.terrain).toBeGreaterThan(beforeDrag.terrain);
+    const beforeMoving = animationRef.current.time.terrain;
+    for (let step = 1; step <= 6; step++) {
+      fireEvent.pointerMove(target, {
+        pointerType,
+        pointerId: 1,
+        clientX: screen.x + 17 + step * 5,
+        clientY: screen.y + 24 + step * 2.5,
+      });
+      await act(() => vi.advanceTimersToNextFrame());
+    }
+    if (!paused) expect(animationRef.current.time.terrain).toBeGreaterThan(beforeMoving);
     const moved = projectTrailNode(
       animationRef.current.trail.display.nodes[trailNodesPerLeg],
       animationRef.current.time.terrain,
@@ -369,8 +374,8 @@ test.each([
     fireEvent.pointerUp(target, { pointerType, pointerId: 1 });
     expect(releasePointerCapture).toHaveBeenCalledWith(1);
     await act(() => vi.advanceTimersByTimeAsync(200));
-    if (paused) expect(animationRef.current.time).toEqual(frozen);
-    else expect(animationRef.current.time.checkpoints).toBeGreaterThan(frozen.checkpoints);
+    if (paused) expect(animationRef.current.time).toEqual(beforeDrag);
+    else expect(animationRef.current.time.checkpoints).toBeGreaterThan(beforeDrag.checkpoints);
     expect(gpu.initialize).toHaveBeenCalledOnce();
   },
 );
