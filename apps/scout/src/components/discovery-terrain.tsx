@@ -45,7 +45,7 @@ export function DiscoveryTerrain({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const checkpointRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const refreshRef = useRef<(() => void) | null>(null);
+  const redrawRef = useRef<(() => void) | null>(null);
   const [renderState, setRenderState] = useState<"initializing" | "ready" | "unavailable">(
     "initializing",
   );
@@ -97,7 +97,7 @@ export function DiscoveryTerrain({
   function finishDrag() {
     dragRef.current = null;
     setDragging(false);
-    refreshRef.current?.();
+    redrawRef.current?.();
   }
 
   function movePointer(event: PointerEvent<HTMLElement>) {
@@ -131,7 +131,7 @@ export function DiscoveryTerrain({
         view,
       );
       moveTrailCheckpoint(animation.current.trail, drag.checkpoint, point);
-      refreshRef.current?.();
+      redrawRef.current?.();
       return;
     }
     const tilt = Math.min(85, Math.max(10, drag.tilt + (event.clientY - drag.y) * 0.2));
@@ -229,6 +229,7 @@ export function DiscoveryTerrain({
     }
 
     function draw(now: number) {
+      frame = 0;
       if (!canvas || !field || disposed || !visible || document.hidden) return;
       const moving = !shouldPause();
       const settings = currentSettings();
@@ -391,6 +392,7 @@ export function DiscoveryTerrain({
         if (moving || (settings.trail > 0 && animation.current.trail.display.moving)) {
           frame = requestAnimationFrame(draw);
         } else {
+          last = 0;
           lastTransition = 0;
         }
       } catch (error) {
@@ -398,8 +400,14 @@ export function DiscoveryTerrain({
       }
     }
 
+    function requestDraw() {
+      if (!frame && field && !disposed && visible && !document.hidden)
+        frame = requestAnimationFrame(draw);
+    }
+
     function refresh() {
       cancelAnimationFrame(frame);
+      frame = 0;
       last = 0;
       if (!visible || document.hidden) lastTransition = 0;
       timingStart = 0;
@@ -409,7 +417,7 @@ export function DiscoveryTerrain({
       timingCompletion = 0;
       timing = null;
       measureObstacles();
-      if (field && visible && !document.hidden) frame = requestAnimationFrame(draw);
+      requestDraw();
     }
 
     function resize() {
@@ -435,7 +443,7 @@ export function DiscoveryTerrain({
     intersectionObserver.observe(canvas);
     document.addEventListener("visibilitychange", refresh);
     document.addEventListener("scroll", measureObstacles, true);
-    refreshRef.current = refresh;
+    redrawRef.current = requestDraw;
     resize();
 
     void import("#lib/discovery-field")
@@ -459,7 +467,7 @@ export function DiscoveryTerrain({
     return () => {
       disposed = true;
       initialization.abort();
-      refreshRef.current = null;
+      redrawRef.current = null;
       resizeObserver.disconnect();
       intersectionObserver.disconnect();
       document.removeEventListener("visibilitychange", refresh);
@@ -469,7 +477,7 @@ export function DiscoveryTerrain({
   }, [profile, framingRef, animation]);
 
   useEffect(() => {
-    refreshRef.current?.();
+    redrawRef.current?.();
   }, [reducedMotion, paused, settings, onTrailDiagnostics, frameRevision]);
 
   return (
@@ -523,7 +531,7 @@ export function DiscoveryTerrain({
                 rotation: settings.rotation,
               };
           setDragging(true);
-          refreshRef.current?.();
+          redrawRef.current?.();
         }}
         onPointerMove={movePointer}
         onPointerUp={releasePointer}
@@ -559,7 +567,7 @@ export function DiscoveryTerrain({
                 offsetY: point.y - (event.clientY - view.rect.top),
               };
               setDragging(true);
-              refreshRef.current?.();
+              redrawRef.current?.();
             }}
             onPointerMove={movePointer}
             onPointerUp={releasePointer}

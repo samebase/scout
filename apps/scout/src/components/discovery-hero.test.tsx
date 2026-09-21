@@ -350,13 +350,17 @@ test.each([
     await act(() => vi.advanceTimersByTimeAsync(200));
     if (paused) expect(animationRef.current.time).toEqual(beforeDrag);
     else expect(animationRef.current.time.terrain).toBeGreaterThan(beforeDrag.terrain);
-    fireEvent.pointerMove(target, {
-      pointerType,
-      pointerId: 1,
-      clientX: screen.x + 47,
-      clientY: screen.y + 39,
-    });
-    await act(() => vi.advanceTimersToNextFrame());
+    const beforeMoving = animationRef.current.time.terrain;
+    for (let step = 1; step <= 6; step++) {
+      fireEvent.pointerMove(target, {
+        pointerType,
+        pointerId: 1,
+        clientX: screen.x + 17 + step * 5,
+        clientY: screen.y + 24 + step * 2.5,
+      });
+      await act(() => vi.advanceTimersToNextFrame());
+    }
+    if (!paused) expect(animationRef.current.time.terrain).toBeGreaterThan(beforeMoving);
     const moved = projectTrailNode(
       animationRef.current.trail.display.nodes[trailNodesPerLeg],
       animationRef.current.time.terrain,
