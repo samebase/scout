@@ -19,7 +19,7 @@ export function DiscoveryHero({
       <div className="discovery-terrain-backdrop">
         <DiscoveryTerrain {...terrain} paused={paused} framingRef={framingRef} />
       </div>
-      <div className="pointer-events-none relative mx-auto max-w-[1160px] px-8 py-8 @max-[640px]/hero:px-4 @max-[640px]/hero:py-7">
+      <div className="pointer-events-none relative mx-auto max-w-[1160px] px-8 pt-2 pb-8 @max-[640px]/hero:px-4 @max-[640px]/hero:pb-7">
         <div className="relative isolate max-w-[940px] before:absolute before:-inset-4 before:-z-10 before:bg-background/90 before:blur-xl">
           <div className="pointer-events-auto w-fit text-muted-foreground" data-terrain-obstacle>
             <SamebaseAttribution />
