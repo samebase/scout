@@ -244,7 +244,7 @@ it.each(products)("denies %s creation after membership is revoked", async (kind)
 });
 
 it.each(engines)(
-  "allows %s admin inspection but reserves execution and browser control for the owner",
+  "allows %s admin inspection and stopping but reserves execution and browser control for the owner",
   async (engine) => {
     const { backend, admin, inspector, member, start } = await setup();
     const sessionId = await start(engine);
@@ -280,9 +280,9 @@ it.each(engines)(
           turnId: handoff.turnId,
         }),
       ).rejects.toThrow();
-      await expect(viewer.mutation(api.tasks.sessions.stop, { sessionId })).rejects.toThrow();
     }
     for (const viewer of [member, backend]) {
+      await expect(viewer.mutation(api.tasks.sessions.stop, { sessionId })).rejects.toThrow();
       await expect(viewer.query(api.tasks.sessions.get, { sessionId })).rejects.toThrow(
         "Not authorized",
       );
@@ -290,6 +290,7 @@ it.each(engines)(
         viewer.query(api.tasks.sessions.listItems, { sessionId, paginationOpts }),
       ).rejects.toThrow("Not authorized");
     }
+    await expect(inspector.mutation(api.tasks.sessions.stop, { sessionId })).resolves.toBeNull();
     await expect(admin.mutation(api.tasks.sessions.stop, { sessionId })).resolves.toBeNull();
   },
 );

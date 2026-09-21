@@ -1296,7 +1296,7 @@ test("loads older sessions from the sidebar", async () => {
   expect(remote.loadMore).toHaveBeenCalledExactlyOnceWith(50);
 });
 
-test("admins can inspect another user's transcript without owner controls", async () => {
+test("admins can inspect and stop another user's task without owner controls", async () => {
   remote.queries.set("tasks/sessions:get", {
     ...session({
       kind: "waiting",
@@ -1311,7 +1311,8 @@ test("admins can inspect another user's transcript without owner controls", asyn
   ]);
   await open("/lab?session=session-1");
   expect(await screen.findByText("I opened the site.")).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+  await waitFor(() => expect(remote.stop).toHaveBeenCalledWith({ sessionId: "session-1" }));
   expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
   expect(screen.queryByRole("button", { name: "I couldn't complete this" })).toBeNull();
   expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();

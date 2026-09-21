@@ -199,6 +199,33 @@ it("lets a private task's owner and admin read metadata and sign its image", asy
   expect(getUrl).toHaveBeenCalledWith(`private-images/${captureId}.png`, { expiresIn: 900 });
 });
 
+it("keeps removed task evidence available only to admins", async () => {
+  const t = await setup("private");
+  const captureId = await t.reserve("capture-1", "browser-1");
+  await t.finish(captureId);
+  const browser = await t.backend.run((ctx) =>
+    ctx.db
+      .query("agentsApiBrowserSessions")
+      .withIndex("by_agents_session_id_and_sequence", (q) => q.eq("agentsSessionId", t.sessionId))
+      .first(),
+  );
+  if (!browser) throw new Error("Missing browser");
+  await t.admin.mutation(api.scout.chats.remove, { threadId: t.sessionId });
+  expect(
+    await t.owner.action(api.tasks.screenshots.imageUrl, { screenshotId: captureId }),
+  ).toBeNull();
+  expect(await t.owner.query(api.tasks.walkthrough.get, { sessionId: t.sessionId })).toBeNull();
+  expect(
+    await t.owner.query(internal.tasks.browsers.replayData, { sessionId: browser._id }),
+  ).toBeNull();
+  expect(
+    await t.admin.action(api.tasks.screenshots.imageUrl, { screenshotId: captureId }),
+  ).not.toBeNull();
+  expect(
+    await t.admin.query(internal.tasks.browsers.replayData, { sessionId: browser._id }),
+  ).not.toBeNull();
+});
+
 it("reopens the stored browser result only for a completed capture in the same task", async () => {
   const t = await setup("private");
   const captureId = await t.reserve("capture-1", "browser-1");

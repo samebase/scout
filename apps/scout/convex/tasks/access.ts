@@ -11,11 +11,7 @@ export async function readableSession(
 ) {
   const session = await ctx.db.get(sessionId);
   if (!session) return null;
-  if (
-    viewer.kind === "account" &&
-    (viewer.userId === session.userId || canAccess("access_lab", viewer.accessKeys))
-  )
-    return session;
+  if (viewer.kind === "account" && canAccess("access_lab", viewer.accessKeys)) return session;
   return (await visibleChat(ctx, sessionId, viewer)) ? session : null;
 }
 

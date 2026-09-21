@@ -666,6 +666,113 @@ test("managed Reviews share the feed and expose only conversation text and watch
   ).not.toBeNull();
 });
 
+test("admins can inspect private tasks and moderate them after the owner's approval is revoked", async () => {
+  const t = await setup();
+  const admin = t.backend.withIdentity({ subject: t.adminId });
+  const { sessionId, chatId } = await t.managedReview("moderation.test");
+  await t.backend.run(async (ctx) => {
+    await ctx.db.patch(chatId, { visibility: "private" });
+    const chat = await ctx.db.get(chatId);
+    if (!chat) throw new Error("Missing task");
+    await syncChatSite(ctx, chat);
+    await ctx.db.patch(sessionId, { active: true, state: { kind: "running" } });
+  });
+  await t.backend.mutation(internal.tasks.browsers.open, {
+    billable: false,
+    sessionId,
+    browser: {
+      providerSessionId: "moderation-browser",
+      cdpUrl: "wss://browser.example.test/private",
+      liveViewUrl: "https://liveview.firecrawl.dev/watch-only",
+      interactiveLiveViewUrl: "https://liveview.firecrawl.dev/control",
+      currentUrl: null,
+    },
+  });
+  const activity = await admin.query(api.scout.activity.get, { threadId: sessionId });
+  expect(activity).toMatchObject({ visibility: "private", isOwner: false, canControl: false });
+  expect(
+    await admin.query(api.scout.activity.messages, {
+      threadId: sessionId,
+      paginationOpts: { cursor: null, numItems: 20 },
+    }),
+  ).toMatchObject({ page: [{ text: "private initial request" }] });
+  const browser = activity?.sessions[0];
+  if (!browser) throw new Error("Missing browser");
+  expect(await admin.query(api.scout.activity.liveView, { sessionId: browser.sessionId })).toEqual({
+    url: "https://liveview.firecrawl.dev/watch-only",
+  });
+  expect(await t.other.query(api.scout.activity.get, { threadId: sessionId })).toBeNull();
+  await expect(admin.query(api.tasks.sessions.controls, { sessionId })).rejects.toThrow();
+  await expect(
+    admin.mutation(api.tasks.sessions.send, { sessionId, message: "Continue" }),
+  ).rejects.toThrow();
+  await t.backend.run((ctx) => ctx.db.patch(t.memberId, { isApproved: false }));
+  await admin.mutation(api.scout.chats.setVisibility, {
+    threadId: sessionId,
+    visibility: "public",
+  });
+  expect(await t.backend.query(api.scout.activity.get, { threadId: sessionId })).not.toBeNull();
+  await admin.mutation(api.scout.chats.setVisibility, {
+    threadId: sessionId,
+    visibility: "private",
+  });
+  expect(await t.backend.query(api.scout.activity.get, { threadId: sessionId })).toBeNull();
+  await admin.mutation(api.tasks.sessions.stop, { sessionId });
+  expect(await t.backend.run((ctx) => ctx.db.get(sessionId))).toMatchObject({
+    state: { kind: "stopped" },
+  });
+});
+
+test("only admins can remove a task, stop its run, and revoke member access to retained history", async () => {
+  const t = await setup();
+  const admin = t.backend.withIdentity({ subject: t.adminId });
+  const { sessionId, chatId } = await t.managedReview("removal.test");
+  await t.backend.run(async (ctx) => {
+    const chat = await ctx.db.get(chatId);
+    if (!chat) throw new Error("Missing task");
+    await syncChatSite(ctx, chat);
+    await ctx.db.patch(sessionId, {
+      active: true,
+      state: { kind: "waiting", callId: "call", turnId: "turn", message: "Help" },
+    });
+  });
+  for (const viewer of [t.backend, t.member, t.other]) {
+    await expect(viewer.mutation(api.scout.chats.remove, { threadId: sessionId })).rejects.toThrow(
+      "Not authorized",
+    );
+  }
+  await admin.mutation(api.scout.chats.remove, { threadId: sessionId });
+  await admin.mutation(api.scout.chats.remove, { threadId: sessionId });
+  expect(await t.backend.run((ctx) => ctx.db.get(chatId))).toBeNull();
+  const retained = await t.backend.run((ctx) => ctx.db.get(sessionId));
+  expect(retained).toMatchObject({ state: { kind: "stopped" } });
+  expect(retained?.cleanupJobId).toBeDefined();
+  expect(await admin.query(api.tasks.sessions.get, { sessionId })).toMatchObject({
+    _id: sessionId,
+  });
+  for (const viewer of [t.backend, t.member, t.other]) {
+    expect(await viewer.query(api.scout.activity.get, { threadId: sessionId })).toBeNull();
+    expect(await viewer.query(api.tasks.walkthrough.get, { sessionId })).toBeNull();
+  }
+  await expect(
+    t.member.mutation(api.tasks.sessions.send, { sessionId, message: "Restore" }),
+  ).rejects.toThrow("Not authorized");
+  await expect(
+    t.member.mutation(api.scout.chats.setVisibility, { threadId: sessionId, visibility: "public" }),
+  ).rejects.toThrow("Chat not found");
+  expect(await t.backend.run((ctx) => ctx.db.query("siteUserListings").take(10))).toEqual([]);
+  expect(await t.backend.run((ctx) => ctx.db.query("sites").take(10))).toMatchObject([
+    { hostname: "removal.test", latestPublicTask: null, taskCount: 0, publicTaskCount: 0 },
+  ]);
+  expect(
+    await t.member.query(api.scout.activity.list, {
+      scope: "mine",
+      site: null,
+      paginationOpts: { cursor: null, numItems: 20 },
+    }),
+  ).toMatchObject({ page: [] });
+});
+
 test("Review owners can resume handoffs, stop, and send follow-ups while Lab remains private", async () => {
   const t = await setup();
   const sessionId = await t.review("private");

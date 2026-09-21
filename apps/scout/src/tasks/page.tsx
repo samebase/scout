@@ -417,6 +417,14 @@ function LabChrome({ session, search }: { session: Session | null; search: LabSe
           </Link>
         </Button>
       )}
+      {review?.purpose.kind === "play" && (
+        <Button asChild variant="ghost" size="sm">
+          <Link to="/play" search={{ thread: review.threadId }} aria-label="Open play">
+            <span className="hidden sm:inline">Open play</span>
+            <ArrowUpRightIcon aria-hidden="true" />
+          </Link>
+        </Button>
+      )}
       {session && (
         <Button
           type="button"
@@ -698,7 +706,7 @@ function SessionView({ session, walkthrough }: { session: Session; walkthrough: 
     !session.active &&
     session.hasChat &&
     Boolean(draft.trim());
-  const canStop = session.canControl && (controls.canStop || session.active);
+  const canStop = controls.canStop || session.active;
   const error =
     session.cleanupError ?? (session.state.kind === "failed" ? session.state.error : null);
   const errorMessage =
@@ -708,7 +716,11 @@ function SessionView({ session, walkthrough }: { session: Session; walkthrough: 
   const pending = request.kind === "pending";
 
   async function run(operation: "send" | "retry" | "stop" | "resume" | "decline" | "refresh") {
-    if (submitting.current || (operation !== "refresh" && !session.canControl)) return;
+    if (
+      submitting.current ||
+      (operation !== "refresh" && operation !== "stop" && !session.canControl)
+    )
+      return;
     if (operation === "send" && !canSend) return;
     if (operation === "refresh" && session.active) return;
     submitting.current = true;

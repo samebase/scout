@@ -245,9 +245,7 @@ it("lists and inspects a member's private Review without granting session contro
   await expect(
     admin.mutation(api.tasks.sessions.resume, { sessionId, callId: "call", turnId: "turn" }),
   ).rejects.toThrow("Session not found");
-  await expect(admin.mutation(api.tasks.sessions.stop, { sessionId })).rejects.toThrow(
-    "Session not found",
-  );
+  await expect(admin.mutation(api.tasks.sessions.stop, { sessionId })).resolves.toBeNull();
   await expect(member.mutation(api.tasks.sessions.stop, { sessionId })).resolves.toBeNull();
 });
 
