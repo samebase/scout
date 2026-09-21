@@ -1,4 +1,5 @@
 import { defineConfig } from "vite-plus";
+import { omitNullish } from "./apps/scout/shared/omitNullish.ts";
 
 export default defineConfig({
   fmt: {
@@ -70,7 +71,7 @@ export default defineConfig({
   staged: { "*": "vp check --fix" },
   test: {
     // Vitest reserves one CPU by default, leaving a two-core CI runner with one worker.
-    maxWorkers: process.env.CI ? "100%" : undefined,
+    ...omitNullish({ maxWorkers: process.env["CI"] ? "100%" : null }),
     projects: [
       { test: { name: "tooling", include: ["scripts/**/*.test.ts"] } },
       "apps/*",
