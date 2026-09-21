@@ -4,7 +4,7 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { useAction, usePaginatedQuery, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { ArrowRightIcon, EarthIcon, LockKeyholeIcon } from "lucide-react";
-import { useCallback, useDeferredValue, useEffect, useState } from "react";
+import { Suspense, useCallback, useDeferredValue, useEffect, useState } from "react";
 import { Button } from "#components/ui/button";
 import { SiteFilters } from "#components/site-filters";
 import { ReviewCheckSummary } from "#components/review-checks";
@@ -132,14 +132,6 @@ export function SiteCard({
     onNavigate: () => void;
   } | null;
 }) {
-  const scope = search.scope ?? "public";
-  const tasks = useSsrPaginatedQuery(
-    api.scout.activity.list,
-    { site: site.hostname, scope },
-    { initialNumItems: 2 },
-  );
-  const rows = tasks.results;
-  const exhausted = tasks.status === "Exhausted";
   return (
     <article
       aria-label={site.hostname}
@@ -178,16 +170,9 @@ export function SiteCard({
             />
             <SiteIdentity site={site} heading={navigation ? "span" : "h2"} />
           </header>
-          <div className="site-card-tasks flex-1" aria-busy={tasks.status === "LoadingFirstPage"}>
-            {rows.slice(0, 2).map((activity) => (
-              <ReviewRow key={activity.threadId} activity={activity} preview search={search} />
-            ))}
-            {exhausted && !rows.length && (
-              <p className="py-6 text-sm text-muted-foreground">
-                {scope === "mine" ? "You haven't reviewed this site yet." : "No public tasks yet."}
-              </p>
-            )}
-          </div>
+          <Suspense fallback={<div className="site-card-tasks flex-1" aria-busy="true" />}>
+            <SiteCardTasks site={site.hostname} search={search} />
+          </Suspense>
           <Button
             asChild
             variant="ghost"
@@ -211,6 +196,27 @@ export function SiteCard({
         </div>
       </div>
     </article>
+  );
+}
+
+function SiteCardTasks({ site, search }: { site: string; search: ReviewFeedSearch }) {
+  const scope = search.scope ?? "public";
+  const tasks = useSsrPaginatedQuery(
+    api.scout.activity.list,
+    { site, scope },
+    { initialNumItems: 2 },
+  );
+  return (
+    <div className="site-card-tasks flex-1" aria-busy={tasks.status === "LoadingFirstPage"}>
+      {tasks.results.slice(0, 2).map((activity) => (
+        <ReviewRow key={activity.threadId} activity={activity} preview search={search} />
+      ))}
+      {tasks.status === "Exhausted" && !tasks.results.length && (
+        <p className="py-6 text-sm text-muted-foreground">
+          {scope === "mine" ? "You haven't reviewed this site yet." : "No public tasks yet."}
+        </p>
+      )}
+    </div>
   );
 }
 
