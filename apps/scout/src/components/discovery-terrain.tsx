@@ -44,8 +44,7 @@ export function DiscoveryTerrain({
   animationRef?: RefObject<ReturnType<typeof createTerrainAnimation>>;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const checkpointRefs = useRef<(HTMLButtonElement | null)[]>([]);
-  const [focusedCheckpoint, setFocusedCheckpoint] = useState<number | null>(null);
+  const checkpointRefs = useRef<(HTMLDivElement | null)[]>([]);
   const refreshRef = useRef<(() => void) | null>(null);
   const [renderState, setRenderState] = useState<"initializing" | "ready" | "unavailable">(
     "initializing",
@@ -74,7 +73,6 @@ export function DiscoveryTerrain({
     () =>
       reducedMotion ||
       paused ||
-      focusedCheckpoint !== null ||
       dragRef.current?.kind === "checkpoint" ||
       ((!settings.terrainMotion || settings.speed === 0) &&
         (!settings.checkpointMotion || settings.trail === 0)),
@@ -473,7 +471,7 @@ export function DiscoveryTerrain({
 
   useEffect(() => {
     refreshRef.current?.();
-  }, [reducedMotion, paused, focusedCheckpoint, settings, onTrailDiagnostics, frameRevision]);
+  }, [reducedMotion, paused, settings, onTrailDiagnostics, frameRevision]);
 
   return (
     <>
@@ -537,16 +535,14 @@ export function DiscoveryTerrain({
       {!onCameraChange &&
         settings.trail > 0 &&
         Array.from({ length: settings.scene === "landscape" ? 4 : 2 }, (_, checkpoint) => (
-          <button
+          <div
             key={checkpoint}
             ref={(element) => {
               checkpointRefs.current[checkpoint] = element;
             }}
-            type="button"
-            disabled={!available}
-            aria-label={`Move checkpoint ${checkpoint + 1}`}
-            title="Drag to move. Arrow keys also move this checkpoint."
-            className="absolute size-11 -translate-x-1/2 -translate-y-1/2 touch-none rounded-full bg-transparent cursor-grab active:cursor-grabbing focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500"
+            aria-hidden="true"
+            title={`Drag checkpoint ${checkpoint + 1}`}
+            className={`absolute size-11 -translate-x-1/2 -translate-y-1/2 touch-none rounded-full cursor-grab active:cursor-grabbing ${available ? "" : "pointer-events-none"}`}
             style={{ visibility: "hidden" }}
             onPointerDown={(event) => {
               const canvas = canvasRef.current;
@@ -570,43 +566,6 @@ export function DiscoveryTerrain({
             onPointerUp={releasePointer}
             onPointerCancel={finishDrag}
             onLostPointerCapture={finishDrag}
-            onFocus={() => setFocusedCheckpoint(checkpoint)}
-            onBlur={() => setFocusedCheckpoint(null)}
-            onKeyDown={(event) => {
-              const step = event.shiftKey ? 40 : 12;
-              let dx = 0;
-              let dy = 0;
-              switch (event.key) {
-                case "ArrowLeft":
-                  dx = -step;
-                  break;
-                case "ArrowRight":
-                  dx = step;
-                  break;
-                case "ArrowUp":
-                  dy = -step;
-                  break;
-                case "ArrowDown":
-                  dy = step;
-                  break;
-                default:
-                  return;
-              }
-              event.preventDefault();
-              const canvas = canvasRef.current;
-              const node = animation.current.trail.display.nodes[checkpoint * trailNodesPerLeg];
-              if (!canvas || !node) return;
-              const view = pointerView(canvas);
-              const screen = projectTrailNode(node, animation.current.time.terrain, settings, view);
-              const point = trailGroundAtPointer(
-                { x: screen.x + dx, y: screen.y + dy },
-                animation.current.time.terrain,
-                settings,
-                view,
-              );
-              moveTrailCheckpoint(animation.current.trail, checkpoint, point);
-              refreshRef.current?.();
-            }}
           />
         ))}
     </>

@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-21T15:30:49Z
+- **Last updated:** 2026-09-21T15:46:30Z
 
 ## Log
 
@@ -1825,5 +1825,5 @@ causes and unverified outcomes left explicit
 The homepage and terrain explorer now let visitors drag checkpoints and see routes adjust around changing hills.
 The line stretches during a drag, then settles at a chosen horizontal speed while staying above the ground.
 Separate motion controls, simple hill scenes, and route diagnostics make the experiment easier to inspect.
-The homepage keeps a fixed camera, supports keyboard movement, and leaves chat input and scrolling available.
+The homepage keeps a fixed camera and leaves chat input and scrolling available.
 (`apps/scout/src/components/discovery-terrain.tsx`, `apps/scout/src/components/terrain-explorer.tsx`, `apps/scout/src/lib/terrain-trail-routing.ts`).

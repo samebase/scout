@@ -339,7 +339,7 @@ test.each([
     assert.isNotNull(canvas);
     vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue(new DOMRect(10, 20, 1100, 760));
     vi.spyOn(canvas, "clientHeight", "get").mockReturnValue(760);
-    const target = allowCamera ? canvas : view.getByLabelText("Move checkpoint 2");
+    const target = allowCamera ? canvas : view.getByTitle("Drag checkpoint 2");
     target.setPointerCapture = vi.fn();
     if (!allowCamera) {
       expect(canvas.className).toContain("pointer-events-none");
@@ -476,7 +476,7 @@ test("waits for a busy GPU instead of accumulating frames, then resumes renderin
   expect(gpu.draw.mock.calls.length).toBeGreaterThan(2);
 });
 
-test("homepage checkpoint handles follow the visible line and support arrow keys", async () => {
+test("homepage checkpoint handles match the displayed route", async () => {
   const settings = { ...routeExperimentSettings, tilt: 85, zoom: 0.7, offsetY: 0 };
   const camera = {
     width: 1100,
@@ -499,7 +499,7 @@ test("homepage checkpoint handles follow the visible line and support arrow keys
   render(<DiscoveryTerrain paused settings={settings} animationRef={animationRef} />);
   await act(() => vi.dynamicImportSettled());
   await act(() => vi.advanceTimersToNextFrame());
-  const checkpoint = screen.getByRole("button", { name: "Move checkpoint 1" });
+  const checkpoint = screen.getByTitle("Drag checkpoint 1");
   const before = projectTrailNode(
     animationRef.current.trail.display.nodes[0],
     animationRef.current.time.terrain,
@@ -508,17 +508,4 @@ test("homepage checkpoint handles follow the visible line and support arrow keys
   );
   expect(parseFloat(checkpoint.style.left)).toBeCloseTo(before.x);
   expect(parseFloat(checkpoint.style.top)).toBeCloseTo(before.y);
-  fireEvent.focus(checkpoint);
-  fireEvent.keyDown(checkpoint, { key: "ArrowRight" });
-  await act(() => vi.advanceTimersToNextFrame());
-  const after = projectTrailNode(
-    animationRef.current.trail.display.nodes[0],
-    animationRef.current.time.terrain,
-    settings,
-    camera,
-  );
-  expect(after.x - before.x).toBeCloseTo(12, 1);
-  expect(after.y).toBeCloseTo(before.y, 1);
-  expect(parseFloat(checkpoint.style.left)).toBeCloseTo(after.x);
-  expect(parseFloat(checkpoint.style.top)).toBeCloseTo(after.y);
 });
