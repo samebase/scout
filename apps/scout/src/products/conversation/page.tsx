@@ -488,14 +488,16 @@ function SessionLoader({
       {...omitNullish({
         left:
           kind === "review" && navigationThread?.primarySite ? (
-            <TaskNavigation
-              key={`${navigationThread.primarySite}:${filters.scope}`}
-              site={navigationThread.primarySite}
-              search={filters}
-              current={navigationThread}
-              selectedThreadId={threadId}
-              view={showingWalkthrough ? "walkthrough" : "chat"}
-            />
+            <Suspense fallback={<div aria-busy="true" />}>
+              <TaskNavigation
+                key={`${navigationThread.primarySite}:${filters.scope}`}
+                site={navigationThread.primarySite}
+                search={filters}
+                current={navigationThread}
+                selectedThreadId={threadId}
+                view={showingWalkthrough ? "walkthrough" : "chat"}
+              />
+            </Suspense>
           ) : undefined,
         right: showingWalkthrough ? undefined : available ? (
           <ClientOnly fallback={<div aria-busy="true" />}>
