@@ -288,12 +288,14 @@ async function open(path = "/lab") {
     },
   });
   queryClients.add(queryClient);
-  render(
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>,
-  );
-  await router.load();
+  await act(async () => {
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    );
+    await router.load();
+  });
   return router;
 }
 
@@ -1092,23 +1094,6 @@ test.each([
   expect(await screen.findByText(`Pip · ${label}`)).toBeTruthy();
   expect(router.state.location.pathname).toBe("/lab");
   expect(router.state.location.search).toEqual({ session: "session-1" });
-});
-
-test("has one admin task navigation entry", async () => {
-  await open();
-  await screen.findByRole("heading", { name: "New task" });
-  const links = within(screen.getByRole("navigation", { name: "Primary navigation" })).getAllByRole(
-    "link",
-  );
-  expect(links.map((link) => link.textContent)).toEqual([
-    "Reviews",
-    "About",
-    "Scouts",
-    "Lab",
-    "Members",
-  ]);
-  expect(links.filter((link) => link.getAttribute("href") === "/lab")).toHaveLength(1);
-  expect(screen.queryByRole("link", { name: "Agents" })).toBeNull();
 });
 
 test("Convex Agent tasks use shared chat readiness and controls", async () => {

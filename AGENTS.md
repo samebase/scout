@@ -124,6 +124,18 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
 - Run `pnpm run check` before a deploy and `pnpm run build` to verify the build locally.
   GitHub CI runs checks and tests; Cloudflare Workers Builds builds and deploys without rerunning them.
 
+## Test scope and cost
+
+- Add a test for a concrete behavior, consequential failure, or observed regression. Do not freeze
+  incidental copy, DOM order, camera settings, motion ratios, or internal call counts.
+- Test shared behavior once and cover each caller's distinct wiring. Avoid multiplying the same
+  assertions across every route, role, and viewport when those dimensions are independent.
+- Keep simulations only as long as the behavior requires. For React integration tests, await
+  initial rendering and router loading inside async `act`; retain explicit deferred responses when
+  testing loading behavior. Do not replace real behavior with mocks merely to make a test faster.
+- Inspect visual changes in the browser. CPU geometry and mocked renderer tests do not establish
+  that the WebGPU output looks correct. Measure suite cost before expanding expensive coverage.
+
 ## Code guardrails
 
 - Ordinary data loading stays visually quiet. Keep the page shell, navigation, existing content,

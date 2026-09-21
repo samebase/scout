@@ -256,12 +256,14 @@ async function openPage(path: string) {
     ]),
     history: createMemoryHistory({ initialEntries: [path] }),
   });
-  render(
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>,
-  );
-  await router.load();
+  await act(async () => {
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    );
+    await router.load();
+  });
   return router;
 }
 
@@ -398,22 +400,13 @@ test.each([
   },
 );
 
-test("shows the product name above the hostname in the heading and sidebar, and visits the researched homepage", async () => {
+test("keeps the researched homepage usable while a refresh is running or fails", async () => {
   await openPage("/sites/chessmerge.com");
-  const heading = await screen.findByRole("heading", { name: "Chess Merge", level: 1 });
-  expect(heading.nextElementSibling?.textContent).toBe("chessmerge.com");
-  const link = screen.getByRole("link", { name: "View tasks for Chess Merge" });
-  const card = link.closest("li");
-  if (!card) throw new Error("Missing site card");
-  const name = within(card).getByText("Chess Merge");
-  const hostname = within(card).getByRole("link", { name: "chessmerge.com" });
-  expect(name.compareDocumentPosition(hostname)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   expect(
     screen
       .getAllByRole("link", { name: "chessmerge.com" })
       .map((link) => link.getAttribute("href")),
   ).toEqual(["https://www.chessmerge.com/play", "https://www.chessmerge.com/play"]);
-  expect(screen.queryByRole("link", { name: "Visit website" })).toBeNull();
   expect(document.querySelector("a a")).toBeNull();
   for (const website of screen.getAllByRole("link", { name: "chessmerge.com" })) {
     expect(website.getAttribute("target")).toBe("_blank");
@@ -434,47 +427,6 @@ test("shows the product name above the hostname in the heading and sidebar, and 
       .getAllByRole("link", { name: "chessmerge.com" })
       .map((link) => link.getAttribute("href")),
   ).toEqual(["https://www.chessmerge.com/play", "https://www.chessmerge.com/play"]);
-});
-
-test.each([
-  { admin: true, signedIn: true },
-  { admin: false, signedIn: true },
-  { admin: false, signedIn: false },
-])(
-  "shows the site description below its identity and above tasks, admin=$admin, signedIn=$signedIn",
-  async ({ admin, signedIn }) => {
-    remote.admin = admin;
-    remote.signedIn = signedIn;
-    await openPage("/sites/chessmerge.com");
-    const heading = await screen.findByRole("heading", { name: "Chess Merge", level: 1 });
-    const description = screen.getByText("Play chess variants with friends in your browser.");
-    const tasks = screen.getByRole("region", { name: "Tasks for chessmerge.com" });
-    const hostname = heading.nextElementSibling;
-    if (!hostname) throw new Error("Missing site hostname");
-    expect(description.tagName).toBe("P");
-    expect(
-      hostname.compareDocumentPosition(description) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    expect(
-      description.compareDocumentPosition(tasks) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    expect(
-      within(screen.getByRole("navigation", { name: "Sites" })).queryByText(
-        "Play chess variants with friends in your browser.",
-      ),
-    ).toBeNull();
-    expect(screen.queryByRole("heading", { name: /overview|description/i })).toBeNull();
-    expect(remote.refresh).not.toHaveBeenCalled();
-  },
-);
-
-test("shows an existing profile without an overview without adding description copy", async () => {
-  await openPage("/sites/papergames.io");
-  const heading = await screen.findByRole("heading", { name: "Papergames", level: 1 });
-  const tasks = screen.getByRole("region", { name: "Tasks for papergames.io" });
-  expect(heading.nextElementSibling?.textContent).toBe("papergames.io");
-  expect(tasks.parentElement?.querySelectorAll(":scope > p")).toHaveLength(0);
-  expect(remote.refresh).not.toHaveBeenCalled();
 });
 
 test("researches a pending site and updates its name, address, and description when the profile arrives", async () => {
