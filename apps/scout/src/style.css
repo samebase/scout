@@ -236,7 +236,6 @@
   box-shadow: 0 7px 18px color-mix(in oklch, var(--primary) 24%, transparent);
 }
 
-.app-navigation__mark svg,
 .app-navigation__routes svg,
 .app-navigation__settings svg {
   width: 1rem;

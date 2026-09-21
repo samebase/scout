@@ -1,5 +1,5 @@
 import { ArrowUpIcon, SquareIcon } from "lucide-react";
-import type { FormEvent, ReactNode } from "react";
+import type { FormEvent, ReactNode, Ref } from "react";
 
 export function ConversationComposer({
   value,
@@ -11,6 +11,7 @@ export function ConversationComposer({
   placeholder,
   context,
   autoFocus,
+  inputRef,
   children,
 }: {
   value: string;
@@ -22,6 +23,7 @@ export function ConversationComposer({
   placeholder: string;
   context: ReactNode;
   autoFocus: boolean;
+  inputRef: Ref<HTMLTextAreaElement>;
   children: ReactNode;
 }) {
   return (
@@ -34,6 +36,7 @@ export function ConversationComposer({
         Message Scout
       </label>
       <textarea
+        ref={inputRef}
         id="conversation-message"
         autoFocus={autoFocus}
         className="block max-h-[200px] min-h-[72px] w-full resize-none rounded-xl bg-transparent px-2 py-2 text-base leading-relaxed text-foreground placeholder:text-muted-foreground focus-visible:outline-none! [field-sizing:content] sm:px-3"
