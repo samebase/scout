@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-21T13:03:12Z
+- **Last updated:** 2026-09-21T13:29:39Z
 
 ## Log
 
@@ -1806,9 +1806,16 @@ Public visitors can open the Scout directory from the main navigation and browse
 The Scouts link remains visible while account access loads or changes
 (`apps/scout/src/components/app-navigation.tsx`).
 
-### 2026-09-21 - working tree - v289
+### 2026-09-21 - a53e82f - v289
 
 The homepage leads with checking whether a product does what you need, with larger points about browser agents, evidence, and public accountability.
 Examples prepare editable prompts for free-plan exports, signup, and hackathon entries,
 with the website link selected for replacement. A white scarf on blue matches the navigation and favicon, with attribution on About
 (`apps/scout/src/components/discovery-hero.tsx`, `apps/scout/src/products/conversation/page.tsx`, `apps/scout/public/favicon.svg`).
+
+### 2026-09-21 - working tree - v290
+
+Scout's task and walkthrough instructions distinguish product claims, direct observations,
+and independent source checks. The same evidence standard applies to criticism, with unknown
+causes and unverified outcomes left explicit
+(`apps/scout/convex/tasks/instructions.ts`, `apps/scout/convex/tasks/walkthroughReport.ts`).

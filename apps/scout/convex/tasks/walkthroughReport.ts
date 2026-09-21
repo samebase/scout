@@ -44,6 +44,14 @@ export const walkthroughDescription = outdent`
   behavior corrects them or the user explicitly asks to remove them or replace the
   review's scope. It does not end the task.
 
+  Distinguish the site's claims, directly observed behavior, and independent source
+  verification. A quotation displayed by the product is not verification of the original
+  source. Attribute separate research or user-supplied evidence explicitly; do not present
+  it as something the product accomplished. Keep conclusions within the evidence's scope
+  and conditions, and say what remains unverified. Apply the same standard to criticism:
+  an unexpected result or changing reading alone does not prove incorrect data, a product
+  defect, or its cause.
+
   Include 1–10 concrete checks of the requested behavior, each with a short explanation.
   Use passed when the observed result meets the requested outcome, not merely when
   an action completes or output appears. Include material inaccuracies and unmet
