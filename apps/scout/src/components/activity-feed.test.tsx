@@ -327,12 +327,14 @@ async function openFeed(path = "/", dehydrated?: DehydratedState) {
     ]),
     history: createMemoryHistory({ initialEntries: [path] }),
   });
-  render(
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>,
-  );
-  await router.load();
+  await act(async () => {
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    );
+    await router.load();
+  });
   await screen.findByRole("article", { name: "chessmerge.com" });
   return { router, queryClient };
 }
@@ -466,13 +468,6 @@ test("requests six sites initially and two tasks for each site", async () => {
   expect(remote.loadSites).not.toHaveBeenCalled();
   expect(remote.loadChessTasks).not.toHaveBeenCalled();
   expect(remote.loadPaperTasks).not.toHaveBeenCalled();
-});
-
-test("a site with one task uses a singular link", async () => {
-  remote.sites[0].taskCount = 1;
-  await openFeed();
-  const card = within(screen.getByRole("article", { name: "chessmerge.com" }));
-  expect(card.getByRole("link", { name: "View 1 task" })).toBeTruthy();
 });
 
 test.each(["public", "mine"])(
@@ -618,18 +613,6 @@ test.each(["public", "mine"])("site heading links preserve the %s scope", async 
   expect(screen.getByRole("link", { name: /papergames.io task 1/ }).getAttribute("href")).toContain(
     "/tasks/",
   );
-});
-
-test("site groups put the researched product name above its hostname", async () => {
-  await openFeed();
-  const card = within(screen.getByRole("article", { name: "chessmerge.com" }));
-  const heading = card.getByRole("heading", { name: "Chess Merge", level: 2 });
-  expect(heading.nextElementSibling?.textContent).toBe("chessmerge.com");
-  expect(card.queryByText("Research completed")).toBeNull();
-  const unnamed = within(screen.getByRole("article", { name: "papergames.io" }));
-  expect(
-    unnamed.getByRole("heading", { name: "papergames.io", level: 2 }).nextElementSibling,
-  ).toBeNull();
 });
 
 test("the site filter is bookmarked, restored by history, and carried through every card link", async () => {

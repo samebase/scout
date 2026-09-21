@@ -1837,9 +1837,16 @@ copy and records the builder's product, agent, replay, and integration decisions
 keeps the hand-written About page and Markdown synchronized
 (`apps/scout/src/routes/about.tsx`, `docs/hackathon-submission.md`, `AGENTS.md`).
 
-### 2026-09-21 - working tree - v293
+### 2026-09-21 - f6e05ce - v293
 
 Scouts can reread the original saved page text behind a screenshot before writing a walkthrough,
 recovering observations removed from the running conversation. The tool reads only completed
 captures from the same task and identifies the returned evidence as text rather than image contents
 (`apps/scout/convex/tasks/screenshotRecords.ts`, `apps/scout/convex/tasks/tools.ts`).
+
+### 2026-09-21 - working tree - v294
+
+Simplified the test suite and removed long terrain simulations tied to specific camera arrangements.
+UI checks finish initial rendering without unnecessary waits, and shared access behavior is covered
+without repeating the same route-by-viewer matrix. Repository guidance now asks for a concrete
+regression or behavior before adding coverage and direct browser inspection for visual changes.

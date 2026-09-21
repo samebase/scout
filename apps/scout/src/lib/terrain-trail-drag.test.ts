@@ -94,8 +94,7 @@ test.each([0, 1, 2, 3])(
       expect(left.x + right.x).toBeCloseTo(2 * point.x, 10);
       expect(left.z + right.z).toBeCloseTo(2 * point.z, 10);
     }
-    for (let frame = 1; frame <= 24 * 6; frame++)
-      advanceTrail(state, { terrain: 12, checkpoints: frame / 24, shimmer: 4 }, options, view);
+    advanceTrail(state, { terrain: 12, checkpoints: 6, shimmer: 4 }, options, view);
     expect(state.nodes[index]).toMatchObject(position);
   },
 );

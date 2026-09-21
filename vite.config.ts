@@ -69,6 +69,8 @@ export default defineConfig({
 
   staged: { "*": "vp check --fix" },
   test: {
+    // Vitest reserves one CPU by default, leaving a two-core CI runner with one worker.
+    maxWorkers: process.env.CI ? "100%" : undefined,
     projects: [
       { test: { name: "tooling", include: ["scripts/**/*.test.ts"] } },
       "apps/*",

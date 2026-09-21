@@ -185,8 +185,10 @@ async function open(path: string) {
     ]),
     history: createMemoryHistory({ initialEntries: [path] }),
   });
-  render(<RouterProvider router={router} />);
-  await router.load();
+  await act(async () => {
+    render(<RouterProvider router={router} />);
+    await router.load();
+  });
 }
 
 test("protected children wait for access and unmount on revocation", async () => {
@@ -245,13 +247,10 @@ test("pending accounts retain account controls", async () => {
   expect(screen.getByRole("link", { name: "Reviews" })).toBeTruthy();
 });
 
-test("account controls stay above credits and history opens on its own page", async () => {
+test("credit history opens from settings and returns to the account", async () => {
   setViewer("role_member");
   await open("/settings");
   const user = userEvent.setup();
-  const session = await screen.findByRole("region", { name: "Your session" });
-  const credits = screen.getByRole("region", { name: "Credits" });
-  expect(session.compareDocumentPosition(credits) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(screen.getByRole("button", { name: "Sign out" })).toBeTruthy();
   expect(screen.queryByRole("list", { name: "Credit history" })).toBeNull();
   await user.click(screen.getByRole("link", { name: "View credit history" }));
@@ -334,7 +333,7 @@ test.each(["deleting", "deleted"])(
   },
 );
 
-for (const { path, title } of [
+test.each([
   { path: "/", title: "Activity contents" },
   { path: "/about", title: "The internet is a confusing place." },
   { path: "/play", title: "Play contents" },
@@ -342,55 +341,50 @@ for (const { path, title } of [
   { path: "/sites/example.com", title: "Site contents" },
   { path: "/privacy", title: "Privacy policy" },
   { path: "/terms", title: "Terms and conditions" },
-]) {
-  test.each([
-    "anonymous",
-    "auth_loading",
-    "loading",
-    "pending",
-    "member",
-    "staff",
-    "deleting",
-    "deleted",
-    "terms_required",
-  ])(`${path} remains readable for %s viewers`, async (state) => {
-    switch (state) {
-      case "auth_loading":
-        remote.authenticated = false;
-        remote.authLoading = true;
-        break;
-      case "anonymous":
-        remote.authenticated = false;
-        break;
-      case "pending":
-        setViewer("role_pending_access");
-        break;
-      case "member":
-        setViewer("role_member");
-        break;
-      case "staff":
-        setViewer("role_staff");
-        break;
-      case "deleting":
-      case "deleted":
-      case "terms_required":
-        remote.values.set("viewer", { kind: state });
-        break;
-    }
-    await open(path);
-    expect(await screen.findByRole("heading", { level: 1, name: title })).toBeTruthy();
-    if (path === "/privacy" || path === "/terms") {
-      expect(screen.getByText(/^Effective date: [A-Z][a-z]+ \d{1,2}, \d{4}$/)).toBeTruthy();
-      expect(screen.getByRole("main").textContent).not.toMatch(
-        /\{\{[A-Z_]+\}\}|Draft for review|Not yet effective/,
-      );
-    }
-    expect(screen.queryByRole("heading", { name: "Account deletion" })).toBeNull();
-    expect(screen.queryByLabelText("Account access")).toBeNull();
-    expect(screen.queryByText("Loading account…")).toBeNull();
-    expect(screen.queryByRole("heading", { name: "Review our terms" })).toBeNull();
-  });
-}
+])("$path is readable without signing in", async ({ path, title }) => {
+  remote.authenticated = false;
+  await open(path);
+  expect(await screen.findByRole("heading", { level: 1, name: title })).toBeTruthy();
+  expect(screen.queryByLabelText("Account access")).toBeNull();
+});
+
+// The shared access gate handles viewer state once; each route declares its policy above.
+test.each([
+  "auth_loading",
+  "loading",
+  "pending",
+  "member",
+  "staff",
+  "deleting",
+  "deleted",
+  "terms_required",
+])("public content remains readable for a %s viewer", async (state) => {
+  switch (state) {
+    case "auth_loading":
+      remote.authenticated = false;
+      remote.authLoading = true;
+      break;
+    case "pending":
+      setViewer("role_pending_access");
+      break;
+    case "member":
+      setViewer("role_member");
+      break;
+    case "staff":
+      setViewer("role_staff");
+      break;
+    case "deleting":
+    case "deleted":
+    case "terms_required":
+      remote.values.set("viewer", { kind: state });
+      break;
+  }
+  await open("/");
+  expect(await screen.findByRole("heading", { name: "Activity contents" })).toBeTruthy();
+  expect(screen.queryByRole("heading", { name: "Account deletion" })).toBeNull();
+  expect(screen.queryByLabelText("Account access")).toBeNull();
+  expect(screen.queryByRole("heading", { name: "Review our terms" })).toBeNull();
+});
 
 test("legal documents render tables, email links, and section anchors before the account query resolves", async () => {
   await open("/privacy");

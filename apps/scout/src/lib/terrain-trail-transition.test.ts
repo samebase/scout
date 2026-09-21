@@ -76,12 +76,12 @@ test.each([15, 60])(
       for (let index = 0; index < after.length; index++) {
         const speed =
           Math.hypot(after[index].x - before[index].x, after[index].z - before[index].z) * fps;
-        expect(speed).toBeLessThanOrEqual(settings.routeMaxSpeed + 0.0001);
         maximum = Math.max(maximum, speed);
       }
       before = after;
       frames++;
     } while (state.display.moving && frames < fps * 25);
+    expect(maximum).toBeLessThanOrEqual(settings.routeMaxSpeed + 0.0001);
     expect(maximum).toBeGreaterThan(settings.routeMaxSpeed * 0.9);
     expect(frames).toBeGreaterThan(fps);
     expect(state.display.moving).toBe(false);

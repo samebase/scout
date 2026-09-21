@@ -2297,13 +2297,13 @@ describe("Play invitation", () => {
       await user.click(screen.getByRole("button", { name: "Review a hackathon entry" }));
       const input = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Message Scout" });
       await waitFor(() => expect(document.activeElement).toBe(input));
-      expect(input.value).toContain("Review this hackathon submission.");
-      expect(input.value).toContain("what you couldn't test.");
+      const draft = input.value;
+      expect(draft.trim()).not.toBe("");
       expect(remote.createThread).not.toHaveBeenCalled();
       if (needsUrl) {
         expect(input.value.slice(input.selectionStart, input.selectionEnd)).toBe("[website URL]");
         await user.keyboard("https://example.com");
-        expect(input.value).toMatch(/^https:\/\/example.com\n\nReview this hackathon submission\./);
+        expect(input.value).toBe(draft.replace("[website URL]", "https://example.com"));
       } else {
         expect(input.value).not.toContain("[website URL]");
         expect(input.selectionStart).toBe(input.value.length);

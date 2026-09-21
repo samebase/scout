@@ -154,12 +154,14 @@ async function openPage(path: string) {
     },
   });
   queryClients.add(queryClient);
-  render(
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>,
-  );
-  await router.load();
+  await act(async () => {
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    );
+    await router.load();
+  });
   return router;
 }
 
