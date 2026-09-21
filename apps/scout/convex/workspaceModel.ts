@@ -48,7 +48,11 @@ export const workspaceTargetValidator = v.union(
 export type WorkspaceTarget = typeof workspaceTargetValidator.type;
 
 export const bashInputSchema = z.object({
-  workspace: siteHostnameSchema.optional(),
+  workspace: z
+    .union([z.literal("current_task"), siteHostnameSchema])
+    .describe(
+      "current_task for this task's private files; an exact hostname for shared site files",
+    ),
   command: z
     .string()
     .min(1)
@@ -67,7 +71,7 @@ export const BASH_DESCRIPTION = outdent`
 
   Workspaces:
 
-  - Omit workspace for this chat's private files, shown in the Workspace panel.
+  - Set workspace to "current_task" for this task's private files, shown in the Workspace panel.
   - Set workspace to the site's exact hostname (for example papergames.io) to use files
     shared across users, Scouts, and chats for that site.
   - Keep private data, credentials, room links, and current task state in the private

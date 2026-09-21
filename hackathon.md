@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-21T19:29:00Z
+- **Last updated:** 2026-09-21T21:36:00Z
 
 ## Log
 
@@ -1864,10 +1864,17 @@ user-facing pages while retaining their history in Lab. Task execution and brows
 remain with the owner. The Private label stays unchanged, with administrator access explained
 in the terms (`apps/scout/convex/scout/chats.ts`, `apps/scout/convex/scout/chatAccess.ts`).
 
-### 2026-09-21 - working tree - v297
+### 2026-09-21 - 106dab5 - v297
 
 Browser executions save full redacted page text and output in the task's private workspace,
 so either engine can reread earlier observations with Bash after moving to another page.
 The conversation receives short previews and file references. File-save failures remain separate
 from action outcomes, and a failed page snapshot no longer discards completed execution output
 (`apps/scout/convex/scout/browserTools.ts`, `apps/scout/convex/tasks/tools.ts`).
+
+### 2026-09-21 - working tree - v299
+
+Bash now asks agents to explicitly select `current_task` for private files or a hostname
+for shared site files, so saved browser results and task notes can be read from the intended
+workspace. Existing Agents API calls that omit the selector remain supported
+(`apps/scout/convex/workspaceModel.ts`, `apps/scout/convex/scout/workspaceTools.ts`).

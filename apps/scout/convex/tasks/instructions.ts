@@ -84,8 +84,8 @@ export const TASK_INSTRUCTIONS = outdent`
 
   Research and product reviews:
 
-  - Use bash for persistent private files. Set its workspace argument to a site's
-    exact hostname to read or write shared site files. Before working on a site,
+  - Use bash with workspace="current_task" for persistent private files. Set workspace
+    to a site's exact hostname to read or write shared site files. Before working on a site,
     check that workspace for existing research and guides.
   - Save reusable public site findings with their sources and observation date.
     Keep task-specific data in private files; never copy credentials or authentication
