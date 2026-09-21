@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-21T21:36:00Z
+- **Last updated:** 2026-09-21T22:31:59Z
 
 ## Log
 
@@ -1872,9 +1872,15 @@ The conversation receives short previews and file references. File-save failures
 from action outcomes, and a failed page snapshot no longer discards completed execution output
 (`apps/scout/convex/scout/browserTools.ts`, `apps/scout/convex/tasks/tools.ts`).
 
-### 2026-09-21 - working tree - v299
+### 2026-09-21 - d50e020 - v299
 
 Bash now asks agents to explicitly select `current_task` for private files or a hostname
 for shared site files, so saved browser results and task notes can be read from the intended
 workspace. Existing Agents API calls that omit the selector remain supported
 (`apps/scout/convex/workspaceModel.ts`, `apps/scout/convex/scout/workspaceTools.ts`).
+
+### 2026-09-21 - working tree - v300
+
+The homepage shows the standard Samebase attribution above its headline, visible before scrolling.
+A soft background fade keeps both readable over the animated terrain
+(`apps/scout/src/components/discovery-hero.tsx`).
