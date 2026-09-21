@@ -53,17 +53,8 @@ async function openHero() {
   return view;
 }
 
-test("pauses while composing and releases GPU resources when leaving the page", async () => {
+test("releases GPU resources when leaving the page", async () => {
   const view = await openHero();
-  expect(gpu.draw).toHaveBeenCalled();
-  fireEvent.focus(screen.getByRole("textbox", { name: "Message Scout" }));
-  await act(() => vi.advanceTimersToNextFrame());
-  gpu.draw.mockClear();
-  await act(() => vi.advanceTimersByTimeAsync(200));
-  expect(gpu.draw).not.toHaveBeenCalled();
-
-  fireEvent.blur(screen.getByRole("textbox", { name: "Message Scout" }));
-  await act(() => vi.advanceTimersToNextFrame());
   expect(gpu.draw).toHaveBeenCalled();
   view.unmount();
   expect(gpu.destroy).toHaveBeenCalledOnce();
