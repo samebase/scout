@@ -6,14 +6,14 @@ import type { homeSearch } from "#lib/homeSearch";
 import { ActivityFeed } from "./activity-feed";
 import { DiscoveryHero } from "./discovery-hero";
 import { Suspense } from "react";
-import { atlasTerrainSettings } from "#lib/terrain-settings";
+import { defaultTerrainSettings } from "#lib/terrain-settings";
 
 export function ProductHome({ search }: { search: z.infer<typeof homeSearch> }) {
   const navigate = useNavigate({ from: "/" });
   return (
     <ProductShell>
       <main id="main-content" className="relative isolate">
-        <DiscoveryHero paused={false} settings={atlasTerrainSettings}>
+        <DiscoveryHero paused={false} settings={defaultTerrainSettings}>
           <ConversationLobby
             kind="review"
             siteSelection={
