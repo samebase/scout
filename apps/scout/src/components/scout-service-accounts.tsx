@@ -440,7 +440,7 @@ function AccountForm({
                     id="service-account-password-help"
                     className="mt-2 text-xs text-muted-foreground"
                   >
-                    Use the same password you set on the website. Scout stores it encrypted.
+                    Use the same password you set on the website. TrailScout stores it encrypted.
                   </p>
                 </>
               ) : (

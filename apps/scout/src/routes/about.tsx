@@ -6,11 +6,11 @@ export const Route = createFileRoute("/about")({
   staticData: { access: "access_public" },
   head: () => ({
     meta: [
-      { title: "About | Scout" },
+      { title: "About | TrailScout" },
       {
         name: "description",
         content:
-          "Why Scout exists: try a website before investing your time, with browser runs, screenshots, and evidence you can inspect.",
+          "Why TrailScout exists: try a website before investing your time, with browser runs, screenshots, and evidence you can inspect.",
       },
     ],
   }),
@@ -33,16 +33,16 @@ function AboutPage() {
             signing up, learning your way around, and trying it yourself.
           </p>
           <p className="mt-5">
-            Scout sends AI agents to do that exploration for you. They use the product and leave a
-            walkthrough, screenshots, and a replay so you can make up your own mind.
+            TrailScout sends AI agents to do that exploration for you. They use the product and
+            leave a walkthrough, screenshots, and a replay so you can make up your own mind.
           </p>
         </header>
 
         <div className="mt-14 space-y-12 [&_h2]:font-display [&_h2]:text-[28px] [&_h2]:leading-tight [&_h2]:font-medium [&_h2]:tracking-[-0.03em] [&_p]:mt-4">
           <section aria-labelledby="about-send-scout">
-            <h2 id="about-send-scout">Send Scout in first.</h2>
+            <h2 id="about-send-scout">Send a Scout in first.</h2>
             <p>
-              Give Scout a website and a question. It opens a real browser and tries to answer by
+              Give a Scout a website and a question. It opens a real browser and tries to answer by
               using the product: following links, filling forms, and testing the path you asked
               about.
             </p>
@@ -50,8 +50,8 @@ function AboutPage() {
               “Can I sign up and create my first project?”
             </blockquote>
             <p>
-              You can watch the visit as it happens, or come back to see how far Scout got and what
-              it found along the way.
+              You can watch the visit as it happens, or come back to see how far your Scout got and
+              what it found along the way.
             </p>
           </section>
 
@@ -92,7 +92,7 @@ function AboutPage() {
           <section aria-labelledby="about-before-starting">
             <h2 id="about-before-starting">Before the browser work starts.</h2>
             <p>
-              Before testing a product, Scout can use Firecrawl to research its public pages and
+              Before testing a product, a Scout can use Firecrawl to research its public pages and
               documentation. It saves a briefing with source links, product details, and unanswered
               questions, then uses that context during the browser visit. Existing research and site
               guides can be reused on later visits.
@@ -106,12 +106,12 @@ function AboutPage() {
           <section aria-labelledby="about-human-help">
             <h2 id="about-human-help">A Scout can ask for help.</h2>
             <p>
-              If a CAPTCHA or another step needs a person, Scout can pause and email you from its
-              own inbox. A private link lets you take over the browser without another Scout
-              sign-in. The handoff page explains what needs your attention.
+              If a CAPTCHA or another step needs a person, your Scout can pause and email you from
+              its own inbox. A private link lets you take over the browser without another
+              TrailScout sign-in. The handoff page explains what needs your attention.
             </p>
             <p>
-              When you resume, Scout checks the current browser pages against the original task
+              When you resume, TrailScout checks the current browser pages against the original task
               before continuing. The help window has a deadline; if it expires, the task stops and
               the browser closes.
             </p>
@@ -120,8 +120,8 @@ function AboutPage() {
           <section aria-labelledby="about-evidence">
             <h2 id="about-evidence">Show the work.</h2>
             <p>
-              An AI answer is only useful if you can check it. Scout keeps a record of the visit,
-              with screenshots, a browser replay, and findings tied to the steps it took.
+              An AI answer is only useful if you can check it. TrailScout keeps a record of the
+              visit, with screenshots, a browser replay, and findings tied to the steps it took.
             </p>
             <p>
               Reviews show what passed, what failed, and what remains untested. Follow-up questions
@@ -133,7 +133,7 @@ function AboutPage() {
           <section aria-labelledby="about-shared-reviews">
             <h2 id="about-shared-reviews">Useful beyond one visit.</h2>
             <p>
-              Reviews are public by default, with a private option. Browse what other people asked
+              Reviews are public by default, with a private option. Browse what other people asked a
               Scout to try, open a review, and inspect the evidence before sending it on another
               task. Public reviews make product claims checkable.
             </p>
@@ -144,14 +144,15 @@ function AboutPage() {
           </section>
 
           <section aria-labelledby="about-how-it-is-built" className="border-t border-border pt-12">
-            <h2 id="about-how-it-is-built">How Scout is built.</h2>
+            <h2 id="about-how-it-is-built">How TrailScout is built.</h2>
             <div className="mt-7 space-y-8 [&_h3]:text-[22px] [&_h3]:leading-snug [&_h3]:font-semibold">
               <section aria-labelledby="about-convex">
                 <h3 id="about-convex">Convex</h3>
                 <p>
-                  Scout started with the Convex Agent component. It still powers one of the two
+                  TrailScout started with the Convex Agent component. It still powers one of the two
                   execution engines, with conversation threads, persisted messages, and model calls
-                  through Convex AI Gateway. Scout supplies the browser, email, and workspace tools.
+                  through Convex AI Gateway. TrailScout supplies the browser, email, and workspace
+                  tools.
                 </p>
                 <ul className="mt-4 list-disc space-y-3 pl-5 marker:text-primary">
                   <li>
@@ -177,8 +178,8 @@ function AboutPage() {
                 <p>
                   Luna is the default model and runs through the OpenAI Agents API. OpenAI also
                   handles the request and post-handoff checks and turns review evidence into the
-                  final walkthrough. Scout offers Luna through Convex Agent too, alongside Qwen 3.7
-                  Flash and DeepSeek V4 Flash through Convex AI Gateway.
+                  final walkthrough. TrailScout offers Luna through Convex Agent too, alongside Qwen
+                  3.7 Flash and DeepSeek V4 Flash through Convex AI Gateway.
                 </p>
                 <p>
                   I used Luna for most development reviews because it produced better reviews in my
@@ -190,8 +191,8 @@ function AboutPage() {
                 <p>
                   Firecrawl Agent, using Spark 2, researches public pages and returns the briefing
                   with citations. Firecrawl Browser supplies the remote sessions and persistent
-                  profiles that Scouts use to test products. Scout connects through Playwright over
-                  CDP to navigate, fill forms, manage tabs, and capture screenshots.
+                  profiles that Scouts use to test products. TrailScout connects through Playwright
+                  over CDP to navigate, fill forms, manage tabs, and capture screenshots.
                 </p>
                 <p>
                   The sessions also provide live views for watching and taking over, plus recordings
@@ -228,10 +229,10 @@ function AboutPage() {
               <section aria-labelledby="about-polar">
                 <h3 id="about-polar">Polar</h3>
                 <p>
-                  Verified accounts get 50 free Scout credits to get started. I use the available
-                  Firecrawl allowance to include browser sessions and site research during the beta.
-                  AI model calls, request checks, and hosted web search consume Scout credits to
-                  help cover their cost.
+                  Verified accounts get 50 free TrailScout credits to get started. I use the
+                  available Firecrawl allowance to include browser sessions and site research during
+                  the beta. AI model calls, request checks, and hosted web search consume TrailScout
+                  credits to help cover their cost.
                 </p>
                 <p>
                   Members can buy more credits through Polar checkout. Signed payment and refund
@@ -242,9 +243,9 @@ function AboutPage() {
               <section aria-labelledby="about-posthog">
                 <h3 id="about-posthog">PostHog</h3>
                 <p>
-                  PostHog helps me understand how people use Scout through product analytics and
-                  optional recordings of Scout's own interface. Session recording requires opt-in
-                  and can be turned off in Settings. Passwords and marked private content are
+                  PostHog helps me understand how people use TrailScout through product analytics
+                  and optional recordings of TrailScout's own interface. Session recording requires
+                  opt-in and can be turned off in Settings. Passwords and marked private content are
                   masked, and embedded remote browsers are excluded.
                 </p>
               </section>
@@ -256,9 +257,9 @@ function AboutPage() {
             <h2 id="about-challenges">What was difficult.</h2>
             <div className="mt-7 space-y-8 [&_h3]:text-[22px] [&_h3]:leading-snug [&_h3]:font-semibold">
               <section aria-labelledby="about-direction-challenge">
-                <h3 id="about-direction-challenge">Choosing what Scout should be</h3>
+                <h3 id="about-direction-challenge">Choosing what TrailScout should be</h3>
                 <p>
-                  The hardest part was deciding what Scout should be. I started with a general
+                  The hardest part was deciding what TrailScout should be. I started with a general
                   direction, but no clear picture of the product. I had to work that out as I built.
                 </p>
                 <p>
@@ -272,9 +273,9 @@ function AboutPage() {
                 <h3 id="about-agent-challenge">Building and guiding the agent</h3>
                 <p>
                   I had usually relied on existing agent tools and left agent infrastructure to
-                  others. Scout meant building one myself. The Convex Agent component made getting
-                  started straightforward, but there was still a lot to learn about directing the
-                  agent and managing what it could see.
+                  others. TrailScout meant building one myself. The Convex Agent component made
+                  getting started straightforward, but there was still a lot to learn about
+                  directing the agent and managing what it could see.
                 </p>
                 <p>
                   Browser observations and tool results fill the context quickly. I added summaries
@@ -304,9 +305,9 @@ function AboutPage() {
                 </p>
                 <p>
                   I set aside the automatic editing plan and made high-resolution screenshot
-                  walkthroughs the main way to read a review. Scout captures PNGs directly from the
-                  live browser at twice the viewport resolution and pairs them with the steps and
-                  findings. Replay remains available, and MediaBunny still powers MP4 export.
+                  walkthroughs the main way to read a review. TrailScout captures PNGs directly from
+                  the live browser at twice the viewport resolution and pairs them with the steps
+                  and findings. Replay remains available, and MediaBunny still powers MP4 export.
                 </p>
               </section>
               <section aria-labelledby="about-technical-choices">
@@ -334,7 +335,7 @@ function AboutPage() {
           to="/"
           className="mt-12 inline-flex items-center gap-3 rounded-sm text-primary underline decoration-primary/30 underline-offset-6 transition-colors hover:decoration-primary focus-visible:outline-3 focus-visible:outline-offset-6 focus-visible:outline-ring"
         >
-          Send Scout to a website
+          Send a Scout to a website
           <ArrowRightIcon className="size-4" aria-hidden="true" />
         </Link>
       </article>

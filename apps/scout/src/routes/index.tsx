@@ -8,7 +8,7 @@ export const Route = createFileRoute("/")({
   validateSearch: homeSearch,
   head: () => ({
     meta: [
-      { title: "Scout | Check if a product does what you need" },
+      { title: "TrailScout | Check if a product does what you need" },
       {
         name: "description",
         content:

@@ -204,7 +204,7 @@ test("protected children wait for access and unmount on revocation", async () =>
   expect(screen.queryByRole("link", { name: "Members" })).toBeNull();
   expect(screen.queryByRole("link", { name: "Lab" })).toBeNull();
   expect(screen.getByRole("link", { name: "Scouts" })).toBeTruthy();
-  expect(screen.getByRole("link", { name: "Reviews" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "TrailScout home" })).toBeTruthy();
 });
 
 test.each(["anonymous", "loading", "terms_required", "deleted"])(
@@ -215,7 +215,7 @@ test.each(["anonymous", "loading", "terms_required", "deleted"])(
     await open("/handoff/session");
     expect(await screen.findByRole("heading", { name: "Handoff browser" })).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Review our terms" })).toBeNull();
-    expect(screen.queryByRole("heading", { name: "Sign in to Scout" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Sign in to TrailScout" })).toBeNull();
   },
 );
 
@@ -244,7 +244,7 @@ test("pending accounts retain account controls", async () => {
   expect(await screen.findByRole("heading", { name: "Waiting for approval" })).toBeTruthy();
   expect(await screen.findByRole("heading", { name: "Your session" })).toBeTruthy();
   expect(screen.queryByRole("link", { name: "Members" })).toBeNull();
-  expect(screen.getByRole("link", { name: "Reviews" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "TrailScout home" })).toBeTruthy();
 });
 
 test("credit history opens from settings and returns to the account", async () => {
@@ -264,7 +264,7 @@ test("credit history opens from settings and returns to the account", async () =
 test("guests must sign in before opening credit history", async () => {
   remote.authenticated = false;
   await open("/credit-history");
-  expect(await screen.findByRole("heading", { name: "Sign in to Scout" })).toBeTruthy();
+  expect(await screen.findByRole("heading", { name: "Sign in to TrailScout" })).toBeTruthy();
   expect(screen.queryByRole("heading", { name: "Credit history" })).toBeNull();
 });
 
@@ -281,21 +281,23 @@ test("pending members keep account controls and receive approval without signing
   await open("/settings");
   expect(await screen.findByRole("heading", { name: "Waiting for approval" })).toBeTruthy();
   expect(screen.getByRole("heading", { name: "Your session" })).toBeTruthy();
-  expect(screen.getByRole("link", { name: "Reviews" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "TrailScout home" })).toBeTruthy();
   setViewer("role_member");
   expect(await screen.findByRole("heading", { name: "Account approved" })).toBeTruthy();
-  expect(screen.getByRole("link", { name: "Reviews" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "TrailScout home" })).toBeTruthy();
   expect(screen.queryByRole("link", { name: "Members" })).toBeNull();
   setViewer("role_pending_access");
   expect(await screen.findByRole("heading", { name: "Waiting for approval" })).toBeTruthy();
-  expect(screen.getByRole("link", { name: "Reviews" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "TrailScout home" })).toBeTruthy();
 });
 
 test("guests can navigate public pages and sign in without seeing admin links", async () => {
   remote.authenticated = false;
   await open("/");
   const user = userEvent.setup();
-  expect(screen.getByRole("link", { name: "Reviews" }).getAttribute("aria-current")).toBe("page");
+  expect(screen.getByRole("link", { name: "TrailScout home" }).getAttribute("aria-current")).toBe(
+    "page",
+  );
   expect(screen.queryByRole("link", { name: "Settings" })).toBeNull();
   for (const name of ["Lab", "Sites", "Members"]) {
     expect(screen.queryByRole("link", { name })).toBeNull();
@@ -305,7 +307,7 @@ test("guests can navigate public pages and sign in without seeing admin links", 
   await user.click(screen.getByRole("link", { name: "Scouts" }));
   expect(await screen.findByRole("heading", { name: "Scouts directory" })).toBeTruthy();
   await user.click(screen.getByRole("link", { name: "Sign in" }));
-  expect(await screen.findByRole("heading", { name: "Sign in to Scout" })).toBeTruthy();
+  expect(await screen.findByRole("heading", { name: "Sign in to TrailScout" })).toBeTruthy();
   expect(screen.getByLabelText("Email")).toBeTruthy();
   expect(remote.lab).not.toHaveBeenCalled();
 });

@@ -6,7 +6,7 @@ export const Route = createFileRoute("/tasks/$thread")({
   ssr: ({ search }) => search.status === "success" && search.value.scope !== "mine",
   staticData: { access: "access_public" },
   validateSearch: conversationSearch,
-  head: () => ({ meta: [{ title: "Task | Scout" }] }),
+  head: () => ({ meta: [{ title: "Task | TrailScout" }] }),
   component: TaskPage,
   errorComponent: ConversationError,
 });

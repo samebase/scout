@@ -1,7 +1,7 @@
 import { canAccess, useViewerAccess } from "../lib/access";
 import { CreditBalanceLink } from "./credits-panel";
-import { Link, useRouterState } from "@tanstack/react-router";
-import { BotIcon, EllipsisIcon, FocusIcon, SettingsIcon, UsersIcon } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { BotIcon, EllipsisIcon, SettingsIcon, UsersIcon } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import { Button } from "./ui/button";
 import { ScoutMark } from "./scout-mark";
@@ -11,12 +11,6 @@ const navigationLinkClass =
 
 export function AppNavigation() {
   const viewer = useViewerAccess();
-  const reviewPage = useRouterState({
-    select: (state) =>
-      state.location.pathname === "/" ||
-      state.location.pathname.startsWith("/tasks/") ||
-      state.location.pathname.startsWith("/sites/"),
-  });
   const permissions = viewer?.kind === "account" ? viewer.accessKeys : [];
   return (
     <header className="app-navigation">
@@ -25,22 +19,13 @@ export function AppNavigation() {
           to="/"
           activeOptions={{ exact: true }}
           className="app-navigation__brand"
-          aria-label="Scout home"
+          aria-label="TrailScout home"
         >
-          <ScoutMark className="size-8" />
-          <span className="hidden font-semibold tracking-[-0.02em] sm:inline">Scout</span>
+          <ScoutMark className="size-11 sm:size-12" />
+          <span className="font-bold tracking-[-0.03em]">TrailScout</span>
         </Link>
 
         <nav className="app-navigation__routes" aria-label="Primary navigation">
-          <Link
-            to="/"
-            activeOptions={{ exact: true }}
-            aria-current={reviewPage ? "page" : undefined}
-            className={navigationLinkClass}
-          >
-            <FocusIcon aria-hidden="true" />
-            <span>Reviews</span>
-          </Link>
           <Link to="/about" className={navigationLinkClass}>
             About
           </Link>

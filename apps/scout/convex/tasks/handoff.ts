@@ -64,7 +64,7 @@ export const notify = internalAction({
       to: delivery.recipient,
       subject: `${delivery.scoutName} needs your help`,
       text: outdent`
-        Open this link to take over the browser, then resume ${delivery.scoutName}. No Scout sign-in is needed.
+        Open this link to take over the browser, then resume ${delivery.scoutName}. No TrailScout sign-in is needed.
 
         ${url}
 

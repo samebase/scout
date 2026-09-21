@@ -12,7 +12,7 @@ import { LegalLinks } from "#components/legal-links";
 export const Route = createFileRoute("/account-deletion")({
   ssr: false,
   staticData: { access: "access_public" },
-  head: () => ({ meta: [{ title: "Delete account | Scout" }] }),
+  head: () => ({ meta: [{ title: "Delete account | TrailScout" }] }),
   component: AccountDeletionPage,
 });
 
@@ -63,7 +63,7 @@ function AccountDeletionPage() {
           <>
             <p>Your profile and sign-in access have been removed.</p>
             <p className="mt-3 text-sm text-muted-foreground">
-              Your chats, messages, and files remain in Scout, linked to a deleted account.
+              Your chats, messages, and files remain in TrailScout, linked to a deleted account.
             </p>
             {signOutFailed ? (
               <Button
@@ -78,7 +78,7 @@ function AccountDeletionPage() {
               </Button>
             ) : (
               <Link to="/" className="mt-6 inline-block text-sm underline">
-                Back to Scout
+                Back to TrailScout
               </Link>
             )}
           </>

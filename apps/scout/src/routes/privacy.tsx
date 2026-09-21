@@ -6,7 +6,7 @@ export const Route = createFileRoute("/privacy")({
   ssr: true,
   staticData: { access: "access_public" },
   head: () => ({
-    meta: [{ title: "Privacy policy | Scout" }],
+    meta: [{ title: "Privacy policy | TrailScout" }],
   }),
   component: () => <LegalDocument content={privacyPolicy} />,
 });

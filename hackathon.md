@@ -1,6 +1,6 @@
 # Hackathon log
 
-- **Project:** Scout
+- **Project:** TrailScout
 - **Event:** Convex All Gas Hackathon
 - **What it does:** Sends persistent AI Scouts to try web products and record walkthroughs, screenshots, and browser replays, with public reviews by default.
 - **Live app:** https://doting-crab-687.convex.site
@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-21T22:31:59Z
+- **Last updated:** 2026-09-21T23:09:24Z
 
 ## Log
 
@@ -1879,8 +1879,15 @@ for shared site files, so saved browser results and task notes can be read from 
 workspace. Existing Agents API calls that omit the selector remain supported
 (`apps/scout/convex/workspaceModel.ts`, `apps/scout/convex/scout/workspaceTools.ts`).
 
-### 2026-09-21 - working tree - v300
+### 2026-09-21 - 98ff4e6 - v300
 
 The homepage shows the standard Samebase attribution above its headline, visible before scrolling.
 A soft background fade keeps both readable over the animated terrain
 (`apps/scout/src/components/discovery-hero.tsx`).
+
+### 2026-09-21 - working tree - v301
+
+The product is now TrailScout, connecting its name to the orange trail across the homepage.
+Its larger wordmark stays visible on mobile, and the brand link replaces the duplicate Reviews link.
+Individual agents remain Scouts. The scarf's larger orange ring has a white center like the
+trail checkpoints (`apps/scout/src/components/app-navigation.tsx`, `apps/scout/public/scout-mark.png`).

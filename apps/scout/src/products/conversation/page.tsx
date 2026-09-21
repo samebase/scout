@@ -365,9 +365,9 @@ export function ConversationLobby({
                       </Select>
                     </div>
                   ) : isPlay ? (
-                    "Scout Play"
+                    "TrailScout Play"
                   ) : (
-                    "Scout Review"
+                    "TrailScout Review"
                   )}
                 </div>
                 <Select

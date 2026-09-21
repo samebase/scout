@@ -2,9 +2,9 @@
 
 Effective date: September 20, 2026
 
-Scout lets you ask AI agents to explore websites, play browser games, review products, and
+TrailScout lets you ask AI agents to explore websites, play browser games, review products, and
 carry out online tasks. This policy explains how we handle personal information when you
-visit a Scout website or app that links to this policy, create an account, or use Scout.
+visit a TrailScout website or app that links to this policy, create an account, or use TrailScout.
 
 Public chats can reveal your messages and the Scout's browser activity to anyone. A private
 chat limits access to its history, but its Scout can use an inbox, browser profile, and
@@ -13,7 +13,7 @@ and sign-in access, but keeps chat and Scout history. These distinctions are exp
 
 ## Who is responsible
 
-The Samebase team operates Scout. In this policy, "we", "us", and "our" mean the Samebase
+The Samebase team operates TrailScout. In this policy, "we", "us", and "our" mean the Samebase
 team. It is responsible for the processing described in this policy and is the controller
 where that term applies.
 
@@ -28,12 +28,12 @@ For privacy questions, requests, or complaints, email contact@samebase.com.
 | Browser and connected-service information | Visited URLs, page content, browser actions, remote-browser recordings, persistent browser profiles, service-account identifiers, and managed credentials for Scout accounts.                                                                                                                                         |
 | Email and human assistance                | Messages and attachments read or sent through a Scout inbox, recipients and senders, requests for human help, temporary handoff links, and the browser activity associated with a handoff.                                                                                                                            |
 | Usage and diagnostic information          | Task status, timestamps, selected models, model requests and responses, token and credit usage, provider costs, failures, and operational logs. Our hosting and service providers also receive connection information such as IP addresses and browser information when handling requests.                            |
-| Website analytics and optional recordings | Page visits, browser and device type, timestamps, an internal account identifier when signed in, and your recording preference. If you opt in, PostHog also receives recordings of page content, ordinary inputs, clicks, scrolling, and navigation in Scout.                                                         |
-| Purchases, when available                 | Credit balances, purchase and checkout identifiers, payment status, amounts, currency, tax and refund amounts. Polar and its payment providers collect payment and billing details at checkout. Scout's payment integration does not receive full payment-card numbers.                                               |
+| Website analytics and optional recordings | Page visits, browser and device type, timestamps, an internal account identifier when signed in, and your recording preference. If you opt in, PostHog also receives recordings of page content, ordinary inputs, clicks, scrolling, and navigation in TrailScout.                                                    |
+| Purchases, when available                 | Credit balances, purchase and checkout identifiers, payment status, amounts, currency, tax and refund amounts. Polar and its payment providers collect payment and billing details at checkout. TrailScout's payment integration does not receive full payment-card numbers.                                          |
 | Correspondence                            | Information you send us in support requests, privacy requests, reports, and feedback.                                                                                                                                                                                                                                 |
 
 Information about other people may appear in a task, website, screenshot, or email even if
-they do not have a Scout account. We receive it from the person submitting the task, the
+they do not have a TrailScout account. We receive it from the person submitting the task, the
 visited service, public web sources, or email correspondents. They can contact us about
 their information using the same privacy contact above.
 
@@ -52,9 +52,9 @@ Where data-protection law requires a legal basis, we use the following bases for
 | Create and operate your account, run requested tasks, maintain task history, and deliver account messages | Account, task, browser, connected-service, and email information                  | Performing our contract with you, to the extent this processing is necessary to provide the service you request.                                                      |
 | Display a chat you choose to make public                                                                  | The chat and associated task activity described below                             | Performing the public-sharing feature you request, where necessary to our contract. Your choice does not authorize publication of someone else's private information. |
 | Process credit purchases and maintain balances, when enabled                                              | Account identifiers, usage, and transaction information                           | Performing our contract; legal obligations for records we must keep.                                                                                                  |
-| Approve access, investigate faults, prevent abuse, secure Scout, and answer support requests              | Account, diagnostic, correspondence, and relevant task information                | Our legitimate interests in operating a reliable service, controlling access, and protecting users and systems, balanced against the people affected.                 |
+| Approve access, investigate faults, prevent abuse, secure TrailScout, and answer support requests         | Account, diagnostic, correspondence, and relevant task information                | Our legitimate interests in operating a reliable service, controlling access, and protecting users and systems, balanced against the people affected.                 |
 | Handle legal requests, privacy rights, and disputes                                                       | The information relevant to the request or dispute                                | Applicable legal obligations; legitimate interests in establishing, exercising, or defending legal claims where appropriate.                                          |
-| Understand which pages people use and improve Scout                                                       | Limited website analytics linked to an internal account identifier when signed in | Our legitimate interests in understanding and improving Scout, subject to applicable consent requirements and your right to object.                                   |
+| Understand which pages people use and improve TrailScout                                                  | Limited website analytics linked to an internal account identifier when signed in | Our legitimate interests in understanding and improving TrailScout, subject to applicable consent requirements and your right to object.                              |
 | Review optional recordings to find usability problems                                                     | Website session recordings linked to an internal account identifier               | Your separate consent, which you can withdraw in Settings.                                                                                                            |
 
 The contract basis does not automatically cover information about people who are not parties
@@ -65,7 +65,7 @@ without a lawful basis.
 
 This policy is a notice, not a request for blanket consent. If a feature needs consent, we
 will ask separately and explain how to withdraw it. Account, security, and billing messages
-are part of operating the service. We do not treat a Scout account as permission to send
+are part of operating the service. We do not treat a TrailScout account as permission to send
 optional marketing emails or make optional recordings of your use of our website.
 
 ## AI processing and automated checks
@@ -74,7 +74,7 @@ AI providers receive the context needed to answer or act on a request. This can 
 instructions, conversation history, summaries, website content, screenshots, email content,
 and tool results. Choosing a model can change which provider receives that context.
 
-Scout uses OpenAI directly for its Agents API and request checks. Other model calls use the
+TrailScout uses OpenAI directly for its Agents API and request checks. Other model calls use the
 Convex AI Gateway, with OpenAI, Qwen, and DeepSeek model options. Model names do not by
 themselves identify the company hosting a model. The gateway and the providers serving the
 selected model can process that task context under their applicable service terms and data
@@ -82,7 +82,7 @@ controls. We do not train our own AI models on your task content. Provider reten
 permitted uses vary by service; we do not promise that every model or tool has the same
 retention period or data-use settings.
 
-Scout stores task history and model-call information so tasks can continue and their results
+TrailScout stores task history and model-call information so tasks can continue and their results
 can be inspected. A short-lived browser session or a provider's no-training setting does not
 mean the task history is immediately deleted.
 
@@ -99,7 +99,7 @@ may be copied by others or indexed by search engines. Changing visibility cannot
 copies other people have already made.
 
 Private chats are not listed for public viewing. Authorized operators and administrators can
-access information needed to run, inspect, and support Scout. Providers still process private
+access information needed to run, inspect, and support TrailScout. Providers still process private
 task content. Private chats are not end-to-end encrypted.
 
 A Scout is a persistent identity with its own inbox, browser profile, and service accounts.
@@ -115,15 +115,15 @@ its access window, so treat the link as confidential.
 
 ## Who receives information
 
-| Recipient                                                 | What it does and the information involved                                                                                                                                                                                                    |
-| --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Convex                                                    | Hosts Scout's backend, database, authentication, task history, and some site delivery. Its AI Gateway also handles model requests.                                                                                                           |
-| Cloudflare                                                | Delivers the website, stores workspace files and screenshots in R2, and sends account-verification and password-reset emails. It handles the relevant content and network information.                                                       |
-| PostHog                                                   | Processes website analytics and, with your consent, session recordings in our EU Cloud project. Account attribution uses your internal Scout identifier. PostHog also receives network connection information when your browser contacts it. |
-| OpenAI and the providers serving gateway models           | Generate responses, operate agents, and evaluate task requests using the task context sent to them.                                                                                                                                          |
-| Firecrawl                                                 | Searches and reads websites, runs remote browsers and persistent profiles, and provides screenshots, live views, and replays. It receives visited content and browser commands.                                                              |
-| AgentMail                                                 | Hosts Scout inboxes and handles messages, attachments, addresses, and delivery information used by email tasks and human handoffs.                                                                                                           |
-| Polar and its payment providers, when checkout is enabled | Sell credit packs through checkout and handle payment, billing, tax, fraud prevention, and refunds. Polar acts as the merchant of record for those sales and processes information for its own legal and payment responsibilities.           |
+| Recipient                                                 | What it does and the information involved                                                                                                                                                                                                         |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Convex                                                    | Hosts TrailScout's backend, database, authentication, task history, and some site delivery. Its AI Gateway also handles model requests.                                                                                                           |
+| Cloudflare                                                | Delivers the website, stores workspace files and screenshots in R2, and sends account-verification and password-reset emails. It handles the relevant content and network information.                                                            |
+| PostHog                                                   | Processes website analytics and, with your consent, session recordings in our EU Cloud project. Account attribution uses your internal TrailScout identifier. PostHog also receives network connection information when your browser contacts it. |
+| OpenAI and the providers serving gateway models           | Generate responses, operate agents, and evaluate task requests using the task context sent to them.                                                                                                                                               |
+| Firecrawl                                                 | Searches and reads websites, runs remote browsers and persistent profiles, and provides screenshots, live views, and replays. It receives visited content and browser commands.                                                                   |
+| AgentMail                                                 | Hosts Scout inboxes and handles messages, attachments, addresses, and delivery information used by email tasks and human handoffs.                                                                                                                |
+| Polar and its payment providers, when checkout is enabled | Sell credit packs through checkout and handle payment, billing, tax, fraud prevention, and refunds. Polar acts as the merchant of record for those sales and processes information for its own legal and payment responsibilities.                |
 
 Websites the Scout visits and people it emails receive the information submitted to them.
 Their own privacy practices govern their independent use of that information. Public viewers
@@ -150,20 +150,20 @@ data and a copy where the law entitles you to one.
 
 ## Browser storage
 
-Scout uses local browser storage to keep you signed in and remember sidebar layout choices.
+TrailScout uses local browser storage to keep you signed in and remember sidebar layout choices.
 Signing out removes the stored authentication tokens; layout preferences remain until
 replaced or cleared. You can clear site data in your browser settings, which may sign you
 out and reset preferences.
 
-Scout uses PostHog for website analytics, with persistent analytics identifiers in cookies
-and local storage disabled. Signed-in page visits are linked to your internal Scout account
+TrailScout uses PostHog for website analytics, with persistent analytics identifiers in cookies
+and local storage disabled. Signed-in page visits are linked to your internal TrailScout account
 identifier. We send route patterns rather than task identifiers, search parameters, or
 handoff tokens. We do not send your email, chat messages, task prompts, or user-written
 page titles as analytics properties. The integration respects the browser's Do Not Track
 signal. You can also contact us to object to analytics processing.
 
 Session recording is off unless you select the separate, optional checkbox at account
-creation or enable it in Settings. Declining does not affect access to Scout. You can turn
+creation or enable it in Settings. Declining does not affect access to TrailScout. You can turn
 it off in Settings at any time. Withdrawal stops future recording; it does not automatically
 delete earlier recordings. Recordings include the page content you see, images, clicks,
 scrolling, navigation, and ordinary form inputs, including task prompts. Passwords and
@@ -184,7 +184,7 @@ PostHog session recordings use a 30-day retention setting; provider deletion may
 additional processing time. Analytics events have a separate retention policy and are
 reviewed for continued necessity. Account closure does not automatically erase previously
 collected PostHog data. Contact contact@samebase.com to request access or deletion; we can
-locate it using your internal Scout account identifier. We retain recording-consent records
+locate it using your internal TrailScout account identifier. We retain recording-consent records
 to record your current choice and demonstrate consent where required.
 
 Deleting your account in Settings starts removal of your profile and authentication records
@@ -231,7 +231,7 @@ cannot guarantee that copies outside our control disappear.
 
 ## Security
 
-Scout uses access controls and encrypted connections. Managed passwords for Scout service
+TrailScout uses access controls and encrypted connections. Managed passwords for Scout service
 accounts are encrypted in storage, but the browser provider and destination website receive
 them when a login is performed. Recordings and page content can still expose sensitive
 information. No security measure guarantees complete protection.
@@ -247,7 +247,7 @@ processing based on legitimate interests. Where we rely on consent, you can with
 without affecting the lawfulness of earlier processing. Rights and exceptions depend on the
 circumstances.
 
-Send requests to contact@samebase.com. You do not need an active Scout account. We may ask for
+Send requests to contact@samebase.com. You do not need an active TrailScout account. We may ask for
 proportionate information to verify your identity and locate the records. We respond within
 the applicable legal deadline. Under the EU GDPR, this is normally one month, with extensions
 permitted in specified cases; we will explain an extension within that first month.
@@ -261,7 +261,7 @@ Elsewhere, contact the data-protection regulator with jurisdiction over your com
 
 ## Age and changes to this policy
 
-Scout is intended for adults aged 18 or older. If you believe a child has provided personal
+TrailScout is intended for adults aged 18 or older. If you believe a child has provided personal
 information, contact us so we can investigate and take appropriate action.
 
 We will publish updates with a new effective date and give appropriate notice of material

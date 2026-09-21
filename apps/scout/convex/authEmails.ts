@@ -5,7 +5,7 @@ import { EMAIL_VERIFICATION_PROVIDER_ID, PASSWORD_RESET_PROVIDER_ID } from "../s
 
 const CODE_LENGTH = 8;
 const CODE_TTL_SECONDS = 15 * 60;
-const AUTH_EMAIL_FROM = "Scout <scout-notifications@samebase.com>";
+const AUTH_EMAIL_FROM = "TrailScout <scout-notifications@samebase.com>";
 const DECIMAL_BUCKET_SIZE = 250;
 
 function generateNumericCode() {
@@ -46,7 +46,7 @@ function createEmailCodeProvider({
         to: email,
         subject,
         text: `${message}\n\n${token}\n\nThis code expires in 15 minutes. If you did not request it, you can ignore this email.`,
-        html: `<div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.6;"><h1 style="font-size: 24px; margin: 0 0 16px;">Scout</h1><p>${message}</p><p style="font-size: 32px; font-weight: 700; letter-spacing: 8px; margin: 24px 0;">${token}</p><p>This code expires in 15 minutes.</p><p style="color: #6b7280; font-size: 14px;">If you did not request it, you can ignore this email.</p></div>`,
+        html: `<div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.6;"><h1 style="font-size: 24px; margin: 0 0 16px;">TrailScout</h1><p>${message}</p><p style="font-size: 32px; font-weight: 700; letter-spacing: 8px; margin: 24px 0;">${token}</p><p>This code expires in 15 minutes.</p><p style="color: #6b7280; font-size: 14px;">If you did not request it, you can ignore this email.</p></div>`,
       });
     },
   };
@@ -55,12 +55,12 @@ function createEmailCodeProvider({
 
 export const emailVerificationCode = createEmailCodeProvider({
   id: EMAIL_VERIFICATION_PROVIDER_ID,
-  subject: "Verify your Scout email",
-  message: "Enter this code in Scout to verify your email address:",
+  subject: "Verify your TrailScout email",
+  message: "Enter this code in TrailScout to verify your email address:",
 });
 
 export const passwordResetCode = createEmailCodeProvider({
   id: PASSWORD_RESET_PROVIDER_ID,
-  subject: "Reset your Scout password",
-  message: "Enter this code in Scout to choose a new password:",
+  subject: "Reset your TrailScout password",
+  message: "Enter this code in TrailScout to choose a new password:",
 });

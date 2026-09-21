@@ -16,7 +16,7 @@ export const Route = createFileRoute("/settings")({
   staticData: { access: "access_account" },
   validateSearch: (search) => z.object({ purchase: z.string().optional() }).parse(search),
   head: () => ({
-    meta: [{ title: "Settings | Scout" }],
+    meta: [{ title: "Settings | TrailScout" }],
   }),
   component: SettingsPage,
 });
@@ -45,7 +45,7 @@ function SettingsPage() {
         <section className="surface-panel mt-8 p-5 sm:p-6">
           <h2 className="text-base font-semibold">Delete account</h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            Remove your profile and sign-in access. Chats, messages, and files stay in Scout.
+            Remove your profile and sign-in access. Chats, messages, and files stay in TrailScout.
           </p>
           <Link
             to="/account-deletion"

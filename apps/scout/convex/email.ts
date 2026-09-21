@@ -4,7 +4,7 @@ import { omitNullish } from "../shared/omitNullish";
 const CLOUDFLARE_API_BASE_URL = "https://api.cloudflare.com/client/v4";
 const EMAIL_FROM = {
   address: "scout-notifications@samebase.com",
-  name: "Scout",
+  name: "TrailScout",
 };
 
 type EmailContent = { text: string; html?: string } | { text?: string; html: string };

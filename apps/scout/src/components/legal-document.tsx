@@ -46,7 +46,7 @@ export function LegalDocument({ content }: { content: string }) {
           to="/"
           className="inline-flex min-h-11 items-center text-sm text-primary underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
         >
-          Back to Scout
+          Back to TrailScout
         </Link>
       </footer>
     </main>
