@@ -199,6 +199,40 @@ it("lets a private task's owner and admin read metadata and sign its image", asy
   expect(getUrl).toHaveBeenCalledWith(`private-images/${captureId}.png`, { expiresIn: 900 });
 });
 
+it("reopens the stored browser result only for a completed capture in the same task", async () => {
+  const t = await setup("private");
+  const captureId = await t.reserve("capture-1", "browser-1");
+  await t.finish(captureId);
+  const browserResult = JSON.stringify({ currentPage: "7 results", output: { maxRent: 2500 } });
+  await t.backend.run(async (ctx) => {
+    await ctx.db.insert("agentsApiCalls", {
+      sessionId: t.sessionId,
+      callId: "capture-1",
+      result: { kind: "success", output: browserResult },
+    });
+  });
+  expect(
+    await t.backend.query(internal.tasks.screenshotRecords.evidence, {
+      sessionId: t.sessionId,
+      captureId,
+    }),
+  ).toEqual({ captureId, note, metadata: image.metadata, browserResult });
+  const other = await t.createTask();
+  await expect(
+    t.backend.query(internal.tasks.screenshotRecords.evidence, {
+      sessionId: other.sessionId,
+      captureId,
+    }),
+  ).rejects.toThrow("Use a completed screenshot from this task");
+  const pending = await t.reserve("capture-2", "browser-1");
+  await expect(
+    t.backend.query(internal.tasks.screenshotRecords.evidence, {
+      sessionId: t.sessionId,
+      captureId: pending,
+    }),
+  ).rejects.toThrow("Use a completed screenshot from this task");
+});
+
 it("denies private metadata and image signing by capture ID to other users and anonymous viewers", async () => {
   const t = await setup("private");
   const captureId = await t.reserve("capture-1", "browser-1");

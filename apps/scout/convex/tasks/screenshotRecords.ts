@@ -107,3 +107,35 @@ export const imageKey = internalQuery({
     return session ? capture.state.key : null;
   },
 });
+
+export const evidence = internalQuery({
+  args: { sessionId: v.id("agentsApiSessions"), captureId: v.string() },
+  returns: v.object({
+    captureId: v.id("agentsApiScreenshots"),
+    note: v.string(),
+    metadata: screenshotMetadata,
+    browserResult: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    const id = ctx.db.normalizeId("agentsApiScreenshots", args.captureId);
+    const capture = id ? await ctx.db.get(id) : null;
+    if (!capture || capture.sessionId !== args.sessionId || capture.state.kind !== "ready")
+      throw new Error("Use a completed screenshot from this task");
+    const operation = await ctx.db.get(capture.operationId);
+    if (!operation) throw new Error("The screenshot's browser operation is missing");
+    const call = await ctx.db
+      .query("agentsApiCalls")
+      .withIndex("by_session_id_and_call_id", (q) =>
+        q.eq("sessionId", args.sessionId).eq("callId", operation.toolCallId),
+      )
+      .unique();
+    if (call?.result.kind !== "success")
+      throw new Error("The screenshot's browser result is unavailable");
+    return {
+      captureId: capture._id,
+      note: capture.note,
+      metadata: capture.state.metadata,
+      browserResult: call.result.output,
+    };
+  },
+});
