@@ -33,8 +33,8 @@ export function DiscoveryHero({
             className="pointer-events-auto list-disc space-y-2 pl-6 text-xl leading-relaxed text-foreground marker:text-primary @max-[640px]/hero:text-lg"
           >
             <li>Send an AI agent to try a website for you.</li>
-            <li>Get a walkthrough, screenshots, and a video replay.</li>
-            <li>Public reviews show whether products live up to their claims.</li>
+            <li>See what happened in a walkthrough, screenshots, and a replay.</li>
+            <li>Public reviews make product claims checkable.</li>
           </ul>
         </div>
       </div>

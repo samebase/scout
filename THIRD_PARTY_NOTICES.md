@@ -1,5 +1,14 @@
 # Third-Party Notices
 
+## Previous Scout scarf icon
+
+Earlier versions used a scarf in the navigation and favicon designed by
+[andinur on Flaticon](https://www.flaticon.com/free-icon/scarf_12736059).
+That asset remains in Git history as `apps/scout/public/favicon.svg` and uses the
+[Flaticon license with attribution](https://www.flaticon.com/media/license/license.pdf).
+The icon is third-party material and is not covered by this repository's Apache-2.0 license.
+The current blue-and-orange mark replaces that asset and was generated for Scout with ChatGPT.
+
 ## Play interface fonts
 
 The play interface self-hosts Latin subsets of Bricolage Grotesque and DM Sans from Google Fonts.

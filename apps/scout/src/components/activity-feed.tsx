@@ -18,7 +18,7 @@ import { cn } from "#lib/utils";
 import { api } from "../../convex/_generated/api";
 import { useViewerAccess } from "../lib/access";
 import { BrowserReplayTrack } from "./browser-replay";
-import { ScoutPiece } from "../products/play/scout-piece";
+import { ScoutMark } from "./scout-mark";
 import { buildReplayTimeline } from "../lib/browserReplayTimeline";
 
 type Activity = FunctionReturnType<typeof api.scout.activity.list>["page"][number];
@@ -347,7 +347,7 @@ function ReviewRow({
 function PreviewPlaceholder() {
   return (
     <div className="grid size-full place-items-center">
-      <ScoutPiece className="scale-65 opacity-60" />
+      <ScoutMark className="size-12 opacity-60" />
     </div>
   );
 }

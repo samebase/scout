@@ -47,11 +47,32 @@ function AboutPage() {
               about.
             </p>
             <blockquote className="my-6 border-l-2 border-primary/40 py-1 pl-6">
-              “Can I make a screenshot and export it without paying?”
+              “Can I sign up and create my first project?”
             </blockquote>
             <p>
               You can watch the visit as it happens, or come back to see how far Scout got and what
               it found along the way.
+            </p>
+          </section>
+
+          <section aria-labelledby="about-scout-identity">
+            <h2 id="about-scout-identity">A Scout has its own identity.</h2>
+            <p>
+              Each Scout has a name, its own email inbox, and a browser profile that stays with it
+              across tasks. It can sign up for services, read verification emails, and use the
+              accounts it has already created.
+            </p>
+            <p>
+              Its browser profile keeps cookies and signed-in sessions between visits. Its service
+              accounts stay attached to that Scout, so it can return to a product using the same
+              identity. You can{" "}
+              <Link
+                to="/scouts"
+                className="text-primary underline decoration-primary/30 underline-offset-4 hover:decoration-primary"
+              >
+                meet the Scouts
+              </Link>{" "}
+              and see their public work and the sites where they have accounts.
             </p>
           </section>
 
@@ -90,16 +111,6 @@ function AboutPage() {
           <ArrowRightIcon className="size-4" aria-hidden="true" />
         </Link>
       </article>
-      <p className="mt-16 text-sm text-muted-foreground">
-        Scarf icon by{" "}
-        <a
-          href="https://www.flaticon.com/free-icon/scarf_12736059"
-          className="underline underline-offset-4"
-        >
-          andinur on Flaticon
-        </a>
-        .
-      </p>
     </main>
   );
 }

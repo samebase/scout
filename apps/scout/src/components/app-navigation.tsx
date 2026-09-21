@@ -4,6 +4,7 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { BotIcon, EllipsisIcon, FocusIcon, SettingsIcon, UsersIcon } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import { Button } from "./ui/button";
+import { ScoutMark } from "./scout-mark";
 
 const navigationLinkClass =
   "group inline-flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-medium text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/40 aria-[current=page]:bg-primary aria-[current=page]:text-primary-foreground";
@@ -26,9 +27,7 @@ export function AppNavigation() {
           className="app-navigation__brand"
           aria-label="Scout home"
         >
-          <span className="app-navigation__mark" aria-hidden="true">
-            <img src="/favicon.svg" width={32} height={32} alt="" />
-          </span>
+          <ScoutMark className="size-8" />
           <span className="hidden font-semibold tracking-[-0.02em] sm:inline">Scout</span>
         </Link>
 
