@@ -72,10 +72,6 @@ vi.mock("../lib/access", async (importOriginal) => ({
       : { kind: "anonymous" },
 }));
 vi.mock("./site-preview", () => ({ SitePreview: () => <div />, SitePreviewCapture: () => null }));
-vi.mock("./activity-feed", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./activity-feed")>()),
-  SiteTaskList: ({ site }: { site: string }) => <p>Tasks for {site}</p>,
-}));
 vi.mock("convex/react", () => ({
   usePaginatedQuery: (
     ref: FunctionReference<"query">,
@@ -291,7 +287,7 @@ test.each([true, false])(
 test("opens a site, previews and downloads files, and runs commands without a chat", async () => {
   const router = await openPage("/sites/chessmerge.com");
   const user = userEvent.setup();
-  expect(await screen.findByText("Tasks for chessmerge.com")).toBeTruthy();
+  expect(await screen.findByRole("region", { name: "Tasks for chessmerge.com" })).toBeTruthy();
   await user.click(await screen.findByRole("link", { name: "Workspace" }));
   await user.click(await screen.findByRole("button", { name: "guide.md" }));
   expect((await screen.findByLabelText("File contents")).textContent).toBe("Site guide");
@@ -376,7 +372,7 @@ test("opens the mobile site list and returns to the workspace after selecting a 
 test("members see tasks and cannot mount the workspace from its URL", async () => {
   remote.admin = false;
   await openPage("/sites/chessmerge.com?view=workspace");
-  expect(await screen.findByText("Tasks for chessmerge.com")).toBeTruthy();
+  expect(await screen.findByRole("region", { name: "Tasks for chessmerge.com" })).toBeTruthy();
   expect(screen.queryByRole("link", { name: "Workspace" })).toBeNull();
   expect(screen.queryByRole("textbox", { name: "Bash command" })).toBeNull();
   expect(remote.query).not.toHaveBeenCalled();
@@ -452,7 +448,7 @@ test.each([
     await openPage("/sites/chessmerge.com");
     const heading = await screen.findByRole("heading", { name: "Chess Merge", level: 1 });
     const description = screen.getByText("Play chess variants with friends in your browser.");
-    const tasks = screen.getByText("Tasks for chessmerge.com");
+    const tasks = screen.getByRole("region", { name: "Tasks for chessmerge.com" });
     const hostname = heading.nextElementSibling;
     if (!hostname) throw new Error("Missing site hostname");
     expect(description.tagName).toBe("P");
@@ -475,9 +471,9 @@ test.each([
 test("shows an existing profile without an overview without adding description copy", async () => {
   await openPage("/sites/papergames.io");
   const heading = await screen.findByRole("heading", { name: "Papergames", level: 1 });
-  const tasks = screen.getByText("Tasks for papergames.io");
+  const tasks = screen.getByRole("region", { name: "Tasks for papergames.io" });
   expect(heading.nextElementSibling?.textContent).toBe("papergames.io");
-  expect(tasks.parentElement?.querySelectorAll(":scope > p")).toHaveLength(1);
+  expect(tasks.parentElement?.querySelectorAll(":scope > p")).toHaveLength(0);
   expect(remote.refresh).not.toHaveBeenCalled();
 });
 
@@ -659,6 +655,39 @@ test("site sidebar filters stay editable across views and browser history", asyn
   await user.click(screen.getByRole("link", { name: "All sites" }));
   await waitFor(() => expect(router.state.location.pathname).toBe("/"));
   expect(router.state.location.search).toEqual({ site: "paper", scope: "public" });
+});
+
+test("changing task visibility keeps the site heading and views visible while tasks load", async () => {
+  const router = await openPage("/sites/chessmerge.com?scope=public");
+  const heading = await screen.findByRole("heading", { name: "Chess Merge" });
+  const views = screen.getByRole("navigation", { name: "Site views" });
+  const tasks = await screen.findByRole("region", { name: "Tasks for chessmerge.com" });
+  let resolvePending: (page: FunctionReturnType<typeof api.scout.activity.list>) => void;
+  const pending = new Promise<FunctionReturnType<typeof api.scout.activity.list>>((resolve) => {
+    resolvePending = resolve;
+  });
+  const load = vi.fn(() => pending);
+  queryClient.setQueryDefaults(
+    convexQuery(api.scout.activity.list, {
+      site: "chessmerge.com",
+      scope: "mine",
+      paginationOpts: { numItems: 10, cursor: null },
+    }).queryKey,
+    { queryFn: load },
+  );
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("combobox", { name: "Review visibility" }));
+  await user.click(screen.getByRole("option", { name: "My reviews" }));
+  await waitFor(() => expect(router.state.location.search.scope).toBe("mine"));
+  await waitFor(() => expect(load).toHaveBeenCalled());
+  expect(screen.getByRole("heading", { name: "Chess Merge" })).toBe(heading);
+  expect(screen.getByRole("navigation", { name: "Site views" })).toBe(views);
+  await act(async () => resolvePending({ page: [], isDone: true, continueCursor: "" }));
+  await waitFor(() =>
+    expect(screen.getByRole("region", { name: "Tasks for chessmerge.com" })).not.toBe(tasks),
+  );
+  expect(screen.getByRole("heading", { name: "Chess Merge" })).toBe(heading);
+  expect(screen.getByRole("navigation", { name: "Site views" })).toBe(views);
 });
 
 test("the filtered site sidebar retains its DOM, width, and scroll while another site loads", async () => {

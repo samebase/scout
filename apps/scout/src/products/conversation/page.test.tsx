@@ -13,6 +13,7 @@ import { getFunctionName, type FunctionReturnType, type FunctionReference } from
 import { ConvexError } from "convex/values";
 import { useSyncExternalStore } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { convexQuery } from "@convex-dev/react-query";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { Route as TaskRoute } from "../../routes/tasks.$thread";
 import { Route as PlayRoute } from "../../routes/play";
@@ -1091,6 +1092,47 @@ test("a delayed transcript leaves the walkthrough, view links, and composer avai
   expect(await screen.findByRole("log", { name: "Session messages" })).toBeTruthy();
   expect(screen.getByRole("textbox", { name: "Message Scout" })).toBe(composer);
   expect(composer).toHaveProperty("value", "Keep this draft");
+});
+
+test("discovering a task's site keeps its conversation visible while navigation loads", async () => {
+  vi.spyOn(window, "innerWidth", "get").mockReturnValue(1280);
+  const review = session({ purpose: { kind: "review" }, title: "Review in progress" });
+  remote.queries.set("scout/activity:get", review);
+  remote.messages = [
+    { kind: "message", id: "recent", role: "assistant", text: "Opening the site" },
+  ];
+  await openPlay("/tasks/game-thread");
+  const heading = await screen.findByRole("heading", { name: "Review in progress" });
+  const composer = screen.getByRole("textbox", { name: "Message Scout" });
+  const transcript = screen.getByRole("region", { name: "Session messages" });
+  fireEvent.change(composer, { target: { value: "Keep this draft" } });
+  transcript.scrollTop = 120;
+  let resolvePending: (page: FunctionReturnType<typeof api.scout.activity.list>) => void;
+  const pending = new Promise<FunctionReturnType<typeof api.scout.activity.list>>((resolve) => {
+    resolvePending = resolve;
+  });
+  const query = convexQuery(api.scout.activity.list, {
+    site: "samebase.com",
+    scope: "mine",
+    paginationOpts: { numItems: 10, cursor: null },
+  });
+  const load = vi.fn(() => pending);
+  for (const client of queryClients) client.setQueryDefaults(query.queryKey, { queryFn: load });
+  act(() => {
+    remote.queries.set("scout/activity:get", { ...review, primarySite: "samebase.com" });
+    remote.revision++;
+    remote.subscribers.forEach((notify) => notify());
+  });
+  await waitFor(() => expect(load).toHaveBeenCalled());
+  expect(screen.getByRole("heading", { name: "Review in progress" })).toBe(heading);
+  expect(screen.getByRole("textbox", { name: "Message Scout" })).toBe(composer);
+  expect(screen.getByRole("region", { name: "Session messages" })).toBe(transcript);
+  expect(transcript.scrollTop).toBe(120);
+  await act(async () => resolvePending({ page: [], isDone: true, continueCursor: "" }));
+  expect(await screen.findByRole("navigation", { name: "Tasks for samebase.com" })).toBeTruthy();
+  expect(screen.getByRole("textbox", { name: "Message Scout" })).toBe(composer);
+  expect(composer).toHaveProperty("value", "Keep this draft");
+  expect(transcript.scrollTop).toBe(120);
 });
 
 test("a completed managed Review opens its walkthrough and pairs replay with Chat", async () => {

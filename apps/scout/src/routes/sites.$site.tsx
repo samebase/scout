@@ -284,7 +284,9 @@ function SiteContent({ site }: { site: string }) {
           />
         </div>
       ) : (
-        <SiteTaskList key={`${site}:${scope}`} site={site} search={filters} />
+        <Suspense fallback={<div className="min-h-40" aria-busy="true" />}>
+          <SiteTaskList key={`${site}:${scope}`} site={site} search={filters} />
+        </Suspense>
       )}
     </div>
   );

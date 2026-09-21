@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-21T00:22:17Z
+- **Last updated:** 2026-09-21T01:51:01Z
 
 ## Log
 
@@ -1788,8 +1788,14 @@ Review transcripts and saved walkthrough text arrive in HTML; private tasks wait
 authentication, and the existing switch still restores the SPA
 (`apps/scout/src/products/conversation/page.tsx`, `apps/scout/src/routes/scouts.$slug.tsx`).
 
-### 2026-09-21 - working tree - v286
+### 2026-09-21 - df4c431 - v286
 
 Infinite scrolling keeps the existing feed and site navigation visible while new task previews load.
 Cards retain their images and links during loading, and the first page still renders on the server
 (`apps/scout/src/components/activity-feed.tsx`).
+
+### 2026-09-21 - working tree - v287
+
+Site headings and tabs stay visible while changing review visibility, and conversations remain
+available while a newly discovered site's task navigation loads
+(`apps/scout/src/routes/sites.$site.tsx`, `apps/scout/src/products/conversation/page.tsx`).
