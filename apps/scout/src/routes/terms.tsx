@@ -6,7 +6,7 @@ export const Route = createFileRoute("/terms")({
   ssr: true,
   staticData: { access: "access_public" },
   head: () => ({
-    meta: [{ title: "Terms and conditions | Scout" }],
+    meta: [{ title: "Terms and conditions | TrailScout" }],
   }),
   component: () => <LegalDocument content={termsOfService} />,
 });

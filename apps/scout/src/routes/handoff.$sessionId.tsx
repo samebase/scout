@@ -6,7 +6,7 @@ export const Route = createFileRoute("/handoff/$sessionId")({
   staticData: { access: "access_public" },
   head: () => ({
     meta: [
-      { title: "Help Scout continue" },
+      { title: "Help your Scout continue | TrailScout" },
       { name: "robots", content: "noindex, nofollow" },
       { name: "referrer", content: "no-referrer" },
     ],

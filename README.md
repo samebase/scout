@@ -1,6 +1,6 @@
-# Scout
+# TrailScout
 
-Explore Scout Play for browser games, Scout Review for testing products, and Agents
+Explore TrailScout Play for browser games, TrailScout Review for testing products, and Agents
 for inspecting tasks and comparing execution engines.
 
 Live app: [doting-crab-687.convex.site](https://doting-crab-687.convex.site)
@@ -52,7 +52,7 @@ Tailwind utilities style the UI, with shared class variants in `apps/scout/src/p
 Font declarations and Tailwind theme tokens live in `apps/scout/src/style.css`. Each product keeps its own
 identity; separate frontends would still need their own routing and deployment setup.
 
-Scout provides private chats with persistent Scout identities. A chat can use the Scout's
+TrailScout provides private chats with persistent Scout identities. A chat can use the Scout's
 AgentMail inbox to read, send, and reply to email, plus its Firecrawl browser profile and accounts
 across multiple services. Inspect tool calls, live browsers, replay, usage, and human handoffs
 in the same task interface.
@@ -109,7 +109,7 @@ The core workflow runs on macOS, Linux, and Windows. See
 For app-specific CLIs, use `pnpm --filter samebase-scout exec <command>`, for example
 `pnpm --filter samebase-scout exec convex dashboard`. New workspace packages should define a
 `typecheck` script and a Vite+ test configuration when they have tests. Root checks include
-workspace typechecks and tests; root build/deploy commands target Scout.
+workspace typechecks and tests; root build/deploy commands target TrailScout.
 
 ## Checks and builds
 
@@ -167,7 +167,7 @@ lists use the shared `useSsrPaginatedQuery` bridge while native Convex hooks ret
 live pagination. New public routes inherit SSR without a separate server loader.
 Account, workspace, and personal views remain client-rendered.
 `TANSTACK_SERVER_ENABLED=false` still restores static prerenders and the SPA shell.
-See [Scout SSR verification](./docs/convex-ssr-experiment.md) for the PR preview
+See [TrailScout SSR verification](./docs/convex-ssr-experiment.md) for the PR preview
 and commands to reproduce it without a Cloudflare runtime.
 
 See [`docs/cloudflare-workers-builds.md`](./docs/cloudflare-workers-builds.md) for the detailed build

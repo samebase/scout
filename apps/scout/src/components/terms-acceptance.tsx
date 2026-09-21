@@ -42,7 +42,7 @@ export function TermsAcceptance() {
     <main className="route-page max-w-lg">
       <h1 className="route-heading">Review our terms</h1>
       <p className="mt-3 text-muted-foreground">
-        Please review and accept the Terms and conditions to continue using your Scout account.
+        Please review and accept the Terms and conditions to continue using your TrailScout account.
       </p>
       <form className="mt-6 space-y-5" onSubmit={submit}>
         <TermsCheckbox />

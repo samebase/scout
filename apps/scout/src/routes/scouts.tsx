@@ -2,7 +2,7 @@ import { Outlet, createFileRoute } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/scouts")({
   staticData: { access: "access_public" },
-  head: () => ({ meta: [{ title: "Scouts | Scout" }] }),
+  head: () => ({ meta: [{ title: "Scouts | TrailScout" }] }),
   component: ScoutsLayout,
 });
 

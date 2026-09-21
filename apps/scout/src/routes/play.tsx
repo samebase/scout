@@ -11,7 +11,7 @@ export const Route = createFileRoute("/play")({
   ssr: false,
   staticData: { access: "access_public" },
   validateSearch: playSearch,
-  head: () => ({ meta: [{ title: "Play with Scout" }] }),
+  head: () => ({ meta: [{ title: "Play with a Scout | TrailScout" }] }),
   component: PlayPage,
   errorComponent: ConversationError,
 });

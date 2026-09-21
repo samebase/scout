@@ -6,7 +6,7 @@ export const Route = createFileRoute("/lab")({
   ssr: false,
   staticData: { access: "access_lab" },
   validateSearch: labSearch,
-  head: () => ({ meta: [{ title: "Lab | Scout" }] }),
+  head: () => ({ meta: [{ title: "Lab | TrailScout" }] }),
   component: () => <LabPage search={Route.useSearch()} />,
   errorComponent: LabError,
 });

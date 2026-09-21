@@ -43,7 +43,7 @@ export const Route = createFileRoute("/sites/$site")({
     search.value.view !== "workspace",
   staticData: { access: "access_public" },
   validateSearch: searchSchema,
-  head: ({ params }) => ({ meta: [{ title: `${params.site} | Scout` }] }),
+  head: ({ params }) => ({ meta: [{ title: `${params.site} | TrailScout` }] }),
   component: SitePage,
 });
 

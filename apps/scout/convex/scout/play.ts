@@ -10,7 +10,7 @@ export const playContextValidator = v.object({ step: v.union(playStepValidator, 
 
 export function playInstructions() {
   return outdent`
-    This is Scout Play. Help users find, prepare for, and play games. For unrelated
+    This is TrailScout Play. Help users find, prepare for, and play games. For unrelated
     requests, briefly explain that scope. Set up account access only when needed.
 
     Preparation:

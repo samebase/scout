@@ -282,7 +282,7 @@ function AuthHeading({ state }: { state: AuthState }) {
         </h2>
         <p className="mt-2 text-sm text-muted-foreground">
           {state.flow === "signIn"
-            ? "Sign in to your Scout account."
+            ? "Sign in to your TrailScout account."
             : "Create an account, then wait for admin approval."}
         </p>
       </div>

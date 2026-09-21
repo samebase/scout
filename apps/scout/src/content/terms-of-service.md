@@ -2,8 +2,8 @@
 
 Effective date: September 21, 2026
 
-These terms govern Scout and the websites, apps, and services that link to these terms.
-Scout is operated by the Samebase team.
+These terms govern TrailScout and the websites, apps, and services that link to these terms.
+TrailScout is operated by the Samebase team.
 "We", "us", and "our" refer to that operator. For support, legal notices, or questions about
 these terms, email contact@samebase.com.
 
@@ -18,16 +18,16 @@ and your use of the resulting actions and outputs. Scouts can act without asking
 approve each step and can make costly or irreversible mistakes.** The limits and exceptions
 to this allocation of responsibility are set out below.
 
-## What Scout does
+## What TrailScout does
 
-Scout is an experimental service for working with AI agents. Scouts can explore websites,
+TrailScout is an experimental service for working with AI agents. Scouts can explore websites,
 play browser games, review products, create files, and perform online tasks. Depending on the
 feature and your permissions, they can use external accounts, send email, submit forms, and
 make changes on other services. Public visitors can watch published tasks and recordings.
 
 A Scout is an AI agent, not a person. Responses, reviews, and actions can be inaccurate,
 incomplete, or inappropriate. An AI-generated review is not evidence that a human used or
-endorsed a product. Scout does not promise that a task will succeed or produce a particular
+endorsed a product. TrailScout does not promise that a task will succeed or produce a particular
 result. It is not a substitute for professional advice or human review of consequential
 decisions.
 
@@ -43,15 +43,15 @@ Do not transfer your account or use another person's account without authorizati
 
 ## Your instructions, authorization, and responsibility
 
-Give Scout only tasks you are authorized to perform. Your instructions authorize the actions
+Give TrailScout only tasks you are authorized to perform. Your instructions authorize the actions
 reasonably needed to carry out the task within the service's available tools and permissions.
 State limits clearly, particularly for communications, purchases, account changes, or public
-posting. Do not assume Scout will ask you before every external action.
+posting. Do not assume TrailScout will ask you before every external action.
 
 As between you and us, you are responsible for:
 
 - Having the rights, permissions, and lawful basis for your instructions, supplied content,
-  connected accounts, and the actions you ask Scout to perform.
+  connected accounts, and the actions you ask TrailScout to perform.
 - Choosing suitable accounts and systems, limiting the access you provide, setting budgets
   and other constraints, and keeping independent backups of information you need.
 - Supervising tasks and checking communications, changes, purchases, and other results
@@ -61,15 +61,15 @@ As between you and us, you are responsible for:
 - Your own breach of law, these terms, or third-party rules. Using an automated tool does
   not remove your responsibility for the conduct you direct or approve.
 
-You authorize Scout to use its available tools and transmit the information reasonably
+You authorize TrailScout to use its available tools and transmit the information reasonably
 needed to perform your task. That authorization does not make the Samebase team a party to
 your third-party transactions or authorize you to make commitments on our behalf. We do not
 undertake to review or supervise every task. Automated checks and occasional operator
 intervention do not replace your review or guarantee that an action is safe or lawful.
 
 AI can misunderstand instructions, ignore a constraint, select the wrong target, or be
-misled by a website, message, or other external content. Only give Scout access to resources
-for which you can manage those risks. Do not rely on Scout for emergency services, critical
+misled by a website, message, or other external content. Only give TrailScout access to resources
+for which you can manage those risks. Do not rely on TrailScout for emergency services, critical
 infrastructure, or decisions where an error could cause death or serious injury. Obtain
 qualified human advice for medical, legal, financial, and other professional decisions.
 
@@ -80,8 +80,8 @@ people. Human handoffs give access to a remote browser; do not share a handoff l
 someone who should not control that browser.
 
 Third-party websites and services have their own rules, charges, and privacy practices.
-Scout access does not grant permission to bypass those rules or access accounts or data you
-are not entitled to use. Paying for Scout does not pay for purchases or subscriptions at
+TrailScout access does not grant permission to bypass those rules or access accounts or data you
+are not entitled to use. Paying for TrailScout does not pay for purchases or subscriptions at
 third-party services.
 
 Subject to the liability section below, you accept the risks of the automated tasks you
@@ -111,7 +111,7 @@ Public availability does not authorize harassment, identity theft, or unrestrict
 
 ## Acceptable use
 
-You must not use Scout to:
+You must not use TrailScout to:
 
 - Access systems, accounts, or information without authorization, defeat access restrictions,
   steal credentials, or deploy malware.
@@ -125,7 +125,7 @@ You must not use Scout to:
   service is not designed to handle that information.
 - Put passwords, API keys, payment-card details, or similar secrets in chat or public content.
   Use the designated managed-credential feature only for authorized Scout service accounts.
-- Interfere with Scout's operation, evade usage limits, or misuse another user's resources.
+- Interfere with TrailScout's operation, evade usage limits, or misuse another user's resources.
 
 You remain responsible for the rights and authority needed for your instructions and the
 content you supply. These responsibilities do not exclude our own obligations under law.
@@ -133,10 +133,10 @@ content you supply. These responsibilities do not exclude our own obligations un
 ## Your content and generated results
 
 You retain any rights you have in content you provide. You give us a non-exclusive license
-to host, copy, process, transmit, and display that content as needed to provide Scout,
+to host, copy, process, transmit, and display that content as needed to provide TrailScout,
 carry out your instructions, secure the service, and handle support and legal obligations.
 This includes sending relevant content to the providers needed for a task. Choosing public
-visibility also authorizes public display through Scout.
+visibility also authorizes public display through TrailScout.
 
 This license is limited to those purposes and the lawful retention described in the privacy
 policy. It does not give us general permission to sell your content or use private chats in
@@ -147,7 +147,7 @@ rights to you. Output may not qualify for intellectual-property protection, may 
 other output, or may include third-party material. We cannot give you rights that belong to
 someone else. Check permissions before publishing or reusing results.
 
-The Scout service, branding, and software remain subject to their owners' rights. Software
+The TrailScout service, branding, and software remain subject to their owners' rights. Software
 released under the repository's Apache-2.0 license remains governed by that license; these
 terms do not replace it.
 
@@ -157,26 +157,26 @@ We may provide free access or promotional credits subject to stated limits. Thei
 does not promise permanent free access. You will not be charged simply for creating an
 account. A paid purchase requires a separate checkout.
 
-When enabled, checkout offers one-time Scout credit packs. It shows the pack size, currency,
+When enabled, checkout offers one-time TrailScout credit packs. It shows the pack size, currency,
 price, and applicable tax before purchase. These packs do not automatically renew. Polar is
 the merchant of record and authorized reseller for the sale; its
 [buyer terms](https://polar.sh/legal/checkout-buyer-terms) also govern checkout. These terms
-govern use of Scout.
+govern use of TrailScout.
 
 Credits measure service usage, not successful outcomes. Model calls, request checks, website
 research, remote-browser activity, and hosted web searches can use credits even when a task
-fails, stops, or produces an unsatisfactory result. Review the usage information in Scout.
+fails, stops, or produces an unsatisfactory result. Review the usage information in TrailScout.
 
-Under the current metering policy, one Scout credit corresponds to US$0.01 of recorded
+Under the current metering policy, one TrailScout credit corresponds to US$0.01 of recorded
 provider cost. Costs may use provider-reported amounts or estimates based on model token
 rates and tool usage; they are not a promise to pass through a provider's final invoice.
 Model, browser, and research rates vary by provider and feature. Recorded costs are rounded
-up to the nearest US$0.000001, equivalent to 0.0001 Scout credits at the current conversion.
+up to the nearest US$0.000001, equivalent to 0.0001 TrailScout credits at the current conversion.
 The price of a credit pack is set separately and shown at checkout. Buying credits does not
 guarantee a particular number of tasks or results. We will disclose material metering changes
 before they apply to new work.
 
-Credits are usable only in Scout and cannot be transferred or exchanged for cash, except
+Credits are usable only in TrailScout and cannot be transferred or exchanged for cash, except
 through an applicable refund. The current credit system has no scheduled expiry. We may
 change offers for future purchases, but changes do not retroactively reduce the credit
 quantity already purchased or remove rights required by law.
@@ -208,7 +208,7 @@ otherwise have to a refund.
 
 ## Availability, suspension, and ending use
 
-Scout is experimental and may have interruptions, errors, or data loss. Keep your own copies
+TrailScout is experimental and may have interruptions, errors, or data loss. Keep your own copies
 of important results. We do not guarantee continuous availability or that third-party
 services will remain available. These statements do not remove mandatory service standards
 or remedies.
@@ -224,7 +224,7 @@ We may change or discontinue features for technical, security, legal, or busines
 For a material reduction or closure affecting paid access, we will give reasonable advance
 notice where possible and address unused paid credits and remedies required by law.
 
-You can stop using Scout at any time and close your account through Settings. Closure removes
+You can stop using TrailScout at any time and close your account through Settings. Closure removes
 your profile and sign-in access, but currently keeps chats, files, task history, shared Scout
 resources, and transaction records. Read the privacy policy for details and for the separate
 process to request erasure of personal information. Account closure does not undo actions
@@ -243,10 +243,10 @@ breach the law.
 
 ## Warranty disclaimer
 
-To the maximum extent permitted by law, Scout, its agents, and their outputs are provided
+To the maximum extent permitted by law, TrailScout, its agents, and their outputs are provided
 "as is" and "as available", without express, implied, or statutory warranties, including
 warranties of merchantability, fitness for a particular purpose, title, and non-infringement.
-We do not warrant that Scout will be uninterrupted, secure, error-free, accurate, or suitable
+We do not warrant that TrailScout will be uninterrupted, secure, error-free, accurate, or suitable
 for your intended use; that it will follow every instruction; or that errors will be corrected.
 No task result, support response, or demonstration creates an additional warranty unless we
 expressly agree to it in writing. Mandatory guarantees and binding pre-contract information
@@ -262,14 +262,14 @@ applicable law makes us responsible.
 To the maximum extent permitted by law, neither the Samebase team nor its contributors,
 personnel, or service providers will be liable for indirect, incidental, special,
 consequential, exemplary, or punitive damages, or loss of profits, revenue, business
-opportunities, goodwill, or anticipated savings arising from Scout or its outputs. For
+opportunities, goodwill, or anticipated savings arising from TrailScout or its outputs. For
 business users, this exclusion also covers business interruption, loss or corruption of data,
 and the cost of substitute services, whether those losses are direct or indirect.
 
 To the maximum extent permitted by law, our total aggregate liability for all claims arising
-out of or relating to Scout or these terms is limited to the greater of **US$10** or **the
-amount you paid for Scout in the 12 months before the event giving rise to the claim**.
-Payments through an authorized reseller count as payments for Scout. The limit applies
+out of or relating to TrailScout or these terms is limited to the greater of **US$10** or **the
+amount you paid for TrailScout in the 12 months before the event giving rise to the claim**.
+Payments through an authorized reseller count as payments for TrailScout. The limit applies
 across all related claims and legal theories, including contract, tort, and negligence,
 even if we were advised that a loss was possible.
 
@@ -282,7 +282,7 @@ not require you to waive a right that the law says you must keep.
 
 ## Business-user indemnity
 
-If you use Scout for a business or organization, to the extent permitted by law you will
+If you use TrailScout for a business or organization, to the extent permitted by law you will
 indemnify the Samebase team and its personnel against third-party claims, damages, and
 reasonable legal costs to the extent caused by your unlawful instructions or content, your
 unauthorized use of third-party accounts or services, or your material breach of these terms.
@@ -310,10 +310,10 @@ exercising rights that the law gives you.
 We may update these terms to reflect changes in the service, providers, security needs,
 business arrangements, or law. We will publish the effective date, give appropriate advance
 notice of material changes where possible, and request renewed agreement where required.
-Changes do not retroactively change completed purchases. You may stop using Scout if you
+Changes do not retroactively change completed purchases. You may stop using TrailScout if you
 do not accept revised terms, without losing remedies required by law.
 
 If a provision is unenforceable, the remaining provisions continue to apply to the extent
 permitted by law. Our failure to enforce a provision immediately is not a waiver. These
-terms and any specific terms expressly agreed for a purchase govern that use of Scout,
+terms and any specific terms expressly agreed for a purchase govern that use of TrailScout,
 without excluding statements or rights that the law makes binding.

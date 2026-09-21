@@ -1,4 +1,4 @@
-# Scout submission draft
+# TrailScout submission draft
 
 Working copy for discussion. This file has not been submitted as a hackathon entry.
 Keep the shared copy below synchronized with `apps/scout/src/routes/about.tsx` in the
@@ -7,7 +7,7 @@ rendering or generation between the two files.
 
 ## Submission fields
 
-- **Project name:** Scout
+- **Project name:** TrailScout
 - **Tagline:** Send an AI agent to try a website for you. See what happened in a walkthrough, screenshots, and a replay.
 - **Live app:** https://doting-crab-687.convex.site
 - **Repository:** https://github.com/samebase/scout — currently private; make public before submission.
@@ -26,17 +26,17 @@ Add the public repository, video, and announcement links to About when ready.
 Every website has a pitch. Finding out whether it does what you need usually means
 signing up, learning your way around, and trying it yourself.
 
-Scout sends AI agents to do that exploration for you. They use the product and leave a
+TrailScout sends AI agents to do that exploration for you. They use the product and leave a
 walkthrough, screenshots, and a replay so you can make up your own mind.
 
-### Send Scout in first.
+### Send a Scout in first.
 
-Give Scout a website and a question. It opens a real browser and tries to answer by
+Give a Scout a website and a question. It opens a real browser and tries to answer by
 using the product: following links, filling forms, and testing the path you asked about.
 
 > “Can I sign up and create my first project?”
 
-You can watch the visit as it happens, or come back to see how far Scout got and what
+You can watch the visit as it happens, or come back to see how far your Scout got and what
 it found along the way.
 
 ### A Scout has its own identity.
@@ -61,7 +61,7 @@ in the conversation workspace.
 
 ### Before the browser work starts.
 
-Before testing a product, Scout can use Firecrawl to research its public pages and
+Before testing a product, a Scout can use Firecrawl to research its public pages and
 documentation. It saves a briefing with source links, product details, and unanswered
 questions, then uses that context during the browser visit. Existing research and
 site guides can be reused on later visits.
@@ -71,17 +71,17 @@ fraud, credential theft, and unauthorized access.
 
 ### A Scout can ask for help.
 
-If a CAPTCHA or another step needs a person, Scout can pause and email you from its
-own inbox. A private link lets you take over the browser without another Scout
+If a CAPTCHA or another step needs a person, your Scout can pause and email you from its
+own inbox. A private link lets you take over the browser without another TrailScout
 sign-in. The handoff page explains what needs your attention.
 
-When you resume, Scout checks the current browser pages against the original task
+When you resume, TrailScout checks the current browser pages against the original task
 before continuing. The help window has a deadline; if it expires, the task stops and
 the browser closes.
 
 ### Show the work.
 
-An AI answer is only useful if you can check it. Scout keeps a record of the visit,
+An AI answer is only useful if you can check it. TrailScout keeps a record of the visit,
 with screenshots, a browser replay, and findings tied to the steps it took.
 
 Reviews show what passed, what failed, and what remains untested. Follow-up questions
@@ -91,18 +91,18 @@ blocked signup or an interrupted task stays visible.
 ### Useful beyond one visit.
 
 Reviews are public by default, with a private option. Browse what other people asked
-Scout to try, open a review, and inspect the evidence before sending it on another
+a Scout to try, open a review, and inspect the evidence before sending it on another
 task. Public reviews make product claims checkable.
 
 Anyone can read public reviews. Starting a task currently requires an approved account.
 
-### How Scout is built.
+### How TrailScout is built.
 
 #### Convex
 
-Scout started with the Convex Agent component. It still powers one of the two
+TrailScout started with the Convex Agent component. It still powers one of the two
 execution engines, with conversation threads, persisted messages, and model calls
-through Convex AI Gateway. Scout supplies the browser, email, and workspace tools.
+through Convex AI Gateway. TrailScout supplies the browser, email, and workspace tools.
 
 - The Workflow component coordinates request checks, site research, agent turns,
   and human handoffs.
@@ -118,7 +118,7 @@ review evidence, and credit balances alongside the task history.
 
 Luna is the default model and runs through the OpenAI Agents API. OpenAI also
 handles the request and post-handoff checks and turns review evidence into the
-final walkthrough. Scout offers Luna through Convex Agent too, alongside Qwen
+final walkthrough. TrailScout offers Luna through Convex Agent too, alongside Qwen
 3.7 Flash and DeepSeek V4 Flash through Convex AI Gateway.
 
 I used Luna for most development reviews because it produced better reviews in my testing.
@@ -127,7 +127,7 @@ I used Luna for most development reviews because it produced better reviews in m
 
 Firecrawl Agent, using Spark 2, researches public pages and returns the briefing
 with citations. Firecrawl Browser supplies the remote sessions and persistent
-profiles that Scouts use to test products. Scout connects through Playwright
+profiles that Scouts use to test products. TrailScout connects through Playwright
 over CDP to navigate, fill forms, manage tabs, and capture screenshots.
 
 The sessions also provide live views for watching and taking over, plus
@@ -156,9 +156,9 @@ and cached media domain serve homepage previews for public sites.
 
 #### Polar
 
-Verified accounts get 50 free Scout credits to get started. I use the available
+Verified accounts get 50 free TrailScout credits to get started. I use the available
 Firecrawl allowance to include browser sessions and site research during the
-beta. AI model calls, request checks, and hosted web search consume Scout credits
+beta. AI model calls, request checks, and hosted web search consume TrailScout credits
 to help cover their cost.
 
 Members can buy more credits through Polar checkout. Signed payment and refund
@@ -167,8 +167,8 @@ and the remaining balance.
 
 #### PostHog
 
-PostHog helps me understand how people use Scout through product analytics and
-optional recordings of Scout's own interface. Session recording requires
+PostHog helps me understand how people use TrailScout through product analytics and
+optional recordings of TrailScout's own interface. Session recording requires
 opt-in and can be turned off in Settings. Passwords and marked private content
 are masked, and embedded remote browsers are excluded.
 
@@ -176,9 +176,9 @@ The frontend uses TypeScript, React, and TanStack Start.
 
 ### What was difficult.
 
-#### Choosing what Scout should be
+#### Choosing what TrailScout should be
 
-The hardest part was deciding what Scout should be. I started with a general
+The hardest part was deciding what TrailScout should be. I started with a general
 direction, but no clear picture of the product. I had to work that out as I built.
 
 For a while, I considered making one product for playing browser games with a
@@ -189,7 +189,7 @@ few days, even with much of the technical work already in place.
 #### Building and guiding the agent
 
 I had usually relied on existing agent tools and left agent infrastructure to
-others. Scout meant building one myself. The Convex Agent component made getting
+others. TrailScout meant building one myself. The Convex Agent component made getting
 started straightforward, but there was still a lot to learn about directing the
 agent and managing what it could see.
 
@@ -215,7 +215,7 @@ timing did not consistently match the browser actions. Parts appeared faster or
 slower, which made automatic cuts and click alignment unreliable.
 
 I set aside the automatic editing plan and made high-resolution screenshot
-walkthroughs the main way to read a review. Scout captures PNGs directly from the
+walkthroughs the main way to read a review. TrailScout captures PNGs directly from the
 live browser at twice the viewport resolution and pairs them with the steps and
 findings. Replay remains available, and MediaBunny still powers MP4 export.
 
@@ -233,7 +233,7 @@ a persistent place to write scripts and process research within the existing
 backend. I had to teach it when to save material, how to read it back, and which
 files belonged in the private conversation workspace or the shared site workspace.
 
-[Send Scout to a website](https://doting-crab-687.convex.site)
+[Send a Scout to a website](https://doting-crab-687.convex.site)
 
 ## Working notes, not public copy
 
@@ -297,7 +297,7 @@ instead of introducing unexplained names such as Play.
   are different execution options; do not describe every task as using both.
   The registered components are Agent, Workflow, R2, and Static Hosting. Convex Auth
   handles authentication separately. `apps/scout/convex/tasks/convexAgent.ts` shows
-  Scout's context selection and summarization around the Agent component; the Agents
+  TrailScout's context selection and summarization around the Agent component; the Agents
   API owns compaction for its runtime. An existing task does not switch engines midway.
 - **SSR integration:** `packages/convex-tanstack-start/README.md`,
   `docs/convex-ssr-experiment.md`, and
@@ -336,7 +336,7 @@ instead of introducing unexplained names such as Play.
   accounts and Firecrawl browsing/research included by default. The builder confirms
   this uses the project's available Firecrawl allowance. Omit the changing provider
   balance and do not promise permanent free usage or exact cost pass-through. AI calls,
-  request checks, and hosted web search remain billable in Scout credits.
+  request checks, and hosted web search remain billable in TrailScout credits.
 - **Replay tradeoff:** The builder's account, the v150 build-log entry,
   `docs/admin-replay-editing.md`, `docs/browser-screenshot-research.md`,
   `apps/scout/convex/scout/lib/firecrawlReplay.ts`, `playwrightBrowser.ts`, and

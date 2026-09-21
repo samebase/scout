@@ -10,7 +10,7 @@ export const Route = createFileRoute("/terrain")({
     view: z.enum(["terrain", "landing"]).default("terrain"),
   }),
   head: () => ({
-    meta: [{ title: "Terrain explorer | Scout" }, { name: "robots", content: "noindex" }],
+    meta: [{ title: "Terrain explorer | TrailScout" }, { name: "robots", content: "noindex" }],
   }),
   component: TerrainPage,
 });

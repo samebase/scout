@@ -30,7 +30,7 @@ function ProtectedRouteOutlet({ policies }: { policies: AccessKey[] }) {
   if (viewer.kind === "anonymous")
     return (
       <main className="route-page max-w-md">
-        <h1 className="route-heading mb-6">Sign in to Scout</h1>
+        <h1 className="route-heading mb-6">Sign in to TrailScout</h1>
         <AuthPanel />
       </main>
     );
@@ -66,7 +66,7 @@ function AccessUnavailable() {
       </p>
       <div className="mt-6 flex gap-4 items-center">
         <Link to="/" className="underline">
-          Back to Scout
+          Back to TrailScout
         </Link>
         <Button
           variant="outline"

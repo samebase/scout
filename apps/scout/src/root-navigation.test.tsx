@@ -36,7 +36,7 @@ test.each([
   {
     from: "/about",
     to: "/",
-    link: "Reviews",
+    link: "TrailScout home",
     before: "The internet is a confusing place.",
     after: "Home fixture",
   },

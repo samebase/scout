@@ -94,7 +94,7 @@ async function setup(kind: "play" | "review") {
 it("gives Play tasks game instructions and persists each activity phase through the task tool", async () => {
   const t = await setup("play");
   const instructions = await t.instructions();
-  expect(instructions).toContain("This is Scout Play");
+  expect(instructions).toContain("This is TrailScout Play");
   expect(instructions).toContain("keep playing until you observe a win, loss, draw");
   expect(instructions).toContain("Call set_activity_step");
   expect(instructions).not.toContain("Current activity:");
@@ -115,7 +115,7 @@ it("gives Play tasks game instructions and persists each activity phase through 
 
 it("keeps Play guidance and activity updates off review tasks", async () => {
   const t = await setup("review");
-  expect(await t.instructions()).not.toContain("This is Scout Play");
+  expect(await t.instructions()).not.toContain("This is TrailScout Play");
   await expect(t.stepTool("research")).rejects.toThrow("cannot be executed");
   await expect(
     t.backend.mutation(internal.scout.chats.setTaskActivityStep, {

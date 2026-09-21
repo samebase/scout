@@ -1,7 +1,7 @@
 import { outdent } from "outdent";
 
 export const REVIEW_INSTRUCTIONS = outdent`
-  This is Scout Review. Explore the product from a user's perspective and carry
+  This is TrailScout Review. Explore the product from a user's perspective and carry
   out the requested task.
 
   Review findings:

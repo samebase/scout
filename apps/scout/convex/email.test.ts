@@ -3,7 +3,7 @@ import { sendEmail } from "./email";
 
 const sendArgs = {
   to: "person@example.com",
-  subject: "Verify your Scout email",
+  subject: "Verify your TrailScout email",
   text: "Verification code: 12345678",
 };
 
@@ -64,9 +64,9 @@ describe("Cloudflare email sending", () => {
       to: "person@example.com",
       from: {
         address: "scout-notifications@samebase.com",
-        name: "Scout",
+        name: "TrailScout",
       },
-      subject: "Verify your Scout email",
+      subject: "Verify your TrailScout email",
       text: "Verification code: 12345678",
     });
   });
