@@ -152,6 +152,7 @@ function SiteNavigation() {
             search={filters}
             layout="sidebar"
             reviewedSiteCount={reviewedSiteCount}
+            isSearching={scope !== deferredScope || search.site !== deferredSite}
             onChange={(filters, options) => {
               void navigate({
                 search: (previous) => ({ ...previous, ...filters }),

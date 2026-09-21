@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useState } from "react";
-import { SearchIcon, XIcon } from "lucide-react";
+import { LoaderCircleIcon, SearchIcon, XIcon } from "lucide-react";
 import type { FunctionReturnType } from "convex/server";
 import type { api } from "../../convex/_generated/api";
 import { Button } from "#components/ui/button";
@@ -20,11 +20,13 @@ export function SiteFilters({
   search,
   layout,
   reviewedSiteCount,
+  isSearching,
   onChange,
 }: {
   search: ReviewFeedSearch;
   layout: "toolbar" | "sidebar";
   reviewedSiteCount: FunctionReturnType<typeof api.scout.sites.count> | undefined;
+  isSearching: boolean;
   onChange: (search: ReviewFeedSearch, options: { replace: boolean }) => void;
 }) {
   const viewer = useViewerAccess();
@@ -43,6 +45,8 @@ export function SiteFilters({
     const timeout = setTimeout(() => applySearch(site), 300);
     return () => clearTimeout(timeout);
   }, [draft, search.site]);
+  const searching = isSearching || (siteSearchSchema.parse(draft) || undefined) !== search.site;
+  const SearchIndicator = searching ? LoaderCircleIcon : SearchIcon;
 
   return (
     <div className="@container/site-filters">
@@ -93,12 +97,19 @@ export function SiteFilters({
           )}
         </div>
         <div className="relative w-full min-w-0 max-w-full @min-[500px]/site-filters:ml-auto @min-[500px]/site-filters:w-64">
-          <SearchIcon
-            aria-hidden="true"
-            className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-          />
+          <span
+            role={searching ? "status" : undefined}
+            className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted-foreground"
+          >
+            <SearchIndicator
+              aria-hidden="true"
+              className={cn("size-4", searching && "animate-spin")}
+            />
+            {searching && <span className="sr-only">Searching sites</span>}
+          </span>
           <Input
             aria-label="Filter by site"
+            aria-busy={searching}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             placeholder="Search sites"
