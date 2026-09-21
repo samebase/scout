@@ -37,9 +37,11 @@ Backend and runtime checks read the current user; route gates and navigation use
 reactive viewer response. Approval changes take effect without signing in again.
 Auth-library exports and public bearer-token handoffs retain their protocol boundaries.
 
-Admin authority does not bypass private-thread ownership. Shared Scout activity returns
-only `busy` when another account owns the active chat; the owner retains details and links
-between their own chats.
+Administrators can view private tasks, change visibility, stop runs, and remove tasks from
+user-facing pages. Lab lists all managed sessions and retains their history after removal.
+Removal deletes the chat binding and updates site listings in the same mutation; non-staff
+owners lose access to the retained session. Sending messages, resuming tasks, and interactive
+browser control remain owner-only. Shared Scout activity hides private tasks from other members.
 
 ## Scout-specific scope
 
@@ -58,10 +60,11 @@ deleted accounts have no protected app access.
 Approved members can start and control their own Play and Review chats using available shared Scouts.
 Execution rechecks the chat owner's current product permission; general Lab chats still require
 Lab access. Public viewers receive conversation text and read-only browser views or replay.
-Private chats remain owner-only, and publishing requires current product permission. Owners can
-make a chat private even after approval is revoked. Scout inboxes, profiles, credentials, workspace
+Private chats are readable by their owner and administrators. Owners need current product
+permission to publish, and can make a chat private even after approval is revoked. Administrators
+can change visibility and stop tasks even when the owner's access is revoked. Scout inboxes, profiles, credentials, workspace
 files, and raw model/tool data are not part of the public viewing API.
-Only staff owners can open a chat's detailed Lab inspector. Signup and approval neither create
+Staff can open any managed task's detailed Lab inspector. Signup and approval neither create
 nor assign a Scout, browser, inbox, or connected account.
 
 ## Development and rollout

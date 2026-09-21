@@ -649,6 +649,7 @@ test("manual backfill uses bounded resumable pages and is idempotent for existin
   expect(c.isDone).toBe(true);
 });
 
+// More than one cleanup batch also runs a durable workflow step for every retained task and chat.
 test("account deletion removes all owner listings in batches and keeps retained public task history", async () => {
   const t = await setup();
   for (let i = 0; i < 70; i++) {
@@ -702,7 +703,7 @@ test("account deletion removes all owner listings in batches and keeps retained 
   ).toEqual([
     { hostname: "shared.test", taskCount: 1, preview: null, profile: null, research: null },
   ]);
-});
+}, 15_000);
 
 test.each([undefined, "A public calculator."])(
   "site details expose overview=%s, lists stay lightweight, and diagnostics stay private",

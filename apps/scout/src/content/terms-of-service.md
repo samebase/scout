@@ -1,6 +1,6 @@
 # Terms and conditions
 
-Effective date: September 19, 2026
+Effective date: September 21, 2026
 
 These terms govern Scout and the websites, apps, and services that link to these terms.
 Scout is operated by the Samebase team.
@@ -95,6 +95,11 @@ Making a chat public allows others to view its messages and associated task acti
 including tool results, screenshots, walkthroughs, and available live-browser views or
 recordings. Check that you have permission to share everything the task may expose. Public
 viewers may copy that material. Making the chat private later cannot recover those copies.
+
+Private tasks are hidden from other users. Administrators can view private tasks for support,
+security, and moderation, and can stop tasks, change their visibility, or remove them from
+user-facing pages. Removed task history may remain available to administrators as described
+in the privacy policy.
 
 Scouts can share persistent inboxes, browser profiles, and external accounts across tasks
 and authorized users. These resources are not your personal accounts or private storage.

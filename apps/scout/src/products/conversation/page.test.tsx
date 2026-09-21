@@ -46,6 +46,7 @@ const remote = vi.hoisted(() => ({
   declineManaged: vi.fn(),
   openHandoffBrowser: vi.fn(),
   setVisibility: vi.fn(),
+  removeTask: vi.fn(),
   savePreferences: vi.fn(),
   signIn: vi.fn(),
   queryCalls: vi.fn(),
@@ -135,6 +136,8 @@ vi.mock("convex/react", () => ({
         return remote.createThread;
       case "scout/chats:setVisibility":
         return remote.setVisibility;
+      case "scout/chats:remove":
+        return remote.removeTask;
       case "tasks/sessions:send":
         return remote.sendManaged;
       case "tasks/sessions:retryMessage":
@@ -240,6 +243,7 @@ beforeEach(() => {
     expiresAt: 1_000_000,
   });
   remote.setVisibility.mockReset().mockResolvedValue(null);
+  remote.removeTask.mockReset().mockResolvedValue(null);
   remote.signIn.mockReset();
   remote.listReplayPages.mockReset().mockResolvedValue({ status: "unavailable" });
   // happy-dom does not implement the browser's scrolling API.
@@ -252,6 +256,7 @@ afterEach(() => {
   queryClients.clear();
   remote.subscribers.clear();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 async function openPlay(path = "/play") {
@@ -304,6 +309,12 @@ async function openPlay(path = "/play") {
       settings,
       createRoute({
         getParentRoute: () => root,
+        path: "/lab",
+        staticData: { access: "access_lab" },
+        component: () => <h1>Lab</h1>,
+      }),
+      createRoute({
+        getParentRoute: () => root,
         path: "/scouts/$slug",
         staticData: { access: "access_public" },
         component: () => <h1>Scout profile</h1>,
@@ -347,6 +358,57 @@ async function openPlay(path = "/play") {
   });
   return router;
 }
+
+test("admins can moderate another user's task without execution controls", async () => {
+  remote.queries.set(
+    "scout/activity:get",
+    session({
+      purpose: { kind: "review" },
+      isOwner: false,
+      canControl: false,
+    }),
+  );
+  remote.queries.set("tasks/sessions:get", {
+    active: true,
+    state: { kind: "running" },
+    cleanupError: null,
+  });
+  const confirm = vi.fn(() => false);
+  vi.stubGlobal("confirm", confirm);
+  const router = await openPlay("/tasks/game-thread?view=chat");
+  fireEvent.change(screen.getByRole("combobox", { name: "Chat visibility" }), {
+    target: { value: "public" },
+  });
+  await waitFor(() =>
+    expect(remote.setVisibility).toHaveBeenCalledWith({
+      threadId: "game-thread",
+      visibility: "public",
+    }),
+  );
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Stop Scout" })).toHaveProperty("disabled", false),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Stop Scout" }));
+  await waitFor(() => expect(remote.stopManaged).toHaveBeenCalledWith({ sessionId: "managed-1" }));
+  expect(remote.queryCalls).not.toHaveBeenCalledWith("tasks/sessions:controls", {
+    sessionId: "managed-1",
+  });
+  expect(screen.queryByRole("textbox", { name: "Message Scout" })).toBeNull();
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Remove task" })).toHaveProperty("disabled", false),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Remove task" }));
+  expect(remote.removeTask).not.toHaveBeenCalled();
+  confirm.mockReturnValue(true);
+  remote.removeTask.mockRejectedValueOnce(new Error("Removal failed"));
+  fireEvent.click(screen.getByRole("button", { name: "Remove task" }));
+  expect((await screen.findByRole("alert")).textContent).toContain("Removal failed");
+  expect(router.state.location.pathname).toBe("/tasks/game-thread");
+  fireEvent.click(screen.getByRole("button", { name: "Remove task" }));
+  expect(await screen.findByRole("heading", { name: "Lab" })).toBeTruthy();
+  expect(remote.removeTask).toHaveBeenCalledWith({ threadId: "game-thread" });
+  expect(router.state.location.search).toEqual({ session: "managed-1" });
+});
 
 test.each(["header", "sidebar"])(
   "the task %s scout pill opens the scout profile",
@@ -2498,7 +2560,7 @@ describe("Play invitation", () => {
     fireEvent.change(screen.getByRole("combobox", { name: "Chat visibility" }), {
       target: { value: "public" },
     });
-    expect((await screen.findByRole("alert")).textContent).toContain("Couldn't change visibility");
+    expect((await screen.findByRole("alert")).textContent).toContain("Offline");
     expect(remote.setVisibility).toHaveBeenCalledExactlyOnceWith({
       threadId: "game-thread",
       visibility: "public",

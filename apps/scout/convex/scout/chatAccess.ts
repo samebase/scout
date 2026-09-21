@@ -32,10 +32,9 @@ export async function visibleChat(
     .withIndex("by_thread_id", (q) => q.eq("threadId", threadId))
     .unique();
   if (!chat) return null;
+  if (viewer.kind === "account" && canAccess("access_lab", viewer.accessKeys)) return chat;
+  if (chat.purpose.kind === "general") return null;
   const owner = viewer.kind === "account" && viewer.userId === chat.userId;
-  if (chat.purpose.kind === "general") {
-    return owner && canAccess("access_lab", viewer.accessKeys) ? chat : null;
-  }
   return owner || (await isPublicChat(ctx, chat)) ? chat : null;
 }
 

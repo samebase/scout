@@ -24,6 +24,8 @@ import {
   LoaderCircleIcon,
   LockKeyholeIcon,
   MonitorIcon,
+  SquareIcon,
+  Trash2Icon,
   XIcon,
 } from "lucide-react";
 import { type FormEvent, Suspense, useDeferredValue, useRef, useState } from "react";
@@ -704,14 +706,25 @@ function ConversationInspectorLink({ thread }: { thread: ChatThread }) {
 
 function ConversationActions({ thread, kind }: { thread: ChatThread; kind: ProductKind }) {
   const { threadId } = thread;
+  const viewer = useViewerAccess();
+  const admin = viewer?.kind === "account" && canAccess("access_lab", viewer.accessKeys);
+  const navigate = useNavigate();
   const managedId = thread.runtime.kind === "task" ? thread.runtime.sessionId : null;
   const managed = useQuery(
     api.tasks.sessions.controls,
     kind === "play" && thread.canControl && managedId ? { sessionId: managedId } : "skip",
   );
-  const canStop = managed?.canStop === true;
+  const inspection = useQuery(
+    api.tasks.sessions.get,
+    admin && !thread.canControl && managedId ? { sessionId: managedId } : "skip",
+  );
+  const canStop =
+    managed?.canStop === true ||
+    (inspection?.active === true &&
+      (inspection.state.kind !== "stopped" || inspection.cleanupError !== null));
   const setVisibility = useMutation(api.scout.chats.setVisibility);
   const stopManaged = useMutation(api.tasks.sessions.stop);
+  const removeTask = useMutation(api.scout.chats.remove);
   const [request, setRequest] = useState<RequestState>({ kind: "idle" });
   const pending = useRef(false);
   async function changeVisibility(visibility: ChatThread["visibility"]) {
@@ -721,8 +734,11 @@ function ConversationActions({ thread, kind }: { thread: ChatThread; kind: Produ
     try {
       await setVisibility({ threadId, visibility });
       setRequest({ kind: "idle" });
-    } catch {
-      setRequest({ kind: "failed", message: "Couldn't change visibility. Try again." });
+    } catch (error) {
+      setRequest({
+        kind: "failed",
+        message: error instanceof Error ? error.message : String(error),
+      });
     } finally {
       pending.current = false;
     }
@@ -734,16 +750,36 @@ function ConversationActions({ thread, kind }: { thread: ChatThread; kind: Produ
     try {
       await stopManaged({ sessionId: managedId });
       setRequest({ kind: "idle" });
-    } catch {
-      setRequest({ kind: "failed", message: "Couldn't stop. Try again." });
+    } catch (error) {
+      setRequest({
+        kind: "failed",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      pending.current = false;
+    }
+  }
+  async function remove() {
+    if (!managedId || pending.current) return;
+    if (!window.confirm("Remove this task? Its history will remain in Lab.")) return;
+    pending.current = true;
+    setRequest({ kind: "pending" });
+    try {
+      await removeTask({ threadId });
+      await navigate({ to: "/lab", search: { session: managedId } });
+    } catch (error) {
+      setRequest({
+        kind: "failed",
+        message: error instanceof Error ? error.message : String(error),
+      });
     } finally {
       pending.current = false;
     }
   }
   return (
     <div className="ml-auto flex shrink-0 flex-col items-end gap-2">
-      <div className="flex items-center gap-5 max-[760px]:gap-4">
-        {thread.isOwner && managedId && thread.purpose.kind !== "general" ? (
+      <div className="flex items-center gap-5 max-[760px]:gap-2">
+        {(thread.isOwner || admin) && managedId && thread.purpose.kind !== "general" ? (
           <select
             aria-label="Chat visibility"
             title="Public shares the chat and browser with anyone."
@@ -755,7 +791,7 @@ function ConversationActions({ thread, kind }: { thread: ChatThread; kind: Produ
             }}
           >
             <option value="private">Private</option>
-            <option value="public" disabled={!thread.canControl}>
+            <option value="public" disabled={!thread.canControl && !admin}>
               Public
             </option>
           </select>
@@ -765,13 +801,34 @@ function ConversationActions({ thread, kind }: { thread: ChatThread; kind: Produ
           </span>
         )}
         {kind === "play" && <BrowserToggle action="open" />}
-        {kind === "play" && canStop && (
+        {admin && !thread.canControl && canStop ? (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Stop Scout"
+            disabled={request.kind === "pending"}
+            onClick={() => void stop()}
+          >
+            <SquareIcon aria-hidden="true" />
+          </Button>
+        ) : kind === "play" && canStop ? (
           <BrowserStop
             onStop={() => {
               void stop();
             }}
             disabled={request.kind === "pending"}
           />
+        ) : null}
+        {admin && managedId && thread.purpose.kind !== "general" && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Remove task"
+            disabled={request.kind === "pending"}
+            onClick={() => void remove()}
+          >
+            <Trash2Icon aria-hidden="true" />
+          </Button>
         )}
       </div>
       {request.kind === "failed" && (

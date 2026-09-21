@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-21T19:11:20Z
+- **Last updated:** 2026-09-21T19:29:00Z
 
 ## Log
 
@@ -1851,8 +1851,15 @@ UI checks finish initial rendering without unnecessary waits, and shared access 
 without repeating the same route-by-viewer matrix. Repository guidance now asks for a concrete
 regression or behavior before adding coverage and direct browser inspection for visual changes.
 
-### 2026-09-21 - working tree - v295
+### 2026-09-21 - b05a801 - v295
 
 Site search shows a spinning icon while typing and waiting for results, both on the homepage
 and in the left sidebar. The indicator stays inside the search box and announces the search
 to screen readers (`apps/scout/src/components/site-filters.tsx`).
+
+### 2026-09-21 - working tree - v296
+
+Administrators can open private tasks, change visibility, stop runs, and remove tasks from
+user-facing pages while retaining their history in Lab. Task execution and browser control
+remain with the owner. The Private label stays unchanged, with administrator access explained
+in the terms (`apps/scout/convex/scout/chats.ts`, `apps/scout/convex/scout/chatAccess.ts`).

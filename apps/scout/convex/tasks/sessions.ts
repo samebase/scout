@@ -2,6 +2,7 @@ import { paginationOptsValidator, paginationResultValidator } from "convex/serve
 import { vWorkflowId } from "@convex-dev/workflow";
 import { ConvexError, v } from "convex/values";
 import { taskSelection, type TaskSelection } from "../../shared/taskModels";
+import { canAccess } from "../../shared/accessModel";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
@@ -85,7 +86,7 @@ async function scheduleSessionCleanup(ctx: MutationCtx, session: Doc<"agentsApiS
   await ctx.db.patch(session._id, { cleanupJobId });
 }
 
-async function stopSession(
+export async function stopSession(
   ctx: MutationCtx,
   session: Doc<"agentsApiSessions">,
   state: Extract<Doc<"agentsApiSessions">["state"], { kind: "stopped" }>,
@@ -780,8 +781,11 @@ export const stop = mutation({
   args: { sessionId: v.id("agentsApiSessions") },
   returns: v.null(),
   handler: async (ctx, args): Promise<null> => {
-    const session = await owned(ctx, args.sessionId, ctx.viewer.userId);
-    await requireSessionPermission(ctx, session);
+    const session = await requireSession(ctx, args.sessionId);
+    if (!canAccess("access_lab", ctx.viewer.accessKeys)) {
+      if (session.userId !== ctx.viewer.userId) throw new Error("Session not found");
+      await requireSessionPermission(ctx, session);
+    }
     await stopSession(
       ctx,
       session,

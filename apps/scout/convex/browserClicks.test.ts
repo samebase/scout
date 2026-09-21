@@ -59,7 +59,7 @@ async function setup() {
 }
 
 describe("browser click persistence and access", () => {
-  test("retains clicks on failed actions, settles once, and returns them only to the owner", async () => {
+  test("retains clicks on failed actions, settles once, and allows admin inspection", async () => {
     const { backend, owner, other, sessionId } = await setup();
     const clickCapture = {
       kind: "captured",
@@ -98,7 +98,7 @@ describe("browser click persistence and access", () => {
     expect(JSON.stringify(replay?.operations)).not.toContain("page.mouse");
     await expect(
       other.query(internal.scout.browserSessions.replayData, { sessionId }),
-    ).resolves.toBeNull();
+    ).resolves.toEqual(replay);
     await expect(
       backend.query(internal.scout.browserSessions.replayData, { sessionId }),
     ).resolves.toBeNull();

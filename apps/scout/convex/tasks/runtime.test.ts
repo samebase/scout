@@ -15,6 +15,7 @@ import { z } from "zod";
 import { api, internal } from "../_generated/api";
 import schema from "../schema";
 import { createBrowserHarness } from "../scout/browserTools";
+import { scoutReservation } from "../scout/availability";
 import { closeFirecrawlBrowserSession } from "../scout/lib/firecrawl";
 import { ADMIN_EMAIL, insertTestAccount } from "../testing/accounts";
 import { runtimeTools } from "./tools";
@@ -1550,6 +1551,66 @@ it("keeps delayed assistant preambles ahead of tool calls by waiting for the pro
   );
   await advance();
   expect((await history()).map((item) => item.kind)).toEqual(["assistant", "function_call"]);
+});
+
+it("cleans up a removed member task when its workflow can no longer read the chat", async () => {
+  const t = await setup();
+  const { memberId, scoutId } = await t.backend.run(async (ctx) => {
+    const memberId = await insertTestAccount(ctx, { email: "task-owner@example.test" });
+    const session = await ctx.db.get(t.sessionId);
+    if (!session) throw new Error("Session missing");
+    await ctx.db.patch(t.sessionId, { userId: memberId });
+    await ctx.db.insert("scoutChats", {
+      threadId: t.sessionId,
+      runtime: { kind: "agents_api", sessionId: t.sessionId },
+      userId: memberId,
+      scoutId: session.scoutId,
+      createdAt: Date.now(),
+      purpose: { kind: "review" },
+      visibility: "private",
+    });
+    const workflowId = await workflow.start(
+      ctx,
+      internal.tasks.lifecycle.run,
+      { sessionId: t.sessionId, command: { kind: "observe" } },
+      {
+        startAsync: true,
+        onComplete: internal.tasks.lifecycle.onComplete,
+        context: { sessionId: t.sessionId },
+      },
+    );
+    await ctx.db.patch(t.sessionId, { workflowId });
+    return { memberId, scoutId: session.scoutId };
+  });
+  const member = t.backend.withIdentity({ subject: memberId });
+  expect(await member.query(api.scout.activity.get, { threadId: t.sessionId })).not.toBeNull();
+
+  await t.owner.mutation(api.scout.chats.remove, { threadId: t.sessionId });
+  expect(await t.session()).toMatchObject({ active: true, state: { kind: "stopped" } });
+  expect(await t.backend.run((ctx) => scoutReservation(ctx, scoutId))).not.toBeNull();
+  await expect(
+    t.backend.query(internal.tasks.sessions.runtime, { sessionId: t.sessionId }),
+  ).rejects.toThrow("Not authorized");
+
+  await t.backend.finishAllScheduledFunctions(vi.runAllTimers);
+
+  expect(await t.session()).toMatchObject({
+    state: { kind: "stopped" },
+    active: false,
+    browser: null,
+  });
+  expect(t.provider.events).toContainEqual({ events: [{ type: "agent.session.input.cancel" }] });
+  expect(closeFirecrawlBrowserSession).toHaveBeenCalledWith(expect.anything(), "browser-test");
+  expect(await t.backend.run((ctx) => scoutReservation(ctx, scoutId))).toBeNull();
+  expect(await member.query(api.scout.activity.get, { threadId: t.sessionId })).toBeNull();
+  await expect(
+    member.mutation(api.tasks.sessions.send, { sessionId: t.sessionId, message: "Continue" }),
+  ).rejects.toThrow("Not authorized");
+  expect(await t.owner.query(api.tasks.sessions.get, { sessionId: t.sessionId })).toMatchObject({
+    _id: t.sessionId,
+    state: { kind: "stopped" },
+    active: false,
+  });
 });
 
 it("closes the browser even if OpenAI cancellation fails, retaining the Scout lease", async () => {

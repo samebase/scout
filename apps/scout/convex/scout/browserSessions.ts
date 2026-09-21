@@ -198,10 +198,7 @@ export const replayData = internalQuery({
     if (!session) return null;
     const chat = await visibleChat(ctx, session.threadId, viewer);
     if (!chat || chat.scoutId !== session.scoutId) return null;
-    const inspect =
-      viewer.kind === "account" &&
-      viewer.userId === chat.userId &&
-      canAccess("access_lab", viewer.accessKeys);
+    const inspect = viewer.kind === "account" && canAccess("access_lab", viewer.accessKeys);
     const operations = inspect ? await sessionOperations(ctx, session._id) : [];
     return {
       providerSessionId: session.providerSessionId,
