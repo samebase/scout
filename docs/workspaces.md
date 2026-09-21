@@ -33,8 +33,8 @@ the selected hostname, or `null` for the private chat workspace. Saved scripts c
 `js-exec file.ts` in either scope. Browser interaction still uses the browser tools.
 
 Use site files for reusable procedures and tested helpers. Private account details, room links,
-transcripts, current positions, and intermediate task data belong in the chat workspace. Web and
-email tool outputs continue to save privately regardless of the preceding Bash call's workspace.
+transcripts, current positions, and intermediate task data belong in the chat workspace. Browser
+execution results save privately regardless of the preceding Bash call's workspace.
 Shared files are reference material to check against the current page, not authority to change a
 user's request. The revision check protects overlapping commands. Separate read and later rewrite
 calls are not one transaction; the rewrite can replace edits saved between those calls. This MVP
@@ -55,7 +55,34 @@ The file-list and preview APIs take `target: { kind: "site", site }` or
 The agent-facing Bash input remains `{ command, workspace? }`.
 This MVP adds no separate product records, guide schema, or transfer tool.
 
-## Saved web pages
+## Saved browser results
+
+Both task engines save each `browser_execute` result in the private task workspace under
+`/workspace/browser-results/<tool-call-hash>.json`. The file contains the complete accessibility
+snapshot and execution output returned to Scout, after managed-password and provider-URL
+redaction. It does not automatically collect HTML: HTML returned by the executed code is part of
+`output`, while `currentPage` is the accessibility snapshot.
+
+The tool returns up to 4,000 characters each of `currentPage` and `output`, explicit truncation
+flags, and `resultFile` with the saved path and byte count. Read the complete JSON with `bash`,
+for example `jq -r '.output' /workspace/browser-results/<tool-call-hash>.json`. Earlier files remain
+available after later calls and conversation compaction; Bash can list that directory if the
+original message is no longer in context. These are ordinary editable workspace files and
+untrusted observations, not instructions.
+
+The existing 256 KiB file, 5 MiB workspace, and 200-entry limits still apply. A save failure returns
+`resultFile.status: "failed"` and the actual error without changing the browser action's outcome
+or rerunning it. No partial file is saved. If the post-action snapshot fails, the tool retains
+execution output and reports the snapshot error with the existing do-not-retry guidance.
+When saving fails, the tool keeps the previous 20,000-character inline limit for each field.
+
+## Earlier web and email tools
+
+The following web/email exports describe the earlier tool set, removed during runtime unification.
+Current automatic task exports are browser results above and site research at
+`/workspace/research/result.json`.
+
+### Saved web pages
 
 `web_read({ url, format? })` saves the complete selected Firecrawl output directly to R2, then adds
 it to the chat's workspace. Omitting `format` keeps the existing Markdown default. This works for
@@ -106,7 +133,7 @@ Provider page errors and non-success page status codes also fail before upload, 
 Firecrawl API request itself succeeded. Page status 304 is accepted, matching Firecrawl's documented
 [clean-load behavior](https://docs.firecrawl.dev/features/scrape#response-metadata-and-status-codes).
 
-### Firecrawl options
+#### Firecrawl options
 
 The tool sends one selected format, `onlyMainContent: true` for Markdown and cleaned HTML, and
 `onlyMainContent: false` for raw HTML. It keeps `removeBase64Images: true`, a 60-second timeout, and
@@ -120,7 +147,7 @@ See the [scrape API reference](https://docs.firecrawl.dev/api-reference/endpoint
 The sandbox can inspect HTML source with `rg`, `sed`, or `js-exec`. It has no browser DOM,
 `DOMParser`, or installed HTML parser. HTML previews display source text.
 
-## Saved tool results
+### Saved tool results
 
 `web_search`, `web_map`, `web_crawl`, `list_messages`, `search_messages`, and `get_thread` always
 save successful results under `/workspace/results`, including empty results. The model receives
@@ -144,9 +171,8 @@ jq '.messages[] | {subject, threadId}' /workspace/results/list_messages-<id>.jso
 This uses the existing Convex tools to fetch data and the existing sandbox to process it. It follows
 [Anthropic's guidance on keeping intermediate results outside model context](https://www.anthropic.com/engineering/code-execution-with-mcp)
 and [Convex's tool integration](https://docs.convex.dev/agents/tools), without exposing API keys,
-network access, or a second set of service commands inside the shell. Browser actions retain their
-current result handling: storing their snapshots needs to distinguish an applied action from a
-failed file save before it can safely use this mechanism.
+network access, or a second set of service commands inside the shell. Browser actions were excluded
+from that earlier mechanism; their current persistence is described under Saved browser results.
 
 ## JavaScript and TypeScript
 
