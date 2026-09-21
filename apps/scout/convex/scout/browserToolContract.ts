@@ -36,7 +36,8 @@ export const BROWSER_EXECUTE_DESCRIPTION = outdent`
   Page state:
 
   - Reported URLs omit query strings and fragments.
-  - The current accessibility snapshot is always included, including after an error.
+  - Returns the current accessibility snapshot when observation succeeds, including after
+    a code error. A snapshot failure is reported separately from any execution output.
 
   Locators and tabs:
 

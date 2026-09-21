@@ -1857,9 +1857,17 @@ Site search shows a spinning icon while typing and waiting for results, both on 
 and in the left sidebar. The indicator stays inside the search box and announces the search
 to screen readers (`apps/scout/src/components/site-filters.tsx`).
 
-### 2026-09-21 - working tree - v296
+### 2026-09-21 - 9d8a0bc - v296
 
 Administrators can open private tasks, change visibility, stop runs, and remove tasks from
 user-facing pages while retaining their history in Lab. Task execution and browser control
 remain with the owner. The Private label stays unchanged, with administrator access explained
 in the terms (`apps/scout/convex/scout/chats.ts`, `apps/scout/convex/scout/chatAccess.ts`).
+
+### 2026-09-21 - working tree - v297
+
+Browser executions save full redacted page text and output in the task's private workspace,
+so either engine can reread earlier observations with Bash after moving to another page.
+The conversation receives short previews and file references. File-save failures remain separate
+from action outcomes, and a failed page snapshot no longer discards completed execution output
+(`apps/scout/convex/scout/browserTools.ts`, `apps/scout/convex/tasks/tools.ts`).

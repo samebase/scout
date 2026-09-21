@@ -29,6 +29,11 @@ describe("browser model context", () => {
                 success: true,
                 currentPage: "old page snapshot",
                 output: "clicked",
+                resultFile: {
+                  status: "saved",
+                  path: "/workspace/browser-results/old.json",
+                  byteCount: 25000,
+                },
               },
             },
           },
@@ -76,6 +81,11 @@ describe("browser model context", () => {
                 success: true,
                 currentPage: "[superseded by a newer browser snapshot]",
                 output: "clicked",
+                resultFile: {
+                  status: "saved",
+                  path: "/workspace/browser-results/old.json",
+                  byteCount: 25000,
+                },
               },
             },
           },

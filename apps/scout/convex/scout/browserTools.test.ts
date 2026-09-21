@@ -384,17 +384,17 @@ describe("browser screenshot results", () => {
       ),
     ).not.toHaveProperty("capture");
     expect(captureScreenshot).not.toHaveBeenCalled();
-    expect(() =>
+    await expect(
       browser.actions.executeCode(
         "return 1",
         "capture-step",
         undefined,
         "x".repeat(MAX_SCREENSHOT_NOTE_LENGTH + 1),
       ),
-    ).toThrow();
-    expect(() =>
+    ).rejects.toThrow();
+    await expect(
       browser.actions.executeCode("return 1", "capture-step", undefined, "  "),
-    ).toThrow();
+    ).rejects.toThrow();
   });
 });
 
@@ -660,6 +660,107 @@ describe("Lab browser harness", () => {
 
     expect(result.currentPage).toContain('textbox "Email"');
     expect(result.output).toHaveLength(20_000);
+  });
+
+  test("saves complete redacted execution and page text before returning previews", async () => {
+    const playwright = runtime();
+    const deps = dependencies(playwright);
+    const saved = new Map<string, string>();
+    const saveExecutionResult = vi.fn(
+      async ({ toolCallId, text }: { toolCallId: string; text: string }) => {
+        const path = `/workspace/browser-results/${toolCallId}.json`;
+        saved.set(path, text);
+        return path;
+      },
+    );
+    const browser = createBrowserHarness({ saveExecutionResult }, deps);
+    await browser.open("https://example.com");
+    const secret = 'managed"password\\value';
+    browser.actions.registerSensitiveValue(secret);
+    const output = `${"x".repeat(25_000)}${secret}\nOUTPUT-END`;
+    const snapshot = `${"p".repeat(25_000)}${encodeURIComponent(secret)}\nPAGE-END`;
+    deps.browserExecute.mockResolvedValueOnce({
+      success: true,
+      result: `__SCOUT_PLAYWRIGHT_RESULT__first:${JSON.stringify({ ok: true, output, activeTabId: "t1" })}`,
+      exitCode: 0,
+    });
+    playwright.snapshot.mockResolvedValueOnce(snapshot);
+    const result = await browser.actions.executeCode("return 'large result'", "first");
+
+    expect(result).toMatchObject({
+      success: true,
+      currentPageTruncated: true,
+      outputTruncated: true,
+      resultFile: { status: "saved", path: "/workspace/browser-results/first.json" },
+    });
+    expect(result.currentPage).toHaveLength(4_000);
+    expect(result.output).toHaveLength(4_000);
+    const text = saved.get("/workspace/browser-results/first.json");
+    expect(text).toBeDefined();
+    expect(JSON.parse(text!)).toMatchObject({
+      success: true,
+      currentPage: `${"p".repeat(25_000)}[secret redacted]\nPAGE-END`,
+      output: `${"x".repeat(25_000)}[secret redacted]\nOUTPUT-END`,
+    });
+    expect(text).not.toContain(secret);
+    expect(text).not.toContain(encodeURIComponent(secret));
+    await browser.actions.executeCode("return 'next result'", "second");
+    expect(saved.get("/workspace/browser-results/first.json")).toBe(text);
+    expect(saved.size).toBe(2);
+  });
+
+  test("reports a workspace failure without changing the action outcome or repeating it", async () => {
+    const deps = dependencies();
+    deps.browserExecute.mockResolvedValueOnce({
+      success: true,
+      stdout: "x".repeat(12_000),
+      exitCode: 0,
+    });
+    const browser = createBrowserHarness(
+      {
+        saveExecutionResult: async () => {
+          throw new Error("Workspace file limit exceeded");
+        },
+      },
+      deps,
+    );
+    await browser.open("https://example.com");
+    const result = await browser.actions.executeCode("await page.getByRole('button').click()");
+    expect(result).toMatchObject({
+      success: true,
+      output: "x".repeat(12_000),
+      outputTruncated: false,
+      error: null,
+      resultFile: { status: "failed", error: "Workspace file limit exceeded" },
+    });
+    expect(deps.browserExecute).toHaveBeenCalledTimes(1);
+  });
+
+  test("preserves execution output when the post-action snapshot fails", async () => {
+    const playwright = runtime();
+    const deps = dependencies(playwright);
+    const saveExecutionResult = vi.fn(
+      async (_args: { toolCallId: string; text: string }) =>
+        "/workspace/browser-results/first.json",
+    );
+    const browser = createBrowserHarness({ saveExecutionResult }, deps);
+    await browser.open("https://example.com");
+    playwright.snapshot.mockRejectedValueOnce(new Error("Snapshot disconnected"));
+    const result = await browser.actions.executeCode("await page.getByRole('button').click()");
+    expect(result).toMatchObject({
+      success: false,
+      output: "clicked",
+      error: "PostActionSnapshotFailed: Snapshot disconnected",
+      mutationApplied: true,
+      doNotRetry: true,
+      resultFile: { status: "saved" },
+    });
+    expect(JSON.parse(saveExecutionResult.mock.calls[0][0].text)).toMatchObject({
+      output: "clicked",
+      mutationApplied: true,
+      doNotRetry: true,
+    });
+    expect(deps.browserExecute).toHaveBeenCalledTimes(1);
   });
 
   test("records failed code without killing the rest of the browser session", async () => {
