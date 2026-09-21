@@ -2,6 +2,18 @@ import { useEffect, useEffectEvent, useRef, useState, type RefObject } from "rea
 import type { createDiscoveryField } from "#lib/discovery-field";
 import type { TerrainSettings } from "#lib/terrain-settings";
 import { terrainRenderProfiles } from "#lib/terrain-quality";
+import { advanceTerrainTime, createTerrainAnimation } from "#lib/terrain-motion";
+import { inspectTrail, type TrailDiagnosticsFrame } from "#lib/terrain-trail-diagnostics";
+import { measureTerrainBounds } from "#lib/terrain-viewport";
+import type { TrailObstacle } from "#lib/terrain-trail-motion";
+import { projectTrailNode } from "#lib/terrain-trail-motion";
+import { trailSegments, trailSpline } from "#lib/terrain-trail";
+import { d } from "typegpu";
+import {
+  moveTrailCheckpoint,
+  pickTrailCheckpoint,
+  trailGroundAtPointer,
+} from "#lib/terrain-trail-drag";
 
 export type TerrainStatus = { kind: "ready" } | { kind: "unavailable"; message: string };
 
@@ -11,12 +23,18 @@ export function DiscoveryTerrain({
   onStatusChange,
   onCameraChange,
   framingRef,
+  animationRef,
+  onTrailDiagnostics,
+  frameRevision = 0,
 }: {
+  frameRevision?: number;
+  onTrailDiagnostics?: (frame: TrailDiagnosticsFrame) => void;
   paused: boolean;
   settings: TerrainSettings;
   onStatusChange?: (status: TerrainStatus) => void;
   onCameraChange?: (tilt: number, rotation: number) => void;
   framingRef?: RefObject<HTMLElement | null>;
+  animationRef?: RefObject<ReturnType<typeof createTerrainAnimation>>;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const refreshRef = useRef<(() => void) | null>(null);
@@ -26,20 +44,54 @@ export function DiscoveryTerrain({
   const available = renderState === "ready";
   const [reducedMotion, setReducedMotion] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [hoveredCheckpoint, setHoveredCheckpoint] = useState<number | null>(null);
   const [compactDevice, setCompactDevice] = useState<boolean | null>(null);
-  const timeRef = useRef(4);
+  const localAnimationRef = useRef(createTerrainAnimation(settings));
+  const animation = animationRef ?? localAnimationRef;
   const quality = settings.quality === "auto" ? (compactDevice ? "low" : "high") : settings.quality;
   const profile = compactDevice === null ? null : terrainRenderProfiles[quality];
-  const dragRef = useRef<{
-    pointerId: number;
-    x: number;
-    y: number;
-    tilt: number;
-    rotation: number;
-  } | null>(null);
-  const shouldPause = useEffectEvent(() => reducedMotion || paused || settings.speed === 0);
+  const dragRef = useRef<
+    | { kind: "camera"; pointerId: number; x: number; y: number; tilt: number; rotation: number }
+    | {
+        kind: "checkpoint";
+        pointerId: number;
+        checkpoint: number;
+        offsetX: number;
+        offsetY: number;
+      }
+    | null
+  >(null);
+  const shouldPause = useEffectEvent(
+    () =>
+      reducedMotion ||
+      paused ||
+      dragRef.current?.kind === "checkpoint" ||
+      ((!settings.terrainMotion || settings.speed === 0) &&
+        (!settings.checkpointMotion || settings.trail === 0)),
+  );
+  const diagnosticsEnabled = useEffectEvent(() => onTrailDiagnostics !== undefined);
+  const reportDiagnostics = useEffectEvent((frame: TrailDiagnosticsFrame) =>
+    onTrailDiagnostics?.(frame),
+  );
   const currentSettings = useEffectEvent(() => settings);
+  const animateTransition = useEffectEvent(() => !reducedMotion);
   const reportStatus = useEffectEvent((status: TerrainStatus) => onStatusChange?.(status));
+
+  function pointerView(canvas: HTMLCanvasElement) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+      rect,
+      width: rect.width,
+      height: rect.height,
+      frameHeight: framingRef?.current?.clientHeight ?? canvas.clientHeight,
+    };
+  }
+
+  function finishDrag() {
+    dragRef.current = null;
+    setDragging(false);
+    refreshRef.current?.();
+  }
 
   useEffect(() => {
     const media = matchMedia("(prefers-reduced-motion: reduce)");
@@ -75,7 +127,36 @@ export function DiscoveryTerrain({
     let frame = 0;
     let visible = true;
     let last = 0;
+    let lastTransition = 0;
     let frameHeight = 0;
+    let lastDiagnostics = 0;
+    let pendingFrames = 0;
+    let timingStart = 0;
+    let timingFrames = 0;
+    let timingDraw = 0;
+    let timingCompleted = 0;
+    let timingCompletion = 0;
+    let timing: TrailDiagnosticsFrame["timing"] = null;
+    let obstacles: TrailObstacle[] = [];
+    let bounds: TrailObstacle = { left: 0, top: 0, right: 0, bottom: 0 };
+
+    function measureObstacles() {
+      if (!canvas) return;
+      const canvasRect = canvas.getBoundingClientRect();
+      bounds = measureTerrainBounds(canvas, frameHeight);
+      obstacles = Array.from(
+        framingRef?.current?.querySelectorAll("[data-terrain-obstacle]") ?? [],
+        (element) => {
+          const rect = element.getBoundingClientRect();
+          return {
+            left: rect.left - canvasRect.left,
+            right: rect.right - canvasRect.left,
+            top: rect.top - canvasRect.top,
+            bottom: rect.bottom - canvasRect.top,
+          };
+        },
+      );
+    }
 
     function stop() {
       cancelAnimationFrame(frame);
@@ -95,28 +176,145 @@ export function DiscoveryTerrain({
     }
 
     function draw(now: number) {
-      if (!field || disposed || !visible || document.hidden) return;
+      if (!canvas || !field || disposed || !visible || document.hidden) return;
       const moving = !shouldPause();
       const settings = currentSettings();
-      if (moving && last && now - last < 1000 / framesPerSecond - 2) {
+      if (animation.current.scene !== settings.scene) {
+        animation.current = createTerrainAnimation(settings);
+      }
+      if (
+        (moving || animation.current.trail.display.moving) &&
+        last &&
+        now - last < 1000 / framesPerSecond - 2
+      ) {
+        frame = requestAnimationFrame(draw);
+        return;
+      }
+      if (pendingFrames >= 2) {
         frame = requestAnimationFrame(draw);
         return;
       }
       if (moving) {
-        if (last) timeRef.current += Math.min((now - last) / 1000, 0.1) * settings.speed;
+        if (last)
+          animation.current.time = advanceTerrainTime(
+            animation.current.time,
+            (now - last) / 1000,
+            settings,
+          );
       }
       last = now;
       try {
-        field.draw(timeRef.current, settings, frameHeight);
-        if (!drawn) {
-          drawn = true;
-          void field.device.queue.onSubmittedWorkDone().then(() => {
-            if (disposed || !field) return;
+        const drawStart = performance.now();
+        field.draw(animation.current.time, settings, frameHeight, {
+          state: animation.current.trail,
+          obstacles,
+          bounds,
+          interacting: dragRef.current !== null,
+          elapsed: lastTransition ? (now - lastTransition) / 1000 : 0,
+          animateTransition: animateTransition(),
+        });
+        lastTransition = now;
+        const animating = moving || animation.current.trail.display.moving;
+        const submittedAt = performance.now();
+        pendingFrames++;
+        void field.device.queue.onSubmittedWorkDone().then(() => {
+          pendingFrames--;
+          if (disposed || !field) return;
+          if (diagnosticsEnabled()) {
+            timingCompleted++;
+            timingCompletion += performance.now() - submittedAt;
+          }
+          if (!drawn) {
+            drawn = true;
             setRenderState("ready");
             reportStatus({ kind: "ready" });
-          }, fail);
+          }
+        }, fail);
+        if (diagnosticsEnabled()) {
+          if (!timingStart) timingStart = now;
+          timingFrames++;
+          timingDraw += submittedAt - drawStart;
+          if (now - timingStart >= 1000) {
+            timing = {
+              framesPerSecond: (timingFrames * 1000) / (now - timingStart),
+              drawMilliseconds: timingDraw / timingFrames,
+              completionMilliseconds: timingCompleted ? timingCompletion / timingCompleted : null,
+            };
+            timingStart = now;
+            timingFrames = 0;
+            timingDraw = 0;
+            timingCompleted = 0;
+            timingCompletion = 0;
+          }
         }
-        if (moving) frame = requestAnimationFrame(draw);
+        if (diagnosticsEnabled() && (!animating || now - lastDiagnostics >= 250)) {
+          lastDiagnostics = now;
+          const rect = canvas.getBoundingClientRect();
+          const diagnosticFrame: TrailDiagnosticsFrame = {
+            ...inspectTrail(
+              animation.current.trail,
+              animation.current.time.terrain,
+              settings,
+              {
+                width: rect.width,
+                height: rect.height,
+                frameHeight,
+                bounds,
+                obstacles,
+                interacting: dragRef.current !== null,
+              },
+              !animating || settings.scene !== "landscape" ? "surface" : "positions",
+            ),
+            timing,
+            renderError: null,
+            viewport: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+            bounds,
+            obstacles,
+          };
+          reportDiagnostics(diagnosticFrame);
+          if (!animating && settings.trail > 0) {
+            const controls = animation.current.trail.display.nodes.map((node) =>
+              d.vec2f(node.x, node.z),
+            );
+            const terrainTime = animation.current.time.terrain;
+            const view = { width: rect.width, height: rect.height, frameHeight };
+            const capturedAt = lastDiagnostics;
+            void field.readRoute().then((rendered) => {
+              if (disposed || lastDiagnostics !== capturedAt) return;
+              let error = 0;
+              for (let index = 0; index <= trailSegments; index++) {
+                const progress = (index / trailSegments) * (controls.length - 1);
+                const segment = Math.min(Math.floor(progress), controls.length - 2);
+                const point = trailSpline(
+                  controls[Math.max(0, segment - 1)],
+                  controls[segment],
+                  controls[segment + 1],
+                  controls[Math.min(controls.length - 1, segment + 2)],
+                  progress - segment,
+                );
+                const expected = projectTrailNode(
+                  { x: point.x, z: point.y },
+                  terrainTime,
+                  settings,
+                  view,
+                );
+                error = Math.max(
+                  error,
+                  Math.hypot(
+                    expected.x - ((rendered[index].x + 1) * rect.width) / 2,
+                    expected.y - ((1 - rendered[index].y) * rect.height) / 2,
+                  ),
+                );
+              }
+              reportDiagnostics({ ...diagnosticFrame, renderError: error });
+            }, fail);
+          }
+        }
+        if (moving || (settings.trail > 0 && animation.current.trail.display.moving)) {
+          frame = requestAnimationFrame(draw);
+        } else {
+          lastTransition = 0;
+        }
       } catch (error) {
         fail(error);
       }
@@ -125,6 +323,14 @@ export function DiscoveryTerrain({
     function refresh() {
       cancelAnimationFrame(frame);
       last = 0;
+      if (!visible || document.hidden) lastTransition = 0;
+      timingStart = 0;
+      timingFrames = 0;
+      timingDraw = 0;
+      timingCompleted = 0;
+      timingCompletion = 0;
+      timing = null;
+      measureObstacles();
       if (field && visible && !document.hidden) frame = requestAnimationFrame(draw);
     }
 
@@ -143,8 +349,14 @@ export function DiscoveryTerrain({
       refresh();
     });
     resizeObserver.observe(canvas);
+    if (framingRef?.current) {
+      resizeObserver.observe(framingRef.current);
+      for (const element of framingRef.current.querySelectorAll("[data-terrain-obstacle]"))
+        resizeObserver.observe(element);
+    }
     intersectionObserver.observe(canvas);
     document.addEventListener("visibilitychange", refresh);
+    document.addEventListener("scroll", measureObstacles, true);
     refreshRef.current = refresh;
     resize();
 
@@ -173,13 +385,14 @@ export function DiscoveryTerrain({
       resizeObserver.disconnect();
       intersectionObserver.disconnect();
       document.removeEventListener("visibilitychange", refresh);
+      document.removeEventListener("scroll", measureObstacles, true);
       stop();
     };
-  }, [profile, framingRef]);
+  }, [profile, framingRef, animation]);
 
   useEffect(() => {
     refreshRef.current?.();
-  }, [reducedMotion, paused, settings]);
+  }, [reducedMotion, paused, settings, onTrailDiagnostics, frameRevision]);
 
   return (
     <>
@@ -201,22 +414,71 @@ export function DiscoveryTerrain({
       <canvas
         ref={canvasRef}
         aria-hidden="true"
-        className={`absolute inset-0 size-full transition-opacity duration-700 ${available ? "opacity-100" : "opacity-0"} ${onCameraChange ? "touch-none" : ""} ${onCameraChange && available ? (dragging ? "cursor-grabbing" : "cursor-grab") : ""}`}
+        className={`absolute inset-0 size-full transition-opacity duration-700 ${available ? "opacity-100" : "opacity-0"} ${onCameraChange ? "touch-none" : ""} ${onCameraChange && available ? (dragging ? "cursor-grabbing" : hoveredCheckpoint !== null ? "cursor-move" : "cursor-grab") : ""}`}
         onPointerDown={(event) => {
           if (!onCameraChange || !available || event.button !== 0 || dragRef.current) return;
+          const view = pointerView(event.currentTarget);
+          const x = event.clientX - view.rect.left;
+          const y = event.clientY - view.rect.top;
+          const checkpoint = pickTrailCheckpoint(
+            animation.current.trail,
+            { x, y },
+            animation.current.time.terrain,
+            settings,
+            view,
+          );
           event.currentTarget.setPointerCapture(event.pointerId);
-          dragRef.current = {
-            pointerId: event.pointerId,
-            x: event.clientX,
-            y: event.clientY,
-            tilt: settings.tilt,
-            rotation: settings.rotation,
-          };
+          dragRef.current = checkpoint
+            ? {
+                kind: "checkpoint",
+                pointerId: event.pointerId,
+                checkpoint: checkpoint.checkpoint,
+                offsetX: checkpoint.x - x,
+                offsetY: checkpoint.y - y,
+              }
+            : {
+                kind: "camera",
+                pointerId: event.pointerId,
+                x: event.clientX,
+                y: event.clientY,
+                tilt: settings.tilt,
+                rotation: settings.rotation,
+              };
           setDragging(true);
+          refreshRef.current?.();
         }}
         onPointerMove={(event) => {
           const drag = dragRef.current;
-          if (!drag || drag.pointerId !== event.pointerId) return;
+          if (!onCameraChange || !available) return;
+          if (!drag) {
+            const view = pointerView(event.currentTarget);
+            setHoveredCheckpoint(
+              pickTrailCheckpoint(
+                animation.current.trail,
+                { x: event.clientX - view.rect.left, y: event.clientY - view.rect.top },
+                animation.current.time.terrain,
+                settings,
+                view,
+              )?.checkpoint ?? null,
+            );
+            return;
+          }
+          if (drag.pointerId !== event.pointerId) return;
+          if (drag.kind === "checkpoint") {
+            const view = pointerView(event.currentTarget);
+            const point = trailGroundAtPointer(
+              {
+                x: event.clientX - view.rect.left + drag.offsetX,
+                y: event.clientY - view.rect.top + drag.offsetY,
+              },
+              animation.current.time.terrain,
+              settings,
+              view,
+            );
+            moveTrailCheckpoint(animation.current.trail, drag.checkpoint, point);
+            refreshRef.current?.();
+            return;
+          }
           const tilt = Math.min(85, Math.max(10, drag.tilt + (event.clientY - drag.y) * 0.2));
           const angle = drag.rotation - (event.clientX - drag.x) * 0.25;
           const rotation = (((angle % 360) + 540) % 360) - 180;
@@ -225,13 +487,11 @@ export function DiscoveryTerrain({
         onPointerUp={(event) => {
           if (dragRef.current?.pointerId !== event.pointerId) return;
           event.currentTarget.releasePointerCapture(event.pointerId);
-          dragRef.current = null;
-          setDragging(false);
+          finishDrag();
         }}
-        onLostPointerCapture={() => {
-          dragRef.current = null;
-          setDragging(false);
-        }}
+        onPointerCancel={finishDrag}
+        onLostPointerCapture={finishDrag}
+        onPointerLeave={() => setHoveredCheckpoint(null)}
       />
     </>
   );

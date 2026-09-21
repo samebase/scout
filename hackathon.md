@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-21T13:29:39Z
+- **Last updated:** 2026-09-21T14:48:51Z
 
 ## Log
 
@@ -1813,9 +1813,17 @@ Examples prepare editable prompts for free-plan exports, signup, and hackathon e
 with the website link selected for replacement. A white scarf on blue matches the navigation and favicon, with attribution on About
 (`apps/scout/src/components/discovery-hero.tsx`, `apps/scout/src/products/conversation/page.tsx`, `apps/scout/public/favicon.svg`).
 
-### 2026-09-21 - working tree - v290
+### 2026-09-21 - e1b53f4 - v290
 
 Scout's task and walkthrough instructions distinguish product claims, direct observations,
 and independent source checks. The same evidence standard applies to criticism, with unknown
 causes and unverified outcomes left explicit
 (`apps/scout/convex/tasks/instructions.ts`, `apps/scout/convex/tasks/walkthroughReport.ts`).
+
+### 2026-09-21 - working tree - v291
+
+Terrain previews now let visitors drag checkpoints and see routes adjust around changing hills.
+The line stretches during a drag, then settles at a chosen horizontal speed while staying above the ground.
+Separate motion controls, simple hill scenes, and route diagnostics make the experiment easier to inspect.
+The homepage uses taller peaks and slower terrain motion, with the orange route kept in the explorer
+(`apps/scout/src/components/terrain-explorer.tsx`, `apps/scout/src/lib/terrain-trail-routing.ts`, `apps/scout/src/lib/terrain-settings.ts`).

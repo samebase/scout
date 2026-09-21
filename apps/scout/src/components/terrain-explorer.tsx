@@ -7,14 +7,20 @@ import {
   useSidebarLayoutPresentation,
 } from "@samebase/sidebars/SidebarRuntime";
 import { LinkIcon, PauseIcon, PlayIcon, RotateCcwIcon, SlidersHorizontalIcon } from "lucide-react";
-import { Suspense, useState } from "react";
+import { Suspense, useRef, useState } from "react";
 import {
-  atlasTerrainSettings,
+  defaultTerrainSettings,
+  routeExperimentSettings,
   terrainPresets,
   terrainSettingsSchema,
   type TerrainSettings,
 } from "#lib/terrain-settings";
+import { createTerrainAnimation } from "#lib/terrain-motion";
+import { resetTrailConnection } from "#lib/terrain-trail-motion";
 import { DiscoveryTerrain, type TerrainStatus } from "./discovery-terrain";
+import { omitNullish } from "../../shared/omitNullish";
+import { TrailDiagnostics } from "./trail-diagnostics";
+import type { TrailDiagnosticsFrame } from "#lib/terrain-trail-diagnostics";
 import { DiscoveryHero } from "./discovery-hero";
 import { ActivityFeed } from "./activity-feed";
 import { ConversationLobby } from "../products/conversation/page";
@@ -42,6 +48,17 @@ const controlGroups = [
     ],
   },
   {
+    title: "Route",
+    controls: [
+      { key: "trail", label: "Route visibility", min: 0, max: 1, step: 0.05, unit: "" },
+      { key: "trailLift", label: "Distance from ground", min: 0, max: 0.15, step: 0.001, unit: "" },
+      { key: "trailWidth", label: "Route width", min: 1, max: 6, step: 0.25, unit: "px" },
+      { key: "routeMaxSpeed", label: "Max route speed", min: 0.1, max: 5, step: 0.1, unit: "u/s" },
+      { key: "checkpointSpeed", label: "Checkpoint speed", min: 0.1, max: 3, step: 0.1, unit: "×" },
+      { key: "checkpointDrift", label: "Wander distance", min: 0, max: 2, step: 0.05, unit: "" },
+    ],
+  },
+  {
     title: "Landscape",
     controls: [
       { key: "extent", label: "Field size", min: 1, max: 3, step: 0.1, unit: "×" },
@@ -52,9 +69,9 @@ const controlGroups = [
     ],
   },
   {
-    title: "Motion",
+    title: "Terrain motion",
     controls: [
-      { key: "speed", label: "Animation speed", min: 0, max: 8, step: 0.1, unit: "×" },
+      { key: "speed", label: "Terrain speed", min: 0, max: 1, step: 0.01, unit: "×" },
       { key: "evolution", label: "Landscape change", min: 0, max: 3, step: 0.1, unit: "×" },
       { key: "shimmer", label: "Shimmer", min: 0, max: 2, step: 0.05, unit: "" },
     ],
@@ -77,7 +94,10 @@ const controlGroups = [
 ] satisfies {
   title: string;
   controls: {
-    key: Exclude<keyof TerrainSettings, "quality">;
+    key: Exclude<
+      keyof TerrainSettings,
+      "scene" | "quality" | "terrainMotion" | "checkpointMotion" | "checkpointAvoidance"
+    >;
     label: string;
     min: number;
     max: number;
@@ -101,9 +121,42 @@ export function TerrainExplorer({
     defaults: sidebarDefaults,
     storageKey: "scout_terrain_sidebar_state",
   });
+  const animationRef = useRef(createTerrainAnimation(settings));
+  const [frameRevision, setFrameRevision] = useState(0);
+  const experiment = settings.scene !== "landscape";
+  const [diagnostics, setDiagnostics] = useState(false);
+  const [diagnosticFrame, setDiagnosticFrame] = useState<TrailDiagnosticsFrame | null>(null);
+  const diagnosticProps = omitNullish({
+    onTrailDiagnostics: diagnostics || experiment ? setDiagnosticFrame : null,
+  });
   const [paused, setPaused] = useState(false);
   const [status, setStatus] = useState<TerrainStatus | null>(null);
   const [copyMessage, setCopyMessage] = useState("");
+  const groups = controlGroups
+    .map((group) => ({
+      ...group,
+      controls: group.controls.filter(
+        (control) =>
+          !experiment ||
+          [
+            "tilt",
+            "rotation",
+            "zoom",
+            "peaks",
+            "trailLift",
+            "routeMaxSpeed",
+            "checkpointSpeed",
+            "speed",
+          ].includes(control.key),
+      ),
+    }))
+    .filter((group) => group.controls.length > 0)
+    .sort((a, b) =>
+      experiment
+        ? ["Landscape", "Camera", "Route", "Terrain motion"].indexOf(a.title) -
+          ["Landscape", "Camera", "Route", "Terrain motion"].indexOf(b.title)
+        : 0,
+    );
 
   async function copyLink() {
     try {
@@ -115,12 +168,20 @@ export function TerrainExplorer({
   }
 
   function change(next: TerrainSettings) {
+    if (next.scene !== settings.scene) animationRef.current = createTerrainAnimation(next);
     setCopyMessage("");
     onChange(next);
   }
 
+  function resetScene(next: TerrainSettings) {
+    animationRef.current = createTerrainAnimation(next);
+    setPaused(false);
+    change(next);
+  }
+
   return (
     <SidebarRuntimeProvider controller={sidebar}>
+      {diagnostics && diagnosticFrame && <TrailDiagnostics frame={diagnosticFrame} />}
       <main id="main-content" className="h-[calc(100dvh-4rem)] min-h-[28rem] bg-background">
         <SidebarLayout
           mobileMinResizeBehavior="min_resize_to_slide"
@@ -139,7 +200,7 @@ export function TerrainExplorer({
                 >
                   <button
                     type="button"
-                    aria-pressed={view === "terrain"}
+                    aria-pressed={view === "terrain" || experiment}
                     onClick={() => onViewChange("terrain")}
                     className="rounded-md px-3 py-1.5 text-xs text-muted-foreground aria-pressed:bg-secondary aria-pressed:text-foreground"
                   >
@@ -147,7 +208,8 @@ export function TerrainExplorer({
                   </button>
                   <button
                     type="button"
-                    aria-pressed={view === "landing"}
+                    aria-pressed={view === "landing" && !experiment}
+                    disabled={experiment}
                     onClick={() => onViewChange("landing")}
                     className="rounded-md px-3 py-1.5 text-xs text-muted-foreground aria-pressed:bg-secondary aria-pressed:text-foreground"
                   >
@@ -167,7 +229,13 @@ export function TerrainExplorer({
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => change(atlasTerrainSettings)}
+                  onClick={() =>
+                    resetScene(
+                      experiment
+                        ? { ...routeExperimentSettings, scene: settings.scene }
+                        : defaultTerrainSettings,
+                    )
+                  }
                   aria-label="Reset terrain"
                 >
                   <RotateCcwIcon />
@@ -199,12 +267,17 @@ export function TerrainExplorer({
                           type="button"
                           key={preset.name}
                           disabled={status?.kind === "unavailable"}
-                          onClick={() => change({ ...preset.settings, quality: settings.quality })}
-                          aria-pressed={controlGroups.every((group) =>
-                            group.controls.every(
-                              ({ key }) => settings[key] === preset.settings[key],
-                            ),
-                          )}
+                          onClick={() =>
+                            resetScene({ ...preset.settings, quality: settings.quality })
+                          }
+                          aria-pressed={
+                            settings.scene === preset.settings.scene &&
+                            controlGroups.every((group) =>
+                              group.controls.every(
+                                ({ key }) => settings[key] === preset.settings[key],
+                              ),
+                            )
+                          }
                           className="rounded-lg border px-3 py-2 text-left text-xs hover:border-primary/40 aria-pressed:border-primary aria-pressed:bg-primary/5 aria-pressed:text-primary disabled:opacity-40"
                         >
                           {preset.name}
@@ -212,7 +285,31 @@ export function TerrainExplorer({
                       ))}
                     </div>
                   </div>
-                  {controlGroups.map((group) => (
+                  {experiment && (
+                    <div className="mb-5 space-y-3">
+                      <p className="text-sm leading-relaxed">
+                        Drag either endpoint or change Peak prominence to recalculate the route
+                        immediately. This also works while paused.
+                      </p>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => change({ ...settings, tilt: 85, rotation: 0 })}
+                        >
+                          Top view
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => change({ ...settings, tilt: 55, rotation: 0 })}
+                        >
+                          Side view
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                  {groups.map((group) => (
                     <fieldset
                       key={group.title}
                       disabled={status?.kind === "unavailable"}
@@ -221,12 +318,96 @@ export function TerrainExplorer({
                       <legend className="pr-3 text-xs font-medium text-muted-foreground">
                         {group.title}
                       </legend>
+                      {group.title === "Route" && !experiment && (
+                        <label className="flex items-center justify-between gap-2 text-xs">
+                          Keep checkpoints visible
+                          <input
+                            type="checkbox"
+                            role="switch"
+                            checked={settings.checkpointAvoidance}
+                            disabled={!settings.checkpointMotion}
+                            onChange={(event) =>
+                              change({
+                                ...settings,
+                                checkpointAvoidance: event.currentTarget.checked,
+                              })
+                            }
+                            className="size-4 accent-primary"
+                          />
+                        </label>
+                      )}
+                      {(group.title === "Route" || group.title === "Terrain motion") && (
+                        <label className="flex items-center justify-between gap-2 text-xs">
+                          {group.title === "Route" ? "Animate checkpoints" : "Animate terrain"}
+                          <input
+                            type="checkbox"
+                            role="switch"
+                            checked={
+                              group.title === "Route"
+                                ? settings.checkpointMotion
+                                : settings.terrainMotion
+                            }
+                            onChange={(event) =>
+                              change({
+                                ...settings,
+                                [group.title === "Route" ? "checkpointMotion" : "terrainMotion"]:
+                                  event.currentTarget.checked,
+                              })
+                            }
+                            className="size-4 accent-primary"
+                          />
+                        </label>
+                      )}
+                      {group.title === "Route" && (
+                        <div className="space-y-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={status?.kind !== "ready"}
+                            onClick={() => {
+                              animationRef.current.trail.replan = true;
+                              setFrameRevision((revision) => revision + 1);
+                            }}
+                          >
+                            Find route
+                          </Button>{" "}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={status?.kind !== "ready"}
+                            onClick={() => {
+                              resetTrailConnection(animationRef.current.trail, settings);
+                              setFrameRevision((revision) => revision + 1);
+                            }}
+                          >
+                            <RotateCcwIcon /> Reset connection
+                          </Button>
+                          <p className="text-xs leading-relaxed text-muted-foreground">
+                            Dragging moves a checkpoint immediately and stretches the nearby line.
+                            Max route speed controls how fast the line settles into its new route.
+                            Height always follows the ground. Reset connection shows the direct
+                            curve for comparison.
+                          </p>
+                        </div>
+                      )}
+                      {group.title === "Route" && (
+                        <label className="flex items-center justify-between gap-2 text-xs">
+                          Route diagnostics
+                          <input
+                            type="checkbox"
+                            role="switch"
+                            checked={diagnostics}
+                            onChange={(event) => setDiagnostics(event.currentTarget.checked)}
+                            className="size-4 accent-primary"
+                          />
+                        </label>
+                      )}
                       {group.controls.map((control) => (
                         <label key={control.key} className="block text-xs">
                           <span className="mb-2 flex items-center justify-between gap-2">
                             {control.label}
                             <output className="font-mono text-[11px] tabular-nums text-muted-foreground">
-                              {Number(settings[control.key].toFixed(2))}
+                              {Number(settings[control.key].toFixed(control.step < 0.01 ? 3 : 2))}
                               {control.unit}
                             </output>
                           </span>
@@ -237,6 +418,11 @@ export function TerrainExplorer({
                             max={control.max}
                             step={control.step}
                             value={settings[control.key]}
+                            disabled={
+                              (control.key === "checkpointSpeed" ||
+                                control.key === "checkpointDrift") &&
+                              !settings.checkpointMotion
+                            }
                             onChange={(event) =>
                               change({
                                 ...settings,
@@ -245,6 +431,12 @@ export function TerrainExplorer({
                             }
                             className="block h-4 w-full cursor-pointer accent-primary"
                           />
+                          {control.key === "peaks" && (
+                            <span className="mt-1 block leading-relaxed text-muted-foreground">
+                              Taller peaks make crossing them more costly, so a detour can be worth
+                              the extra distance.
+                            </span>
+                          )}
                         </label>
                       ))}
                     </fieldset>
@@ -273,9 +465,9 @@ export function TerrainExplorer({
                       </select>
                     </label>
                     <p className="text-xs leading-relaxed text-muted-foreground">
-                      Both modes are capped at 24 fps. Automatic uses balanced curves on phones and
-                      touch devices, and fine curves on desktop. Field size adds more terrain; Width
-                      and Depth stretch it.
+                      Both modes target 60 fps and wait when the GPU is busy. Automatic uses
+                      balanced curves on phones and touch devices, and fine curves on desktop. Field
+                      size adds more terrain; Width and Depth stretch it.
                     </p>
                   </fieldset>
                   <p className="text-xs leading-relaxed text-muted-foreground">
@@ -287,9 +479,32 @@ export function TerrainExplorer({
           }
           main={
             <div className="relative isolate h-full min-h-0 overflow-hidden bg-background">
-              {view === "landing" ? (
+              {experiment &&
+                diagnosticFrame?.climb &&
+                diagnosticFrame.snapshot.settings.scene === settings.scene && (
+                  <div
+                    aria-label="Climb comparison"
+                    className="pointer-events-none absolute left-4 top-4 z-10 rounded-lg border bg-background/95 px-4 py-3 text-sm shadow-sm"
+                  >
+                    <p>
+                      Route climb:{" "}
+                      <span className="font-mono">{diagnosticFrame.climb.route.toFixed(2)}</span>
+                    </p>
+                    <p>
+                      Direct climb:{" "}
+                      <span className="font-mono">{diagnosticFrame.climb.direct.toFixed(2)}</span>
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Total uphill distance on the current terrain
+                    </p>
+                  </div>
+                )}
+              {view === "landing" && !experiment ? (
                 <div className="h-full overflow-y-auto pb-20 [&_button:disabled]:opacity-50">
                   <DiscoveryHero
+                    animationRef={animationRef}
+                    frameRevision={frameRevision}
+                    {...diagnosticProps}
                     settings={settings}
                     paused={paused}
                     onStatusChange={setStatus}
@@ -307,6 +522,9 @@ export function TerrainExplorer({
                 </div>
               ) : (
                 <DiscoveryTerrain
+                  animationRef={animationRef}
+                  frameRevision={frameRevision}
+                  {...diagnosticProps}
                   settings={settings}
                   paused={paused}
                   onStatusChange={setStatus}
@@ -318,8 +536,8 @@ export function TerrainExplorer({
                   {status?.kind === "unavailable"
                     ? `${status.message} Showing a static preview.`
                     : view === "terrain"
-                      ? "Drag the landscape to turn the camera. Use the sidebar to adjust the terrain."
-                      : "Homepage at this preview width. Hide the controls to see it at full width."}
+                      ? "Drag a checkpoint to move it. Drag the terrain to turn the camera."
+                      : "Drag checkpoints to move them. Hide the controls to see the homepage at full width."}
                 </p>
                 <p role="status" className="rounded-lg bg-background/85 px-3 py-2 empty:hidden">
                   {copyMessage}

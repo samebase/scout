@@ -1,6 +1,31 @@
 import { expect, test } from "vite-plus/test";
-import { d } from "typegpu";
-import { terraceVertex } from "./terrain-terraces";
+import tgpu, { d } from "typegpu";
+import { terraceVertex, terraceVertexAddress } from "./terrain-terraces";
+
+test("large terrain draws keep each triangle together past the float precision limit", () => {
+  const triangleCount = 512 * 320 * 2;
+  for (const first of [16777221, 17694717, 23592957, 4294967292]) {
+    const addresses = [first, first + 1, first + 2].map((index) =>
+      terraceVertexAddress(index, triangleCount),
+    );
+    for (const address of addresses) {
+      expect(address.x).toBe(Math.floor(first / 18) % triangleCount);
+      expect(address.y).toBe(Math.floor(first / (18 * triangleCount)));
+    }
+    expect(addresses.map((address) => address.z)).toEqual([
+      first % 18,
+      (first + 1) % 18,
+      (first + 2) % 18,
+    ]);
+  }
+});
+
+test("GPU vertex addressing never passes integer indices through floating point", () => {
+  const address = tgpu.fn([d.u32, d.u32], d.vec3u)(terraceVertexAddress);
+  const shader = tgpu.resolve([address]);
+  expect(shader).not.toContain("f32");
+  expect(shader).toContain(" / ");
+});
 
 function horizontalArea(a: d.v4f, b: d.v4f, c: d.v4f) {
   return Math.abs((b.x - a.x) * (c.z - a.z) - (c.x - a.x) * (b.z - a.z)) / 2;
@@ -46,4 +71,19 @@ test("a level triangle remains a flat top", () => {
   const third = terraceVertex(a, b, c, 0.2, 0.1, 2);
   expect(horizontalArea(first, second, third)).toBeCloseTo(2);
   for (const point of [first, second, third]) expect(point.y).toBeCloseTo(0.2);
+});
+
+test("nearly flat ground keeps its entire area instead of opening gaps around a hill", () => {
+  const low = d.vec3f(-1, 0.17, -1);
+  const middle = d.vec3f(1, 0.17000003, -1);
+  const high = d.vec3f(0, 0.17000006, 1);
+  let area = 0;
+  for (let triangle = 0; triangle < 4; triangle++) {
+    area += horizontalArea(
+      terraceVertex(low, middle, high, 0.13, 0.13, triangle * 3),
+      terraceVertex(low, middle, high, 0.13, 0.13, triangle * 3 + 1),
+      terraceVertex(low, middle, high, 0.13, 0.13, triangle * 3 + 2),
+    );
+  }
+  expect(area).toBeCloseTo(2, 5);
 });

@@ -1,8 +1,21 @@
 import { d, std } from "typegpu";
 
+export const verticesPerTerraceBand = 18;
+
+export function terraceVertexAddress(index: number, triangleCount: number) {
+  "use gpu";
+  // Float division loses vertex addresses above 2^24 and joins unrelated triangles.
+  const count = d.u32(triangleCount);
+  return d.vec3u(
+    std.intdiv(index, verticesPerTerraceBand) % count,
+    std.intdiv(index, verticesPerTerraceBand * count),
+    index % verticesPerTerraceBand,
+  );
+}
+
 function pointAtHeight(a: d.v3f, b: d.v3f, height: number) {
   "use gpu";
-  return std.mix(a, b, std.clamp((height - a.y) / std.max(b.y - a.y, 0.000001), 0, 1));
+  return std.mix(a, b, std.clamp((height - a.y) / std.max(b.y - a.y, 1e-12), 0, 1));
 }
 
 // Each band clips the original triangle into flat tops and an upright riser.

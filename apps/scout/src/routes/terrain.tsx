@@ -23,7 +23,11 @@ function TerrainPage() {
       settings={settings}
       view={view}
       onChange={(next) =>
-        void navigate({ search: { ...next, view }, replace: true, resetScroll: false })
+        void navigate({
+          search: { ...next, view: next.scene === "landscape" ? view : "terrain" },
+          replace: true,
+          resetScroll: false,
+        })
       }
       onViewChange={(view) =>
         void navigate({ search: { ...settings, view }, replace: true, resetScroll: false })

@@ -1,17 +1,27 @@
 import { z } from "zod";
 
 export const terrainSettingsSchema = z.object({
+  scene: z.enum(["landscape", "one-hill", "two-hills"]).default("landscape"),
   tilt: z.number().min(10).max(85).default(25.1),
   rotation: z.number().min(-180).max(180).default(31.8),
   zoom: z.number().min(0.25).max(3).default(0.95),
   extent: z.number().min(1).max(3).default(1.9),
-  elevation: z.number().min(0.15).max(3).default(0.45),
-  peaks: z.number().min(0).max(2).default(0.35),
+  elevation: z.number().min(0.15).max(3).default(0.5),
+  peaks: z.number().min(0).max(2).default(1.6),
   spread: z.number().min(0.6).max(4).default(1.6),
   depth: z.number().min(0.6).max(4).default(1.6),
-  speed: z.number().min(0).max(8).default(0.1),
+  speed: z.number().min(0).max(1).default(0.04),
+  terrainMotion: z.boolean().default(true),
   evolution: z.number().min(0).max(3).default(3),
   shimmer: z.number().min(0).max(2).default(2),
+  trail: z.number().min(0).max(1).default(1),
+  trailWidth: z.number().min(1).max(6).default(3),
+  trailLift: z.number().min(0).max(0.15).default(0.05),
+  routeMaxSpeed: z.number().min(0.1).max(5).default(0.3),
+  checkpointMotion: z.boolean().default(true),
+  checkpointSpeed: z.number().min(0.1).max(3).default(1),
+  checkpointDrift: z.number().min(0).max(2).default(0.65),
+  checkpointAvoidance: z.boolean().default(true),
   contrast: z.number().min(0.1).max(1).default(0.1),
   stepHeight: z.number().min(0.04).max(0.3).default(0.13),
   offsetX: z.number().min(-1).max(1).default(0.58),
@@ -21,8 +31,37 @@ export const terrainSettingsSchema = z.object({
 });
 
 export type TerrainSettings = z.infer<typeof terrainSettingsSchema>;
-export const atlasTerrainSettings = terrainSettingsSchema.parse({});
+export const terrainSceneIndex = { landscape: 0, "one-hill": 1, "two-hills": 2 };
+export const defaultTerrainSettings = terrainSettingsSchema.parse({});
+export const atlasTerrainSettings = { ...defaultTerrainSettings, trail: 0 };
+export const routeExperimentSettings: TerrainSettings = {
+  ...atlasTerrainSettings,
+  scene: "one-hill",
+  trail: 1,
+  checkpointMotion: false,
+  checkpointDrift: 0,
+  checkpointAvoidance: false,
+  terrainMotion: false,
+  tilt: 55,
+  rotation: 0,
+  zoom: 1.1,
+  extent: 1,
+  elevation: 0.8,
+  peaks: 1,
+  spread: 1,
+  depth: 1,
+  offsetX: 0,
+  offsetY: -0.1,
+  fade: 0,
+  shimmer: 0,
+};
 export const terrainPresets = [
+  { name: "Default", settings: defaultTerrainSettings },
+  { name: "One hill · 2 points", settings: routeExperimentSettings },
+  {
+    name: "Two hills · 2 points",
+    settings: { ...routeExperimentSettings, scene: "two-hills" },
+  },
   { name: "Landing default", settings: atlasTerrainSettings },
   {
     name: "Overhead",
@@ -58,4 +97,4 @@ export const terrainPresets = [
       fade: 0,
     },
   },
-];
+] satisfies { name: string; settings: TerrainSettings }[];
