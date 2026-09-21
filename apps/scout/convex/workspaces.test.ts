@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 
 import { R2 } from "@convex-dev/r2";
+import { asSchema } from "@ai-sdk/provider-utils";
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { api, internal } from "./_generated/api";
@@ -120,7 +121,11 @@ describe.each(["agents_api", "convex_agent"] satisfies Array<Doc<"agentsApiSessi
         });
       const sessionId = await makeSession(userId, scoutId, "general");
       const otherSessionId = await makeSession(otherId, scoutId, "general");
-      const runSession = (id: Id<"agentsApiSessions">, command: string, workspace?: string) =>
+      const runSession = (
+        id: Id<"agentsApiSessions">,
+        command: string,
+        workspace = "current_task",
+      ) =>
         backend.action(async (ctx) => {
           const data = await ctx.runQuery(internal.tasks.sessions.runtime, { sessionId: id });
           const resource = await runtimeTools(ctx, data.session, data.scout, "bash", data.purpose);
@@ -153,6 +158,25 @@ describe.each(["agents_api", "convex_agent"] satisfies Array<Doc<"agentsApiSessi
     }
 
     describe("task runtime workspaces", () => {
+      it("requires explicit workspace selection in new schemas while accepting legacy private reads", async () => {
+        const t = await setup();
+        await t.run("printf 'saved private result' > saved.txt");
+        const output = await t.owner.action(async (ctx) => {
+          const tools = createWorkspaceTools(
+            ctx,
+            { target: { kind: "agent_session", sessionId: t.sessionId }, userId: t.userId },
+            async () => {},
+          );
+          const schema = await asSchema(tools.bash.inputSchema).jsonSchema;
+          expect(schema.required).toEqual(["workspace", "command"]);
+          return requireRuntimeTool(tools, "bash").execute(
+            { command: "cat saved.txt" },
+            { toolCallId: "legacy-private-read", messages: [], context: {} },
+          );
+        });
+        expect(output).toMatchObject({ stdout: "saved private result", exitCode: 0 });
+      });
+
       it.each(["general", "review"] satisfies Array<"general" | "review">)(
         "persists %s session files and shares site files through the real tools",
         async (purpose) => {
@@ -706,6 +730,12 @@ js-exec report.ts`);
             command: "rm guide.md",
           }),
         ).rejects.toThrow("exact hostname");
+        await expect(
+          viewer.action(api.scout.workspaceTools.executeSiteCommand, {
+            site: "current_task",
+            command: "rm guide.md",
+          }),
+        ).rejects.toThrow("exact hostname");
         await t.backend.run((ctx) =>
           ctx.db.patch(userId, { email: "member@example.test", isApproved: true }),
         );
@@ -985,7 +1015,7 @@ js-exec report.ts`);
                 { target: { kind: "agent_session", sessionId }, userId },
                 async () => {},
               ).bash.execute(
-                { command },
+                { command, workspace: "current_task" },
                 { toolCallId: crypto.randomUUID(), messages: [], context: {} },
               );
             }),

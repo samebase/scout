@@ -2,12 +2,14 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
+import { jsonSchema, safeValidateTypes, zodSchema } from "@ai-sdk/provider-utils";
 import { tool } from "ai";
 import { v } from "convex/values";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { action } from "../functions";
+import { siteHostnameSchema } from "../../shared/site";
 import {
   BASH_DESCRIPTION,
   bashInputSchema,
@@ -18,6 +20,14 @@ import {
 } from "../workspaceModel";
 import { workspaceFileKey, workspaceStorage } from "../workspaceStorage";
 import { runWorkspaceShell } from "./workspaceShell";
+
+// Existing Agents API sessions retain the original optional-workspace tool definition.
+const legacyBashInputSchema = bashInputSchema.extend({
+  workspace: bashInputSchema.shape.workspace.default("current_task"),
+});
+const bashToolSchema = jsonSchema(zodSchema(bashInputSchema).jsonSchema, {
+  validate: (value) => safeValidateTypes({ value, schema: legacyBashInputSchema }),
+});
 
 async function readStoredFile(entry: Extract<WorkspaceEntry, { kind: "file" }>) {
   const response = await fetch(await workspaceStorage().getUrl(entry.key), {
@@ -83,11 +93,11 @@ export function createWorkspaceTools(
   return {
     bash: tool({
       description: BASH_DESCRIPTION,
-      inputSchema: bashInputSchema,
+      inputSchema: bashToolSchema,
       execute: async ({ command, workspace }) => {
         await beforeDispatch();
         return executeCommand(ctx, {
-          target: workspace === undefined ? scope.target : { kind: "site", site: workspace },
+          target: workspace === "current_task" ? scope.target : { kind: "site", site: workspace },
           userId: scope.userId,
           command,
         });
@@ -157,7 +167,7 @@ export const executeSiteCommand = action({
   returns: commandResultValidator,
   handler: async (ctx, args) => {
     const input = bashInputSchema
-      .required({ workspace: true })
+      .extend({ workspace: siteHostnameSchema })
       .parse({ workspace: args.site, command: args.command });
     return executeCommand(ctx, {
       target: { kind: "site", site: input.workspace },
