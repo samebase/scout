@@ -52,6 +52,7 @@ export function ActivityFeed({ search }: { search: ReviewFeedSearch }) {
           search={filters}
           layout="toolbar"
           reviewedSiteCount={reviewedSiteCount}
+          isSearching={scope !== deferredScope || search.site !== deferredSite}
           onChange={(search, options) => {
             void navigate({
               to: "/",

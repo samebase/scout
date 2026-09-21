@@ -17,6 +17,7 @@ test("typing waits for a pause and clearing cancels a pending search", () => {
       search={{ scope: "public" }}
       layout="sidebar"
       reviewedSiteCount={undefined}
+      isSearching={false}
       onChange={onChange}
     />,
   );
@@ -60,6 +61,7 @@ test("history navigation and unmount cancel stale search updates", () => {
       search={{ scope: "public", site: "pika" }}
       layout="sidebar"
       reviewedSiteCount={undefined}
+      isSearching={false}
       onChange={onChange}
     />,
   );
@@ -73,6 +75,7 @@ test("history navigation and unmount cancel stale search updates", () => {
       search={{ scope: "public", site: "studio" }}
       layout="sidebar"
       reviewedSiteCount={undefined}
+      isSearching={false}
       onChange={onChange}
     />,
   );

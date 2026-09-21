@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-21T17:39:13Z
+- **Last updated:** 2026-09-21T19:11:20Z
 
 ## Log
 
@@ -1844,9 +1844,15 @@ recovering observations removed from the running conversation. The tool reads on
 captures from the same task and identifies the returned evidence as text rather than image contents
 (`apps/scout/convex/tasks/screenshotRecords.ts`, `apps/scout/convex/tasks/tools.ts`).
 
-### 2026-09-21 - working tree - v294
+### 2026-09-21 - 140b291 - v294
 
 Simplified the test suite and removed long terrain simulations tied to specific camera arrangements.
 UI checks finish initial rendering without unnecessary waits, and shared access behavior is covered
 without repeating the same route-by-viewer matrix. Repository guidance now asks for a concrete
 regression or behavior before adding coverage and direct browser inspection for visual changes.
+
+### 2026-09-21 - working tree - v295
+
+Site search shows a spinning icon while typing and waiting for results, both on the homepage
+and in the left sidebar. The indicator stays inside the search box and announces the search
+to screen readers (`apps/scout/src/components/site-filters.tsx`).
