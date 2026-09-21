@@ -339,7 +339,7 @@ test.each([
     target.releasePointerCapture = releasePointerCapture;
     const point = animationRef.current.trail.nodes[trailNodesPerLeg];
     const screen = projectTrailNode(point, animationRef.current.time.terrain, settings, camera);
-    const frozen = { ...animationRef.current.time };
+    const beforeDrag = { ...animationRef.current.time };
     fireEvent.pointerDown(target, {
       pointerType,
       pointerId: 1,
@@ -348,7 +348,8 @@ test.each([
       clientY: screen.y + 24,
     });
     await act(() => vi.advanceTimersByTimeAsync(200));
-    expect(animationRef.current.time).toEqual(frozen);
+    if (paused) expect(animationRef.current.time).toEqual(beforeDrag);
+    else expect(animationRef.current.time.terrain).toBeGreaterThan(beforeDrag.terrain);
     fireEvent.pointerMove(target, {
       pointerType,
       pointerId: 1,
@@ -369,8 +370,8 @@ test.each([
     fireEvent.pointerUp(target, { pointerType, pointerId: 1 });
     expect(releasePointerCapture).toHaveBeenCalledWith(1);
     await act(() => vi.advanceTimersByTimeAsync(200));
-    if (paused) expect(animationRef.current.time).toEqual(frozen);
-    else expect(animationRef.current.time.checkpoints).toBeGreaterThan(frozen.checkpoints);
+    if (paused) expect(animationRef.current.time).toEqual(beforeDrag);
+    else expect(animationRef.current.time.checkpoints).toBeGreaterThan(beforeDrag.checkpoints);
     expect(gpu.initialize).toHaveBeenCalledOnce();
   },
 );

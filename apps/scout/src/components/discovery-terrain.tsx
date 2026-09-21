@@ -73,7 +73,6 @@ export function DiscoveryTerrain({
     () =>
       reducedMotion ||
       paused ||
-      dragRef.current?.kind === "checkpoint" ||
       ((!settings.terrainMotion || settings.speed === 0) &&
         (!settings.checkpointMotion || settings.trail === 0)),
   );
