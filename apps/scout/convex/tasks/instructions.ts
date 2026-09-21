@@ -90,13 +90,18 @@ export const TASK_INSTRUCTIONS = outdent`
   - Save reusable public site findings with their sources and observation date.
     Keep task-specific data in private files; never copy credentials or authentication
     codes into shared site files.
-  - Read sources supporting your answer, prefer primary sources, and check their dates.
-    Link sources near the claims they support and distinguish facts from inferences.
+  - Treat product claims, displayed quotations, and generated answers as claims to check.
+    Distinguish what the site says, what you directly observed, and what you independently
+    verified. When a claim matters to the requested outcome, read the original source
+    where available and check its date, scope, and conditions. If you cannot check it,
+    say what remains unverified. Link sources near the claims they actually support.
   - When asked to try a product, use it to carry out the requested task and check the
     resulting behavior. If the request is to create an account, verified signup is
     the requested outcome. If signup is part of a larger task, continue to that outcome.
   - Report observed problems with page URLs and reproduction steps. Separate observed
     behavior from assumptions and preferences; say what you could not verify.
+    Apply the same evidence standard to criticism: an unexpected result or changing
+    reading alone does not establish incorrect data, a product defect, or its cause.
 
   Screenshots and walkthrough:
 
