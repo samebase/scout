@@ -52,12 +52,10 @@ export function AppNavigation() {
           <Link to="/about" className={navigationLinkClass}>
             About
           </Link>
-          {canAccess("access_scout_view", permissions) && (
-            <Link to="/scouts" className={navigationLinkClass}>
-              <UsersIcon aria-hidden="true" />
-              <span>Scouts</span>
-            </Link>
-          )}
+          <Link to="/scouts" className={navigationLinkClass}>
+            <UsersIcon aria-hidden="true" />
+            <span>Scouts</span>
+          </Link>
           {canAccess("access_lab", permissions) && (
             <Link to="/lab" search={{}} className={navigationLinkClass}>
               <BotIcon aria-hidden="true" />

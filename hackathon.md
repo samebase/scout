@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API experiment)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-21T01:51:01Z
+- **Last updated:** 2026-09-21T11:31:15Z
 
 ## Log
 
@@ -1794,8 +1794,14 @@ Infinite scrolling keeps the existing feed and site navigation visible while new
 Cards retain their images and links during loading, and the first page still renders on the server
 (`apps/scout/src/components/activity-feed.tsx`).
 
-### 2026-09-21 - working tree - v287
+### 2026-09-21 - 87fbada - v287
 
 Site headings and tabs stay visible while changing review visibility, and conversations remain
 available while a newly discovered site's task navigation loads
 (`apps/scout/src/routes/sites.$site.tsx`, `apps/scout/src/products/conversation/page.tsx`).
+
+### 2026-09-21 - working tree - v288
+
+Public visitors can open the Scout directory from the main navigation and browse account sites.
+The Scouts link remains visible while account access loads or changes
+(`apps/scout/src/components/app-navigation.tsx`).

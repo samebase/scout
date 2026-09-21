@@ -233,7 +233,7 @@ test("the public Scouts page stays accessible when membership is revoked", async
   setViewer("role_pending_access");
   expect(screen.getByRole("heading", { name: "Scouts directory" })).toBeTruthy();
   expect(screen.queryByRole("heading", { name: "Waiting for approval" })).toBeNull();
-  expect(screen.queryByRole("link", { name: "Scouts" })).toBeNull();
+  expect(screen.getByRole("link", { name: "Scouts" })).toBeTruthy();
 });
 
 test("pending accounts retain account controls", async () => {
@@ -298,11 +298,13 @@ test("guests can navigate public pages and sign in without seeing admin links", 
   const user = userEvent.setup();
   expect(screen.getByRole("link", { name: "Reviews" }).getAttribute("aria-current")).toBe("page");
   expect(screen.queryByRole("link", { name: "Settings" })).toBeNull();
-  for (const name of ["Lab", "Scouts", "Sites", "Members"]) {
+  for (const name of ["Lab", "Sites", "Members"]) {
     expect(screen.queryByRole("link", { name })).toBeNull();
   }
 
   expect(screen.queryByRole("link", { name: "Play" })).toBeNull();
+  await user.click(screen.getByRole("link", { name: "Scouts" }));
+  expect(await screen.findByRole("heading", { name: "Scouts directory" })).toBeTruthy();
   await user.click(screen.getByRole("link", { name: "Sign in" }));
   expect(await screen.findByRole("heading", { name: "Sign in to Scout" })).toBeTruthy();
   expect(screen.getByLabelText("Email")).toBeTruthy();
