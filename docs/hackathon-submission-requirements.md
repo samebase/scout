@@ -1,6 +1,7 @@
 # Scout submission requirements
 
-Researched September 21, 2026. Preparation notes only; nothing has been submitted.
+Requirements researched September 21, 2026. TrailScout was submitted on September 22:
+https://vibeapps.dev/s/trailscout.
 
 ## Deadline and destination
 
@@ -33,7 +34,7 @@ event-specific settings after signing in.
 
 | Material           | Preparation                                                                               |
 | ------------------ | ----------------------------------------------------------------------------------------- |
-| Project name       | Scout                                                                                     |
+| Project name       | TrailScout                                                                                |
 | Tagline            | At most 140 characters. Proposed copy below.                                              |
 | Description        | Markdown supported. No length cap appears on this textarea in the inspected frontend.     |
 | App link           | https://doting-crab-687.convex.site                                                       |
@@ -48,22 +49,13 @@ event-specific settings after signing in.
 Dynamic textareas have a 20,000-character cap. Their presence is configurable. A generic form's
 optional repository or video fields do not override this event's requirements.
 
-## Scout's current preparation
+## Submission status
 
-| Item                         | Evidence and remaining work                                                                                              |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| App                          | Opened the production homepage while signed out and saw the public review list.                                          |
-| Repository                   | GitHub reports it is private. Public release remains to be done.                                                         |
-| Build log                    | Present at the root, with an August 26 start. Add the final video link and refresh public repository details when ready. |
-| Product story                | Working copy exists in [hackathon-submission.md](./hackathon-submission.md).                                             |
-| Video                        | No demo URL is recorded in the draft or log. Choose and verify the review before recording.                              |
-| Images                       | Capture the final UI after the identity PR is deployed.                                                                  |
-| Registration and social post | Completion has not been confirmed in this task.                                                                          |
-| Judge access                 | Public reading works. Task creation requires member access; decide the intended judge experience before the demo.        |
-
-The access distinction is visible in `apps/scout/convex/access.ts` and
-`apps/scout/src/products/conversation/page.tsx`. This is a preparation item, not a confirmed
-eligibility failure. Do not promise that a new visitor can immediately start a task.
+The [submitted entry](https://vibeapps.dev/s/trailscout) contains five screenshots, the demo,
+the public repository, and the X announcement. Chrome inspection confirmed that the images
+load, the video plays, and the main links open. The [submission checklist](./hackathon-submit-checklist.md)
+tracks completed work and remaining checks; the [maintained copy](./hackathon-submission.md)
+keeps the product story and shared About content.
 
 ## Recommended submission content
 

@@ -31,13 +31,13 @@ test.each([
     to: "/about",
     link: "About",
     before: "Home fixture",
-    after: "The internet is a confusing place.",
+    after: "Send a Scout to try a website.",
   },
   {
     from: "/about",
     to: "/",
     link: "TrailScout home",
-    before: "The internet is a confusing place.",
+    before: "Send a Scout to try a website.",
     after: "Home fixture",
   },
 ])(

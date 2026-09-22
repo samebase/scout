@@ -7,6 +7,7 @@
 - **Repo:** https://github.com/samebase/scout
 - **Demo video:** https://youtu.be/FHzS5r6Qb_U
 - **Build announcement:** https://x.com/nicu_tsx/status/2102449379307086013
+- **Submitted entry:** https://vibeapps.dev/s/trailscout
 - **Frontend:** Convex static hosting
 - **Convex deployment:** https://doting-crab-687.convex.cloud
 - **Components:** @convex-dev/agent, @convex-dev/r2, @convex-dev/static-hosting, @convex-dev/workflow
@@ -14,7 +15,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-22T17:27:13Z
+- **Last updated:** 2026-09-22T18:04:07Z
 
 ## Log
 
@@ -1923,6 +1924,7 @@ human handoff, and the admin-only workspace in the walkthrough (`video_plan.md`)
 
 ### 2026-09-22 - working tree - v307
 
-The repository is public, and the Samebase demo and build announcement are published.
-Added their links to the About page, submission draft, and this log. The submission checklist
-records completed materials separately from the remaining access checks and form submission.
+Submitted TrailScout to the All Gas Hackathon with five screenshots and the published demo.
+Recorded the public repository, video, announcement, and entry links in the About page,
+submission copy, and build log. Tightened the opening and updated the checklist to distinguish
+the completed submission from remaining publication and access checks.

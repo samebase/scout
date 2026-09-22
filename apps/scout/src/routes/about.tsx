@@ -26,32 +26,27 @@ function AboutPage() {
       <article className="font-sans text-[20px] leading-[1.75] text-foreground">
         <header>
           <h1 className="font-display text-[64px] leading-[1.05] font-medium tracking-[-0.05em] max-[640px]:text-[42px]">
-            The internet is a confusing place.
+            Send a Scout to try a website.
           </h1>
           <p className="mt-7">
-            Every website has a pitch. Finding out whether it does what you need usually means
-            signing up, learning your way around, and trying it yourself.
+            TrailScout sends AI agents to try websites for you. Give a Scout a website and a task.
+            It uses a real browser and leaves a walkthrough, screenshots, and a replay showing what
+            worked, what failed, and what it could not verify.
           </p>
-          <p className="mt-5">
-            TrailScout sends AI agents to do that exploration for you. They use the product and
-            leave a walkthrough, screenshots, and a replay so you can make up your own mind.
-          </p>
+          <p className="mt-5">You can watch a Scout work live or come back to its review.</p>
         </header>
 
         <div className="mt-14 space-y-12 [&_h2]:font-display [&_h2]:text-[28px] [&_h2]:leading-tight [&_h2]:font-medium [&_h2]:tracking-[-0.03em] [&_p]:mt-4">
-          <section aria-labelledby="about-send-scout">
-            <h2 id="about-send-scout">Send a Scout in first.</h2>
+          <section aria-labelledby="about-shared-reviews">
+            <h2 id="about-shared-reviews">Public reviews help more than one person.</h2>
             <p>
-              Give a Scout a website and a question. It opens a real browser and tries to answer by
-              using the product: following links, filling forms, and testing the path you asked
-              about.
+              Reviews are public by default, with a private option. Anyone can read a public review
+              without an account, so one person's task can help others decide whether a product is
+              worth trying.
             </p>
-            <blockquote className="my-6 border-l-2 border-primary/40 py-1 pl-6">
-              “Can I sign up and create my first project?”
-            </blockquote>
             <p>
-              You can watch the visit as it happens, or come back to see how far your Scout got and
-              what it found along the way.
+              Follow-up questions extend the same walkthrough, keeping earlier findings alongside
+              new evidence. Create an account and verify your email to start your own tasks.
             </p>
           </section>
 
@@ -114,32 +109,6 @@ function AboutPage() {
               When you resume, TrailScout checks the current browser pages against the original task
               before continuing. The help window has a deadline; if it expires, the task stops and
               the browser closes.
-            </p>
-          </section>
-
-          <section aria-labelledby="about-evidence">
-            <h2 id="about-evidence">Show the work.</h2>
-            <p>
-              An AI answer is only useful if you can check it. TrailScout keeps a record of the
-              visit, with screenshots, a browser replay, and findings tied to the steps it took.
-            </p>
-            <p>
-              Reviews show what passed, what failed, and what remains untested. Follow-up questions
-              can extend the same walkthrough, keeping earlier findings alongside new evidence. A
-              blocked signup or an interrupted task stays visible.
-            </p>
-          </section>
-
-          <section aria-labelledby="about-shared-reviews">
-            <h2 id="about-shared-reviews">Useful beyond one visit.</h2>
-            <p>
-              Reviews are public by default, with a private option. Browse what other people asked a
-              Scout to try, open a review, and inspect the evidence before sending it on another
-              task. Public reviews make product claims checkable.
-            </p>
-            <p>
-              Anyone can read public reviews. Create an account and verify your email to start your
-              own tasks.
             </p>
           </section>
 
@@ -359,6 +328,12 @@ function AboutPage() {
                 className="text-primary underline underline-offset-4"
               >
                 Announcement on X
+              </a>
+              <a
+                href="https://vibeapps.dev/s/trailscout"
+                className="text-primary underline underline-offset-4"
+              >
+                Hackathon entry
               </a>
             </p>
           </section>
