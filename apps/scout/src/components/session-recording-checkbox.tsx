@@ -1,7 +1,4 @@
-import {
-  SESSION_RECORDING_DESCRIPTION,
-  SESSION_RECORDING_LABEL,
-} from "../../shared/sessionRecording";
+import { SESSION_RECORDING_LABEL } from "../../shared/sessionRecording";
 
 export function SessionRecordingCheckbox() {
   return (
@@ -13,10 +10,7 @@ export function SessionRecordingCheckbox() {
         className="mt-1 size-4 shrink-0 accent-primary"
         aria-label={SESSION_RECORDING_LABEL}
       />
-      <span>
-        <span className="block">{SESSION_RECORDING_LABEL}</span>
-        <span className="block text-muted-foreground">{SESSION_RECORDING_DESCRIPTION}</span>
-      </span>
+      <span>{SESSION_RECORDING_LABEL}</span>
     </label>
   );
 }
