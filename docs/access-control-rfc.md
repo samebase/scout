@@ -1,6 +1,6 @@
 # Account approval and derived access
 
-Status: implementation contract, September 7, 2026. This replaces the stored-role
+Status: implementation contract, updated September 22, 2026. This replaces the stored-role
 account design from PR #72. [Samebase source notes](./account-approval-research.md) record
 the reference behavior and Scout-specific differences.
 
@@ -8,7 +8,7 @@ the reference behavior and Scout-specific differences.
 
 Account authorization adds one field to Convex Auth's `users` document:
 `isApproved: v.optional(v.boolean())`. For ordinary users, only `true` grants member
-access; `false` and a missing field both mean pending approval. Convex Auth continues
+access; `false` and a missing field both deny member access. Convex Auth continues
 to own identity, email verification, passwords, and sessions.
 
 There are no persisted `users.role` or `users.status` fields, and no `accountAccess` or
@@ -16,14 +16,16 @@ There are no persisted `users.role` or `users.status` fields, and no `accountAcc
 viewer responses, never stored. There are no promotion, suspension, admin-bootstrap,
 last-admin protection, audit, or account-revocation workflows.
 
-Public signup writes `isApproved: false`. Email verification enables sign-in without approving
-the account. Login and password recovery preserve approval; client-supplied approval or
+Public signup writes `isApproved: true` for new accounts. Members can start tasks after
+verifying their email and accepting the terms, subject to credits and task limits. This
+default needs no environment variable. Existing accounts keep their approval value;
+login and password recovery cannot restore revoked access. Client-supplied approval or
 role fields are ignored.
 
 ## Derived permissions
 
-Scout requires a verified email before granting protected app access. For a verified user,
-staff authority comes from Scout's allowlist, matched case-insensitively:
+Scout requires a verified email and accepted terms before granting protected app access.
+For a verified user, staff authority comes from Scout's allowlist, matched case-insensitively:
 `nicu.dev@gmail.com` and `nicu@samebase.com`. It does not depend on `isApproved`.
 
 | Verified account                           | Derived role          | Access                                                                              |
@@ -52,8 +54,8 @@ its users page. Approval can be set before verification, but access still requir
 verified email. Revoking approval does not remove allowlisted staff authority or schedule
 a cleanup workflow.
 
-Scout does not add Samebase's Terms gate, organization or invitation approval rules,
-or automatic public-signup approval setting. Self-service deletion is specified
+Scout requires acceptance of its own terms. It has no organization or invitation approval
+rules or configurable signup approval setting. Self-service deletion is specified
 separately in the [account deletion contract](./account-deletion-rfc.md); deleting and
 deleted accounts have no protected app access.
 

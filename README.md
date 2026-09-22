@@ -39,9 +39,11 @@ Luna through Agents API by default. Members and admins can also select Luna thro
 Qwen 3.7 Flash, or DeepSeek V4 Flash when creating a task. See
 [`docs/play-product-direction.md`](./docs/play-product-direction.md) for the product options and research.
 
-Anyone can create an account and verify their email. `users.isApproved` is the only stored
-access field and defaults to false. Admins come from the same email allowlist as Samebase;
-other users need approval through `/members` or by editing `users.isApproved` in Convex.
+Anyone can create an account and verify their email. New accounts get member access after
+email verification and terms acceptance. `users.isApproved` is the only stored access field
+and defaults to true at signup; existing accounts keep their current value. Admins come from
+the same email allowlist as Samebase and can revoke or restore access through `/members` or
+by editing `users.isApproved` in Convex.
 The account model, permission boundaries, and rollout procedure are in
 [`docs/access-control-rfc.md`](./docs/access-control-rfc.md), with the Samebase source findings in
 [`docs/account-approval-research.md`](./docs/account-approval-research.md).

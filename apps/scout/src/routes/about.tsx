@@ -138,8 +138,8 @@ function AboutPage() {
               task. Public reviews make product claims checkable.
             </p>
             <p>
-              Anyone can read public reviews. Starting a task currently requires an approved
-              account.
+              Anyone can read public reviews. Create an account and verify your email to start your
+              own tasks.
             </p>
           </section>
 
