@@ -410,6 +410,54 @@ test("admins can moderate another user's task without execution controls", async
   expect(router.state.location.search).toEqual({ session: "managed-1" });
 });
 
+test.each([
+  { kind: "review", path: "/tasks/game-thread?view=chat", destination: "/" },
+  { kind: "play", path: "/play?thread=game-thread", destination: "/play" },
+])(
+  "owners can remove their $kind tasks without Lab access",
+  async ({ kind, path, destination }) => {
+    remote.queries.set("accounts:currentViewerAccess", {
+      kind: "account",
+      userId: "member",
+      role: "role_pending_access",
+      isApproved: false,
+      accessKeys: ROLE_ACCESS_GRANTS.role_pending_access,
+    });
+    remote.queries.set("scout/activity:get", session({ purpose: { kind }, canControl: false }));
+    const confirm = vi.fn(() => false);
+    vi.stubGlobal("confirm", confirm);
+    const router = await openPlay(path);
+    fireEvent.click(screen.getByRole("button", { name: "Remove task" }));
+    expect(remote.removeTask).not.toHaveBeenCalled();
+    confirm.mockReturnValue(true);
+    fireEvent.click(screen.getByRole("button", { name: "Remove task" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe(destination));
+    expect(remote.removeTask).toHaveBeenCalledWith({ threadId: "game-thread" });
+    expect(router.state.location.search).toEqual(kind === "review" ? { scope: "mine" } : {});
+  },
+);
+
+test("members cannot remove another owner's public task", async () => {
+  remote.queries.set("accounts:currentViewerAccess", {
+    kind: "account",
+    userId: "member",
+    role: "role_member",
+    isApproved: true,
+    accessKeys: ROLE_ACCESS_GRANTS.role_member,
+  });
+  remote.queries.set(
+    "scout/activity:get",
+    session({
+      purpose: { kind: "review" },
+      visibility: "public",
+      isOwner: false,
+      canControl: false,
+    }),
+  );
+  await openPlay("/tasks/game-thread?view=chat");
+  expect(screen.queryByRole("button", { name: "Remove task" })).toBeNull();
+});
+
 test.each(["header", "sidebar"])(
   "the task %s scout pill opens the scout profile",
   async (placement) => {
@@ -1175,7 +1223,7 @@ test("discovering a task's site keeps its conversation visible while navigation 
   });
   const query = convexQuery(api.scout.activity.list, {
     site: "samebase.com",
-    scope: "mine",
+    scope: "all",
     paginationOpts: { numItems: 10, cursor: null },
   });
   const load = vi.fn(() => pending);
@@ -2153,12 +2201,21 @@ function fillInvite() {
 }
 
 test.each([
-  { visibility: "public", scope: "public" },
-  { visibility: "private", scope: "mine" },
-  { visibility: "public", scope: "mine" },
+  { visibility: "public", scope: "public", role: "role_member" },
+  { visibility: "private", scope: "mine", role: "role_member" },
+  { visibility: "public", scope: "mine", role: "role_member" },
+  { visibility: "private", scope: "public", role: "role_staff" },
 ])(
-  "the task sidebar survives delayed navigation between $visibility reviews",
-  async ({ visibility, scope }) => {
+  "the task sidebar survives delayed navigation between $visibility reviews for $role",
+  async ({ visibility, scope, role }) => {
+    remote.queries.set("accounts:currentViewerAccess", {
+      kind: "account",
+      userId: "viewer",
+      role,
+      isApproved: true,
+      accessKeys:
+        role === "role_staff" ? ROLE_ACCESS_GRANTS.role_staff : ROLE_ACCESS_GRANTS.role_member,
+    });
     vi.spyOn(window, "innerWidth", "get").mockReturnValue(1280);
     // happy-dom has no layout measurements; give the real sidebar a desktop viewport.
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
@@ -2169,6 +2226,8 @@ test.each([
       purpose: { kind: "review" },
       primarySite: "samebase.com",
       visibility,
+      isOwner: role !== "role_staff",
+      canControl: role !== "role_staff",
     });
     const second = session({
       threadId: "second-review",
@@ -2195,12 +2254,14 @@ test.each([
     const scrollport = nav.closest<HTMLElement>("[data-sidebar-layout-part='pane-scrollport']");
     if (!scrollport) throw new Error("Task navigation needs a scroll container");
     scrollport.scrollTop = 180;
-    fireEvent.change(screen.getByLabelText("Message Scout"), {
-      target: { value: "First task draft" },
-    });
+    if (role !== "role_staff") {
+      fireEvent.change(screen.getByLabelText("Message Scout"), {
+        target: { value: "First task draft" },
+      });
+    }
     expect(remote.queryCalls).toHaveBeenCalledWith("scout/activity:list", {
       site: "samebase.com",
-      scope,
+      scope: role === "role_staff" ? "all" : scope,
     });
     expect(
       within(nav)

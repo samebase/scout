@@ -101,7 +101,7 @@ export const setVisibility = mutation({
 });
 
 export const remove = mutation({
-  access: "access_lab",
+  access: "access_account",
   args: { threadId: v.string() },
   returns: v.null(),
   handler: async (ctx, { threadId }) => {
@@ -110,6 +110,8 @@ export const remove = mutation({
       .withIndex("by_thread_id", (q) => q.eq("threadId", threadId))
       .unique();
     if (!chat) return null;
+    if (chat.userId !== ctx.viewer.userId && !canAccess("access_lab", ctx.viewer.accessKeys))
+      throw new Error("Task not found");
     if (chat.runtime?.kind !== "agents_api" || chat.purpose.kind === "general")
       throw new Error("Task not found");
     const session = await ctx.db.get(chat.runtime.sessionId);
