@@ -32,6 +32,7 @@ import { type FormEvent, Suspense, useDeferredValue, useRef, useState } from "re
 import { api } from "../../../convex/_generated/api";
 import { omitNullish } from "../../../shared/omitNullish";
 import {
+  agentsApiPauseLabel,
   defaultTaskSelection,
   taskEngineDisabledReason,
   taskModelOptions,
@@ -413,7 +414,7 @@ export function ConversationLobby({
                           <span>
                             {option.label}
                             {disabled && (
-                              <span className="block text-xs">Temporarily disabled</span>
+                              <span className="block text-xs">{agentsApiPauseLabel}</span>
                             )}
                           </span>
                         </SelectItem>

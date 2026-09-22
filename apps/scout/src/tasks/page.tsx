@@ -52,6 +52,7 @@ import { ScoutWorkspace } from "#components/scout-workspace";
 import { TaskWalkthrough } from "#components/task-walkthrough";
 import type { WorkspaceTarget } from "../../convex/workspaceModel";
 import {
+  agentsApiPauseLabel,
   defaultTaskSelection,
   taskEngineDisabledReason,
   taskModelOptions,
@@ -599,7 +600,7 @@ function NewSession({ initialScoutId }: { initialScoutId: string }) {
               return (
                 <option key={option.value} value={option.value} disabled={disabled}>
                   {option.label}
-                  {disabled ? " (temporarily disabled)" : ""}
+                  {disabled ? ` (${agentsApiPauseLabel})` : ""}
                 </option>
               );
             })}
