@@ -28,7 +28,7 @@ describe("verify-current-branch-head", () => {
         () => "new",
         () => "old",
       ),
-    ).toThrow("Convex was not deployed");
+    ).toThrow("Refusing to publish this stale build");
   });
 
   it("fails closed without Workers Builds branch identity", () => {

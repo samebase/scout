@@ -156,9 +156,11 @@ build from deploying backend code after a newer commit reaches the same branch. 
 Set each Convex preview's `SITE_URL` to its frontend origin for signup verification and handoff links.
 
 `pnpm run deploy:convex` provides a separate manual production deployment to Convex Static Hosting.
-For an automatic `main` deployment, the Cloudflare deploy command publishes the Worker first, then
-uploads the same `apps/scout/dist/client` files to Convex Static Hosting. Preview and dry-run deployments do
-not change the production `convex.site` app.
+Automatic builds upload and verify `apps/scout/dist/client` on the selected Convex deployment
+immediately after its backend push, then publish Cloudflare. Preview and dry-run deployments do
+not change the production `convex.site` app. A build marker keeps the renderer from running before
+its matching files are published, and Convex retains old bundled assets for at least seven days.
+See [release order and retention](docs/cloudflare-workers-builds.md#release-order-and-asset-retention).
 
 Preview builds also upload browser assets to the matching Convex preview. On
 `convex.site`, the homepage, public site and task pages, and Scout directory and

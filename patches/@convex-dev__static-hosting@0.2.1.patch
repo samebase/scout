@@ -109,9 +109,15 @@ index c56bea2295e25496a1f89abcc6c48e94754a8fb3..fe4d9f316d505465e40b248b0a8f8cac
 -//# sourceMappingURL=upload.js.map
 \ No newline at end of file
 diff --git a/dist/client/index.d.ts b/dist/client/index.d.ts
-index 3e4407a497acaeebe7a988e79b6264f8e79d612e..04312b2879970a040eb14c6b0a18bc48273ac54d 100644
+index 3e4407a497acaeebe7a988e79b6264f8e79d612e..a8bbd8df796e149367cc521988ff812a7a8bbb28 100644
 --- a/dist/client/index.d.ts
 +++ b/dist/client/index.d.ts
+@@ -1,4 +1,4 @@
+-import { type HttpRouter } from "convex/server";
++import { type HttpRouter, type GenericActionCtx, type GenericDataModel } from "convex/server";
+ import type { ComponentApi } from "../component/_generated/component.js";
+ /**
+  * Register app-owned HTTP routes for static hosting.
 @@ -21,13 +21,17 @@ import type { ComponentApi } from "../component/_generated/component.js";
   * export default http;
   * ```
@@ -127,12 +133,18 @@ index 3e4407a497acaeebe7a988e79b6264f8e79d612e..04312b2879970a040eb14c6b0a18bc48
 +    /** Rewrite the decoded request path before resolving a static asset. */
 +    rewritePath?: (path: string, request: Request) => string;
 +    /** Handle an exact asset miss before static rewrites or SPA fallback. Return null to continue static serving. */
-+    fallback?: (request: Request) => Response | null | Promise<Response | null>;
++    fallback?: (request: Request, ctx: GenericActionCtx<GenericDataModel>) => Response | null | Promise<Response | null>;
  }): void;
  /**
   * Expose a query that clients can subscribe to for live reload on deploy.
+@@ -69,4 +73,3 @@ export declare function exposeDeploymentQuery(component: ComponentApi): {
+  * ```
+  */
+ export declare function getConvexUrl(): string;
+-//# sourceMappingURL=index.d.ts.map
+\ No newline at end of file
 diff --git a/dist/client/index.js b/dist/client/index.js
-index f0c97fef71699c9a0ab940ae30dd45041ca3cb8a..f420c785737c2d62407edb7156c6f4a5e5a1fa05 100644
+index f0c97fef71699c9a0ab940ae30dd45041ca3cb8a..c9706d73f8f64ac0992caaca954aaff4da3cc6eb 100644
 --- a/dist/client/index.js
 +++ b/dist/client/index.js
 @@ -29,7 +29,7 @@ const deploymentInfoValidator = v.object({
@@ -144,17 +156,23 @@ index f0c97fef71699c9a0ab940ae30dd45041ca3cb8a..f420c785737c2d62407edb7156c6f4a5
      if (!pathPrefix.startsWith("/")) {
          throw new Error("pathPrefix must start with /");
      }
-@@ -47,13 +47,27 @@ export function registerStaticRoutes(http, component, { pathPrefix = "/", spaFal
+@@ -47,13 +47,33 @@ export function registerStaticRoutes(http, component, { pathPrefix = "/", spaFal
          if (normalizedPrefix && path.startsWith(normalizedPrefix)) {
              path = path.slice(normalizedPrefix.length) || "/";
          }
 -        if (path === "" || path === "/") {
 -            path = "/index.html";
-+        let asset = fallback
++        let asset = fallback || path.startsWith("/assets/")
 +            ? await ctx.runQuery(component.lib.resolveAssetForHttp, { path, spaFallback: false })
 +            : null;
++        if (!asset && path.startsWith("/assets/")) {
++            return new Response("Not Found", {
++                status: 404,
++                headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" },
++            });
++        }
 +        if (!asset) {
-+            const response = await fallback?.(request);
++            const response = await fallback?.(request, ctx);
 +            if (response)
 +                return response;
 +            if (rewritePath) {
@@ -178,7 +196,12 @@ index f0c97fef71699c9a0ab940ae30dd45041ca3cb8a..f420c785737c2d62407edb7156c6f4a5
          if (!asset) {
              if (path === "/index.html") {
                  return new Response(getSetupHtml(), {
-@@ -71,7 +85,7 @@ export function registerStaticRoutes(http, component, { pathPrefix = "/", spaFal
+@@ -67,11 +87,11 @@ export function registerStaticRoutes(http, component, { pathPrefix = "/", spaFal
+             }
+             return new Response("Not Found", {
+                 status: 404,
+-                headers: { "Content-Type": "text/plain" },
++                headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" },
              });
          }
          const contentType = asset.contentType || getMimeType(path);
@@ -187,8 +210,14 @@ index f0c97fef71699c9a0ab940ae30dd45041ca3cb8a..f420c785737c2d62407edb7156c6f4a5
          if (asset.blobId && !isHtmlContentType(contentType)) {
              const configuredBase = typeof cdnBaseUrl === "function" ? cdnBaseUrl(request) : cdnBaseUrl;
              const baseUrl = configuredBase ?? `${url.origin}/fs/blobs`;
+@@ -227,4 +247,3 @@ export function getConvexUrl() {
+     }
+     throw new Error("Unable to derive Convex URL. Please set VITE_CONVEX_URL environment variable.");
+ }
+-//# sourceMappingURL=index.js.map
+\ No newline at end of file
 diff --git a/dist/component/http.js b/dist/component/http.js
-index 4faa12bcfe7f7fe50d0bcb7f5e16b93e95f6dd1a..4f229e0f7d8e2f4ab7f2c4c811934464e54dc5e7 100644
+index 4faa12bcfe7f7fe50d0bcb7f5e16b93e95f6dd1a..19001e91f8f4753576fca5e6895ff23b93b865c0 100644
 --- a/dist/component/http.js
 +++ b/dist/component/http.js
 @@ -37,8 +37,8 @@ const serveStaticFile = httpAction(async (ctx, request) => {
@@ -197,11 +226,20 @@ index 4faa12bcfe7f7fe50d0bcb7f5e16b93e95f6dd1a..4f229e0f7d8e2f4ab7f2c4c811934464
      // One query resolves the asset: an exact match, or, when SPA fallback is
 -    // enabled for the current deployment, the index.html asset for an
 -    // extension-less miss. The fallback lookup happens inside the query so the
-+    // enabled for the current deployment, the index.html asset for any missing
-+    // path. The fallback lookup happens inside the query so the
++    // enabled for the current deployment, index.html outside /assets/.
++    // The fallback lookup happens inside the query so the
      // HTTP action never makes a second round-trip.
      const asset = await ctx.runQuery(internal.lib.resolveAsset, { path });
      if (!asset) {
+@@ -54,7 +54,7 @@ const serveStaticFile = httpAction(async (ctx, request) => {
+         }
+         return new Response("Not Found", {
+             status: 404,
+-            headers: { "Content-Type": "text/plain" },
++            headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" },
+         });
+     }
+     const contentType = asset.contentType || getMimeType(path);
 @@ -66,7 +66,7 @@ const serveStaticFile = httpAction(async (ctx, request) => {
              status: 302,
              headers: {
@@ -220,26 +258,452 @@ index 4faa12bcfe7f7fe50d0bcb7f5e16b93e95f6dd1a..4f229e0f7d8e2f4ab7f2c4c811934464
      if (etagMatches(ifNoneMatch, etag)) {
          return new Response(null, {
              status: 304,
+@@ -122,4 +122,3 @@ http.route({
+     handler: serveStaticFile,
+ });
+ export default http;
+-//# sourceMappingURL=http.js.map
+\ No newline at end of file
+diff --git a/dist/component/lib.d.ts b/dist/component/lib.d.ts
+index 33903afb8330ff270879507fa487b2e22cfb184f..a7daddaf18511e3b3ce5172d9ae0a24c4348a902 100644
+--- a/dist/component/lib.d.ts
++++ b/dist/component/lib.d.ts
+@@ -28,19 +28,30 @@ export declare const getByPath: import("convex/server").RegisteredQuery<"interna
+     storageId?: import("convex/values").GenericId<"_storage"> | undefined;
+     blobId?: string | undefined;
+     path: string;
+-    deploymentId: string;
+     contentType: string;
++    deploymentId: string;
+ } | null>>;
+ export declare const resolveAsset: import("convex/server").RegisteredQuery<"internal", {
+     path: string;
+ }, Promise<{
+-    _id: import("convex/values").GenericId<"staticAssets">;
+-    _creationTime: number;
+     storageId?: import("convex/values").GenericId<"_storage"> | undefined;
+     blobId?: string | undefined;
+     path: string;
++    contentType: string;
+     deploymentId: string;
++    _creationTime: number;
++    _id: import("convex/values").GenericId<"staticAssets">;
++} | {
++    path: string;
++    storageId: string & {
++        __tableName: "_storage";
++    };
++    blobId?: string | undefined;
+     contentType: string;
++    deploymentId: string;
++    _creationTime: number;
++    expiresAt: number;
++    _id: import("convex/values").GenericId<"retiredAssets">;
+ } | null>>;
+ export declare const listAssets: import("convex/server").RegisteredQuery<"internal", {
+     limit?: number | undefined;
+@@ -50,8 +61,8 @@ export declare const listAssets: import("convex/server").RegisteredQuery<"intern
+     storageId?: import("convex/values").GenericId<"_storage"> | undefined;
+     blobId?: string | undefined;
+     path: string;
+-    deploymentId: string;
+     contentType: string;
++    deploymentId: string;
+ }[]>>;
+ export declare const generateUploadUrl: import("convex/server").RegisteredMutation<"internal", {}, Promise<string>>;
+ export declare const generateUploadUrls: import("convex/server").RegisteredMutation<"internal", {
+@@ -89,8 +100,8 @@ export declare const stageAssets: import("convex/server").RegisteredMutation<"in
+         storageId?: import("convex/values").GenericId<"_storage"> | undefined;
+         blobId?: string | undefined;
+         path: string;
+-        deploymentId: string;
+         contentType: string;
++        deploymentId: string;
+     }[];
+ }, Promise<{
+     staged: number;
+@@ -110,8 +121,8 @@ export declare const cleanupAbandonedStaging: import("convex/server").Registered
+ }>>;
+ export declare const cleanupUnreferencedStorage: import("convex/server").RegisteredMutation<"internal", {
+     limit?: number | undefined;
+-    order?: "asc" | "desc" | undefined;
+     before?: number | undefined;
++    order?: "asc" | "desc" | undefined;
+ }, Promise<{
+     scanned: number;
+     deleted: number;
+@@ -121,16 +132,16 @@ export declare const recordAsset: import("convex/server").RegisteredMutation<"in
+     storageId?: import("convex/values").GenericId<"_storage"> | undefined;
+     blobId?: string | undefined;
+     path: string;
+-    deploymentId: string;
+     contentType: string;
++    deploymentId: string;
+ }, Promise<string | null>>;
+ export declare const recordAssets: import("convex/server").RegisteredMutation<"internal", {
+     assets: {
+         storageId?: import("convex/values").GenericId<"_storage"> | undefined;
+         blobId?: string | undefined;
+         path: string;
+-        deploymentId: string;
+         contentType: string;
++        deploymentId: string;
+     }[];
+ }, Promise<{
+     blobIds: string[];
+@@ -150,4 +161,3 @@ export declare const commitDeployment: import("convex/server").RegisteredMutatio
+     deleted: number;
+     blobIds: string[];
+ }>>;
+-//# sourceMappingURL=lib.d.ts.map
+\ No newline at end of file
 diff --git a/dist/component/lib.js b/dist/component/lib.js
-index 7fa00e8f0ec3e68d69136d11c3390ee6c84bc791..7963791fc3da67d67396797a87ead0950003e206 100644
+index 7fa00e8f0ec3e68d69136d11c3390ee6c84bc791..d96c3ab5e0b37412a96fa9038940bc963b385c44 100644
 --- a/dist/component/lib.js
 +++ b/dist/component/lib.js
-@@ -1,6 +1,5 @@
+@@ -1,6 +1,6 @@
  import { v } from "convex/values";
  import { internalMutation, internalQuery, query, } from "./_generated/server.js";
 -import { hasFileExtension } from "./serving.js";
++import { isHtmlContentType } from "./serving.js";
  const staticAssetValidator = v.object({
      _id: v.id("staticAssets"),
      _creationTime: v.number(),
-@@ -46,8 +45,6 @@ async function resolveAssetDocument(ctx, path, spaFallbackOverride) {
+@@ -10,6 +10,11 @@ const staticAssetValidator = v.object({
+     contentType: v.string(),
+     deploymentId: v.string(),
+ });
++const resolvedAssetValidator = v.union(staticAssetValidator, staticAssetValidator.omit("_id").extend({
++    _id: v.id("retiredAssets"),
++    storageId: v.id("_storage"),
++    expiresAt: v.number(),
++}));
+ const deploymentInfoValidator = v.object({
+     _id: v.id("deploymentInfo"),
+     _creationTime: v.number(),
+@@ -27,6 +32,7 @@ const MAINTENANCE_PAGE_LIMIT = 256;
+ // staged lookups use an explicit budget below Convex's 4,096 read limit.
+ const STORAGE_SCAN_LIMIT = 2000;
+ const ABANDONED_UPLOAD_AGE_MS = 24 * 60 * 60 * 1000;
++const RETIRED_ASSET_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+ const httpAssetValidator = v.object({
+     storageUrl: v.optional(v.string()),
+     blobId: v.optional(v.string()),
+@@ -46,8 +52,16 @@ async function resolveAssetDocument(ctx, path, spaFallbackOverride) {
          .unique();
      if (exact)
          return exact;
 -    if (hasFileExtension(path))
--        return null;
++    if (path.startsWith("/assets/")) {
++        const retired = await ctx.db
++            .query("retiredAssets")
++            .withIndex("by_path", (q) => q.eq("path", path))
++            .order("desc")
++            .first();
++        if (retired && !isHtmlContentType(retired.contentType))
++            return retired;
+         return null;
++    }
      const info = await ctx.db.query("deploymentInfo").first();
      const spaFallback = spaFallbackOverride ?? info?.spaFallback ?? true;
      if (!spaFallback)
+@@ -58,6 +72,12 @@ async function resolveAssetDocument(ctx, path, spaFallbackOverride) {
+         .unique();
+ }
+ async function deleteStorageFile(ctx, storageId) {
++    const retiredReference = await ctx.db
++        .query("retiredAssets")
++        .withIndex("by_storageId", (q) => q.eq("storageId", storageId))
++        .first();
++    if (retiredReference)
++        return false;
+     // A v2 component mounted with the old `selfHosting` name can inherit v1 rows
+     // containing app-owned storage IDs. They are deliberately invisible in the
+     // component namespace. Checking metadata avoids relying on backend error text
+@@ -170,7 +190,7 @@ export const getByPath = internalQuery({
+ // index.html asset. Doing the fallback here keeps it to a single query.
+ export const resolveAsset = internalQuery({
+     args: { path: v.string() },
+-    returns: v.union(staticAssetValidator, v.null()),
++    returns: v.union(resolvedAssetValidator, v.null()),
+     handler: async (ctx, { path }) => {
+         return await resolveAssetDocument(ctx, path);
+     },
+@@ -263,12 +283,22 @@ export const cleanupPendingStorage = internalMutation({
+     }),
+     handler: async (ctx, { limit }) => {
+         const batchLimit = Math.min(limit ?? MAINTENANCE_PAGE_LIMIT, MAINTENANCE_PAGE_LIMIT);
++        const expired = await ctx.db
++            .query("retiredAssets")
++            .withIndex("by_expiresAt", (q) => q.lte("expiresAt", Date.now()))
++            .take(batchLimit);
++        for (const asset of expired) {
++            if (asset.storageId) {
++                await ctx.db.insert("pendingStorageCleanup", { storageId: asset.storageId });
++            }
++            await ctx.db.delete("retiredAssets", asset._id);
++        }
+         const entries = await ctx.db
+             .query("pendingStorageCleanup")
+             .take(batchLimit);
+         let deleted = 0;
+         for (const entry of entries) {
+-            const [liveReference, stagedReference] = await Promise.all([
++            const [liveReference, stagedReference, retiredReference] = await Promise.all([
+                 ctx.db
+                     .query("staticAssets")
+                     .withIndex("by_storageId", (q) => q.eq("storageId", entry.storageId))
+@@ -277,9 +307,14 @@ export const cleanupPendingStorage = internalMutation({
+                     .query("stagedAssets")
+                     .withIndex("by_storageId", (q) => q.eq("storageId", entry.storageId))
+                     .first(),
++                ctx.db
++                    .query("retiredAssets")
++                    .withIndex("by_storageId", (q) => q.eq("storageId", entry.storageId))
++                    .first(),
+             ]);
+             if (!liveReference &&
+                 !stagedReference &&
++                !retiredReference &&
+                 (await deleteStorageFile(ctx, entry.storageId))) {
+                 deleted++;
+             }
+@@ -288,7 +323,7 @@ export const cleanupPendingStorage = internalMutation({
+         return {
+             processed: entries.length,
+             deleted,
+-            needsAnotherPass: entries.length === batchLimit,
++            needsAnotherPass: entries.length === batchLimit || expired.length === batchLimit,
+         };
+     },
+ });
+@@ -308,7 +343,11 @@ export const deleteUploadedFiles = internalMutation({
+         let alreadyMissing = 0;
+         let stillReferenced = 0;
+         for (const storageId of storageIds) {
+-            if (referencedStorageIds.has(storageId)) {
++            const retiredReference = await ctx.db
++                .query("retiredAssets")
++                .withIndex("by_storageId", (q) => q.eq("storageId", storageId))
++                .first();
++            if (referencedStorageIds.has(storageId) || retiredReference) {
+                 stillReferenced++;
+                 continue;
+             }
+@@ -418,11 +457,16 @@ export const cleanupAbandonedStaging = internalMutation({
+         let queuedBlobIds = 0;
+         for (const asset of assets) {
+             if (asset.storageId) {
++                const storageId = asset.storageId;
+                 const liveReference = await ctx.db
+                     .query("staticAssets")
+                     .withIndex("by_storageId", (q) => q.eq("storageId", asset.storageId))
+                     .first();
+-                if (!liveReference && (await deleteStorageFile(ctx, asset.storageId))) {
++                const retiredReference = await ctx.db
++                    .query("retiredAssets")
++                    .withIndex("by_storageId", (q) => q.eq("storageId", storageId))
++                    .first();
++                if (!liveReference && !retiredReference && (await deleteStorageFile(ctx, asset.storageId))) {
+                     deletedFiles++;
+                 }
+             }
+@@ -481,16 +525,20 @@ export const cleanupUnreferencedStorage = internalMutation({
+             scanned++;
+             if (liveStorageIds.has(file._id))
+                 continue;
+-            if (stagedLookups >= stagedLookupBudget) {
++            if (stagedLookups + 2 > stagedLookupBudget) {
+                 stoppedForReadBudget = true;
+                 break;
+             }
+-            stagedLookups++;
++            stagedLookups += 2;
+             const stagedReference = await ctx.db
+                 .query("stagedAssets")
+                 .withIndex("by_storageId", (q) => q.eq("storageId", file._id))
+                 .first();
+-            if (!stagedReference) {
++            const retiredReference = await ctx.db
++                .query("retiredAssets")
++                .withIndex("by_storageId", (q) => q.eq("storageId", file._id))
++                .first();
++            if (!stagedReference && !retiredReference) {
+                 await ctx.storage.delete(file._id);
+                 deleted++;
+             }
+@@ -499,8 +547,8 @@ export const cleanupUnreferencedStorage = internalMutation({
+             scanned,
+             deleted,
+             needsAnotherPass: deleted === deleteLimit ||
+-                stoppedForReadBudget ||
+-                (deleted > 0 && files.length === STORAGE_SCAN_LIMIT),
++                // Without deletes, another pass would inspect the same protected prefix.
++                (deleted > 0 && (stoppedForReadBudget || files.length === STORAGE_SCAN_LIMIT)),
+         };
+     },
+ });
+@@ -633,9 +681,25 @@ export const publishDeployment = internalMutation({
+         if (assets.length + oldAssets.length > MAX_PUBLISH_MANIFEST_READS) {
+             throw new Error(`The old and new manifests contain more than ${MAX_PUBLISH_MANIFEST_READS} rows combined. Reduce the new build or clean up the legacy manifest before migrating.`);
+         }
++        const retiredAssets = oldAssets.flatMap((asset) => {
++            if (asset.storageId !== undefined &&
++                asset.blobId === undefined) {
++                return [{
++                        _id: asset._id,
++                        path: asset.path,
++                        storageId: asset.storageId,
++                        contentType: asset.contentType,
++                        deploymentId: asset.deploymentId,
++                    }];
++            }
++            return [];
++        });
++        const retiredIds = new Set(retiredAssets.map((asset) => asset._id));
+         const blobIds = [];
+         const storageIds = new Set();
+         for (const asset of oldAssets) {
++            if (retiredIds.has(asset._id))
++                continue;
+             if (asset.blobId)
+                 blobIds.push(asset.blobId);
+             if (asset.storageId)
+@@ -646,6 +710,7 @@ export const publishDeployment = internalMutation({
+             blobIds.length +
+             assets.length +
+             stagedAssets.length +
++            retiredAssets.length +
+             2;
+         if (plannedDocumentWrites > MAX_PUBLISH_DOCUMENT_WRITES) {
+             throw new Error(`Publishing this manifest would require ${plannedDocumentWrites} document writes, above the safe limit of ${MAX_PUBLISH_DOCUMENT_WRITES}. Reduce the number of files in the deployment.`);
+@@ -653,6 +718,12 @@ export const publishDeployment = internalMutation({
+         for (const asset of oldAssets) {
+             await ctx.db.delete("staticAssets", asset._id);
+         }
++        for (const { _id, ...asset } of retiredAssets) {
++            await ctx.db.insert("retiredAssets", {
++                ...asset,
++                expiresAt: Date.now() + RETIRED_ASSET_AGE_MS,
++            });
++        }
+         for (const asset of assets) {
+             await ctx.db.insert("staticAssets", {
+                 path: asset.path,
+@@ -715,4 +786,3 @@ export const commitDeployment = internalMutation({
+         return { deleted, blobIds };
+     },
+ });
+-//# sourceMappingURL=lib.js.map
+\ No newline at end of file
+diff --git a/dist/component/schema.d.ts b/dist/component/schema.d.ts
+index a9c567e7f78a7cb55df1855659592542e941a6de..639f4b98453bed07978ff6b34c0899d127923f56 100644
+--- a/dist/component/schema.d.ts
++++ b/dist/component/schema.d.ts
+@@ -3,32 +3,49 @@ declare const _default: import("convex/server").SchemaDefinition<{
+         storageId?: import("convex/values").GenericId<"_storage"> | undefined;
+         blobId?: string | undefined;
+         path: string;
+-        deploymentId: string;
+         contentType: string;
++        deploymentId: string;
+     }, {
+         path: import("convex/values").VString<string, "required">;
+         storageId: import("convex/values").VId<import("convex/values").GenericId<"_storage"> | undefined, "optional">;
+         blobId: import("convex/values").VString<string | undefined, "optional">;
+         contentType: import("convex/values").VString<string, "required">;
+         deploymentId: import("convex/values").VString<string, "required">;
+-    }, "required", "path" | "deploymentId" | "storageId" | "blobId" | "contentType">, {
++    }, "required", "path" | "storageId" | "blobId" | "contentType" | "deploymentId">, {
+         by_path: ["path", "_creationTime"];
+         by_deploymentId: ["deploymentId", "_creationTime"];
+         by_storageId: ["storageId", "_creationTime"];
+     }, {}, {}>;
++    retiredAssets: import("convex/server").TableDefinition<import("convex/values").VObject<{
++        path: string;
++        storageId: import("convex/values").GenericId<"_storage">;
++        contentType: string;
++        deploymentId: string;
++        expiresAt: number;
++    }, {
++        path: import("convex/values").VString<string, "required">;
++        storageId: import("convex/values").VId<import("convex/values").GenericId<"_storage">, "required">;
++        contentType: import("convex/values").VString<string, "required">;
++        deploymentId: import("convex/values").VString<string, "required">;
++        expiresAt: import("convex/values").VFloat64<number, "required">;
++    }, "required", "path" | "storageId" | "contentType" | "deploymentId" | "expiresAt">, {
++        by_path: ["path", "_creationTime"];
++        by_storageId: ["storageId", "_creationTime"];
++        by_expiresAt: ["expiresAt", "_creationTime"];
++    }, {}, {}>;
+     stagedAssets: import("convex/server").TableDefinition<import("convex/values").VObject<{
+         storageId?: import("convex/values").GenericId<"_storage"> | undefined;
+         blobId?: string | undefined;
+         path: string;
+-        deploymentId: string;
+         contentType: string;
++        deploymentId: string;
+     }, {
+         path: import("convex/values").VString<string, "required">;
+         storageId: import("convex/values").VId<import("convex/values").GenericId<"_storage"> | undefined, "optional">;
+         blobId: import("convex/values").VString<string | undefined, "optional">;
+         contentType: import("convex/values").VString<string, "required">;
+         deploymentId: import("convex/values").VString<string, "required">;
+-    }, "required", "path" | "deploymentId" | "storageId" | "blobId" | "contentType">, {
++    }, "required", "path" | "storageId" | "blobId" | "contentType" | "deploymentId">, {
+         by_deploymentId: ["deploymentId", "_creationTime"];
+         by_storageId: ["storageId", "_creationTime"];
+     }, {}, {}>;
+@@ -52,8 +69,8 @@ declare const _default: import("convex/server").SchemaDefinition<{
+         pendingBlobCleanupCount: import("convex/values").VFloat64<number, "required">;
+     }, "required", "pendingBlobCleanupCount">, {}, {}, {}>;
+     deploymentInfo: import("convex/server").TableDefinition<import("convex/values").VObject<{
+-        spaFallback?: boolean | undefined;
+         pendingBlobCleanupCount?: number | undefined;
++        spaFallback?: boolean | undefined;
+         currentDeploymentId: string;
+         deployedAt: number;
+     }, {
+@@ -61,7 +78,6 @@ declare const _default: import("convex/server").SchemaDefinition<{
+         deployedAt: import("convex/values").VFloat64<number, "required">;
+         spaFallback: import("convex/values").VBoolean<boolean | undefined, "optional">;
+         pendingBlobCleanupCount: import("convex/values").VFloat64<number | undefined, "optional">;
+-    }, "required", "currentDeploymentId" | "spaFallback" | "pendingBlobCleanupCount" | "deployedAt">, {}, {}, {}>;
++    }, "required", "pendingBlobCleanupCount" | "currentDeploymentId" | "deployedAt" | "spaFallback">, {}, {}, {}>;
+ }, true>;
+ export default _default;
+-//# sourceMappingURL=schema.d.ts.map
+\ No newline at end of file
+diff --git a/dist/component/schema.js b/dist/component/schema.js
+index a66f23132aadf53695e20689dee8d6afa69e9def..bb49c5f4bea92404152f3496492831427470f416 100644
+--- a/dist/component/schema.js
++++ b/dist/component/schema.js
+@@ -11,6 +11,19 @@ export default defineSchema({
+         .index("by_path", ["path"])
+         .index("by_deploymentId", ["deploymentId"])
+         .index("by_storageId", ["storageId"]),
++    // Retain old storage for HTTP requests that already resolved its URL.
++    // Only bundled /assets/ paths remain addressable after publication.
++    // These rows stay outside the current manifest's bounded transaction.
++    retiredAssets: defineTable({
++        path: v.string(),
++        storageId: v.id("_storage"),
++        contentType: v.string(),
++        deploymentId: v.string(),
++        expiresAt: v.number(),
++    })
++        .index("by_path", ["path"])
++        .index("by_storageId", ["storageId"])
++        .index("by_expiresAt", ["expiresAt"]),
+     // Uploads stage their manifest in small chunks because the Convex CLI takes
+     // function arguments on the command line. Only publishDeployment copies a
+     // complete staged manifest into staticAssets, so partial uploads are never
+@@ -53,4 +66,3 @@ export default defineSchema({
+         pendingBlobCleanupCount: v.optional(v.number()),
+     }),
+ });
+-//# sourceMappingURL=schema.js.map
+\ No newline at end of file
 diff --git a/src/cli/args.ts b/src/cli/args.ts
 index b12a21bf6e77b0aa5de3665adf7e7ccc6b631910..7caf508c93ff088302d7bcb96eef153760b9e6c4 100644
 --- a/src/cli/args.ts
@@ -333,10 +797,19 @@ index 9c2f9c1fccedb954b845c7599a2e8d5d132c0087..b87b41e5ed1cfc7ecf4f6d67e4a6739a
    if (useCdn) {
      console.log("☁️  CDN mode: non-HTML assets will be uploaded to convex-fs");
 diff --git a/src/client/index.ts b/src/client/index.ts
-index c23f011b2b0d34702636fc9bd95cbb98a87f46eb..8e876f4c9436d110716184128a6d67448defbfaa 100644
+index c23f011b2b0d34702636fc9bd95cbb98a87f46eb..db32970be34ba0387bf4b5569ca5de604e737162 100644
 --- a/src/client/index.ts
 +++ b/src/client/index.ts
-@@ -50,6 +50,8 @@ export function registerStaticRoutes(
+@@ -2,6 +2,8 @@ import {
+   httpActionGeneric,
+   queryGeneric,
+   type HttpRouter,
++  type GenericActionCtx,
++  type GenericDataModel,
+ } from "convex/server";
+ import { v, type GenericId } from "convex/values";
+ import type { ComponentApi } from "../component/_generated/component.js";
+@@ -50,6 +52,8 @@ export function registerStaticRoutes(
      pathPrefix = "/",
      spaFallback,
      cdnBaseUrl,
@@ -345,34 +818,40 @@ index c23f011b2b0d34702636fc9bd95cbb98a87f46eb..8e876f4c9436d110716184128a6d6744
    }: {
      /** URL prefix where the app should serve static files. */
      pathPrefix?: string;
-@@ -57,6 +59,10 @@ export function registerStaticRoutes(
+@@ -57,6 +61,10 @@ export function registerStaticRoutes(
      spaFallback?: boolean;
      /** Optional custom base URL for convex-fs blob redirects. */
      cdnBaseUrl?: string | ((request: Request) => string);
 +    /** Rewrite the decoded request path before resolving a static asset. */
 +    rewritePath?: (path: string, request: Request) => string;
 +    /** Handle an exact asset miss before static rewrites or SPA fallback. Return null to continue static serving. */
-+    fallback?: (request: Request) => Response | null | Promise<Response | null>;
++    fallback?: (request: Request, ctx: GenericActionCtx<GenericDataModel>) => Response | null | Promise<Response | null>;
    } = {},
  ) {
    if (!pathPrefix.startsWith("/")) {
-@@ -80,14 +86,29 @@ export function registerStaticRoutes(
+@@ -80,14 +88,36 @@ export function registerStaticRoutes(
      if (normalizedPrefix && path.startsWith(normalizedPrefix)) {
        path = path.slice(normalizedPrefix.length) || "/";
      }
 -    if (path === "" || path === "/") {
 -      path = "/index.html";
--    }
-+    let asset = fallback
++    let asset = fallback || path.startsWith("/assets/")
 +      ? await ctx.runQuery(component.lib.resolveAssetForHttp, { path, spaFallback: false })
 +      : null;
++
++    if (!asset && path.startsWith("/assets/")) {
++      return new Response("Not Found", {
++        status: 404,
++        headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" },
++      });
+     }
  
 -    const asset = await ctx.runQuery(component.lib.resolveAssetForHttp, {
 -      path,
 -      ...(spaFallback === undefined ? {} : { spaFallback }),
 -    });
 +    if (!asset) {
-+      const response = await fallback?.(request);
++      const response = await fallback?.(request, ctx);
 +      if (response) return response;
 +
 +      if (rewritePath) {
@@ -393,7 +872,13 @@ index c23f011b2b0d34702636fc9bd95cbb98a87f46eb..8e876f4c9436d110716184128a6d6744
  
      if (!asset) {
        if (path === "/index.html") {
-@@ -107,7 +128,7 @@ export function registerStaticRoutes(
+@@ -102,12 +132,12 @@ export function registerStaticRoutes(
+       }
+       return new Response("Not Found", {
+         status: 404,
+-        headers: { "Content-Type": "text/plain" },
++        headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" },
+       });
      }
  
      const contentType = asset.contentType || getMimeType(path);
@@ -403,7 +888,7 @@ index c23f011b2b0d34702636fc9bd95cbb98a87f46eb..8e876f4c9436d110716184128a6d6744
      if (asset.blobId && !isHtmlContentType(contentType)) {
        const configuredBase =
 diff --git a/src/component/http.ts b/src/component/http.ts
-index a804cb5ca268953f7cdedc68138c5332be4ae6c4..56aae65217071269d863e2f47e115b198fe5d4b5 100644
+index a804cb5ca268953f7cdedc68138c5332be4ae6c4..a8f838ffa0ffc4dc84213407fcd0bfd510ebe9cc 100644
 --- a/src/component/http.ts
 +++ b/src/component/http.ts
 @@ -46,8 +46,8 @@ const serveStaticFile = httpAction(async (ctx, request) => {
@@ -412,10 +897,19 @@ index a804cb5ca268953f7cdedc68138c5332be4ae6c4..56aae65217071269d863e2f47e115b19
    // One query resolves the asset: an exact match, or, when SPA fallback is
 -  // enabled for the current deployment, the index.html asset for an
 -  // extension-less miss. The fallback lookup happens inside the query so the
-+  // enabled for the current deployment, the index.html asset for any missing
-+  // path. The fallback lookup happens inside the query so the
++  // enabled for the current deployment, index.html outside /assets/.
++  // The fallback lookup happens inside the query so the
    // HTTP action never makes a second round-trip.
    const asset = await ctx.runQuery(internal.lib.resolveAsset, { path });
+ 
+@@ -64,7 +64,7 @@ const serveStaticFile = httpAction(async (ctx, request) => {
+     }
+     return new Response("Not Found", {
+       status: 404,
+-      headers: { "Content-Type": "text/plain" },
++      headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" },
+     });
+   }
  
 @@ -78,7 +78,7 @@ const serveStaticFile = httpAction(async (ctx, request) => {
        status: 302,
@@ -436,23 +930,280 @@ index a804cb5ca268953f7cdedc68138c5332be4ae6c4..56aae65217071269d863e2f47e115b19
    if (etagMatches(ifNoneMatch, etag)) {
      return new Response(null, {
 diff --git a/src/component/lib.ts b/src/component/lib.ts
-index 6923814a4d88119beaf44a8200744c752b185f97..9a559a49bbf4b01de46b125955698f882d68ba80 100644
+index 6923814a4d88119beaf44a8200744c752b185f97..fec295ffa2258ba01736408e992919a8b3ee7137 100644
 --- a/src/component/lib.ts
 +++ b/src/component/lib.ts
-@@ -7,7 +7,6 @@ import {
+@@ -1,4 +1,4 @@
+-import { v } from "convex/values";
++import { v, type Infer } from "convex/values";
+ import {
+   internalMutation,
+   internalQuery,
+@@ -7,7 +7,7 @@ import {
    type QueryCtx,
  } from "./_generated/server.js";
  import type { Id } from "./_generated/dataModel.js";
 -import { hasFileExtension } from "./serving.js";
++import { isHtmlContentType } from "./serving.js";
  
  const staticAssetValidator = v.object({
    _id: v.id("staticAssets"),
-@@ -62,8 +61,6 @@ async function resolveAssetDocument(
+@@ -19,6 +19,15 @@ const staticAssetValidator = v.object({
+   deploymentId: v.string(),
+ });
+ 
++const resolvedAssetValidator = v.union(
++  staticAssetValidator,
++  staticAssetValidator.omit("_id").extend({
++    _id: v.id("retiredAssets"),
++    storageId: v.id("_storage"),
++    expiresAt: v.number(),
++  }),
++);
++
+ const deploymentInfoValidator = v.object({
+   _id: v.id("deploymentInfo"),
+   _creationTime: v.number(),
+@@ -37,6 +46,7 @@ const MAINTENANCE_PAGE_LIMIT = 256;
+ // staged lookups use an explicit budget below Convex's 4,096 read limit.
+ const STORAGE_SCAN_LIMIT = 2000;
+ const ABANDONED_UPLOAD_AGE_MS = 24 * 60 * 60 * 1000;
++const RETIRED_ASSET_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+ 
+ const httpAssetValidator = v.object({
+   storageUrl: v.optional(v.string()),
+@@ -55,14 +65,22 @@ async function resolveAssetDocument(
+   ctx: QueryCtx,
+   path: string,
+   spaFallbackOverride?: boolean,
+-) {
++): Promise<Infer<typeof resolvedAssetValidator> | null> {
+   const exact = await ctx.db
+     .query("staticAssets")
+     .withIndex("by_path", (q) => q.eq("path", path))
      .unique();
    if (exact) return exact;
  
 -  if (hasFileExtension(path)) return null;
--
++  if (path.startsWith("/assets/")) {
++    const retired = await ctx.db
++      .query("retiredAssets")
++      .withIndex("by_path", (q) => q.eq("path", path))
++      .order("desc")
++      .first();
++    if (retired && !isHtmlContentType(retired.contentType)) return retired;
++    return null;
++  }
+ 
    const info = await ctx.db.query("deploymentInfo").first();
    const spaFallback = spaFallbackOverride ?? info?.spaFallback ?? true;
-   if (!spaFallback) return null;
+@@ -75,6 +93,11 @@ async function resolveAssetDocument(
+ }
+ 
+ async function deleteStorageFile(ctx: MutationCtx, storageId: Id<"_storage">) {
++  const retiredReference = await ctx.db
++    .query("retiredAssets")
++    .withIndex("by_storageId", (q) => q.eq("storageId", storageId))
++    .first();
++  if (retiredReference) return false;
+   // A v2 component mounted with the old `selfHosting` name can inherit v1 rows
+   // containing app-owned storage IDs. They are deliberately invisible in the
+   // component namespace. Checking metadata avoids relying on backend error text
+@@ -200,7 +223,7 @@ export const getByPath = internalQuery({
+ // index.html asset. Doing the fallback here keeps it to a single query.
+ export const resolveAsset = internalQuery({
+   args: { path: v.string() },
+-  returns: v.union(staticAssetValidator, v.null()),
++  returns: v.union(resolvedAssetValidator, v.null()),
+   handler: async (ctx, { path }) => {
+     return await resolveAssetDocument(ctx, path);
+   },
+@@ -305,12 +328,22 @@ export const cleanupPendingStorage = internalMutation({
+       limit ?? MAINTENANCE_PAGE_LIMIT,
+       MAINTENANCE_PAGE_LIMIT,
+     );
++    const expired = await ctx.db
++      .query("retiredAssets")
++      .withIndex("by_expiresAt", (q) => q.lte("expiresAt", Date.now()))
++      .take(batchLimit);
++    for (const asset of expired) {
++      if (asset.storageId) {
++        await ctx.db.insert("pendingStorageCleanup", { storageId: asset.storageId });
++      }
++      await ctx.db.delete("retiredAssets", asset._id);
++    }
+     const entries = await ctx.db
+       .query("pendingStorageCleanup")
+       .take(batchLimit);
+     let deleted = 0;
+     for (const entry of entries) {
+-      const [liveReference, stagedReference] = await Promise.all([
++      const [liveReference, stagedReference, retiredReference] = await Promise.all([
+         ctx.db
+           .query("staticAssets")
+           .withIndex("by_storageId", (q) => q.eq("storageId", entry.storageId))
+@@ -319,10 +352,15 @@ export const cleanupPendingStorage = internalMutation({
+           .query("stagedAssets")
+           .withIndex("by_storageId", (q) => q.eq("storageId", entry.storageId))
+           .first(),
++        ctx.db
++          .query("retiredAssets")
++          .withIndex("by_storageId", (q) => q.eq("storageId", entry.storageId))
++          .first(),
+       ]);
+       if (
+         !liveReference &&
+         !stagedReference &&
++        !retiredReference &&
+         (await deleteStorageFile(ctx, entry.storageId))
+       ) {
+         deleted++;
+@@ -332,7 +370,7 @@ export const cleanupPendingStorage = internalMutation({
+     return {
+       processed: entries.length,
+       deleted,
+-      needsAnotherPass: entries.length === batchLimit,
++      needsAnotherPass: entries.length === batchLimit || expired.length === batchLimit,
+     };
+   },
+ });
+@@ -357,7 +395,11 @@ export const deleteUploadedFiles = internalMutation({
+     let alreadyMissing = 0;
+     let stillReferenced = 0;
+     for (const storageId of storageIds) {
+-      if (referencedStorageIds.has(storageId)) {
++      const retiredReference = await ctx.db
++        .query("retiredAssets")
++        .withIndex("by_storageId", (q) => q.eq("storageId", storageId))
++        .first();
++      if (referencedStorageIds.has(storageId) || retiredReference) {
+         stillReferenced++;
+         continue;
+       }
+@@ -498,11 +540,16 @@ export const cleanupAbandonedStaging = internalMutation({
+     let queuedBlobIds = 0;
+     for (const asset of assets) {
+       if (asset.storageId) {
++        const storageId = asset.storageId;
+         const liveReference = await ctx.db
+           .query("staticAssets")
+           .withIndex("by_storageId", (q) => q.eq("storageId", asset.storageId))
+           .first();
+-        if (!liveReference && (await deleteStorageFile(ctx, asset.storageId))) {
++        const retiredReference = await ctx.db
++          .query("retiredAssets")
++          .withIndex("by_storageId", (q) => q.eq("storageId", storageId))
++          .first();
++        if (!liveReference && !retiredReference && (await deleteStorageFile(ctx, asset.storageId))) {
+           deletedFiles++;
+         }
+       }
+@@ -570,16 +617,20 @@ export const cleanupUnreferencedStorage = internalMutation({
+       }
+       scanned++;
+       if (liveStorageIds.has(file._id)) continue;
+-      if (stagedLookups >= stagedLookupBudget) {
++      if (stagedLookups + 2 > stagedLookupBudget) {
+         stoppedForReadBudget = true;
+         break;
+       }
+-      stagedLookups++;
++      stagedLookups += 2;
+       const stagedReference = await ctx.db
+         .query("stagedAssets")
+         .withIndex("by_storageId", (q) => q.eq("storageId", file._id))
+         .first();
+-      if (!stagedReference) {
++      const retiredReference = await ctx.db
++        .query("retiredAssets")
++        .withIndex("by_storageId", (q) => q.eq("storageId", file._id))
++        .first();
++      if (!stagedReference && !retiredReference) {
+         await ctx.storage.delete(file._id);
+         deleted++;
+       }
+@@ -589,8 +640,8 @@ export const cleanupUnreferencedStorage = internalMutation({
+       deleted,
+       needsAnotherPass:
+         deleted === deleteLimit ||
+-        stoppedForReadBudget ||
+-        (deleted > 0 && files.length === STORAGE_SCAN_LIMIT),
++        // Without deletes, another pass would inspect the same protected prefix.
++        (deleted > 0 && (stoppedForReadBudget || files.length === STORAGE_SCAN_LIMIT)),
+     };
+   },
+ });
+@@ -752,9 +803,26 @@ export const publishDeployment = internalMutation({
+         `The old and new manifests contain more than ${MAX_PUBLISH_MANIFEST_READS} rows combined. Reduce the new build or clean up the legacy manifest before migrating.`,
+       );
+     }
++    const retiredAssets = oldAssets.flatMap((asset) => {
++      if (
++        asset.storageId !== undefined &&
++        asset.blobId === undefined
++      ) {
++        return [{
++          _id: asset._id,
++          path: asset.path,
++          storageId: asset.storageId,
++          contentType: asset.contentType,
++          deploymentId: asset.deploymentId,
++        }];
++      }
++      return [];
++    });
++    const retiredIds = new Set(retiredAssets.map((asset) => asset._id));
+     const blobIds: string[] = [];
+     const storageIds = new Set<Id<"_storage">>();
+     for (const asset of oldAssets) {
++      if (retiredIds.has(asset._id)) continue;
+       if (asset.blobId) blobIds.push(asset.blobId);
+       if (asset.storageId) storageIds.add(asset.storageId);
+     }
+@@ -764,6 +832,7 @@ export const publishDeployment = internalMutation({
+       blobIds.length +
+       assets.length +
+       stagedAssets.length +
++      retiredAssets.length +
+       2;
+     if (plannedDocumentWrites > MAX_PUBLISH_DOCUMENT_WRITES) {
+       throw new Error(
+@@ -775,6 +844,13 @@ export const publishDeployment = internalMutation({
+       await ctx.db.delete("staticAssets", asset._id);
+     }
+ 
++    for (const { _id, ...asset } of retiredAssets) {
++      await ctx.db.insert("retiredAssets", {
++        ...asset,
++        expiresAt: Date.now() + RETIRED_ASSET_AGE_MS,
++      });
++    }
++
+     for (const asset of assets) {
+       await ctx.db.insert("staticAssets", {
+         path: asset.path,
+diff --git a/src/component/schema.ts b/src/component/schema.ts
+index f2684f2864a72235104be93c71cb4c488f709537..36e3571aff39fb10a7dd16caaff6accf41f5ffd7 100644
+--- a/src/component/schema.ts
++++ b/src/component/schema.ts
+@@ -13,6 +13,20 @@ export default defineSchema({
+     .index("by_deploymentId", ["deploymentId"])
+     .index("by_storageId", ["storageId"]),
+ 
++  // Retain old storage for HTTP requests that already resolved its URL.
++  // Only bundled /assets/ paths remain addressable after publication.
++  // These rows stay outside the current manifest's bounded transaction.
++  retiredAssets: defineTable({
++    path: v.string(),
++    storageId: v.id("_storage"),
++    contentType: v.string(),
++    deploymentId: v.string(),
++    expiresAt: v.number(),
++  })
++    .index("by_path", ["path"])
++    .index("by_storageId", ["storageId"])
++    .index("by_expiresAt", ["expiresAt"]),
++
+   // Uploads stage their manifest in small chunks because the Convex CLI takes
+   // function arguments on the command line. Only publishDeployment copies a
+   // complete staged manifest into staticAssets, so partial uploads are never

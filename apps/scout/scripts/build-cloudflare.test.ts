@@ -40,13 +40,15 @@ describe("build-cloudflare", () => {
         "--cmd",
         "vp run build:app && node ./scripts/verify-current-branch-head.ts",
       ],
+      uploadArgs: ["exec", "static-hosting", "upload", "--dist", "./dist/client", "--prod"],
+      verifyArgs: ["./scripts/verify-static-release.ts", "--prod"],
     });
   });
 
   it("seeds after a successful preview deploy and auth setup", async () => {
     const invocations: string[] = [];
-    const runCommand = (_command: string, args: readonly string[]) => {
-      invocations.push(args[2] === "run" ? (args[3] ?? "run") : (args[2] ?? "build"));
+    const runCommand = (command: string, args: readonly string[]) => {
+      invocations.push(command === "node" ? args[0] : args[2] === "run" ? args[3] : args[2]);
       return Promise.resolve();
     };
     const ensureAuth = () => {
@@ -64,13 +66,20 @@ describe("build-cloudflare", () => {
       ensureAuth,
     );
 
-    expect(invocations).toEqual(["deploy", "ensureAuth", "devAuth:seedPasswordAccount", "upload"]);
+    expect(invocations).toEqual([
+      "deploy",
+      "./scripts/verify-current-branch-head.ts",
+      "upload",
+      "./scripts/verify-static-release.ts",
+      "ensureAuth",
+      "devAuth:seedPasswordAccount",
+    ]);
   });
 
   it("does not seed when the preview deploy fails", async () => {
     const invocations: string[] = [];
-    const runCommand = (_command: string, args: readonly string[]) => {
-      invocations.push(args[2] ?? "build");
+    const runCommand = (command: string, args: readonly string[]) => {
+      invocations.push(command === "node" ? args[0] : args[2]);
       return Promise.reject(new Error("deploy failed"));
     };
     const ensureAuth = () => {
@@ -93,10 +102,10 @@ describe("build-cloudflare", () => {
     expect(invocations).toEqual(["deploy"]);
   });
 
-  it("does not seed production after auth setup", async () => {
+  it("publishes and verifies production assets before unrelated auth setup", async () => {
     const invocations: string[] = [];
-    const runCommand = (_command: string, args: readonly string[]) => {
-      invocations.push(args[2] ?? "build");
+    const runCommand = (command: string, args: readonly string[]) => {
+      invocations.push(command === "node" ? args[0] : args[2]);
       return Promise.resolve();
     };
     const ensureAuth = () => {
@@ -114,8 +123,39 @@ describe("build-cloudflare", () => {
       ensureAuth,
     );
 
-    expect(invocations).toEqual(["deploy", "ensureAuth"]);
+    expect(invocations).toEqual([
+      "deploy",
+      "./scripts/verify-current-branch-head.ts",
+      "upload",
+      "./scripts/verify-static-release.ts",
+      "ensureAuth",
+    ]);
   });
+
+  it.each(["upload", "./scripts/verify-static-release.ts"])(
+    "fails the build before auth setup when %s fails",
+    async (failedStep) => {
+      const invocations: string[] = [];
+      await expect(
+        main(
+          { CONVEX_DEPLOY_KEY: "production-key", WORKERS_CI: "1", WORKERS_CI_BRANCH: "main" },
+          (command, args) => {
+            const step = command === "node" ? args[0] : args[2];
+            invocations.push(step);
+            return step === failedStep
+              ? Promise.reject(new Error("release failed"))
+              : Promise.resolve();
+          },
+          () => {
+            invocations.push("ensureAuth");
+            return Promise.resolve();
+          },
+        ),
+      ).rejects.toThrow("release failed");
+      expect(invocations).not.toContain("ensureAuth");
+      expect(invocations.at(-1)).toBe(failedStep);
+    },
+  );
 
   it("selects the preview key for non-main branches", () => {
     expect(
@@ -155,6 +195,7 @@ describe("build-cloudflare", () => {
         "--preview-name",
         "feature-branch",
       ],
+      verifyArgs: ["./scripts/verify-static-release.ts", "--preview-name", "feature-branch"],
     });
   });
 

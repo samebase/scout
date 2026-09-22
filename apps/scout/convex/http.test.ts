@@ -1,6 +1,8 @@
 import staticHosting from "@convex-dev/static-hosting/test";
+import { anyApi } from "convex/server";
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
+import clientBuild from "../dist/server/client-build.json";
 
 const renderer = vi.hoisted(() => ({ load: vi.fn(), fetch: vi.fn() }));
 
@@ -38,14 +40,14 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function setup() {
+async function setup(markerPath: string | null) {
   const backend = convexTest(staticHosting.schema, {
     ...staticHosting.modules,
     "./component/http.ts": () => import("./http"),
   });
   const bodies = new Map<string, string>();
   await backend.run(async (ctx) => {
-    for (const asset of [
+    const assets = [
       { path: "/index.html", contentType: "text/html", body: "Scout app shell" },
       { path: "/about/index.html", contentType: "text/html", body: "About Scout" },
       {
@@ -53,7 +55,11 @@ async function setup() {
         contentType: "text/javascript",
         body: "console.log('Scout')",
       },
-    ]) {
+    ];
+    if (markerPath) {
+      assets.push({ path: markerPath, contentType: "application/octet-stream", body: "{}" });
+    }
+    for (const asset of assets) {
       const storageId = await ctx.storage.store(new Blob([asset.body]));
       await ctx.db.insert("staticAssets", {
         path: asset.path,
@@ -92,7 +98,7 @@ test.each([
       headers: { "Content-Type": "text/html", "Cache-Control": "public, max-age=3600" },
     }),
   );
-  const backend = await setup();
+  const backend = await setup(clientBuild.markerPath);
   const response = await backend.fetch(path);
   expect(response.status).toBe(200);
   expect(response.headers.get("Cache-Control")).toBe("no-store");
@@ -111,7 +117,7 @@ test.each([undefined, "false"])(
     renderer.load.mockImplementation(() => {
       throw new Error("Renderer cannot initialize");
     });
-    const backend = await setup();
+    const backend = await setup(clientBuild.markerPath);
     for (const { path, body } of [
       { path: "/", body: "Scout app shell" },
       { path: "/?site=example&scope=public", body: "Scout app shell" },
@@ -134,7 +140,7 @@ test("assets and existing Convex endpoints bypass TanStack", async () => {
   renderer.load.mockImplementation(() => {
     throw new Error("Renderer cannot initialize");
   });
-  const backend = await setup();
+  const backend = await setup(clientBuild.markerPath);
   const asset = await backend.fetch("/assets/app-a1b2c3d4.js");
   expect(asset.headers.get("Cache-Control")).toBe("public, max-age=31536000, immutable");
   expect(await asset.text()).toBe("console.log('Scout')");
@@ -146,6 +152,22 @@ test("assets and existing Convex endpoints bypass TanStack", async () => {
   expect(renderer.load).not.toHaveBeenCalled();
 });
 
+test.each(["true", "false"])(
+  "missing bundles bypass SSR and the SPA shell with SSR %s",
+  async (setting) => {
+    vi.stubEnv("TANSTACK_SERVER_ENABLED", setting);
+    renderer.load.mockImplementation(() => {
+      throw new Error("Renderer must not handle missing bundles");
+    });
+    const backend = await setup(clientBuild.markerPath);
+    const response = await backend.fetch("/assets/missing-AbCdEfGh.js");
+    expect(response.status).toBe(404);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(await response.text()).toBe("Not Found");
+    expect(renderer.load).not.toHaveBeenCalled();
+  },
+);
+
 test.each([404, 500, 307])("preserves TanStack status %s and response headers", async (status) => {
   vi.stubEnv("TANSTACK_SERVER_ENABLED", "true");
   renderer.fetch.mockResolvedValue(
@@ -154,7 +176,7 @@ test.each([404, 500, 307])("preserves TanStack status %s and response headers", 
       headers: { Location: "/about", "Set-Cookie": "example=value; HttpOnly; SameSite=Lax" },
     }),
   );
-  const backend = await setup();
+  const backend = await setup(clientBuild.markerPath);
   const response = await backend.fetch("/unknown/route.pdf");
   expect(response.status).toBe(status);
   expect(response.headers.get("Location")).toBe("/about");
@@ -167,7 +189,7 @@ test("switching off recovers from initialization failure without rebuilding", as
   renderer.load.mockImplementation(() => {
     throw new Error("Renderer cannot initialize");
   });
-  const backend = await setup();
+  const backend = await setup(clientBuild.markerPath);
   await expect(backend.fetch("/sites/example.com")).rejects.toThrow();
   vi.stubEnv("TANSTACK_SERVER_ENABLED", "false");
   const response = await backend.fetch("/sites/example.com");
@@ -179,7 +201,7 @@ test("switching off recovers from initialization failure without rebuilding", as
 test("accepts TanStack redirects with immutable headers", async () => {
   vi.stubEnv("TANSTACK_SERVER_ENABLED", "true");
   renderer.fetch.mockResolvedValue(Response.redirect("https://preview.convex.site/about", 308));
-  const backend = await setup();
+  const backend = await setup(clientBuild.markerPath);
   const response = await backend.fetch("//about");
   expect(response.status).toBe(308);
   expect(response.headers.get("Location")).toBe("https://preview.convex.site/about");
@@ -187,11 +209,95 @@ test("accepts TanStack redirects with immutable headers", async () => {
 });
 
 test("switching off and back on changes the next request", async () => {
-  const backend = await setup();
+  const backend = await setup(clientBuild.markerPath);
   renderer.fetch.mockImplementation(() => new Response("TanStack document"));
   for (const enabled of [true, false, true]) {
     vi.stubEnv("TANSTACK_SERVER_ENABLED", String(enabled));
     const response = await backend.fetch("/sites/example.com");
     expect(await response.text()).toBe(enabled ? "TanStack document" : "Scout app shell");
   }
+});
+
+test("keeps the published shell until the matching client build publishes successfully", async () => {
+  vi.stubEnv("TANSTACK_SERVER_ENABLED", "true");
+  renderer.fetch.mockImplementation(() => new Response("New rendered document"));
+  const backend = await setup("/__convex_build/previous");
+
+  const previous = await backend.fetch("/sites/example.com");
+  expect(await previous.text()).toBe("Scout app shell");
+  expect(renderer.load).not.toHaveBeenCalled();
+
+  const assets = await backend.run(async (ctx) => {
+    const storageId = await ctx.storage.store(new Blob(["New client build"]));
+    return [
+      {
+        path: "/index.html",
+        storageId,
+        contentType: "text/html",
+        deploymentId: "next",
+      },
+      {
+        path: clientBuild.markerPath,
+        storageId,
+        contentType: "application/octet-stream",
+        deploymentId: "next",
+      },
+    ];
+  });
+  await backend.mutation(anyApi["lib"]["stageAssets"], { assets });
+  await expect(
+    backend.mutation(anyApi["lib"]["publishDeployment"], {
+      currentDeploymentId: "next",
+      expectedAssetCount: 3,
+    }),
+  ).rejects.toThrow("expected 3");
+
+  const unpublished = await backend.fetch("/sites/example.com");
+  expect(await unpublished.text()).toBe("Scout app shell");
+  expect(renderer.load).not.toHaveBeenCalled();
+
+  await backend.mutation(anyApi["lib"]["publishDeployment"], {
+    currentDeploymentId: "next",
+    expectedAssetCount: assets.length,
+  });
+  const published = await backend.fetch("/sites/example.com");
+  expect(await published.text()).toBe("New rendered document");
+  expect(renderer.load).toHaveBeenCalledOnce();
+});
+
+test("does not initialize a broken renderer while its client build is missing", async () => {
+  vi.stubEnv("TANSTACK_SERVER_ENABLED", "true");
+  renderer.load.mockImplementation(() => {
+    throw new Error("Renderer cannot initialize");
+  });
+  const backend = await setup(null);
+  const response = await backend.fetch("/sites/example.com");
+  expect(await response.text()).toBe("Scout app shell");
+  expect(renderer.load).not.toHaveBeenCalled();
+});
+
+test("keeps a new deployment unavailable until its first client build publishes", async () => {
+  vi.stubEnv("TANSTACK_SERVER_ENABLED", "true");
+  const backend = await setup(null);
+  await backend.run(async (ctx) => {
+    for (const asset of await ctx.db.query("staticAssets").take(10)) {
+      await ctx.db.delete("staticAssets", asset._id);
+    }
+  });
+  const response = await backend.fetch("/");
+  expect(response.status).toBe(503);
+  expect(response.headers.get("Cache-Control")).toBe("no-store");
+  expect(renderer.load).not.toHaveBeenCalled();
+});
+
+test("reports the deployed server build without initializing the renderer", async () => {
+  renderer.load.mockImplementation(() => {
+    throw new Error("Renderer cannot initialize");
+  });
+  const backend = await setup("/__convex_build/previous");
+  const response = await backend.fetch("/__convex_build");
+  expect(response.status).toBe(200);
+  expect(response.headers.get("Cache-Control")).toBe("no-store");
+  expect(await response.json()).toEqual(clientBuild);
+  expect(renderer.load).not.toHaveBeenCalled();
 });

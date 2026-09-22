@@ -10,7 +10,6 @@ describe("deploy-cloudflare", () => {
       }),
     ).toEqual({
       buildArgs: ["run", "build:app"],
-      convexStaticHostingArgs: null,
       wranglerArgs: ["deploy", "--name", "example-app", "--dry-run"],
     });
   });
@@ -22,7 +21,6 @@ describe("deploy-cloudflare", () => {
       }),
     ).toEqual({
       buildArgs: ["run", "build:app"],
-      convexStaticHostingArgs: null,
       wranglerArgs: ["deploy", "--name", "example-app", "--dry-run=true"],
     });
   });
@@ -35,7 +33,6 @@ describe("deploy-cloudflare", () => {
       }),
     ).toEqual({
       buildArgs: ["run", "build:cloudflare"],
-      convexStaticHostingArgs: null,
       wranglerArgs: ["deploy", "--name", "example-app", "--dry-run=false"],
     });
   });
@@ -47,12 +44,11 @@ describe("deploy-cloudflare", () => {
       }),
     ).toEqual({
       buildArgs: ["run", "build:cloudflare"],
-      convexStaticHostingArgs: null,
       wranglerArgs: ["versions", "upload", "--name", "example-app"],
     });
   });
 
-  it("uploads the built production assets to Convex after a main Workers Build", () => {
+  it("deploys the already verified build to Cloudflare", () => {
     expect(
       selectCloudflareDeployPlan(["deploy"], {
         WORKERS_CI: "true",
@@ -61,14 +57,6 @@ describe("deploy-cloudflare", () => {
       }),
     ).toEqual({
       buildArgs: null,
-      convexStaticHostingArgs: [
-        "exec",
-        "static-hosting",
-        "upload",
-        "--dist",
-        "./dist/client",
-        "--prod",
-      ],
       wranglerArgs: ["deploy", "--name", "connected-worker"],
     });
   });
@@ -82,7 +70,6 @@ describe("deploy-cloudflare", () => {
       }),
     ).toEqual({
       buildArgs: null,
-      convexStaticHostingArgs: null,
       wranglerArgs: ["versions", "upload", "--name", "connected-worker"],
     });
   });
@@ -96,7 +83,6 @@ describe("deploy-cloudflare", () => {
       }),
     ).toEqual({
       buildArgs: null,
-      convexStaticHostingArgs: null,
       wranglerArgs: ["deploy", "--name", "connected-worker"],
     });
   });
@@ -110,7 +96,6 @@ describe("deploy-cloudflare", () => {
       }),
     ).toEqual({
       buildArgs: null,
-      convexStaticHostingArgs: null,
       wranglerArgs: ["deploy", "--name", "connected-worker", "--dry-run"],
     });
   });
