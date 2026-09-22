@@ -18,6 +18,7 @@ import {
   type FunctionReturnType,
 } from "convex/server";
 import { useSyncExternalStore } from "react";
+import type { UsePaginatedQueryReturnType } from "convex/react";
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
 import { api } from "../../convex/_generated/api";
 import { omitNullish } from "../../shared/omitNullish";
@@ -31,6 +32,7 @@ let queryClient: QueryClient;
 
 type Site = NonNullable<FunctionReturnType<typeof api.scout.sites.get>>;
 type Activity = FunctionReturnType<typeof api.scout.activity.list>["page"][number];
+type Sites = UsePaginatedQueryReturnType<typeof api.scout.sites.list>;
 
 const remote = vi.hoisted(() => ({
   read: vi.fn(),
@@ -42,6 +44,7 @@ const remote = vi.hoisted(() => ({
   tasks: new Map<string, Activity[]>(),
   refresh: vi.fn(),
   sites: new Map<string, Site>(),
+  sitePages: new Map<string, Sites>(),
   loadingSites: new Set<string>(),
   subscribers: new Set<() => void>(),
   revision: 0,
@@ -85,6 +88,8 @@ vi.mock("convex/react", () => ({
       return { results: remote.tasks.get(args.site ?? "") ?? [], status: "Exhausted" };
     }
     remote.paginated(args);
+    const page = remote.sitePages.get(args.site ?? "");
+    if (page) return page;
     return {
       results: [...remote.sites.values()]
         .filter(
@@ -190,6 +195,7 @@ beforeEach(() => {
   remote.signedIn = true;
   remote.revision = 0;
   remote.sites.clear();
+  remote.sitePages.clear();
   remote.tasks.clear();
   remote.loadingSites.clear();
   remote.sites.set("papergames.io", {
@@ -603,6 +609,42 @@ test("sidebar search keeps its filter and navigation mounted while the list spin
   await act(async () => pending.resolve({ page: [], isDone: true, continueCursor: "" }));
   await waitFor(() => expect(within(navigation).queryByRole("status")).toBeNull());
   expect(within(navigation).getByRole("article", { name: "papergames.io" })).toBeTruthy();
+});
+
+test("the sidebar keeps spinning through empty pages until no matches is confirmed", async () => {
+  remote.sitePages.set("missing", {
+    results: [],
+    status: "CanLoadMore",
+    isLoading: false,
+    loadMore: vi.fn(),
+  });
+  await openPage("/sites/chessmerge.com?scope=public&site=missing");
+  const navigation = await screen.findByRole("navigation", { name: "Sites" });
+  expect(within(navigation).getByRole("status", { name: "Searching sites" })).toBeTruthy();
+  expect(screen.queryByText("No sites match these filters.")).toBeNull();
+  await act(async () => {
+    remote.sitePages.set("missing", {
+      results: [],
+      status: "LoadingMore",
+      isLoading: true,
+      loadMore: vi.fn(),
+    });
+    remote.revision++;
+    for (const listener of remote.subscribers) listener();
+  });
+  expect(within(navigation).getByRole("status", { name: "Searching sites" })).toBeTruthy();
+  await act(async () => {
+    remote.sitePages.set("missing", {
+      results: [],
+      status: "Exhausted",
+      isLoading: false,
+      loadMore: vi.fn(),
+    });
+    remote.revision++;
+    for (const listener of remote.subscribers) listener();
+  });
+  expect(within(navigation).queryByRole("status")).toBeNull();
+  expect(within(navigation).getByText("No sites match these filters.")).toBeTruthy();
 });
 
 test("site sidebar filters stay editable across views and browser history", async () => {

@@ -144,7 +144,8 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
   progress feedback for user actions and background work such as starting a task or preparing a replay.
   Site searches are an explicit exception: show a centered rotating icon in the results list, both
   on the homepage and in the sites sidebar, during initial loading and filter changes. Keep the
-  search field's magnifying glass static and preserve the surrounding layout.
+  search field's magnifying glass static and preserve the surrounding layout. Keep spinning through
+  empty intermediate pages until matches arrive or the search is exhausted.
 
 - Use TanStack Router `Link` and `navigate` for internal navigation. When switching a selected
   task or site, keep its surrounding layout and navigation mounted; put pending states inside

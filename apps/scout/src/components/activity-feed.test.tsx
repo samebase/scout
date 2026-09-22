@@ -50,6 +50,7 @@ const remote = vi.hoisted(() => ({
   loadUnassigned: vi.fn<(count: number) => void>(),
   tasks: new Map<string, Tasks>(),
   sites: new Array<Sites["results"][number]>(),
+  sitePages: new Map<string, Sites>(),
   loadingSites: false,
   revision: 0,
   subscribe: (listener: () => void) => {
@@ -87,7 +88,9 @@ vi.mock("convex/react", () => ({
     const name = getFunctionName(reference);
     remote.paginated(name, args, options);
     switch (name) {
-      case "scout/sites:list":
+      case "scout/sites:list": {
+        const page = remote.sitePages.get("site" in args ? (args.site ?? "") : "");
+        if (page) return page;
         if (remote.loadingSites)
           return {
             results: [],
@@ -108,6 +111,7 @@ vi.mock("convex/react", () => ({
           isLoading: false,
           loadMore: remote.loadSites,
         };
+      }
       case "scout/activity:list": {
         if (!("site" in args) || args.site === null)
           throw new Error("Expected a site for the task query");
@@ -245,6 +249,8 @@ afterEach(() => {
   queryClients.length = 0;
   observers.length = 0;
   remote.tasks.clear();
+  remote.sitePages.clear();
+  vi.useRealTimers();
   vi.clearAllMocks();
   vi.unstubAllGlobals();
 });
@@ -390,6 +396,70 @@ test("searching shows a list spinner from typing until delayed results arrive", 
   expect(screen.getByRole("article", { name: "papergames.io" })).toBeTruthy();
   expect(screen.queryByRole("article", { name: "chessmerge.com" })).toBeNull();
 });
+
+test.each(["matches", "nothing found"])(
+  "keeps spinning across empty search pages until the response is %s",
+  async (outcome) => {
+    remote.sitePages.set("paper", {
+      results: [],
+      status: "CanLoadMore",
+      isLoading: false,
+      loadMore: remote.loadSites,
+    });
+    const { queryClient, router } = await openFeed();
+    const pending = createControlledPromise<FunctionReturnType<typeof api.scout.sites.list>>();
+    queryClient.setQueryDefaults(
+      convexQuery(api.scout.sites.list, {
+        site: "paper",
+        scope: "public",
+        paginationOpts: { numItems: 6, cursor: null },
+      }).queryKey,
+      { queryFn: () => pending },
+    );
+    await userEvent.setup().type(screen.getByRole("textbox", { name: "Filter by site" }), "paper");
+    await waitFor(() => expect(router.state.location.search.site).toBe("paper"));
+    await act(async () =>
+      pending.resolve({ page: [], isDone: false, continueCursor: "next-sites" }),
+    );
+    expect(screen.getByRole("status", { name: "Searching sites" })).toBeTruthy();
+    expect(screen.queryByText("No sites match your search.")).toBeNull();
+
+    remote.loadSites.mockImplementationOnce(() => {
+      remote.sitePages.set("paper", {
+        results: [],
+        status: "LoadingMore",
+        isLoading: true,
+        loadMore: remote.loadSites,
+      });
+      remote.revision++;
+      for (const listener of remote.listeners) listener();
+    });
+    const sentinel = observers.find((observer) => observer.targets.size > 0);
+    if (!sentinel) throw new Error("Missing search pagination sentinel");
+    await act(async () => sentinel.intersect(true));
+    expect(remote.loadSites).toHaveBeenCalledWith(6);
+    vi.useFakeTimers();
+    await act(() => vi.advanceTimersByTimeAsync(5_000));
+    expect(screen.getByRole("status", { name: "Searching sites" })).toBeTruthy();
+    expect(screen.queryByText("No sites match your search.")).toBeNull();
+    vi.useRealTimers();
+
+    await act(async () => {
+      remote.sitePages.set("paper", {
+        results: outcome === "matches" ? remote.sites.slice(1) : [],
+        status: "Exhausted",
+        isLoading: false,
+        loadMore: remote.loadSites,
+      });
+      remote.revision++;
+      for (const listener of remote.listeners) listener();
+    });
+    expect(screen.queryByRole("status", { name: "Searching sites" })).toBeNull();
+    if (outcome === "matches")
+      expect(screen.getByRole("article", { name: "papergames.io" })).toBeTruthy();
+    else expect(screen.getByText("No sites match your search.")).toBeTruthy();
+  },
+);
 
 test("keeps server-rendered cards and reviews visible until live subscriptions arrive", async () => {
   const serverCache = createQueryClient();

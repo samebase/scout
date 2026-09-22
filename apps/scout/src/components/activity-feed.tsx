@@ -108,8 +108,8 @@ function SiteGroups({ search }: { search: ReviewFeedSearch }) {
   const rows = sites.results;
   const exhausted = sites.status === "Exhausted";
   return (
-    <div className="min-h-60 space-y-5" aria-busy={sites.status === "LoadingFirstPage"}>
-      {sites.status === "LoadingFirstPage" && !rows.length && <SiteSearchLoading />}
+    <div className="min-h-60 space-y-5" aria-busy={!exhausted && !rows.length}>
+      {!exhausted && !rows.length && <SiteSearchLoading />}
       {rows.map((site) => (
         <SiteCard key={site.hostname} site={site} search={search} navigation={null} />
       ))}

@@ -182,7 +182,7 @@ function SiteNavigationResults({ search }: { search: ReviewFeedSearch }) {
   );
   return (
     <>
-      {sites.status === "LoadingFirstPage" && !sites.results.length && <SiteSearchLoading />}
+      {sites.status !== "Exhausted" && !sites.results.length && <SiteSearchLoading />}
       <ul className="space-y-3">
         {sites.results.map((site) => (
           <li key={site.hostname}>
