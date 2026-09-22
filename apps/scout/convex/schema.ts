@@ -283,6 +283,12 @@ export default defineSchema({
     .index("by_user_id_and_created_at", ["userId", "createdAt"])
     .index("by_public_site_eligible_and_created_at", ["publicSiteEligible", "createdAt"])
     .index("by_user_id_and_purpose_kind_and_created_at", ["userId", "purpose.kind", "createdAt"])
+    .index("by_purpose_kind_and_created_at", ["purpose.kind", "createdAt"])
+    .index("by_purpose_kind_and_primary_site_and_created_at", [
+      "purpose.kind",
+      "primarySite",
+      "createdAt",
+    ])
     .index("by_public_site_eligible_and_primary_site_and_created_at", [
       "publicSiteEligible",
       "primarySite",

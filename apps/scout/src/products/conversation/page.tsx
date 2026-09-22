@@ -761,12 +761,25 @@ function ConversationActions({ thread, kind }: { thread: ChatThread; kind: Produ
   }
   async function remove() {
     if (!managedId || pending.current) return;
-    if (!window.confirm("Remove this task? Its history will remain in Lab.")) return;
+    if (
+      !window.confirm(
+        admin
+          ? "Remove this task? Its history will remain in Lab."
+          : "Remove this task? You will no longer be able to access it.",
+      )
+    )
+      return;
     pending.current = true;
     setRequest({ kind: "pending" });
     try {
       await removeTask({ threadId });
-      await navigate({ to: "/lab", search: { session: managedId } });
+      if (admin) {
+        await navigate({ to: "/lab", search: { session: managedId } });
+      } else if (kind === "play") {
+        await navigate({ to: "/play", search: {} });
+      } else {
+        await navigate({ to: "/", search: { scope: "mine" } });
+      }
     } catch (error) {
       setRequest({
         kind: "failed",
@@ -819,7 +832,7 @@ function ConversationActions({ thread, kind }: { thread: ChatThread; kind: Produ
             disabled={request.kind === "pending"}
           />
         ) : null}
-        {admin && managedId && thread.purpose.kind !== "general" && (
+        {(thread.isOwner || admin) && managedId && thread.purpose.kind !== "general" && (
           <Button
             variant="ghost"
             size="icon-sm"

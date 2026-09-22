@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-21T23:09:24Z
+- **Last updated:** 2026-09-22T12:11:24Z
 
 ## Log
 
@@ -1885,9 +1885,16 @@ The homepage shows the standard Samebase attribution above its headline, visible
 A soft background fade keeps both readable over the animated terrain
 (`apps/scout/src/components/discovery-hero.tsx`).
 
-### 2026-09-21 - working tree - v301
+### 2026-09-21 - 8622ca5 - v301
 
 The product is now TrailScout, connecting its name to the orange trail across the homepage.
 Its larger wordmark stays visible on mobile, and the brand link replaces the duplicate Reviews link.
 Individual agents remain Scouts. The scarf's larger orange ring has a white center like the
 trail checkpoints (`apps/scout/src/components/app-navigation.tsx`, `apps/scout/public/scout-mark.png`).
+
+### 2026-09-22 - working tree - v302
+
+Task owners can remove their own tasks, stopping active runs and returning to their task list.
+Administrators see other accounts' private reviews in each site's task sidebar, with the same
+paginated navigation as public reviews. Removed task history remains available in Lab
+(`apps/scout/convex/scout/chats.ts`, `apps/scout/src/products/conversation/task-navigation.tsx`).

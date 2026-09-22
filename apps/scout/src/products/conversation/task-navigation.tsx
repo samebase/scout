@@ -8,6 +8,7 @@ import { api } from "../../../convex/_generated/api";
 import { LoadOnScroll } from "#components/load-on-scroll";
 import { ScoutBadge } from "#components/scout-badge";
 import { cn } from "#lib/utils";
+import { canAccess, useViewerAccess } from "#lib/access";
 import type { ReviewFeedSearch } from "#lib/reviewFeedSearch";
 
 type Activity = FunctionReturnType<typeof api.scout.activity.list>["page"][number];
@@ -26,7 +27,9 @@ export function TaskNavigation({
   selectedThreadId: string;
   view: "walkthrough" | "chat";
 }) {
-  const scope = search.scope ?? "public";
+  const viewer = useViewerAccess();
+  const admin = viewer?.kind === "account" && canAccess("access_lab", viewer.accessKeys);
+  const scope = admin ? "all" : (search.scope ?? "public");
   const tasks = useSsrPaginatedQuery(
     api.scout.activity.list,
     { site, scope },

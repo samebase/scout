@@ -280,38 +280,49 @@ export const list = publicQuery({
   access: "access_public",
   args: {
     site: v.union(v.string(), v.null()),
-    scope: v.union(v.literal("public"), v.literal("mine")),
+    scope: v.union(v.literal("public"), v.literal("mine"), v.literal("all")),
     paginationOpts: paginationOptsValidator,
   },
   returns: paginationResultValidator(activityValidator),
   handler: async (ctx, args) => {
     const site = args.site === null ? null : siteHostnameSchema.parse(args.site);
+    if (args.scope === "all") requireViewerPermission(ctx.viewer, "access_lab");
     const userId =
       args.scope === "mine" ? requireViewerPermission(ctx.viewer, "access_account").userId : null;
     const rows =
-      userId === null
+      args.scope === "all"
         ? site === null
           ? ctx.db
               .query("scoutChats")
-              .withIndex("by_public_site_eligible_and_created_at", (q) =>
-                q.eq("publicSiteEligible", true),
-              )
+              .withIndex("by_purpose_kind_and_created_at", (q) => q.eq("purpose.kind", "review"))
           : ctx.db
               .query("scoutChats")
-              .withIndex("by_public_site_eligible_and_primary_site_and_created_at", (q) =>
-                q.eq("publicSiteEligible", true).eq("primarySite", site),
+              .withIndex("by_purpose_kind_and_primary_site_and_created_at", (q) =>
+                q.eq("purpose.kind", "review").eq("primarySite", site),
               )
-        : site === null
-          ? ctx.db
-              .query("scoutChats")
-              .withIndex("by_user_id_and_purpose_kind_and_created_at", (q) =>
-                q.eq("userId", userId).eq("purpose.kind", "review"),
-              )
-          : ctx.db
-              .query("scoutChats")
-              .withIndex("by_user_id_and_purpose_kind_and_primary_site_and_created_at", (q) =>
-                q.eq("userId", userId).eq("purpose.kind", "review").eq("primarySite", site),
-              );
+        : userId === null
+          ? site === null
+            ? ctx.db
+                .query("scoutChats")
+                .withIndex("by_public_site_eligible_and_created_at", (q) =>
+                  q.eq("publicSiteEligible", true),
+                )
+            : ctx.db
+                .query("scoutChats")
+                .withIndex("by_public_site_eligible_and_primary_site_and_created_at", (q) =>
+                  q.eq("publicSiteEligible", true).eq("primarySite", site),
+                )
+          : site === null
+            ? ctx.db
+                .query("scoutChats")
+                .withIndex("by_user_id_and_purpose_kind_and_created_at", (q) =>
+                  q.eq("userId", userId).eq("purpose.kind", "review"),
+                )
+            : ctx.db
+                .query("scoutChats")
+                .withIndex("by_user_id_and_purpose_kind_and_primary_site_and_created_at", (q) =>
+                  q.eq("userId", userId).eq("purpose.kind", "review").eq("primarySite", site),
+                );
     // Bound both initial and reactive pages without discarding native cursor/split options.
     const result = await rows.order("desc").paginate({
       ...args.paginationOpts,
