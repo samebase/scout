@@ -37,8 +37,9 @@ You must be at least 18 and legally able to enter into these terms to create an 
 direct a Scout. Keep your sign-in information secure, use an email address you control, and
 tell us if you suspect unauthorized account access.
 
-Creating or verifying an account does not guarantee permission to run tasks. Some features
-require administrator approval and depend on available Scouts, usage limits, and providers.
+New accounts receive member access after email verification and acceptance of these terms.
+Running tasks depends on available Scouts, credits, usage limits, and providers. Administrative
+features remain restricted, and we may revoke account access.
 Do not transfer your account or use another person's account without authorization.
 
 ## Your instructions, authorization, and responsibility

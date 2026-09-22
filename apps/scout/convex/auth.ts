@@ -130,7 +130,7 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
       await ctx.runQuery(internal.accounts.assertActiveForAuth, { userId: args.userId });
       if (args.existingUserId === null) {
         await ctx.db.patch(args.userId, {
-          isApproved: false,
+          isApproved: true,
           state: "active",
         });
       }

@@ -94,7 +94,7 @@ Reviews are public by default, with a private option. Browse what other people a
 a Scout to try, open a review, and inspect the evidence before sending it on another
 task. Public reviews make product claims checkable.
 
-Anyone can read public reviews. Starting a task currently requires an approved account.
+Anyone can read public reviews. Create an account and verify your email to start your own tasks.
 
 ### How TrailScout is built.
 

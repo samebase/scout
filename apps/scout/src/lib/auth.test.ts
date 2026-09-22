@@ -273,11 +273,15 @@ describe("password authentication", () => {
       const user = await ctx.db.query("users").unique();
       if (!user) throw new Error("Expected signup to create a user");
       expect(user).toMatchObject({ email: MEMBER_EMAIL });
-      expectPersistedApproval(user, false);
+      expectPersistedApproval(user, true);
       expect(await ctx.db.query("authAccounts").first()).toMatchObject({
         providerAccountId: MEMBER_EMAIL,
       });
       return user._id;
+    });
+    const member = t.withIdentity({ subject: `${userId}|session` });
+    await expect(member.query(api.accounts.currentViewerAccess, {})).resolves.toEqual({
+      kind: "unavailable",
     });
 
     const verified = await t.action(api.auth.signIn, {
@@ -294,19 +298,24 @@ describe("password authentication", () => {
       expect(await ctx.db.query("authSessions").collect()).toHaveLength(1);
       const user = await ctx.db.get(userId);
       if (!user) throw new Error("Expected verified user");
-      expectPersistedApproval(user, false);
+      expectPersistedApproval(user, true);
       expect(await ctx.db.query("authAccounts").first()).toMatchObject({
         emailVerified: MEMBER_EMAIL,
       });
     });
-    const pending = t.withIdentity({ subject: `${userId}|session` });
-    await expect(pending.query(api.accounts.currentViewerAccess, {})).resolves.toEqual({
+    await expect(member.query(api.accounts.currentViewerAccess, {})).resolves.toEqual({
       kind: "account",
       email: MEMBER_EMAIL,
       userId,
-      role: "role_pending_access",
-      isApproved: false,
-      accessKeys: ["access_public", "access_account"],
+      role: "role_member",
+      isApproved: true,
+      accessKeys: [
+        "access_public",
+        "access_account",
+        "access_play",
+        "access_review",
+        "access_scout_view",
+      ],
     });
   });
 
@@ -435,7 +444,7 @@ describe("password authentication", () => {
       expect(await ctx.db.query("users").collect()).toHaveLength(1);
       const user = await ctx.db.query("users").unique();
       if (!user) throw new Error("Expected interrupted signup to preserve its user");
-      expectPersistedApproval(user, false);
+      expectPersistedApproval(user, true);
     });
   });
 
@@ -621,7 +630,7 @@ describe("password authentication", () => {
     }
   });
 
-  it("allows public signup but ignores attempts to approve or promote the account", async () => {
+  it("approves public signup as a member and ignores client-supplied access fields", async () => {
     const t = convexTest(schema, modules);
     const email = "new-member@example.test";
     const signUp = await captureAuthCode(() =>
@@ -632,8 +641,8 @@ describe("password authentication", () => {
           password: "secure-password",
           flow: "signUp",
           termsAccepted: "true",
-          isApproved: true,
-          role: "role_admin",
+          isApproved: false,
+          role: "role_staff",
         },
       }),
     );
@@ -644,26 +653,32 @@ describe("password authentication", () => {
         email,
         code: signUp.code,
         flow: "email-verification",
-        isApproved: true,
-        role: "role_admin",
+        isApproved: false,
+        role: "role_staff",
       },
     });
     expect(verified.tokens).not.toBeNull();
     const user = await t.run((ctx) => ctx.db.query("users").unique());
     if (!user) throw new Error("Expected signup to create a user");
-    expectPersistedApproval(user, false);
-    const pending = t.withIdentity({ subject: `${user._id}|session` });
-    expect(await pending.query(api.accounts.currentViewerAccess, {})).toEqual({
+    expectPersistedApproval(user, true);
+    const member = t.withIdentity({ subject: `${user._id}|session` });
+    expect(await member.query(api.accounts.currentViewerAccess, {})).toEqual({
       kind: "account",
       email,
       userId: user._id,
-      role: "role_pending_access",
-      isApproved: false,
-      accessKeys: ["access_public", "access_account"],
+      role: "role_member",
+      isApproved: true,
+      accessKeys: [
+        "access_public",
+        "access_account",
+        "access_play",
+        "access_review",
+        "access_scout_view",
+      ],
     });
-    await expect(pending.query(api.scout.scouts.list, {})).resolves.toEqual([]);
+    await expect(member.query(api.scout.scouts.list, {})).resolves.toEqual([]);
     await expect(
-      pending.mutation(api.accounts.setApproval, {
+      member.mutation(api.accounts.setApproval, {
         userId: user._id,
         isApproved: true,
       }),
@@ -677,7 +692,7 @@ describe("password authentication", () => {
       await createVerifiedUser(t, email, "secure-password");
       const user = await t.run((ctx) => ctx.db.query("users").unique());
       if (!user) throw new Error("Expected staff signup to create a user");
-      expectPersistedApproval(user, false);
+      expectPersistedApproval(user, true);
       const staff = t.withIdentity({ subject: `${user._id}|session` });
       const staffAccess = {
         kind: "account" as const,
@@ -697,17 +712,17 @@ describe("password authentication", () => {
       };
       await expect(staff.query(api.accounts.currentViewerAccess, {})).resolves.toEqual({
         ...staffAccess,
-        isApproved: false,
-      });
-
-      await staff.mutation(api.accounts.setApproval, { userId: user._id, isApproved: true });
-      await expect(staff.query(api.accounts.currentViewerAccess, {})).resolves.toEqual({
-        ...staffAccess,
         isApproved: true,
       });
-      const approved = await t.run((ctx) => ctx.db.get(user._id));
-      if (!approved) throw new Error("Expected staff user");
-      expectPersistedApproval(approved, true);
+
+      await staff.mutation(api.accounts.setApproval, { userId: user._id, isApproved: false });
+      await expect(staff.query(api.accounts.currentViewerAccess, {})).resolves.toEqual({
+        ...staffAccess,
+        isApproved: false,
+      });
+      const revoked = await t.run((ctx) => ctx.db.get(user._id));
+      if (!revoked) throw new Error("Expected staff user");
+      expectPersistedApproval(revoked, false);
     },
   );
 

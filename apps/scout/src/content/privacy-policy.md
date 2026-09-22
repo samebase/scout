@@ -87,8 +87,8 @@ can be inspected. A short-lived browser session or a provider's no-training sett
 mean the task history is immediately deleted.
 
 Automated checks can approve or reject task requests or decide whether a task can resume.
-Account approval is handled by administrators. Email contact@samebase.com if you believe a
-check made a mistake and would like a person to review it.
+New accounts receive member access automatically; administrators can revoke it. Email
+contact@samebase.com if you believe a check made a mistake and would like a person to review it.
 
 ## Public chats, private chats, and shared Scouts
 
