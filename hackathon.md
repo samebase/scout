@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-22T13:40:00Z
+- **Last updated:** 2026-09-22T16:06:48Z
 
 ## Log
 
@@ -1907,8 +1907,14 @@ names before paginating matches, preserving visibility rules and live page bound
 field keeps its magnifying glass, and filters stay available while results load
 (`apps/scout/convex/scout/sites.ts`, `apps/scout/src/components/site-search-results.tsx`).
 
-### 2026-09-22 - working tree - v304
+### 2026-09-22 - 2a6a182 - v304
 
 New accounts can start tasks after email verification and terms acceptance without waiting
 for manual approval. Admin revocation, credit limits, and restricted Lab access still apply
 (`apps/scout/convex/auth.ts`).
+
+### 2026-09-22 - working tree - v306
+
+Prepared the three-minute demo around one Samebase signup and app deployment, ending with
+TrailScout reviewing itself. Speaker notes and recording directions keep scout selection,
+human handoff, and the admin-only workspace in the walkthrough (`video_plan.md`).
