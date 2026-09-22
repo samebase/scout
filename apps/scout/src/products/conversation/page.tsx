@@ -83,6 +83,10 @@ const reviewExamples = [
     prompt:
       "Review this hackathon submission. Try its main feature, check the claims on its homepage, and show what works, what fails, and what you couldn't test.",
   },
+  {
+    label: "Show me how it works",
+    prompt: "Try this website's main feature and show me what it does and how to use it.",
+  },
 ];
 
 export function ConversationError() {
