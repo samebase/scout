@@ -692,7 +692,9 @@ test("site sidebar filters stay editable across views and browser history", asyn
   await user.type(filter, "Paper");
   await waitFor(() => expect(router.state.location.search.site).toBe("paper"));
   expect(screen.queryByRole("alert")).toBeNull();
-  expect(remote.paginated).toHaveBeenLastCalledWith({ scope: "public", site: "paper" });
+  await waitFor(() =>
+    expect(remote.paginated).toHaveBeenLastCalledWith({ scope: "public", site: "paper" }),
+  );
   act(() => router.history.back());
   await waitFor(() => expect(filter).toHaveProperty("value", ""));
   act(() => router.history.forward());

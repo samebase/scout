@@ -117,6 +117,10 @@ export default defineSchema({
     .index("by_product_and_environment", ["terms.productId", "terms.environment"])
     .index("by_user_id", ["userId"])
     .index("by_order_id", ["orderId"]),
+  taskEngineSettings: defineTable({
+    key: v.literal("global"),
+    agentsApiEnabled: v.boolean(),
+  }).index("by_key", ["key"]),
   taskConvexContexts: defineTable(convexContextRecord).index("by_session_id", ["sessionId"]),
   agentsApiSiteResearch: defineTable(siteResearchRecord).index("by_session_id", ["sessionId"]),
   agentsApiScreenshots: defineTable(screenshotRecord)

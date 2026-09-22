@@ -12,6 +12,20 @@ export const taskSelection = v.union(
 );
 export type TaskSelection = Infer<typeof taskSelection>;
 
+export const defaultTaskSelection = {
+  engine: "convex_agent",
+  model: "gpt-5.6-luna",
+} satisfies TaskSelection;
+
+export function taskEngineDisabledReason(
+  engine: Infer<typeof taskEngine>,
+  agentsApiEnabled: boolean,
+): string | null {
+  return engine === "agents_api" && !agentsApiEnabled
+    ? "The Agents API is temporarily disabled. Start a new task with Luna - Convex."
+    : null;
+}
+
 export const taskModelOptions = [
   {
     value: "agents_api",

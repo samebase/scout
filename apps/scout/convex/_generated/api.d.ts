@@ -115,6 +115,7 @@ import type * as tasks_convexAgentModel from "../tasks/convexAgentModel.js";
 import type * as tasks_convexAgentRecords from "../tasks/convexAgentRecords.js";
 import type * as tasks_cost from "../tasks/cost.js";
 import type * as tasks_creditUsage from "../tasks/creditUsage.js";
+import type * as tasks_engineSettings from "../tasks/engineSettings.js";
 import type * as tasks_events from "../tasks/events.js";
 import type * as tasks_execution from "../tasks/execution.js";
 import type * as tasks_failure from "../tasks/failure.js";
@@ -265,6 +266,7 @@ declare const fullApi: ApiFromModules<{
   "tasks/convexAgentRecords": typeof tasks_convexAgentRecords;
   "tasks/cost": typeof tasks_cost;
   "tasks/creditUsage": typeof tasks_creditUsage;
+  "tasks/engineSettings": typeof tasks_engineSettings;
   "tasks/events": typeof tasks_events;
   "tasks/execution": typeof tasks_execution;
   "tasks/failure": typeof tasks_failure;

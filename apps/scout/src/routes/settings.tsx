@@ -1,6 +1,8 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import { Link, Navigate, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Authenticated, Unauthenticated } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
+import { ConvexError } from "convex/values";
 import { LogOutIcon, ShieldCheckIcon } from "lucide-react";
 import { useState } from "react";
 import { z } from "zod";
@@ -10,6 +12,7 @@ import { Button } from "#components/ui/button";
 import { accountAccessMessage, useViewerAccess } from "#lib/access";
 import { SessionRecordingSettings } from "../components/session-recording-settings";
 import { resetAnalytics } from "../lib/posthog";
+import { api } from "../../convex/_generated/api";
 
 export const Route = createFileRoute("/settings")({
   ssr: false,
@@ -39,6 +42,7 @@ function SettingsPage() {
       </Unauthenticated>
       <Authenticated>
         <SessionSettings />
+        <AgentsApiSettings />
         <SessionRecordingSettings />
         <AccountStatus />
         <CreditsPanel purchaseId={purchase} />
@@ -59,6 +63,61 @@ function SettingsPage() {
         <LegalLinks />
       </footer>
     </main>
+  );
+}
+
+function AgentsApiSettings() {
+  const viewer = useViewerAccess();
+  const enabled = useQuery(
+    api.tasks.engineSettings.get,
+    viewer?.kind === "account" && viewer.role === "role_staff" ? {} : "skip",
+  );
+  const save = useMutation(api.tasks.engineSettings.set);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+
+  if (viewer?.kind !== "account" || viewer.role !== "role_staff") return null;
+
+  async function change(checked: boolean) {
+    setPending(true);
+    setError("");
+    try {
+      await save({ enabled: checked });
+    } catch (caught) {
+      setError(
+        caught instanceof ConvexError && typeof caught.data === "string"
+          ? caught.data
+          : caught instanceof Error
+            ? caught.message
+            : "Could not update Agents API availability.",
+      );
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <section className="surface-panel mt-8 p-5 sm:p-6" aria-busy={enabled === undefined || pending}>
+      <h2 className="text-base font-semibold">Task engines</h2>
+      <label className="mt-4 flex items-start gap-3 text-sm leading-6">
+        <input
+          type="checkbox"
+          className="mt-1 size-4 shrink-0 accent-primary"
+          checked={enabled ?? false}
+          disabled={enabled === undefined || pending}
+          onChange={(event) => void change(event.currentTarget.checked)}
+        />
+        <span>Allow new tasks with Luna - Agents API</span>
+      </label>
+      <p className="mt-2 text-sm text-muted-foreground">
+        Turning this off leaves existing Agents API tasks running.
+      </p>
+      {error && (
+        <p role="alert" className="mt-3 text-sm text-destructive">
+          {error}
+        </p>
+      )}
+    </section>
   );
 }
 

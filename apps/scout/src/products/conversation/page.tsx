@@ -31,7 +31,12 @@ import {
 import { type FormEvent, Suspense, useDeferredValue, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import { omitNullish } from "../../../shared/omitNullish";
-import { taskModelOptions, type TaskSelection } from "../../../shared/taskModels";
+import {
+  defaultTaskSelection,
+  taskEngineDisabledReason,
+  taskModelOptions,
+  type TaskSelection,
+} from "../../../shared/taskModels";
 import {
   HANDOFF_DECLINED_REASON,
   HANDOFF_EXPIRED_REASON,
@@ -153,6 +158,7 @@ export function ConversationLobby({
   const { isAuthenticated, isLoading } = useConvexAuth();
   const scouts = useQuery(api.scout.activity.players);
   const savedPreferences = useQuery(api.accounts.taskPreferences, canRun ? {} : "skip");
+  const agentsApiAvailable = useQuery(api.tasks.engineSettings.get, {}) === true;
   const savePreferences = useMutation(api.accounts.setTaskPreferences).withOptimisticUpdate(
     (store, patch) => {
       const saved = store.getQuery(api.accounts.taskPreferences, {});
@@ -168,11 +174,12 @@ export function ConversationLobby({
     FunctionReturnType<typeof api.accounts.taskPreferences>
   >({});
   const preferences = canRun ? savedPreferences : guestPreferences;
-  const engine = preferences?.lastTaskEngine ?? "convex_agent";
   const selection: TaskSelection =
-    engine === "agents_api"
-      ? { engine, model: "gpt-5.6-luna" }
-      : { engine, model: preferences?.lastConvexModel ?? "gpt-5.6-luna" };
+    preferences?.lastTaskEngine === "agents_api" && agentsApiAvailable
+      ? { engine: "agents_api", model: "gpt-5.6-luna" }
+      : preferences?.lastTaskEngine === "convex_agent"
+        ? { engine: "convex_agent", model: preferences.lastConvexModel ?? "gpt-5.6-luna" }
+        : defaultTaskSelection;
   const [signingIn, setSigningIn] = useState(false);
   const [request, setRequest] = useState<RequestState>({ kind: "idle" });
   const [visibility, setVisibility] = useState<ChatThread["visibility"]>(
@@ -375,7 +382,10 @@ export function ConversationLobby({
                   disabled={request.kind === "pending" || loadingScouts}
                   onValueChange={(value) => {
                     const option = taskModelOptions.find((option) => option.value === value);
-                    if (option)
+                    if (
+                      option &&
+                      !taskEngineDisabledReason(option.selection.engine, agentsApiAvailable)
+                    )
                       void updatePreferences({
                         lastTaskEngine: option.selection.engine,
                         ...omitNullish({
@@ -394,11 +404,21 @@ export function ConversationLobby({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent position="popper">
-                    {taskModelOptions.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
+                    {taskModelOptions.map((option) => {
+                      const disabled =
+                        taskEngineDisabledReason(option.selection.engine, agentsApiAvailable) !==
+                        null;
+                      return (
+                        <SelectItem key={option.value} value={option.value} disabled={disabled}>
+                          <span>
+                            {option.label}
+                            {disabled && (
+                              <span className="block text-xs">Temporarily disabled</span>
+                            )}
+                          </span>
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
                 <Select

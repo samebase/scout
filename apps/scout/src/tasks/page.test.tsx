@@ -160,6 +160,7 @@ beforeEach(() => {
   window.localStorage.clear();
   vi.spyOn(window, "innerWidth", "get").mockReturnValue(1440);
   remote.queries.clear();
+  remote.queries.set("tasks/engineSettings:get", true);
   remote.revision = 0;
   remote.queryCalls.mockReset();
   remote.start.mockReset().mockResolvedValue("session-1");
@@ -1094,6 +1095,15 @@ test.each([
   expect(await screen.findByText(`Pip · ${label}`)).toBeTruthy();
   expect(router.state.location.pathname).toBe("/lab");
   expect(router.state.location.search).toEqual({ session: "session-1" });
+});
+
+test("Lab pauses new Agents API selections while keeping Convex available", async () => {
+  remote.queries.set("tasks/engineSettings:get", false);
+  await open("/lab?scout=scout-1");
+  expect(
+    screen.getByRole("option", { name: "Luna - Agents API (temporarily disabled)" }),
+  ).toHaveProperty("disabled", true);
+  expect(screen.getByRole("combobox", { name: "Model" })).toHaveProperty("value", "convex_agent");
 });
 
 test("Convex Agent tasks use shared chat readiness and controls", async () => {

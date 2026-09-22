@@ -195,6 +195,7 @@ beforeEach(() => {
   remote.revision = 0;
   remote.queries.clear();
   remote.queries.set("accounts:taskPreferences", {});
+  remote.queries.set("tasks/engineSettings:get", true);
   remote.savePreferences.mockReset().mockImplementation(async (patch) => {
     const current = remote.queries.get("accounts:taskPreferences");
     remote.queries.set("accounts:taskPreferences", {
@@ -552,6 +553,21 @@ test("the composer restores saved choices and saves picker changes before any ta
   expect(screen.getByRole("combobox", { name: "Task model" }).textContent).toContain(
     "Luna - Agents API",
   );
+});
+
+test("the composer falls back to Convex when the saved Agents API choice is paused", async () => {
+  remote.queries.set("tasks/engineSettings:get", false);
+  remote.queries.set("accounts:taskPreferences", { lastTaskEngine: "agents_api" });
+  await openPlay();
+  expect(screen.getByRole("combobox", { name: "Task model" }).textContent).toContain(
+    "Luna - Convex",
+  );
+  await userEvent.setup().click(screen.getByRole("combobox", { name: "Task model" }));
+  expect(
+    screen
+      .getByRole("option", { name: /Luna - Agents API.*Temporarily disabled/ })
+      .getAttribute("aria-disabled"),
+  ).toBe("true");
 });
 
 test.each([

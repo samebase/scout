@@ -51,7 +51,12 @@ import { SessionCost } from "#components/session-cost";
 import { ScoutWorkspace } from "#components/scout-workspace";
 import { TaskWalkthrough } from "#components/task-walkthrough";
 import type { WorkspaceTarget } from "../../convex/workspaceModel";
-import { taskModelOptions, type TaskSelection } from "../../shared/taskModels";
+import {
+  defaultTaskSelection,
+  taskEngineDisabledReason,
+  taskModelOptions,
+  type TaskSelection,
+} from "../../shared/taskModels";
 
 const runtimeLabels: Record<Session["engine"], string> = {
   agents_api: "Agents API",
@@ -479,12 +484,12 @@ function LabChrome({ session, search }: { session: Session | null; search: LabSe
 function NewSession({ initialScoutId }: { initialScoutId: string }) {
   const scouts = useQuery(api.scout.scouts.list, {});
   const start = useMutation(api.tasks.sessions.start);
+  const agentsApiAvailable = useQuery(api.tasks.engineSettings.get, {}) === true;
   const navigate = useNavigate({ from: "/lab" });
   const [scoutId, setScoutId] = useState(initialScoutId);
-  const [selection, setSelection] = useState<TaskSelection>({
-    engine: "convex_agent",
-    model: "gpt-5.6-luna",
-  });
+  const [selection, setSelection] = useState<TaskSelection>(defaultTaskSelection);
+  const availableSelection =
+    selection.engine === "agents_api" && !agentsApiAvailable ? defaultTaskSelection : selection;
   const [prompt, setPrompt] = useState("");
   const [request, setRequest] = useState<RequestState>({ kind: "idle" });
   const submitting = useRef(false);
@@ -515,7 +520,7 @@ function NewSession({ initialScoutId }: { initialScoutId: string }) {
       const sessionId = await start({
         scoutId: selectedScout._id,
         prompt: prompt.trim(),
-        selection,
+        selection: availableSelection,
       });
       await navigate({ search: { session: sessionId } });
     } catch (error) {
@@ -575,22 +580,32 @@ function NewSession({ initialScoutId }: { initialScoutId: string }) {
           <select
             id="task-runtime"
             aria-describedby="task-runtime-description"
-            value={selection.model === "gpt-5.6-luna" ? selection.engine : selection.model}
+            value={
+              availableSelection.model === "gpt-5.6-luna"
+                ? availableSelection.engine
+                : availableSelection.model
+            }
             disabled={request.kind === "pending"}
             onChange={(event) => {
               const option = taskModelOptions.find((option) => option.value === event.target.value);
-              if (option) setSelection(option.selection);
+              if (option && !taskEngineDisabledReason(option.selection.engine, agentsApiAvailable))
+                setSelection(option.selection);
             }}
             className="block h-11 w-full rounded-lg border border-input bg-card px-3 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/25 disabled:opacity-50"
           >
-            {taskModelOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
+            {taskModelOptions.map((option) => {
+              const disabled =
+                taskEngineDisabledReason(option.selection.engine, agentsApiAvailable) !== null;
+              return (
+                <option key={option.value} value={option.value} disabled={disabled}>
+                  {option.label}
+                  {disabled ? " (temporarily disabled)" : ""}
+                </option>
+              );
+            })}
           </select>
           <p id="task-runtime-description" className="text-xs text-muted-foreground">
-            {selection.engine === "agents_api"
+            {availableSelection.engine === "agents_api"
               ? "OpenAI manages conversation context and includes native web search."
               : "Scout manages conversation summaries and keeps only the latest browser snapshot. Native web search is unavailable."}
           </p>
