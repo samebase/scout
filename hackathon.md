@@ -15,7 +15,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-22T22:40:00Z
+- **Last updated:** 2026-09-22T23:34:20Z
 
 ## Log
 
@@ -1959,9 +1959,16 @@ user-facing picker, with matching wording in Lab and task-start errors.
 Kept the animated homepage trail and its checkpoint drag targets inside the terrain
 backdrop so they cannot widen the page on mobile or desktop (`apps/scout/src/style.css`).
 
-### 2026-09-22 - working tree - v313
+### 2026-09-22 - 4bd5525 - v313
 
 Wait for site research before starting the review, allowing up to six minutes.
 Check completed Firecrawl results before applying the deadline, and let admin
 refresh recover a finished result without starting another research job
 (`apps/scout/convex/tasks/siteResearch.ts`).
+
+### 2026-09-22 - working tree - v314
+
+Show “Preparing a site brief” and elapsed time in task chat while Scout gathers
+background information, explaining the wait before browser review starts.
+Use the existing research state so the timer survives refresh and disappears when
+preparation finishes or the task stops (`apps/scout/src/products/conversation/page.tsx`).

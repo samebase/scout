@@ -28,7 +28,7 @@ import {
   Trash2Icon,
   XIcon,
 } from "lucide-react";
-import { type FormEvent, Suspense, useDeferredValue, useRef, useState } from "react";
+import { type FormEvent, Suspense, useDeferredValue, useEffect, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import { omitNullish } from "../../../shared/omitNullish";
 import {
@@ -1390,6 +1390,39 @@ function ConversationSession({
   );
 }
 
+function SitePreparationStatus({ startedAt }: { startedAt: number }) {
+  const [now, setNow] = useState<number | null>(null);
+  useEffect(() => {
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const seconds = now === null ? null : Math.max(0, Math.floor((now - startedAt) / 1000));
+
+  return (
+    <div className="text-sm text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <p role="status" className="flex items-center gap-2.5">
+          <LoaderCircleIcon size={15} className="motion-safe:animate-spin" aria-hidden="true" />
+          Preparing a site brief
+        </p>
+        <time
+          role="timer"
+          aria-label="Site preparation elapsed time"
+          aria-live="off"
+          dateTime={seconds === null ? undefined : `PT${seconds}S`}
+          className="min-w-[12ch] text-xs tabular-nums"
+        >
+          {seconds === null
+            ? ""
+            : `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")} elapsed`}
+        </time>
+      </div>
+      <p className="mt-1 text-xs">This can take up to 6 minutes before browser review starts.</p>
+    </div>
+  );
+}
+
 function ConversationTranscript({ thread, checking }: { thread: ChatThread; checking: boolean }) {
   const messages = useSsrPaginatedQuery(
     api.scout.activity.messages,
@@ -1468,12 +1501,19 @@ function ConversationTranscript({ thread, checking }: { thread: ChatThread; chec
                 </p>
               </MessageScrollerItem>
             )}
-            {thread.status === "running" && !checking && (
-              <p role="status" className="flex items-center gap-2.5 text-sm text-muted-foreground">
-                <LoaderCircleIcon size={15} className="animate-spin" aria-hidden="true" />
-                {phaseLabel ?? <span className="sr-only">Scout is working</span>}
-              </p>
-            )}
+            {thread.status === "running" &&
+              !checking &&
+              (thread.sitePreparation ? (
+                <SitePreparationStatus startedAt={thread.sitePreparation.startedAt} />
+              ) : (
+                <p
+                  role="status"
+                  className="flex items-center gap-2.5 text-sm text-muted-foreground"
+                >
+                  <LoaderCircleIcon size={15} className="animate-spin" aria-hidden="true" />
+                  {phaseLabel ?? <span className="sr-only">Scout is working</span>}
+                </p>
+              ))}
           </MessageScrollerContent>
         </MessageScrollerViewport>
         <MessageScrollerButton className="size-11" />

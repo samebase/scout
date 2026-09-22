@@ -9,6 +9,7 @@ import schema from "./schema";
 import { ADMIN_EMAIL, insertTestAccount } from "./testing/accounts";
 import { omitNullish } from "../shared/omitNullish";
 import { syncChatSite } from "./scout/siteListings";
+import { getResearch } from "./tasks/siteResearchRecords";
 
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => {
@@ -152,6 +153,22 @@ async function setup() {
       return { sessionId, chatId, checkId };
     });
   }
+  async function preparingReview() {
+    const review = await managedReview("example.com");
+    await backend.run((ctx) =>
+      ctx.db.patch(review.sessionId, { state: { kind: "starting" }, active: true }),
+    );
+    await backend.mutation(internal.tasks.siteResearchRecords.start, {
+      sessionId: review.sessionId,
+      site: "example.com",
+    });
+    const research = await backend.run((ctx) => getResearch(ctx, review.sessionId));
+    if (research?.state.kind !== "waiting") throw new Error("Expected waiting research");
+    const sharedId = research.state.researchId;
+    const shared = await backend.run((ctx) => ctx.db.get(sharedId));
+    if (!shared) throw new Error("Expected shared research");
+    return { ...review, research, shared };
+  }
   return {
     backend,
     member,
@@ -163,8 +180,119 @@ async function setup() {
     chat,
     review,
     managedReview,
+    preparingReview,
   };
 }
+
+test("running site preparation exposes only its timestamp in task details, never feeds", async () => {
+  const t = await setup();
+  const { sessionId, research } = await t.preparingReview();
+  await t.backend.run((ctx) =>
+    ctx.db.patch(research._id, {
+      state: { kind: "running" },
+      jobId: "private-provider-job",
+      requestPath: "/private/request.json",
+      responsePath: "/private/response.json",
+      credits: 12,
+    }),
+  );
+  const detail = await t.member.query(api.scout.activity.get, { threadId: sessionId });
+  expect(detail?.sitePreparation).toEqual({ startedAt: research._creationTime });
+  const feed = await t.member.query(api.scout.activity.list, {
+    site: null,
+    scope: "mine",
+    paginationOpts: { cursor: null, numItems: 20 },
+  });
+  expect(feed.page).toHaveLength(1);
+  expect(feed.page[0]).not.toHaveProperty("sitePreparation");
+  await t.backend.run((ctx) => ctx.db.delete(research._id));
+  expect(
+    (await t.member.query(api.scout.activity.get, { threadId: sessionId }))?.sitePreparation,
+  ).toBeNull();
+});
+
+test("shared site preparation uses the job's start time and keeps task access rules", async () => {
+  const t = await setup();
+  const first = await t.preparingReview();
+  vi.setSystemTime(Date.now() + 60_000);
+  const waiting = await t.preparingReview();
+  expect(waiting.shared._id).toBe(first.shared._id);
+  expect(waiting.research._creationTime).toBeGreaterThan(first.shared._creationTime);
+  for (const reader of [t.backend, t.other]) {
+    expect(
+      (await reader.query(api.scout.activity.get, { threadId: waiting.sessionId }))
+        ?.sitePreparation,
+    ).toEqual({ startedAt: first.shared._creationTime });
+  }
+  await t.backend.run((ctx) => ctx.db.patch(waiting.chatId, { visibility: "private" }));
+  for (const reader of [t.backend, t.other]) {
+    expect(await reader.query(api.scout.activity.get, { threadId: waiting.sessionId })).toBeNull();
+  }
+  const admin = t.backend.withIdentity({ subject: `${t.adminId}|session` });
+  for (const reader of [t.member, admin]) {
+    expect(
+      (await reader.query(api.scout.activity.get, { threadId: waiting.sessionId }))
+        ?.sitePreparation,
+    ).toEqual({ startedAt: first.shared._creationTime });
+  }
+  await t.backend.run((ctx) => ctx.db.delete(first.shared._id));
+  expect(
+    (await t.member.query(api.scout.activity.get, { threadId: waiting.sessionId }))
+      ?.sitePreparation,
+  ).toBeNull();
+});
+
+test.each([
+  { kind: "completed", finishedAt: 1, brief: "private brief", briefPath: "/private/brief.md" },
+  { kind: "failed", finishedAt: 1, error: "private provider error" },
+  { kind: "cancelled", finishedAt: 1 },
+  { kind: "skipped", finishedAt: 1, reason: "private reason" },
+] satisfies Doc<"agentsApiSiteResearch">["state"][])(
+  "$kind research suppresses preparation even before its waiting task catches up",
+  async (state) => {
+    const t = await setup();
+    const { sessionId, research, shared } = await t.preparingReview();
+    await t.backend.run((ctx) => ctx.db.patch(shared._id, { state }));
+    expect(
+      (await t.member.query(api.scout.activity.get, { threadId: sessionId }))?.sitePreparation,
+    ).toBeNull();
+    await t.backend.run(async (ctx) => {
+      await ctx.db.patch(shared._id, { state: { kind: "running" } });
+      await ctx.db.patch(research._id, { state });
+    });
+    expect(
+      (await t.member.query(api.scout.activity.get, { threadId: sessionId }))?.sitePreparation,
+    ).toBeNull();
+  },
+);
+
+test("site preparation requires an active review that is still starting", async () => {
+  const t = await setup();
+  const { sessionId, chatId, checkId } = await t.preparingReview();
+  for (const patch of [
+    { state: { kind: "starting" }, active: false },
+    { state: { kind: "running" }, active: true },
+    { state: { kind: "checking", checkId }, active: true },
+    { state: { kind: "waiting", callId: "call", turnId: "turn", message: "Help" }, active: true },
+    { state: { kind: "idle" }, active: false },
+    { state: { kind: "stopped" }, active: true },
+    { state: { kind: "stopped" }, active: false },
+    { state: { kind: "failed", error: "private failure" }, active: true },
+  ] satisfies Pick<Doc<"agentsApiSessions">, "state" | "active">[]) {
+    await t.backend.run((ctx) => ctx.db.patch(sessionId, patch));
+    expect(
+      (await t.member.query(api.scout.activity.get, { threadId: sessionId }))?.sitePreparation,
+      `${patch.state.kind}, active: ${patch.active}`,
+    ).toBeNull();
+  }
+  await t.backend.run(async (ctx) => {
+    await ctx.db.patch(sessionId, { state: { kind: "starting" }, active: true });
+    await ctx.db.patch(chatId, { purpose: { kind: "play", step: null } });
+  });
+  expect(
+    (await t.member.query(api.scout.activity.get, { threadId: sessionId }))?.sitePreparation,
+  ).toBeNull();
+});
 
 test("one feed supports site groups, the first three reviews, and paginated inline history", async () => {
   const t = await setup();

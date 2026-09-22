@@ -178,6 +178,7 @@ function session(overrides = {}) {
     sessions: [],
     runtime: { kind: "task", sessionId: "managed-1" },
     latestSession: null,
+    sitePreparation: null,
     ...overrides,
   };
 }
@@ -256,6 +257,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   for (const client of queryClients) client.clear();
   queryClients.clear();
   remote.subscribers.clear();
@@ -362,6 +364,47 @@ async function openPlay(path = "/play") {
   });
   return router;
 }
+
+test("site preparation shows persisted elapsed time and yields to browser work or stopping", async () => {
+  vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+  vi.setSystemTime(1_000_000);
+  const preparing = session({
+    purpose: { kind: "review" },
+    status: "running",
+    sitePreparation: { startedAt: 916_000 },
+  });
+  remote.queries.set("scout/activity:get", preparing);
+  remote.queries.set("tasks/sessions:controls", {
+    state: { kind: "starting" },
+    pendingMessage: null,
+    active: true,
+    canRetryMessage: false,
+    resumeAttempts: [],
+    canSend: false,
+    canStop: true,
+    busy: true,
+  });
+  await openPlay("/tasks/game-thread?view=chat");
+  const timer = screen.getByRole("timer", { name: "Site preparation elapsed time" });
+  expect(timer.textContent).toBe("1:24 elapsed");
+  expect(timer.getAttribute("aria-live")).toBe("off");
+  await act(async () => vi.advanceTimersByTime(1000));
+  expect(timer.textContent).toBe("1:25 elapsed");
+  fireEvent.click(screen.getByRole("button", { name: "Stop Scout" }));
+  await waitFor(() => expect(remote.stopManaged).toHaveBeenCalledWith({ sessionId: "managed-1" }));
+
+  for (const updated of [
+    { ...preparing, sitePreparation: null },
+    { ...preparing, status: "stopped" },
+  ]) {
+    await act(async () => {
+      remote.queries.set("scout/activity:get", updated);
+      remote.revision += 1;
+      remote.subscribers.forEach((notify) => notify());
+    });
+    expect(screen.queryByRole("timer")).toBeNull();
+  }
+});
 
 test("admins can moderate another user's task without execution controls", async () => {
   remote.queries.set(
