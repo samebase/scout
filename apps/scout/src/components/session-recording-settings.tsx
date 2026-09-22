@@ -4,7 +4,6 @@ import { ConvexError } from "convex/values";
 import { api } from "../../convex/_generated/api";
 import {
   SESSION_RECORDING_CONSENT_VERSION,
-  SESSION_RECORDING_DESCRIPTION,
   SESSION_RECORDING_LABEL,
 } from "../../shared/sessionRecording";
 import { resumeRecordingAfterConsent, stopRecordingImmediately } from "../lib/posthog";
@@ -51,13 +50,9 @@ export function SessionRecordingSettings() {
           checked={enabled}
           disabled={!preferences || pending}
           onChange={(event) => void change(event.currentTarget.checked)}
-          aria-describedby="session-recording-description"
         />
         <span>{SESSION_RECORDING_LABEL}</span>
       </label>
-      <p id="session-recording-description" className="mt-2 text-sm text-muted-foreground">
-        {SESSION_RECORDING_DESCRIPTION}
-      </p>
       {error && (
         <p role="alert" className="mt-3 text-sm text-destructive">
           {error}
