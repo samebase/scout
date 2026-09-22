@@ -6,6 +6,7 @@ import {
   Outlet,
   RouterProvider,
   createMemoryHistory,
+  createControlledPromise,
   createRootRoute,
   createRoute,
   createRouter,
@@ -22,6 +23,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
 import { api } from "../../convex/_generated/api";
 import { reviewFeedSearch } from "../lib/reviewFeedSearch";
 import { ActivityFeed, SiteTaskList } from "./activity-feed";
+import { SiteSearchLoading } from "./site-search-results";
 import { convexQuery } from "@convex-dev/react-query";
 import {
   QueryClient,
@@ -287,8 +289,12 @@ function createQueryClient() {
   return queryClient;
 }
 
-async function openFeed(path = "/", dehydrated?: DehydratedState) {
-  const queryClient = createQueryClient();
+async function openFeed(
+  path = "/",
+  dehydrated?: DehydratedState,
+  queryClient = createQueryClient(),
+  waitForResults = true,
+) {
   if (dehydrated) hydrate(queryClient, dehydrated);
   const root = createRootRoute({ staticData: { access: "access_public" }, component: Outlet });
   const home = createRoute({
@@ -297,7 +303,7 @@ async function openFeed(path = "/", dehydrated?: DehydratedState) {
     staticData: { access: "access_public" },
     validateSearch: reviewFeedSearch,
     component: () => (
-      <Suspense fallback={<div className="min-h-60" aria-busy="true" />}>
+      <Suspense fallback={<SiteSearchLoading />}>
         <ActivityFeed search={home.useSearch()} />
       </Suspense>
     ),
@@ -335,9 +341,55 @@ async function openFeed(path = "/", dehydrated?: DehydratedState) {
     );
     await router.load();
   });
-  await screen.findByRole("article", { name: "chessmerge.com" });
+  if (waitForResults) await screen.findByRole("article", { name: "chessmerge.com" });
   return { router, queryClient };
 }
+
+test("a direct filtered visit shows a spinner in the results until the first query completes", async () => {
+  const queryClient = createQueryClient();
+  const pending = createControlledPromise<FunctionReturnType<typeof api.scout.sites.list>>();
+  queryClient.setQueryDefaults(
+    convexQuery(api.scout.sites.list, {
+      site: "chess",
+      scope: "public",
+      paginationOpts: { numItems: 6, cursor: null },
+    }).queryKey,
+    { queryFn: () => pending },
+  );
+  await openFeed("/?scope=public&site=chess", undefined, queryClient, false);
+  const reviews = await screen.findByRole("region", { name: "Reviews" });
+  expect(within(reviews).getByRole("status", { name: "Searching sites" })).toBeTruthy();
+  expect(screen.getByRole("textbox", { name: "Filter by site" })).toHaveProperty("value", "chess");
+  expect(screen.queryByText("No sites match your search.")).toBeNull();
+  await act(async () => pending.resolve({ page: remote.sites, isDone: true, continueCursor: "" }));
+  await screen.findByRole("article", { name: "chessmerge.com" });
+  expect(screen.queryByRole("status", { name: "Searching sites" })).toBeNull();
+});
+
+test("searching shows a list spinner from typing until delayed results arrive", async () => {
+  const { queryClient, router } = await openFeed();
+  const pending = createControlledPromise<FunctionReturnType<typeof api.scout.sites.list>>();
+  queryClient.setQueryDefaults(
+    convexQuery(api.scout.sites.list, {
+      site: "paper",
+      scope: "public",
+      paginationOpts: { numItems: 6, cursor: null },
+    }).queryKey,
+    { queryFn: () => pending },
+  );
+  const user = userEvent.setup();
+  const input = screen.getByRole("textbox", { name: "Filter by site" });
+  await user.type(input, "paper");
+  const spinner = screen.getByRole("status", { name: "Searching sites" });
+  expect(input.parentElement?.contains(spinner)).toBe(false);
+  await waitFor(() => expect(router.state.location.search.site).toBe("paper"));
+  expect(screen.getByRole("status", { name: "Searching sites" })).toBeTruthy();
+  expect(screen.getByRole("textbox", { name: "Filter by site" })).toBe(input);
+  await act(async () => pending.resolve({ page: remote.sites, isDone: true, continueCursor: "" }));
+  await waitFor(() => expect(screen.queryByRole("status", { name: "Searching sites" })).toBeNull());
+  expect(screen.getByRole("article", { name: "papergames.io" })).toBeTruthy();
+  expect(screen.queryByRole("article", { name: "chessmerge.com" })).toBeNull();
+});
 
 test("keeps server-rendered cards and reviews visible until live subscriptions arrive", async () => {
   const serverCache = createQueryClient();

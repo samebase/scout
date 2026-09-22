@@ -6,6 +6,7 @@ import {
   Outlet,
   RouterProvider,
   createMemoryHistory,
+  createControlledPromise,
   createRootRoute,
   createRoute,
   createRouter,
@@ -556,6 +557,53 @@ test.each([
     expect(remote.refresh).not.toHaveBeenCalled();
   },
 );
+
+test("a direct site visit shows a spinner inside the sidebar while its first results load", async () => {
+  remote.signedIn = false;
+  const pending = createControlledPromise<FunctionReturnType<typeof api.scout.sites.list>>();
+  queryClient.setQueryDefaults(
+    convexQuery(api.scout.sites.list, {
+      site: "paper",
+      scope: "public",
+      paginationOpts: { numItems: 20, cursor: null },
+    }).queryKey,
+    { queryFn: () => pending },
+  );
+  await openPage("/sites/chessmerge.com?scope=public&site=paper");
+  const navigation = await screen.findByRole("navigation", { name: "Sites" });
+  expect(within(navigation).getByRole("status", { name: "Searching sites" })).toBeTruthy();
+  expect(screen.getByRole("textbox", { name: "Filter by site" })).toHaveProperty("value", "paper");
+  expect(screen.queryByText("No sites match these filters.")).toBeNull();
+  await act(async () => pending.resolve({ page: [], isDone: true, continueCursor: "" }));
+  await waitFor(() => expect(within(navigation).queryByRole("status")).toBeNull());
+  expect(within(navigation).getByRole("article", { name: "papergames.io" })).toBeTruthy();
+});
+
+test("sidebar search keeps its filter and navigation mounted while the list spinner waits for results", async () => {
+  const router = await openPage("/sites/chessmerge.com?scope=public");
+  const navigation = await screen.findByRole("navigation", { name: "Sites" });
+  const input = screen.getByRole("textbox", { name: "Filter by site" });
+  const pending = createControlledPromise<FunctionReturnType<typeof api.scout.sites.list>>();
+  queryClient.setQueryDefaults(
+    convexQuery(api.scout.sites.list, {
+      site: "paper",
+      scope: "public",
+      paginationOpts: { numItems: 20, cursor: null },
+    }).queryKey,
+    { queryFn: () => pending },
+  );
+  await userEvent.setup().type(input, "paper");
+  expect(within(navigation).getByRole("status", { name: "Searching sites" })).toBeTruthy();
+  expect(within(input.parentElement ?? input).queryByRole("status")).toBeNull();
+  await waitFor(() => expect(router.state.location.search.site).toBe("paper"));
+  expect(within(navigation).getByRole("status", { name: "Searching sites" })).toBeTruthy();
+  expect(screen.getByRole("navigation", { name: "Sites" })).toBe(navigation);
+  expect(screen.getByRole("textbox", { name: "Filter by site" })).toBe(input);
+  expect(screen.queryByText("No sites match these filters.")).toBeNull();
+  await act(async () => pending.resolve({ page: [], isDone: true, continueCursor: "" }));
+  await waitFor(() => expect(within(navigation).queryByRole("status")).toBeNull());
+  expect(within(navigation).getByRole("article", { name: "papergames.io" })).toBeTruthy();
+});
 
 test("site sidebar filters stay editable across views and browser history", async () => {
   const router = await openPage("/sites/chessmerge.com?scope=mine&site=chessmerge.com");

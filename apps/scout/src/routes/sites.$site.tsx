@@ -23,8 +23,9 @@ import { SiteCard, SiteTaskList } from "#components/activity-feed";
 import { SitePreviewCapture } from "#components/site-preview";
 import { SiteIdentity } from "#components/site-identity";
 import { SiteFilters } from "#components/site-filters";
+import { SiteSearchLoading, SiteSearchResults } from "#components/site-search-results";
 import { LoadOnScroll } from "#components/load-on-scroll";
-import { reviewFeedSearch } from "#lib/reviewFeedSearch";
+import { reviewFeedSearch, type ReviewFeedSearch } from "#lib/reviewFeedSearch";
 import { canAccess, useViewerAccess } from "#lib/access";
 import { siteHostnameSchema } from "../../shared/site";
 import { ProductShell } from "../products/shell";
@@ -99,7 +100,7 @@ function SiteLayout() {
           </header>
         }
         left={
-          <Suspense fallback={<div aria-busy="true" />}>
+          <Suspense fallback={<SiteSearchLoading />}>
             <SiteNavigation />
           </Suspense>
         }
@@ -123,25 +124,16 @@ function SiteLayout() {
 }
 
 function SiteNavigation() {
-  const { site } = Route.useParams();
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
-  const parsed = siteHostnameSchema.safeParse(site);
   const viewer = useViewerAccess();
-  const canInspect = viewer?.kind === "account" && canAccess("access_lab", viewer.accessKeys);
   const scope = viewer?.kind === "account" ? (search.scope ?? "public") : "public";
   const filters = { scope, site: search.site };
-  const workspace = canInspect && search.view === "workspace";
   const deferredScope = useDeferredValue(scope);
   const deferredSite = useDeferredValue(search.site);
+  const [draftPending, setDraftPending] = useState(false);
   const { data: reviewedSiteCount } = useSuspenseQuery(
     convexQuery(api.scout.sites.count, { scope: deferredScope }),
-  );
-  const { setMobilePane } = useSidebarActions();
-  const sites = useSsrPaginatedQuery(
-    api.scout.sites.list,
-    { scope: deferredScope, site: deferredSite ?? null },
-    { initialNumItems: 20 },
   );
   return (
     <PaneFrame
@@ -152,7 +144,7 @@ function SiteNavigation() {
             search={filters}
             layout="sidebar"
             reviewedSiteCount={reviewedSiteCount}
-            isSearching={scope !== deferredScope || search.site !== deferredSite}
+            onPendingChange={setDraftPending}
             onChange={(filters, options) => {
               void navigate({
                 search: (previous) => ({ ...previous, ...filters }),
@@ -164,37 +156,53 @@ function SiteNavigation() {
         </div>
       }
       content={
-        <nav
-          aria-label="Sites"
-          aria-busy={
-            sites.status === "LoadingFirstPage" ||
-            scope !== deferredScope ||
-            search.site !== deferredSite
-          }
-          className="mx-auto w-full max-w-page p-2 text-sm"
-        >
-          <ul className="space-y-3">
-            {sites.results.map((site) => (
-              <li key={site.hostname}>
-                <SiteCard
-                  site={site}
-                  search={filters}
-                  navigation={{
-                    selected: site.hostname === parsed.data,
-                    view: workspace ? "workspace" : "tasks",
-                    onNavigate: () => setMobilePane("main"),
-                  }}
-                />
-              </li>
-            ))}
-          </ul>
-          {sites.status === "Exhausted" && sites.results.length === 0 && (
-            <p className="p-2 text-muted-foreground">No sites match these filters.</p>
-          )}
-          <LoadOnScroll status={sites.status} onLoad={() => sites.loadMore(20)} />
+        <nav aria-label="Sites" className="mx-auto w-full max-w-page p-2 text-sm">
+          <SiteSearchResults
+            pending={draftPending || scope !== deferredScope || search.site !== deferredSite}
+          >
+            <SiteNavigationResults search={{ scope: deferredScope, site: deferredSite }} />
+          </SiteSearchResults>
         </nav>
       }
     />
+  );
+}
+
+function SiteNavigationResults({ search }: { search: ReviewFeedSearch }) {
+  const { site } = Route.useParams();
+  const { view } = Route.useSearch();
+  const parsed = siteHostnameSchema.safeParse(site);
+  const viewer = useViewerAccess();
+  const canInspect = viewer?.kind === "account" && canAccess("access_lab", viewer.accessKeys);
+  const { setMobilePane } = useSidebarActions();
+  const sites = useSsrPaginatedQuery(
+    api.scout.sites.list,
+    { scope: search.scope ?? "public", site: search.site ?? null },
+    { initialNumItems: 20 },
+  );
+  return (
+    <>
+      {sites.status === "LoadingFirstPage" && !sites.results.length && <SiteSearchLoading />}
+      <ul className="space-y-3">
+        {sites.results.map((site) => (
+          <li key={site.hostname}>
+            <SiteCard
+              site={site}
+              search={search}
+              navigation={{
+                selected: site.hostname === parsed.data,
+                view: canInspect && view === "workspace" ? "workspace" : "tasks",
+                onNavigate: () => setMobilePane("main"),
+              }}
+            />
+          </li>
+        ))}
+      </ul>
+      {sites.status === "Exhausted" && sites.results.length === 0 && (
+        <p className="p-2 text-muted-foreground">No sites match these filters.</p>
+      )}
+      <LoadOnScroll status={sites.status} onLoad={() => sites.loadMore(20)} />
+    </>
   );
 }
 

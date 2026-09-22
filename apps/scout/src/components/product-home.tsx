@@ -4,6 +4,7 @@ import { ProductShell } from "../products/shell";
 import { ConversationLobby } from "../products/conversation/page";
 import type { homeSearch } from "#lib/homeSearch";
 import { ActivityFeed } from "./activity-feed";
+import { SiteSearchLoading } from "./site-search-results";
 import { DiscoveryHero } from "./discovery-hero";
 import { Suspense } from "react";
 import { defaultTerrainSettings } from "#lib/terrain-settings";
@@ -33,7 +34,7 @@ export function ProductHome({ search }: { search: z.infer<typeof homeSearch> }) 
           />
         </DiscoveryHero>
         <div className="relative mx-auto max-w-page px-8 pb-16 max-[640px]:px-4">
-          <Suspense fallback={<div className="min-h-60" aria-busy="true" />}>
+          <Suspense fallback={<SiteSearchLoading />}>
             <ActivityFeed search={{ site: search.site, scope: search.scope }} />
           </Suspense>
         </div>
