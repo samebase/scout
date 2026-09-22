@@ -2,8 +2,7 @@ import { v } from "convex/values";
 
 export const SITE_RESEARCH_MODEL = "spark-2";
 export const SITE_RESEARCH_MAX_CREDITS = 50;
-export const SITE_RESEARCH_TIMEOUT_MS = 10 * 60_000;
-export const TASK_RESEARCH_WAIT_MS = 3 * 60_000;
+export const SITE_RESEARCH_TIMEOUT_MS = 6 * 60_000;
 
 export const siteProfile = v.object({
   name: v.string(),

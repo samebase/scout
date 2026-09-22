@@ -879,7 +879,7 @@ it("refuses refresh until an uncertain previous provider job is confirmed stoppe
   await t.process(shared._id);
   getAgentStatus.mockResolvedValue(processing);
   cancelAgent.mockResolvedValue(false);
-  vi.setSystemTime(Math.ceil(shared._creationTime) + 600_000);
+  vi.setSystemTime(Math.ceil(shared._creationTime) + 360_000);
   await t.process(shared._id);
   await t.advance();
   const failedTask = await t.inspect();
@@ -1136,7 +1136,7 @@ it("keeps a failed site preview independent of the shared research and approved 
   });
 });
 
-it("lets the task continue after three minutes while the shared research saves its result later", async () => {
+it("keeps the task waiting beyond three minutes and supplies the finished brief before it starts", async () => {
   const t = await setup();
   await t.run();
   const shared = await t.sharedJob();
@@ -1144,9 +1144,8 @@ it("lets the task continue after three minutes while the shared research saves i
   getAgentStatus.mockResolvedValue(processing);
   vi.setSystemTime(Math.ceil(shared._creationTime) + 180_000);
   await t.process(shared._id);
-  expect(await t.advance()).toBe(false);
-  const taskResearch = await t.inspect();
-  expect(taskResearch?.state).toMatchObject({ kind: "skipped" });
+  expect(await t.advance()).toBe(true);
+  expect((await t.inspect())?.state.kind).toBe("waiting");
   expect((await t.sharedJob()).state.kind).toBe("running");
   expect(cancelAgent).not.toHaveBeenCalled();
 
@@ -1155,12 +1154,20 @@ it("lets the task continue after three minutes while the shared research saves i
   await t.process(shared._id);
   expect((await t.sharedJob()).state.kind).toBe("completed");
   expect((await t.site())?.profile?.name).toBe(result.data.name);
-  expect(await t.inspect()).toEqual(taskResearch);
-
-  const nextTask = await t.addTask();
-  expect(await nextTask.run()).toBe(false);
-  expect((await nextTask.inspect())?.state.kind).toBe("completed");
-  expect(startAgent).toHaveBeenCalledTimes(1);
+  expect(await t.advance()).toBe(false);
+  expect((await t.inspect())?.state).toMatchObject({
+    kind: "completed",
+    brief: (await t.site())?.profile?.brief,
+    briefPath: "/workspace/research/brief.md",
+  });
+  expect(vi.mocked(saveWorkspaceFile)).toHaveBeenCalledWith(
+    expect.anything(),
+    expect.objectContaining({
+      target: { kind: "agent_session", sessionId: t.sessionId },
+      path: "/workspace/research/brief.md",
+      text: (await t.site())?.profile?.brief,
+    }),
+  );
 });
 
 it("saves a completed provider result even when the next poll is past the deadline", async () => {
@@ -1168,7 +1175,7 @@ it("saves a completed provider result even when the next poll is past the deadli
   await t.run();
   const shared = await t.sharedJob();
   await t.process(shared._id);
-  vi.setSystemTime(Math.ceil(shared._creationTime) + 605_000);
+  vi.setSystemTime(Math.ceil(shared._creationTime) + 365_000);
   await t.process(shared._id);
   expect((await t.sharedJob()).state.kind).toBe("completed");
   expect((await t.site())?.profile?.name).toBe(result.data.name);
@@ -1181,7 +1188,7 @@ it("recovers an already completed provider result on admin refresh without buyin
   const shared = await t.sharedJob();
   await t.process(shared._id);
   getAgentStatus.mockResolvedValue(processing);
-  vi.setSystemTime(Math.ceil(shared._creationTime) + 600_000);
+  vi.setSystemTime(Math.ceil(shared._creationTime) + 360_000);
   await t.process(shared._id);
   await t.advance();
   const originalTask = await t.inspect();
@@ -1199,7 +1206,7 @@ it("recovers an already completed provider result on admin refresh without buyin
   expect(await t.records()).toHaveLength(2);
 });
 
-it("bounds shared polling at 600 seconds and reports the failure to every waiter", async () => {
+it("bounds shared polling at 360 seconds and reports the failure to every waiter", async () => {
   const t = await setup();
   await t.run();
   const second = await t.addTask();
@@ -1207,28 +1214,28 @@ it("bounds shared polling at 600 seconds and reports the failure to every waiter
   const shared = await t.sharedJob();
   await t.process(shared._id);
   getAgentStatus.mockResolvedValue(processing);
-  vi.setSystemTime(shared._creationTime + 599_999);
+  vi.setSystemTime(shared._creationTime + 359_999);
   await t.process(shared._id);
   expect((await t.sharedJob()).state.kind).toBe("running");
   expect(cancelAgent).not.toHaveBeenCalled();
   const scheduledBeforeTimeout = await t.backend.run((ctx) =>
     ctx.db.system.query("_scheduled_functions").collect(),
   );
-  vi.setSystemTime(Math.ceil(shared._creationTime) + 600_000);
+  vi.setSystemTime(Math.ceil(shared._creationTime) + 360_000);
   await t.process(shared._id);
   expect(await t.sharedJob()).toMatchObject({
-    state: { kind: "failed", error: expect.stringContaining("600 seconds") },
+    state: { kind: "failed", error: expect.stringContaining("360 seconds") },
     credits: null,
   });
   expect(await t.advance()).toBe(false);
   expect(await second.advance()).toBe(false);
   expect(await t.inspect()).toMatchObject({
     credits: null,
-    state: { kind: "failed", error: expect.stringContaining("600 seconds") },
+    state: { kind: "failed", error: expect.stringContaining("360 seconds") },
   });
   expect(await second.inspect()).toMatchObject({
     credits: 0,
-    state: { kind: "failed", error: expect.stringContaining("600 seconds") },
+    state: { kind: "failed", error: expect.stringContaining("360 seconds") },
   });
   await t.process(shared._id);
   expect(
@@ -1243,12 +1250,12 @@ it("does not submit a paid job when its scheduled start already exceeded the dea
   const t = await setup();
   await t.run();
   const shared = await t.sharedJob();
-  vi.setSystemTime(Math.ceil(shared._creationTime) + 600_000);
+  vi.setSystemTime(Math.ceil(shared._creationTime) + 360_000);
   await t.process(shared._id);
   await t.advance();
   expect((await t.inspect())?.state).toMatchObject({
     kind: "failed",
-    error: expect.stringContaining("600 seconds"),
+    error: expect.stringContaining("360 seconds"),
   });
   expect(startAgent).not.toHaveBeenCalled();
   expect(getAgentStatus).not.toHaveBeenCalled();
@@ -1267,7 +1274,7 @@ it.each(["cancel refused", "cancel threw", "status threw"])(
     else if (failure === "cancel threw")
       cancelAgent.mockRejectedValue(new Error("Cancel unavailable"));
     else getAgentStatus.mockRejectedValue(new Error("Status unavailable"));
-    vi.setSystemTime(Math.ceil(shared._creationTime) + 600_000);
+    vi.setSystemTime(Math.ceil(shared._creationTime) + 360_000);
     await expect(t.process(shared._id)).resolves.toBeNull();
     expect(await t.sharedJob()).toMatchObject({
       credits: null,
@@ -1279,7 +1286,7 @@ it.each(["cancel refused", "cancel threw", "status threw"])(
       state: {
         kind: "failed",
         error: expect.stringContaining(
-          failure === "status threw" ? "Status unavailable" : "600 seconds",
+          failure === "status threw" ? "Status unavailable" : "360 seconds",
         ),
       },
     });

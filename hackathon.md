@@ -1961,7 +1961,7 @@ backdrop so they cannot widen the page on mobile or desktop (`apps/scout/src/sty
 
 ### 2026-09-22 - working tree - v313
 
-Let site research finish in the background after a task stops waiting for its brief.
-Check completed Firecrawl results before applying the research deadline, and let
-admin refresh recover a finished result without starting another research job
+Wait for site research before starting the review, allowing up to six minutes.
+Check completed Firecrawl results before applying the deadline, and let admin
+refresh recover a finished result without starting another research job
 (`apps/scout/convex/tasks/siteResearch.ts`).

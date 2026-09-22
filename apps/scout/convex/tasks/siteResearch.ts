@@ -10,11 +10,7 @@ import { siteHostnameSchema } from "../../shared/site";
 import { saveWorkspaceFile } from "../scout/workspaceTools";
 import { createFirecrawlClient } from "../scout/lib/firecrawl";
 import { diagnosticMessage } from "../scout/lib/redaction";
-import {
-  researchFinishedState,
-  SITE_RESEARCH_TIMEOUT_MS,
-  TASK_RESEARCH_WAIT_MS,
-} from "./siteResearchModel";
+import { researchFinishedState, SITE_RESEARCH_TIMEOUT_MS } from "./siteResearchModel";
 import { researchSite, researchRequest, siteBrief, renderBrief } from "./siteResearchSources";
 import { failTaskOnCreditError } from "./creditUsage";
 
@@ -165,20 +161,7 @@ async function advanceTask(
   if (!source || source.sessionId !== null) throw new Error("Shared site research not found");
   switch (source.state.kind) {
     case "running":
-      if (Date.now() - research._creationTime < TASK_RESEARCH_WAIT_MS) return true;
-      await ctx.runMutation(internal.tasks.siteResearchRecords.finish, {
-        researchId: research._id,
-        jobId: null,
-        responsePath: null,
-        profile: null,
-        credits: research.state.reused ? 0 : source.credits,
-        state: {
-          kind: "skipped",
-          finishedAt: Date.now(),
-          reason: "Site research is still running in the background. Continuing without a brief.",
-        },
-      });
-      return false;
+      return true;
     case "waiting":
       throw new Error("Site research cannot wait on a task");
     case "completed": {
