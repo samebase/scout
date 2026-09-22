@@ -110,8 +110,7 @@ function AgentsApiSettings() {
         <span>Allow new tasks with Luna - Agents API</span>
       </label>
       <p className="mt-2 text-sm text-muted-foreground">
-        Pausing new Agents API tasks lets us investigate unexpected OpenAI charges. Existing tasks
-        can continue while this is off.
+        Turning this off leaves existing Agents API tasks running.
       </p>
       {error && (
         <p role="alert" className="mt-3 text-sm text-destructive">

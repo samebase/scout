@@ -17,14 +17,14 @@ export const defaultTaskSelection = {
   model: "gpt-5.6-luna",
 } satisfies TaskSelection;
 
-export const agentsApiPauseLabel = "Paused: unexpected OpenAI charges under review";
+export const agentsApiPauseLabel = "Temporarily disabled due to OpenAI billing issues.";
 
 export function taskEngineDisabledReason(
   engine: Infer<typeof taskEngine>,
   agentsApiEnabled: boolean,
 ): string | null {
   return engine === "agents_api" && !agentsApiEnabled
-    ? "New Agents API tasks are paused while we investigate unexpected OpenAI charges. Start a new task with Luna - Convex."
+    ? `${agentsApiPauseLabel} Start a new task with Luna - Convex.`
     : null;
 }
 

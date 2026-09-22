@@ -1951,5 +1951,5 @@ New starts use Convex by default and existing Agents API tasks can continue
 
 ### 2026-09-22 - working tree - v311
 
-Explained the Agents API pause in the task pickers and admin setting while
-unexpected OpenAI charges are investigated.
+Showed the OpenAI billing pause beneath the disabled Agents API option in the
+user-facing picker, with matching wording in Lab and task-start errors.

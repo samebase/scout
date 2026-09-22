@@ -414,7 +414,9 @@ export function ConversationLobby({
                           <span>
                             {option.label}
                             {disabled && (
-                              <span className="block text-xs">{agentsApiPauseLabel}</span>
+                              <span className="block max-w-64 text-xs whitespace-normal">
+                                {agentsApiPauseLabel}
+                              </span>
                             )}
                           </span>
                         </SelectItem>
