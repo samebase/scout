@@ -1,8 +1,13 @@
 import { paginationOptsValidator, paginationResultValidator } from "convex/server";
 import { vWorkflowId } from "@convex-dev/workflow";
 import { ConvexError, v } from "convex/values";
-import { taskSelection, type TaskSelection } from "../../shared/taskModels";
+import {
+  taskEngineDisabledReason,
+  taskSelection,
+  type TaskSelection,
+} from "../../shared/taskModels";
 import { canAccess } from "../../shared/accessModel";
+import { agentsApiEnabled } from "./engineSettings";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
@@ -537,6 +542,11 @@ export async function startSession(
     selection: TaskSelection;
   },
 ): Promise<Id<"agentsApiSessions">> {
+  const disabledReason = taskEngineDisabledReason(
+    args.selection.engine,
+    await agentsApiEnabled(ctx),
+  );
+  if (disabledReason) throw new ConvexError(disabledReason);
   const prompt = args.prompt.trim();
   if (!prompt || prompt.length > 20_000)
     throw new Error("Enter a prompt of at most 20,000 characters");

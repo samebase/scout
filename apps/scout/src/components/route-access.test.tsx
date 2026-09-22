@@ -33,6 +33,7 @@ const remote = vi.hoisted(() => ({
   subscribers: new Set<() => void>(),
   lab: vi.fn(),
   accept: vi.fn(),
+  engineSet: vi.fn(),
 }));
 function subscribe(listener: () => void) {
   remote.subscribers.add(listener);
@@ -50,12 +51,18 @@ vi.mock("convex/react", () => ({
     remote.authenticated ? null : children,
   useQuery: (reference: FunctionReference<"query">) => {
     useSyncExternalStore(subscribe, () => remote.revision);
+    if (getFunctionName(reference) === "tasks/engineSettings:get")
+      return remote.values.get("engineEnabled");
     if (getFunctionName(reference) === "credits:balance") return null;
     if (getFunctionName(reference) === "credits:offer") return undefined;
     return remote.values.get("viewer");
   },
   useMutation: (reference: FunctionReference<"mutation">) =>
-    getFunctionName(reference) === "accounts:acceptTerms" ? remote.accept : async () => {},
+    getFunctionName(reference) === "accounts:acceptTerms"
+      ? remote.accept
+      : getFunctionName(reference) === "tasks/engineSettings:set"
+        ? remote.engineSet
+        : async () => {},
   useAction: () => async () => {},
   usePaginatedQuery: () => ({ results: [], status: "Exhausted", loadMore: () => {} }),
 }));
@@ -68,6 +75,13 @@ beforeEach(() => {
   remote.values.clear();
   remote.lab.mockClear();
   remote.accept.mockReset().mockResolvedValue(null);
+  remote.values.set("engineEnabled", false);
+  remote.engineSet.mockReset().mockImplementation(async ({ enabled }: { enabled: boolean }) => {
+    remote.values.set("engineEnabled", enabled);
+    remote.revision += 1;
+    for (const listener of remote.subscribers) listener();
+    return null;
+  });
   remote.revision = 0;
 });
 afterEach(cleanup);
@@ -274,6 +288,20 @@ test("staff keep Lab and settings admin access without approval", async () => {
   expect(await screen.findByRole("heading", { name: "Admin access" })).toBeTruthy();
   expect(screen.getByText("You have admin access.")).toBeTruthy();
   expect(screen.getByRole("link", { name: "Members" })).toBeTruthy();
+});
+
+test("staff can pause new Agents API tasks from Settings", async () => {
+  setViewer("role_staff");
+  await open("/settings");
+  const toggle = screen.getByRole("checkbox", { name: "Allow new tasks with Luna - Agents API" });
+  expect(toggle).toHaveProperty("checked", false);
+  await userEvent.setup().click(toggle);
+  expect(remote.engineSet).toHaveBeenCalledWith({ enabled: true });
+  expect(toggle).toHaveProperty("checked", true);
+  setViewer("role_member");
+  expect(
+    screen.queryByRole("checkbox", { name: "Allow new tasks with Luna - Agents API" }),
+  ).toBeNull();
 });
 
 test("pending members keep account controls and receive approval without signing in again", async () => {

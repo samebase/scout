@@ -21,6 +21,9 @@ async function setup() {
   const backend = convexTest(schema, import.meta.glob("./**/*.ts"));
   agentTest.register(backend);
   workflowTest.register(backend);
+  await backend.run((ctx) =>
+    ctx.db.insert("taskEngineSettings", { key: "global", agentsApiEnabled: true }),
+  );
   const { memberId, otherId, adminId, scoutId } = await backend.run(async (ctx) => ({
     memberId: await insertTestAccount(ctx, { email: "player@example.test" }),
     otherId: await insertTestAccount(ctx, { email: "other@example.test" }),

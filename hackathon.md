@@ -15,7 +15,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-22T19:16:39Z
+- **Last updated:** 2026-09-22T19:20:11Z
 
 ## Log
 
@@ -1936,9 +1936,15 @@ for at least seven days, so deployments preserve open tabs and the previous comp
 Moved asset publication directly after the backend push and added served-file verification
 before a release reports success.
 
-### 2026-09-22 - working tree - v309
+### 2026-09-22 - d8ea880 - v309
 
 Made Luna through Convex Agent the starting choice for new reviews, Play tasks,
 and Lab sessions. A user's saved engine choice still wins, and the Agents API
 remains selectable (`apps/scout/src/products/conversation/page.tsx`,
 `apps/scout/src/tasks/page.tsx`).
+
+### 2026-09-22 - working tree - v310
+
+Added a staff control in Settings to pause new Agents API tasks without a deploy.
+New starts use Convex by default and existing Agents API tasks can continue
+(`apps/scout/convex/tasks/engineSettings.ts`, `apps/scout/src/routes/settings.tsx`).

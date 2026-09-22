@@ -32,6 +32,9 @@ afterEach(() => {
 async function setup(kind: "play" | "review") {
   const backend = convexTest(schema, modules);
   workflowTest.register(backend);
+  await backend.run((ctx) =>
+    ctx.db.insert("taskEngineSettings", { key: "global", agentsApiEnabled: true }),
+  );
   const { userId, scoutId } = await backend.run(async (ctx) => ({
     userId: await insertTestAccount(ctx, { email: "member@example.test" }),
     scoutId: await ctx.db.insert("scouts", {
