@@ -13,6 +13,7 @@ import { chatPermission, visibleChat } from "./chatAccess";
 import { availabilityValidator, scoutReservation } from "./availability";
 import type { ViewerAccess } from "../access";
 import { getInitialCheck } from "../tasks/requestChecks";
+import { getResearch } from "../tasks/siteResearchRecords";
 import { walkthroughContent } from "../tasks/screenshotModel";
 import { chatPurposeValidator, chatVisibilityValidator } from "./chatModel";
 import { MAX_BROWSER_SESSIONS_PER_THREAD } from "./browserSessions";
@@ -379,6 +380,7 @@ export const get = publicQuery({
         v.object({ kind: v.literal("convex_agent") }),
       ),
       hasWalkthrough: v.boolean(),
+      sitePreparation: v.union(v.object({ startedAt: v.number() }), v.null()),
     }),
     v.null(),
   ),
@@ -409,6 +411,19 @@ export const get = publicQuery({
             .order("asc")
             .take(MAX_BROWSER_SESSIONS_PER_THREAD)
         ).map(sessionSummary);
+    const managed = managedId ? await ctx.db.get(managedId) : null;
+    let sitePreparation: { startedAt: number } | null = null;
+    if (chat.purpose.kind === "review" && managed?.active && managed.state.kind === "starting") {
+      const research = await getResearch(ctx, managed._id);
+      if (research?.state.kind === "running") {
+        sitePreparation = { startedAt: research._creationTime };
+      } else if (research?.state.kind === "waiting") {
+        const shared = await ctx.db.get(research.state.researchId);
+        if (shared?.sessionId === null && shared.state.kind === "running") {
+          sitePreparation = { startedAt: shared._creationTime };
+        }
+      }
+    }
     return {
       ...(await summary(ctx, chat)),
       isOwner,
@@ -421,7 +436,8 @@ export const get = publicQuery({
       runtime: managedId
         ? { kind: "task" as const, sessionId: managedId }
         : { kind: "convex_agent" as const },
-      hasWalkthrough: managedId ? Boolean((await ctx.db.get(managedId))?.walkthrough) : false,
+      hasWalkthrough: Boolean(managed?.walkthrough),
+      sitePreparation,
     };
   },
 });
