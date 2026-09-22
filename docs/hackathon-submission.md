@@ -1,6 +1,7 @@
-# TrailScout submission draft
+# TrailScout submission
 
-Working copy for discussion. This file has not been submitted as a hackathon entry.
+Submitted on September 22, 2026: https://vibeapps.dev/s/trailscout.
+This maintained copy may include later edits. Changes here do not update the Vibe Apps entry.
 Keep the shared copy below synchronized with `apps/scout/src/routes/about.tsx` in the
 same change. The About page stays hand-written JSX; there is no automatic Markdown
 rendering or generation between the two files.
@@ -8,36 +9,35 @@ rendering or generation between the two files.
 ## Submission fields
 
 - **Project name:** TrailScout
-- **Tagline:** Send an AI agent to try a website for you. See what happened in a walkthrough, screenshots, and a replay.
+- **Tagline:** Check if a product does what you need.
 - **Live app:** https://doting-crab-687.convex.site
-- **Repository:** https://github.com/samebase/scout — currently private; make public before submission.
+- **Repository:** https://github.com/samebase/scout
 - **Build log:** [hackathon.md](../hackathon.md)
-- **Demo video:** Pending.
-- **Build announcement:** Pending confirmation and link.
+- **Demo video:** https://youtu.be/FHzS5r6Qb_U
+- **Build announcement:** https://x.com/nicu_tsx/status/2102449379307086013
+- **Submitted entry:** https://vibeapps.dev/s/trailscout
 
-The tagline is 105 characters. Confirm the event-specific fields after signing in
-and follow [the researched requirements](./hackathon-submission-requirements.md).
-Add the public repository, video, and announcement links to About when ready.
+See [the researched requirements](./hackathon-submission-requirements.md) and
+[the submission checklist](./hackathon-submit-checklist.md).
 
 ## Shared About and submission copy
 
-### The internet is a confusing place.
+### Send a Scout to try a website.
 
-Every website has a pitch. Finding out whether it does what you need usually means
-signing up, learning your way around, and trying it yourself.
+TrailScout sends AI agents to try websites for you. Give a Scout a website and a task.
+It uses a real browser and leaves a walkthrough, screenshots, and a replay showing what
+worked, what failed, and what it could not verify.
 
-TrailScout sends AI agents to do that exploration for you. They use the product and leave a
-walkthrough, screenshots, and a replay so you can make up your own mind.
+You can watch a Scout work live or come back to its review.
 
-### Send a Scout in first.
+### Public reviews help more than one person.
 
-Give a Scout a website and a question. It opens a real browser and tries to answer by
-using the product: following links, filling forms, and testing the path you asked about.
+Reviews are public by default, with a private option. Anyone can read a public review
+without an account, so one person's task can help others decide whether a product is
+worth trying.
 
-> “Can I sign up and create my first project?”
-
-You can watch the visit as it happens, or come back to see how far your Scout got and what
-it found along the way.
+Follow-up questions extend the same walkthrough, keeping earlier findings alongside new
+evidence. Create an account and verify your email to start your own tasks.
 
 ### A Scout has its own identity.
 
@@ -78,23 +78,6 @@ sign-in. The handoff page explains what needs your attention.
 When you resume, TrailScout checks the current browser pages against the original task
 before continuing. The help window has a deadline; if it expires, the task stops and
 the browser closes.
-
-### Show the work.
-
-An AI answer is only useful if you can check it. TrailScout keeps a record of the visit,
-with screenshots, a browser replay, and findings tied to the steps it took.
-
-Reviews show what passed, what failed, and what remains untested. Follow-up questions
-can extend the same walkthrough, keeping earlier findings alongside new evidence. A
-blocked signup or an interrupted task stays visible.
-
-### Useful beyond one visit.
-
-Reviews are public by default, with a private option. Browse what other people asked
-a Scout to try, open a review, and inspect the evidence before sending it on another
-task. Public reviews make product claims checkable.
-
-Anyone can read public reviews. Create an account and verify your email to start your own tasks.
 
 ### How TrailScout is built.
 
@@ -233,6 +216,15 @@ a persistent place to write scripts and process research within the existing
 backend. I had to teach it when to save material, how to read it back, and which
 files belonged in the private conversation workspace or the shared site workspace.
 
+### Built for the All Gas Hackathon.
+
+I built TrailScout for the [Convex All Gas Hackathon](https://www.convex.dev/hackathons/all-gas).
+
+[Watch the demo](https://youtu.be/FHzS5r6Qb_U) ·
+[Source code](https://github.com/samebase/scout) ·
+[Announcement on X](https://x.com/nicu_tsx/status/2102449379307086013) ·
+[Hackathon entry](https://vibeapps.dev/s/trailscout)
+
 [Send a Scout to a website](https://doting-crab-687.convex.site)
 
 ## Working notes, not public copy
@@ -345,17 +337,9 @@ instead of introducing unexplained names such as Play.
   variable-speed experience and decision to abandon automatic editing come from the
   builder's account; do not invent drift measurements or blame the export library.
 
-### Still to finish
+### After submission
 
-- Review the challenge sections for voice and emphasis, with product direction first
-  and the grouped technical decisions after the agent and replay stories.
-- Choose and verify one actual public review for the submission evidence and video.
-  Check its walkthrough, screenshots, and replay before recording.
-- Add the final video, public repository, and announcement links to both places.
-  Refresh the root build log when the submission is ready.
-- Confirm the signed-in form's event-specific questions and fields, team details,
-  registration, and the intended judge access to task creation.
-- Keep the homepage concise. Its approved three explanatory lines and the existing
-  review list stay as they are. The example buttons start with “Does signup work?”
-  and “Review a hackathon entry”; the third remains undecided. No extra featured-review
-  section is planned.
+The submitted entry is live at https://vibeapps.dev/s/trailscout. Publication work and
+checks that have not been confirmed are tracked in [the checklist](./hackathon-submit-checklist.md).
+The submitted description still includes the Samebase demo sentence removed from this
+maintained copy. Updating that description requires editing the Vibe Apps entry separately.

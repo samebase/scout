@@ -337,7 +337,7 @@ test.each(["deleting", "deleted"])(
 
 test.each([
   { path: "/", title: "Activity contents" },
-  { path: "/about", title: "The internet is a confusing place." },
+  { path: "/about", title: "Send a Scout to try a website." },
   { path: "/play", title: "Play contents" },
   { path: "/tasks/public-review", title: "Review contents" },
   { path: "/sites/example.com", title: "Site contents" },

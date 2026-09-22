@@ -4,7 +4,10 @@
 - **Event:** Convex All Gas Hackathon
 - **What it does:** Sends persistent AI Scouts to try web products and record walkthroughs, screenshots, and browser replays, with public reviews by default.
 - **Live app:** https://doting-crab-687.convex.site
-- **Repo:** private
+- **Repo:** https://github.com/samebase/scout
+- **Demo video:** https://youtu.be/FHzS5r6Qb_U
+- **Build announcement:** https://x.com/nicu_tsx/status/2102449379307086013
+- **Submitted entry:** https://vibeapps.dev/s/trailscout
 - **Frontend:** Convex static hosting
 - **Convex deployment:** https://doting-crab-687.convex.cloud
 - **Components:** @convex-dev/agent, @convex-dev/r2, @convex-dev/static-hosting, @convex-dev/workflow
@@ -12,7 +15,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-22T16:06:48Z
+- **Last updated:** 2026-09-22T18:04:07Z
 
 ## Log
 
@@ -1913,8 +1916,15 @@ New accounts can start tasks after email verification and terms acceptance witho
 for manual approval. Admin revocation, credit limits, and restricted Lab access still apply
 (`apps/scout/convex/auth.ts`).
 
-### 2026-09-22 - working tree - v306
+### 2026-09-22 - 6ff5abf - v306
 
 Prepared the three-minute demo around one Samebase signup and app deployment, ending with
 TrailScout reviewing itself. Speaker notes and recording directions keep scout selection,
 human handoff, and the admin-only workspace in the walkthrough (`video_plan.md`).
+
+### 2026-09-22 - working tree - v307
+
+Submitted TrailScout to the All Gas Hackathon with five screenshots and the published demo.
+Recorded the public repository, video, announcement, and entry links in the About page,
+submission copy, and build log. Tightened the opening and updated the checklist to distinguish
+the completed submission from remaining publication and access checks.
