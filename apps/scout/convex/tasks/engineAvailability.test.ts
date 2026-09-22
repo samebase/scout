@@ -54,7 +54,7 @@ it("lets staff pause and resume new Agents API tasks without redeploying", async
   await expect(member.mutation(api.tasks.engineSettings.set, { enabled: true })).rejects.toThrow();
   expect(await member.query(api.tasks.engineSettings.get, {})).toBe(false);
   await expect(staff.mutation(api.tasks.sessions.start, args)).rejects.toThrow(
-    "Agents API is temporarily disabled",
+    "Temporarily disabled due to OpenAI billing issues",
   );
   await expect(
     member.mutation(api.scout.chats.startProductChat, {
@@ -62,7 +62,7 @@ it("lets staff pause and resume new Agents API tasks without redeploying", async
       product: { kind: "review" },
       visibility: "public",
     }),
-  ).rejects.toThrow("Agents API is temporarily disabled");
+  ).rejects.toThrow("Temporarily disabled due to OpenAI billing issues");
   expect(await backend.run((ctx) => ctx.db.query("agentsApiSessions").first())).toBeNull();
 
   await staff.mutation(api.tasks.engineSettings.set, { enabled: true });

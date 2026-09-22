@@ -565,7 +565,7 @@ test("the composer falls back to Convex when the saved Agents API choice is paus
   await userEvent.setup().click(screen.getByRole("combobox", { name: "Task model" }));
   expect(
     screen
-      .getByRole("option", { name: /Luna - Agents API.*Temporarily disabled/ })
+      .getByRole("option", { name: /Luna - Agents API.*OpenAI billing issues/ })
       .getAttribute("aria-disabled"),
   ).toBe("true");
 });

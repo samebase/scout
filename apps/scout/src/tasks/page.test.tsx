@@ -1101,7 +1101,9 @@ test("Lab pauses new Agents API selections while keeping Convex available", asyn
   remote.queries.set("tasks/engineSettings:get", false);
   await open("/lab?scout=scout-1");
   expect(
-    screen.getByRole("option", { name: "Luna - Agents API (temporarily disabled)" }),
+    screen.getByRole("option", {
+      name: "Luna - Agents API (Temporarily disabled due to OpenAI billing issues.)",
+    }),
   ).toHaveProperty("disabled", true);
   expect(screen.getByRole("combobox", { name: "Model" })).toHaveProperty("value", "convex_agent");
 });
