@@ -168,7 +168,7 @@ export function ConversationLobby({
     FunctionReturnType<typeof api.accounts.taskPreferences>
   >({});
   const preferences = canRun ? savedPreferences : guestPreferences;
-  const engine = preferences?.lastTaskEngine ?? "agents_api";
+  const engine = preferences?.lastTaskEngine ?? "convex_agent";
   const selection: TaskSelection =
     engine === "agents_api"
       ? { engine, model: "gpt-5.6-luna" }
