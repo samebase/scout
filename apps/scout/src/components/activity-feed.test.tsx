@@ -6,6 +6,7 @@ import {
   Outlet,
   RouterProvider,
   createMemoryHistory,
+  createControlledPromise,
   createRootRoute,
   createRoute,
   createRouter,
@@ -22,6 +23,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
 import { api } from "../../convex/_generated/api";
 import { reviewFeedSearch } from "../lib/reviewFeedSearch";
 import { ActivityFeed, SiteTaskList } from "./activity-feed";
+import { SiteSearchLoading } from "./site-search-results";
 import { convexQuery } from "@convex-dev/react-query";
 import {
   QueryClient,
@@ -48,6 +50,7 @@ const remote = vi.hoisted(() => ({
   loadUnassigned: vi.fn<(count: number) => void>(),
   tasks: new Map<string, Tasks>(),
   sites: new Array<Sites["results"][number]>(),
+  sitePages: new Map<string, Sites>(),
   loadingSites: false,
   revision: 0,
   subscribe: (listener: () => void) => {
@@ -63,6 +66,9 @@ vi.mock("../lib/access", () => ({
 }));
 vi.mock("./site-preview", () => ({
   SitePreview: () => <div data-testid="site-preview" />,
+}));
+vi.mock("convex-helpers/react", async () => ({
+  usePaginatedQuery: (await import("convex/react")).usePaginatedQuery,
 }));
 vi.mock("convex/react", () => ({
   useQuery: (
@@ -85,7 +91,9 @@ vi.mock("convex/react", () => ({
     const name = getFunctionName(reference);
     remote.paginated(name, args, options);
     switch (name) {
-      case "scout/sites:list":
+      case "scout/sites:list": {
+        const page = remote.sitePages.get("site" in args ? (args.site ?? "") : "");
+        if (page) return page;
         if (remote.loadingSites)
           return {
             results: [],
@@ -106,6 +114,7 @@ vi.mock("convex/react", () => ({
           isLoading: false,
           loadMore: remote.loadSites,
         };
+      }
       case "scout/activity:list": {
         if (!("site" in args) || args.site === null)
           throw new Error("Expected a site for the task query");
@@ -243,6 +252,8 @@ afterEach(() => {
   queryClients.length = 0;
   observers.length = 0;
   remote.tasks.clear();
+  remote.sitePages.clear();
+  vi.useRealTimers();
   vi.clearAllMocks();
   vi.unstubAllGlobals();
 });
@@ -287,8 +298,12 @@ function createQueryClient() {
   return queryClient;
 }
 
-async function openFeed(path = "/", dehydrated?: DehydratedState) {
-  const queryClient = createQueryClient();
+async function openFeed(
+  path = "/",
+  dehydrated?: DehydratedState,
+  queryClient = createQueryClient(),
+  waitForResults = true,
+) {
   if (dehydrated) hydrate(queryClient, dehydrated);
   const root = createRootRoute({ staticData: { access: "access_public" }, component: Outlet });
   const home = createRoute({
@@ -297,7 +312,7 @@ async function openFeed(path = "/", dehydrated?: DehydratedState) {
     staticData: { access: "access_public" },
     validateSearch: reviewFeedSearch,
     component: () => (
-      <Suspense fallback={<div className="min-h-60" aria-busy="true" />}>
+      <Suspense fallback={<SiteSearchLoading />}>
         <ActivityFeed search={home.useSearch()} />
       </Suspense>
     ),
@@ -335,9 +350,119 @@ async function openFeed(path = "/", dehydrated?: DehydratedState) {
     );
     await router.load();
   });
-  await screen.findByRole("article", { name: "chessmerge.com" });
+  if (waitForResults) await screen.findByRole("article", { name: "chessmerge.com" });
   return { router, queryClient };
 }
+
+test("a direct filtered visit shows a spinner in the results until the first query completes", async () => {
+  const queryClient = createQueryClient();
+  const pending = createControlledPromise<FunctionReturnType<typeof api.scout.sites.list>>();
+  queryClient.setQueryDefaults(
+    convexQuery(api.scout.sites.list, {
+      site: "chess",
+      scope: "public",
+      paginationOpts: { numItems: 6, cursor: null },
+    }).queryKey,
+    { queryFn: () => pending },
+  );
+  await openFeed("/?scope=public&site=chess", undefined, queryClient, false);
+  const reviews = await screen.findByRole("region", { name: "Reviews" });
+  expect(within(reviews).getByRole("status", { name: "Searching sites" })).toBeTruthy();
+  expect(screen.getByRole("textbox", { name: "Filter by site" })).toHaveProperty("value", "chess");
+  expect(screen.queryByText("No sites match your search.")).toBeNull();
+  await act(async () => pending.resolve({ page: remote.sites, isDone: true, continueCursor: "" }));
+  await screen.findByRole("article", { name: "chessmerge.com" });
+  expect(screen.queryByRole("status", { name: "Searching sites" })).toBeNull();
+});
+
+test("searching shows a list spinner from typing until delayed results arrive", async () => {
+  const { queryClient, router } = await openFeed();
+  const pending = createControlledPromise<FunctionReturnType<typeof api.scout.sites.list>>();
+  queryClient.setQueryDefaults(
+    convexQuery(api.scout.sites.list, {
+      site: "paper",
+      scope: "public",
+      paginationOpts: { numItems: 6, cursor: null },
+    }).queryKey,
+    { queryFn: () => pending },
+  );
+  const user = userEvent.setup();
+  const input = screen.getByRole("textbox", { name: "Filter by site" });
+  await user.type(input, "paper");
+  const spinner = screen.getByRole("status", { name: "Searching sites" });
+  expect(input.parentElement?.contains(spinner)).toBe(false);
+  await waitFor(() => expect(router.state.location.search.site).toBe("paper"));
+  expect(screen.getByRole("status", { name: "Searching sites" })).toBeTruthy();
+  expect(screen.getByRole("textbox", { name: "Filter by site" })).toBe(input);
+  await act(async () => pending.resolve({ page: remote.sites, isDone: true, continueCursor: "" }));
+  await waitFor(() => expect(screen.queryByRole("status", { name: "Searching sites" })).toBeNull());
+  expect(screen.getByRole("article", { name: "papergames.io" })).toBeTruthy();
+  expect(screen.queryByRole("article", { name: "chessmerge.com" })).toBeNull();
+});
+
+test.each(["matches", "nothing found"])(
+  "keeps spinning across empty search pages until the response is %s",
+  async (outcome) => {
+    remote.sitePages.set("paper", {
+      results: [],
+      status: "CanLoadMore",
+      isLoading: false,
+      loadMore: remote.loadSites,
+    });
+    const { queryClient, router } = await openFeed();
+    const pending = createControlledPromise<FunctionReturnType<typeof api.scout.sites.list>>();
+    queryClient.setQueryDefaults(
+      convexQuery(api.scout.sites.list, {
+        site: "paper",
+        scope: "public",
+        paginationOpts: { numItems: 6, cursor: null },
+      }).queryKey,
+      { queryFn: () => pending },
+    );
+    await userEvent.setup().type(screen.getByRole("textbox", { name: "Filter by site" }), "paper");
+    await waitFor(() => expect(router.state.location.search.site).toBe("paper"));
+    await act(async () =>
+      pending.resolve({ page: [], isDone: false, continueCursor: "next-sites" }),
+    );
+    expect(screen.getByRole("status", { name: "Searching sites" })).toBeTruthy();
+    expect(screen.queryByText("No sites match your search.")).toBeNull();
+
+    remote.loadSites.mockImplementationOnce(() => {
+      remote.sitePages.set("paper", {
+        results: [],
+        status: "LoadingMore",
+        isLoading: true,
+        loadMore: remote.loadSites,
+      });
+      remote.revision++;
+      for (const listener of remote.listeners) listener();
+    });
+    const sentinel = observers.find((observer) => observer.targets.size > 0);
+    if (!sentinel) throw new Error("Missing search pagination sentinel");
+    await act(async () => sentinel.intersect(true));
+    expect(remote.loadSites).toHaveBeenCalledWith(6);
+    vi.useFakeTimers();
+    await act(() => vi.advanceTimersByTimeAsync(5_000));
+    expect(screen.getByRole("status", { name: "Searching sites" })).toBeTruthy();
+    expect(screen.queryByText("No sites match your search.")).toBeNull();
+    vi.useRealTimers();
+
+    await act(async () => {
+      remote.sitePages.set("paper", {
+        results: outcome === "matches" ? remote.sites.slice(1) : [],
+        status: "Exhausted",
+        isLoading: false,
+        loadMore: remote.loadSites,
+      });
+      remote.revision++;
+      for (const listener of remote.listeners) listener();
+    });
+    expect(screen.queryByRole("status", { name: "Searching sites" })).toBeNull();
+    if (outcome === "matches")
+      expect(screen.getByRole("article", { name: "papergames.io" })).toBeTruthy();
+    else expect(screen.getByText("No sites match your search.")).toBeTruthy();
+  },
+);
 
 test("keeps server-rendered cards and reviews visible until live subscriptions arrive", async () => {
   const serverCache = createQueryClient();

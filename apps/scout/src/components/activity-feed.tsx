@@ -2,11 +2,13 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { convexQuery } from "@convex-dev/react-query";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { useAction, usePaginatedQuery, useQuery } from "convex/react";
+import { usePaginatedQuery as useStreamPaginatedQuery } from "convex-helpers/react";
 import type { FunctionReturnType } from "convex/server";
 import { ArrowRightIcon, EarthIcon, LockKeyholeIcon } from "lucide-react";
 import { Suspense, useCallback, useDeferredValue, useEffect, useState } from "react";
 import { Button } from "#components/ui/button";
 import { SiteFilters } from "#components/site-filters";
+import { SiteSearchLoading, SiteSearchResults } from "#components/site-search-results";
 import { ReviewCheckSummary } from "#components/review-checks";
 import { LoadOnScroll } from "#components/load-on-scroll";
 import { SitePreview } from "#components/site-preview";
@@ -38,6 +40,7 @@ export function ActivityFeed({ search }: { search: ReviewFeedSearch }) {
   const scope = viewer?.kind === "account" ? (search.scope ?? "public") : "public";
   const deferredScope = useDeferredValue(scope);
   const deferredSite = useDeferredValue(search.site);
+  const [draftPending, setDraftPending] = useState(false);
   const { data: reviewedSiteCount } = useSuspenseQuery(
     convexQuery(api.scout.sites.count, { scope: deferredScope }),
   );
@@ -52,7 +55,7 @@ export function ActivityFeed({ search }: { search: ReviewFeedSearch }) {
           search={filters}
           layout="toolbar"
           reviewedSiteCount={reviewedSiteCount}
-          isSearching={scope !== deferredScope || search.site !== deferredSite}
+          onPendingChange={setDraftPending}
           onChange={(search, options) => {
             void navigate({
               to: "/",
@@ -64,10 +67,14 @@ export function ActivityFeed({ search }: { search: ReviewFeedSearch }) {
         />
       </div>
       {scope === "mine" && !search.site && <UnassignedTasks search={filters} />}
-      <SiteGroups
-        key={`${deferredScope}:${deferredSite ?? ""}`}
-        search={{ scope: deferredScope, site: deferredSite }}
-      />
+      <SiteSearchResults
+        pending={draftPending || scope !== deferredScope || search.site !== deferredSite}
+      >
+        <SiteGroups
+          key={`${deferredScope}:${deferredSite ?? ""}`}
+          search={{ scope: deferredScope, site: deferredSite }}
+        />
+      </SiteSearchResults>
     </section>
   );
 }
@@ -98,11 +105,17 @@ function UnassignedTasks({ search }: { search: ReviewFeedSearch }) {
 function SiteGroups({ search }: { search: ReviewFeedSearch }) {
   const site = search.site ?? null;
   const scope = search.scope ?? "public";
-  const sites = useSsrPaginatedQuery(api.scout.sites.list, { site, scope }, { initialNumItems: 6 });
+  const sites = useSsrPaginatedQuery(
+    api.scout.sites.list,
+    { site, scope },
+    { initialNumItems: 6 },
+    useStreamPaginatedQuery,
+  );
   const rows = sites.results;
   const exhausted = sites.status === "Exhausted";
   return (
-    <div className="min-h-60 space-y-5" aria-busy={sites.status === "LoadingFirstPage"}>
+    <div className="min-h-60 space-y-5" aria-busy={!exhausted && !rows.length}>
+      {!exhausted && !rows.length && <SiteSearchLoading />}
       {rows.map((site) => (
         <SiteCard key={site.hostname} site={site} search={search} navigation={null} />
       ))}

@@ -101,6 +101,9 @@ function readSsrQuery(queryKey: readonly unknown[]): unknown {
   return readQuery(name, queryKey[2]);
 }
 
+vi.mock("convex-helpers/react", async () => ({
+  usePaginatedQuery: (await import("convex/react")).usePaginatedQuery,
+}));
 vi.mock("convex/react", () => ({
   useConvexAuth: () => {
     useSyncExternalStore(subscribe, () => remote.revision);
