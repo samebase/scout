@@ -504,6 +504,7 @@
   position: absolute;
   inset: 0 0 auto;
   height: calc(100% + var(--terrain-tail));
+  overflow: clip;
   mask-image:
     linear-gradient(
       to bottom,
