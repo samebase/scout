@@ -15,7 +15,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-22T18:45:50Z
+- **Last updated:** 2026-09-22T19:16:39Z
 
 ## Log
 
@@ -1929,9 +1929,16 @@ Recorded the public repository, video, announcement, and entry links in the Abou
 submission copy, and build log. Tightened the opening and updated the checklist to distinguish
 the completed submission from remaining publication and access checks.
 
-### 2026-09-22 - working tree - v308
+### 2026-09-22 - 7664a61 - v308
 
 Kept each renderer behind its published browser build and retained outgoing Convex assets
 for at least seven days, so deployments preserve open tabs and the previous complete page.
 Moved asset publication directly after the backend push and added served-file verification
 before a release reports success.
+
+### 2026-09-22 - working tree - v309
+
+Made Luna through Convex Agent the starting choice for new reviews, Play tasks,
+and Lab sessions. A user's saved engine choice still wins, and the Agents API
+remains selectable (`apps/scout/src/products/conversation/page.tsx`,
+`apps/scout/src/tasks/page.tsx`).

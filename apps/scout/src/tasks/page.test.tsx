@@ -1039,7 +1039,7 @@ test("starts with an active scout and opens the new session without mutating on 
     expect(remote.start).toHaveBeenCalledWith({
       scoutId: "scout-1",
       prompt: "Inspect the site",
-      selection: { engine: "agents_api", model: "gpt-5.6-luna" },
+      selection: { engine: "convex_agent", model: "gpt-5.6-luna" },
     }),
   );
   await waitFor(() => expect(router.state.location.search).toEqual({ session: "session-1" }));
@@ -1079,7 +1079,7 @@ test.each([
   remote.queries.set("tasks/sessions:get", { ...session(), engine });
   const router = await open("/lab?scout=scout-1");
   const runtime = await screen.findByRole("combobox", { name: "Model" });
-  expect(runtime).toHaveProperty("value", "agents_api");
+  expect(runtime).toHaveProperty("value", "convex_agent");
   expect(screen.getByRole("combobox", { name: "Scout" })).toHaveProperty("value", "scout-1");
   await userEvent.setup().selectOptions(runtime, value);
   fireEvent.change(screen.getByLabelText("Prompt"), { target: { value: " Inspect checkout " } });

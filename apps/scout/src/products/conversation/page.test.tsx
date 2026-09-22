@@ -519,7 +519,7 @@ test("a site link opens the shared composer without submitting and sends the sel
     scoutId: "scout-2",
     prompt: "Check the sign-up flow.",
     visibility: "private",
-    selection: { engine: "agents_api", model: "gpt-5.6-luna" },
+    selection: { engine: "convex_agent", model: "gpt-5.6-luna" },
   });
   act(() => router.history.back());
   expect(await screen.findByRole("button", { name: "Remove example.com from task" })).toBeTruthy();
@@ -628,7 +628,7 @@ test("site selection survives feed filters and removal keeps the draft without a
       scoutId: "scout-1",
       prompt: "Check the sign-up flow.",
       visibility: "public",
-      selection: { engine: "agents_api", model: "gpt-5.6-luna" },
+      selection: { engine: "convex_agent", model: "gpt-5.6-luna" },
     }),
   );
 });
@@ -2456,7 +2456,7 @@ describe("Play invitation", () => {
         scoutId: "scout-1",
         prompt: "Review example.com",
         visibility: "public",
-        selection: { engine: "agents_api", model: "gpt-5.6-luna" },
+        selection: { engine: "convex_agent", model: "gpt-5.6-luna" },
       }),
     );
     await waitFor(() => expect(router.state.location.pathname).toBe("/tasks/game-thread"));
@@ -2601,7 +2601,7 @@ describe("Play invitation", () => {
       scoutId: "scout-2",
       visibility: "private",
       prompt: invitation,
-      selection: { engine: "agents_api", model: "gpt-5.6-luna" },
+      selection: { engine: "convex_agent", model: "gpt-5.6-luna" },
     });
     expect(remote.sendManaged).not.toHaveBeenCalled();
     expect(await screen.findByRole("region", { name: "Conversation with Scout" })).toBeTruthy();
@@ -2657,7 +2657,7 @@ describe("Play invitation", () => {
         scoutId: "scout-1",
         visibility: "private",
         prompt: "Find us a cooperative game for tomorrow.",
-        selection: { engine: "agents_api", model: "gpt-5.6-luna" },
+        selection: { engine: "convex_agent", model: "gpt-5.6-luna" },
       }),
     );
   });

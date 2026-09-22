@@ -482,7 +482,7 @@ function NewSession({ initialScoutId }: { initialScoutId: string }) {
   const navigate = useNavigate({ from: "/lab" });
   const [scoutId, setScoutId] = useState(initialScoutId);
   const [selection, setSelection] = useState<TaskSelection>({
-    engine: "agents_api",
+    engine: "convex_agent",
     model: "gpt-5.6-luna",
   });
   const [prompt, setPrompt] = useState("");
