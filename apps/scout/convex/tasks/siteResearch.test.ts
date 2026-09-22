@@ -847,6 +847,7 @@ it("reuses failed research without inventing metadata and retries only after adm
   expect(
     vi.mocked(saveWorkspaceFile).mock.calls.some(([, file]) => file.path.endsWith("brief.md")),
   ).toBe(false);
+  getAgentStatus.mockResolvedValueOnce(failedResponse);
   const retryId = await t.refresh();
   expect(retryId).not.toBe(failedJob._id);
   expect(await t.refresh()).toBe(retryId);
@@ -878,7 +879,7 @@ it("refuses refresh until an uncertain previous provider job is confirmed stoppe
   await t.process(shared._id);
   getAgentStatus.mockResolvedValue(processing);
   cancelAgent.mockResolvedValue(false);
-  vi.setSystemTime(Math.ceil(shared._creationTime) + 180_000);
+  vi.setSystemTime(Math.ceil(shared._creationTime) + 600_000);
   await t.process(shared._id);
   await t.advance();
   const failedTask = await t.inspect();
@@ -901,7 +902,7 @@ it("refuses refresh until an uncertain previous provider job is confirmed stoppe
   expect(await t.refresh()).toBe(retryId);
   expect(await t.records()).toHaveLength(3);
   expect(startAgent).toHaveBeenCalledTimes(1);
-  expect(getAgentStatus).toHaveBeenCalledTimes(4);
+  expect(getAgentStatus).toHaveBeenCalledTimes(5);
   expect(cancelAgent).toHaveBeenCalledTimes(3);
   expect(await t.inspect()).toEqual(failedTask);
 });
@@ -1135,7 +1136,70 @@ it("keeps a failed site preview independent of the shared research and approved 
   });
 });
 
-it("bounds shared polling at 180 seconds and reports the failure to every waiter", async () => {
+it("lets the task continue after three minutes while the shared research saves its result later", async () => {
+  const t = await setup();
+  await t.run();
+  const shared = await t.sharedJob();
+  await t.process(shared._id);
+  getAgentStatus.mockResolvedValue(processing);
+  vi.setSystemTime(Math.ceil(shared._creationTime) + 180_000);
+  await t.process(shared._id);
+  expect(await t.advance()).toBe(false);
+  const taskResearch = await t.inspect();
+  expect(taskResearch?.state).toMatchObject({ kind: "skipped" });
+  expect((await t.sharedJob()).state.kind).toBe("running");
+  expect(cancelAgent).not.toHaveBeenCalled();
+
+  vi.setSystemTime(Date.now() + 120_000);
+  getAgentStatus.mockResolvedValue(result);
+  await t.process(shared._id);
+  expect((await t.sharedJob()).state.kind).toBe("completed");
+  expect((await t.site())?.profile?.name).toBe(result.data.name);
+  expect(await t.inspect()).toEqual(taskResearch);
+
+  const nextTask = await t.addTask();
+  expect(await nextTask.run()).toBe(false);
+  expect((await nextTask.inspect())?.state.kind).toBe("completed");
+  expect(startAgent).toHaveBeenCalledTimes(1);
+});
+
+it("saves a completed provider result even when the next poll is past the deadline", async () => {
+  const t = await setup();
+  await t.run();
+  const shared = await t.sharedJob();
+  await t.process(shared._id);
+  vi.setSystemTime(Math.ceil(shared._creationTime) + 605_000);
+  await t.process(shared._id);
+  expect((await t.sharedJob()).state.kind).toBe("completed");
+  expect((await t.site())?.profile?.name).toBe(result.data.name);
+  expect(cancelAgent).not.toHaveBeenCalled();
+});
+
+it("recovers an already completed provider result on admin refresh without buying another job", async () => {
+  const t = await setup();
+  await t.run();
+  const shared = await t.sharedJob();
+  await t.process(shared._id);
+  getAgentStatus.mockResolvedValue(processing);
+  vi.setSystemTime(Math.ceil(shared._creationTime) + 600_000);
+  await t.process(shared._id);
+  await t.advance();
+  const originalTask = await t.inspect();
+  expect(originalTask?.state.kind).toBe("failed");
+
+  getAgentStatus.mockResolvedValue(result);
+  expect(await t.refresh()).toBe(shared._id);
+  expect(await t.sharedJob()).toMatchObject({
+    credits: result.creditsUsed,
+    state: { kind: "completed" },
+  });
+  expect((await t.site())?.profile?.name).toBe(result.data.name);
+  expect(await t.inspect()).toEqual(originalTask);
+  expect(startAgent).toHaveBeenCalledTimes(1);
+  expect(await t.records()).toHaveLength(2);
+});
+
+it("bounds shared polling at 600 seconds and reports the failure to every waiter", async () => {
   const t = await setup();
   await t.run();
   const second = await t.addTask();
@@ -1143,28 +1207,28 @@ it("bounds shared polling at 180 seconds and reports the failure to every waiter
   const shared = await t.sharedJob();
   await t.process(shared._id);
   getAgentStatus.mockResolvedValue(processing);
-  vi.setSystemTime(shared._creationTime + 179_999);
+  vi.setSystemTime(shared._creationTime + 599_999);
   await t.process(shared._id);
   expect((await t.sharedJob()).state.kind).toBe("running");
   expect(cancelAgent).not.toHaveBeenCalled();
   const scheduledBeforeTimeout = await t.backend.run((ctx) =>
     ctx.db.system.query("_scheduled_functions").collect(),
   );
-  vi.setSystemTime(Math.ceil(shared._creationTime) + 180_000);
+  vi.setSystemTime(Math.ceil(shared._creationTime) + 600_000);
   await t.process(shared._id);
   expect(await t.sharedJob()).toMatchObject({
-    state: { kind: "failed", error: expect.stringContaining("180 seconds") },
+    state: { kind: "failed", error: expect.stringContaining("600 seconds") },
     credits: null,
   });
   expect(await t.advance()).toBe(false);
   expect(await second.advance()).toBe(false);
   expect(await t.inspect()).toMatchObject({
     credits: null,
-    state: { kind: "failed", error: expect.stringContaining("180 seconds") },
+    state: { kind: "failed", error: expect.stringContaining("600 seconds") },
   });
   expect(await second.inspect()).toMatchObject({
     credits: 0,
-    state: { kind: "failed", error: expect.stringContaining("180 seconds") },
+    state: { kind: "failed", error: expect.stringContaining("600 seconds") },
   });
   await t.process(shared._id);
   expect(
@@ -1172,19 +1236,19 @@ it("bounds shared polling at 180 seconds and reports the failure to every waiter
   ).toHaveLength(scheduledBeforeTimeout.length);
   expect(cancelAgent).toHaveBeenCalledExactlyOnceWith("job-1");
   expect(startAgent).toHaveBeenCalledTimes(1);
-  expect(getAgentStatus).toHaveBeenCalledTimes(2);
+  expect(getAgentStatus).toHaveBeenCalledTimes(3);
 });
 
 it("does not submit a paid job when its scheduled start already exceeded the deadline", async () => {
   const t = await setup();
   await t.run();
   const shared = await t.sharedJob();
-  vi.setSystemTime(Math.ceil(shared._creationTime) + 180_000);
+  vi.setSystemTime(Math.ceil(shared._creationTime) + 600_000);
   await t.process(shared._id);
   await t.advance();
   expect((await t.inspect())?.state).toMatchObject({
     kind: "failed",
-    error: expect.stringContaining("180 seconds"),
+    error: expect.stringContaining("600 seconds"),
   });
   expect(startAgent).not.toHaveBeenCalled();
   expect(getAgentStatus).not.toHaveBeenCalled();
@@ -1203,7 +1267,7 @@ it.each(["cancel refused", "cancel threw", "status threw"])(
     else if (failure === "cancel threw")
       cancelAgent.mockRejectedValue(new Error("Cancel unavailable"));
     else getAgentStatus.mockRejectedValue(new Error("Status unavailable"));
-    vi.setSystemTime(Math.ceil(shared._creationTime) + 180_000);
+    vi.setSystemTime(Math.ceil(shared._creationTime) + 600_000);
     await expect(t.process(shared._id)).resolves.toBeNull();
     expect(await t.sharedJob()).toMatchObject({
       credits: null,
@@ -1212,10 +1276,15 @@ it.each(["cancel refused", "cancel threw", "status threw"])(
     expect(await t.advance()).toBe(false);
     expect(await t.inspect()).toMatchObject({
       credits: null,
-      state: { kind: "failed", error: expect.stringContaining("180 seconds") },
+      state: {
+        kind: "failed",
+        error: expect.stringContaining(
+          failure === "status threw" ? "Status unavailable" : "600 seconds",
+        ),
+      },
     });
     await t.process(shared._id);
-    expect(getAgentStatus).toHaveBeenCalledTimes(1);
+    expect(getAgentStatus).toHaveBeenCalledTimes(2);
     if (failure === "status threw") expect(cancelAgent).not.toHaveBeenCalled();
     else expect(cancelAgent).toHaveBeenCalledExactlyOnceWith("job-1");
   },

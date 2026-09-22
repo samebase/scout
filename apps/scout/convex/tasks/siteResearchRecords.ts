@@ -228,7 +228,14 @@ export const finish = internalMutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const research = await ctx.db.get(args.researchId);
-    if (!research || (research.state.kind !== "running" && research.state.kind !== "waiting"))
+    if (!research) return null;
+    const recoveredResult =
+      research.sessionId === null &&
+      research.state.kind === "failed" &&
+      args.state.kind === "completed" &&
+      research.jobId !== null &&
+      research.jobId === args.jobId;
+    if (research.state.kind !== "running" && research.state.kind !== "waiting" && !recoveredResult)
       return null;
     if (research.sessionId === null && research.billable && args.credits !== null)
       await recordCreditUsage(ctx, {

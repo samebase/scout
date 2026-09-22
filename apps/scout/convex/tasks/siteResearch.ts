@@ -1,7 +1,7 @@
 "use node";
 
 import { v } from "convex/values";
-import { SdkError } from "firecrawl";
+import { SdkError, type Firecrawl } from "firecrawl";
 import { internal } from "../_generated/api";
 import type { Doc } from "../_generated/dataModel";
 import { internalAction, type ActionCtx } from "../_generated/server";
@@ -10,9 +10,54 @@ import { siteHostnameSchema } from "../../shared/site";
 import { saveWorkspaceFile } from "../scout/workspaceTools";
 import { createFirecrawlClient } from "../scout/lib/firecrawl";
 import { diagnosticMessage } from "../scout/lib/redaction";
-import { researchFinishedState, SITE_RESEARCH_TIMEOUT_MS } from "./siteResearchModel";
+import {
+  researchFinishedState,
+  SITE_RESEARCH_TIMEOUT_MS,
+  TASK_RESEARCH_WAIT_MS,
+} from "./siteResearchModel";
 import { researchSite, researchRequest, siteBrief, renderBrief } from "./siteResearchSources";
 import { failTaskOnCreditError } from "./creditUsage";
+
+async function saveCompletedResearch(
+  ctx: ActionCtx,
+  research: Doc<"agentsApiSiteResearch">,
+  response: Awaited<ReturnType<Firecrawl["getAgentStatus"]>>,
+) {
+  if (research.sessionId !== null || !research.site)
+    throw new Error("Expected site-owned research");
+  const target = { kind: "site" as const, site: research.site };
+  const responsePath = "/workspace/research/result.json";
+  await saveWorkspaceFile(ctx, {
+    target,
+    userId: research.userId,
+    path: responsePath,
+    text: JSON.stringify(response, null, 2),
+  });
+  const result = siteBrief.parse(response.data);
+  const finishedAt = Date.now();
+  const markdown = renderBrief(research.site, result, finishedAt);
+  const briefPath = "/workspace/research/brief.md";
+  await saveWorkspaceFile(ctx, {
+    target,
+    userId: research.userId,
+    path: briefPath,
+    text: markdown,
+  });
+  await ctx.runMutation(internal.tasks.siteResearchRecords.finish, {
+    researchId: research._id,
+    jobId: research.jobId,
+    responsePath,
+    credits: response.creditsUsed ?? null,
+    profile: {
+      name: result.name,
+      homepageUrl: `https://${research.site}/`,
+      overview: result.overview,
+      brief: markdown,
+      researchedAt: finishedAt,
+    },
+    state: { kind: "completed", finishedAt, brief: markdown, briefPath },
+  });
+}
 
 export async function endResearch(
   ctx: ActionCtx,
@@ -64,6 +109,11 @@ export const refresh = action({
       const client = createFirecrawlClient();
       try {
         const status = await client.getAgentStatus(current.jobId);
+        if (!status.success) throw new Error(status.error ?? "Firecrawl research request failed");
+        if (status.status === "completed") {
+          await saveCompletedResearch(ctx, current, status);
+          return current._id;
+        }
         if (status.status === "processing" && !(await client.cancelAgent(current.jobId)))
           throw new Error(
             "Could not stop the previous Firecrawl research job. Retry after resolving it.",
@@ -115,7 +165,20 @@ async function advanceTask(
   if (!source || source.sessionId !== null) throw new Error("Shared site research not found");
   switch (source.state.kind) {
     case "running":
-      return true;
+      if (Date.now() - research._creationTime < TASK_RESEARCH_WAIT_MS) return true;
+      await ctx.runMutation(internal.tasks.siteResearchRecords.finish, {
+        researchId: research._id,
+        jobId: null,
+        responsePath: null,
+        profile: null,
+        credits: research.state.reused ? 0 : source.credits,
+        state: {
+          kind: "skipped",
+          finishedAt: Date.now(),
+          reason: "Site research is still running in the background. Continuing without a brief.",
+        },
+      });
+      return false;
     case "waiting":
       throw new Error("Site research cannot wait on a task");
     case "completed": {
@@ -191,9 +254,9 @@ export const process = internalAction({
     let jobId = research.jobId;
     let observedCredits = research.credits;
     try {
-      if (Date.now() - research._creationTime >= SITE_RESEARCH_TIMEOUT_MS)
-        throw new Error(`Site research exceeded ${SITE_RESEARCH_TIMEOUT_MS / 1000} seconds`);
       if (!jobId) {
+        if (Date.now() - research._creationTime >= SITE_RESEARCH_TIMEOUT_MS)
+          throw new Error(`Site research exceeded ${SITE_RESEARCH_TIMEOUT_MS / 1000} seconds`);
         await ctx.runMutation(internal.tasks.siteResearchRecords.admit, {
           researchId: research._id,
         });
@@ -224,13 +287,13 @@ export const process = internalAction({
         if (response.status !== "processing") {
           observedCredits = response.creditsUsed ?? null;
           responsePath = "/workspace/research/result.json";
-          await saveWorkspaceFile(ctx, {
-            target,
-            userId: research.userId,
-            path: responsePath,
-            text: JSON.stringify(response, null, 2),
-          });
           if (response.status === "failed") {
+            await saveWorkspaceFile(ctx, {
+              target,
+              userId: research.userId,
+              path: responsePath,
+              text: JSON.stringify(response, null, 2),
+            });
             await ctx.runMutation(internal.tasks.siteResearchRecords.finish, {
               researchId: research._id,
               jobId,
@@ -245,32 +308,11 @@ export const process = internalAction({
             });
             return null;
           }
-          const result = siteBrief.parse(response.data);
-          const finishedAt = Date.now();
-          const markdown = renderBrief(research.site, result, finishedAt);
-          const briefPath = "/workspace/research/brief.md";
-          await saveWorkspaceFile(ctx, {
-            target,
-            userId: research.userId,
-            path: briefPath,
-            text: markdown,
-          });
-          await ctx.runMutation(internal.tasks.siteResearchRecords.finish, {
-            researchId: research._id,
-            jobId,
-            responsePath,
-            credits: response.creditsUsed ?? null,
-            profile: {
-              name: result.name,
-              homepageUrl: `https://${research.site}/`,
-              overview: result.overview,
-              brief: markdown,
-              researchedAt: finishedAt,
-            },
-            state: { kind: "completed", finishedAt, brief: markdown, briefPath },
-          });
+          await saveCompletedResearch(ctx, research, response);
           return null;
         }
+        if (Date.now() - research._creationTime >= SITE_RESEARCH_TIMEOUT_MS)
+          throw new Error(`Site research exceeded ${SITE_RESEARCH_TIMEOUT_MS / 1000} seconds`);
       }
       await ctx.scheduler.runAfter(5_000, internal.tasks.siteResearch.process, args);
     } catch (error) {
