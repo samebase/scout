@@ -15,7 +15,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-22T20:05:26Z
+- **Last updated:** 2026-09-22T22:40:00Z
 
 ## Log
 
@@ -1954,7 +1954,14 @@ New starts use Convex by default and existing Agents API tasks can continue
 Showed the OpenAI billing pause beneath the disabled Agents API option in the
 user-facing picker, with matching wording in Lab and task-start errors.
 
-### 2026-09-22 - working tree - v312
+### 2026-09-22 - ff782e4 - v312
 
 Kept the animated homepage trail and its checkpoint drag targets inside the terrain
 backdrop so they cannot widen the page on mobile or desktop (`apps/scout/src/style.css`).
+
+### 2026-09-22 - working tree - v313
+
+Wait for site research before starting the review, allowing up to six minutes.
+Check completed Firecrawl results before applying the deadline, and let admin
+refresh recover a finished result without starting another research job
+(`apps/scout/convex/tasks/siteResearch.ts`).
