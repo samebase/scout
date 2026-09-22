@@ -329,6 +329,39 @@ function AboutPage() {
               </section>
             </div>
           </section>
+          <section aria-labelledby="about-hackathon">
+            <h2 id="about-hackathon">Built for the All Gas Hackathon.</h2>
+            <p>
+              I built TrailScout for the{" "}
+              <a
+                href="https://www.convex.dev/hackathons/all-gas"
+                className="text-primary underline underline-offset-4"
+              >
+                Convex All Gas Hackathon
+              </a>
+              .
+            </p>
+            <p className="flex flex-wrap gap-x-6 gap-y-2">
+              <a
+                href="https://youtu.be/FHzS5r6Qb_U"
+                className="text-primary underline underline-offset-4"
+              >
+                Watch the demo
+              </a>
+              <a
+                href="https://github.com/samebase/scout"
+                className="text-primary underline underline-offset-4"
+              >
+                Source code
+              </a>
+              <a
+                href="https://x.com/nicu_tsx/status/2102449379307086013"
+                className="text-primary underline underline-offset-4"
+              >
+                Announcement on X
+              </a>
+            </p>
+          </section>
         </div>
 
         <Link

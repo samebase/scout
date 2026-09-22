@@ -10,14 +10,13 @@ rendering or generation between the two files.
 - **Project name:** TrailScout
 - **Tagline:** Send an AI agent to try a website for you. See what happened in a walkthrough, screenshots, and a replay.
 - **Live app:** https://doting-crab-687.convex.site
-- **Repository:** https://github.com/samebase/scout — currently private; make public before submission.
+- **Repository:** https://github.com/samebase/scout
 - **Build log:** [hackathon.md](../hackathon.md)
-- **Demo video:** Pending.
-- **Build announcement:** Pending confirmation and link.
+- **Demo video:** https://youtu.be/FHzS5r6Qb_U
+- **Build announcement:** https://x.com/nicu_tsx/status/2102449379307086013
 
 The tagline is 105 characters. Confirm the event-specific fields after signing in
 and follow [the researched requirements](./hackathon-submission-requirements.md).
-Add the public repository, video, and announcement links to About when ready.
 
 ## Shared About and submission copy
 
@@ -233,6 +232,14 @@ a persistent place to write scripts and process research within the existing
 backend. I had to teach it when to save material, how to read it back, and which
 files belonged in the private conversation workspace or the shared site workspace.
 
+### Built for the All Gas Hackathon.
+
+I built TrailScout for the [Convex All Gas Hackathon](https://www.convex.dev/hackathons/all-gas).
+
+[Watch the demo](https://youtu.be/FHzS5r6Qb_U) ·
+[Source code](https://github.com/samebase/scout) ·
+[Announcement on X](https://x.com/nicu_tsx/status/2102449379307086013)
+
 [Send a Scout to a website](https://doting-crab-687.convex.site)
 
 ## Working notes, not public copy
@@ -351,8 +358,8 @@ instead of introducing unexplained names such as Play.
   and the grouped technical decisions after the agent and replay stories.
 - Choose and verify one actual public review for the submission evidence and video.
   Check its walkthrough, screenshots, and replay before recording.
-- Add the final video, public repository, and announcement links to both places.
-  Refresh the root build log when the submission is ready.
+- Publish the final video, public repository, and announcement links in both places,
+  together with the updated root build log.
 - Confirm the signed-in form's event-specific questions and fields, team details,
   registration, and the intended judge access to task creation.
 - Keep the homepage concise. Its approved three explanatory lines and the existing
