@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-22T12:13:00Z
+- **Last updated:** 2026-09-22T12:41:00Z
 
 ## Log
 
@@ -1902,7 +1902,7 @@ paginated navigation as public reviews. Removed task history remains available i
 ### 2026-09-22 - working tree - v303
 
 Site search shows a larger rotating icon in the results area on the homepage and sites sidebar,
-including first visits. The search field keeps its magnifying glass, and filters stay available
-while the list waits for results. Empty intermediate pages keep the indicator active until matches
-arrive or the search is exhausted (`apps/scout/src/components/site-search-results.tsx`,
-`apps/scout/src/components/activity-feed.tsx`, `apps/scout/src/routes/sites.$site.tsx`).
+until matching sites or a completed empty result arrive. The server searches hostnames and product
+names before paginating matches, preserving visibility rules and live page boundaries. The search
+field keeps its magnifying glass, and filters stay available while results load
+(`apps/scout/convex/scout/sites.ts`, `apps/scout/src/components/site-search-results.tsx`).

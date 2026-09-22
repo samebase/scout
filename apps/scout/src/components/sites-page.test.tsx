@@ -76,6 +76,9 @@ vi.mock("../lib/access", async (importOriginal) => ({
       : { kind: "anonymous" },
 }));
 vi.mock("./site-preview", () => ({ SitePreview: () => <div />, SitePreviewCapture: () => null }));
+vi.mock("convex-helpers/react", async () => ({
+  usePaginatedQuery: (await import("convex/react")).usePaginatedQuery,
+}));
 vi.mock("convex/react", () => ({
   usePaginatedQuery: (
     ref: FunctionReference<"query">,

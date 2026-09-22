@@ -12,6 +12,7 @@ import { useAction } from "convex/react";
 import { convexQuery } from "@convex-dev/react-query";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { useSsrPaginatedQuery } from "#lib/useSsrPaginatedQuery";
+import { usePaginatedQuery as useStreamPaginatedQuery } from "convex-helpers/react";
 import type { FunctionReturnType } from "convex/server";
 import { ArrowLeftIcon, PanelLeftIcon, PlusIcon, SearchIcon } from "lucide-react";
 import { Suspense, useDeferredValue, useState } from "react";
@@ -179,6 +180,7 @@ function SiteNavigationResults({ search }: { search: ReviewFeedSearch }) {
     api.scout.sites.list,
     { scope: search.scope ?? "public", site: search.site ?? null },
     { initialNumItems: 20 },
+    useStreamPaginatedQuery,
   );
   return (
     <>

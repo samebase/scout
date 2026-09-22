@@ -2,6 +2,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { convexQuery } from "@convex-dev/react-query";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { useAction, usePaginatedQuery, useQuery } from "convex/react";
+import { usePaginatedQuery as useStreamPaginatedQuery } from "convex-helpers/react";
 import type { FunctionReturnType } from "convex/server";
 import { ArrowRightIcon, EarthIcon, LockKeyholeIcon } from "lucide-react";
 import { Suspense, useCallback, useDeferredValue, useEffect, useState } from "react";
@@ -104,7 +105,12 @@ function UnassignedTasks({ search }: { search: ReviewFeedSearch }) {
 function SiteGroups({ search }: { search: ReviewFeedSearch }) {
   const site = search.site ?? null;
   const scope = search.scope ?? "public";
-  const sites = useSsrPaginatedQuery(api.scout.sites.list, { site, scope }, { initialNumItems: 6 });
+  const sites = useSsrPaginatedQuery(
+    api.scout.sites.list,
+    { site, scope },
+    { initialNumItems: 6 },
+    useStreamPaginatedQuery,
+  );
   const rows = sites.results;
   const exhausted = sites.status === "Exhausted";
   return (

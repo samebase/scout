@@ -67,6 +67,9 @@ vi.mock("../lib/access", () => ({
 vi.mock("./site-preview", () => ({
   SitePreview: () => <div data-testid="site-preview" />,
 }));
+vi.mock("convex-helpers/react", async () => ({
+  usePaginatedQuery: (await import("convex/react")).usePaginatedQuery,
+}));
 vi.mock("convex/react", () => ({
   useQuery: (
     reference: FunctionReference<"query">,

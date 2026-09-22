@@ -1,5 +1,6 @@
 import { paginationOptsValidator, paginationResultValidator } from "convex/server";
 import { v } from "convex/values";
+import { stream } from "convex-helpers/server/stream";
 import { siteHostnameSchema, siteSearchSchema } from "../../shared/site";
 import { omitNullish } from "../../shared/omitNullish";
 import type { Doc } from "../_generated/dataModel";
@@ -7,6 +8,7 @@ import { internalMutation, type QueryCtx } from "../_generated/server";
 import { canAccess } from "../../shared/accessModel";
 import { requireViewerPermission, type ViewerAccess } from "../access";
 import { publicQuery } from "../functions";
+import schema from "../schema";
 import { accessibleSite, ensureSite, syncChatSite } from "./siteListings";
 import { previewMetadata, sitePreviewMetadata } from "./sitePreviewModel";
 
@@ -61,20 +63,19 @@ export const list = publicQuery({
     const matches = (site: Doc<"sites">) =>
       site.hostname.includes(search) ||
       (site.profile?.name.toLowerCase().includes(search) ?? false);
-    const paginationOpts = {
-      ...args.paginationOpts,
-      numItems: Math.min(args.paginationOpts.numItems, 24),
-      maximumRowsRead: Math.min(args.paginationOpts.maximumRowsRead ?? 24, 24),
-      maximumBytesRead: Math.min(args.paginationOpts.maximumBytesRead ?? 256 * 1024, 256 * 1024),
-    };
+    const db = stream(ctx.db, schema);
     if (args.scope === "all") {
       requireViewerPermission(ctx.viewer, "access_lab");
-      const rows = ctx.db.query("sites").withIndex("by_hostname");
-      const page = await rows.order("asc").paginate(paginationOpts);
+      const page = await db
+        .query("sites")
+        .withIndex("by_hostname")
+        .order("asc")
+        .filterWith(async (site) => matches(site))
+        .paginate(args.paginationOpts);
       return {
         ...page,
         page: await Promise.all(
-          page.page.filter(matches).map(async (site) => ({
+          page.page.map(async (site) => ({
             ...(await presentSite(ctx, site, ctx.viewer)),
             taskCount: site.taskCount,
           })),
@@ -83,44 +84,44 @@ export const list = publicQuery({
     }
     if (args.scope === "mine") {
       const { userId } = requireViewerPermission(ctx.viewer, "access_account");
-      const rows = ctx.db
+      const page = await db
         .query("siteUserListings")
         .withIndex("by_user_id_and_latest_task_created_at_and_hostname", (q) =>
           q.eq("userId", userId),
-        );
-      const page = await rows.order("desc").paginate(paginationOpts);
-      const sites = await Promise.all(
-        page.page.map(async ({ hostname, taskCount }) => {
+        )
+        .order("desc")
+        .map(async ({ hostname, taskCount }) => {
           const site = await ctx.db
             .query("sites")
             .withIndex("by_hostname", (q) => q.eq("hostname", hostname))
             .unique();
           if (!site) throw new Error("Site listing has no site");
           return { site, taskCount };
-        }),
-      );
+        })
+        .filterWith(async ({ site }) => matches(site))
+        .paginate(args.paginationOpts);
       return {
         ...page,
         page: await Promise.all(
-          sites
-            .filter(({ site }) => matches(site))
-            .map(async ({ site, taskCount }) => ({
-              ...(await presentSite(ctx, site, ctx.viewer)),
-              taskCount,
-            })),
+          page.page.map(async ({ site, taskCount }) => ({
+            ...(await presentSite(ctx, site, ctx.viewer)),
+            taskCount,
+          })),
         ),
       };
     }
-    const rows = ctx.db
+    const page = await db
       .query("sites")
       .withIndex("by_latest_public_task_created_at_and_hostname", (q) =>
         q.gt("latestPublicTask.createdAt", undefined),
-      );
-    const page = await rows.order("desc").paginate(paginationOpts);
+      )
+      .order("desc")
+      .filterWith(async (site) => matches(site))
+      .paginate(args.paginationOpts);
     return {
       ...page,
       page: await Promise.all(
-        page.page.filter(matches).map(async (site) => ({
+        page.page.map(async (site) => ({
           ...(await presentSite(ctx, site, ctx.viewer)),
           taskCount: site.publicTaskCount,
         })),

@@ -266,7 +266,10 @@ test("site cursors count sites, order by latest eligible activity, and never exp
     { hostname: "old.test", taskCount: 2, preview: null, profile: null, research: null },
     { hostname: "second.test", taskCount: 1, preview: null, profile: null, research: null },
   ]);
-  expect(third.isDone).toBe(true);
+  expect(await t.list("public", third.continueCursor, 1)).toMatchObject({
+    page: [],
+    isDone: true,
+  });
   expect((await t.list("mine")).page.map((row) => row.hostname)).toEqual([
     "second.test",
     "rejected.test",
@@ -545,14 +548,8 @@ test("admin all-sites cursors include workspace-only and private sites in hostna
   await expect(t.owner.query(api.scout.sites.list, args)).rejects.toThrow("Not authorized");
   await expect(t.backend.query(api.scout.sites.list, args)).rejects.toThrow("Not authorized");
   const search = await t.admin.query(api.scout.sites.list, { ...args, site: " C.TEST " });
-  expect(search.page).toEqual([]);
-  expect(search.isDone).toBe(false);
-  const matches = await t.admin.query(api.scout.sites.list, {
-    ...args,
-    site: " C.TEST ",
-    paginationOpts: { cursor: search.continueCursor, numItems: 2 },
-  });
-  expect(matches.page).toEqual([
+  expect(search.isDone).toBe(true);
+  expect(search.page).toEqual([
     { hostname: "c.test", taskCount: 0, preview: null, profile: null, research: null },
   ]);
 });
@@ -769,11 +766,11 @@ test.each([undefined, "A public calculator."])(
   },
 );
 
-test("search matches partial names and domains across bounded pages without exposing private sites", async () => {
+test("search returns matches beyond the first 24 sites in one response without exposing private sites", async () => {
   const t = await setup();
   await t.review("older-app.test", 1);
   await t.review("pika.style", 2);
-  await t.review("unrelated.test", 3);
+  for (let i = 0; i < 30; i++) await t.review(`unrelated-${i}.test`, 10 + i);
   await t.review("pika-private.test", 4, { userId: t.otherId, visibility: "private" });
   await t.backend.run(async (ctx) => {
     const site = await ctx.db
@@ -792,21 +789,20 @@ test("search matches partial names and domains across bounded pages without expo
   });
   for (const scope of ["public", "mine"] as const) {
     const first = await t.list(scope, null, 1, " PIKA ");
-    expect(first.page).toEqual([]);
+    expect(first.page.map((site) => site.hostname)).toEqual(["pika.style"]);
     expect(first.isDone).toBe(false);
     const second = await t.list(scope, first.continueCursor, 1, " PIKA ");
-    const third = await t.list(scope, second.continueCursor, 1, " PIKA ");
-    expect([...second.page, ...third.page].map((site) => site.hostname)).toEqual([
-      "pika.style",
-      "older-app.test",
-    ]);
+    expect(second.page.map((site) => site.hostname)).toEqual(["older-app.test"]);
     expect((await t.list(scope, null, 24, "studio")).page.map((site) => site.hostname)).toEqual([
       "older-app.test",
     ]);
-    expect((await t.list(scope, null, 24, "ika")).page.map((site) => site.hostname)).toEqual([
-      "pika.style",
-      "older-app.test",
-    ]);
+    const matches = await t.list(scope, null, 6, "ika");
+    expect(matches.page.map((site) => site.hostname)).toEqual(["pika.style", "older-app.test"]);
+    expect(matches.isDone).toBe(true);
+    expect(await t.list(scope, null, 6, "nothing-matches")).toMatchObject({
+      page: [],
+      isDone: true,
+    });
   }
   const privateMatch = await t.other.query(api.scout.sites.list, {
     scope: "mine",
@@ -814,4 +810,32 @@ test("search matches partial names and domains across bounded pages without expo
     paginationOpts: { cursor: null, numItems: 24 },
   });
   expect(privateMatch.page.map((site) => site.hostname)).toEqual(["pika-private.test"]);
+});
+
+test("search page boundaries keep matches contiguous when a new site arrives", async () => {
+  const t = await setup();
+  await t.review("match-oldest.test", 1);
+  await t.review("match-middle.test", 2);
+  await t.review("match-newest.test", 3);
+  await t.review("unrelated.test", 4);
+  for (const scope of ["public", "mine"] as const) {
+    const first = await t.list(scope, null, 2, "match");
+    const second = await t.list(scope, first.continueCursor, 2, "match");
+    const inserted = await t.review(`match-inserted-${scope}.test`, 5);
+    const refreshed = await t.owner.query(api.scout.sites.list, {
+      scope,
+      site: "match",
+      paginationOpts: { cursor: null, endCursor: first.continueCursor, numItems: 2 },
+    });
+    expect([...refreshed.page, ...second.page].map((site) => site.hostname)).toEqual([
+      `match-inserted-${scope}.test`,
+      "match-newest.test",
+      "match-middle.test",
+      "match-oldest.test",
+    ]);
+    await t.owner.mutation(api.scout.reviewSites.set, {
+      threadId: inserted.sessionId,
+      site: "unrelated.test",
+    });
+  }
 });

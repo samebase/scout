@@ -14,8 +14,9 @@ export function useSsrPaginatedQuery<Query extends PaginatedQueryReference>(
   query: Query,
   args: PaginatedQueryArgs<Query>,
   options: { initialNumItems: number },
+  useLiveQuery = usePaginatedQuery,
 ): UsePaginatedQueryReturnType<Query> {
-  const live = usePaginatedQuery(query, args, options);
+  const live = useLiveQuery(query, args, options);
   // Convex's generic rest tuple cannot infer the reconstruction of its paginated args.
   // @ts-expect-error args omits paginationOpts; adding it restores the query's declared arguments.
   const { queryKey, staleTime } = convexQuery(query, {
