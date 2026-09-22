@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url";
+import { randomUUID } from "node:crypto";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
@@ -10,6 +11,9 @@ import { prerenderPages, prerenderPathRewrites } from "./prerender.config.ts";
 
 export default defineConfig(({ command }) => {
   const primaryCheckout = command === "serve" && resolveWorktreeKind() === "main";
+  // Each publish replaces this marker while retaining older files under /assets/.
+  const markerPath = `/__convex_build/${randomUUID()}`;
+  const clientBuild = JSON.stringify({ markerPath });
   return {
     server: {
       port: primaryCheckout ? 5173 : 5174,
@@ -18,6 +22,21 @@ export default defineConfig(({ command }) => {
     ssr: { noExternal: ["@samebase/sidebars"] },
     plugins: [
       convexSsr(),
+      {
+        name: "convex-client-build",
+        apply: "build",
+        sharedDuringBuild: true,
+        applyToEnvironment: (environment) =>
+          environment.name === "client" || environment.name === "ssr",
+        generateBundle() {
+          this.emitFile({
+            type: "asset",
+            fileName:
+              this.environment.name === "client" ? markerPath.slice(1) : "client-build.json",
+            source: clientBuild,
+          });
+        },
+      },
       typegpu(),
       tailwindcss(),
       tanstackStart({
@@ -66,6 +85,9 @@ export default defineConfig(({ command }) => {
       // Give renderer mocks a resolvable entry before the first build.
       alias: {
         "../dist/server/server.js": fileURLToPath(new URL("./src/server.ts", import.meta.url)),
+        "../dist/server/client-build.json": fileURLToPath(
+          new URL("./scripts/fixtures/client-build.json", import.meta.url),
+        ),
       },
       // Keep hoisted dependencies inside the test root. Vitest's /@fs/ loader
       // reads global process while Convex Workflow temporarily removes it.

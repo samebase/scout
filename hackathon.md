@@ -15,7 +15,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-22T18:04:07Z
+- **Last updated:** 2026-09-22T18:45:50Z
 
 ## Log
 
@@ -1922,9 +1922,16 @@ Prepared the three-minute demo around one Samebase signup and app deployment, en
 TrailScout reviewing itself. Speaker notes and recording directions keep scout selection,
 human handoff, and the admin-only workspace in the walkthrough (`video_plan.md`).
 
-### 2026-09-22 - working tree - v307
+### 2026-09-22 - 10fe184 - v307
 
 Submitted TrailScout to the All Gas Hackathon with five screenshots and the published demo.
 Recorded the public repository, video, announcement, and entry links in the About page,
 submission copy, and build log. Tightened the opening and updated the checklist to distinguish
 the completed submission from remaining publication and access checks.
+
+### 2026-09-22 - working tree - v308
+
+Kept each renderer behind its published browser build and retained outgoing Convex assets
+for at least seven days, so deployments preserve open tabs and the previous complete page.
+Moved asset publication directly after the backend push and added served-file verification
+before a release reports success.

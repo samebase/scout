@@ -19,7 +19,7 @@
     "build:app": "vp build",
     "build:cloudflare": "node ./scripts/build-cloudflare.ts",
     "deploy": "node ./scripts/deploy-cloudflare.ts deploy",
-    "deploy:convex": "static-hosting deploy --dist ./dist/client --build-command \"pnpm run build:app\"",
+    "deploy:convex": "static-hosting deploy --dist ./dist/client --build-command \"pnpm run build:app\" && node ./scripts/verify-static-release.ts --prod",
     "deploy:preview": "node ./scripts/deploy-cloudflare.ts preview",
     "deploy:dry-run": "node ./scripts/deploy-cloudflare.ts deploy --dry-run",
     "deploy:preview:dry-run": "node ./scripts/deploy-cloudflare.ts preview --dry-run",

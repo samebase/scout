@@ -68,7 +68,6 @@ test.each([
   "/scouts/scout-name",
   "/future-route/nested/customer.v2?tab=details",
   "/another-new-route/report.pdf",
-  "/assets/missing-b5e0f667.js",
   "/missing.png",
   "/sites/example.com/data.json",
 ])("unmatched path %s loads the app shell", async (path) => {
@@ -133,7 +132,7 @@ test("uploaded hashed assets keep their immutable caching", async () => {
 
 test("component-owned HTTP serving uses the same fallback and shell caching", async () => {
   const backend = await setup(true, "component");
-  const response = await backend.fetch("/assets/missing-b5e0f667.js");
+  const response = await backend.fetch("/future/customer.v2");
   expect(response.status).toBe(200);
   expect(response.headers.get("Content-Type")).toBe("text/html");
   expect(response.headers.get("Cache-Control")).toBe("no-store");

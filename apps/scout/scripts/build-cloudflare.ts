@@ -14,6 +14,8 @@ type ConvexDeployPlan =
       deployKey: string;
       deployKeyName: typeof CONVEX_DEPLOY_KEY;
       args: readonly string[];
+      uploadArgs: readonly string[];
+      verifyArgs: readonly string[];
     }
   | {
       kind: "previewDeploy";
@@ -22,6 +24,7 @@ type ConvexDeployPlan =
       args: readonly string[];
       seedArgs: readonly string[];
       uploadArgs: readonly string[];
+      verifyArgs: readonly string[];
     }
   | {
       kind: "frontendOnly";
@@ -119,6 +122,7 @@ export function selectConvexDeployPlan(env: NodeJS.ProcessEnv): ConvexDeployPlan
         "--preview-name",
         branch,
       ],
+      verifyArgs: ["./scripts/verify-static-release.ts", "--preview-name", branch],
     };
   }
 
@@ -131,6 +135,8 @@ export function selectConvexDeployPlan(env: NodeJS.ProcessEnv): ConvexDeployPlan
       deployKeyName: CONVEX_DEPLOY_KEY,
     }),
     args: ["exec", "convex", "deploy", "--cmd", WORKERS_BUILD_COMMAND],
+    uploadArgs: ["exec", "static-hosting", "upload", "--dist", "./dist/client", "--prod"],
+    verifyArgs: ["./scripts/verify-static-release.ts", "--prod"],
   };
 }
 
@@ -154,10 +160,12 @@ export async function main(
     CONVEX_DEPLOY_KEY: plan.deployKey,
   };
   await runCommand("vp", plan.args, convexEnv);
+  await runCommand("node", ["./scripts/verify-current-branch-head.ts"], convexEnv);
+  await runCommand("vp", plan.uploadArgs, convexEnv);
+  await runCommand("node", plan.verifyArgs, convexEnv);
   await ensureAuth(convexEnv);
   if (plan.kind === "previewDeploy") {
     await runCommand("vp", plan.seedArgs, convexEnv);
-    await runCommand("vp", plan.uploadArgs, convexEnv);
   }
 }
 

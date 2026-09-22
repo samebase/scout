@@ -41,7 +41,7 @@ export function verifyCurrentBranchHead(
 
   if (remoteHead !== checkoutHead) {
     throw new Error(
-      `Workers Build ${checkoutHead} is stale: ${branch} now points to ${remoteHead}. Convex was not deployed.`,
+      `Workers Build ${checkoutHead} is stale: ${branch} now points to ${remoteHead}. Refusing to publish this stale build.`,
     );
   }
 }

@@ -49,7 +49,8 @@ and preserves it until native `usePaginatedQuery` connects. Convex owns cursor
 advancement, page splitting, and live updates. Both subscriptions remain active,
 so this currently costs one additional first-page subscription per list.
 
-Every unmatched GET goes to TanStack, which owns route matching and Not Found.
+Unmatched document GETs go to TanStack, which owns route matching and Not Found.
+Missing `/assets/` paths return a plain 404 without entering the renderer or SPA fallback.
 Public routes inherit SSR. The homepage and site route disable it for personal or
 workspace views; browser-dependent routes explicitly set `ssr: false`.
 No route list is registered in the HTTP action, and new ordinary public queries
@@ -110,23 +111,79 @@ Verified on the hosted `clever-vole-526` preview on September 20, 2026:
   the Convex preview push passed its TypeScript and bundle checks.
 
 Static Hosting still owns uploads, storage, and serving built assets. Its patched
-`fallback(request)` callback runs after an exact asset miss, before static rewrites
+`fallback(request, ctx)` callback runs after an exact asset miss, before static rewrites
 and SPA fallback. A response is returned unchanged; `null` continues normal static
 serving. Callback errors propagate instead of silently switching modes. The callback
-does not run for uploaded files or more-specific Convex auth and webhook endpoints.
+does not run for uploaded files, missing `/assets/` files, or more-specific Convex auth and webhook endpoints.
 This hook handles GET documents; it does not add POST server-function support.
 
 With TanStack serving disabled, public prerenders and the universal `/index.html`
-fallback work as before. Dots and Accept headers do not affect shell fallback.
+fallback work as before for document routes. Dots and Accept headers do not affect shell fallback
+outside the reserved `/assets/` namespace.
 HTML responses set `Cache-Control: no-store`.
 In hosted preview checks, Convex preserves that header for site URLs but overrides
 it with `public, max-age=14400` on missing `.js`, `.png`, and `.pdf` URLs. Browsers
-can cache the static shell or TanStack Not Found response there for four hours.
+could cache the static shell or TanStack Not Found response there for four hours. The release
+guard now prevents pages from referencing unpublished bundles, and retained files protect
+old tabs. Missing bundle responses still request `no-store`; the upstream header override
+was also present on the temporary dev deployment during the September 22 release checks.
+
+### Matching the renderer to published browser files
+
+Each build emits `dist/server/client-build.json` and a matching extensionless public marker.
+The HTTP handler checks that marker before importing the renderer. Until the upload atomically
+publishes it, requests use the complete preceding static release. A missing or partial initial
+upload returns Static Hosting's setup response. This is a release-readiness check; errors from
+a renderer whose files are published still propagate.
+
+Only the active manifest can satisfy the marker check. The component retains outgoing file
+storage for at least seven days, but serves retired paths only for non-HTML files under
+`/assets/`. Old HTML and readiness markers are never selected from retained files.
+`GET /__convex_build` reports the deployed backend's build identity without initializing SSR.
+The release verifier checks that identity, the active static marker, asset MIME types, and
+asset bytes before reporting success. See [release order and retention](cloudflare-workers-builds.md#release-order-and-asset-retention).
+
+Verified on temporary dev deployment `scintillating-sardine-100` on September 22, 2026:
+
+- Before the first upload, the backend metadata endpoint worked and the homepage returned
+  the component's 503 setup response. Missing JavaScript returned plain 404, with the host's
+  four-hour cache override still present.
+- With release A published, deploying server B kept serving A's exact static shell.
+  The release verifier rejected B until its client files were published.
+- Publishing B activated SSR and passed byte-for-byte verification of all 68 browser assets.
+  An inert JavaScript asset uploaded only in A still returned its original bytes after B.
+- A browser tab opened on A navigated to About and back after B published, then reloaded
+  successfully. Its console contained no warnings or errors. The two builds used the same
+  application source; the removed probe asset separately exercised archive resolution.
+
+The temporary deployment expires after one day. Production was not changed. Seven-day
+expiration, interrupted uploads, rollback, and storage cleanup are covered by component tests.
+
+The same deployment also passed a changed-build check before opening the pull request.
+Release C temporarily changed the real stylesheet and lazy About route. Its CSS changed from
+`style-CprUfdoC.css` to `style-CAH0MBGL.css`, and its About bundle changed from
+`about-BZ_bGCzi.js` to `about-BIuH9_1T.js`. In total, 19 old bundles disappeared from C's manifest.
+The temporary source edits were restored immediately after building and are not part of the PR.
+
+| Scenario                              | Hosted result                                                                                                                                      |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| New backend, old published frontend   | Homepage returned the exact preceding shell; a fresh browser tab hydrated without errors.                                                          |
+| Only C's marker and stylesheet staged | The new marker was not active. Publication rejected the incomplete 2-of-85-file manifest, and failure cleanup preserved the old page.              |
+| Complete C publication                | All 68 active browser assets matched the build byte for byte. All 19 replaced bundles still returned their original bytes.                         |
+| Tab opened before C                   | Its first About navigation after publication rendered the original heading with the original stylesheet and no console errors.                     |
+| Fresh tab and ordinary reload         | Both rendered C's changed heading and purple CSS outline without clearing browser cache.                                                           |
+| Rollback to B                         | All 68 active assets matched B; all 19 replaced C bundles retained their bytes. The open C tab navigated without errors, and reload returned to B. |
+
+The temporary deployment was left on the original PR build, with no visual test changes.
+These checks exercised real Convex storage, staging, publication, HTTP serving, and browser
+navigation. They do not simulate arbitrary backend API incompatibilities or the passage of
+seven days; retention expiration is tested with a controlled clock in the component suite.
 
 ### Enable or disable TanStack serving
 
 Set `TANSTACK_SERVER_ENABLED` in the target Convex deployment's environment settings.
-`true` enables TanStack's server handler; `false` or an unset value restores static
+`true` enables TanStack's server handler once its matching browser build is published;
+`false` or an unset value restores static
 prerenders and the SPA shell for all pages. The HTTP handler reads the setting on
 each request, so changing it does not require a rebuild or code deployment.
 This replaces `HOMEPAGE_SSR_ENABLED`, which no longer controls serving. A deployment
@@ -159,9 +216,9 @@ After selecting a preview, run these platform-neutral commands from the root:
 pnpm --filter samebase-scout exec convex deployment select clever-vole-526
 pnpm run check
 pnpm run build
-pnpm --filter samebase-scout exec convex env set TANSTACK_SERVER_ENABLED false --deployment clever-vole-526
 pnpm --filter samebase-scout exec convex dev --once --typecheck enable
 pnpm --filter samebase-scout exec static-hosting upload --dist ./dist/client --preview-name nicu-convex-tanstack-ssr
+pnpm --filter samebase-scout exec node ./scripts/verify-static-release.ts --deployment clever-vole-526
 pnpm --filter samebase-scout exec convex env set TANSTACK_SERVER_ENABLED true --deployment clever-vole-526
 ```
 
@@ -169,9 +226,8 @@ The backend imports the generated server, so the build must precede its push.
 Normal `pnpm run dev` now does this initial build automatically. Rebuild after
 frontend edits to refresh the hosted renderer; Vite still hot-reloads locally.
 The CI preview path builds before deploying and uploads matching browser assets
-afterwards. It does not toggle this setting automatically. If TanStack serving is
-already enabled, use the manual sequence above for releases: otherwise the interval
-between backend deployment and asset upload can reference missing browser files.
+afterwards, before auth setup and Cloudflare publication. It does not toggle this setting.
+The readiness marker keeps the previous static release available throughout that interval.
 The existing Static Hosting patch adds explicit `--preview-name`
 forwarding, since 0.2.1's uploader otherwise does not target a named preview.
 
