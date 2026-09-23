@@ -6,13 +6,16 @@ import { internal } from "../_generated/api";
 import type { Doc } from "../_generated/dataModel";
 import { internalAction, type ActionCtx } from "../_generated/server";
 import { action } from "../functions";
-import { siteHostnameSchema } from "../../shared/site";
 import { saveWorkspaceFile } from "../scout/workspaceTools";
 import { createFirecrawlClient } from "../scout/lib/firecrawl";
 import { diagnosticMessage } from "../scout/lib/redaction";
 import { researchFinishedState, SITE_RESEARCH_TIMEOUT_MS } from "./siteResearchModel";
-import { researchSite, researchRequest, siteBrief, renderBrief } from "./siteResearchSources";
-import { failTaskOnCreditError } from "./creditUsage";
+import {
+  publicResearchHostnameSchema,
+  researchRequest,
+  siteBrief,
+  renderBrief,
+} from "./siteResearchSources";
 
 async function saveCompletedResearch(
   ctx: ActionCtx,
@@ -94,9 +97,7 @@ export const refresh = action({
   args: { site: v.string() },
   returns: v.id("agentsApiSiteResearch"),
   handler: async (ctx, args): Promise<Doc<"agentsApiSiteResearch">["_id"]> => {
-    const site = siteHostnameSchema.parse(args.site);
-    if (researchSite(`https://${site}/`) !== site)
-      throw new Error("Research requires a public hostname");
+    const site = publicResearchHostnameSchema.parse(args.site);
     const current = await ctx.runQuery(internal.tasks.siteResearchRecords.currentSiteJob, {
       site,
     });
@@ -127,19 +128,39 @@ export const refresh = action({
   },
 });
 
-export const run = internalAction({
-  args: { sessionId: v.id("agentsApiSessions"), prompt: v.string() },
-  returns: v.boolean(),
-  handler: async (ctx, args): Promise<boolean> => {
-    try {
-      const researchId = await ctx.runMutation(internal.tasks.siteResearchRecords.start, {
-        sessionId: args.sessionId,
-        site: researchSite(args.prompt),
-      });
-      if (!researchId) return false;
-      return await advanceTask(ctx, args.sessionId);
-    } catch (error) {
-      return failTaskOnCreditError(ctx, args.sessionId, error);
+export const prepare = internalAction({
+  args: { sessionId: v.id("agentsApiSessions"), site: v.string() },
+  returns: v.union(v.null(), v.object({ primarySite: v.string(), briefPath: v.string() })),
+  handler: async (ctx, args): Promise<{ primarySite: string; briefPath: string } | null> => {
+    const { primarySite } = await ctx.runMutation(internal.scout.reviewSites.identify, args);
+    const snapshot = await ctx.runQuery(internal.tasks.siteResearchRecords.get, {
+      sessionId: args.sessionId,
+    });
+    if (snapshot && snapshot.site !== primarySite) {
+      if (snapshot.state.kind === "waiting" || snapshot.state.kind === "running")
+        await endResearch(ctx, snapshot, { kind: "cancelled", finishedAt: Date.now() });
+      throw new Error(
+        `The saved site brief belongs to ${snapshot.site}, but the review's site is now ${primarySite}. Continue without this brief.`,
+      );
+    }
+    await advanceTask(ctx, args.sessionId);
+    const research = await ctx.runQuery(internal.tasks.siteResearchRecords.get, {
+      sessionId: args.sessionId,
+    });
+    if (!research) throw new Error("Task site research not found");
+    switch (research.state.kind) {
+      case "waiting":
+        return null;
+      case "completed":
+        return { primarySite, briefPath: research.state.briefPath };
+      case "failed":
+        throw new Error(research.state.error);
+      case "skipped":
+        throw new Error(`Site research was skipped: ${research.state.reason}`);
+      case "cancelled":
+        throw new Error("Site research was cancelled");
+      case "running":
+        throw new Error("Task site research is not attached to shared research");
     }
   },
 });
@@ -151,7 +172,7 @@ async function advanceTask(
   const research = await ctx.runQuery(internal.tasks.siteResearchRecords.get, { sessionId });
   if (!research || research.state.kind !== "waiting") return false;
   const { session } = await ctx.runQuery(internal.tasks.sessions.runtime, { sessionId });
-  if (session.state.kind !== "starting" || !session.active) {
+  if (!session.active || (session.state.kind !== "starting" && session.state.kind !== "running")) {
     await endResearch(ctx, research, { kind: "cancelled", finishedAt: Date.now() });
     return false;
   }

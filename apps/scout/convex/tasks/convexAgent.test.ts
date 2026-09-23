@@ -13,7 +13,7 @@ import schema from "../schema";
 import { createBrowserHarness } from "../scout/browserTools";
 import { createServiceAccountRecordingTool } from "../scout/serviceAccountTool";
 import { ADMIN_EMAIL, insertTestAccount } from "../testing/accounts";
-import { runtimeTools } from "./tools";
+import { reviewSiteInput, runtimeTools } from "./tools";
 import {
   accumulatedUsage,
   modelToolOutput,
@@ -77,6 +77,7 @@ beforeEach(() => {
   vi.mocked(runtimeTools).mockImplementation(async () => ({
     tools: {
       browser_read: tool({ inputSchema: z.object({ value: z.string() }), execute }),
+      set_review_site: tool({ inputSchema: reviewSiteInput }),
       count_items: tool({
         inputSchema: z.object({ count: z.number(), label: z.string() }),
         execute: countItems,
@@ -223,6 +224,98 @@ it("records captured paid generations once even after the session starts a free 
     1,
   );
   expect((await task.session())?.modelUsageIncomplete).toBe(true);
+});
+
+it("does not generate another model step while the site brief is pending and delivers its failure", async () => {
+  vi.useFakeTimers();
+  try {
+    const task = await setup();
+    const session = await task.session();
+    if (!session) throw new Error("Session missing");
+    await task.backend.run(async (ctx) => {
+      await ctx.db.insert("scoutChats", {
+        threadId: session._id,
+        runtime: { kind: "agents_api", sessionId: session._id },
+        userId: session.userId,
+        scoutId: session.scoutId,
+        createdAt: Date.now(),
+        purpose: { kind: "review" },
+        visibility: "private",
+      });
+      await ctx.db.insert("agentsApiRequestChecks", {
+        sessionId: session._id,
+        kind: "initial",
+        model: "gpt-5.6-luna",
+        prompt: "Try Example.",
+        state: {
+          kind: "completed",
+          finishedAt: Date.now(),
+          call: { startedAt: Date.now(), request: "{}", response: "{}", usage: null },
+          result: { kind: "initial", title: "Try Example", decision: { kind: "approved" } },
+        },
+      });
+    });
+    provider.stream.mockResolvedValueOnce(
+      streamed(
+        [
+          {
+            type: "tool-call",
+            toolCallId: "site-1",
+            toolName: "set_review_site",
+            input: JSON.stringify({ site: "example.com" }),
+          },
+        ],
+        "tool-calls",
+      ),
+    );
+    expect(await task.advance()).toBe(true);
+    expect(await task.advance()).toBe(true);
+    expect(await task.advance()).toBe(true);
+    expect(provider.stream).toHaveBeenCalledOnce();
+    const call = await task.backend.run((ctx) => ctx.db.query("agentsApiCalls").unique());
+    expect(call?.result).toEqual({ kind: "running" });
+    await task.backend.run(async (ctx) => {
+      const site = await ctx.db.query("sites").unique();
+      if (!site?.researchId) throw new Error("Research missing");
+      await ctx.db.patch(site.researchId, {
+        state: {
+          kind: "failed",
+          finishedAt: Date.now(),
+          error: "Firecrawl HTTP 429: rate limit exceeded",
+        },
+      });
+    });
+    expect(await task.advance()).toBe(true);
+    const finished = await task.backend.run((ctx) => ctx.db.query("agentsApiCalls").unique());
+    expect(finished?.result).toMatchObject({
+      kind: "error",
+      error: expect.stringContaining("Firecrawl HTTP 429"),
+    });
+    provider.stream.mockResolvedValueOnce(
+      textStream("The site brief failed with HTTP 429. I can continue without it."),
+    );
+    expect(await task.advance()).toBe(true);
+    expect(provider.stream).toHaveBeenCalledTimes(2);
+    expect(provider.stream.mock.calls[1]?.[0].prompt).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: "tool",
+          content: expect.arrayContaining([
+            expect.objectContaining({
+              type: "tool-result",
+              toolName: "set_review_site",
+              output: expect.objectContaining({
+                value: expect.stringContaining("Firecrawl HTTP 429"),
+              }),
+            }),
+          ]),
+        }),
+      ]),
+    );
+  } finally {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  }
 });
 
 it.each(["gpt-5.6-luna", "qwen/qwen3.7-flash", "deepseek/deepseek-v4-flash-0731"])(

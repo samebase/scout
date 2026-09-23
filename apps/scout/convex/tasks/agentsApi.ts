@@ -648,6 +648,7 @@ export async function advance(
     purpose,
     call: { name: call.name, callId: call.call_id, arguments: call.arguments },
   });
+  if (result.kind === "running") return true;
   const current = await ctx.runQuery(internal.tasks.sessions.runtime, args);
   if (current.session.state.kind === "stopped") return true;
   const finishedResult = result;

@@ -4,7 +4,8 @@ import { mutation } from "../functions";
 import { requireSessionPermission } from "../tasks/access";
 import { siteHostnameSchema } from "../../shared/site";
 import { syncChatSite } from "./siteListings";
-import { ensureSiteResearch } from "../tasks/siteResearchRecords";
+import { attachSiteResearch } from "../tasks/siteResearchRecords";
+import { publicResearchHostnameSchema } from "../tasks/siteResearchSources";
 import { getInitialCheck } from "../tasks/requestChecks";
 
 export const set = mutation({
@@ -29,7 +30,7 @@ export const identify = internalMutation({
   returns: v.object({ primarySite: v.string() }),
   handler: async (ctx, args) => {
     const session = await ctx.db.get(args.sessionId);
-    if (!session || (session.state.kind !== "running" && session.state.kind !== "starting"))
+    if (!session?.active || (session.state.kind !== "running" && session.state.kind !== "starting"))
       throw new Error("This session is no longer running");
     const chat = await requireSessionPermission(ctx, session);
     if (
@@ -40,15 +41,16 @@ export const identify = internalMutation({
       chat.userId !== session.userId
     )
       throw new Error("Review not found");
+    const check = await getInitialCheck(ctx, session._id);
+    if (check?.state.kind !== "completed" || check.state.result.decision.kind !== "approved")
+      throw new Error("Site research requires an approved request");
     const site = siteHostnameSchema.parse(args.site);
-    const primarySite = chat.primarySite ?? site;
+    const primarySite = publicResearchHostnameSchema.parse(chat.primarySite ?? site);
     if (!chat.primarySite) {
       await ctx.db.patch(chat._id, { primarySite });
       await syncChatSite(ctx, chat);
     }
-    const check = await getInitialCheck(ctx, session._id);
-    if (check?.state.kind === "completed" && check.state.result.decision.kind === "approved")
-      await ensureSiteResearch(ctx, primarySite, session.userId, session._id);
+    await attachSiteResearch(ctx, primarySite, session.userId, session._id);
     return { primarySite };
   },
 });

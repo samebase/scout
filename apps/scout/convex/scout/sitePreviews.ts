@@ -8,15 +8,13 @@ import { action, publicAction } from "../functions";
 import { getRuntimeEnv } from "../runtimeEnv";
 import { workspaceStorage } from "../workspaceStorage";
 import { siteHostnameSchema } from "../../shared/site";
-import { researchSite } from "../tasks/siteResearchSources";
+import { publicResearchHostnameSchema } from "../tasks/siteResearchSources";
 import { createFirecrawlClient } from "./lib/firecrawl";
 import { downloadFirecrawlScreenshot } from "./lib/firecrawlScreenshot";
 import { diagnosticMessage } from "./lib/redaction";
 
 async function capturePreview(ctx: ActionCtx, input: string, retryFailed: boolean): Promise<null> {
-  const site = siteHostnameSchema.parse(input);
-  if (researchSite(`https://${site}/`) !== site)
-    throw new Error("Preview requires a public hostname");
+  const site = publicResearchHostnameSchema.parse(input);
   const siteId = await ctx.runMutation(internal.scout.sitePreviewRecords.claim, {
     site,
     retryFailed,

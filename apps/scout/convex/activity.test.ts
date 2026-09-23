@@ -9,7 +9,6 @@ import schema from "./schema";
 import { ADMIN_EMAIL, insertTestAccount } from "./testing/accounts";
 import { omitNullish } from "../shared/omitNullish";
 import { syncChatSite } from "./scout/siteListings";
-import { getResearch } from "./tasks/siteResearchRecords";
 
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => {
@@ -156,13 +155,15 @@ async function setup() {
   async function preparingReview() {
     const review = await managedReview("example.com");
     await backend.run((ctx) =>
-      ctx.db.patch(review.sessionId, { state: { kind: "starting" }, active: true }),
+      ctx.db.patch(review.sessionId, { state: { kind: "running" }, active: true }),
     );
-    await backend.mutation(internal.tasks.siteResearchRecords.start, {
+    await backend.mutation(internal.scout.reviewSites.identify, {
       sessionId: review.sessionId,
       site: "example.com",
     });
-    const research = await backend.run((ctx) => getResearch(ctx, review.sessionId));
+    const research = await backend.query(internal.tasks.siteResearchRecords.get, {
+      sessionId: review.sessionId,
+    });
     if (research?.state.kind !== "waiting") throw new Error("Expected waiting research");
     const sharedId = research.state.researchId;
     const shared = await backend.run((ctx) => ctx.db.get(sharedId));
@@ -266,12 +267,18 @@ test.each([
   },
 );
 
-test("site preparation requires an active review that is still starting", async () => {
+test("site preparation requires a starting or running active review", async () => {
   const t = await setup();
-  const { sessionId, chatId, checkId } = await t.preparingReview();
+  const { sessionId, chatId, checkId, shared } = await t.preparingReview();
+  for (const kind of ["starting", "running"] as const) {
+    await t.backend.run((ctx) => ctx.db.patch(sessionId, { state: { kind }, active: true }));
+    expect(
+      (await t.member.query(api.scout.activity.get, { threadId: sessionId }))?.sitePreparation,
+    ).toEqual({ startedAt: shared._creationTime });
+  }
   for (const patch of [
     { state: { kind: "starting" }, active: false },
-    { state: { kind: "running" }, active: true },
+    { state: { kind: "running" }, active: false },
     { state: { kind: "checking", checkId }, active: true },
     { state: { kind: "waiting", callId: "call", turnId: "turn", message: "Help" }, active: true },
     { state: { kind: "idle" }, active: false },
@@ -286,7 +293,7 @@ test("site preparation requires an active review that is still starting", async 
     ).toBeNull();
   }
   await t.backend.run(async (ctx) => {
-    await ctx.db.patch(sessionId, { state: { kind: "starting" }, active: true });
+    await ctx.db.patch(sessionId, { state: { kind: "running" }, active: true });
     await ctx.db.patch(chatId, { purpose: { kind: "play", step: null } });
   });
   expect(

@@ -530,6 +530,7 @@ it("lists saved screenshots and saves their walkthrough while the browser cannot
       });
     });
   const listed = await execute("list_screenshots", {});
+  if (listed.kind === "running") throw new Error("Screenshot listing did not finish");
   if (listed.kind !== "success") throw new Error(listed.error);
   const captures: unknown = JSON.parse(listed.output);
   expect(captures).toMatchObject({

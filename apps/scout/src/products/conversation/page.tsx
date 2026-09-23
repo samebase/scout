@@ -1418,7 +1418,7 @@ function SitePreparationStatus({ startedAt }: { startedAt: number }) {
             : `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")} elapsed`}
         </time>
       </div>
-      <p className="mt-1 text-xs">This can take up to 6 minutes before browser review starts.</p>
+      <p className="mt-1 text-xs">Scout waits up to 6 minutes for the brief before continuing.</p>
     </div>
   );
 }

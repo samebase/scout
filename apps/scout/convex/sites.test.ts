@@ -182,8 +182,14 @@ async function setup() {
 test("approval, identification, edits, and visibility update public and owner directories atomically", async () => {
   const t = await setup();
   const pending = await t.review(null, 10, { decision: "pending" });
-  await t.backend.mutation(internal.scout.reviewSites.identify, {
-    sessionId: pending.sessionId,
+  await expect(
+    t.backend.mutation(internal.scout.reviewSites.identify, {
+      sessionId: pending.sessionId,
+      site: "example.test",
+    }),
+  ).rejects.toThrow("approved request");
+  await t.owner.mutation(api.scout.reviewSites.set, {
+    threadId: pending.sessionId,
     site: " EXAMPLE.TEST ",
   });
   expect((await t.list("public")).page).toEqual([]);

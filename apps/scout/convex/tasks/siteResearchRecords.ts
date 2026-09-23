@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { internal } from "../_generated/api";
-import { ensureSite, syncChatSite } from "../scout/siteListings";
+import { ensureSite } from "../scout/siteListings";
 import {
   internalMutation,
   internalQuery,
@@ -12,10 +12,7 @@ import { query } from "../functions";
 import schema from "../schema";
 import { creditsEnabled, costMicrodollars, firecrawlCreditsEnabled } from "../creditPolicy";
 import { assertCreditAdmission, recordCreditUsage } from "../creditLedger";
-import { getInitialCheck } from "./requestChecks";
-import { requireSessionPermission } from "./access";
-import { siteHostnameSchema } from "../../shared/site";
-import { researchSite } from "./siteResearchSources";
+import { publicResearchHostnameSchema } from "./siteResearchSources";
 import {
   SITE_RESEARCH_MAX_CREDITS,
   researchFinishedState,
@@ -98,8 +95,6 @@ export async function ensureSiteResearch(
   userId: Id<"users">,
   sessionId: Id<"agentsApiSessions">,
 ) {
-  if (researchSite(`https://${hostname}/`) !== hostname)
-    throw new Error("Research requires a public hostname");
   const siteId = await ensureSite(ctx, hostname);
   const site = await ctx.db.get(siteId);
   if (!site) throw new Error("Site not found");
@@ -109,6 +104,28 @@ export async function ensureSiteResearch(
         researchId: await startSiteResearch(ctx, site, userId, sessionId),
         reused: false,
       };
+}
+
+export async function attachSiteResearch(
+  ctx: MutationCtx,
+  hostname: string,
+  userId: Id<"users">,
+  sessionId: Id<"agentsApiSessions">,
+) {
+  const existing = await getResearch(ctx, sessionId);
+  if (existing && existing.state.kind !== "skipped") return existing._id;
+  const { researchId, reused } = await ensureSiteResearch(ctx, hostname, userId, sessionId);
+  const snapshot = {
+    ...emptyJob,
+    sessionId,
+    site: hostname,
+    state: { kind: "waiting", researchId, reused },
+  } satisfies Omit<Doc<"agentsApiSiteResearch">, "_id" | "_creationTime">;
+  if (existing) {
+    await ctx.db.replace(existing._id, snapshot);
+    return existing._id;
+  }
+  return ctx.db.insert("agentsApiSiteResearch", snapshot);
 }
 
 export const currentSiteJob = internalQuery({
@@ -132,7 +149,7 @@ export const refresh = internalMutation({
   },
   returns: v.id("agentsApiSiteResearch"),
   handler: async (ctx, args) => {
-    const hostname = siteHostnameSchema.parse(args.site);
+    const hostname = publicResearchHostnameSchema.parse(args.site);
     const site = await ctx.db
       .query("sites")
       .withIndex("by_hostname", (q) => q.eq("hostname", hostname))
@@ -144,51 +161,6 @@ export const refresh = internalMutation({
         return site.researchId;
     }
     return startSiteResearch(ctx, site, args.userId, null);
-  },
-});
-
-export const start = internalMutation({
-  args: { sessionId: v.id("agentsApiSessions"), site: v.union(v.string(), v.null()) },
-  returns: v.union(v.id("agentsApiSiteResearch"), v.null()),
-  handler: async (ctx, args) => {
-    const session = await ctx.db.get(args.sessionId);
-    if (!session || session.state.kind !== "starting" || !session.active) return null;
-    const chat = await requireSessionPermission(ctx, session);
-    if (chat?.purpose.kind !== "review") return null;
-    const check = await getInitialCheck(ctx, session._id);
-    if (check?.state.kind !== "completed" || check.state.result.decision.kind !== "approved")
-      throw new Error("Site research requires an approved request");
-    const existing = await getResearch(ctx, session._id);
-    if (existing) return existing._id;
-    const hostname = chat.primarySite ?? args.site;
-    if (!hostname)
-      return ctx.db.insert("agentsApiSiteResearch", {
-        ...emptyJob,
-        sessionId: session._id,
-        site: null,
-        credits: 0,
-        state: {
-          kind: "skipped",
-          finishedAt: Date.now(),
-          reason: "No single public HTTPS site in the request.",
-        },
-      });
-    if (!chat.primarySite) {
-      await ctx.db.patch(chat._id, { primarySite: hostname });
-      await syncChatSite(ctx, chat);
-    }
-    const { researchId, reused } = await ensureSiteResearch(
-      ctx,
-      hostname,
-      session.userId,
-      session._id,
-    );
-    return ctx.db.insert("agentsApiSiteResearch", {
-      ...emptyJob,
-      sessionId: session._id,
-      site: hostname,
-      state: { kind: "waiting", researchId, reused },
-    });
   },
 });
 
@@ -250,7 +222,10 @@ export const finish = internalMutation({
       const session = await ctx.db.get(research.sessionId);
       if (session?.state.kind === "failed")
         state = { kind: "failed", finishedAt: Date.now(), error: session.state.error };
-      else if (session?.state.kind !== "starting" || !session.active)
+      else if (
+        !session?.active ||
+        (session.state.kind !== "starting" && session.state.kind !== "running")
+      )
         state = { kind: "cancelled", finishedAt: Date.now() };
     } else if (state.kind === "completed") {
       if (!args.profile || !research.site)

@@ -11,7 +11,7 @@ import { ADMIN_EMAIL, insertTestAccount } from "../testing/accounts";
 import { saveWorkspaceFile } from "../scout/workspaceTools";
 import { endResearch } from "./siteResearch";
 import { ensureSiteResearch } from "./siteResearchRecords";
-import { researchSite, researchRequest, siteBrief } from "./siteResearchSources";
+import { publicResearchHostnameSchema, researchRequest, siteBrief } from "./siteResearchSources";
 
 vi.mock("../scout/workspaceTools", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../scout/workspaceTools")>()),
@@ -113,13 +113,24 @@ async function setup(prompt = "Try https://example.com and tell me whether it wo
     call: { startedAt: Date.now(), request: "{}", response: "{}", usage: null },
     result: { kind: "initial", title: "Test Example", decision: { kind: "approved" } },
   } satisfies typeof check.state;
-  await backend.run((ctx) => ctx.db.patch(check._id, { state: approved }));
+  await backend.run(async (ctx) => {
+    await ctx.db.patch(check._id, { state: approved });
+    await ctx.db.patch(session._id, { state: { kind: "running" } });
+  });
 
   function task(sessionId: Id<"agentsApiSessions">, checkId: Id<"agentsApiRequestChecks">) {
     return {
       sessionId,
       checkId,
-      run: () => backend.action(internal.tasks.siteResearch.run, { sessionId, prompt }),
+      identifyAndAdvance: async () => {
+        await backend.mutation(internal.scout.reviewSites.identify, {
+          sessionId,
+          site: "example.com",
+        });
+        return backend.action(internal.tasks.siteResearch.advance, { sessionId });
+      },
+      prepare: (site = "example.com") =>
+        backend.action(internal.tasks.siteResearch.prepare, { sessionId, site }),
       advance: () => backend.action(internal.tasks.siteResearch.advance, { sessionId }),
       inspect: () => admin.query(api.tasks.siteResearchRecords.inspect, { sessionId }),
     };
@@ -134,7 +145,7 @@ async function setup(prompt = "Try https://example.com and tell me whether it wo
         scoutName,
         title: "Another review",
         model: sessionModel,
-        state: { kind: "starting" },
+        state: { kind: "running" },
         active: true,
         nextSequence: 0,
         browser: null,
@@ -193,7 +204,7 @@ it("persists the site profile and frozen task brief without sharing private requ
   const t = await setup(
     "Try https://example.com/invite?token=private-token. My private note is secret-note.",
   );
-  expect(await t.run()).toBe(true);
+  expect(await t.identifyAndAdvance()).toBe(true);
   const shared = await t.sharedJob();
   expect(shared).toMatchObject({
     sessionId: null,
@@ -280,7 +291,7 @@ it("persists the site profile and frozen task brief without sharing private requ
   );
   await t.process(shared._id);
   expect(await t.advance()).toBe(false);
-  expect(await t.run()).toBe(false);
+  expect(await t.identifyAndAdvance()).toBe(false);
   expect(await t.inspect()).toEqual(task);
   expect(await t.records()).toHaveLength(2);
   expect(startAgent).toHaveBeenCalledTimes(1);
@@ -289,15 +300,125 @@ it("persists the site profile and frozen task brief without sharing private requ
   expect(saveWorkspaceFile).toHaveBeenCalledTimes(4);
 });
 
-it("keeps repeated run calls waiting on the same shared job until it finishes", async () => {
-  const t = await setup();
-  expect(await t.run()).toBe(true);
+it("prepares an agent-selected site without provider polling and returns the private brief when ready", async () => {
+  const t = await setup("Find a public calculator and try it.");
+  expect(await t.prepare(" Example.COM ")).toBeNull();
   const shared = await t.sharedJob();
-  expect(await t.run()).toBe(true);
+  expect(await t.prepare()).toBeNull();
+  expect(await t.records()).toHaveLength(2);
+  expect(startAgent).not.toHaveBeenCalled();
+  expect(getAgentStatus).not.toHaveBeenCalled();
   await t.process(shared._id);
-  expect(await t.run()).toBe(true);
   await t.process(shared._id);
-  expect(await t.run()).toBe(false);
+  const prepared = { primarySite: "example.com", briefPath: "/workspace/research/brief.md" };
+  expect(await t.prepare()).toEqual(prepared);
+  const completed = await t.inspect();
+  expect(await t.prepare("different.example")).toEqual(prepared);
+  await expect(t.prepare("https://example.com/")).rejects.toThrow("exact hostname");
+  expect(await t.inspect()).toEqual(completed);
+  expect(
+    vi
+      .mocked(saveWorkspaceFile)
+      .mock.calls.filter(([, file]) => file.target.kind === "agent_session"),
+  ).toHaveLength(1);
+  expect(startAgent).toHaveBeenCalledTimes(1);
+  expect(getAgentStatus).toHaveBeenCalledTimes(1);
+});
+
+it("reports a private brief copy failure and preserves the completed shared cache", async () => {
+  const t = await setup();
+  expect(await t.prepare()).toBeNull();
+  const shared = await t.sharedJob();
+  await t.process(shared._id);
+  await t.process(shared._id);
+  vi.mocked(saveWorkspaceFile).mockRejectedValueOnce(
+    new Error("R2 write failed (503), request req-123"),
+  );
+  await expect(t.prepare()).rejects.toThrow("R2 write failed (503), request req-123");
+  await expect(t.prepare()).rejects.toThrow("R2 write failed (503), request req-123");
+  expect((await t.inspect())?.state).toMatchObject({
+    kind: "failed",
+    error: "R2 write failed (503), request req-123",
+  });
+  expect((await t.sharedJob()).state.kind).toBe("completed");
+  const other = await t.addTask();
+  expect(await other.prepare()).toEqual({
+    primarySite: "example.com",
+    briefPath: "/workspace/research/brief.md",
+  });
+  expect(startAgent).toHaveBeenCalledTimes(1);
+});
+
+it.each(["cancelled", "skipped"])(
+  "reports %s shared research as a preparation failure",
+  async (kind) => {
+    const t = await setup();
+    await t.prepare();
+    const shared = await t.sharedJob();
+    await t.backend.run((ctx) =>
+      ctx.db.patch(shared._id, {
+        state:
+          kind === "cancelled"
+            ? { kind: "cancelled", finishedAt: Date.now() }
+            : { kind: "skipped", finishedAt: Date.now(), reason: "No public research available" },
+      }),
+    );
+    await expect(t.prepare()).rejects.toThrow(
+      kind === "cancelled"
+        ? "Site research was cancelled"
+        : "Site research was skipped: No public research available",
+    );
+    expect((await t.inspect())?.state.kind).toBe(kind);
+    expect(saveWorkspaceFile).not.toHaveBeenCalled();
+  },
+);
+
+it("does not complete preparation when Stop arrives while copying the private brief", async () => {
+  const t = await setup();
+  await t.prepare();
+  const shared = await t.sharedJob();
+  await t.process(shared._id);
+  await t.process(shared._id);
+  vi.mocked(saveWorkspaceFile).mockImplementationOnce(async () => {
+    await t.admin.mutation(api.tasks.sessions.stop, { sessionId: t.sessionId });
+  });
+  await expect(t.prepare()).rejects.toThrow("Site research was cancelled");
+  expect((await t.inspect())?.state.kind).toBe("cancelled");
+  expect((await t.sharedJob()).state.kind).toBe("completed");
+  expect(cancelAgent).not.toHaveBeenCalled();
+  await expect(t.prepare()).rejects.toThrow("no longer running");
+});
+
+it.each(["purpose", "owner", "runtime", "inactive"])(
+  "rejects preparation with an invalid %s before creating research",
+  async (invalid) => {
+    const t = await setup();
+    await t.backend.run(async (ctx) => {
+      const chat = await ctx.db.query("scoutChats").unique();
+      if (!chat) throw new Error("Missing review");
+      if (invalid === "purpose") await ctx.db.patch(chat._id, { purpose: { kind: "general" } });
+      if (invalid === "owner") await ctx.db.patch(chat._id, { userId: t.memberId });
+      if (invalid === "runtime") await ctx.db.patch(chat._id, { runtime: undefined });
+      if (invalid === "inactive") await ctx.db.patch(t.sessionId, { active: false });
+    });
+    await expect(t.prepare()).rejects.toThrow(
+      invalid === "inactive" ? "no longer running" : "Review not found",
+    );
+    expect(await t.site()).toBeNull();
+    expect(await t.records()).toHaveLength(0);
+    expect(startAgent).not.toHaveBeenCalled();
+  },
+);
+
+it("keeps repeated identification waiting on the same shared job until it finishes", async () => {
+  const t = await setup();
+  expect(await t.identifyAndAdvance()).toBe(true);
+  const shared = await t.sharedJob();
+  expect(await t.identifyAndAdvance()).toBe(true);
+  await t.process(shared._id);
+  expect(await t.identifyAndAdvance()).toBe(true);
+  await t.process(shared._id);
+  expect(await t.identifyAndAdvance()).toBe(false);
   expect((await t.inspect())?.state.kind).toBe("completed");
   expect(await t.records()).toHaveLength(2);
   expect(startAgent).toHaveBeenCalledTimes(1);
@@ -306,7 +427,7 @@ it("keeps repeated run calls waiting on the same shared job until it finishes", 
 
 it("reuses completed research across users with zero task credits and no extra Firecrawl calls", async () => {
   const t = await setup();
-  await t.run();
+  await t.identifyAndAdvance();
   const shared = await t.sharedJob();
   await t.process(shared._id);
   await t.process(shared._id);
@@ -314,7 +435,7 @@ it("reuses completed research across users with zero task credits and no extra F
   const profile = (await t.site())?.profile;
   const second = await t.addTask();
   vi.setSystemTime(Date.now() + 30_000);
-  expect(await second.run()).toBe(false);
+  expect(await second.identifyAndAdvance()).toBe(false);
   expect(await second.inspect()).toMatchObject({
     credits: 0,
     jobId: null,
@@ -342,7 +463,10 @@ it("reuses completed research across users with zero task credits and no extra F
 it("lets concurrent tasks share one paid job and attributes its credits only once", async () => {
   const t = await setup();
   const second = await t.addTask();
-  expect(await Promise.all([t.run(), second.run()])).toEqual([true, true]);
+  expect(await Promise.all([t.identifyAndAdvance(), second.identifyAndAdvance()])).toEqual([
+    true,
+    true,
+  ]);
   const shared = await t.sharedJob();
   expect([await t.inspect(), await second.inspect()]).toEqual(
     expect.arrayContaining([
@@ -377,7 +501,10 @@ it("charges one shared research job to its initiating owner and never charges ca
   vi.stubEnv("CREDITS_ENABLED", "true");
   vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", "true");
   const second = await t.addTask();
-  expect(await Promise.all([t.run(), second.run()])).toEqual([true, true]);
+  expect(await Promise.all([t.identifyAndAdvance(), second.identifyAndAdvance()])).toEqual([
+    true,
+    true,
+  ]);
   const shared = await t.sharedJob();
   expect(shared).toMatchObject({ userId: t.userId, sessionId: null, billable: true });
   expect(startAgent).not.toHaveBeenCalled();
@@ -409,7 +536,7 @@ it("charges one shared research job to its initiating owner and never charges ca
   expect(after.entries.filter((entry) => entry.detail.kind === "usage")).toHaveLength(1);
   expect((await second.inspect())?.credits).toBe(0);
   const later = await t.addTask();
-  expect(await later.run()).toBe(false);
+  expect(await later.identifyAndAdvance()).toBe(false);
   expect((await later.inspect())?.credits).toBe(0);
   await t.process(shared._id);
   expect(await t.backend.run((ctx) => ctx.db.query("creditEntries").collect())).toEqual(
@@ -424,7 +551,7 @@ it.each([undefined, "false", "true"])(
     const t = await setup();
     vi.stubEnv("CREDITS_ENABLED", "true");
     vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", setting);
-    expect(await t.run()).toBe(true);
+    expect(await t.identifyAndAdvance()).toBe(true);
     const shared = await t.sharedJob();
     expect(shared).toMatchObject({ billable: setting === "true" });
     vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", setting === "true" ? "false" : "true");
@@ -444,7 +571,7 @@ it("keeps missing provider usage visible without charging or locking the owner",
   const t = await setup();
   vi.stubEnv("CREDITS_ENABLED", "true");
   vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", "true");
-  await t.run();
+  await t.identifyAndAdvance();
   const shared = await t.sharedJob();
   await t.process(shared._id);
   getAgentStatus.mockResolvedValueOnce({
@@ -465,7 +592,7 @@ it("charges reported credits even when the research result fails", async () => {
   const t = await setup();
   vi.stubEnv("CREDITS_ENABLED", "true");
   vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", "true");
-  await t.run();
+  await t.identifyAndAdvance();
   const shared = await t.sharedJob();
   await t.process(shared._id);
   getAgentStatus.mockResolvedValueOnce({
@@ -484,7 +611,7 @@ it("charges known provider usage when the returned profile is invalid", async ()
   const t = await setup();
   vi.stubEnv("CREDITS_ENABLED", "true");
   vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", "true");
-  await t.run();
+  await t.identifyAndAdvance();
   const shared = await t.sharedJob();
   await t.process(shared._id);
   getAgentStatus.mockResolvedValueOnce({ ...result, data: { brief: "Invalid profile" } });
@@ -499,7 +626,7 @@ it("records a failed submission without inventing a provider charge", async () =
   const t = await setup();
   vi.stubEnv("CREDITS_ENABLED", "true");
   vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", "true");
-  await t.run();
+  await t.identifyAndAdvance();
   const shared = await t.sharedJob();
   startAgent.mockResolvedValueOnce({
     success: false,
@@ -515,7 +642,7 @@ it("does not charge when work fails before the Firecrawl request", async () => {
   const t = await setup();
   vi.stubEnv("CREDITS_ENABLED", "true");
   vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", "true");
-  await t.run();
+  await t.identifyAndAdvance();
   const shared = await t.sharedJob();
   vi.mocked(saveWorkspaceFile).mockRejectedValueOnce(new Error("Workspace unavailable"));
   await t.process(shared._id);
@@ -536,7 +663,7 @@ it("blocks new paid research on a nonpositive wallet before Firecrawl", async ()
       hold: { kind: "clear" },
     }),
   );
-  await expect(t.run()).rejects.toThrow();
+  await expect(t.identifyAndAdvance()).rejects.toThrow();
   expect(await t.site()).toBeNull();
   expect(await t.records()).toHaveLength(0);
   expect(startAgent).not.toHaveBeenCalled();
@@ -553,7 +680,7 @@ it("allows a positive wallet below the research maximum, then records the actual
       hold: { kind: "clear" },
     }),
   );
-  expect(await t.run()).toBe(true);
+  expect(await t.identifyAndAdvance()).toBe(true);
   const shared = await t.sharedJob();
   await t.process(shared._id);
   await t.process(shared._id);
@@ -570,8 +697,7 @@ it("charges site research discovered by Scout after the task starts", async () =
   const t = await setup("Find a public calculator and try it.");
   vi.stubEnv("CREDITS_ENABLED", "true");
   vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", "true");
-  expect(await t.run()).toBe(false);
-  await t.backend.run((ctx) => ctx.db.patch(t.sessionId, { state: { kind: "running" } }));
+  expect(await t.inspect()).toBeNull();
   await t.backend.mutation(internal.scout.reviewSites.identify, {
     sessionId: t.sessionId,
     site: "example.com",
@@ -591,7 +717,7 @@ it("assigns site research to the task user even when another task knows the site
   const t = await setup("Find a public calculator and try it.");
   vi.stubEnv("CREDITS_ENABLED", "true");
   vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", "true");
-  expect(await t.run()).toBe(false);
+  expect(await t.inspect()).toBeNull();
   await t.backend.run(async (ctx) => {
     const first = await ctx.db.get(t.sessionId);
     if (!first) throw new Error("Missing first task");
@@ -633,9 +759,9 @@ it.each(["saving request", "submitting job"])(
   "keeps shared research alive when a task stops while %s",
   async (stage) => {
     const t = await setup();
-    await t.run();
+    await t.identifyAndAdvance();
     const second = await t.addTask();
-    await second.run();
+    await second.identifyAndAdvance();
     const shared = await t.sharedJob();
     const stop = () => t.admin.mutation(api.tasks.sessions.stop, { sessionId: t.sessionId });
     if (stage === "saving request")
@@ -668,9 +794,9 @@ it.each(["advance", "cleanup"])(
   "%s cancels only a stopped task's wait and leaves the other waiter running",
   async (operation) => {
     const t = await setup();
-    await t.run();
+    await t.identifyAndAdvance();
     const second = await t.addTask();
-    await second.run();
+    await second.identifyAndAdvance();
     const shared = await t.sharedJob();
     await t.process(shared._id);
     await t.admin.mutation(api.tasks.sessions.stop, { sessionId: t.sessionId });
@@ -706,7 +832,7 @@ it.each(["advance", "cleanup"])(
 
 it("preserves a failed workflow's error while its shared research finishes independently", async () => {
   const t = await setup();
-  await t.run();
+  await t.identifyAndAdvance();
   const shared = await t.sharedJob();
   await t.process(shared._id);
   await t.backend.run((ctx) =>
@@ -725,10 +851,10 @@ it("refreshes completed research once without changing historical or already wai
   vi.stubEnv("CREDITS_ENABLED", "true");
   vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", "true");
   const t = await setup();
-  await t.run();
+  await t.identifyAndAdvance();
   const original = await t.sharedJob();
   const waiting = await t.addTask();
-  await waiting.run();
+  await waiting.identifyAndAdvance();
   await t.process(original._id);
   await t.process(original._id);
   await t.advance();
@@ -779,7 +905,7 @@ it("refreshes completed research once without changing historical or already wai
     },
   });
   const latest = await t.addTask();
-  expect(await latest.run()).toBe(false);
+  expect(await latest.identifyAndAdvance()).toBe(false);
   expect(await latest.inspect()).toMatchObject({
     credits: 0,
     state: {
@@ -804,7 +930,7 @@ it("refreshes completed research once without changing historical or already wai
 
 it("reuses failed research without inventing metadata and retries only after admin refresh", async () => {
   const t = await setup();
-  await t.run();
+  await t.identifyAndAdvance();
   const failedJob = await t.sharedJob();
   await t.process(failedJob._id);
   const failedResponse = {
@@ -817,6 +943,7 @@ it("reuses failed research without inventing metadata and retries only after adm
   await t.process(failedJob._id);
   expect(await t.advance()).toBe(false);
   const failedTask = await t.inspect();
+  await expect(t.prepare()).rejects.toThrow("Site unavailable");
   expect(failedTask).toMatchObject({
     state: { kind: "failed", error: "Site unavailable" },
     credits: 12,
@@ -832,13 +959,14 @@ it("reuses failed research without inventing metadata and retries only after adm
     target: { kind: "site", site: "example.com" },
     text: JSON.stringify(failedResponse, null, 2),
   });
-  expect((await t.backend.run((ctx) => ctx.db.get(t.sessionId)))?.state.kind).toBe("starting");
+  expect((await t.backend.run((ctx) => ctx.db.get(t.sessionId)))?.state.kind).toBe("running");
   const second = await t.addTask();
-  expect(await second.run()).toBe(false);
+  expect(await second.identifyAndAdvance()).toBe(false);
   expect(await second.inspect()).toMatchObject({
     credits: 0,
     state: { kind: "failed", error: "Site unavailable" },
   });
+  await expect(second.prepare()).rejects.toThrow("Site unavailable");
   await t.process(failedJob._id);
   expect((await t.site())?.researchId).toBe(failedJob._id);
   expect(await t.records()).toHaveLength(3);
@@ -853,7 +981,7 @@ it("reuses failed research without inventing metadata and retries only after adm
   expect(await t.refresh()).toBe(retryId);
   startAgent.mockResolvedValueOnce({ success: true, id: "job-2" });
   const retrying = await t.addTask();
-  expect(await retrying.run()).toBe(true);
+  expect(await retrying.identifyAndAdvance()).toBe(true);
   await t.process(retryId);
   await t.process(retryId);
   expect(await retrying.advance()).toBe(false);
@@ -874,7 +1002,7 @@ it("reuses failed research without inventing metadata and retries only after adm
 
 it("refuses refresh until an uncertain previous provider job is confirmed stopped", async () => {
   const t = await setup();
-  await t.run();
+  await t.identifyAndAdvance();
   const shared = await t.sharedJob();
   await t.process(shared._id);
   getAgentStatus.mockResolvedValue(processing);
@@ -911,7 +1039,7 @@ it.each([404, 410])(
   "refreshes when Firecrawl confirms the old job is absent with SDK status %i",
   async (status) => {
     const t = await setup();
-    await t.run();
+    await t.identifyAndAdvance();
     const shared = await t.sharedJob();
     await t.process(shared._id);
     getAgentStatus.mockResolvedValueOnce({
@@ -942,7 +1070,7 @@ it.each([
   "blocks refresh when the old provider job cannot be confirmed absent: $label",
   async ({ error }) => {
     const t = await setup();
-    await t.run();
+    await t.identifyAndAdvance();
     const shared = await t.sharedJob();
     await t.process(shared._id);
     getAgentStatus.mockResolvedValueOnce({
@@ -965,7 +1093,7 @@ it.each([
 
 it("persists a known provider job ID when ending research after its submission was not saved", async () => {
   const t = await setup();
-  await t.run();
+  await t.identifyAndAdvance();
   const shared = await t.sharedJob();
   expect(shared.jobId).toBeNull();
   getAgentStatus.mockResolvedValue(processing);
@@ -997,7 +1125,7 @@ it("persists a known provider job ID when ending research after its submission w
 
 it("serializes concurrent refreshes and ignores a stale expected research ID", async () => {
   const t = await setup();
-  await t.run();
+  await t.identifyAndAdvance();
   const original = await t.sharedJob();
   await t.process(original._id);
   await t.process(original._id);
@@ -1021,12 +1149,54 @@ it("serializes concurrent refreshes and ignores a stale expected research ID", a
   expect(getAgentStatus).toHaveBeenCalledTimes(2);
 });
 
-it("starts shared research when the agent identifies a site later and keeps its skipped task snapshot", async () => {
+it.each(["waiting", "completed"] as const)(
+  "does not return an old %s brief for an owner-corrected site",
+  async (kind) => {
+    const t = await setup();
+    await t.prepare();
+    const shared = await t.sharedJob();
+    if (kind === "completed") {
+      await t.process(shared._id);
+      await t.process(shared._id);
+      await t.prepare();
+    }
+    const snapshot = await t.inspect();
+    const source = await t.backend.query(internal.tasks.siteResearchRecords.job, {
+      researchId: shared._id,
+    });
+    await t.admin.mutation(api.scout.reviewSites.set, {
+      threadId: t.sessionId,
+      site: "example.org",
+    });
+    await expect(t.prepare("example.org")).rejects.toThrow("belongs to example.com");
+    if (kind === "completed") expect(await t.inspect()).toEqual(snapshot);
+    else expect((await t.inspect())?.state.kind).toBe("cancelled");
+    expect(
+      await t.backend.query(internal.tasks.siteResearchRecords.job, { researchId: shared._id }),
+    ).toEqual(source);
+    expect(cancelAgent).not.toHaveBeenCalled();
+  },
+);
+
+it("attaches a previously skipped task to shared research when the agent identifies its site", async () => {
   const t = await setup("Find a public calculator and try it.");
-  expect(await t.run()).toBe(false);
-  const skipped = await t.inspect();
-  expect(skipped?.state.kind).toBe("skipped");
-  await t.backend.run((ctx) => ctx.db.patch(t.sessionId, { state: { kind: "running" } }));
+  const skippedId = await t.backend.run((ctx) =>
+    ctx.db.insert("agentsApiSiteResearch", {
+      sessionId: t.sessionId,
+      site: null,
+      model: "spark-2",
+      maxCredits: 50,
+      jobId: null,
+      requestPath: null,
+      responsePath: null,
+      credits: 0,
+      state: {
+        kind: "skipped",
+        finishedAt: Date.now(),
+        reason: "No single public HTTPS site in the request.",
+      },
+    }),
+  );
   expect(
     await t.backend.mutation(internal.scout.reviewSites.identify, {
       sessionId: t.sessionId,
@@ -1044,9 +1214,15 @@ it("starts shared research when the agent identifies a site later and keeps its 
   await t.process(shared._id);
   expect((await t.site())?.profile).toMatchObject({ name: result.data.name });
   expect(await t.advance()).toBe(false);
-  expect(await t.inspect()).toEqual(skipped);
+  expect(await t.inspect()).toMatchObject({
+    _id: skippedId,
+    site: "example.com",
+    state: { kind: "completed", source: { researchId: shared._id, reused: false } },
+  });
   expect(
-    vi.mocked(saveWorkspaceFile).mock.calls.every(([, file]) => file.target.kind === "site"),
+    vi
+      .mocked(saveWorkspaceFile)
+      .mock.calls.some(([, file]) => file.target.kind === "agent_session"),
   ).toBe(true);
   expect(startAgent).toHaveBeenCalledTimes(1);
   expect(getAgentStatus).toHaveBeenCalledTimes(1);
@@ -1054,7 +1230,7 @@ it("starts shared research when the agent identifies a site later and keeps its 
 
 it("does not replace a completed task brief when the agent identifies its site again", async () => {
   const t = await setup();
-  await t.run();
+  await t.identifyAndAdvance();
   const shared = await t.sharedJob();
   await t.process(shared._id);
   await t.process(shared._id);
@@ -1074,12 +1250,13 @@ it("does not replace a completed task brief when the agent identifies its site a
   expect(startAgent).toHaveBeenCalledTimes(1);
 });
 
-it("skips ambiguous sites without creating a shared job or calling Firecrawl", async () => {
+it("waits for agent identification even when the request includes multiple sites", async () => {
   const t = await setup("Compare https://example.com with https://example.org");
-  expect(await t.run()).toBe(false);
-  expect(await t.inspect()).toMatchObject({ site: null, credits: 0, state: { kind: "skipped" } });
+  expect(await t.inspect()).toBeNull();
   expect(await t.site()).toBeNull();
-  expect(await t.records()).toHaveLength(1);
+  expect(await t.records()).toHaveLength(0);
+  expect(await t.prepare("example.org")).toBeNull();
+  expect(await t.inspect()).toMatchObject({ site: "example.org", state: { kind: "waiting" } });
   expect(startAgent).not.toHaveBeenCalled();
   expect(getAgentStatus).not.toHaveBeenCalled();
 });
@@ -1100,7 +1277,7 @@ it("rejects an unapproved request before creating a site, task wait, or paid job
       },
     }),
   );
-  await expect(t.run()).rejects.toThrow("approved request");
+  await expect(t.prepare()).rejects.toThrow("approved request");
   expect(await t.site()).toBeNull();
   expect(await t.records()).toHaveLength(0);
   expect(await t.inspect()).toBeNull();
@@ -1110,7 +1287,7 @@ it("rejects an unapproved request before creating a site, task wait, or paid job
 
 it("keeps a failed site preview independent of the shared research and approved task", async () => {
   const t = await setup();
-  await t.run();
+  await t.identifyAndAdvance();
   const shared = await t.sharedJob();
   const scheduled = await t.backend.run((ctx) =>
     ctx.db.system.query("_scheduled_functions").collect(),
@@ -1131,14 +1308,14 @@ it("keeps a failed site preview independent of the shared research and approved 
   });
   expect((await t.inspect())?.state.kind).toBe("completed");
   expect(await t.backend.run((ctx) => ctx.db.get(t.sessionId))).toMatchObject({
-    state: { kind: "starting" },
+    state: { kind: "running" },
     active: true,
   });
 });
 
-it("keeps the task waiting beyond three minutes and supplies the finished brief before it starts", async () => {
+it("keeps preparation waiting beyond three minutes and supplies the finished brief before continuing", async () => {
   const t = await setup();
-  await t.run();
+  await t.identifyAndAdvance();
   const shared = await t.sharedJob();
   await t.process(shared._id);
   getAgentStatus.mockResolvedValue(processing);
@@ -1172,7 +1349,7 @@ it("keeps the task waiting beyond three minutes and supplies the finished brief 
 
 it("saves a completed provider result even when the next poll is past the deadline", async () => {
   const t = await setup();
-  await t.run();
+  await t.identifyAndAdvance();
   const shared = await t.sharedJob();
   await t.process(shared._id);
   vi.setSystemTime(Math.ceil(shared._creationTime) + 365_000);
@@ -1184,7 +1361,7 @@ it("saves a completed provider result even when the next poll is past the deadli
 
 it("recovers an already completed provider result on admin refresh without buying another job", async () => {
   const t = await setup();
-  await t.run();
+  await t.identifyAndAdvance();
   const shared = await t.sharedJob();
   await t.process(shared._id);
   getAgentStatus.mockResolvedValue(processing);
@@ -1208,9 +1385,9 @@ it("recovers an already completed provider result on admin refresh without buyin
 
 it("bounds shared polling at 360 seconds and reports the failure to every waiter", async () => {
   const t = await setup();
-  await t.run();
+  await t.identifyAndAdvance();
   const second = await t.addTask();
-  await second.run();
+  await second.identifyAndAdvance();
   const shared = await t.sharedJob();
   await t.process(shared._id);
   getAgentStatus.mockResolvedValue(processing);
@@ -1233,6 +1410,7 @@ it("bounds shared polling at 360 seconds and reports the failure to every waiter
     credits: null,
     state: { kind: "failed", error: expect.stringContaining("360 seconds") },
   });
+  await expect(t.prepare()).rejects.toThrow("360 seconds");
   expect(await second.inspect()).toMatchObject({
     credits: 0,
     state: { kind: "failed", error: expect.stringContaining("360 seconds") },
@@ -1248,7 +1426,7 @@ it("bounds shared polling at 360 seconds and reports the failure to every waiter
 
 it("does not submit a paid job when its scheduled start already exceeded the deadline", async () => {
   const t = await setup();
-  await t.run();
+  await t.identifyAndAdvance();
   const shared = await t.sharedJob();
   vi.setSystemTime(Math.ceil(shared._creationTime) + 360_000);
   await t.process(shared._id);
@@ -1266,7 +1444,7 @@ it.each(["cancel refused", "cancel threw", "status threw"])(
   "persists a failed shared job when deadline cleanup fails: %s",
   async (failure) => {
     const t = await setup();
-    await t.run();
+    await t.identifyAndAdvance();
     const shared = await t.sharedJob();
     await t.process(shared._id);
     getAgentStatus.mockResolvedValue(processing);
@@ -1310,7 +1488,7 @@ it.each([
   { label: "blank name", data: { ...result.data, name: "   " } },
 ])("rejects $label without inventing a name or saving a task brief", async ({ data }) => {
   const t = await setup();
-  await t.run();
+  await t.identifyAndAdvance();
   const shared = await t.sharedJob();
   await t.process(shared._id);
   getAgentStatus.mockResolvedValue({ ...result, data });
@@ -1327,7 +1505,7 @@ it.each([
 
 it("ignores a provider-added homepage and persists the submitted root without fetching it", async () => {
   const t = await setup();
-  await t.run();
+  await t.identifyAndAdvance();
   const shared = await t.sharedJob();
   await t.process(shared._id);
   const data = { ...result.data, homepageUrl: "https://wrong.example/" };
@@ -1352,7 +1530,7 @@ it("ignores a provider-added homepage and persists the submitted root without fe
 
 it("requires admin access for refresh and inspect without creating unauthorized work", async () => {
   const t = await setup();
-  await t.run();
+  await t.identifyAndAdvance();
   const shared = await t.sharedJob();
   await t.process(shared._id);
   await t.process(shared._id);
@@ -1377,13 +1555,21 @@ it("requires admin access for refresh and inspect without creating unauthorized 
 it.each([
   "https://example.com/",
   "127.0.0.1",
+  "0x7f.0.0.1",
+  "[::1]",
   "localhost",
   "example.internal",
   "example.local",
+  "example.localhost",
   "example.com:443",
-])("rejects an invalid refresh hostname before creating work: %s", async (site) => {
+  "user:password@example.com",
+  "example.com/invite?token=private",
+])("rejects an invalid prepare or refresh hostname before creating work: %s", async (site) => {
   const t = await setup();
-  await t.run();
+  await expect(t.prepare(site)).rejects.toThrow();
+  expect(await t.records()).toHaveLength(0);
+  expect(await t.site()).toBeNull();
+  await t.identifyAndAdvance();
   const before = await t.records();
   await expect(t.admin.action(api.tasks.siteResearch.refresh, { site })).rejects.toThrow();
   expect(await t.records()).toEqual(before);
@@ -1391,23 +1577,7 @@ it.each([
 });
 
 it("uses public origins and a concrete draft-7 schema with all profile fields", () => {
-  expect(researchSite("Try (https://example.com/invite?token=abc).")).toBe("example.com");
-  expect(researchSite("Read https://example.com/help and https://example.com/pricing")).toBe(
-    "example.com",
-  );
-  for (const text of [
-    "Find a calculator",
-    "https://127.0.0.1",
-    "https://[::1]/",
-    "https://localhost:5173",
-    "https://example.internal/",
-    "https://example.local/",
-    "https://u:p@example.com",
-    "https://example.com:444/",
-    "http://example.com",
-    "https://example.com and https://example.org",
-  ])
-    expect(researchSite(text), text).toBeNull();
+  expect(publicResearchHostnameSchema.parse(" Example.COM ")).toBe("example.com");
   const request = researchRequest("example.com");
   expect(request.urls).toEqual(["https://example.com/"]);
   expect(request.schema.$schema).toContain("draft-07");
