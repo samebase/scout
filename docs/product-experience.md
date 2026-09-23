@@ -107,8 +107,8 @@ presentation where useful, but do not simply remove the guard from management qu
 ## Implementation order to try
 
 Member Scout browsing, site association, request checks, and [Site research](site-research.md)
-are implemented. Firecrawl Agent gathers a brief from public pages before the browser
-agent starts; the browser agent reads that brief and existing site guides. Agents shows
+are implemented. Scout identifies the product and waits for Firecrawl Agent to gather
+a public brief, then reads it and existing site guides before testing. Lab shows
 research beside the single chat, with its saved request, result, and job details.
 Score Four completed a real review after reading
 its brief; broader comparisons are still needed.

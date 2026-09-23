@@ -375,7 +375,7 @@ test("site preparation shows persisted elapsed time and yields to browser work o
   });
   remote.queries.set("scout/activity:get", preparing);
   remote.queries.set("tasks/sessions:controls", {
-    state: { kind: "starting" },
+    state: { kind: "running" },
     pendingMessage: null,
     active: true,
     canRetryMessage: false,

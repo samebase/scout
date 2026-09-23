@@ -15,7 +15,7 @@ import {
 import { REVIEW_INSTRUCTIONS } from "../scout/review";
 import { playInstructions } from "../scout/play";
 import { previousWalkthroughContext, TASK_INSTRUCTIONS } from "./instructions";
-import { runtimeTools } from "./tools";
+import { reviewSiteInput, runtimeTools } from "./tools";
 import { WalkthroughReportingError } from "./walkthroughReport";
 
 export async function taskInstructions(
@@ -58,9 +58,12 @@ export async function taskInstructions(
         ? outdent`
       ${REVIEW_INSTRUCTIONS}
 
-      Call set_review_site once you know the hostname of the product
-      being reviewed. This identifies the review's subject, not the
-      other sites you may visit along the way.
+      Identify the product from the user's request, searching if needed, then
+      call set_review_site with its hostname before testing it. This identifies
+      the review's subject, not other sites mentioned or visited along the way.
+      The tool waits for the site's public brief. Read the returned briefPath
+      with bash, workspace="current_task", before continuing. If preparation
+      fails, explain the error and continue the review without that brief.
     `
         : ""
     }
@@ -104,31 +107,42 @@ export async function executeTaskTool(
     call: { name: string; callId: string; arguments: unknown };
   },
 ) {
+  const preparingSite = call.name === "set_review_site" && purpose.kind === "review";
   const claimed = await ctx.runMutation(internal.tasks.sessions.claimCall, {
     sessionId: session._id,
     callId: call.callId,
   });
   if (!claimed.fresh) {
-    if (claimed.call.result.kind === "running")
+    if (claimed.call.result.kind === "running" && !preparingSite)
       throw new Error("Tool execution was interrupted. Inspect its outcome before rerunning.");
-    return claimed.call.result;
+    if (claimed.call.result.kind !== "running") return claimed.call.result;
   }
   let resource: Awaited<ReturnType<typeof runtimeTools>> | null = null;
   let result: { kind: "success"; output: string } | { kind: "error"; error: string };
   let reportingFailure: WalkthroughReportingError | null = null;
   try {
-    resource = await runtimeTools(ctx, session, scout, call.name, purpose);
-    const tool = requireRuntimeTool(resource.tools, call.name);
-    const output = await tool.execute(call.arguments, {
-      toolCallId: call.callId,
-      messages: [],
-      context: undefined,
-      abortSignal: AbortSignal.timeout(180_000),
-    });
-    const modelOutput = tool.toModelOutput
-      ? await tool.toModelOutput({ toolCallId: call.callId, input: call.arguments, output })
-      : output;
-    result = { kind: "success", output: JSON.stringify(modelOutput ?? null) };
+    if (preparingSite) {
+      const { site } = reviewSiteInput.parse(call.arguments);
+      const prepared = await ctx.runAction(internal.tasks.siteResearch.prepare, {
+        sessionId: session._id,
+        site,
+      });
+      if (!prepared) return { kind: "running" } as const;
+      result = { kind: "success", output: JSON.stringify(prepared) };
+    } else {
+      resource = await runtimeTools(ctx, session, scout, call.name, purpose);
+      const tool = requireRuntimeTool(resource.tools, call.name);
+      const output = await tool.execute(call.arguments, {
+        toolCallId: call.callId,
+        messages: [],
+        context: undefined,
+        abortSignal: AbortSignal.timeout(180_000),
+      });
+      const modelOutput = tool.toModelOutput
+        ? await tool.toModelOutput({ toolCallId: call.callId, input: call.arguments, output })
+        : output;
+      result = { kind: "success", output: JSON.stringify(modelOutput ?? null) };
+    }
   } catch (error) {
     if (error instanceof WalkthroughReportingError) {
       reportingFailure = error;

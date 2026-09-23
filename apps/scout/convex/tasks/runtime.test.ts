@@ -22,6 +22,12 @@ import { runtimeTools } from "./tools";
 import { workflow } from "./lifecycle";
 import { presentItem } from "./output";
 import { followUpContext, previousWalkthroughContext } from "./instructions";
+import { saveWorkspaceFile } from "../scout/workspaceTools";
+
+vi.mock("../scout/workspaceTools", async (original) => ({
+  ...(await original<typeof import("../scout/workspaceTools")>()),
+  saveWorkspaceFile: vi.fn(),
+}));
 
 vi.mock("./tools", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./tools")>()),
@@ -47,6 +53,7 @@ beforeEach(() => {
   vi.stubEnv("OPENAI_API_KEY", "test-openai-key");
   vi.stubEnv("FIRECRAWL_API_KEY", "test-firecrawl-key");
   vi.mocked(runtimeTools).mockReset();
+  vi.mocked(saveWorkspaceFile).mockReset().mockResolvedValue(undefined);
   vi.mocked(closeFirecrawlBrowserSession).mockReset().mockResolvedValue({ success: true });
 });
 afterEach(() => {
@@ -665,7 +672,7 @@ it("never bills an unmarked free turn when credits are enabled later", async () 
   expect(await t.backend.run((ctx) => ctx.db.query("creditUsageTotals").collect())).toEqual([]);
 });
 
-it("executes review site assignment through the real tools without connecting to the browser", async () => {
+it("waits for a site brief before submitting the Agents API tool result", async () => {
   const t = await setup();
   await t.backend.run(async (ctx) => {
     const session = await ctx.db.get(t.sessionId);
@@ -679,16 +686,67 @@ it("executes review site assignment through the real tools without connecting to
       purpose: { kind: "review" },
       visibility: "private",
     });
+    await ctx.db.insert("agentsApiRequestChecks", {
+      sessionId: t.sessionId,
+      kind: "initial",
+      model: "gpt-5.6-luna",
+      prompt: "Try Samebase.",
+      state: {
+        kind: "completed",
+        finishedAt: Date.now(),
+        call: { startedAt: Date.now(), request: "{}", response: "{}", usage: null },
+        result: { kind: "initial", title: "Try Samebase", decision: { kind: "approved" } },
+      },
+    });
   });
   const original = await vi.importActual<typeof import("./tools")>("./tools");
   vi.mocked(runtimeTools).mockImplementation(original.runtimeTools);
   t.provider.call.name = "set_review_site";
   t.provider.call.arguments = { site: "samebase.com" };
   expect(await t.advance()).toBe(true);
+  expect(await t.advance()).toBe(true);
   expect(t.turns).not.toHaveBeenCalled();
-  expect(await t.savedCall()).toMatchObject({
-    result: { kind: "success", output: JSON.stringify({ primarySite: "samebase.com" }) },
+  expect(t.provider.events).toEqual([]);
+  expect(await t.savedCall()).toMatchObject({ result: { kind: "running" } });
+  const briefPath = "/workspace/research/brief.md";
+  await t.backend.run(async (ctx) => {
+    const site = await ctx.db
+      .query("sites")
+      .withIndex("by_hostname", (q) => q.eq("hostname", "samebase.com"))
+      .unique();
+    if (!site?.researchId) throw new Error("Research missing");
+    await ctx.db.patch(site.researchId, {
+      state: {
+        kind: "completed",
+        finishedAt: Date.now(),
+        brief: "# Samebase\nBuild apps.",
+        briefPath,
+      },
+    });
   });
+  expect(await t.advance()).toBe(true);
+  const finished = (await t.savedCall())?.result;
+  expect(finished?.kind).toBe("success");
+  if (finished?.kind !== "success") throw new Error("Site tool did not finish");
+  expect(JSON.parse(finished.output)).toEqual({ primarySite: "samebase.com", briefPath });
+  expect(t.provider.events).toMatchObject([
+    {
+      events: [
+        {
+          type: "agent.session.input.tool_result",
+          success: true,
+          output: finished.output,
+        },
+      ],
+    },
+  ]);
+  expect(saveWorkspaceFile).toHaveBeenCalledWith(
+    expect.anything(),
+    expect.objectContaining({
+      target: { kind: "agent_session", sessionId: t.sessionId },
+      path: briefPath,
+    }),
+  );
   expect(
     await t.backend.run(async (ctx) =>
       ctx.db

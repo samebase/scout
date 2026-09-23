@@ -413,7 +413,11 @@ export const get = publicQuery({
         ).map(sessionSummary);
     const managed = managedId ? await ctx.db.get(managedId) : null;
     let sitePreparation: { startedAt: number } | null = null;
-    if (chat.purpose.kind === "review" && managed?.active && managed.state.kind === "starting") {
+    if (
+      chat.purpose.kind === "review" &&
+      managed?.active &&
+      (managed.state.kind === "starting" || managed.state.kind === "running")
+    ) {
       const research = await getResearch(ctx, managed._id);
       if (research?.state.kind === "running") {
         sitePreparation = { startedAt: research._creationTime };

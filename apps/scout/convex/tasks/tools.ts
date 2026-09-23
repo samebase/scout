@@ -30,6 +30,7 @@ import { createPlayTools } from "../scout/play";
 import { taskBrowserBilling } from "./browserCredits";
 
 export const handoffInput = z.object({ message: z.string().trim().min(1).max(2_000) });
+export const reviewSiteInput = z.object({ site: z.string() });
 const mailNames = new Set([
   "list_messages",
   "search_messages",
@@ -259,15 +260,12 @@ export async function runtimeTools(
     tools["set_review_site"] = tool({
       description: outdent`
         Identify the main site this review is about. Supply its exact hostname,
-        such as samebase.com. Returns the saved primarySite. Once identified,
-        only the review owner can change it.
+        such as samebase.com, before testing the product. Waits for its public
+        site brief and returns the saved primarySite and private briefPath.
+        Read that file using bash with workspace="current_task" before continuing.
+        Once identified, only the review owner can change the review's site.
       `,
-      inputSchema: z.object({ site: z.string() }),
-      execute: async ({ site }) =>
-        ctx.runMutation(internal.scout.reviewSites.identify, {
-          sessionId,
-          site,
-        }),
+      inputSchema: reviewSiteInput,
     });
   }
 

@@ -34,29 +34,13 @@ export function researchRequest(site: string) {
   } satisfies Parameters<Firecrawl["startAgent"]>[0];
 }
 
-export function researchSite(prompt: string) {
-  const urls = [...prompt.matchAll(/https?:\/\/[^\s<>"'`]+/g)].map((match) =>
-    URL.parse(match[0].replace(/[.,;!?\])}]+$/, "")),
-  );
-  if (urls.length === 0 || urls.some((url) => url === null)) return null;
-  const hosts = new Set<string>();
-  for (const url of urls) {
-    if (
-      !url ||
-      url.protocol !== "https:" ||
-      url.username ||
-      url.password ||
-      url.port ||
-      !siteHostnameSchema.safeParse(url.hostname).success ||
-      /^[\d.]+$/.test(url.hostname) ||
-      /\.(local|internal|localhost)$/.test(url.hostname)
-    )
-      return null;
-    hosts.add(url.hostname);
-  }
-  // Research public homepages, never invitation tokens or signed-in URL paths.
-  return hosts.size === 1 ? [...hosts][0] : null;
-}
+export const publicResearchHostnameSchema = siteHostnameSchema.refine(
+  (hostname) =>
+    URL.parse(`https://${hostname}/`)?.hostname === hostname &&
+    !/^[\d.]+$/.test(hostname) &&
+    !/\.(local|internal|localhost)$/.test(hostname),
+  "Use a public hostname",
+);
 
 export function renderBrief(site: string, brief: z.infer<typeof siteBrief>, researchedAt: number) {
   const sources = [...new Set(brief.facts.flatMap((fact) => fact.sources))];

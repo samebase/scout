@@ -185,6 +185,7 @@ async function serviceNextCall(
     return waiting ? ({ kind: "waiting" } as const) : ({ kind: "stopped" } as const);
   }
   const result = await executeTaskTool(ctx, { ...current, call });
+  if (result.kind === "running") return { kind: "preparing" } as const;
   await ctx.runMutation(internal.tasks.convexAgentRecords.toolResult, {
     sessionId: session._id,
     promptMessageId: session.previousTurnId,
@@ -225,7 +226,7 @@ export async function advance(
     await ctx.runMutation(internal.tasks.sessions.scheduleCleanup, args);
     return false;
   }
-  if (next.kind !== "none") return next.kind === "executed";
+  if (next.kind !== "none") return next.kind === "executed" || next.kind === "preparing";
   const steps = messages.filter(
     (message) => message.message?.role === "assistant" && message.status === "success",
   );

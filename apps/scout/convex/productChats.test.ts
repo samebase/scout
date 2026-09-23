@@ -232,12 +232,13 @@ test.each([true, false])(
       ).page.map((task) => task.threadId),
     ).toContain(threadId);
     if (approved) {
-      const researchId = await t.backend.mutation(internal.tasks.siteResearchRecords.start, {
+      await t.backend.mutation(internal.scout.reviewSites.identify, {
         sessionId,
-        site: null,
+        site: "example.com",
       });
-      if (!researchId) throw new Error("Missing research");
-      expect(await t.backend.run((ctx) => ctx.db.get(researchId))).toMatchObject({
+      expect(
+        await t.backend.query(internal.tasks.siteResearchRecords.get, { sessionId }),
+      ).toMatchObject({
         site: "example.com",
         state: { kind: "waiting" },
       });
