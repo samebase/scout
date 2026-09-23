@@ -19,6 +19,7 @@ import {
 } from "convex/server";
 import { useSyncExternalStore } from "react";
 import type { UsePaginatedQueryReturnType } from "convex/react";
+import { ConvexError } from "convex/values";
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
 import { api } from "../../convex/_generated/api";
 import { omitNullish } from "../../shared/omitNullish";
@@ -515,12 +516,14 @@ test("shows research failures and permits an explicit retry after an action fail
     profile: null,
     research: { status: "failed", error: "Research provider unavailable" },
   });
-  remote.refresh.mockRejectedValueOnce(new Error("Could not start research"));
+  const providerError =
+    "Firecrawl DELETE /v2/agent/job-1: Agent already completed (HTTP 409, code ERR_BAD_REQUEST)";
+  remote.refresh.mockRejectedValueOnce(new ConvexError(providerError));
   await openPage("/sites/chessmerge.com");
   expect((await screen.findByRole("alert")).textContent).toBe("Research provider unavailable");
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: "Retry research" }));
-  expect((await screen.findByRole("alert")).textContent).toBe("Could not start research");
+  expect((await screen.findByRole("alert")).textContent).toBe(providerError);
   expect(screen.getByRole("button", { name: "Retry research" })).toHaveProperty("disabled", false);
   await user.click(screen.getByRole("button", { name: "Retry research" }));
   expect(remote.refresh).toHaveBeenCalledTimes(2);

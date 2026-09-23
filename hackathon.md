@@ -15,7 +15,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-23T00:08:25Z
+- **Last updated:** 2026-09-23T00:24:56Z
 
 ## Log
 
@@ -1973,9 +1973,15 @@ background information, explaining the wait before browser review starts.
 Use the existing research state so the timer survives refresh and disappears when
 preparation finishes or the task stops (`apps/scout/src/products/conversation/page.tsx`).
 
-### 2026-09-23 - working tree - v315
+### 2026-09-23 - 463d932 - v315
 
 Let Scout identify the review's site from the user's request, then wait for its brief
 through `set_review_site`. Remove URL extraction at startup and show preparation
 progress during that same tool call. Both engines receive the saved brief path or
 the research error before continuing (`apps/scout/convex/tasks/execution.ts`).
+
+### 2026-09-23 - working tree - v316
+
+Allow research refresh after Firecrawl confirms the previous job was already cancelled,
+even when its status still says processing. Show remaining provider failures with their
+method, path, HTTP status, and code (`apps/scout/convex/tasks/siteResearch.ts`).

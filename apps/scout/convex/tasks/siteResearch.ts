@@ -1,6 +1,6 @@
 "use node";
 
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { SdkError, type Firecrawl } from "firecrawl";
 import { internal } from "../_generated/api";
 import type { Doc } from "../_generated/dataModel";
@@ -104,6 +104,7 @@ export const refresh = action({
     if (current?.state.kind === "running") return current._id;
     if (current?.state.kind === "failed" && current.jobId) {
       const client = createFirecrawlClient();
+      let method = "GET";
       try {
         const status = await client.getAgentStatus(current.jobId);
         if (!status.success) throw new Error(status.error ?? "Firecrawl research request failed");
@@ -111,13 +112,29 @@ export const refresh = action({
           await saveCompletedResearch(ctx, current, status);
           return current._id;
         }
-        if (status.status === "processing" && !(await client.cancelAgent(current.jobId)))
-          throw new Error(
-            "Could not stop the previous Firecrawl research job. Retry after resolving it.",
-          );
+        if (status.status === "processing") {
+          method = "DELETE";
+          if (!(await client.cancelAgent(current.jobId)))
+            throw new ConvexError(
+              "Could not stop the previous Firecrawl research job. Retry after resolving it.",
+            );
+        }
       } catch (error) {
-        if (!(error instanceof SdkError) || (error.status !== 404 && error.status !== 410))
-          throw error;
+        if (!(error instanceof SdkError)) throw error;
+        // Firecrawl can keep reporting processing after cancellation has finished.
+        const alreadyCancelled =
+          method === "DELETE" &&
+          error.status === 409 &&
+          error.message === "Agent is already cancelled";
+        if (error.status !== 404 && error.status !== 410 && !alreadyCancelled) {
+          const details = [
+            error.status === undefined ? null : `HTTP ${error.status}`,
+            error.code ? `code ${error.code}` : null,
+          ].filter((detail) => detail !== null);
+          const failure = `Firecrawl ${method} /v2/agent/${current.jobId}: ${diagnosticMessage(error)}${details.length ? ` (${details.join(", ")})` : ""}`;
+          console.error(failure);
+          throw new ConvexError(failure);
+        }
       }
     }
     return ctx.runMutation(internal.tasks.siteResearchRecords.refresh, {

@@ -9,6 +9,7 @@ import {
 import type { SidebarLayoutState } from "@samebase/sidebars/SidebarLayoutState";
 import { useLocalStorageSidebarState } from "../sidebars/scoutSidebarState";
 import { useAction } from "convex/react";
+import { ConvexError } from "convex/values";
 import { convexQuery } from "@convex-dev/react-query";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { useSsrPaginatedQuery } from "#lib/useSsrPaginatedQuery";
@@ -325,7 +326,14 @@ function SiteResearchControl({
           setError(null);
           void refresh({ site: site.hostname })
             .catch((cause) => {
-              setError(cause instanceof Error ? cause.message : "Couldn't start research.");
+              const detail = cause instanceof ConvexError ? z.string().safeParse(cause.data) : null;
+              setError(
+                detail?.success
+                  ? detail.data
+                  : cause instanceof Error
+                    ? cause.message
+                    : "Couldn't start research.",
+              );
             })
             .finally(() => setPending(false));
         }}
