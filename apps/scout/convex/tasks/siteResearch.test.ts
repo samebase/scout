@@ -2,6 +2,7 @@
 import agentTest from "@convex-dev/agent/test";
 import workflowTest from "@convex-dev/workflow/test";
 import { convexTest } from "convex-test";
+import { ConvexError } from "convex/values";
 import { Firecrawl, SdkError } from "firecrawl";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { api, internal } from "../_generated/api";
@@ -1062,10 +1063,59 @@ it.each([404, 410])(
   },
 );
 
+it("refreshes a timed-out job when Firecrawl reports processing but confirms it is already cancelled", async () => {
+  const t = await setup();
+  await t.identifyAndAdvance();
+  const shared = await t.sharedJob();
+  await t.process(shared._id);
+  getAgentStatus.mockResolvedValue(processing);
+  vi.setSystemTime(Math.ceil(shared._creationTime) + 360_000);
+  await t.process(shared._id);
+  await t.advance();
+  const failedTask = await t.inspect();
+  cancelAgent.mockRejectedValueOnce(
+    new SdkError("Agent is already cancelled", 409, "ERR_BAD_REQUEST"),
+  );
+
+  const retryId = await t.refresh();
+  expect(retryId).not.toBe(shared._id);
+  expect(await t.sharedJob()).toMatchObject({ jobId: null, state: { kind: "running" } });
+  expect(await t.refresh()).toBe(retryId);
+  expect(await t.inspect()).toEqual(failedTask);
+
+  startAgent.mockResolvedValueOnce({ success: true, id: "job-2" });
+  await t.process(retryId);
+  getAgentStatus.mockResolvedValue(result);
+  await t.process(retryId);
+  expect(await t.sharedJob()).toMatchObject({ jobId: "job-2", state: { kind: "completed" } });
+  expect((await t.site())?.profile?.name).toBe(result.data.name);
+});
+
+it("surfaces other cancellation conflicts with provider details and preserves the failed job", async () => {
+  const t = await setup();
+  await t.identifyAndAdvance();
+  const shared = await t.sharedJob();
+  await t.process(shared._id);
+  getAgentStatus.mockResolvedValue(processing);
+  vi.setSystemTime(Math.ceil(shared._creationTime) + 360_000);
+  await t.process(shared._id);
+  const before = await t.records();
+  cancelAgent.mockRejectedValueOnce(
+    new SdkError("Agent already completed", 409, "ERR_BAD_REQUEST"),
+  );
+
+  await expect(t.refresh()).rejects.toMatchObject({
+    data: "Firecrawl DELETE /v2/agent/job-1: Agent already completed (HTTP 409, code ERR_BAD_REQUEST)",
+  });
+  expect(await t.records()).toEqual(before);
+  expect((await t.site())?.researchId).toBe(shared._id);
+});
+
 it.each([
   { label: "generic error mentioning 404", error: new Error("404 Not Found") },
   { label: "SDK 500", error: new SdkError("Server error", 500) },
   { label: "SDK 503", error: new SdkError("Service unavailable", 503) },
+  { label: "SDK 409 from status lookup", error: new SdkError("Agent is already cancelled", 409) },
 ])(
   "blocks refresh when the old provider job cannot be confirmed absent: $label",
   async ({ error }) => {
@@ -1082,7 +1132,14 @@ it.each([
     await t.process(shared._id);
     const before = await t.records();
     getAgentStatus.mockRejectedValueOnce(error);
-    await expect(t.refresh()).rejects.toThrow(error.message);
+    const failedRefresh = t.refresh();
+    await expect(failedRefresh).rejects.toThrow(error.message);
+    if (error instanceof SdkError) {
+      await expect(failedRefresh).rejects.toBeInstanceOf(ConvexError);
+      await expect(failedRefresh).rejects.toMatchObject({
+        data: `Firecrawl GET /v2/agent/job-1: ${error.message} (HTTP ${error.status})`,
+      });
+    }
     expect((await t.site())?.researchId).toBe(shared._id);
     expect(await t.records()).toEqual(before);
     expect(startAgent).toHaveBeenCalledTimes(1);
