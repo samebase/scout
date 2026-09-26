@@ -202,6 +202,20 @@ function routeInput(state: TrailState) {
   ]);
 }
 
+// Keep the height closure in its own scope. A closure created inside
+// replanTrailConnection would share that function's context, which holds
+// `previous`, so every surface would retain the one before it.
+function createTerrainSurface(
+  terrainTime: number,
+  settings: TerrainSettings,
+  checkpoints: { x: number; z: number }[],
+) {
+  const scene = terrainSceneIndex[settings.scene];
+  const height = (x: number, z: number) =>
+    terrainHeight(x, z, terrainTime, settings.peaks, settings.extent, scene) * settings.elevation;
+  return createTrailSurface(height, settings, checkpoints);
+}
+
 function replanTrailConnection(state: TrailState, settings: TerrainSettings) {
   const checkpoints = state.homes.map((_, index) => state.nodes[index * trailNodesPerLeg]);
   const input = routeInput(state);
@@ -220,16 +234,7 @@ function replanTrailConnection(state: TrailState, settings: TerrainSettings) {
         p.z > previous.surface.bottom,
     )
   ) {
-    const height = (x: number, z: number) =>
-      terrainHeight(
-        x,
-        z,
-        state.terrainTime,
-        settings.peaks,
-        settings.extent,
-        terrainSceneIndex[settings.scene],
-      ) * settings.elevation;
-    surface = createTrailSurface(height, settings, checkpoints);
+    surface = createTerrainSurface(state.terrainTime, settings, checkpoints);
     surfaces.set(state, { key, surface });
   } else {
     surface = previous.surface;

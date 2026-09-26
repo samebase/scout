@@ -15,7 +15,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-23T00:24:56Z
+- **Last updated:** 2026-09-26T18:32:36Z
 
 ## Log
 
@@ -1980,8 +1980,14 @@ through `set_review_site`. Remove URL extraction at startup and show preparation
 progress during that same tool call. Both engines receive the saved brief path or
 the research error before continuing (`apps/scout/convex/tasks/execution.ts`).
 
-### 2026-09-23 - working tree - v316
+### 2026-09-23 - 9c9ed75 - v316
 
 Allow research refresh after Firecrawl confirms the previous job was already cancelled,
 even when its status still says processing. Show remaining provider failures with their
 method, path, HTTP status, and code (`apps/scout/convex/tasks/siteResearch.ts`).
+
+### 2026-09-26 - working tree - v317
+
+Fixed homepage tabs crashing with "Aw, Snap!" after a few minutes of animation. Each replanned
+trail surface kept the previous one alive through a shared closure, growing the heap by about
+374 KB per frame until Chrome's 4 GB limit (`apps/scout/src/lib/terrain-trail-motion.ts`).
