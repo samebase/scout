@@ -115,26 +115,20 @@ workspace typechecks and tests; root build/deploy commands target TrailScout.
 
 ## Checks and builds
 
-| Command                           | Purpose                                              |
-| --------------------------------- | ---------------------------------------------------- |
-| `pnpm run check`                  | Format, lint, type-check, and test                   |
-| `pnpm run build`                  | Build for Cloudflare without rerunning checks        |
-| `pnpm run deploy:convex`          | Build and deploy the production app to `convex.site` |
-| `pnpm run deploy:dry-run`         | Validate a production upload without publishing it   |
-| `pnpm run deploy:preview:dry-run` | Validate a preview upload without publishing it      |
+| Command                   | Purpose                                              |
+| ------------------------- | ---------------------------------------------------- |
+| `pnpm run check`          | Format, lint, type-check, and test                   |
+| `pnpm run build`          | Build for Cloudflare without rerunning checks        |
+| `pnpm run deploy`         | Publish the production Worker                        |
+| `pnpm run deploy:preview` | Publish the current branch's Worker Preview          |
+| `pnpm run deploy:convex`  | Build and deploy the production app to `convex.site` |
+| `pnpm run deploy:dry-run` | Validate a production upload without publishing it   |
 
-The dry-run commands need `CLOUDFLARE_WORKER_NAME`.
-
-On macOS or Linux:
+Worker Previews has no dry-run mode. Build first, then pass the connected Worker name for a manual
+Preview deployment on macOS, Linux, or Windows:
 
 ```sh
-export CLOUDFLARE_WORKER_NAME=my-worker
-```
-
-On Windows PowerShell:
-
-```powershell
-$env:CLOUDFLARE_WORKER_NAME = "my-worker"
+pnpm run deploy:preview --worker-name my-worker
 ```
 
 ## Deployment contract
@@ -144,16 +138,28 @@ Cloudflare Workers Builds keeps its root directory at the repository root and ru
 commands run with `apps/scout/` as their working directory. GitHub CI runs `pnpm run check`
 separately; the Workers build only builds and deploys. It then uses:
 
-| Branch type             | Deploy command            | Convex key                  |
-| ----------------------- | ------------------------- | --------------------------- |
-| `main`                  | `pnpm run deploy`         | `CONVEX_DEPLOY_KEY`         |
-| Non-production branches | `pnpm run deploy:preview` | `PREVIEW_CONVEX_DEPLOY_KEY` |
+| Branch type             | Deploy command            | Convex key          |
+| ----------------------- | ------------------------- | ------------------- |
+| `main`                  | `pnpm run deploy`         | `CONVEX_DEPLOY_KEY` |
+| Non-production branches | `pnpm run deploy:preview` | `CONVEX_DEPLOY_KEY` |
 
-`apps/scout/scripts/build-cloudflare.ts` selects the Convex key from `WORKERS_CI_BRANCH` and fails closed when
+Use a production deploy key in **Settings > Builds > Production** and a project Preview deploy key
+under the same name in **Settings > Builds > Previews Base**. These are build secrets, not runtime
+bindings. `apps/scout/scripts/build-cloudflare.ts` uses the active build scope's key and fails closed when
 the branch identity is missing. `apps/scout/scripts/verify-current-branch-head.ts` prevents an older concurrent
 build from deploying backend code after a newer commit reaches the same branch. `convex deploy
 --cmd` supplies `VITE_CONVEX_URL` to the frontend build, so it is not a Cloudflare build variable.
 Set each Convex preview's `SITE_URL` to its frontend origin for signup verification and handoff links.
+
+`pnpm run build`, `pnpm run deploy`, and `pnpm run deploy:preview` are the stable repository
+interface. Their implementation can change without changing the Cloudflare configuration.
+Outside Workers Builds, `pnpm run build` runs only the app build.
+
+Wrangler reads the connected Worker name from the Workers Builds environment. Existing Workers
+need the one-time **Settings > Builds > Set up Worker Previews** switch. Restore the Preview command
+to `pnpm run deploy:preview` after that switch. The configuration uses `previews: {}` because
+Cloudflare serves static assets. See the [provider migration](./docs/cloudflare-workers-builds.md#worker-previews)
+before enabling branch previews.
 
 `pnpm run deploy:convex` provides a separate manual production deployment to Convex Static Hosting.
 Automatic builds upload and verify `apps/scout/dist/client` on the selected Convex deployment
@@ -187,7 +193,6 @@ and deploy behavior. Use the
   Cloudflare uses build-generated `_redirects`, and Convex uses the same exact path rewrites.
 - `apps/scout/wrangler.jsonc` defines Cloudflare static assets, SPA fallback, and preview URLs.
 - `apps/scout/scripts/build-cloudflare.ts` owns the Cloudflare build and Convex deployment selection.
-- `apps/scout/scripts/deploy-cloudflare.ts` owns production, preview, and dry-run uploads.
 - `docs/agent-runtime.md` describes Scout ownership, chats, tools, and handoffs.
 - `apps/scout/convex/` contains the backend, schema, authentication, and generated Convex bindings.
 - `apps/scout/src/` contains the React application and routes.

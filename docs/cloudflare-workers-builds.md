@@ -13,44 +13,32 @@ Keep the Workers Builds root directory at the repository root. These commands us
 to run the `samebase-scout` app in `apps/scout/`, where its Convex and Wrangler configuration
 live. The frontend output is `apps/scout/dist/client`.
 
+`pnpm run build`, `pnpm run deploy`, and `pnpm run deploy:preview` are the stable repository
+interface. Outside Workers Builds, `pnpm run build` runs only the app build.
+
 ## Build Variables
 
-Set these build secrets in the Cloudflare Workers Builds settings:
+Set `CONVEX_DEPLOY_KEY` separately in the Cloudflare Workers Builds settings:
 
-- `CONVEX_DEPLOY_KEY`
-- `PREVIEW_CONVEX_DEPLOY_KEY`
+- **Settings > Builds > Production**: a Convex production deploy key.
+- **Settings > Builds > Previews Base**: a Convex project Preview deploy key.
+
+The Previews Base section here contains shared preview build settings. Do not put deploy keys in
+**Runtime variables and secrets**, which exposes them to Worker code and does not supply the build.
 
 Do not add `VITE_CONVEX_URL`. Convex supplies the selected deployment URL to the frontend command
 that runs through `convex deploy --cmd`.
 
-Cloudflare Workers Builds has separate production and preview build triggers
-under the hood, but the dashboard currently shows one build-variable table. To
-keep dashboard and API-created configurations equivalent, store both secrets on
-both triggers. This also keeps the production and preview keys visible in the
-dashboard. Keep this shared layout until Cloudflare exposes separate production
-and preview build-variable views.
-
-This template handles that dashboard limitation in `apps/scout/scripts/build-cloudflare.ts`:
-
-1. It reads `WORKERS_CI_BRANCH`.
-2. It selects `CONVEX_DEPLOY_KEY` when the branch is `main`.
-3. It selects `PREVIEW_CONVEX_DEPLOY_KEY` for every other branch.
-4. It passes only the selected value to the Convex deploy subprocess as
-   `CONVEX_DEPLOY_KEY`.
-
-That keeps the production key compatible with projects that do not use the
-preview-aware wrapper, while still requiring a separate preview key for
-non-production branches.
-
-When configuring through the Builds API, write the same two secrets to both
-triggers. When configuring through the dashboard, enter both secrets in its
-build-variable table. The script selects the correct key for each branch and
-keeps preview builds from falling back to the production key.
+Each build scope supplies its own `CONVEX_DEPLOY_KEY`. The build script uses `WORKERS_CI_BRANCH` to
+select production or a named Convex preview. It does not choose between two secret names.
+After both builds succeed, delete `PREVIEW_CONVEX_DEPLOY_KEY` from both build scopes.
+The current scripts do not read it.
 
 ## Build Ordering
 
 Non-production builds pass `WORKERS_CI_BRANCH` to Convex as the stable preview
-name, so repeated commits reuse one preview deployment, URL, and data.
+name. Auth environment commands, seed data, static uploads, and release verification use the same
+explicit preview name, so repeated commits reuse one preview deployment, URL, and data.
 
 A preview deployment that sends human-handoff emails must set Convex Auth's `SITE_URL` to the
 intended preview app origin. Preview builds upload assets to their named Convex preview, so
@@ -90,7 +78,7 @@ For production and named preview Workers Builds, the build command:
 5. Configures auth and, for previews, seeds the development account.
 
 Cloudflare publication runs afterward. A Cloudflare failure no longer delays the Convex
-frontend's files. Local builds without deploy keys remain frontend-only; dry-runs do not
+frontend's files. Local builds remain frontend-only; dry-runs do not
 publish Convex assets. `pnpm run deploy:convex` also verifies its completed release.
 
 Every renderer knows its own marker path, `/__convex_build/<unique-build-id>`. Before loading
@@ -120,19 +108,48 @@ the SPA shell. The Convex hosting layer has been observed to override missing `.
 responses with a four-hour browser cache policy. Release safety therefore depends on keeping
 referenced assets available, not on a client reload or the host preserving that header.
 
+## Worker Previews
+
+`pnpm run deploy:preview` checks the current branch head and runs `wrangler preview`.
+Wrangler reads `WRANGLER_CI_OVERRIDE_NAME` in Workers Builds. The repository does not need a fixed
+Worker name or a name adapter. For a local command, pass `--worker-name <connected-worker-name>`.
+Wrangler's `--name` option selects the Preview, not the parent Worker.
+
+Wrangler 4.135.0 or later and a `previews` configuration block are required. This application serves
+static assets through Cloudflare, so `apps/scout/wrangler.jsonc` uses `previews: {}`.
+Its Convex Static Hosting upload, auth setup, and release checks remain part of the build.
+
+Existing Workers need **Settings > Builds > Set up Worker Previews**. The switch is irreversible
+and changes the preview command to `npx wrangler preview`. Restore `pnpm run deploy:preview`,
+keep the build root at the repository root, and keep `pnpm run build` as the build command.
+New connections use Worker Previews by default.
+
+After switching and before a branch build, set `CONVEX_DEPLOY_KEY` in Previews Base build settings
+to the project Preview key. The switch removes the old preview trigger, so do not use an old
+preview trigger ID to configure these settings.
+Keep the production key and `SAMEBASE_CONVEX_PROJECT` on Production only. Verify a branch preview,
+its matching Convex deployment, auth, and static-release checks. Production rollout is a separate
+approved step. After both builds pass, remove any `PREVIEW_CONVEX_DEPLOY_KEY` left in Production
+or Previews Base build settings and remove any `SAMEBASE_CONVEX_PROJECT` from Previews Base
+build settings.
+
+Runtime secrets belong under Runtime **Previews Base**, separately from Builds secrets. Base
+secret changes apply to newly created Previews. This code change does not switch provider settings.
+
 ## Local Checks
 
-Local dry-runs can validate the Worker package without build secrets. Set
-`CLOUDFLARE_WORKER_NAME` using the [platform-specific commands in the README](../README.md#checks-and-builds),
-then run:
+Build and validate the Worker package without publishing it:
 
 ```sh
 pnpm run deploy:dry-run
-pnpm run deploy:preview:dry-run
 ```
 
-If you set either deploy key locally, also set `WORKERS_CI_BRANCH` so the
-script can choose the intended deployment target.
+This command does not deploy Convex. Worker Previews has no dry-run mode. After building locally,
+use the connected Worker name to publish a Preview:
+
+```sh
+pnpm run deploy:preview --worker-name my-worker
+```
 
 ## References
 
