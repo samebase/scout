@@ -23,13 +23,13 @@ Set `CONVEX_DEPLOY_KEY` separately in the Cloudflare Workers Builds settings:
 - **Settings > Builds > Production**: a Convex production deploy key.
 - **Settings > Builds > Previews Base**: a Convex project Preview deploy key.
 
-The Previews Base section here is the preview trigger's build variables. Do not put deploy keys in
+The Previews Base section here contains shared preview build settings. Do not put deploy keys in
 **Runtime variables and secrets**, which exposes them to Worker code and does not supply the build.
 
 Do not add `VITE_CONVEX_URL`. Convex supplies the selected deployment URL to the frontend command
 that runs through `convex deploy --cmd`.
 
-Each trigger supplies its own `CONVEX_DEPLOY_KEY`. The build script uses `WORKERS_CI_BRANCH` to
+Each build scope supplies its own `CONVEX_DEPLOY_KEY`. The build script uses `WORKERS_CI_BRANCH` to
 select production or a named Convex preview. It does not choose between two secret names.
 After both builds succeed, delete `PREVIEW_CONVEX_DEPLOY_KEY` from both build scopes.
 The current scripts do not read it.
@@ -124,11 +124,14 @@ and changes the preview command to `npx wrangler preview`. Restore `pnpm run dep
 keep the build root at the repository root, and keep `pnpm run build` as the build command.
 New connections use Worker Previews by default.
 
-Before switching, set the preview Builds trigger's `CONVEX_DEPLOY_KEY` to the project Preview key.
+After switching and before a branch build, set `CONVEX_DEPLOY_KEY` in Previews Base build settings
+to the project Preview key. The switch removes the old preview trigger, so do not use an old
+preview trigger ID to configure these settings.
 Keep the production key and `SAMEBASE_CONVEX_PROJECT` on Production only. Verify a branch preview,
 its matching Convex deployment, auth, and static-release checks. Production rollout is a separate
-approved step. After both builds pass, remove `PREVIEW_CONVEX_DEPLOY_KEY` from both triggers and
-remove `SAMEBASE_CONVEX_PROJECT` from the preview trigger.
+approved step. After both builds pass, remove any `PREVIEW_CONVEX_DEPLOY_KEY` left in Production
+or Previews Base build settings and remove any `SAMEBASE_CONVEX_PROJECT` from Previews Base
+build settings.
 
 Runtime secrets belong under Runtime **Previews Base**, separately from Builds secrets. Base
 secret changes apply to newly created Previews. This code change does not switch provider settings.

@@ -145,7 +145,7 @@ separately; the Workers build only builds and deploys. It then uses:
 
 Use a production deploy key in **Settings > Builds > Production** and a project Preview deploy key
 under the same name in **Settings > Builds > Previews Base**. These are build secrets, not runtime
-bindings. `apps/scout/scripts/build-cloudflare.ts` uses the active trigger's key and fails closed when
+bindings. `apps/scout/scripts/build-cloudflare.ts` uses the active build scope's key and fails closed when
 the branch identity is missing. `apps/scout/scripts/verify-current-branch-head.ts` prevents an older concurrent
 build from deploying backend code after a newer commit reaches the same branch. `convex deploy
 --cmd` supplies `VITE_CONVEX_URL` to the frontend build, so it is not a Cloudflare build variable.
