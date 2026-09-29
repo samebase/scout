@@ -110,21 +110,28 @@ referenced assets available, not on a client reload or the host preserving that 
 
 ## Worker Previews
 
-`pnpm run deploy:preview` runs `wrangler preview`. Its wrapper passes the Worker name from
-`WRANGLER_CI_OVERRIDE_NAME` in Workers Builds, or `CLOUDFLARE_WORKER_NAME` for a local command.
-The repository does not hard-code a Worker name. The command checks the current branch head
-before it publishes, as the production deploy command does.
+`pnpm run deploy:preview` checks the current branch head and runs `wrangler preview`.
+Wrangler reads `WRANGLER_CI_OVERRIDE_NAME` in Workers Builds. The repository does not need a fixed
+Worker name or a name adapter. For a local command, pass `--worker-name <connected-worker-name>`.
+Wrangler's `--name` option selects the Preview, not the parent Worker.
 
-Enable Preview builds for non-production branches. Cloudflare can still show an **Enable Worker
-Previews** banner when the Preview command is `pnpm run deploy:preview`. Cloudflare documents this
-button as a command change from an old deploy command to `npx wrangler preview`. The Builds API has
-no separate Worker Previews flag. Keep `pnpm run deploy:preview` because its repository adapter
-already runs `wrangler preview`.
+Wrangler 4.135.0 or later and a `previews` configuration block are required. This application serves
+static assets through Cloudflare, so `apps/scout/wrangler.jsonc` uses `previews: {}`.
+Its Convex Static Hosting upload, auth setup, and release checks remain part of the build.
 
-Configure safe runtime variables, secrets, and bindings in Runtime **Previews Base** before you
-share a Preview URL. A new Preview copies the Base settings when it is created. A later Base change
-does not update an existing Preview. Production runtime settings do not become Preview settings
-automatically.
+Existing Workers need **Settings > Builds > Set up Worker Previews**. The switch is irreversible
+and changes the preview command to `npx wrangler preview`. Restore `pnpm run deploy:preview`,
+keep the build root at the repository root, and keep `pnpm run build` as the build command.
+New connections use Worker Previews by default.
+
+Before switching, set the preview Builds trigger's `CONVEX_DEPLOY_KEY` to the project Preview key.
+Keep the production key and `SAMEBASE_CONVEX_PROJECT` on Production only. Verify a branch preview,
+its matching Convex deployment, auth, and static-release checks. Production rollout is a separate
+approved step. After both builds pass, remove `PREVIEW_CONVEX_DEPLOY_KEY` from both triggers and
+remove `SAMEBASE_CONVEX_PROJECT` from the preview trigger.
+
+Runtime secrets belong under Runtime **Previews Base**, separately from Builds secrets. Base
+secret changes apply to newly created Previews. This code change does not switch provider settings.
 
 ## Local Checks
 
@@ -134,8 +141,12 @@ Build and validate the Worker package without publishing it:
 pnpm run deploy:dry-run
 ```
 
-This command does not deploy Convex. For a local Worker Preview command, set
-`CLOUDFLARE_WORKER_NAME` with the [platform-specific commands in the README](../README.md#checks-and-builds).
+This command does not deploy Convex. Worker Previews has no dry-run mode. After building locally,
+use the connected Worker name to publish a Preview:
+
+```sh
+pnpm run deploy:preview --worker-name my-worker
+```
 
 ## References
 

@@ -15,7 +15,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-09-26T18:32:36Z
+- **Last updated:** 2026-09-29T15:24:18Z
 
 ## Log
 
@@ -1999,4 +1999,5 @@ Preview Convex deploys, Auth variables, and seed data now use the same branch na
 `build`, `deploy`, and `deploy:preview` commands remain the Cloudflare interface, while production
 and preview builds retain verified Convex Static Hosting publication before Cloudflare.
 (`apps/scout/package.json`, `apps/scout/scripts/build-cloudflare.ts`,
-`apps/scout/scripts/deploy-worker-preview.ts`, `apps/scout/scripts/ensure-convex-auth.ts`).
+`apps/scout/wrangler.jsonc`, `apps/scout/scripts/ensure-convex-auth.ts`).
+Wrangler 4.136.2 now selects the connected Worker directly. Provider migration and live checks are pending.

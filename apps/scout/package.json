@@ -20,7 +20,7 @@
     "build:cloudflare": "node ./scripts/build-cloudflare.ts",
     "deploy": "node ./scripts/verify-current-branch-head.ts && wrangler deploy",
     "deploy:convex": "static-hosting deploy --dist ./dist/client --build-command \"pnpm run build:app\" && node ./scripts/verify-static-release.ts --prod",
-    "deploy:preview": "node ./scripts/deploy-worker-preview.ts",
+    "deploy:preview": "node ./scripts/verify-current-branch-head.ts && wrangler preview",
     "deploy:dry-run": "pnpm run build:app && wrangler deploy --dry-run",
     "format": "vp fmt",
     "format:check": "vp fmt --check",
@@ -95,6 +95,6 @@
     "vite": "catalog:",
     "vite-plus": "catalog:",
     "vitest": "catalog:",
-    "wrangler": "^4.118.0"
+    "wrangler": "4.136.2"
   }
 }

@@ -124,18 +124,11 @@ workspace typechecks and tests; root build/deploy commands target TrailScout.
 | `pnpm run deploy:convex`  | Build and deploy the production app to `convex.site` |
 | `pnpm run deploy:dry-run` | Validate a production upload without publishing it   |
 
-A local `pnpm run deploy:preview` needs `CLOUDFLARE_WORKER_NAME`.
-
-On macOS or Linux:
+Worker Previews has no dry-run mode. Build first, then pass the connected Worker name for a manual
+Preview deployment on macOS, Linux, or Windows:
 
 ```sh
-export CLOUDFLARE_WORKER_NAME=my-worker
-```
-
-On Windows PowerShell:
-
-```powershell
-$env:CLOUDFLARE_WORKER_NAME = "my-worker"
+pnpm run deploy:preview --worker-name my-worker
 ```
 
 ## Deployment contract
@@ -162,9 +155,11 @@ Set each Convex preview's `SITE_URL` to its frontend origin for signup verificat
 interface. Their implementation can change without changing the Cloudflare configuration.
 Outside Workers Builds, `pnpm run build` runs only the app build.
 
-Enable Preview builds for non-production branches, but keep the Preview command set to
-`pnpm run deploy:preview`. Cloudflare can still show an **Enable Worker Previews** banner because it
-cannot inspect the package script. The repository adapter already runs `wrangler preview`.
+Wrangler reads the connected Worker name from the Workers Builds environment. Existing Workers
+need the one-time **Settings > Builds > Set up Worker Previews** switch. Restore the Preview command
+to `pnpm run deploy:preview` after that switch. The configuration uses `previews: {}` because
+Cloudflare serves static assets. See the [provider migration](./docs/cloudflare-workers-builds.md#worker-previews)
+before enabling branch previews.
 
 `pnpm run deploy:convex` provides a separate manual production deployment to Convex Static Hosting.
 Automatic builds upload and verify `apps/scout/dist/client` on the selected Convex deployment
@@ -198,7 +193,6 @@ and deploy behavior. Use the
   Cloudflare uses build-generated `_redirects`, and Convex uses the same exact path rewrites.
 - `apps/scout/wrangler.jsonc` defines Cloudflare static assets, SPA fallback, and preview URLs.
 - `apps/scout/scripts/build-cloudflare.ts` owns the Cloudflare build and Convex deployment selection.
-- `apps/scout/scripts/deploy-worker-preview.ts` passes the connected Worker name to Worker Previews.
 - `docs/agent-runtime.md` describes Scout ownership, chats, tools, and handoffs.
 - `apps/scout/convex/` contains the backend, schema, authentication, and generated Convex bindings.
 - `apps/scout/src/` contains the React application and routes.
