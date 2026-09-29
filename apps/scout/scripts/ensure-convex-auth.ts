@@ -172,7 +172,6 @@ export async function ensureConvexAuth(args: {
     await setConvexEnv("JWKS", keys.JWKS, args.target, args.env, runConvex);
     console.log("Convex Auth keys configured.");
   }
-
 }
 
 const entrypoint = process.argv[1];

@@ -115,14 +115,14 @@ workspace typechecks and tests; root build/deploy commands target TrailScout.
 
 ## Checks and builds
 
-| Command                           | Purpose                                              |
-| --------------------------------- | ---------------------------------------------------- |
-| `pnpm run check`                  | Format, lint, type-check, and test                   |
-| `pnpm run build`                  | Build for Cloudflare without rerunning checks        |
-| `pnpm run deploy`                 | Publish the production Worker                       |
-| `pnpm run deploy:preview`         | Publish the current branch's Worker Preview          |
-| `pnpm run deploy:convex`          | Build and deploy the production app to `convex.site` |
-| `pnpm run deploy:dry-run`         | Validate a production upload without publishing it   |
+| Command                   | Purpose                                              |
+| ------------------------- | ---------------------------------------------------- |
+| `pnpm run check`          | Format, lint, type-check, and test                   |
+| `pnpm run build`          | Build for Cloudflare without rerunning checks        |
+| `pnpm run deploy`         | Publish the production Worker                        |
+| `pnpm run deploy:preview` | Publish the current branch's Worker Preview          |
+| `pnpm run deploy:convex`  | Build and deploy the production app to `convex.site` |
+| `pnpm run deploy:dry-run` | Validate a production upload without publishing it   |
 
 A local `pnpm run deploy:preview` needs `CLOUDFLARE_WORKER_NAME`.
 
@@ -145,9 +145,9 @@ Cloudflare Workers Builds keeps its root directory at the repository root and ru
 commands run with `apps/scout/` as their working directory. GitHub CI runs `pnpm run check`
 separately; the Workers build only builds and deploys. It then uses:
 
-| Branch type             | Deploy command            | Convex key                  |
-| ----------------------- | ------------------------- | --------------------------- |
-| `main`                  | `pnpm run deploy`         | `CONVEX_DEPLOY_KEY`         |
+| Branch type             | Deploy command            | Convex key          |
+| ----------------------- | ------------------------- | ------------------- |
+| `main`                  | `pnpm run deploy`         | `CONVEX_DEPLOY_KEY` |
 | Non-production branches | `pnpm run deploy:preview` | `CONVEX_DEPLOY_KEY` |
 
 Use a production deploy key in **Settings > Builds > Production** and a project Preview deploy key

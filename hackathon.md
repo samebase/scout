@@ -1991,7 +1991,8 @@ method, path, HTTP status, and code (`apps/scout/convex/tasks/siteResearch.ts`).
 Fixed homepage tabs crashing with "Aw, Snap!" after a few minutes of animation. Each replanned
 trail surface kept the previous one alive through a shared closure, growing the heap by about
 374 KB per frame until Chrome's 4 GB limit (`apps/scout/src/lib/terrain-trail-motion.ts`).
-### 2026-09-29 - working tree - v318
+
+### 2026-09-29 - working tree - v319
 
 Moved Cloudflare branch deploys to Worker Previews and one trigger-scoped `CONVEX_DEPLOY_KEY` name.
 Preview Convex deploys, Auth variables, and seed data now use the same branch name. The stable
