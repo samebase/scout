@@ -388,3 +388,34 @@ it("authorizes both replay endpoints before fetching a provider recording", asyn
     await owner.action(api.browserReplay.loadPlaylist, { sessionId: browser._id, pageId: "1" }),
   ).toEqual({ status: "ready", playlist: "#EXTM3U\n#EXT-X-ENDLIST" });
 });
+
+it("returns missing recordings as failures and allows an explicit later retry", async () => {
+  const { owner, open, list } = await setup();
+  await open("browser-1");
+  const [browser] = await list();
+  if (!browser) throw new Error("Missing browser");
+  vi.stubEnv("FIRECRAWL_API_KEY", "test-key");
+  const fetchMock = vi
+    .fn<typeof fetch>()
+    .mockImplementation(async () => Response.json({ error: "Replay not found." }, { status: 404 }));
+  vi.stubGlobal("fetch", fetchMock);
+  expect(await owner.action(api.browserReplay.listPages, { sessionId: browser._id })).toEqual({
+    status: "failed",
+    message: "Firecrawl GET /v2/browser/browser-1/replay: HTTP 404. Replay not found.",
+  });
+  expect(
+    await owner.action(api.browserReplay.loadPlaylist, { sessionId: browser._id, pageId: "0" }),
+  ).toMatchObject({
+    status: "failed",
+    message: expect.stringContaining("HTTP 404. Replay not found."),
+  });
+  fetchMock.mockResolvedValueOnce(
+    Response.json({
+      success: true,
+      pages: [{ pageId: "0", pageUrl: "", startTimeMs: 0, endTimeMs: 8083 }],
+    }),
+  );
+  expect(await owner.action(api.browserReplay.listPages, { sessionId: browser._id })).toMatchObject(
+    { status: "ready", pages: [{ pageId: "0", pageUrl: "" }] },
+  );
+});

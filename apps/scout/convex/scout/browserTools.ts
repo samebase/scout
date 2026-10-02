@@ -25,8 +25,10 @@ import {
 import {
   closeFirecrawlBrowserSession,
   createFirecrawlClient,
+  createRecordedFirecrawlBrowser,
   firecrawlBrowserExecutionSucceeded,
 } from "./lib/firecrawl";
+import { FirecrawlApiError } from "./lib/firecrawlHttp";
 import { optionalFirecrawlLiveViewUrl } from "./lib/firecrawlLiveView";
 import { diagnosticMessage } from "./lib/redaction";
 import { requireRuntimeTool } from "./lib/runtimeTool";
@@ -71,7 +73,7 @@ type BrowserStopResult = {
 };
 
 type BrowserDependencies = {
-  browser: Firecrawl["browser"];
+  browser: typeof createRecordedFirecrawlBrowser;
   browserExecute: Firecrawl["browserExecute"];
   deleteBrowser: Firecrawl["deleteBrowser"];
   connect: (cdpUrl: string, abortSignal?: AbortSignal) => Promise<PlaywrightBrowser>;
@@ -141,7 +143,7 @@ type BrowserHarnessOptions = {
 function defaultBrowserDependencies(): BrowserDependencies {
   const firecrawl = createFirecrawlClient();
   return {
-    browser: async (options) => await firecrawl.browser(options),
+    browser: createRecordedFirecrawlBrowser,
     browserExecute: async (sessionId, options) =>
       await firecrawl.browserExecute(sessionId, options),
     deleteBrowser: async (sessionId) => await closeFirecrawlBrowserSession(firecrawl, sessionId),
@@ -161,7 +163,7 @@ function firecrawlRateLimitDelay(error: unknown) {
 
 function firecrawlProfileWriterBusy(error: unknown) {
   return (
-    error instanceof SdkError &&
+    (error instanceof SdkError || error instanceof FirecrawlApiError) &&
     /another session is currently writing to this profile/i.test(error.message)
   );
 }

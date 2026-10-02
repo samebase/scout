@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
+import { replayExportSpans } from "./browserReplayExportPlan";
 import {
   activePageIdAt,
   activeTabAt,
@@ -42,6 +43,33 @@ function operation(args: {
 }
 
 describe("task replay timeline", () => {
+  test("plays and exports a desktop recording before and after a tab switch without URL matching", () => {
+    const timeline = buildReplayTimeline(
+      [{ pageId: "0", pageUrl: "", startTimeMs: 0, endTimeMs: 8083 }],
+      [
+        operation({
+          sequence: 1,
+          beforeMs: 10000,
+          afterMs: 12000,
+          beforeTarget: "t1",
+          afterTarget: "t2",
+          beforeUrl: "https://app.test/",
+          url: "https://login.test/",
+        }),
+      ],
+    );
+    expect(timeline.pages[0].binding).toEqual({ kind: "desktop" });
+    expect([0, 1000, 3000, 8083].map((time) => activePageIdAt(timeline, time))).toEqual([
+      "0",
+      "0",
+      "0",
+      "0",
+    ]);
+    expect(replayExportSpans(timeline, null)).toEqual([
+      { pageId: "0", fromMs: 0, toMs: 8083, pageStartMs: 0 },
+    ]);
+    expect(timeline.pageIdByTabId.size).toBe(0);
+  });
   test("shows the last observed URL of the selected tab, including when seeking backwards", () => {
     const timeline = buildReplayTimeline(
       [{ pageId: "1", pageUrl: "https://app.test/dashboard", startTimeMs: 0, endTimeMs: 8_000 }],

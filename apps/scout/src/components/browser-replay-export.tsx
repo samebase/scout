@@ -73,6 +73,7 @@ export function BrowserReplayExport({
       for (const pageId of new Set(spans.map((span) => span.pageId))) {
         const result = await loadPlaylist({ sessionId, pageId });
         if (run !== runRef.current) return;
+        if (result.status === "failed") throw new Error(result.message);
         if (result.status !== "ready")
           throw new Error("The recording is not ready. Refresh the replay and try again.");
         playlists.set(pageId, result.playlist);

@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
 import { Firecrawl } from "firecrawl";
+import * as firecrawlBoundary from "../scout/lib/firecrawl";
 import { chromium } from "playwright-core";
 import { afterEach, expect, it, vi } from "vite-plus/test";
 import { internal } from "../_generated/api";
@@ -92,7 +93,7 @@ async function setupBrokenBrowser() {
     .spyOn(Firecrawl.prototype, "listBrowsers")
     .mockRejectedValue(new Error("Browser recovery unavailable"));
   const create = vi
-    .spyOn(Firecrawl.prototype, "browser")
+    .spyOn(firecrawlBoundary, "createRecordedFirecrawlBrowser")
     .mockResolvedValue({ success: false, error: "New browser unavailable" });
   return { ...t, connect, recovery, create };
 }
@@ -165,10 +166,12 @@ it.each([true, false])(
     const { backend, open, userId } = await setup();
     vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", String(billable));
     await backend.mutation(internal.credits.grantOnSignIn, { userId });
-    const create = vi.spyOn(Firecrawl.prototype, "browser").mockImplementation(async () => {
-      vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", String(!billable));
-      return { success: true, id: "orphan-1" };
-    });
+    const create = vi
+      .spyOn(firecrawlBoundary, "createRecordedFirecrawlBrowser")
+      .mockImplementation(async () => {
+        vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", String(!billable));
+        return { success: true, id: "orphan-1" };
+      });
     const deletion = vi.spyOn(Firecrawl.prototype, "deleteBrowser").mockResolvedValue({
       success: true,
       creditsBilled: 2,
@@ -196,7 +199,7 @@ it.each([true, false])(
   async (billable) => {
     const { backend, sessionId } = await setup();
     vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", String(billable));
-    vi.spyOn(Firecrawl.prototype, "browser").mockImplementation(async () => {
+    vi.spyOn(firecrawlBoundary, "createRecordedFirecrawlBrowser").mockImplementation(async () => {
       vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", String(!billable));
       return { success: true, id: "browser-1" };
     });
@@ -231,7 +234,7 @@ it.each([true, false])(
 it("rejects an invalid Firecrawl billing setting before calling the provider", async () => {
   const { open } = await setup();
   vi.stubEnv("FIRECRAWL_CREDITS_ENABLED", "tru");
-  const create = vi.spyOn(Firecrawl.prototype, "browser");
+  const create = vi.spyOn(firecrawlBoundary, "createRecordedFirecrawlBrowser");
   await expect(open()).rejects.toThrow();
   expect(create).not.toHaveBeenCalled();
 });
@@ -239,7 +242,10 @@ it("rejects an invalid Firecrawl billing setting before calling the provider", a
 it("keeps a failed compensating deletion visible without freezing credits", async () => {
   const { backend, open, userId } = await setup();
   await backend.mutation(internal.credits.grantOnSignIn, { userId });
-  vi.spyOn(Firecrawl.prototype, "browser").mockResolvedValue({ success: true, id: "orphan-2" });
+  vi.spyOn(firecrawlBoundary, "createRecordedFirecrawlBrowser").mockResolvedValue({
+    success: true,
+    id: "orphan-2",
+  });
   vi.spyOn(Firecrawl.prototype, "deleteBrowser").mockRejectedValue(new Error("cleanup failed"));
   await expect(open()).rejects.toThrow("cleanup failed");
   const browsers = await backend.run((ctx) => ctx.db.query("agentsApiBrowserSessions").take(2));
@@ -256,7 +262,7 @@ it("keeps a failed compensating deletion visible without freezing credits", asyn
 it("does not charge a provider rejection without a browser ID", async () => {
   const { backend, open, userId } = await setup();
   await backend.mutation(internal.credits.grantOnSignIn, { userId });
-  vi.spyOn(Firecrawl.prototype, "browser").mockResolvedValue({
+  vi.spyOn(firecrawlBoundary, "createRecordedFirecrawlBrowser").mockResolvedValue({
     success: false,
     error: "Browser creation rejected",
   });
@@ -278,7 +284,7 @@ it("rejects a nonpositive wallet before calling Firecrawl", async () => {
     if (!wallet) throw new Error("Missing wallet");
     await ctx.db.patch(wallet._id, { balanceUnits: 0 });
   });
-  const create = vi.spyOn(Firecrawl.prototype, "browser");
+  const create = vi.spyOn(firecrawlBoundary, "createRecordedFirecrawlBrowser");
   await expect(open()).rejects.toThrow();
   expect(create).not.toHaveBeenCalled();
 });

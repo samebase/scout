@@ -8,9 +8,34 @@ import {
 } from "firecrawl";
 import { getRuntimeEnv } from "../../runtimeEnv";
 import { optionalFirecrawlLiveViewUrl } from "./firecrawlLiveView";
+import { z } from "zod";
+import { firecrawlRequest } from "./firecrawlHttp";
 
 type BrowserLifecycleClient = Pick<Firecrawl, "deleteBrowser" | "listBrowsers">;
 const FIRECRAWL_REQUEST_TIMEOUT_MS = 60_000;
+
+const browserResponseSchema = z.object({
+  success: z.boolean(),
+  id: z.string().optional(),
+  cdpUrl: z.string().optional(),
+  liveViewUrl: z.string().optional(),
+  interactiveLiveViewUrl: z.string().optional(),
+  expiresAt: z.string().optional(),
+  error: z.string().optional(),
+});
+
+export async function createRecordedFirecrawlBrowser(
+  options: NonNullable<Parameters<Firecrawl["browser"]>[0]>,
+) {
+  // The SDK browser method drops recordSession when constructing its request body.
+  const response = await firecrawlRequest("/v2/browser", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...options, recordSession: true }),
+    signal: AbortSignal.timeout(FIRECRAWL_REQUEST_TIMEOUT_MS),
+  });
+  return browserResponseSchema.parse(await response.json());
+}
 
 export function createFirecrawlClient() {
   const apiKey = getRuntimeEnv("FIRECRAWL_API_KEY")?.trim();

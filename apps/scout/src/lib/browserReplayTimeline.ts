@@ -1,9 +1,6 @@
-export type ReplayPageTrack = {
-  pageId: string;
-  pageUrl: string | null;
-  startTimeMs: number;
-  endTimeMs: number;
-};
+import type { BrowserReplayPage } from "../../convex/scout/lib/firecrawlReplay";
+
+export type ReplayPageTrack = BrowserReplayPage;
 
 type ReplayTabObservation = {
   tabId: string;
@@ -26,6 +23,7 @@ export type ReplayOperation = {
 };
 
 export type ReplayTrackBinding =
+  | { kind: "desktop" }
   | { kind: "correlated"; tabId: string }
   | { kind: "ambiguous"; candidateTabIds: string[] }
   | { kind: "unmatched" };
@@ -169,6 +167,10 @@ export function buildReplayTimeline(
   const candidateTabIdsByPageId = new Map<string, string[]>();
   // Firecrawl records the tab's first URL. Later navigations cannot identify its video.
   for (const page of orderedPages) {
+    if (page.pageUrl === "") {
+      bindingByPageId.set(page.pageId, { kind: "desktop" });
+      continue;
+    }
     const candidateTabIds = [...tabEvidence.entries()]
       .filter(([, evidence]) => page.pageUrl !== null && evidence.firstUrl === page.pageUrl)
       .map(([tabId]) => tabId)
@@ -305,6 +307,13 @@ export function activeTabAt(points: readonly ReplayTimelinePoint[], timeMs: numb
 }
 
 export function activePageIdAt(timeline: ReplayTimeline, timeMs: number) {
+  const desktop = timeline.pages.find(
+    (page) =>
+      page.binding.kind === "desktop" &&
+      page.relativeStartMs <= timeMs &&
+      page.relativeEndMs >= timeMs,
+  );
+  if (desktop) return desktop.pageId;
   const tabId = activeTabAt(timeline.points, timeMs);
   if (tabId) return timeline.pageIdByTabId.get(tabId) ?? null;
 

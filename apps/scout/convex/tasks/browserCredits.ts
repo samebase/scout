@@ -6,7 +6,11 @@ import type { Infer } from "convex/values";
 import type { browserHandle } from "./model";
 import type { ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
-import { closeFirecrawlBrowserSession, createFirecrawlClient } from "../scout/lib/firecrawl";
+import {
+  closeFirecrawlBrowserSession,
+  createFirecrawlClient,
+  createRecordedFirecrawlBrowser,
+} from "../scout/lib/firecrawl";
 import { diagnosticMessage } from "../scout/lib/redaction";
 import { connectPlaywrightBrowser } from "../scout/playwrightBrowser";
 import { omitNullish } from "../../shared/omitNullish";
@@ -52,10 +56,10 @@ export function taskBrowserBilling(ctx: ActionCtx, sessionId: Id<"agentsApiSessi
       clear();
     },
     dependencies: {
-      browser: async (options: Parameters<typeof firecrawl.browser>[0]) => {
+      browser: async (options: Parameters<typeof createRecordedFirecrawlBrowser>[0]) => {
         const billable = await ctx.runMutation(internal.tasks.browsers.admit, { sessionId });
         admission = { sessionId, billable, openedAtMs: Date.now() };
-        const result = await firecrawl.browser(options);
+        const result = await createRecordedFirecrawlBrowser(options);
         createdProviderId = result.id ?? null;
         if (!result.success && result.id) {
           const stopped = await closeFirecrawlBrowserSession(firecrawl, result.id);
