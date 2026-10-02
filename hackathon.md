@@ -15,7 +15,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-10-02T07:33:32Z
+- **Last updated:** 2026-10-02T07:40:25Z
 
 ## Log
 
@@ -1992,8 +1992,14 @@ Fixed homepage tabs crashing with "Aw, Snap!" after a few minutes of animation. 
 trail surface kept the previous one alive through a shared closure, growing the heap by about
 374 KB per frame until Chrome's 4 GB limit (`apps/scout/src/lib/terrain-trail-motion.ts`).
 
-### 2026-10-02 - working tree - v319
+### 2026-10-02 - 411b09d - v319
 
 Trust the HTTPS live-view URLs returned by Firecrawl so provider hostname changes
 do not prevent Scout from opening browser sessions. Remove the fixed-host allowlist
 (`apps/scout/convex/scout/lib/firecrawlLiveView.ts`).
+
+### 2026-10-02 - working tree - v320
+
+Updated Axios, brace-expansion, and DOMPurify to patched releases used by browser
+requests, Scout's shell, and analytics. Override Firecrawl's pinned Axios version
+until its SDK adopts a patched release (`pnpm-workspace.yaml`, `pnpm-lock.yaml`).
