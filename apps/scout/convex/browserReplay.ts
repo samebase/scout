@@ -13,8 +13,7 @@ const replayPageValidator = v.object({
   endTimeMs: v.number(),
 });
 
-const replayNotReadyValidator = v.union(
-  v.object({ status: v.literal("processing") }),
+const replayUnavailableValidator = v.union(
   v.object({ status: v.literal("unavailable") }),
   v.object({ status: v.literal("failed"), message: v.string() }),
 );
@@ -27,7 +26,8 @@ type ReplayData = {
   operations: Array<Infer<typeof replayOperationValidator>>;
 } | null;
 type ReplayPagesResult =
-  | Infer<typeof replayNotReadyValidator>
+  | Infer<typeof replayUnavailableValidator>
+  | { status: "processing" }
   | {
       status: "ready";
       pages: Awaited<ReturnType<typeof listBrowserReplayPages>>;
@@ -35,14 +35,15 @@ type ReplayPagesResult =
       operations: NonNullable<ReplayData>["operations"];
     };
 type ReplayPlaylistResult =
-  | Infer<typeof replayNotReadyValidator>
+  | Infer<typeof replayUnavailableValidator>
   | { status: "ready"; playlist: string };
 
 export const listPages = publicAction({
   access: "access_public",
   args: { sessionId: replaySessionId },
   returns: v.union(
-    replayNotReadyValidator,
+    replayUnavailableValidator,
+    v.object({ status: v.literal("processing") }),
     v.object({
       status: v.literal("ready"),
       pages: v.array(replayPageValidator),
@@ -76,7 +77,7 @@ export const loadPlaylist = publicAction({
     pageId: v.string(),
   },
   returns: v.union(
-    replayNotReadyValidator,
+    replayUnavailableValidator,
     v.object({
       status: v.literal("ready"),
       playlist: v.string(),

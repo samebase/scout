@@ -225,33 +225,22 @@ function BrowserReplayPlayer({
 
     void Promise.all(
       timeline.pages.map(async (page) => {
-        for (let attempt = 0; attempt < REPLAY_PREPARATION_RETRIES; attempt += 1) {
-          try {
-            const result = await loadPlaylist({ sessionId, pageId: page.pageId });
-            if (result.status === "ready") {
-              return { pageId: page.pageId, status: "ready" as const, playlist: result.playlist };
-            }
-            if (result.status === "failed") return { pageId: page.pageId, ...result };
-            if (result.status === "unavailable")
-              return {
-                pageId: page.pageId,
-                status: "failed" as const,
-                message: "No recording is available.",
-              };
-          } catch (error) {
+        try {
+          const result = await loadPlaylist({ sessionId, pageId: page.pageId });
+          if (result.status === "unavailable")
             return {
               pageId: page.pageId,
               status: "failed" as const,
-              message: error instanceof Error ? error.message : String(error),
+              message: "No recording is available.",
             };
-          }
-          await new Promise<void>((resolve) => window.setTimeout(resolve, REPLAY_RETRY_DELAY_MS));
+          return { pageId: page.pageId, ...result };
+        } catch (error) {
+          return {
+            pageId: page.pageId,
+            status: "failed" as const,
+            message: error instanceof Error ? error.message : String(error),
+          };
         }
-        return {
-          pageId: page.pageId,
-          status: "failed" as const,
-          message: "No recording is available yet. Try again later.",
-        };
       }),
     ).then((loaded) => {
       if (cancelled) return;
