@@ -16,6 +16,7 @@ allowBuilds:
 overrides:
   "@hono/node-server": 2.0.10
   fast-uri: 3.1.7
+  "firecrawl>axios": 1.20.0
   hono: "^4.13.5"
   ip-address: 10.5.1
   js-yaml: "^4.3.2"
