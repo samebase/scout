@@ -412,16 +412,15 @@ describe("Lab browser harness", () => {
     await expect(browser.actions.getPage("url")).rejects.toThrow("finished accepting operations");
   });
 
-  test("opens Firecrawl once and keeps its CDP and live-view URLs outside model output", async () => {
+  test("opens Firecrawl with Hangar live views and keeps provider URLs outside model output", async () => {
     const playwright = runtime();
     const deps = dependencies(playwright);
     deps.browser.mockResolvedValueOnce({
       success: true,
       id: "session-1",
       cdpUrl: "wss://browser.firecrawl.dev/cdp?token=secret",
-      liveViewUrl: "https://liveview.firecrawl.dev/private?signature=read-only",
-      interactiveLiveViewUrl:
-        "https://liveview.firecrawl.dev/private?signature=interactive-control",
+      liveViewUrl: "https://hangar.firecrawl.dev/private?signature=read-only",
+      interactiveLiveViewUrl: "https://hangar.firecrawl.dev/private?signature=interactive-control",
     });
     const onSessionCreated = vi.fn(async () => undefined);
     const onLiveViewAvailable = vi.fn(async () => undefined);
@@ -452,13 +451,16 @@ describe("Lab browser harness", () => {
       "https://example.com/login",
       undefined,
     );
-    expect(onLiveViewAvailable).toHaveBeenCalledOnce();
-    expect(onInteractiveLiveViewAvailable).toHaveBeenCalledOnce();
+    expect(onLiveViewAvailable).toHaveBeenCalledExactlyOnceWith(
+      "https://hangar.firecrawl.dev/private?signature=read-only",
+    );
+    expect(onInteractiveLiveViewAvailable).toHaveBeenCalledExactlyOnceWith(
+      "https://hangar.firecrawl.dev/private?signature=interactive-control",
+    );
     expect(onSessionCreated).toHaveBeenCalledExactlyOnceWith({
       providerSessionId: "session-1",
       cdpUrl: "wss://browser.firecrawl.dev/cdp?token=secret",
-      interactiveLiveViewUrl:
-        "https://liveview.firecrawl.dev/private?signature=interactive-control",
+      interactiveLiveViewUrl: "https://hangar.firecrawl.dev/private?signature=interactive-control",
       providerExpiresAtMs: 3_601_010,
     });
     expect(JSON.stringify(output)).not.toContain("firecrawl.dev");
