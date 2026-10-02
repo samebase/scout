@@ -1,12 +1,5 @@
-const FIRECRAWL_LIVE_VIEW_HOSTNAME = "liveview.firecrawl.dev";
-const MAX_FIRECRAWL_LIVE_VIEW_URL_LENGTH = 4_096;
-
 export function requireFirecrawlLiveViewUrl(value: unknown) {
-  if (
-    typeof value !== "string" ||
-    value.length === 0 ||
-    value.length > MAX_FIRECRAWL_LIVE_VIEW_URL_LENGTH
-  ) {
+  if (typeof value !== "string") {
     throw new Error("Firecrawl returned an invalid live view URL");
   }
 
@@ -16,13 +9,7 @@ export function requireFirecrawlLiveViewUrl(value: unknown) {
   } catch {
     throw new Error("Firecrawl returned an invalid live view URL");
   }
-  if (
-    url.protocol !== "https:" ||
-    url.hostname !== FIRECRAWL_LIVE_VIEW_HOSTNAME ||
-    url.port !== "" ||
-    url.username !== "" ||
-    url.password !== ""
-  ) {
+  if (url.protocol !== "https:") {
     throw new Error("Firecrawl returned an invalid live view URL");
   }
   return url.toString();
