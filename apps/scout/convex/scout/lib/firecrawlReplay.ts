@@ -1,39 +1,21 @@
-import { getRuntimeEnv } from "../../runtimeEnv";
 import { z } from "zod";
+import { firecrawlRequest } from "./firecrawlHttp";
 
-const FIRECRAWL_BROWSER_URL = "https://api.firecrawl.dev/v2/browser";
 const REQUEST_TIMEOUT_MS = 15_000;
 const MAX_REPLAY_PAGES = 1_000;
 const MAX_PLAYLIST_LENGTH = 1_000_000;
 const PAGE_ID_PATTERN = /^\d{1,3}$/;
 
-class FirecrawlReplayNotReadyError extends Error {}
-
-export function isFirecrawlReplayNotReady(error: unknown) {
-  return error instanceof FirecrawlReplayNotReadyError;
-}
-
-function authorizationHeaders(accept?: string) {
-  const apiKey = getRuntimeEnv("FIRECRAWL_API_KEY")?.trim();
-  if (!apiKey) throw new Error("FIRECRAWL_API_KEY is not configured");
-  return accept
-    ? { Authorization: `Bearer ${apiKey}`, Accept: accept }
-    : { Authorization: `Bearer ${apiKey}` };
-}
-
 async function replayRequest(path: string, accept?: string) {
-  const response = await fetch(`${FIRECRAWL_BROWSER_URL}/${path}`, {
-    headers: authorizationHeaders(accept),
+  return await firecrawlRequest(`/v2/browser/${path}`, {
+    headers: accept ? { Accept: accept } : {},
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
-  if (response.status === 404) throw new FirecrawlReplayNotReadyError();
-  if (!response.ok) {
-    throw new Error(`Firecrawl replay request failed with status ${response.status}`);
-  }
-  return response;
 }
 
 function safePageUrl(value: unknown) {
+  // Firecrawl's desktop recording has an empty URL; about:blank is a tab recording.
+  if (value === "") return "";
   if (typeof value !== "string") return null;
   try {
     const url = new URL(value);

@@ -31,6 +31,14 @@ export function BrowserReplayHeader({
     }
   }, [activePageId]);
 
+  if (pages.some((page) => page.binding.kind === "desktop")) {
+    return (
+      <div className="shrink-0 border-b bg-muted/70 px-3 py-2 text-xs text-muted-foreground">
+        Browser recording
+      </div>
+    );
+  }
+
   return (
     <div className="shrink-0 border-b bg-muted/70">
       <div

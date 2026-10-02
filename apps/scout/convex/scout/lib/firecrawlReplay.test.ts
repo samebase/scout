@@ -1,9 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
-import {
-  getBrowserReplayPlaylist,
-  isFirecrawlReplayNotReady,
-  listBrowserReplayPages,
-} from "./firecrawlReplay";
+import { getBrowserReplayPlaylist, listBrowserReplayPages } from "./firecrawlReplay";
 
 type CapturedRequest = {
   url: string;
@@ -38,6 +34,21 @@ afterEach(() => {
 });
 
 describe("Firecrawl browser replay", () => {
+  test("preserves the desktop recording marker separately from an unaddressed tab", async () => {
+    responses.push(
+      Response.json({
+        success: true,
+        pages: [
+          { pageId: "0", pageUrl: "", startTimeMs: 0, endTimeMs: 8083 },
+          { pageId: "1", pageUrl: "about:blank", startTimeMs: 0, endTimeMs: 8083 },
+        ],
+      }),
+    );
+    await expect(listBrowserReplayPages("desktop")).resolves.toEqual([
+      { pageId: "0", pageUrl: "", startTimeMs: 0, endTimeMs: 8083 },
+      { pageId: "1", pageUrl: null, startTimeMs: 0, endTimeMs: 8083 },
+    ]);
+  });
   test("uses the current invocation's key after the runtime replaces process.env", async () => {
     const previousEnvironment = process.env;
     try {
@@ -46,7 +57,9 @@ describe("Firecrawl browser replay", () => {
 
       await listBrowserReplayPages("session-1");
 
-      expect(requests[0]?.init?.headers).toEqual({ Authorization: "Bearer updated-key" });
+      expect(new Headers(requests[0]?.init?.headers).get("Authorization")).toBe(
+        "Bearer updated-key",
+      );
     } finally {
       process.env = previousEnvironment;
     }
@@ -91,10 +104,9 @@ describe("Firecrawl browser replay", () => {
 
     await expect(getBrowserReplayPlaylist("session-1", "2")).resolves.toBe(playlist);
     expect(requests[0]?.url).toBe("https://api.firecrawl.dev/v2/browser/session-1/replay/2");
-    expect(requests[0]?.init?.headers).toEqual({
-      Authorization: "Bearer test-key",
-      Accept: "application/vnd.apple.mpegurl",
-    });
+    expect(new Headers(requests[0]?.init?.headers).get("Accept")).toBe(
+      "application/vnd.apple.mpegurl",
+    );
   });
 
   test("rejects an invalid page ID before contacting Firecrawl", async () => {
@@ -104,11 +116,12 @@ describe("Firecrawl browser replay", () => {
     expect(requests).toHaveLength(0);
   });
 
-  test("identifies a replay that Firecrawl has not prepared yet", async () => {
+  test("preserves a missing recording response without claiming it is processing", async () => {
     responses.push(Response.json({ success: false, error: "Replay not found." }, { status: 404 }));
 
-    const error = await listBrowserReplayPages("session-1").catch((caught: unknown) => caught);
-    expect(isFirecrawlReplayNotReady(error)).toBe(true);
+    await expect(listBrowserReplayPages("session-1")).rejects.toThrow(
+      "HTTP 404. Replay not found.",
+    );
   });
 
   test("rejects malformed replay metadata", async () => {

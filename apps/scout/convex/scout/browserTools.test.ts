@@ -12,6 +12,26 @@ import { z } from "zod";
 import { createBrowserHarness, selectAgentMailTools } from "./browserTools";
 import type { BrowserScreenshot, PlaywrightBrowser } from "./playwrightBrowser";
 import { MAX_SCREENSHOT_NOTE_LENGTH } from "../tasks/screenshotModel";
+import * as firecrawlBoundary from "./lib/firecrawl";
+import { FirecrawlApiError } from "./lib/firecrawlHttp";
+
+test("the default browser harness uses recorded browser creation", async () => {
+  vi.stubEnv("FIRECRAWL_API_KEY", "test-key");
+  const create = vi
+    .spyOn(firecrawlBoundary, "createRecordedFirecrawlBrowser")
+    .mockResolvedValue({ success: false, error: "provider rejection" });
+  try {
+    await expect(createBrowserHarness({}).open("https://example.com")).rejects.toThrow(
+      "provider rejection",
+    );
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({ streamWebView: true, ttl: 3600 }),
+    );
+  } finally {
+    create.mockRestore();
+    vi.unstubAllEnvs();
+  }
+});
 
 const firstTab = {
   tabId: "t1",
@@ -1032,7 +1052,7 @@ describe("Lab browser harness", () => {
 
   test("waits for a persistent profile writer before opening one session", async () => {
     const deps = dependencies();
-    const profileBusy = new SdkError(
+    const profileBusy = new FirecrawlApiError(
       "Another session is currently writing to this profile. Only one writer is allowed at a time.",
       409,
     );

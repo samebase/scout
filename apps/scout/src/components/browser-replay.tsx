@@ -21,7 +21,8 @@ const REPLAY_RETRY_DELAY_MS = 2_000;
 type ReplayLoadState =
   | { kind: "loading" | "processing" }
   | { kind: "ready"; replay: ReplayReady }
-  | { kind: "unavailable" | "delayed" | "failed" };
+  | { kind: "unavailable" | "delayed" }
+  | { kind: "failed"; message: string };
 
 type ReplaySelection = {
   selectedPageId: string | null;
@@ -60,6 +61,10 @@ export function BrowserReplay(
           setState({ kind: "unavailable" });
           return;
         }
+        if (replay.status === "failed") {
+          setState({ kind: "failed", message: replay.message });
+          return;
+        }
         attempt += 1;
         if (attempt >= REPLAY_PREPARATION_RETRIES) {
           setState({ kind: "delayed" });
@@ -67,8 +72,12 @@ export function BrowserReplay(
         }
         setState({ kind: "processing" });
         retryTimer = window.setTimeout(() => void load(), REPLAY_RETRY_DELAY_MS);
-      } catch {
-        if (!cancelled) setState({ kind: "failed" });
+      } catch (error) {
+        if (!cancelled)
+          setState({
+            kind: "failed",
+            message: error instanceof Error ? error.message : String(error),
+          });
       }
     };
 
@@ -121,7 +130,7 @@ export function BrowserReplay(
           />
         </>
       ) : (
-        <ReplayStatus state={state.kind} onRetry={refresh} />
+        <ReplayStatus state={state} onRetry={refresh} />
       )}
     </section>
   );
@@ -132,24 +141,29 @@ function ReplayStatus({
   state,
 }: {
   onRetry: () => void;
-  state: Exclude<ReplayLoadState["kind"], "ready">;
+  state: Exclude<ReplayLoadState, { kind: "ready" }>;
 }) {
-  if (state === "loading") return <div className="min-h-40 flex-1" aria-busy="true" />;
-  const waiting = state === "processing";
+  if (state.kind === "loading") return <div className="min-h-40 flex-1" aria-busy="true" />;
+  const waiting = state.kind === "processing";
   const message = waiting
     ? "Preparing replay"
-    : state === "unavailable"
+    : state.kind === "unavailable"
       ? "No replay"
-      : state === "delayed"
-        ? "Replay still processing"
-        : "Replay failed";
+      : state.kind === "delayed"
+        ? "No recording is available yet"
+        : "Couldn't load the recording";
   return (
     <div className="flex min-h-40 flex-col items-center justify-center gap-2 px-3 py-6 text-center">
       <p className="text-muted-foreground flex items-center gap-2 text-sm" role="status">
         {waiting ? <LoaderCircleIcon className="size-4 animate-spin" aria-hidden="true" /> : null}
         {message}
       </p>
-      {!waiting && state !== "unavailable" ? (
+      {state.kind === "failed" && (
+        <p className="max-w-xl break-words text-xs text-muted-foreground" role="alert">
+          {state.message}
+        </p>
+      )}
+      {!waiting && state.kind !== "unavailable" ? (
         <Button type="button" size="sm" variant="outline" onClick={onRetry}>
           <RotateCcwIcon />
           Retry
@@ -161,8 +175,8 @@ function ReplayStatus({
 
 type ReplayPlaylistsState =
   | { kind: "loading" }
-  | { kind: "ready"; playlists: Map<string, string>; failedPageIds: string[] }
-  | { kind: "failed" };
+  | { kind: "ready"; playlists: Map<string, string>; failures: Map<string, string> }
+  | { kind: "failed"; message: string };
 
 function BrowserReplayPlayer({
   replay,
@@ -192,11 +206,14 @@ function BrowserReplayPlayer({
     () => buildReplayTimeline(replay.pages, replay.operations),
     [replay.operations, replay.pages],
   );
-  const selectedPageId =
-    requestedPageId ??
-    (mode === "playback" && replay.operations.length === 0
-      ? (timeline.pages[0]?.pageId ?? null)
-      : null);
+  const desktopRecording = timeline.pages.some((page) => page.binding.kind === "desktop");
+  const clicksVisible = showClicks && !desktopRecording;
+  const selectedPageId = desktopRecording
+    ? null
+    : (requestedPageId ??
+      (mode === "playback" && replay.operations.length === 0
+        ? (timeline.pages[0]?.pageId ?? null)
+        : null));
   const clickData = useMemo(
     () => replayClicks(replay.operations, timeline, clickOffsetMs),
     [replay.operations, timeline, clickOffsetMs],
@@ -208,36 +225,39 @@ function BrowserReplayPlayer({
 
     void Promise.all(
       timeline.pages.map(async (page) => {
-        for (let attempt = 0; attempt < REPLAY_PREPARATION_RETRIES; attempt += 1) {
-          try {
-            const result = await loadPlaylist({ sessionId, pageId: page.pageId });
-            if (result.status === "ready") {
-              return [page.pageId, result.playlist] as const;
-            }
-            if (result.status === "unavailable") return null;
-          } catch {
-            return null;
-          }
-          await new Promise<void>((resolve) => window.setTimeout(resolve, REPLAY_RETRY_DELAY_MS));
+        try {
+          const result = await loadPlaylist({ sessionId, pageId: page.pageId });
+          if (result.status === "unavailable")
+            return {
+              pageId: page.pageId,
+              status: "failed" as const,
+              message: "No recording is available.",
+            };
+          return { pageId: page.pageId, ...result };
+        } catch (error) {
+          return {
+            pageId: page.pageId,
+            status: "failed" as const,
+            message: error instanceof Error ? error.message : String(error),
+          };
         }
-        return null;
       }),
     ).then((loaded) => {
       if (cancelled) return;
-      const successful = loaded.filter(
-        (entry): entry is readonly [string, string] => entry !== null,
-      );
-      if (successful.length === 0) {
-        setPlaylistState({ kind: "failed" });
+      const playlists = new Map<string, string>();
+      const failures = new Map<string, string>();
+      for (const result of loaded) {
+        if (result.status === "ready") playlists.set(result.pageId, result.playlist);
+        else failures.set(result.pageId, result.message);
+      }
+      if (playlists.size === 0) {
+        setPlaylistState({ kind: "failed", message: [...failures.values()].join("\n") });
         return;
       }
-      const playlists = new Map(successful);
       setPlaylistState({
         kind: "ready",
         playlists,
-        failedPageIds: timeline.pages
-          .filter((page) => !playlists.has(page.pageId))
-          .map((page) => page.pageId),
+        failures,
       });
     });
     return () => {
@@ -327,7 +347,7 @@ function BrowserReplayPlayer({
 
   if (playlistState.kind !== "ready") {
     if (mode === "playback") {
-      return <ReplayStatus state={playlistState.kind} onRetry={onRetry} />;
+      return <ReplayStatus state={playlistState} onRetry={onRetry} />;
     }
     return (
       <div
@@ -337,17 +357,17 @@ function BrowserReplayPlayer({
       >
         {playlistState.kind !== "loading" && (
           <p className="text-sm text-neutral-300" role="alert">
-            The recorded tabs could not be loaded.
+            {playlistState.message}
           </p>
         )}
       </div>
     );
   }
 
-  const failedPageIds = new Set([...playlistState.failedPageIds, ...failedMediaPageIds]);
+  const failedPageIds = new Set([...playlistState.failures.keys(), ...failedMediaPageIds]);
   const activeTrackFailed = activePageId !== null && failedPageIds.has(activePageId);
   const unmatchedPageCount = timeline.pages.filter(
-    (page) => page.binding.kind !== "correlated",
+    (page) => page.binding.kind === "unmatched" || page.binding.kind === "ambiguous",
   ).length;
 
   return (
@@ -388,7 +408,7 @@ function BrowserReplayPlayer({
             />
           );
         })}
-        {showClicks && activePageId && !activeTrackFailed ? (
+        {clicksVisible && activePageId && !activeTrackFailed ? (
           <svg
             className="pointer-events-none absolute inset-0 z-10 size-full"
             viewBox={`0 0 ${replay.viewport.width} ${replay.viewport.height}`}
@@ -410,6 +430,9 @@ function BrowserReplayPlayer({
         ) : null}
         {activeTrackFailed ? (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-neutral-950/90 px-8 text-center text-sm text-neutral-300">
+            {activePageId && playlistState.failures.has(activePageId) && (
+              <p role="alert">{playlistState.failures.get(activePageId)}</p>
+            )}
             {mode === "playback" ? (
               <>
                 <p role="status">Couldn't play this recording.</p>
@@ -462,7 +485,7 @@ function BrowserReplayPlayer({
                   : "accent-primary block h-5 w-full cursor-pointer"
               }
             />
-            {mode === "inspector" && (
+            {mode === "inspector" && !desktopRecording && (
               <div
                 className="pointer-events-none absolute inset-x-0 top-1/2 h-0"
                 aria-hidden="true"
@@ -492,7 +515,7 @@ function BrowserReplayPlayer({
               timeline={timeline}
               manualPageId={selectedPageId}
               viewport={replay.viewport}
-              clicks={showClicks ? clickData.clicks : []}
+              clicks={clicksVisible ? clickData.clicks : []}
               mode="download"
             />
           )}
@@ -503,69 +526,83 @@ function BrowserReplayPlayer({
             <div className="text-muted-foreground mt-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px]">
               <span>
                 {timeline.actionCount} {timeline.actionCount === 1 ? "action" : "actions"},{" "}
-                {timeline.pages.length} recorded {timeline.pages.length === 1 ? "tab" : "tabs"}
+                {timeline.pages.length}{" "}
+                {desktopRecording
+                  ? "browser recording"
+                  : timeline.pages.length === 1
+                    ? "recorded tab"
+                    : "recorded tabs"}
               </span>
             </div>
-            <p className="text-muted-foreground mt-2 text-[11px] leading-4">
-              {timeline.hasIntegrityGap ? "The operation log contains an evidence gap. " : ""}
-              {unmatchedPageCount > 0
-                ? `${unmatchedPageCount} ${unmatchedPageCount === 1 ? "recording is" : "recordings are"} unmatched and ${unmatchedPageCount === 1 ? "remains" : "remain"} available for manual inspection. `
-                : ""}
-              {timeline.transitions.length > 0
-                ? `${timeline.transitions.length} ${timeline.transitions.length === 1 ? "tab change is" : "tab changes are"} shown at the first confirming sample; each marker spans the interval in which the change occurred. `
-                : "No tab change was observed. "}
-              Recordings match tabs by their initial address, including unambiguous redirects.
-              {failedPageIds.size > 0
-                ? ` ${failedPageIds.size} ${failedPageIds.size === 1 ? "recording could" : "recordings could"} not be loaded.`
-                : ""}
-            </p>
-            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={showClicks}
-                  onChange={(event) => setShowClicks(event.currentTarget.checked)}
-                />
-                Show clicks ({clickData.recorded})
-              </label>
-              {clickData.recorded > 0 ? (
-                <label className="flex items-center gap-2">
-                  Click timing (seconds)
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="-60"
-                    max="60"
-                    value={clickOffsetMs / 1_000}
-                    className="w-20 rounded border bg-background px-2 py-1"
-                    onChange={(event) => {
-                      const value = event.currentTarget.valueAsNumber;
-                      if (Number.isFinite(value))
-                        setClickOffsetMs(Math.max(-60, Math.min(60, value)) * 1_000);
-                    }}
-                  />
-                </label>
-              ) : null}
-            </div>
-            <p className="mt-2 text-[11px] leading-4 text-muted-foreground">
-              {clickData.recorded === 0
-                ? "No recorded clicks. Automatic markers require a new browser session with click capture enabled."
-                : "Timing is approximate. Adjust it while reviewing, then export. Positive values show clicks later."}
-              {clickData.unmapped > 0
-                ? ` ${clickData.unmapped} clicks could not be matched to a recorded tab and will not be shown.`
-                : ""}
-              {clickData.recorded > 0 && clickData.incomplete
-                ? " Some actions have missing or partial click capture."
-                : ""}{" "}
-              Captures top-level page clicks during agent actions. Iframe clicks and human-control
-              intervals are not captured.
-            </p>
+            {desktopRecording ? (
+              <p className="text-muted-foreground mt-2 text-[11px] leading-4">
+                The recording includes the browser toolbar. Click markers are unavailable for this
+                recording format.
+              </p>
+            ) : (
+              <>
+                <p className="text-muted-foreground mt-2 text-[11px] leading-4">
+                  {timeline.hasIntegrityGap ? "The operation log contains an evidence gap. " : ""}
+                  {unmatchedPageCount > 0
+                    ? `${unmatchedPageCount} ${unmatchedPageCount === 1 ? "recording is" : "recordings are"} unmatched and ${unmatchedPageCount === 1 ? "remains" : "remain"} available for manual inspection. `
+                    : ""}
+                  {timeline.transitions.length > 0
+                    ? `${timeline.transitions.length} ${timeline.transitions.length === 1 ? "tab change is" : "tab changes are"} shown at the first confirming sample; each marker spans the interval in which the change occurred. `
+                    : "No tab change was observed. "}
+                  Recordings match tabs by their initial address, including unambiguous redirects.
+                  {failedPageIds.size > 0
+                    ? ` ${failedPageIds.size} ${failedPageIds.size === 1 ? "recording could" : "recordings could"} not be loaded.`
+                    : ""}
+                </p>
+                <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={showClicks}
+                      onChange={(event) => setShowClicks(event.currentTarget.checked)}
+                    />
+                    Show clicks ({clickData.recorded})
+                  </label>
+                  {clickData.recorded > 0 ? (
+                    <label className="flex items-center gap-2">
+                      Click timing (seconds)
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="-60"
+                        max="60"
+                        value={clickOffsetMs / 1_000}
+                        className="w-20 rounded border bg-background px-2 py-1"
+                        onChange={(event) => {
+                          const value = event.currentTarget.valueAsNumber;
+                          if (Number.isFinite(value))
+                            setClickOffsetMs(Math.max(-60, Math.min(60, value)) * 1_000);
+                        }}
+                      />
+                    </label>
+                  ) : null}
+                </div>
+                <p className="mt-2 text-[11px] leading-4 text-muted-foreground">
+                  {clickData.recorded === 0
+                    ? "No recorded clicks. Automatic markers require a new browser session with click capture enabled."
+                    : "Timing is approximate. Adjust it while reviewing, then export. Positive values show clicks later."}
+                  {clickData.unmapped > 0
+                    ? ` ${clickData.unmapped} clicks could not be matched to a recorded tab and will not be shown.`
+                    : ""}
+                  {clickData.recorded > 0 && clickData.incomplete
+                    ? " Some actions have missing or partial click capture."
+                    : ""}{" "}
+                  Captures top-level page clicks during agent actions. Iframe clicks and
+                  human-control intervals are not captured.
+                </p>
+              </>
+            )}
             <BrowserReplayExport
               sessionId={sessionId}
               timeline={timeline}
               manualPageId={selectedPageId}
               viewport={replay.viewport}
-              clicks={showClicks ? clickData.clicks : []}
+              clicks={clicksVisible ? clickData.clicks : []}
               mode="inspector"
             />
           </>

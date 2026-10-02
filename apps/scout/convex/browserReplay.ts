@@ -4,11 +4,7 @@ import { internal } from "./_generated/api";
 import { internalQuery } from "./_generated/server";
 import { browserViewportValidator } from "./browserModel";
 import { replayOperationValidator } from "./scout/browserSessions";
-import {
-  getBrowserReplayPlaylist,
-  isFirecrawlReplayNotReady,
-  listBrowserReplayPages,
-} from "./scout/lib/firecrawlReplay";
+import { getBrowserReplayPlaylist, listBrowserReplayPages } from "./scout/lib/firecrawlReplay";
 
 const replayPageValidator = v.object({
   pageId: v.string(),
@@ -17,9 +13,9 @@ const replayPageValidator = v.object({
   endTimeMs: v.number(),
 });
 
-const replayNotReadyValidator = v.union(
-  v.object({ status: v.literal("processing") }),
+const replayUnavailableValidator = v.union(
   v.object({ status: v.literal("unavailable") }),
+  v.object({ status: v.literal("failed"), message: v.string() }),
 );
 
 const replaySessionId = v.union(v.id("scoutBrowserSessions"), v.id("agentsApiBrowserSessions"));
@@ -30,7 +26,8 @@ type ReplayData = {
   operations: Array<Infer<typeof replayOperationValidator>>;
 } | null;
 type ReplayPagesResult =
-  | { status: "processing" | "unavailable" }
+  | Infer<typeof replayUnavailableValidator>
+  | { status: "processing" }
   | {
       status: "ready";
       pages: Awaited<ReturnType<typeof listBrowserReplayPages>>;
@@ -38,14 +35,15 @@ type ReplayPagesResult =
       operations: NonNullable<ReplayData>["operations"];
     };
 type ReplayPlaylistResult =
-  | { status: "processing" | "unavailable" }
+  | Infer<typeof replayUnavailableValidator>
   | { status: "ready"; playlist: string };
 
 export const listPages = publicAction({
   access: "access_public",
   args: { sessionId: replaySessionId },
   returns: v.union(
-    replayNotReadyValidator,
+    replayUnavailableValidator,
+    v.object({ status: v.literal("processing") }),
     v.object({
       status: v.literal("ready"),
       pages: v.array(replayPageValidator),
@@ -67,8 +65,7 @@ export const listPages = publicAction({
         operations: replayData.operations,
       };
     } catch (error) {
-      if (isFirecrawlReplayNotReady(error)) return { status: "processing" };
-      throw new Error("Firecrawl replay could not be loaded");
+      return { status: "failed", message: error instanceof Error ? error.message : String(error) };
     }
   },
 });
@@ -80,7 +77,7 @@ export const loadPlaylist = publicAction({
     pageId: v.string(),
   },
   returns: v.union(
-    replayNotReadyValidator,
+    replayUnavailableValidator,
     v.object({
       status: v.literal("ready"),
       playlist: v.string(),
@@ -98,8 +95,7 @@ export const loadPlaylist = publicAction({
         playlist: await getBrowserReplayPlaylist(replayData.providerSessionId, args.pageId),
       };
     } catch (error) {
-      if (isFirecrawlReplayNotReady(error)) return { status: "processing" };
-      throw new Error("Firecrawl replay could not be loaded");
+      return { status: "failed", message: error instanceof Error ? error.message : String(error) };
     }
   },
 });
