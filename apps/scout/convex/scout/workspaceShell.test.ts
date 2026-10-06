@@ -118,6 +118,21 @@ describe("persistent just-bash workspace", () => {
     expect((await session.run("base64 bytes.bin")).output.stdout.trim()).toBe("/wAB");
   });
 
+  it.each(["f", "e", "g"])(
+    "returns a command error for out-of-range printf precision in %s format",
+    async (format) => {
+      const session = workspaceSession();
+      const result = await session.run(`printf '%.101${format}' 1`);
+
+      expect(result.output).toMatchObject({ stdout: "", exitCode: 1 });
+      expect(result.output.stderr).toContain("printf:");
+      expect((await session.run("echo alive")).output).toMatchObject({
+        stdout: "alive\n",
+        exitCode: 0,
+      });
+    },
+  );
+
   it("does not expose host secrets, host files, network, or Python", async () => {
     const session = workspaceSession();
     const result = await session.run(
