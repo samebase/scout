@@ -72,7 +72,7 @@ async function startRendering(content: ReactNode) {
   attachRouterServerSsrUtils({ router, manifest: undefined });
   await router.load();
   await router.serverSsr?.dehydrate();
-  await import("@samebase/convex-tanstack-start/server");
+  await import("@samebase/convex-hosting-tanstack-start/server");
   const callback = start.createStartHandler.mock.calls[0]?.[0];
   if (!callback) throw new Error("Renderer was not registered");
   const pending = Promise.resolve(

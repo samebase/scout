@@ -1,4 +1,4 @@
-import staticHosting from "@convex-dev/static-hosting/test";
+import hosting from "@samebase/convex-hosting/test";
 import { anyApi } from "convex/server";
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
@@ -41,8 +41,8 @@ afterEach(() => {
 });
 
 async function setup(markerPath: string | null) {
-  const backend = convexTest(staticHosting.schema, {
-    ...staticHosting.modules,
+  const backend = convexTest(hosting.schema, {
+    ...hosting.modules,
     "./component/http.ts": () => import("./http"),
   });
   const bodies = new Map<string, string>();
@@ -134,6 +134,32 @@ test.each([undefined, "false"])(
     expect(renderer.load).not.toHaveBeenCalled();
   },
 );
+
+test.each([
+  "/",
+  "/about",
+  "/settings",
+  "/sites/example.com/data.json",
+  "/another-new-route/report.pdf",
+])("static mode serves %s as HTML that no cache keeps", async (path) => {
+  const backend = await setup(clientBuild.markerPath);
+  const response = await backend.fetch(path);
+  expect(response.status).toBe(200);
+  expect(response.headers.get("Content-Type")).toBe("text/html");
+  expect(response.headers.get("Cache-Control")).toBe("no-store");
+});
+
+test("conditional requests revalidate the shell without caching it", async () => {
+  const backend = await setup(clientBuild.markerPath);
+  const response = await backend.fetch("/future/customer.v2");
+  const etag = response.headers.get("ETag");
+  if (!etag) throw new Error("Fixture HTML response is missing an ETag");
+  const unchanged = await backend.fetch("/future/customer.v2", {
+    headers: { "If-None-Match": etag },
+  });
+  expect(unchanged.status).toBe(304);
+  expect(unchanged.headers.get("Cache-Control")).toBe("no-store");
+});
 
 test("assets and existing Convex endpoints bypass TanStack", async () => {
   vi.stubEnv("TANSTACK_SERVER_ENABLED", "true");

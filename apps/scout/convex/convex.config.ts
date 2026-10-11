@@ -2,7 +2,7 @@ import { defineApp } from "convex/server";
 import { v } from "convex/values";
 import agent from "@convex-dev/agent/convex.config";
 import r2 from "@convex-dev/r2/convex.config";
-import staticHosting from "@convex-dev/static-hosting/convex.config";
+import hosting from "@samebase/convex-hosting/convex.config";
 import workflow from "@convex-dev/workflow/convex.config.js";
 
 // Keep existing app HTTP routes at their current root URLs.
@@ -43,6 +43,7 @@ const app = defineApp({
 app.use(agent);
 app.use(r2);
 app.use(workflow);
-app.use(staticHosting);
+// The instance keeps its original name, so its uploaded files stay in place.
+app.use(hosting, { name: "staticHosting" });
 
 export default app;

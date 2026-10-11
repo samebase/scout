@@ -20,7 +20,7 @@ test("normalizes filtered URLs on Convex's URLSearchParams implementation", asyn
     value: undefined,
   });
   expect(getNormalizedURL("https://example.test/?site=ssr-8").url.pathname).toBe("/site=ssr-8");
-  await import("@samebase/convex-tanstack-start/server");
+  await import("@samebase/convex-hosting-tanstack-start/server");
   const normalized = getNormalizedURL("https://example.test/?site=ssr-8&scope=public").url;
   expect(normalized.pathname).toBe("/");
   expect(normalized.searchParams.get("site")).toBe("ssr-8");
@@ -32,6 +32,6 @@ test("normalizes filtered URLs on Convex's URLSearchParams implementation", asyn
 });
 
 test("preserves native URLSearchParams.size when it is already implemented", async () => {
-  await import("@samebase/convex-tanstack-start/server");
+  await import("@samebase/convex-hosting-tanstack-start/server");
   expect(Object.getOwnPropertyDescriptor(URLSearchParams.prototype, "size")).toEqual(nativeSize);
 });

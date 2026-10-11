@@ -115,8 +115,10 @@ export function selectConvexDeployPlan(env: NodeJS.ProcessEnv): ConvexDeployPlan
       seedArgs: ["exec", "convex", "run", "devAuth:seedPasswordAccount", "--preview-name", branch],
       uploadArgs: [
         "exec",
-        "static-hosting",
+        "convex-hosting",
         "upload",
+        "--component",
+        "staticHosting",
         "--dist",
         "./dist/client",
         "--preview-name",
@@ -135,7 +137,16 @@ export function selectConvexDeployPlan(env: NodeJS.ProcessEnv): ConvexDeployPlan
       deployKeyName: CONVEX_DEPLOY_KEY,
     }),
     args: ["exec", "convex", "deploy", "--cmd", WORKERS_BUILD_COMMAND],
-    uploadArgs: ["exec", "static-hosting", "upload", "--dist", "./dist/client", "--prod"],
+    uploadArgs: [
+      "exec",
+      "convex-hosting",
+      "upload",
+      "--component",
+      "staticHosting",
+      "--dist",
+      "./dist/client",
+      "--prod",
+    ],
     verifyArgs: ["./scripts/verify-static-release.ts", "--prod"],
   };
 }

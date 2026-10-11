@@ -9,9 +9,6 @@ auditConfig:
     # and returns exit code 1. workspaceShell.test.ts covers f, e, and g formats.
     - GHSA-hp3w-g68c-fv3c
 
-patchedDependencies:
-  "@convex-dev/static-hosting@0.2.1": patches/@convex-dev__static-hosting@0.2.1.patch
-
 allowBuilds:
   "@mongodb-js/zstd": false
   core-js: false

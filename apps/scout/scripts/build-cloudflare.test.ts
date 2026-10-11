@@ -40,7 +40,16 @@ describe("build-cloudflare", () => {
         "--cmd",
         "vp run build:app && node ./scripts/verify-current-branch-head.ts",
       ],
-      uploadArgs: ["exec", "static-hosting", "upload", "--dist", "./dist/client", "--prod"],
+      uploadArgs: [
+        "exec",
+        "convex-hosting",
+        "upload",
+        "--component",
+        "staticHosting",
+        "--dist",
+        "./dist/client",
+        "--prod",
+      ],
       verifyArgs: ["./scripts/verify-static-release.ts", "--prod"],
     });
   });
@@ -188,8 +197,10 @@ describe("build-cloudflare", () => {
       ],
       uploadArgs: [
         "exec",
-        "static-hosting",
+        "convex-hosting",
         "upload",
+        "--component",
+        "staticHosting",
         "--dist",
         "./dist/client",
         "--preview-name",

@@ -91,8 +91,9 @@ through Convex AI Gateway. TrailScout supplies the browser, email, and workspace
   and human handoffs.
 - The R2 component handles file storage for workspaces, screenshots, and site
   previews in Cloudflare R2.
-- The Static Hosting component serves frontend assets. The TanStack Start
-  integration renders public pages through Convex HTTP actions.
+- Convex Hosting, Samebase's fork of the Static Hosting component, serves frontend
+  assets. The TanStack Start integration renders public pages through Convex HTTP
+  actions.
 
 Convex Auth handles sign-in. The database keeps Scout identities, accounts,
 review evidence, and credit balances alongside the task history.
@@ -206,9 +207,10 @@ findings. Replay remains available, and MediaBunny still powers MP4 export.
 
 I wanted the homepage's initial product list to arrive in the first HTML
 response, so visitors could start browsing without waiting for client-side
-queries. I ran TanStack Start's server renderer inside a Convex HTTP action and
-patched the Static Hosting component to route page requests to it. The tradeoff
-is maintaining that adapter and patch as dependencies change.
+queries. I ran TanStack Start's server renderer inside a Convex HTTP action. To
+route page requests to it, I forked the Static Hosting component as Convex Hosting
+and published the adapter alongside it. The tradeoff is maintaining that fork and
+adapter as dependencies change.
 
 I also built the workspace from an in-memory just-bash filesystem, with file
 contents saved in R2 between commands and metadata in Convex. This gave the agent
@@ -253,7 +255,7 @@ that account rather than inferring difficulty from the number of commits.
   Supporting changes include `25d71cd`, `b4dd421`, `f97f1c1`, `0973d9f`, and `109fec8`.
 - **Technical choices and tradeoffs:** Group the less conventional integrations in one
   section after replay. TanStack Start renders the initial product list in a Convex HTTP
-  action, using a local adapter and a Static Hosting patch. The just-bash workspace uses
+  action, using the Convex Hosting fork and its published adapter. The just-bash workspace uses
   R2 for file contents and Convex for metadata. Explain the product purpose and the
   integration or agent-guidance work; do not present each as a separate major challenge.
 
@@ -287,14 +289,15 @@ instead of introducing unexplained names such as Play.
 - **Stack:** `apps/scout/convex/convex.config.ts`, the task runtimes, and
   `docs/agent-runtime.md`. The default Agents API runtime and the Convex Agent runtime
   are different execution options; do not describe every task as using both.
-  The registered components are Agent, Workflow, R2, and Static Hosting. Convex Auth
+  The registered components are Agent, Workflow, R2, and Convex Hosting (a fork of
+  Static Hosting). Convex Auth
   handles authentication separately. `apps/scout/convex/tasks/convexAgent.ts` shows
   TrailScout's context selection and summarization around the Agent component; the Agents
   API owns compaction for its runtime. An existing task does not switch engines midway.
-- **SSR integration:** `packages/convex-tanstack-start/README.md`,
-  `docs/convex-ssr-experiment.md`, and
-  `patches/@convex-dev__static-hosting@0.2.1.patch`. The patch adds a routing fallback
-  to Static Hosting; it does not patch the Convex core runtime. The adapter supplies
+- **SSR integration:** `apps/scout/convex/http.ts`, `docs/convex-ssr-experiment.md`, and
+  the [`@samebase/convex-hosting-tanstack-start`](https://github.com/samebase/convex-hosting/tree/main/packages/convex-hosting-tanstack-start)
+  package. Scout's HTTP route serves uploaded files with `@samebase/convex-hosting` and
+  sends page requests to the renderer; nothing patches the Convex core runtime. The adapter supplies
   compatible build settings and a buffered renderer. The initial public list is in
   the HTML; additional pages still load through pagination. Do not promise instant
   loading, all products in the first response, or a measured speedup without data.

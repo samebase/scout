@@ -338,7 +338,7 @@ integration above.
 Scout's `src/server.ts` uses the shared server entry:
 
 ```ts
-export { default } from "@samebase/convex-tanstack-start/server";
+export { default } from "@samebase/convex-hosting-tanstack-start/server";
 ```
 
 The shared entry also installs `URLSearchParams.size` when the runtime lacks that getter.
@@ -411,17 +411,17 @@ CommonJS-in-ESM warning in a workspace chunk. The homepage request did not hit a
 error, but this is not evidence that every authenticated route can be rendered.
 
 Current dependency versions are recorded in the [Scout manifest](../apps/scout/package.json)
-and the [integration package manifest](../packages/convex-tanstack-start/package.json).
+and the [integration package manifest](https://github.com/samebase/convex-hosting/blob/main/packages/convex-hosting-tanstack-start/package.json).
 
 ## Workspace extraction
 
 The reusable code now lives in the private workspace package
-[`@samebase/convex-tanstack-start`](../packages/convex-tanstack-start/README.md).
+[`@samebase/convex-hosting-tanstack-start`](https://github.com/samebase/convex-hosting/tree/main/packages/convex-hosting-tanstack-start).
 It contains the Vite plugin and buffered server entry, including the
 URLSearchParams compatibility getter.
 It needs no component schema because it owns no persistent state.
 
-The [runnable example](../apps/convex-ssr-example/README.md) keeps its page loader,
+The [runnable example](https://github.com/samebase/convex-hosting/tree/main/examples/tanstack-ssr) keeps its page loader,
 synthetic database, subscriptions, and HTTP mounts separate from the library.
 All authored source is visible in the repository; generated server bundles remain
 ignored. Scout consumes the same package, with component queries and its own HTTP
