@@ -24,7 +24,7 @@ operational responsibilities.
 - React 19 and TanStack Start, with public-page SSR on Convex
 - Convex for the real-time backend, database, and password authentication
 - Cloudflare Workers Static Assets for production delivery and branch previews
-- Convex HTTP actions for homepage HTML and Static Hosting for browser assets
+- Convex HTTP actions for homepage HTML and Convex Hosting for browser assets
 - shadcn/ui primitives for the user interface
 - Vite+ for development, formatting, linting, tests, and builds
 - Node.js 24 for application and automation code
@@ -155,7 +155,7 @@ build from deploying backend code after a newer commit reaches the same branch. 
 --cmd` supplies `VITE_CONVEX_URL` to the frontend build, so it is not a Cloudflare build variable.
 Set each Convex preview's `SITE_URL` to its frontend origin for signup verification and handoff links.
 
-`pnpm run deploy:convex` provides a separate manual production deployment to Convex Static Hosting.
+`pnpm run deploy:convex` provides a separate manual production deployment to Convex Hosting.
 Automatic builds upload and verify `apps/scout/dist/client` on the selected Convex deployment
 immediately after its backend push, then publish Cloudflare. Preview and dry-run deployments do
 not change the production `convex.site` app. A build marker keeps the renderer from running before

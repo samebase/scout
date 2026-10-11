@@ -133,8 +133,9 @@ function AboutPage() {
                     previews in Cloudflare R2.
                   </li>
                   <li>
-                    The Static Hosting component serves frontend assets. The TanStack Start
-                    integration renders public pages through Convex HTTP actions.
+                    Convex Hosting, Samebase's fork of the Static Hosting component, serves frontend
+                    assets. The TanStack Start integration renders public pages through Convex HTTP
+                    actions.
                   </li>
                 </ul>
                 <p>
@@ -284,9 +285,10 @@ function AboutPage() {
                 <p>
                   I wanted the homepage's initial product list to arrive in the first HTML response,
                   so visitors could start browsing without waiting for client-side queries. I ran
-                  TanStack Start's server renderer inside a Convex HTTP action and patched the
-                  Static Hosting component to route page requests to it. The tradeoff is maintaining
-                  that adapter and patch as dependencies change.
+                  TanStack Start's server renderer inside a Convex HTTP action. To route page
+                  requests to it, I forked the Static Hosting component as Convex Hosting and
+                  published the adapter alongside it. The tradeoff is maintaining that fork and
+                  adapter as dependencies change.
                 </p>
                 <p>
                   I also built the workspace from an in-memory just-bash filesystem, with file
