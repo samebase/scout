@@ -59,7 +59,6 @@ type Env = {
   readonly SCOUT_CREDENTIAL_MASTER_KEY_V1: string | undefined;
   readonly SITE_URL: string | undefined;
   readonly SSR_FIXTURE_DEPLOYMENT_URL: string | undefined;
-  readonly TANSTACK_SERVER_ENABLED: "true" | "false" | undefined;
 };
 
 /**

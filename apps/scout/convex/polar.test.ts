@@ -10,6 +10,11 @@ import { checkoutEnabled } from "./polarConfig";
 import { polarCheckoutSchema } from "./polarModel";
 import type { Doc } from "./_generated/dataModel";
 
+// convex/http.ts imports the server build and the site version, which only a build and a deploy
+// write. The webhook route reads neither.
+vi.mock("../dist/server/server.js", () => ({}));
+vi.mock("../.convex-hosting/version.js", () => ({}));
+
 const modules = import.meta.glob("./**/*.ts");
 const organizationId = "11111111-1111-4111-8111-111111111111";
 const productId = "22222222-2222-4222-8222-222222222222";
