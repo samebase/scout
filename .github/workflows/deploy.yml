@@ -40,14 +40,8 @@ jobs:
       # A re-run of an old run checks out its old commit, and its deploy would put older code
       # and functions over newer ones. Only the commit that main points to now deploys.
       - name: Check that this commit is the head of main
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          head=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
-          if [ "$head" != "$GITHUB_SHA" ]; then
-            echo "::error::$GITHUB_SHA is stale: main now points to $head. Convex was not deployed."
-            exit 1
-          fi
+        working-directory: apps/scout
+        run: node ./scripts/verify-current-branch-head.ts
 
       - name: Deploy
         working-directory: apps/scout
