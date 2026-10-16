@@ -15,14 +15,9 @@
     "dev:frontend": "vp dev",
     "dev:worktree": "node ./scripts/run-worktree-dev.ts",
     "check": "vp check && vp run typecheck && vp test",
-    "build": "vp run build:cloudflare",
-    "build:app": "vp build",
-    "build:cloudflare": "node ./scripts/build-cloudflare.ts",
-    "deploy": "node ./scripts/deploy-cloudflare.ts deploy",
-    "deploy:convex": "convex-hosting deploy --dist ./dist/client --component staticHosting --build-command \"pnpm run build:app\" && node ./scripts/verify-static-release.ts --prod",
-    "deploy:preview": "node ./scripts/deploy-cloudflare.ts preview",
-    "deploy:dry-run": "node ./scripts/deploy-cloudflare.ts deploy --dry-run",
-    "deploy:preview:dry-run": "node ./scripts/deploy-cloudflare.ts preview --dry-run",
+    "build": "vp build",
+    "deploy": "convex-hosting deploy --build \"pnpm run build\" --dist dist/client --html-handling drop-trailing-slash",
+    "deploy:dev": "convex-hosting deploy --dev --build \"pnpm run build\" --dist dist/client --html-handling drop-trailing-slash",
     "format": "vp fmt",
     "format:check": "vp fmt --check",
     "lint": "vp lint --report-unused-disable-directives",
@@ -95,7 +90,6 @@
     "unplugin-typegpu": "0.12.3",
     "vite": "catalog:",
     "vite-plus": "catalog:",
-    "vitest": "catalog:",
-    "wrangler": "^4.118.0"
+    "vitest": "catalog:"
   }
 }

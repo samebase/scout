@@ -15,8 +15,6 @@ allowBuilds:
   esbuild: true
   msw: true
   node-liblzma: false
-  sharp: false
-  workerd: true
 overrides:
   "@hono/node-server": 2.0.10
   "@vitest/browser-preview": 4.1.11
@@ -33,7 +31,6 @@ overrides:
   postcss-selector-parser: 7.1.6
   proxy-addr: 2.0.8
   qs: 6.16.0
-  sharp: 0.35.4
   smol-toml: 1.9.0
   source-map-js: 1.2.2
   tinypool: 2.1.2
