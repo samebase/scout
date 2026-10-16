@@ -43,4 +43,5 @@ signing keys and `SITE_URL`.
 - `apps/scout/public/_headers` caches the hashed files under `/assets/` for a year. Other files
   revalidate with an ETag. Rendered pages and 404 responses are `no-store`.
 - The first request after a deploy deletes the previous version's files. A tab opened before the
-  deploy gets 404 for a hashed file that the new version does not have.
+  deploy reloads when `convex/siteVersion.ts` reports the new version; until then it gets 404 for a
+  hashed file that the new version does not have.
