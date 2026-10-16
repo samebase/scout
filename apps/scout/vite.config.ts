@@ -6,7 +6,14 @@ import typegpu from "unplugin-typegpu/vite";
 import { defineConfig } from "vite-plus";
 import { convexSsr } from "@samebase/convex-hosting-tanstack-start/vite";
 import { resolveWorktreeKind } from "./scripts/run-context-dev.ts";
-import { prerenderPages } from "./prerender.config.ts";
+
+// Data pages render per request. Only data-free pages prerender, so builds can run before a new
+// deployment's backend exists.
+const prerenderPages = [
+  { path: "/about", prerender: { outputPath: "/about/index.html" } },
+  { path: "/privacy", prerender: { outputPath: "/privacy/index.html" } },
+  { path: "/terms", prerender: { outputPath: "/terms/index.html" } },
+];
 
 export default defineConfig(({ command }) => {
   const primaryCheckout = command === "serve" && resolveWorktreeKind() === "main";

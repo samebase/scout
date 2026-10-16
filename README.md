@@ -145,8 +145,7 @@ dashboard setup.
 
 - `package.json` defines the supported development, check, build, and deploy commands.
 - `vite.config.ts` defines workspace formatting, lint rules, staged checks, and test projects.
-- `apps/scout/vite.config.ts` prerenders About, Privacy, and Terms, the pages listed in
-  `apps/scout/prerender.config.ts`.
+- `apps/scout/vite.config.ts` prerenders About, Privacy, and Terms.
 - `apps/scout/convex/http.ts` serves the uploaded files and renders every other page.
 - `.github/workflows/deploy.yml` and `.github/workflows/preview.yml` deploy production and
   previews.
