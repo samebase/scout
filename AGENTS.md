@@ -122,7 +122,9 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
 - Run `pnpm run check`. It checks formatting, lint, browser TypeScript, Node TypeScript, Convex
   TypeScript, and tests.
 - Run `pnpm run check` before a deploy and `pnpm run build` to verify the build locally.
-  GitHub CI runs checks and tests; Cloudflare Workers Builds builds and deploys without rerunning them.
+  While `pnpm run dev` runs, a build makes Convex push a server build whose files the development
+  site does not have; run `pnpm run deploy:dev` afterward. GitHub CI runs checks and tests; the
+  deploy workflows build and deploy without rerunning them.
 
 ## Test scope and cost
 

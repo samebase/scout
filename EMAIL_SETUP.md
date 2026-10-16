@@ -1,8 +1,7 @@
 # Email setup
 
 Scout sends verification and password-reset codes from Convex through Cloudflare Email Service's
-REST API. Scout-originated task and human-help emails use the Scout's own AgentMail inbox. The Cloudflare
-Worker only hosts the built SPA and has no email binding.
+REST API. Scout-originated task and human-help emails use the Scout's own AgentMail inbox.
 
 ## Cloudflare
 
@@ -26,8 +25,7 @@ pnpm --filter samebase-scout exec convex env set --prod CLOUDFLARE_EMAIL_ACCOUNT
 pnpm --filter samebase-scout exec convex env set --prod CLOUDFLARE_EMAIL_API_TOKEN "replace-with-email-token"
 ```
 
-The token is a Convex deployment secret. Do not add it to browser variables, Wrangler variables, or
-the repository.
+The token is a Convex deployment secret. Do not add it to browser variables or the repository.
 
 ## AgentMail
 

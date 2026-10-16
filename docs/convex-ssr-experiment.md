@@ -49,8 +49,7 @@ and preserves it until native `usePaginatedQuery` connects. Convex owns cursor
 advancement, page splitting, and live updates. Both subscriptions remain active,
 so this currently costs one additional first-page subscription per list.
 
-Unmatched document GETs go to TanStack, which owns route matching and Not Found.
-Missing `/assets/` paths return a plain 404 without entering the renderer or SPA fallback.
+Every GET without an uploaded file goes to TanStack, which owns route matching and Not Found.
 Public routes inherit SSR. The homepage and site route disable it for personal or
 workspace views; browser-dependent routes explicitly set `ssr: false`.
 No route list is registered in the HTTP action, and new ordinary public queries
@@ -61,9 +60,7 @@ the completed HTML to TanStack's `renderSsrHtmlResponse`. This is needed because
 `defaultRenderHandler` uses `renderToString`, which does not await Suspense,
 while `defaultStreamHandler` imports Node streams that Convex cannot bundle.
 Route matching, query hydration, response status, and cleanup remain framework-owned.
-Only About, Privacy, and Terms prerender. The homepage uses the universal SPA
-shell in static mode, including on the Cloudflare assets host. This keeps builds
-independent of backend data and avoids incomplete Suspense markup during rollback.
+Only About, Privacy, and Terms prerender, which keeps builds independent of backend data.
 
 Run `pnpm run check` for the automated coverage. The renderer tests delay an
 official Convex query and require its content and hydration data in the completed
@@ -84,8 +81,6 @@ Verified for public task and Scout routes on the hosted preview on September 21,
   profile names in anonymous HTML or serialized query data, including a real private task URL.
 - Chrome loaded and reloaded the task and profile, switched review views, and navigated
   back to the directory without warnings or errors. The private task showed sign-in.
-- With SSR disabled, direct task and Scout URLs returned the SPA shell and loaded in
-  Chrome. The preview is left enabled. Production was not changed.
 - The hosted walkthrough fixture has no screenshots. Its empty notice renders on the
   server; a separate delayed-query test uses the real walkthrough component to verify
   summary, check, and step HTML and that screenshot actions run only in the browser.
@@ -104,135 +99,8 @@ Verified on the hosted `clever-vole-526` preview on September 20, 2026:
 - Chrome hydrated the homepage and direct site page, switched sites, filtered
   the feed, and loaded all eight fixture sites through native pagination.
   The first About navigation retained one menu. Console warnings and errors were empty.
-- With `TANSTACK_SERVER_ENABLED=false`, the homepage and direct site returned
-  the SPA shell, loaded their content in Chrome, and reloaded without console errors.
-  The preview is left enabled. Production and the shared dev deployment were not changed.
 - `pnpm run check` passed 1,579 tests. Scout and the example app built successfully;
   the Convex preview push passed its TypeScript and bundle checks.
-
-Static Hosting still owns uploads, storage, and serving built assets. Its patched
-`fallback(request, ctx)` callback runs after an exact asset miss, before static rewrites
-and SPA fallback. A response is returned unchanged; `null` continues normal static
-serving. Callback errors propagate instead of silently switching modes. The callback
-does not run for uploaded files, missing `/assets/` files, or more-specific Convex auth and webhook endpoints.
-This hook handles GET documents; it does not add POST server-function support.
-
-With TanStack serving disabled, public prerenders and the universal `/index.html`
-fallback work as before for document routes. Dots and Accept headers do not affect shell fallback
-outside the reserved `/assets/` namespace.
-HTML responses set `Cache-Control: no-store`.
-In hosted preview checks, Convex preserves that header for site URLs but overrides
-it with `public, max-age=14400` on missing `.js`, `.png`, and `.pdf` URLs. Browsers
-could cache the static shell or TanStack Not Found response there for four hours. The release
-guard now prevents pages from referencing unpublished bundles, and retained files protect
-old tabs. Missing bundle responses still request `no-store`; the upstream header override
-was also present on the temporary dev deployment during the September 22 release checks.
-
-### Matching the renderer to published browser files
-
-Each build emits `dist/server/client-build.json` and a matching extensionless public marker.
-The HTTP handler checks that marker before importing the renderer. Until the upload atomically
-publishes it, requests use the complete preceding static release. A missing or partial initial
-upload returns Static Hosting's setup response. This is a release-readiness check; errors from
-a renderer whose files are published still propagate.
-
-Only the active manifest can satisfy the marker check. The component retains outgoing file
-storage for at least seven days, but serves retired paths only for non-HTML files under
-`/assets/`. Old HTML and readiness markers are never selected from retained files.
-`GET /__convex_build` reports the deployed backend's build identity without initializing SSR.
-The release verifier checks that identity, the active static marker, asset MIME types, and
-asset bytes before reporting success. See [release order and retention](cloudflare-workers-builds.md#release-order-and-asset-retention).
-
-Verified on temporary dev deployment `scintillating-sardine-100` on September 22, 2026:
-
-- Before the first upload, the backend metadata endpoint worked and the homepage returned
-  the component's 503 setup response. Missing JavaScript returned plain 404, with the host's
-  four-hour cache override still present.
-- With release A published, deploying server B kept serving A's exact static shell.
-  The release verifier rejected B until its client files were published.
-- Publishing B activated SSR and passed byte-for-byte verification of all 68 browser assets.
-  An inert JavaScript asset uploaded only in A still returned its original bytes after B.
-- A browser tab opened on A navigated to About and back after B published, then reloaded
-  successfully. Its console contained no warnings or errors. The two builds used the same
-  application source; the removed probe asset separately exercised archive resolution.
-
-The temporary deployment expires after one day. Production was not changed. Seven-day
-expiration, interrupted uploads, rollback, and storage cleanup are covered by component tests.
-
-The same deployment also passed a changed-build check before opening the pull request.
-Release C temporarily changed the real stylesheet and lazy About route. Its CSS changed from
-`style-CprUfdoC.css` to `style-CAH0MBGL.css`, and its About bundle changed from
-`about-BZ_bGCzi.js` to `about-BIuH9_1T.js`. In total, 19 old bundles disappeared from C's manifest.
-The temporary source edits were restored immediately after building and are not part of the PR.
-
-| Scenario                              | Hosted result                                                                                                                                      |
-| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| New backend, old published frontend   | Homepage returned the exact preceding shell; a fresh browser tab hydrated without errors.                                                          |
-| Only C's marker and stylesheet staged | The new marker was not active. Publication rejected the incomplete 2-of-85-file manifest, and failure cleanup preserved the old page.              |
-| Complete C publication                | All 68 active browser assets matched the build byte for byte. All 19 replaced bundles still returned their original bytes.                         |
-| Tab opened before C                   | Its first About navigation after publication rendered the original heading with the original stylesheet and no console errors.                     |
-| Fresh tab and ordinary reload         | Both rendered C's changed heading and purple CSS outline without clearing browser cache.                                                           |
-| Rollback to B                         | All 68 active assets matched B; all 19 replaced C bundles retained their bytes. The open C tab navigated without errors, and reload returned to B. |
-
-The temporary deployment was left on the original PR build, with no visual test changes.
-These checks exercised real Convex storage, staging, publication, HTTP serving, and browser
-navigation. They do not simulate arbitrary backend API incompatibilities or the passage of
-seven days; retention expiration is tested with a controlled clock in the component suite.
-
-### Enable or disable TanStack serving
-
-Set `TANSTACK_SERVER_ENABLED` in the target Convex deployment's environment settings.
-`true` enables TanStack's server handler once its matching browser build is published;
-`false` or an unset value restores static
-prerenders and the SPA shell for all pages. The HTTP handler reads the setting on
-each request, so changing it does not require a rebuild or code deployment.
-This replaces `HOMEPAGE_SSR_ENABLED`, which no longer controls serving. A deployment
-with only the old variable set starts in static mode until the new variable is enabled.
-
-For this PR preview, run either command from the repository root:
-
-```sh
-pnpm --filter samebase-scout exec convex env set TANSTACK_SERVER_ENABLED false --deployment clever-vole-526
-pnpm --filter samebase-scout exec convex env set TANSTACK_SERVER_ENABLED true --deployment clever-vole-526
-```
-
-The disabled path never imports or initializes the renderer. Static Hosting reads
-the already-published prerender or shell directly, without an HTTP request back to
-the app. The homepage and all data pages use `/index.html` in static mode, so filters
-initialize in the browser without a prerender hydration mismatch. With serving disabled,
-View Page Source contains the page shell without review cards; the browser still
-loads the feed. With serving enabled, the first six cards are in the response HTML.
-
-This is a manual switch, not an automatic error fallback. It does not repair
-missing static assets, shared backend failures, or a failed build. Builds still
-need to generate the server bundle before pushing Convex. The code defaults to static serving when the variable is unset. Project environment
-defaults currently enable it; upload matching assets before verifying a new deployment.
-
-### Build and deploy to an existing preview
-
-After selecting a preview, run these platform-neutral commands from the root:
-
-```sh
-pnpm --filter samebase-scout exec convex deployment select clever-vole-526
-pnpm run check
-pnpm run build
-pnpm --filter samebase-scout exec convex dev --once --typecheck enable
-pnpm --filter samebase-scout exec static-hosting upload --dist ./dist/client --preview-name nicu-convex-tanstack-ssr
-pnpm --filter samebase-scout exec node ./scripts/verify-static-release.ts --deployment clever-vole-526
-pnpm --filter samebase-scout exec convex env set TANSTACK_SERVER_ENABLED true --deployment clever-vole-526
-```
-
-The backend imports the generated server, so the build must precede its push.
-Normal `pnpm run dev` now does this initial build automatically. Rebuild after
-frontend edits to refresh the hosted renderer; Vite still hot-reloads locally.
-The CI preview path builds before deploying and uploads matching browser assets
-afterwards, before auth setup and Cloudflare publication. It does not toggle this setting.
-The readiness marker keeps the previous static release available throughout that interval.
-The existing Static Hosting patch adds explicit `--preview-name`
-forwarding, since 0.2.1's uploader otherwise does not target a named preview.
-
-Build-time prerendering includes only data-free pages. Convex runs the build
-before pushing the backend, so a new preview may not have queries deployed yet.
 
 ### Optional preview fixtures
 
@@ -251,19 +119,17 @@ agent execution separately.
 
 ### Earlier generic routing verification
 
-The final build was deployed to `clever-vole-526` on September 20, 2026, and tested
-with `TANSTACK_SERVER_ENABLED` false, true, false, then true without rebuilding
-between switch changes. The preview is left enabled.
+The final build was deployed to `clever-vole-526` on September 20, 2026, and answered:
 
-| Request                             | TanStack enabled                              | Static rollback                   |
-| ----------------------------------- | --------------------------------------------- | --------------------------------- |
-| `/`                                 | 200; six public review cards in HTML          | 200; prerender without live cards |
-| `/?scope=mine`                      | 200; no public or private review titles       | 200; SPA shell                    |
-| `/about`                            | 200; page content in HTML                     | 200; prerender                    |
-| `/sites/ssr-8.example?scope=public` | 200; native client-rendered route             | 200; SPA shell                    |
-| Unknown URL                         | 404; router renders Not Found after hydration | 200; SPA renders Not Found        |
-| `//about`                           | 308; Location points to `/about`              | Not part of rollback check        |
-| Built JavaScript and auth discovery | 200; correct content types                    | 200; correct content types        |
+| Request                             | Response                                      |
+| ----------------------------------- | --------------------------------------------- |
+| `/`                                 | 200; six public review cards in HTML          |
+| `/?scope=mine`                      | 200; no public or private review titles       |
+| `/about`                            | 200; page content in HTML                     |
+| `/sites/ssr-8.example?scope=public` | 200; native client-rendered route             |
+| Unknown URL                         | 404; router renders Not Found after hydration |
+| `//about`                           | 308; Location points to `/about`              |
+| Built JavaScript and auth discovery | 200; correct content types                    |
 
 Browser checks covered the homepage, About, direct site and task links, sign-in,
 and an unknown route. The final checks reported no console warnings or errors.
@@ -291,10 +157,6 @@ verify renderer-import failure rollback, and keep protected routes client-only.
   Fresh SSR loads hydrated, site filtering worked, and native pagination exposed
   all eight sites. Public task navigation and a direct task reload also worked.
 - No browser warnings or errors were reported during those checks.
-- The homepage switch was exercised on the preview with unset, `false`, and `true`
-  settings. Static mode returned HTML without review cards, then loaded the feed
-  in the browser. A filtered reload worked without hydration errors. Re-enabling
-  SSR restored six cards in the initial response without a rebuild or deployment.
 
 ## Hosted evidence
 

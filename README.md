@@ -23,8 +23,9 @@ operational responsibilities.
 
 - React 19 and TanStack Start, with public-page SSR on Convex
 - Convex for the real-time backend, database, and password authentication
-- Cloudflare Workers Static Assets for production delivery and branch previews
-- Convex HTTP actions for homepage HTML and Convex Hosting for browser assets
+- `@samebase/convex-hosting` for the site on `convex.site`: uploaded browser files, and pages that
+  the TanStack Start server build renders in a Convex HTTP action
+- GitHub Actions for production and pull request preview deploys
 - shadcn/ui primitives for the user interface
 - Vite+ for development, formatting, linting, tests, and builds
 - Node.js 24 for application and automation code
@@ -82,19 +83,22 @@ corepack enable
 pnpm install
 ```
 
-Before the first build, select a cloud development deployment so Convex writes
-the app's URL to `apps/scout/.env.local`, then start development:
+Select a cloud development deployment so Convex writes the app's URL to
+`apps/scout/.env.local`, deploy the site to it once, then start development:
 
 ```sh
 pnpm --filter samebase-scout exec convex deployment select <development-deployment>
+pnpm run deploy:dev
 pnpm run dev
 ```
 
-Run these commands from the repository root. Development starts Convex and TanStack Start
-together, using port 5173 for the primary checkout and ports starting at 5174 for linked worktrees.
-It first builds the server imported by Convex's homepage HTTP action. Rebuild with
-`pnpm run build:app` to update that hosted renderer after frontend changes; local Vite
-development keeps its usual hot reload.
+Run these commands from the repository root. `convex/http.ts` imports the server build and
+`apps/scout/.convex-hosting/version.js`, which only `pnpm run deploy:dev` writes: it builds,
+uploads the browser files, and pushes. Run it again when the development deployment's site should
+serve your current frontend; local Vite development keeps its usual hot reload. If `dist/` or
+`.convex-hosting/` is deleted, `convex dev` fails with `Could not resolve`, and
+`pnpm run deploy:dev` fixes it. Development starts Convex and TanStack Start together, using port
+5173 for the primary checkout and ports starting at 5174 for linked worktrees.
 Worktrees must select their own cloud dev deployment. Convex writes its selected deployment and
 `VITE_CONVEX_URL` to `apps/scout/.env.local`. Move an existing root `.env.local` there when
 updating an older checkout.
@@ -115,79 +119,37 @@ workspace typechecks and tests; root build/deploy commands target TrailScout.
 
 ## Checks and builds
 
-| Command                           | Purpose                                              |
-| --------------------------------- | ---------------------------------------------------- |
-| `pnpm run check`                  | Format, lint, type-check, and test                   |
-| `pnpm run build`                  | Build for Cloudflare without rerunning checks        |
-| `pnpm run deploy:convex`          | Build and deploy the production app to `convex.site` |
-| `pnpm run deploy:dry-run`         | Validate a production upload without publishing it   |
-| `pnpm run deploy:preview:dry-run` | Validate a preview upload without publishing it      |
+| Command               | Purpose                                                               |
+| --------------------- | --------------------------------------------------------------------- |
+| `pnpm run check`      | Format, lint, type-check, and test                                    |
+| `pnpm run build`      | Build the browser files and the server build into `apps/scout/dist/`  |
+| `pnpm run deploy:dev` | Build, upload, and push to the development deployment in `.env.local` |
 
-The dry-run commands need `CLOUDFLARE_WORKER_NAME`.
+## Deployment
 
-On macOS or Linux:
+GitHub Actions deploys `main` to production and each pull request to a Convex preview named after
+its branch. See [`docs/deploy.md`](./docs/deploy.md) for the workflows, keys, and rules.
 
-```sh
-export CLOUDFLARE_WORKER_NAME=my-worker
-```
-
-On Windows PowerShell:
-
-```powershell
-$env:CLOUDFLARE_WORKER_NAME = "my-worker"
-```
-
-## Deployment contract
-
-Cloudflare Workers Builds keeps its root directory at the repository root and runs
-`pnpm run build` for all branches. Root commands select `samebase-scout` through Vite+; app
-commands run with `apps/scout/` as their working directory. GitHub CI runs `pnpm run check`
-separately; the Workers build only builds and deploys. It then uses:
-
-| Branch type             | Deploy command            | Convex key                  |
-| ----------------------- | ------------------------- | --------------------------- |
-| `main`                  | `pnpm run deploy`         | `CONVEX_DEPLOY_KEY`         |
-| Non-production branches | `pnpm run deploy:preview` | `PREVIEW_CONVEX_DEPLOY_KEY` |
-
-`apps/scout/scripts/build-cloudflare.ts` selects the Convex key from `WORKERS_CI_BRANCH` and fails closed when
-the branch identity is missing. `apps/scout/scripts/verify-current-branch-head.ts` prevents an older concurrent
-build from deploying backend code after a newer commit reaches the same branch. `convex deploy
---cmd` supplies `VITE_CONVEX_URL` to the frontend build, so it is not a Cloudflare build variable.
-Set each Convex preview's `SITE_URL` to its frontend origin for signup verification and handoff links.
-
-`pnpm run deploy:convex` provides a separate manual production deployment to Convex Hosting.
-Automatic builds upload and verify `apps/scout/dist/client` on the selected Convex deployment
-immediately after its backend push, then publish Cloudflare. Preview and dry-run deployments do
-not change the production `convex.site` app. A build marker keeps the renderer from running before
-its matching files are published, and Convex retains old bundled assets for at least seven days.
-See [release order and retention](docs/cloudflare-workers-builds.md#release-order-and-asset-retention).
-
-Preview builds also upload browser assets to the matching Convex preview. On
-`convex.site`, the homepage, public site and task pages, and Scout directory and
+On `convex.site`, the homepage, public site and task pages, and Scout directory and
 profiles render their initial data into HTML.
 The router uses the official Convex TanStack Query adapter and TanStack SSR query
 integration. Ordinary queries use `useSuspenseQuery(convexQuery(...))`; paginated
 lists use the shared `useSsrPaginatedQuery` bridge while native Convex hooks retain
 live pagination. New public routes inherit SSR without a separate server loader.
 Account, workspace, and personal views remain client-rendered.
-`TANSTACK_SERVER_ENABLED=false` still restores static prerenders and the SPA shell.
-See [TrailScout SSR verification](./docs/convex-ssr-experiment.md) for the PR preview
-and commands to reproduce it without a Cloudflare runtime.
-
-See [`docs/cloudflare-workers-builds.md`](./docs/cloudflare-workers-builds.md) for the detailed build
-and deploy behavior. Use the
-[do-it-yourself guide](https://samebase.com/docs/do-it-yourself) for the provider dashboard setup.
+See [TrailScout SSR verification](./docs/convex-ssr-experiment.md) for how this was verified.
+Use the [do-it-yourself guide](https://samebase.com/docs/do-it-yourself) for the provider
+dashboard setup.
 
 ## Important files
 
 - `package.json` defines the supported development, check, build, and deploy commands.
 - `vite.config.ts` defines workspace formatting, lint rules, staged checks, and test projects.
-- `apps/scout/vite.config.ts` prerenders About, Privacy, and Terms, plus a separate
-  SPA fallback shell. `apps/scout/prerender.config.ts` maps public URLs to their generated HTML;
-  Cloudflare uses build-generated `_redirects`, and Convex uses the same exact path rewrites.
-- `apps/scout/wrangler.jsonc` defines Cloudflare static assets, SPA fallback, and preview URLs.
-- `apps/scout/scripts/build-cloudflare.ts` owns the Cloudflare build and Convex deployment selection.
-- `apps/scout/scripts/deploy-cloudflare.ts` owns production, preview, and dry-run uploads.
+- `apps/scout/vite.config.ts` prerenders About, Privacy, and Terms, the pages listed in
+  `apps/scout/prerender.config.ts`.
+- `apps/scout/convex/http.ts` serves the uploaded files and renders every other page.
+- `.github/workflows/deploy.yml` and `.github/workflows/preview.yml` deploy production and
+  previews.
 - `docs/agent-runtime.md` describes Scout ownership, chats, tools, and handoffs.
 - `apps/scout/convex/` contains the backend, schema, authentication, and generated Convex bindings.
 - `apps/scout/src/` contains the React application and routes.
@@ -196,6 +158,7 @@ and deploy behavior. Use the
 
 - `apps/scout/src/routeTree.gen.ts` is generated by TanStack Router.
 - `apps/scout/convex/_generated/api.*`, `dataModel.d.ts`, and `server.*` are generated by Convex.
+- `apps/scout/.convex-hosting/` is written by `convex-hosting deploy` and ignores itself.
 - `apps/scout/convex/_generated/ai/`, `.agents/skills/`, `skills-lock.json`, and the marked Convex sections in
   `AGENTS.md` and `CLAUDE.md` are managed by `npx convex ai-files install`.
 - The marked Vite+ section in `AGENTS.md` is managed by `vp config`.
