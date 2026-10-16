@@ -11,9 +11,9 @@ import { polarCheckoutSchema } from "./polarModel";
 import type { Doc } from "./_generated/dataModel";
 
 // convex/http.ts imports the server build and the site version, which only a build and a deploy
-// write. The webhook route reads neither.
-vi.mock("../dist/server/server.js", () => ({}));
-vi.mock("../.convex-hosting/version.js", () => ({}));
+// write, and hands both to serveSite when it loads. The webhook route reads neither.
+vi.mock("../dist/server/server.js", () => ({ default: { fetch: async () => new Response() } }));
+vi.mock("../.convex-hosting/version.js", () => ({ versionId: "test" }));
 
 const modules = import.meta.glob("./**/*.ts");
 const organizationId = "11111111-1111-4111-8111-111111111111";

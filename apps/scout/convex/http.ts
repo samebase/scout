@@ -12,26 +12,18 @@ import server from "../dist/server/server.js";
 import { httpAction } from "./_generated/server";
 
 const http = httpRouter();
-const toServer = httpAction((_ctx, request) => server.fetch(request));
 
 auth.addHttpRoutes(http);
 http.route({ path: "/polar/events", method: "POST", handler: httpAction(handlePolarEvent) });
 
-// Every request that is not a GET goes to the app's server, as every request that is not a GET or
-// HEAD goes to a Cloudflare Worker. Convex answers HEAD through GET. Convex picks an exact path,
-// then the longest prefix, so the auth routes and the Polar webhook keep winning over "/".
-for (const method of ["POST", "PUT", "PATCH", "DELETE", "OPTIONS"] as const) {
-  http.route({ pathPrefix: "/", method, handler: toServer });
+// Every method, every path, as a Cloudflare Worker with static assets: the uploaded file for a path
+// that has one (another method than GET or HEAD on it answers 405), else the page that TanStack
+// Start renders, signed out, because Convex Auth keeps the session in the browser. Convex answers
+// HEAD through GET. Convex picks an exact path, then the longest prefix, so the auth routes and the
+// Polar webhook keep winning over "/".
+const site = httpAction(serveSite(components.hosting, versionId, server));
+for (const method of ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"] as const) {
+  http.route({ pathPrefix: "/", method, handler: site });
 }
-
-// The built site: the uploaded file for a path that has one, else the page that TanStack Start
-// renders, signed out, because Convex Auth keeps the session in the browser.
-http.route({
-  pathPrefix: "/",
-  method: "GET",
-  handler: httpAction((ctx, request) =>
-    serveSite(ctx, components.hosting, request, versionId, () => server.fetch(request)),
-  ),
-});
 
 export default http;
