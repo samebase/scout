@@ -1,7 +1,7 @@
 # Local setup
 
 Use this when you want to run the app from your own computer instead of only
-through Cloudflare.
+through a deployed preview.
 
 ## Install Vite+
 
@@ -31,30 +31,34 @@ The app lives in `apps/scout/`. Its `.env.local` and other app environment files
 When updating a checkout from the previous layout, move its root `.env.local` into `apps/scout/`.
 
 Before the first run, select a cloud development deployment from the repository
-root. This writes the Convex URL needed by the server build to the app's env file:
+root. This writes the Convex URL needed by the build to the app's env file:
 
 ```sh
 pnpm --filter samebase-scout exec convex deployment select <development-deployment>
 ```
 
-Then start the app:
+Then deploy the site to it once and start the app:
 
 ```sh
+pnpm run deploy:dev
 pnpm run dev
 ```
 
-`pnpm run dev` first builds the server imported by the homepage HTTP action,
-then starts Convex and TanStack Start together. Selecting a deployment may ask
+`pnpm run deploy:dev` builds the app, uploads its browser files to the development deployment,
+writes `apps/scout/.convex-hosting/version.js`, and pushes the functions. `convex/http.ts` imports
+that file and the server build, so `convex dev` cannot push before the first `deploy:dev`.
+`pnpm run dev` starts Convex and TanStack Start together. Selecting a deployment may ask
 you to sign in. To create a new cloud dev deployment, use the creation command below.
-The dev script also creates Convex Auth JWT keys in that development deployment
-if they are missing. Scout uses Convex AI Gateway, which requires a cloud backend;
-anonymous and local backends cannot run its model calls.
+New development deployments take the Convex Auth signing keys from the project's dev defaults.
+Scout uses Convex AI Gateway, which requires a cloud backend; anonymous and local backends cannot
+run its model calls.
 
 For a linked Git worktree, create and select a separate cloud dev deployment once.
 Replace the team, project, and feature below with your own values:
 
 ```sh
 pnpm --filter samebase-scout exec convex deployment create <team>:<project>:dev/<feature> --type dev --select
+pnpm run deploy:dev
 pnpm run dev
 ```
 

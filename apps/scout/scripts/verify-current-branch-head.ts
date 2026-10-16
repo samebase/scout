@@ -5,6 +5,8 @@ import { pathToFileURL } from "node:url";
 
 export function verifyCurrentBranchHead(
   env: NodeJS.ProcessEnv,
+  // samebase/scout is public, so `git ls-remote` needs no credentials after `actions/checkout`
+  // with `persist-credentials: false`.
   readRemoteHead = (branch: string) => {
     const output = execFileSync(
       "git",
@@ -12,36 +14,29 @@ export function verifyCurrentBranchHead(
       { encoding: "utf8" },
     );
     const [remoteHead] = output.trim().split(/\s+/, 1);
-
-    if (!remoteHead) {
-      throw new Error(`Git did not return a head commit for ${branch}.`);
-    }
-
     return remoteHead;
   },
   readCheckoutHead = () => execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
 ) {
-  if (env["WORKERS_CI"] !== "1" && env["WORKERS_CI"] !== "true") {
+  if (env["GITHUB_ACTIONS"] !== "true") {
     return;
   }
 
-  const branch = env["WORKERS_CI_BRANCH"];
+  // A pull request run names its branch in GITHUB_HEAD_REF; a push to main leaves it empty.
+  const branch = env["GITHUB_HEAD_REF"] || env["GITHUB_REF_NAME"];
 
   if (!branch) {
-    throw new Error("Workers Builds must provide WORKERS_CI_BRANCH before Convex deploys.");
+    throw new Error(
+      "GitHub Actions must provide GITHUB_HEAD_REF or GITHUB_REF_NAME before Convex deploys.",
+    );
   }
 
-  // A manual Workers Build can identify the commit as a branch name, so use the checkout itself.
   const checkoutHead = readCheckoutHead();
-  if (!checkoutHead) {
-    throw new Error("Git did not return the checked-out commit for this Workers Build.");
-  }
-
   const remoteHead = readRemoteHead(branch);
 
   if (remoteHead !== checkoutHead) {
     throw new Error(
-      `Workers Build ${checkoutHead} is stale: ${branch} now points to ${remoteHead}. Refusing to publish this stale build.`,
+      `${checkoutHead} is stale: ${branch} now points to ${remoteHead}. Refusing to deploy this stale build.`,
     );
   }
 }

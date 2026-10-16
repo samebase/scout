@@ -1,5 +1,4 @@
 import { fileURLToPath } from "node:url";
-import { randomUUID } from "node:crypto";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
@@ -7,13 +6,17 @@ import typegpu from "unplugin-typegpu/vite";
 import { defineConfig } from "vite-plus";
 import { convexSsr } from "@samebase/convex-hosting-tanstack-start/vite";
 import { resolveWorktreeKind } from "./scripts/run-context-dev.ts";
-import { prerenderPages, prerenderPathRewrites } from "./prerender.config.ts";
+
+// Data pages render per request. Only data-free pages prerender, so builds can run before a new
+// deployment's backend exists.
+const prerenderPages = [
+  { path: "/about", prerender: { outputPath: "/about/index.html" } },
+  { path: "/privacy", prerender: { outputPath: "/privacy/index.html" } },
+  { path: "/terms", prerender: { outputPath: "/terms/index.html" } },
+];
 
 export default defineConfig(({ command }) => {
   const primaryCheckout = command === "serve" && resolveWorktreeKind() === "main";
-  // Each publish replaces this marker while retaining older files under /assets/.
-  const markerPath = `/__convex_build/${randomUUID()}`;
-  const clientBuild = JSON.stringify({ markerPath });
   return {
     server: {
       port: primaryCheckout ? 5173 : 5174,
@@ -22,21 +25,6 @@ export default defineConfig(({ command }) => {
     ssr: { noExternal: ["@samebase/sidebars"] },
     plugins: [
       convexSsr(),
-      {
-        name: "convex-client-build",
-        apply: "build",
-        sharedDuringBuild: true,
-        applyToEnvironment: (environment) =>
-          environment.name === "client" || environment.name === "ssr",
-        generateBundle() {
-          this.emitFile({
-            type: "asset",
-            fileName:
-              this.environment.name === "client" ? markerPath.slice(1) : "client-build.json",
-            source: clientBuild,
-          });
-        },
-      },
       typegpu(),
       tailwindcss(),
       tanstackStart({
@@ -52,43 +40,11 @@ export default defineConfig(({ command }) => {
               throw new Error(`Public page ${page.path} did not prerender its content.`);
           },
         },
-        spa: {
-          enabled: true,
-          // The hash keeps the shell on the public root route while giving
-          // prerendering a distinct key from the actual homepage.
-          maskPath: "/#__spa-shell",
-          prerender: {
-            outputPath: "/index.html",
-          },
-        },
       }),
-      {
-        name: "public-page-rewrites",
-        apply: "build",
-        applyToEnvironment: (environment) => environment.name === "client",
-        generateBundle() {
-          this.emitFile({
-            type: "asset",
-            fileName: "_redirects",
-            source: [
-              ...prerenderPages.map(({ path, prerender }) => `${prerender.outputPath} ${path} 301`),
-              ...Array.from(prerenderPathRewrites, ([path, htmlPath]) => `${path} ${htmlPath} 200`),
-              "",
-            ].join("\n"),
-          });
-        },
-      },
       react(),
     ],
     test: {
       name: "scout",
-      // Give renderer mocks a resolvable entry before the first build.
-      alias: {
-        "../dist/server/server.js": fileURLToPath(new URL("./src/server.ts", import.meta.url)),
-        "../dist/server/client-build.json": fileURLToPath(
-          new URL("./scripts/fixtures/client-build.json", import.meta.url),
-        ),
-      },
       // Keep hoisted dependencies inside the test root. Vitest's /@fs/ loader
       // reads global process while Convex Workflow temporarily removes it.
       root: fileURLToPath(new URL("../..", import.meta.url)),

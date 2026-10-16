@@ -3,13 +3,9 @@ import { describe, expect, it } from "vite-plus/test";
 import { verifyCurrentBranchHead } from "./verify-current-branch-head.ts";
 
 describe("verify-current-branch-head", () => {
-  it("accepts a manual build while its checkout is the branch head", () => {
+  it("accepts a checkout at the head of its pull request branch", () => {
     verifyCurrentBranchHead(
-      {
-        WORKERS_CI: "1",
-        WORKERS_CI_BRANCH: "feature",
-        WORKERS_CI_COMMIT_SHA: "feature",
-      },
+      { GITHUB_ACTIONS: "true", GITHUB_HEAD_REF: "feature", GITHUB_REF_NAME: "220/merge" },
       (branch) => {
         expect(branch).toBe("feature");
         return "new";
@@ -18,40 +14,30 @@ describe("verify-current-branch-head", () => {
     );
   });
 
-  it("rejects a build after a newer commit reaches its branch", () => {
+  it("rejects a checkout after a newer commit reaches its branch", () => {
     expect(() =>
       verifyCurrentBranchHead(
-        {
-          WORKERS_CI: "1",
-          WORKERS_CI_BRANCH: "feature",
+        { GITHUB_ACTIONS: "true", GITHUB_HEAD_REF: "", GITHUB_REF_NAME: "main" },
+        (branch) => {
+          expect(branch).toBe("main");
+          return "new";
         },
-        () => "new",
         () => "old",
       ),
-    ).toThrow("Refusing to publish this stale build");
+    ).toThrow("old is stale: main now points to new. Refusing to deploy this stale build.");
   });
 
-  it("fails closed without Workers Builds branch identity", () => {
+  it("fails closed without a branch name", () => {
     expect(() =>
       verifyCurrentBranchHead(
-        { WORKERS_CI: "1" },
+        { GITHUB_ACTIONS: "true" },
         () => "new",
         () => "new",
       ),
-    ).toThrow("WORKERS_CI_BRANCH");
+    ).toThrow("GITHUB_REF_NAME");
   });
 
-  it("fails closed without a checked-out commit", () => {
-    expect(() =>
-      verifyCurrentBranchHead(
-        { WORKERS_CI: "1", WORKERS_CI_BRANCH: "feature" },
-        () => "new",
-        () => "",
-      ),
-    ).toThrow("checked-out commit");
-  });
-
-  it("skips the provider check during local deploy validation", () => {
+  it("skips the check outside GitHub Actions", () => {
     expect(() =>
       verifyCurrentBranchHead(
         {},

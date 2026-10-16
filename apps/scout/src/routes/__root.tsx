@@ -5,8 +5,10 @@ import {
   createRootRouteWithContext,
   useMatches,
 } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import type { QueryClient } from "@tanstack/react-query";
+import { useQuery } from "convex/react";
+import { api } from "../../convex/_generated/api";
 import { ScoutSidebarProvider } from "../sidebars/ScoutSidebarProvider";
 import appCss from "../style.css?url";
 import { RouteAccessOutlet } from "../components/route-access";
@@ -53,7 +55,20 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   component: RootComponent,
 });
 
+// A tab opened before a deploy asks for hashed files that the new version no longer has, so it
+// reloads when the deployed version changes.
+function useReloadOnNewVersion() {
+  const versionId = useQuery(api.siteVersion.get);
+  const first = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (versionId === undefined) return;
+    first.current ??= versionId;
+    if (versionId !== first.current) location.reload();
+  }, [versionId]);
+}
+
 function RootComponent() {
+  useReloadOnNewVersion();
   const isHandoff = useMatches({
     select: (matches) => matches.some((match) => match.routeId === "/handoff/$sessionId"),
   });
