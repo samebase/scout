@@ -1,5 +1,5 @@
 import { httpRouter } from "convex/server";
-import { serveSite } from "@samebase/convex-hosting";
+import { routeAll } from "@samebase/convex-hosting";
 import { components } from "./_generated/api";
 import { auth } from "./auth";
 import { handlePolarEvent } from "./polar";
@@ -21,9 +21,6 @@ http.route({ path: "/polar/events", method: "POST", handler: httpAction(handlePo
 // Start renders, signed out, because Convex Auth keeps the session in the browser. Convex answers
 // HEAD through GET. Convex picks an exact path, then the longest prefix, so the auth routes and the
 // Polar webhook keep winning over "/".
-const site = httpAction(serveSite(components.hosting, versionId, server));
-for (const method of ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"] as const) {
-  http.route({ pathPrefix: "/", method, handler: site });
-}
+routeAll(http, components.hosting, versionId, server);
 
 export default http;

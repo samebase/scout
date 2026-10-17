@@ -55,17 +55,19 @@ workspace views; browser-dependent routes explicitly set `ssr: false`.
 No route list is registered in the HTTP action, and new ordinary public queries
 do not need custom server data plumbing. Personalized SSR is still out of scope.
 
-The Convex adapter awaits React's `renderToReadableStream(...).allReady` and passes
-the completed HTML to TanStack's `renderSsrHtmlResponse`. This is needed because
-`defaultRenderHandler` uses `renderToString`, which does not await Suspense,
-while `defaultStreamHandler` imports Node streams that Convex cannot bundle.
+The Convex adapter is TanStack's own `defaultStreamHandler`, so pages stream as on
+a Cloudflare Worker: the document goes out as it renders, and each Suspense boundary
+follows in its own chunk with the query data it waited for. Crawlers get the completed
+document, because TanStack waits for the whole render when the User-Agent is a bot.
+The handler imports Node streams for a branch that never runs on Convex, and the
+adapter's `convexSsr()` Vite plugin resolves them to a stub for the server build.
 Route matching, query hydration, response status, and cleanup remain framework-owned.
 Only About, Privacy, and Terms prerender, which keeps builds independent of backend data.
 
 Run `pnpm run check` for the automated coverage. The renderer tests delay an
-official Convex query and require its content and hydration data in the completed
-response. Component tests cover private access, authentication transitions, and
-navigation while queries are pending.
+official Convex query and require the response to stay open until the query resolves,
+with its content and hydration data in the completed response. Component tests cover
+private access, authentication transitions, and navigation while queries are pending.
 
 For a hosted smoke check, disable JavaScript in the browser and reload a public
 site, task, or Scout URL. Its content should already be visible. Re-enable
@@ -203,11 +205,10 @@ Scout's `src/server.ts` uses the shared server entry:
 export { default } from "@samebase/convex-hosting-tanstack-start/server";
 ```
 
-The shared entry also installs `URLSearchParams.size` when the runtime lacks that getter.
+The shared entry no longer installs `URLSearchParams.size`, because Convex defines `size` itself now.
 The hosted Convex runtime returned `undefined` for it. Without the getter,
-TanStack normalizes `/?site=ssr-8` into `/site=ssr-8` and returns 404. A regression
-test reproduces that behavior using TanStack's actual URL normalizer and verifies
-the fix, including duplicate parameters and native-runtime preservation.
+TanStack normalizes `/?site=ssr-8` into `/site=ssr-8` and returns 404. With Convex's
+own `size`, TanStack keeps `/?site=ssr-8` on the `/` path with its `site` parameter.
 
 The relevant Vite settings are:
 
@@ -256,15 +257,15 @@ import. The generated `.js` files are Vite output, not authored source.
 The stock `defaultStreamHandler` failed Convex bundling on `node:stream` and
 `node:stream/web`. The original Scout bundle also imported `node:module`. The
 original `defaultRenderHandler` buffered a complete HTML document and required
-loader data. The current adapter described above also awaits query Suspense,
-while still returning a buffered response.
+loader data. The adapter buffered the whole render until its 0.9.0, which resolves
+the Node stream imports to a stub and streams with the stock handler.
 
 An intermediate Node-action attempt deployed but failed at runtime on the
 sidebar's dynamic React import. That route and action were removed from the
 final probe once direct HTTP rendering worked.
 
-Personalized SSR, incremental response streaming, TanStack server functions, production load,
-and cold-start latency remain outside the verified scope. The initial page is
+Personalized SSR, TanStack server functions, production load, and cold-start latency
+remain outside the verified scope. The initial page is
 bounded to six sites rather than rendering an unbounded collection. Private
 pages continue to authenticate and load through the existing browser queries.
 
@@ -279,8 +280,8 @@ and the [integration package manifest](https://github.com/samebase/convex-hostin
 
 The reusable code now lives in the private workspace package
 [`@samebase/convex-hosting-tanstack-start`](https://github.com/samebase/convex-hosting/tree/main/packages/convex-hosting-tanstack-start).
-It contains the Vite plugin and buffered server entry, including the
-URLSearchParams compatibility getter.
+It contains the Vite plugin and buffered server entry; the entry no longer installs the
+URLSearchParams compatibility getter, because Convex defines `size` itself now.
 It needs no component schema because it owns no persistent state.
 
 The [runnable example](https://github.com/samebase/convex-hosting/tree/main/examples/tanstack-ssr) keeps its page loader,
@@ -297,8 +298,9 @@ value. The experimental `/scout-shell` mount is no longer installed there.
 
 Repository validation includes `pnpm run check`, the Scout and example builds,
 and Convex's TypeScript check and hosted push. Tests cover the initial-to-live
-handoff, public filtering, seed isolation, HTTP cache policy, and URL normalization
-without `URLSearchParams.size`. The HTTP test also passed with the generated server
+handoff, public filtering, seed isolation, and HTTP cache policy; the URL normalization
+test without `URLSearchParams.size` is gone, because Convex defines `size` itself now
+and the adapter no longer installs it. The HTTP test also passed with the generated server
 directory temporarily absent, matching a clean CI checkout. Production was not
 changed. The original probe evidence remains in the ignored
 `apps/scout/ssr-probe.local/`; the real Scout checks above used the PR preview.

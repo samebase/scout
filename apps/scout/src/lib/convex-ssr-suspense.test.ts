@@ -91,7 +91,7 @@ async function startRendering(content: ReactNode) {
   };
 }
 
-test("the Convex renderer waits for official query Suspense and includes its hydration data", async () => {
+test("the Convex renderer streams the page, ends it after the official query resolves, and includes its hydration data", async () => {
   let resolveCount: (value: { count: number; hasMore: boolean }) => void = () => {
     throw new Error("Query has not started");
   };
@@ -107,19 +107,20 @@ test("the Convex renderer waits for official query Suspense and includes its hyd
   }
   const render = await startRendering(createElement(Count));
   try {
+    const result = await render.pending;
+    const response = result instanceof Response ? result : result.response;
     let complete = false;
-    void render.pending.then(() => {
+    const text = response.text().then((html) => {
       complete = true;
+      return html;
     });
     await vi.waitFor(() => expect(query).toHaveBeenCalledOnce());
     expect(complete).toBe(false);
     resolveCount({ count: 42, hasMore: false });
-    const result = await render.pending;
-    const response = result instanceof Response ? result : result.response;
-    const html = await response.text();
+    const html = await text;
     expect(response.status).toBe(200);
+    expect(html).toContain("Pending fixture");
     expect(html).toContain("<h1>42 public sites</h1>");
-    expect(html).not.toContain("Pending fixture");
     expect(html).toContain("scout/sites:count");
     expect(html).toContain("convexQuery");
   } finally {
@@ -127,7 +128,7 @@ test("the Convex renderer waits for official query Suspense and includes its hyd
   }
 });
 
-test("a delayed task walkthrough renders its saved findings and checks before hydration", async () => {
+test("a delayed task walkthrough streams its saved findings and checks before hydration", async () => {
   type Result = FunctionReturnType<typeof api.tasks.walkthrough.get>;
   // @ts-expect-error The mocked transport uses a stable fixture ID instead of a database-generated session ID.
   const sessionId: FunctionArgs<typeof api.tasks.walkthrough.get>["sessionId"] = "session-ssr";
@@ -187,9 +188,12 @@ test("a delayed task walkthrough renders its saved findings and checks before hy
     .mockRejectedValue(new Error("Screenshot actions must stay in the browser"));
   const render = await startRendering(createElement(TaskWalkthrough, { sessionId }));
   try {
+    const result = await render.pending;
+    const response = result instanceof Response ? result : result.response;
     let complete = false;
-    void render.pending.then(() => {
+    const text = response.text().then((html) => {
       complete = true;
+      return html;
     });
     await vi.waitFor(() => expect(query).toHaveBeenCalledOnce());
     const call = query.mock.calls[0];
@@ -198,9 +202,7 @@ test("a delayed task walkthrough renders its saved findings and checks before hy
     expect(call[1]).toEqual({ sessionId });
     expect(complete).toBe(false);
     resolveWalkthrough(saved);
-    const result = await render.pending;
-    const response = result instanceof Response ? result : result.response;
-    const html = await response.text();
+    const html = await text;
     expect(response.status).toBe(200);
     expect(html).toMatch(/<p[^>]*>The board supports playing and undoing a move\.<\/p>/);
     expect(html).toMatch(/<h2[^>]*>Play a move<\/h2>/);
@@ -208,8 +210,6 @@ test("a delayed task walkthrough renders its saved findings and checks before hy
     expect(html).toContain("</span>Undo the move</p>");
     expect(html).toContain('style="aspect-ratio:1280 / 1800"');
     expect(html).not.toContain("No screenshot for this step.");
-    expect(html).not.toContain('aria-label="Task walkthrough" aria-busy="true"');
-    expect(html).not.toContain("Pending fixture");
     expect(html).toContain("tasks/walkthrough:get");
     expect(html).toContain("convexQuery");
     expect(screenshot).not.toHaveBeenCalled();
