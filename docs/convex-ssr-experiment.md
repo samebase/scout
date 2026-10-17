@@ -55,17 +55,19 @@ workspace views; browser-dependent routes explicitly set `ssr: false`.
 No route list is registered in the HTTP action, and new ordinary public queries
 do not need custom server data plumbing. Personalized SSR is still out of scope.
 
-The Convex adapter awaits React's `renderToReadableStream(...).allReady` and passes
-the completed HTML to TanStack's `renderSsrHtmlResponse`. This is needed because
-`defaultRenderHandler` uses `renderToString`, which does not await Suspense,
-while `defaultStreamHandler` imports Node streams that Convex cannot bundle.
+The Convex adapter is TanStack's own `defaultStreamHandler`, so pages stream as on
+a Cloudflare Worker: the document goes out as it renders, and each Suspense boundary
+follows in its own chunk with the query data it waited for. Crawlers get the completed
+document, because TanStack waits for the whole render when the User-Agent is a bot.
+The handler imports Node streams for a branch that never runs on Convex, and the
+adapter's `convexSsr()` Vite plugin resolves them to a stub for the server build.
 Route matching, query hydration, response status, and cleanup remain framework-owned.
 Only About, Privacy, and Terms prerender, which keeps builds independent of backend data.
 
 Run `pnpm run check` for the automated coverage. The renderer tests delay an
-official Convex query and require its content and hydration data in the completed
-response. Component tests cover private access, authentication transitions, and
-navigation while queries are pending.
+official Convex query and require the response to stay open until the query resolves,
+with its content and hydration data in the completed response. Component tests cover
+private access, authentication transitions, and navigation while queries are pending.
 
 For a hosted smoke check, disable JavaScript in the browser and reload a public
 site, task, or Scout URL. Its content should already be visible. Re-enable
@@ -256,15 +258,15 @@ import. The generated `.js` files are Vite output, not authored source.
 The stock `defaultStreamHandler` failed Convex bundling on `node:stream` and
 `node:stream/web`. The original Scout bundle also imported `node:module`. The
 original `defaultRenderHandler` buffered a complete HTML document and required
-loader data. The current adapter described above also awaits query Suspense,
-while still returning a buffered response.
+loader data. The adapter buffered the whole render until its 0.9.0, which resolves
+the Node stream imports to a stub and streams with the stock handler.
 
 An intermediate Node-action attempt deployed but failed at runtime on the
 sidebar's dynamic React import. That route and action were removed from the
 final probe once direct HTTP rendering worked.
 
-Personalized SSR, incremental response streaming, TanStack server functions, production load,
-and cold-start latency remain outside the verified scope. The initial page is
+Personalized SSR, TanStack server functions, production load, and cold-start latency
+remain outside the verified scope. The initial page is
 bounded to six sites rather than rendering an unbounded collection. Private
 pages continue to authenticate and load through the existing browser queries.
 
