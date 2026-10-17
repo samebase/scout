@@ -207,9 +207,8 @@ export { default } from "@samebase/convex-hosting-tanstack-start/server";
 
 The shared entry no longer installs `URLSearchParams.size`, because Convex defines `size` itself now.
 The hosted Convex runtime returned `undefined` for it. Without the getter,
-TanStack normalizes `/?site=ssr-8` into `/site=ssr-8` and returns 404. A regression
-test reproduces that behavior using TanStack's actual URL normalizer and verifies
-the fix, including duplicate parameters and native-runtime preservation.
+TanStack normalizes `/?site=ssr-8` into `/site=ssr-8` and returns 404. With Convex's
+own `size`, TanStack keeps `/?site=ssr-8` on the `/` path with its `site` parameter.
 
 The relevant Vite settings are:
 
