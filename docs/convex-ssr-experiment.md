@@ -205,7 +205,7 @@ Scout's `src/server.ts` uses the shared server entry:
 export { default } from "@samebase/convex-hosting-tanstack-start/server";
 ```
 
-The shared entry also installs `URLSearchParams.size` when the runtime lacks that getter.
+The shared entry no longer installs `URLSearchParams.size`, because Convex defines `size` itself now.
 The hosted Convex runtime returned `undefined` for it. Without the getter,
 TanStack normalizes `/?site=ssr-8` into `/site=ssr-8` and returns 404. A regression
 test reproduces that behavior using TanStack's actual URL normalizer and verifies
@@ -281,8 +281,8 @@ and the [integration package manifest](https://github.com/samebase/convex-hostin
 
 The reusable code now lives in the private workspace package
 [`@samebase/convex-hosting-tanstack-start`](https://github.com/samebase/convex-hosting/tree/main/packages/convex-hosting-tanstack-start).
-It contains the Vite plugin and buffered server entry, including the
-URLSearchParams compatibility getter.
+It contains the Vite plugin and buffered server entry; the entry no longer installs the
+URLSearchParams compatibility getter, because Convex defines `size` itself now.
 It needs no component schema because it owns no persistent state.
 
 The [runnable example](https://github.com/samebase/convex-hosting/tree/main/examples/tanstack-ssr) keeps its page loader,
@@ -299,8 +299,9 @@ value. The experimental `/scout-shell` mount is no longer installed there.
 
 Repository validation includes `pnpm run check`, the Scout and example builds,
 and Convex's TypeScript check and hosted push. Tests cover the initial-to-live
-handoff, public filtering, seed isolation, HTTP cache policy, and URL normalization
-without `URLSearchParams.size`. The HTTP test also passed with the generated server
+handoff, public filtering, seed isolation, and HTTP cache policy; the URL normalization
+test without `URLSearchParams.size` is gone, because Convex defines `size` itself now
+and the adapter no longer installs it. The HTTP test also passed with the generated server
 directory temporarily absent, matching a clean CI checkout. Production was not
 changed. The original probe evidence remains in the ignored
 `apps/scout/ssr-probe.local/`; the real Scout checks above used the PR preview.
