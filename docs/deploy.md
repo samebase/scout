@@ -7,20 +7,21 @@ Convex serves TrailScout next to its backend with
 site. `convex/http.ts` answers a path without an uploaded file with the TanStack Start server
 build.
 
-GitHub Actions deploys. GitHub CI runs `pnpm run check` separately; the deploy workflows do not
-rerun it.
+GitHub Actions deploys with `.github/workflows/deploy.yml`, through the
+[deploy action](https://github.com/samebase/convex-hosting/blob/main/docs/deploy.md#github-actions)
+of convex-hosting. GitHub CI runs `pnpm run check` separately; the deploy workflow does not rerun
+it.
 
-- `.github/workflows/deploy.yml`: a push to `main` deploys production with the repository secret
-  `CONVEX_DEPLOY_KEY`.
-- `.github/workflows/preview.yml`: a pull request from this repository deploys a Convex preview
-  named after its branch with the repository secret `CONVEX_PREVIEW_DEPLOY_KEY`. It seeds the
-  development password account, sets the preview's `SITE_URL` to its site URL, and comments that
-  URL on the pull request. Later pushes reuse the preview until Convex deletes it.
+- A push to `main` deploys production with the repository secret `CONVEX_DEPLOY_KEY`.
+- A pull request from this repository deploys the Convex preview `pr-<number>` with the
+  repository secret `CONVEX_PREVIEW_DEPLOY_KEY` and shows its site URL on the pull request. The
+  workflow then seeds the development password account and sets the preview's `SITE_URL` to its
+  site URL. Later pushes reuse the preview, and the close of the pull request deletes it.
 
-Each workflow runs one deploy at a time per deployment and refuses a commit that is no longer the
-head of `main` or of the pull request. A key limited to some actions needs the permissions in the
-package README's [deploy tools and CI](https://github.com/samebase/convex-hosting#deploy-tools-and-ci)
-section.
+The workflow runs one deploy at a time per deployment, and the action refuses a commit that is no
+longer the head of `main` or of the pull request. A key limited to some actions needs the
+permissions in the package README's
+[deploy tools and CI](https://github.com/samebase/convex-hosting#deploy-tools-and-ci) section.
 
 New development and preview deployments take `JWT_PRIVATE_KEY`, `JWKS`, and the
 `DEV_SEED_AUTH_*` values from the project's environment defaults. Production keeps its own

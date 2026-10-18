@@ -147,8 +147,7 @@ dashboard setup.
 - `vite.config.ts` defines workspace formatting, lint rules, staged checks, and test projects.
 - `apps/scout/vite.config.ts` prerenders About, Privacy, and Terms.
 - `apps/scout/convex/http.ts` serves the uploaded files and renders every other page.
-- `.github/workflows/deploy.yml` and `.github/workflows/preview.yml` deploy production and
-  previews.
+- `.github/workflows/deploy.yml` deploys production and previews.
 - `docs/agent-runtime.md` describes Scout ownership, chats, tools, and handoffs.
 - `apps/scout/convex/` contains the backend, schema, authentication, and generated Convex bindings.
 - `apps/scout/src/` contains the React application and routes.
