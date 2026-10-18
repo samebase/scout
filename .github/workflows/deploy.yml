@@ -1,66 +1,34 @@
-# Deploys TrailScout through samebase/convex-hosting's deploy action, which runs `pnpm run deploy`
-# in apps/scout: a push to main deploys production, a pull request deploys the preview named after
-# the branch, and its close deletes that preview. CI runs the checks.
 name: Deploy
 
 on:
-  push: { branches: [main] }
-  pull_request: { branches: [main], types: [opened, synchronize, reopened, closed] }
-permissions: { contents: read, pull-requests: write, deployments: write }
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
 jobs:
-  deploy:
-    if: github.event.pull_request.head.repo.full_name == github.repository || !github.head_ref
+  production:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    environment: production
     concurrency:
-      group: deploy ${{ github.head_ref && format('preview/{0}', github.head_ref) || 'production' }}
+      group: production
       queue: max
-    environment:
-      name: ${{ github.head_ref && 'preview' || 'production' }}
-      url: ${{ steps.deploy.outputs.url }}
-      deployment: ${{ github.event.action != 'closed' }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with: { ref: "${{ github.event.pull_request.head.sha }}", persist-credentials: false }
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
-        with: { version: 11.1.1 }
-      # A closed pull request only deletes its preview. Without an install, the pnpm cache step
-      # would fail to save a store that does not exist.
-      - if: github.event.action != 'closed'
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with: { node-version: 24.x, cache: pnpm }
-      - if: github.event.action != 'closed'
-        run: pnpm install --frozen-lockfile
+        with:
+          version: 11.1.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.x
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
       - id: deploy
         uses: samebase/convex-hosting/actions/deploy@v1
         with:
           deploy-key: ${{ secrets.CONVEX_DEPLOY_KEY }}
-          preview-deploy-key: ${{ secrets.CONVEX_PREVIEW_DEPLOY_KEY }}
           working-directory: apps/scout
-      - if: steps.deploy.outputs.preview-name
-        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
-        with:
-          header: preview
-          message: |
-            Preview `${{ steps.deploy.outputs.preview-name }}`: ${{ steps.deploy.outputs.url }}
-            Deployment: ${{ steps.deploy.outputs.deployment-url }}
-            Dashboard: ${{ steps.deploy.outputs.dashboard-url }}
-      - if: github.event.action == 'closed'
-        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
-        with:
-          header: preview
-          append: true
-          only_update: true
-          message: Preview deleted when the pull request closed.
-      # A preview gets the development password account, and SITE_URL for the handoff links and
-      # the Polar checkout return URL.
-      - name: Seed the preview's password account and set its SITE_URL
-        if: steps.deploy.outputs.preview-name
-        working-directory: apps/scout
-        env:
-          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_PREVIEW_DEPLOY_KEY }}
-          PREVIEW: ${{ steps.deploy.outputs.preview-name }}
-          URL: ${{ steps.deploy.outputs.url }}
-        run: |
-          pnpm exec convex run devAuth:seedPasswordAccount --preview-name "$PREVIEW"
-          pnpm exec convex env set SITE_URL "$URL" --preview-name "$PREVIEW"

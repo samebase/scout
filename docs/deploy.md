@@ -7,18 +7,20 @@ Convex serves TrailScout next to its backend with
 site. `convex/http.ts` answers a path without an uploaded file with the TanStack Start server
 build.
 
-GitHub Actions deploys with `.github/workflows/deploy.yml`, through the
+GitHub Actions deploys through the
 [deploy action](https://github.com/samebase/convex-hosting/blob/main/docs/deploy.md#github-actions)
-of convex-hosting. GitHub CI runs `pnpm run check` separately; the deploy workflow does not rerun
+of convex-hosting. GitHub CI runs `pnpm run check` separately; the deploy workflows do not rerun
 it.
 
-- A push to `main` deploys production with the repository secret `CONVEX_DEPLOY_KEY`.
-- A pull request from this repository deploys a Convex preview named after its branch with the
-  repository secret `CONVEX_PREVIEW_DEPLOY_KEY` and shows its site URL on the pull request. The
-  workflow then seeds the development password account and sets the preview's `SITE_URL` to its
-  site URL. Later pushes reuse the preview, and the close of the pull request deletes it.
+- `.github/workflows/deploy.yml`: a push to `main` deploys production with the repository secret
+  `CONVEX_DEPLOY_KEY`.
+- `.github/workflows/preview.yml`: a pull request from this repository deploys a Convex preview
+  named after its branch with the repository secret `CONVEX_PREVIEW_DEPLOY_KEY` and comments its
+  site URL on the pull request. The workflow then seeds the development password account and sets
+  the preview's `SITE_URL` to its site URL. Later pushes reuse the preview, and the close of the
+  pull request deletes it.
 
-The workflow runs one deploy at a time per deployment, and the action refuses a commit that is no
+Each workflow runs one deploy at a time per deployment, and the action refuses a commit that is no
 longer the head of `main` or of the pull request. A key limited to some actions needs the
 permissions in the package README's
 [deploy tools and CI](https://github.com/samebase/convex-hosting#deploy-tools-and-ci) section.
