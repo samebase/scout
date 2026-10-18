@@ -1,52 +1,27 @@
 name: Preview
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, closed]
-
-# The jobs get only the preview key, so pull request code never holds the production key.
-# deployments: write lets the cleanup mark the branch's GitHub deployments inactive.
-permissions:
-  contents: read
-  pull-requests: write
-  deployments: write
-
+  pull_request: { types: [opened, synchronize, reopened, closed] }
 jobs:
   preview:
-    if: github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository
+    permissions: { contents: read, pull-requests: write }
+    if: github.event.action != 'closed' && github.event.pull_request.head.repo.full_name ==
+      github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    environment:
-      name: preview
-      url: ${{ steps.deploy.outputs.url }}
-    concurrency:
-      group: preview-${{ github.head_ref }}
-      queue: max
+    environment: { name: preview, url: "${{ steps.deploy.outputs.url }}" }
+    concurrency: { group: "preview-${{ github.head_ref }}", queue: max }
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          persist-credentials: false
+        with: { ref: "${{ github.event.pull_request.head.sha }}", persist-credentials: false }
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
-        with:
-          version: 11.1.1
+        with: { version: 11.1.1 }
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with:
-          node-version: 24.x
-          cache: pnpm
+        with: { node-version: 24.x, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - id: deploy
         uses: samebase/convex-hosting/actions/deploy@v1
         with:
-          deploy-key: ${{ secrets.CONVEX_PREVIEW_DEPLOY_KEY }}
-          working-directory: apps/scout
-      - uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
-        with:
-          header: preview
-          message: |
-            Preview `${{ steps.deploy.outputs.preview-name }}`: ${{ steps.deploy.outputs.url }}
-            Deployment: ${{ steps.deploy.outputs.deployment-url }}
-            Dashboard: ${{ steps.deploy.outputs.dashboard-url }}
+          { deploy-key: "${{ secrets.CONVEX_PREVIEW_DEPLOY_KEY }}", working-directory: apps/scout }
       # The development password account, and SITE_URL for the handoff links and the Polar
       # checkout return URL.
       - working-directory: apps/scout
@@ -57,20 +32,13 @@ jobs:
         run: |
           pnpm exec convex run devAuth:seedPasswordAccount --preview-name "$PREVIEW"
           pnpm exec convex env set SITE_URL "$URL" --preview-name "$PREVIEW"
-
   cleanup:
-    if: github.event.action == 'closed' && github.event.pull_request.head.repo.full_name == github.repository
+    permissions: { contents: read, pull-requests: write }
+    if: github.event.action == 'closed' && github.event.pull_request.head.repo.full_name ==
+      github.repository
     runs-on: ubuntu-latest
-    concurrency:
-      group: preview-${{ github.head_ref }}
-      queue: max
+    concurrency: { group: "preview-${{ github.head_ref }}", queue: max }
     steps:
       - uses: samebase/convex-hosting/actions/deploy@v1
         with:
-          deploy-key: ${{ secrets.CONVEX_PREVIEW_DEPLOY_KEY }}
-      - uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
-        with:
-          header: preview
-          append: true
-          only_update: true
-          message: Preview deleted when the pull request closed.
+          { deploy-key: "${{ secrets.CONVEX_PREVIEW_DEPLOY_KEY }}", working-directory: apps/scout }
