@@ -13,7 +13,7 @@ of convex-hosting. GitHub CI runs `pnpm run check` separately; the deploy workfl
 it.
 
 - A push to `main` deploys production with the repository secret `CONVEX_DEPLOY_KEY`.
-- A pull request from this repository deploys the Convex preview `pr-<number>` with the
+- A pull request from this repository deploys a Convex preview named after its branch with the
   repository secret `CONVEX_PREVIEW_DEPLOY_KEY` and shows its site URL on the pull request. The
   workflow then seeds the development password account and sets the preview's `SITE_URL` to its
   site URL. Later pushes reuse the preview, and the close of the pull request deletes it.
