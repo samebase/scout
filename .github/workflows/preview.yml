@@ -19,7 +19,7 @@ jobs:
         with: { node-version: 24.x, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - id: deploy
-        uses: samebase/convex-hosting/actions/deploy@v1
+        uses: samebase/convex-hosting/actions/preview@v1
         with:
           { deploy-key: "${{ secrets.CONVEX_PREVIEW_DEPLOY_KEY }}", working-directory: apps/scout }
       # The development password account, and SITE_URL for the handoff links and the Polar
@@ -39,6 +39,6 @@ jobs:
     runs-on: ubuntu-latest
     concurrency: { group: "preview-${{ github.head_ref }}", queue: max }
     steps:
-      - uses: samebase/convex-hosting/actions/deploy@v1
+      - uses: samebase/convex-hosting/actions/cleanup@v1
         with:
           { deploy-key: "${{ secrets.CONVEX_PREVIEW_DEPLOY_KEY }}", working-directory: apps/scout }
