@@ -1,84 +1,44 @@
 name: Preview
 
 on:
-  pull_request:
-    branches: [main]
-
-permissions:
-  contents: read
-
+  pull_request: { types: [opened, synchronize, reopened, closed] }
 jobs:
   preview:
-    name: Deploy preview
-    # A pull request from a fork gets no secrets.
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    permissions: { contents: read, pull-requests: write }
+    if: github.event.action != 'closed' && github.event.pull_request.head.repo.full_name ==
+      github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: read
-      pull-requests: write # gh pr comment posts the preview URL.
-    # One run per pull request; a newer push waits, so the last deploy is the newest commit.
-    concurrency:
-      group: preview-${{ github.event.pull_request.number }}
-      cancel-in-progress: false
-
+    environment: { name: preview, url: "${{ steps.deploy.outputs.url }}" }
+    concurrency: { group: "preview-${{ github.head_ref }}", queue: max }
     steps:
-      # The branch head, not the default merge commit: the preview is the branch, and the head
-      # check compares the checkout with the branch.
-      - name: Checkout code
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with: { ref: "${{ github.event.pull_request.head.sha }}", persist-credentials: false }
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        with: { version: 11.1.1 }
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with: { node-version: 24.x, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - id: deploy
+        uses: samebase/convex-hosting/actions/preview@v1
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          persist-credentials: false
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
-        with:
-          version: 11.1.1
-
-      - name: Setup Node.js
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with:
-          node-version: 24.x
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      # A re-run of an old run checks out its old commit, and its deploy would put older code
-      # over the newer preview. Only the commit that the branch points to now deploys.
-      - name: Check that this commit is the head of the branch
-        working-directory: apps/scout
-        run: node ./scripts/verify-current-branch-head.ts
-
-      # The preview deployment is named after the branch, so a second push reuses it. The deploy
-      # writes url=<site URL> to $GITHUB_OUTPUT.
-      - name: Deploy the preview
-        id: deploy
-        working-directory: apps/scout
+          { deploy-key: "${{ secrets.CONVEX_PREVIEW_DEPLOY_KEY }}", working-directory: apps/scout }
+      # The development password account, and SITE_URL for the handoff links and the Polar
+      # checkout return URL.
+      - working-directory: apps/scout
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_PREVIEW_DEPLOY_KEY }}
-        run: pnpm run deploy --preview-name "$GITHUB_HEAD_REF"
-
-      - name: Seed the password account
-        working-directory: apps/scout
-        env:
-          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_PREVIEW_DEPLOY_KEY }}
-        run: pnpm exec convex run devAuth:seedPasswordAccount --preview-name "$GITHUB_HEAD_REF"
-
-      # Handoff links and the Polar checkout return URL are built from SITE_URL.
-      - name: Set SITE_URL to the preview URL
-        working-directory: apps/scout
-        env:
-          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_PREVIEW_DEPLOY_KEY }}
-          URL: ${{ steps.deploy.outputs.url }}
-        run: pnpm exec convex env set SITE_URL "$URL" --preview-name "$GITHUB_HEAD_REF"
-
-      - name: Post the preview URL
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR: ${{ github.event.pull_request.number }}
+          PREVIEW: ${{ steps.deploy.outputs.preview-name }}
           URL: ${{ steps.deploy.outputs.url }}
         run: |
-          gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --edit-last --create-if-none \
-            --body "Preview: $URL"
+          pnpm exec convex run devAuth:seedPasswordAccount --preview-name "$PREVIEW"
+          pnpm exec convex env set SITE_URL "$URL" --preview-name "$PREVIEW"
+  cleanup:
+    permissions: { contents: read, pull-requests: write }
+    if: github.event.action == 'closed' && github.event.pull_request.head.repo.full_name ==
+      github.repository
+    runs-on: ubuntu-latest
+    concurrency: { group: "preview-${{ github.head_ref }}", queue: max }
+    steps:
+      - uses: samebase/convex-hosting/actions/cleanup@v1
+        with:
+          { deploy-key: "${{ secrets.CONVEX_PREVIEW_DEPLOY_KEY }}", working-directory: apps/scout }
