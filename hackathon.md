@@ -15,7 +15,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-10-22T16:00:18Z
+- **Last updated:** 2026-10-22T16:48:25Z
 
 ## Log
 
@@ -2016,8 +2016,14 @@ Update Scout's application libraries and build tools. Read the new OpenAI comput
 history records and keep browser sign-in requests separate from their recorded responses
 (`apps/scout/package.json`, `apps/scout/convex/tasks/output.ts`).
 
-### 2026-10-22 - working tree - v332
+### 2026-10-22 - 3d1035f - v332
 
 Define Scout's deployments in Alchemy so Samebase can read their state from the team's store.
 Keep the current Convex site and add isolated pull request stages with preview sign-in and cleanup
 (`alchemy.run.ts`, `.github/workflows/alchemy.yml`).
+
+### 2026-10-22 - working tree - v334
+
+Declare Scout's existing private and public R2 buckets in Alchemy so Samebase can show the
+storage resources. Keep their settings and retain the shared buckets when a stage is removed
+(`alchemy.run.ts`).

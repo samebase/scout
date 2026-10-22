@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import * as Convex from "@samebase/alchemy-convex";
 import * as Alchemy from "alchemy";
 import { adopt } from "alchemy/AdoptPolicy";
+import * as Cloudflare from "alchemy/Cloudflare";
 import * as GitHub from "alchemy/GitHub";
 import * as Output from "alchemy/Output";
 import * as Effect from "effect/Effect";
@@ -14,11 +15,50 @@ const commit = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).
 export default Alchemy.Stack(
   "samebase/scout",
   {
-    providers: Layer.mergeAll(Convex.providers(), GitHub.providers()),
+    providers: Layer.mergeAll(Convex.providers(), Cloudflare.providers(), GitHub.providers()),
     state: Convex.state({ team: "nicu" }),
   },
   Effect.gen(function* () {
     const { stage } = yield* Alchemy.Stack;
+    if (stage === "prod") {
+      const bucketSettings = {
+        storageClass: "Standard",
+        jurisdiction: "default",
+        publicAccess: false,
+        cors: [],
+        domains: [],
+        lifecycleRules: [
+          {
+            id: "Default Multipart Abort Rule",
+            enabled: true,
+            prefix: "",
+            abortMultipartUploadsTransition: { condition: { type: "Age", maxAge: 604800 } },
+          },
+        ],
+      } satisfies Cloudflare.R2.BucketProps;
+
+      yield* Cloudflare.R2.Bucket("ProductionWorkspaceBucket", {
+        ...bucketSettings,
+        name: "scout-workspaces-prod",
+      }).pipe(Alchemy.RemovalPolicy.retain());
+      yield* Cloudflare.R2.Bucket("DevelopmentWorkspaceBucket", {
+        ...bucketSettings,
+        name: "scout-workspaces",
+      }).pipe(Alchemy.RemovalPolicy.retain());
+      yield* Cloudflare.R2.Bucket("PublicMediaBucket", {
+        ...bucketSettings,
+        name: "scout-public-media",
+        domains: [
+          {
+            name: "scout-media.samebase.com",
+            zone: "2f2e7713e926a7282b25796b02826f02",
+            enabled: true,
+            minTLS: "1.2",
+          },
+        ],
+      }).pipe(Alchemy.RemovalPolicy.retain());
+    }
+
     // A slug selects the existing project without creating, renaming, or deleting it.
     const project = yield* Convex.Project("Project", { team: "nicu", slug: "scout" }).pipe(
       adopt(true),
