@@ -96,6 +96,59 @@ it("does not treat unknown reasoning status as a completed item", () => {
   expect(output.drain()[0]).toMatchObject({ text: "Still working", complete: false });
 });
 
+it("keeps computer use calls pending while preserving immutable approval history", () => {
+  const output = new SessionOutput();
+  const call = {
+    id: "computer",
+    type: "computer_use_call",
+    status: "in_progress",
+    title: "Opening the page",
+    output: null,
+    turn_id: "turn",
+  } satisfies AgentSessionItem;
+  const approvalHistory = [
+    {
+      id: "approval",
+      type: "computer_use_approval_request",
+      request_id: "request",
+      turn_id: "turn",
+      request: {
+        type: "browser_authentication",
+        credential_origin: "https://example.test",
+        fields: [],
+        options: [],
+        reason: "Sign in to continue",
+      },
+    },
+    {
+      id: "approval-result",
+      type: "computer_use_approval_request_result",
+      request_id: "request",
+      turn_id: "turn",
+      response: { type: "browser_authentication", action: "cancel" },
+    },
+  ] satisfies AgentSessionItem[];
+  for (const item of [call, ...approvalHistory]) {
+    output.apply({ ...eventBase, type: "agent.session.turn.item.added", item });
+  }
+  expect(
+    output.drain().map(({ providerItemId, complete }) => ({ providerItemId, complete })),
+  ).toEqual([
+    { providerItemId: "computer", complete: false },
+    { providerItemId: "approval", complete: true },
+    { providerItemId: "approval-result", complete: true },
+  ]);
+  for (const item of approvalHistory) {
+    output.apply({ ...eventBase, type: "agent.session.turn.item.added", item });
+  }
+  output.apply({
+    ...eventBase,
+    type: "agent.session.turn.item.done",
+    item: { ...call, status: "completed" },
+  });
+  expect(output.drain()).toMatchObject([{ providerItemId: "computer", complete: true }]);
+});
+
 it("replaces streamed output with its final item and ignores older buffered events after recovery", () => {
   const output = new SessionOutput();
   const delta: AgentSessionEvent = {

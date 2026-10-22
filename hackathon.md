@@ -15,7 +15,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-10-02T08:49:56Z
+- **Last updated:** 2026-10-22T15:43:01Z
 
 ## Log
 
@@ -2004,8 +2004,14 @@ Updated Axios, brace-expansion, and DOMPurify to patched releases used by browse
 requests, Scout's shell, and analytics. Override Firecrawl's pinned Axios version
 until its SDK adopts a patched release (`pnpm-workspace.yaml`, `pnpm-lock.yaml`).
 
-### 2026-10-02 - working tree - v321
+### 2026-10-02 - 6d70c63 - v321
 
 Enable Firecrawl recordings when opening review browsers and play its desktop video
 without tab URL matching. Missing recordings show the provider error and allow a manual retry
 (`apps/scout/convex/scout/lib/firecrawl.ts`, `apps/scout/src/components/browser-replay.tsx`).
+
+### 2026-10-22 - working tree - v331
+
+Update Scout's application libraries and build tools. Read the new OpenAI computer-use
+history records and keep browser sign-in requests separate from their recorded responses
+(`apps/scout/package.json`, `apps/scout/convex/tasks/output.ts`).

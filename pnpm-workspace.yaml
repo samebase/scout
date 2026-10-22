@@ -4,7 +4,7 @@ packages:
 
 auditConfig:
   ignoreGhsas:
-    # Recheck after 2026-10-17. No patched sprintf-js release exists.
+    # Rechecked 2026-10-22. No patched sprintf-js release exists.
     # Its only caller is just-bash, which catches printf precision RangeErrors
     # and returns exit code 1. workspaceShell.test.ts covers f, e, and g formats.
     - GHSA-hp3w-g68c-fv3c
@@ -16,35 +16,14 @@ allowBuilds:
   msw: true
   node-liblzma: false
 overrides:
-  "@hono/node-server": 2.0.10
-  "@vitest/browser-preview": 4.1.11
-  "@vitest/mocker": 4.1.11
-  baseline-browser-mapping: 2.11.0
-  browserslist: 4.28.7
-  fast-uri: 3.1.8
-  "firecrawl>axios": 1.20.0
-  hono: "^4.13.5"
-  ip-address: 10.7.1
-  js-yaml: "^4.3.2"
-  nanoid: 3.3.18
-  postcss: "^8.5.23"
-  postcss-selector-parser: 7.1.6
-  proxy-addr: 2.0.8
-  qs: 6.16.0
-  smol-toml: 1.9.0
-  source-map-js: 1.2.2
-  tinypool: 2.1.2
-  undici: 7.29.1
-  vite: "catalog:"
-  vitest: "catalog:"
+  # guarded-fetch pins an older Undici release with patched request-validation flaws.
+  "guarded-fetch>undici": 7.30.1
+  vite@*: "catalog:"
 catalog:
-  vite: npm:@voidzero-dev/vite-plus-core@0.2.7
-  vitest: 4.1.11
-  vite-plus: 0.2.7
+  vite: npm:@voidzero-dev/vite-plus-core@1.3.0
+  vite-plus: 1.3.0
 peerDependencyRules:
   allowAny:
     - vite
-    - vitest
   allowedVersions:
     vite: "*"
-    vitest: "*"

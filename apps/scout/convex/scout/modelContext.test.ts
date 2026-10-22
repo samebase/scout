@@ -23,10 +23,10 @@ const result = (id: string): ModelMessage => ({
     },
   ],
 });
-const recent = Array.from(
-  { length: KEEP_RECENT_MESSAGES },
-  (_, i): ModelMessage => ({ role: "assistant", content: `Recent ${i}` }),
-);
+const recent = Array.from({ length: KEEP_RECENT_MESSAGES }, (_, i): ModelMessage => ({
+  role: "assistant",
+  content: `Recent ${i}`,
+}));
 
 describe("conversation compaction boundaries", () => {
   test("retains recent messages and moves a cut before an unresolved parallel tool batch", () => {

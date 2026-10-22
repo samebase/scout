@@ -293,6 +293,7 @@ export async function advance(
       ]),
     );
     const model = gatewayModel(session.model);
+    // @ts-expect-error Agent repeats AI SDK's large model-ID union in its options intersection; this is a concrete LanguageModelV4.
     const agent = new Agent(components.agent, {
       name: "Scout",
       languageModel: model,

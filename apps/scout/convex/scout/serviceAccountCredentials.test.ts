@@ -1,6 +1,6 @@
 import { ADMIN_EMAIL, insertTestAccount } from "../testing/accounts";
 import { convexTest } from "convex-test";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test } from "vite-plus/test";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import schema from "../schema";

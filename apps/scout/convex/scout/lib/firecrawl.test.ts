@@ -15,16 +15,15 @@ afterEach(() => {
 
 function browserLifecycle() {
   return {
-    deleteBrowser: vi.fn(
-      async (): Promise<BrowserDeleteResponse> => ({
-        success: true,
-        sessionDurationMs: 1_500,
-        creditsBilled: 2,
-      }),
-    ),
-    listBrowsers: vi.fn(
-      async (): Promise<BrowserListResponse> => ({ success: true, sessions: [] }),
-    ),
+    deleteBrowser: vi.fn(async (): Promise<BrowserDeleteResponse> => ({
+      success: true,
+      sessionDurationMs: 1_500,
+      creditsBilled: 2,
+    })),
+    listBrowsers: vi.fn(async (): Promise<BrowserListResponse> => ({
+      success: true,
+      sessions: [],
+    })),
   };
 }
 

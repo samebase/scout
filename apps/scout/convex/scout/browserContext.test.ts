@@ -1,5 +1,5 @@
 import type { ModelMessage } from "ai";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { compactBrowserModelContext, compactedBrowserSnapshotCount } from "./browserContext";
 
 describe("browser model context", () => {

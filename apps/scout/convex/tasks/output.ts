@@ -9,6 +9,8 @@ import {
 export function itemIsComplete(item: AgentSessionItem) {
   return (
     item.type === "agent_message" ||
+    item.type === "computer_use_approval_request" ||
+    item.type === "computer_use_approval_request_result" ||
     item.status === "completed" ||
     item.status === "failed" ||
     item.status === "incomplete"
@@ -57,6 +59,18 @@ export function presentItem(item: AgentSessionItem) {
       break;
     case "mcp_call":
       text = "MCP tool";
+      break;
+    case "computer_use_call":
+      text = item.title ?? "Computer use";
+      break;
+    case "computer_use_approval_request":
+      text = item.request.reason ?? "Browser sign-in requested";
+      break;
+    case "computer_use_approval_request_result":
+      text =
+        item.response.action === "submit"
+          ? "Browser sign-in submitted"
+          : "Browser sign-in cancelled";
       break;
     case "agent_message":
       text = "Agent message";

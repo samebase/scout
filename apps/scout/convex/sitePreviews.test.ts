@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 import { R2 } from "@convex-dev/r2";
 import { convexTest } from "convex-test";
-import { Firecrawl, SdkError } from "firecrawl";
+import { Firecrawl, SdkError, type Document, type ScrapeOptions } from "firecrawl";
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
 import { api, internal } from "./_generated/api";
 import schema from "./schema";
@@ -13,7 +13,7 @@ const png = Buffer.from(
   "base64",
 );
 const providerImage = "https://storage.googleapis.com/firecrawl-media/screenshot-test.png";
-const scrape = vi.fn<Firecrawl["scrape"]>();
+const scrape = vi.fn<(url: string, options?: ScrapeOptions) => Promise<Document>>();
 const store = vi.fn<R2["store"]>();
 const getUrl = vi.fn<R2["getUrl"]>();
 const deleteObject = vi.fn<R2["deleteObject"]>();
@@ -46,6 +46,7 @@ beforeEach(() => {
         ? Response.json({ success: true, errors: [] })
         : new Response(png, { headers: { "content-type": "image/png" } }),
     );
+  // @ts-expect-error These tests use the URL overload; Vitest requires Firecrawl's unrelated Alexandria overload too.
   vi.spyOn(Firecrawl.prototype, "scrape").mockImplementation(scrape);
   vi.spyOn(R2.prototype, "store").mockImplementation(store);
   vi.spyOn(R2.prototype, "getUrl").mockImplementation(getUrl);
