@@ -7,27 +7,59 @@ Convex serves TrailScout next to its backend with
 site. `convex/http.ts` answers a path without an uploaded file with the TanStack Start server
 build.
 
-GitHub Actions deploys through the
-[deploy action](https://github.com/samebase/convex-hosting/blob/main/docs/deploy.md#github-actions)
-of convex-hosting. GitHub CI runs `pnpm run check` separately; the deploy workflows do not rerun
-it.
+The root `alchemy.run.ts` defines the `samebase/scout` stack. It selects the existing `scout`
+project in the Convex team `nicu`. Production keeps its deployment, data, signing keys, and URL.
+The deployment command runs in `apps/scout` through `Convex.Deployment.rootDir`.
 
-- `.github/workflows/deploy.yml`: a push to `main` deploys production with the repository secret
-  `CONVEX_DEPLOY_KEY`.
-- `.github/workflows/preview.yml`: a pull request from this repository deploys a Convex preview
-  named after its branch with the repository secret `CONVEX_PREVIEW_DEPLOY_KEY` and comments its
-  site URL on the pull request. The workflow then seeds the development password account and sets
-  the preview's `SITE_URL` to its site URL. Later pushes reuse the preview, and the close of the
-  pull request deletes it.
+`.github/workflows/alchemy.yml` runs the stack from the repository root:
 
-Each workflow runs one deploy at a time per deployment, and the action refuses a commit that is no
-longer the head of `main` or of the pull request. A key limited to some actions needs the
-permissions in the package README's
-[deploy tools and CI](https://github.com/samebase/convex-hosting#deploy-tools-and-ci) section.
+- A push to `main` deploys stage `prod`. The stack adopts the existing production deployment
+  and retains it when the stack is destroyed.
+- A pull request from this repository deploys stage `pr-<number>`, with a Convex preview of the
+  same name. The stack comments its URLs on the pull request. The preview command sets `SITE_URL`
+  and seeds the development password account after the hosting deployment.
+- Closing the pull request destroys its stage and deletes its preview. The existing Convex
+  project and the preview comment are retained. Forks receive no preview credentials.
+
+The repository secret `CONVEX_ACCESS_TOKEN` is a team access token for `nicu`, dedicated to this
+repository. Alchemy creates temporary deployment keys for its commands. The former
+`CONVEX_DEPLOY_KEY` and `CONVEX_PREVIEW_DEPLOY_KEY` repository secrets are no longer read by this
+workflow.
+
+Each stage has one queue shared by deployment and cleanup. Before deployment,
+`scripts/verify-deployment-head.ts` checks that the checkout is still the head of the branch.
+GitHub CI runs `pnpm run check` separately. Deployment does not repeat it.
+
+The team's `alchemy-state` Convex project stores the stack state. Its `samebase.run` output
+records the repository, stack file, branch, commit, pull request, and workflow run for Samebase's
+repository overview. `SCOUT_COMMIT` is a deployment input so a change outside `apps/scout` also
+deploys. Existing R2 settings and other deployment environment variables remain unmanaged.
 
 New development and preview deployments take `JWT_PRIVATE_KEY`, `JWKS`, and the
 `DEV_SEED_AUTH_*` values from the project's environment defaults. Production keeps its own
 signing keys and `SITE_URL`.
+
+## Local inspection
+
+Use the Convex CLI login or set `CONVEX_ACCESS_TOKEN` for the intended team. Run Alchemy from the
+repository root:
+
+```sh
+pnpm exec alchemy plan --stage prod --no-input
+```
+
+Production deployment runs through GitHub Actions. Development keeps `pnpm run deploy:dev` and
+the worktree's own selected cloud development deployment.
+
+## First migration
+
+Previews created by the previous workflow have branch-based names. They are outside the new
+stack state. Check the corresponding pull requests before deleting those deployments; deleting
+`pr-<number>` does not delete a branch-named preview.
+
+Cleanup uses the stack on the base branch. If the first migration pull request closes without
+merging, remove its preview with `pnpm exec alchemy destroy --stage pr-<number> --yes --no-input`
+from the migration checkout, because the base branch does not yet have the stack.
 
 ## Rules
 

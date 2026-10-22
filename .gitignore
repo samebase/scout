@@ -14,6 +14,7 @@ dist-ssr
 .dev.vars*
 .env*
 .convex
+.alchemy
 **/convex/.tmp
 
 # Editor directories and files

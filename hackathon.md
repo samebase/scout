@@ -2010,8 +2010,14 @@ Enable Firecrawl recordings when opening review browsers and play its desktop vi
 without tab URL matching. Missing recordings show the provider error and allow a manual retry
 (`apps/scout/convex/scout/lib/firecrawl.ts`, `apps/scout/src/components/browser-replay.tsx`).
 
-### 2026-10-22 - working tree - v331
+### 2026-10-22 - e805a91 - v331
 
 Update Scout's application libraries and build tools. Read the new OpenAI computer-use
 history records and keep browser sign-in requests separate from their recorded responses
 (`apps/scout/package.json`, `apps/scout/convex/tasks/output.ts`).
+
+### 2026-10-22 - working tree - v332
+
+Define Scout's deployments in Alchemy so Samebase can read their state from the team's store.
+Keep the current Convex site and add isolated pull request stages with preview sign-in and cleanup
+(`alchemy.run.ts`, `.github/workflows/alchemy.yml`).
