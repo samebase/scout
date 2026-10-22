@@ -1,6 +1,6 @@
 import { generateText } from "ai";
+import { convexGateway } from "@convex-dev/ai-sdk-provider";
 import { afterEach, expect, test, vi } from "vite-plus/test";
-import { scoutLanguageModel } from "./models";
 import { SCOUT_REASONING_EFFORTS } from "../../shared/scoutReasoning";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -33,7 +33,7 @@ test.each(SCOUT_REASONING_EFFORTS)(
     vi.stubGlobal("fetch", fetchMock);
 
     const result = await generateText({
-      model: scoutLanguageModel("openai/gpt-5.6-luna"),
+      model: convexGateway("openai/gpt-5.6-luna"),
       prompt: "Reply briefly.",
       providerOptions: { convexGateway: { reasoningEffort: effort } },
       maxRetries: 0,
