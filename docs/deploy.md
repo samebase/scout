@@ -26,6 +26,10 @@ repository. Alchemy creates temporary deployment keys for its commands. The form
 `CONVEX_DEPLOY_KEY` and `CONVEX_PREVIEW_DEPLOY_KEY` repository secrets are no longer read by this
 workflow.
 
+The production job uses `CLOUDFLARE_ACCOUNT_ID` and the repository secret `CLOUDFLARE_API_TOKEN`
+to manage the buckets. Pull request jobs receive no Cloudflare token. Scout continues using its
+existing bucket-scoped S3 credentials in Convex.
+
 Each stage has one queue shared by deployment and cleanup. Before deployment,
 `scripts/verify-deployment-head.ts` checks that the checkout is still the head of the branch.
 GitHub CI runs `pnpm run check` separately. Deployment does not repeat it.
@@ -33,7 +37,21 @@ GitHub CI runs `pnpm run check` separately. Deployment does not repeat it.
 The team's `alchemy-state` Convex project stores the stack state. Its `samebase.run` output
 records the repository, stack file, branch, commit, pull request, and workflow run for Samebase's
 repository overview. `SCOUT_COMMIT` is a deployment input so a change outside `apps/scout` also
-deploys. Existing R2 settings and other deployment environment variables remain unmanaged.
+deploys. Deployment environment variables other than `SCOUT_COMMIT` remain unmanaged.
+
+Stage `prod` also owns the existing R2 buckets `scout-workspaces-prod`, `scout-workspaces`, and
+`scout-public-media`, so Samebase can show them with Scout's other resources. All three have a
+retain policy. Preview stages keep using their existing Convex environment defaults and do not
+own these shared buckets. R2 credentials, object keys, and the public-media cache rule stay as
+configured.
+
+The bucket declarations preserve the settings read from Cloudflare on October 22, 2026:
+Standard storage, default jurisdiction, no CORS rules, disabled `r2.dev` access, and the existing
+seven-day rule for aborting incomplete multipart uploads. They keep the public custom domain
+`scout-media.samebase.com` enabled with minimum TLS 1.2. Existing locations and lock rules remain
+unmanaged. Before changing these declarations, read the live settings: Alchemy's bucket plan does
+not refresh CORS, lifecycle, or domain settings, but adoption reconciles them. Omitting CORS or
+lifecycle rules clears them.
 
 New development and preview deployments take `JWT_PRIVATE_KEY`, `JWKS`, and the
 `DEV_SEED_AUTH_*` values from the project's environment defaults. Production keeps its own
@@ -42,7 +60,8 @@ signing keys and `SITE_URL`.
 ## Local inspection
 
 Use the Convex CLI login or set `CONVEX_ACCESS_TOKEN` for the intended team. Run Alchemy from the
-repository root:
+repository root. Production plans also need a configured Alchemy Cloudflare profile, or
+`CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` in the environment:
 
 ```sh
 pnpm exec alchemy plan --stage prod --no-input
