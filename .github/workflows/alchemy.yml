@@ -1,0 +1,80 @@
+name: Alchemy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Deploy and destroy share a queue because the team state store has no lock.
+concurrency:
+  group: alchemy-${{ github.event.pull_request.number || github.ref_name }}
+  queue: max
+  cancel-in-progress: false
+
+env:
+  STAGE: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.number) || 'prod' }}
+  PULL_REQUEST: ${{ github.event.pull_request.number }}
+
+jobs:
+  deploy:
+    name: Deploy ${{ github.event_name == 'pull_request' && 'the preview' || 'production' }}
+    if: >-
+      github.event.action != 'closed' && (github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository || github.event_name !=
+      'pull_request' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: write
+    environment:
+      name: ${{ github.event_name == 'pull_request' && 'preview' || 'production' }}
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with: { node-version: 24.x, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: Check the current branch head
+        run: node ./scripts/verify-deployment-head.ts
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Deploy the stack
+        id: deploy
+        run: pnpm exec alchemy deploy --stage ${{ env.STAGE }} --yes --no-input
+        env:
+          CONVEX_ACCESS_TOKEN: ${{ secrets.CONVEX_ACCESS_TOKEN }}
+          GITHUB_TOKEN: ${{ github.event_name == 'pull_request' && github.token || '' }}
+
+  destroy:
+    name: Destroy the preview
+    if: >-
+      github.event.action == 'closed' && github.event.pull_request.head.repo.full_name ==
+      github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Use the base branch so a broken dependency change in a PR cannot prevent its cleanup.
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with: { node-version: 24.x, cache: pnpm }
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Destroy the stack
+        run: pnpm exec alchemy destroy --stage ${{ env.STAGE }} --yes --no-input
+        env:
+          CONVEX_ACCESS_TOKEN: ${{ secrets.CONVEX_ACCESS_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}

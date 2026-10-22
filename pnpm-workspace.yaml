@@ -15,6 +15,7 @@ allowBuilds:
   esbuild: true
   msw: true
   node-liblzma: false
+  workerd: false
 overrides:
   # guarded-fetch pins an older Undici release with patched request-validation flaws.
   "guarded-fetch>undici": 7.30.1
@@ -27,3 +28,5 @@ peerDependencyRules:
     - vite
   allowedVersions:
     vite: "*"
+minimumReleaseAgeExclude:
+  - "@samebase/alchemy-convex@0.8.0"

@@ -21,7 +21,11 @@
     "prepare": "vp config"
   },
   "devDependencies": {
+    "@effect/platform-node": "4.0.5",
+    "@samebase/alchemy-convex": "0.8.0",
     "@types/node": "^24.19.2",
+    "alchemy": "2.0.0-beta.83",
+    "effect": "4.0.5",
     "typescript": "~7.0.2",
     "vite": "catalog:",
     "vite-plus": "catalog:"
