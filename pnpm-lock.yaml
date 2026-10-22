@@ -299,7 +299,7 @@ importers:
         version: 0.1.128(@standard-schema/spec@1.1.0)(convex@1.47.0(react@19.3.1))(hono@4.13.13)(react@19.3.1)(typescript@7.0.2)(zod@4.6.7)
       firecrawl:
         specifier: ^4.50.0
-        version: 4.50.0(debug@4.4.3)
+        version: 4.51.0(debug@4.4.3)
       hls.js:
         specifier: ^1.7.3
         version: 1.7.3
@@ -3469,8 +3469,8 @@ packages:
     resolution: {integrity: sha512-1yD6RmLI1XBfxugvORwlck6f75tYL+iR0jqwsOrOxMZyGYqUuDhJ0l4AXdO1iX/FTs9cBAMEk1gWSEx1kSbylg==}
     engines: {node: '>=6'}
 
-  firecrawl@4.50.0:
-    resolution: {integrity: sha512-8XKMYKjofhBjdii/0DZON7J9ISVVDAdJ3z2g/GdRhseWMANT5ELMI4Ov4WKs6bTrAH3n5+n0vRo+xd2evf0OcQ==}
+  firecrawl@4.51.0:
+    resolution: {integrity: sha512-QHYNtPAOuyR3/JaA1aI1lrB6VSfzDnfBUGMdXS7Qvqcs5Vxlye1zepShq5KN8iEaTlc+gAoYrSKxxNPxHyzh1w==}
     engines: {node: '>=18.0.0'}
 
   flatted@3.4.4:
@@ -8315,7 +8315,7 @@ snapshots:
     dependencies:
       locate-path: 3.0.0
 
-  firecrawl@4.50.0(debug@4.4.3):
+  firecrawl@4.51.0(debug@4.4.3):
     dependencies:
       axios: 1.20.0(debug@4.4.3)
       typescript-event-target: 1.1.2
