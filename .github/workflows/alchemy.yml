@@ -42,7 +42,6 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
-        with: { version: 11.1.1 }
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with: { node-version: 24.x, cache: pnpm }
       - run: pnpm install --frozen-lockfile
@@ -71,7 +70,6 @@ jobs:
           ref: ${{ github.event.pull_request.base.ref }}
           persist-credentials: false
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
-        with: { version: 11.1.1 }
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with: { node-version: 24.x, cache: pnpm }
       - run: pnpm install --frozen-lockfile --ignore-scripts
