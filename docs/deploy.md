@@ -48,6 +48,20 @@ repository root:
 pnpm exec alchemy plan --stage prod --no-input
 ```
 
+Inspect each stage's resource path, commit, and workflow run in
+[Samebase's Alchemy view](https://samebase.com/repo/samebase/scout/alchemy).
+
+Before removing a closed pull request's preview, inspect its cleanup plan. Replace `123` with
+the pull request number:
+
+```sh
+pnpm exec alchemy destroy --stage pr-123 --dry-run --no-input
+```
+
+The plan deletes `Site` and orphans `Project` and `PreviewComment`. Orphaned resources remain
+on their providers but leave the stage state during an actual destroy. The dry run changes
+neither resources nor stage state. Keep previews for open pull requests.
+
 Production deployment runs through GitHub Actions. Development keeps `pnpm run deploy:dev` and
 the worktree's own selected cloud development deployment.
 
