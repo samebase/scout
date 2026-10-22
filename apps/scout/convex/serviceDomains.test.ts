@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test } from "vite-plus/test";
 import { canonicalCredentialHost, canonicalServiceDomain } from "./serviceDomains";
 
 describe("service and credential domains", () => {

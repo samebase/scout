@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+// @vitest-environment-options {"settings":{"disableCSSFileLoading":true,"handleDisabledFileLoadingAsSuccess":true}}
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {

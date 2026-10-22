@@ -25,6 +25,17 @@ corepack enable
 pnpm install
 ```
 
+## Dependency checks
+
+Run `pnpm run check`, `pnpm run build`, `pnpm audit signatures`, and `pnpm audit --prod`
+after dependency changes. CI reads the pnpm version from the root `packageManager` field.
+Node types stay on major 24 to match `.node-version`.
+
+Keep `convex-test` at exactly `0.0.57` until its module loader runs outside the transaction
+timer guards introduced in [0.0.58](https://github.com/convex/convex-test/blob/ebcf1f74deedba56b9ea7efb8a52d835737f3771/CHANGELOG.md#0058).
+Later versions block Vite's loader timers during nested mutations. Check
+`convex/tasks/convexAgent.test.ts` and `convex/tasks/runtime.test.ts` before removing this pin.
+
 ## Run the app
 
 The app lives in `apps/scout/`. Its `.env.local` and other app environment files belong there.

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// @vitest-environment-options {"settings":{"disableCSSFileLoading":true,"handleDisabledFileLoadingAsSuccess":true}}
+// @vitest-environment-options {"settings":{"disableCSSFileLoading":true,"handleDisabledFileLoadingAsSuccess":true,"enableIframePageLoading":true}}
 import { afterEach, expect, test, vi } from "vite-plus/test";
 import type { CaptureResult } from "posthog-js";
 import { record } from "posthog-js/rrweb";
@@ -58,11 +58,11 @@ test("the actual SDK emits only the allowed page metadata and leaves no analytic
 test("the bundled recorder keeps the page readable and masks only credentials and marked areas", async () => {
   vi.stubGlobal("DOMTokenList", DOMTokenList);
   // rrweb calls Node's native getter directly; Happy DOM only implements it on CharacterData.
-  vi.spyOn(HappyDOMNode.prototype, "textContent", "get").mockImplementation(
-    function (this: HappyDOMNode) {
-      return this instanceof CharacterData ? this.data : "";
-    },
-  );
+  vi.spyOn(HappyDOMNode.prototype, "textContent", "get").mockImplementation(function (
+    this: HappyDOMNode,
+  ) {
+    return this instanceof CharacterData ? this.data : "";
+  });
   const stylesheet = new CSSStyleSheet();
   stylesheet.replaceSync(".replay-layout { display: grid; }");
   const link = document.createElement("link");

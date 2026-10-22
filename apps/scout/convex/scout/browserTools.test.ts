@@ -7,7 +7,7 @@ import {
   type BrowserExecuteResponse,
   type Firecrawl,
 } from "firecrawl";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vite-plus/test";
 import { z } from "zod";
 import { createBrowserHarness, selectAgentMailTools } from "./browserTools";
 import type { BrowserScreenshot, PlaywrightBrowser } from "./playwrightBrowser";
@@ -83,13 +83,11 @@ function runtime() {
 function dependencies(browserRuntime = runtime()) {
   let timestamp = 1_000;
   return {
-    browser: vi.fn(
-      async (): Promise<BrowserCreateResponse> => ({
-        success: true,
-        id: "session-1",
-        cdpUrl: "wss://browser.firecrawl.dev/cdp?token=secret",
-      }),
-    ),
+    browser: vi.fn(async (): Promise<BrowserCreateResponse> => ({
+      success: true,
+      id: "session-1",
+      cdpUrl: "wss://browser.firecrawl.dev/cdp?token=secret",
+    })),
     browserExecute: vi.fn(
       async (
         _sessionId: string,

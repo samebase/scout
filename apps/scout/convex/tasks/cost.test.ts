@@ -1,5 +1,5 @@
 import type { TokenUsage } from "openai/resources/beta/agents/agents";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { estimateAgentsApiCost, readAgentsApiUsage } from "./cost";
 
 const providerUsage = {

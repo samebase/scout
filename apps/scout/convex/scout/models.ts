@@ -1,4 +1,3 @@
-import { convexGateway } from "@convex-dev/ai-sdk-provider";
 import { type Infer, v } from "convex/values";
 import { omitNullish } from "../../shared/omitNullish";
 import { SCOUT_REASONING_EFFORTS } from "../../shared/scoutReasoning";
@@ -183,7 +182,3 @@ export const DEFAULT_SCOUT_MODEL_SELECTION = {
   model: "openai/gpt-5.6-luna",
   reasoningEffort: "max",
 } satisfies ScoutModelSelection;
-
-export function scoutLanguageModel(model: ScoutModel) {
-  return convexGateway(model);
-}

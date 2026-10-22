@@ -235,7 +235,7 @@ TS`);
     await session.run("printf 'enum Status { Ready, Done }' > enum.ts");
     const result = await session.run("js-exec enum.ts");
     expect(result.output.exitCode).not.toBe(0);
-    expect(result.output.stderr).toContain("strip-only mode");
+    expect(result.output.stderr).toContain("unsupported keyword: enum");
   });
 
   it("enforces file limits for JavaScript writes without replacing the saved workspace", async () => {

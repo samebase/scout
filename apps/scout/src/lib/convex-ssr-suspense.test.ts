@@ -20,12 +20,14 @@ import { afterEach, expect, test, vi } from "vite-plus/test";
 import { api } from "../../convex/_generated/api";
 import { TaskWalkthrough } from "../components/task-walkthrough";
 
-const start = vi.hoisted(() => ({
-  createStartHandler: vi.fn<(callback: HandlerCallback<AnyRouter>) => void>(),
+const start = vi.hoisted<{ renderer: HandlerCallback<AnyRouter> | undefined }>(() => ({
+  renderer: undefined,
 }));
 vi.mock("@tanstack/react-start/server", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@tanstack/react-start/server")>()),
-  createStartHandler: start.createStartHandler,
+  createStartHandler: (callback: HandlerCallback<AnyRouter>) => {
+    start.renderer = callback;
+  },
 }));
 
 afterEach(() => vi.restoreAllMocks());
@@ -73,7 +75,7 @@ async function startRendering(content: ReactNode) {
   await router.load();
   await router.serverSsr?.dehydrate();
   await import("@samebase/convex-hosting-tanstack-start/server");
-  const callback = start.createStartHandler.mock.calls[0]?.[0];
+  const callback = start.renderer;
   if (!callback) throw new Error("Renderer was not registered");
   const pending = Promise.resolve(
     callback({

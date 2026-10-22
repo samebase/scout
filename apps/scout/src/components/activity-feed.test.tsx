@@ -173,17 +173,15 @@ class TestIntersectionObserver implements IntersectionObserver {
   }
 
   intersect(isIntersecting: boolean) {
-    const entries = [...this.targets].map(
-      (target): IntersectionObserverEntry => ({
-        target,
-        isIntersecting,
-        intersectionRatio: isIntersecting ? 1 : 0,
-        boundingClientRect: target.getBoundingClientRect(),
-        intersectionRect: isIntersecting ? target.getBoundingClientRect() : new DOMRect(),
-        rootBounds: null,
-        time: performance.now(),
-      }),
-    );
+    const entries = [...this.targets].map((target): IntersectionObserverEntry => ({
+      target,
+      isIntersecting,
+      intersectionRatio: isIntersecting ? 1 : 0,
+      boundingClientRect: target.getBoundingClientRect(),
+      intersectionRect: isIntersecting ? target.getBoundingClientRect() : new DOMRect(),
+      rootBounds: null,
+      time: performance.now(),
+    }));
     if (entries.length) this.callback(entries, this);
   }
 }

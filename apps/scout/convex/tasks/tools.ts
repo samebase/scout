@@ -358,16 +358,14 @@ export async function runtimeTools(
 
 export async function functionDefinitions(tools: ToolSet): Promise<AgentToolParam[]> {
   return await Promise.all(
-    Object.entries(tools).map(
-      async ([name, definition]): Promise<AgentToolParam> => ({
-        type: "function",
-        name,
-        description:
-          typeof definition.description === "function"
-            ? definition.description({ context: undefined })
-            : (definition.description ?? name),
-        parameters: await asSchema(definition.inputSchema).jsonSchema,
-      }),
-    ),
+    Object.entries(tools).map(async ([name, definition]): Promise<AgentToolParam> => ({
+      type: "function",
+      name,
+      description:
+        typeof definition.description === "function"
+          ? definition.description({ context: undefined })
+          : (definition.description ?? name),
+      parameters: await asSchema(definition.inputSchema).jsonSchema,
+    })),
   );
 }

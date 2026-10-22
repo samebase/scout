@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium } from "playwright-core";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 import { captureHandoffEvidence } from "./handoffEvidence";
 
 const executablePath = process.env["SCOUT_BROWSER_PROOF_CHROMIUM"] ?? chromium.executablePath();

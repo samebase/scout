@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { setImmediate } from "node:timers/promises";
 import { chromium, type Dialog } from "playwright-core";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 import { omitNullish } from "../../shared/omitNullish";
 import { browserTargetSchema } from "./browserTarget";
 import { connectPlaywrightBrowser } from "./playwrightBrowser";

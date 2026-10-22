@@ -850,26 +850,24 @@ test.each(["public", "mine"])(
   async (scope) => {
     remote.tasks.set(
       "papergames.io",
-      [1, 2, 3].map(
-        (number): Activity => ({
-          threadId: `paper-task-${number}`,
-          title: `Paper task ${number}`,
-          primarySite: "papergames.io",
-          createdAt: number,
-          purpose: { kind: "review" },
-          visibility: scope === "mine" ? "private" : "public",
-          status: "finished",
-          scout: {
-            // @ts-expect-error The mocked Convex transport uses a stable string instead of a database-generated scout ID.
-            _id: "scout-fixture",
-            displayName: "Scout",
-            slug: "scout",
-            status: "active",
-          },
-          latestSession: null,
-          walkthrough: null,
-        }),
-      ),
+      [1, 2, 3].map((number): Activity => ({
+        threadId: `paper-task-${number}`,
+        title: `Paper task ${number}`,
+        primarySite: "papergames.io",
+        createdAt: number,
+        purpose: { kind: "review" },
+        visibility: scope === "mine" ? "private" : "public",
+        status: "finished",
+        scout: {
+          // @ts-expect-error The mocked Convex transport uses a stable string instead of a database-generated scout ID.
+          _id: "scout-fixture",
+          displayName: "Scout",
+          slug: "scout",
+          status: "active",
+        },
+        latestSession: null,
+        walkthrough: null,
+      })),
     );
     const router = await openPage(`/sites/chessmerge.com?scope=${scope}&site=paper&view=workspace`);
     const navigation = await screen.findByRole("navigation", { name: "Sites" });
