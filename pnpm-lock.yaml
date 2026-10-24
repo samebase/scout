@@ -392,8 +392,8 @@ importers:
         specifier: ^6.1.2
         version: 6.1.2(@voidzero-dev/vite-plus-core@1.3.0(@types/node@24.19.2)(esbuild@0.27.0)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))
       convex-test:
-        specifier: 0.0.57
-        version: 0.0.57(convex@1.47.0(react@19.3.1))
+        specifier: 0.0.64
+        version: 0.0.64(convex@1.47.0(react@19.3.1))
       dotenv:
         specifier: ^18.0.8
         version: 18.0.8
@@ -3934,8 +3934,8 @@ packages:
       zod:
         optional: true
 
-  convex-test@0.0.57:
-    resolution: {integrity: sha512-yedyPgFld7RYVXjozRB4WOVStsXrYuln4JfeZJTVbRNw9SjulK3w2Y7sta7Au/e//nZzzqj3a5T+eaIuWu2sAw==}
+  convex-test@0.0.64:
+    resolution: {integrity: sha512-HvaFwCA7CO3i9sBWkP/+HUpCad49zXitDLheLpt+TUOHVWhsWQ7hbPAyPTOFhHZJrodzngkCP/tW9/8uDSOJqQ==}
     peerDependencies:
       convex: ^1.43.0
 
@@ -9584,7 +9584,7 @@ snapshots:
       typescript: 7.0.2
       zod: 4.6.7
 
-  convex-test@0.0.57(convex@1.47.0(react@19.3.1)):
+  convex-test@0.0.64(convex@1.47.0(react@19.3.1)):
     dependencies:
       convex: 1.47.0(react@19.3.1)
 
