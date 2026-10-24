@@ -21,7 +21,7 @@
     "prepare": "vp config"
   },
   "devDependencies": {
-    "@effect/platform-node": "4.0.5",
+    "@effect/platform-node": "4.0.6",
     "@samebase/alchemy-convex": "0.8.0",
     "@types/node": "^24.19.2",
     "alchemy": "2.0.0-beta.83",
