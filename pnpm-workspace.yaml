@@ -8,6 +8,10 @@ auditConfig:
     # Its only caller is just-bash, which catches printf precision RangeErrors
     # and returns exit code 1. workspaceShell.test.ts covers f, e, and g formats.
     - GHSA-hp3w-g68c-fv3c
+    # Rechecked 2026-10-27. Zod 3 has no patched release. Its only copy here is firecrawl's
+    # (zod 3.25.76, still required by firecrawl 4.51.0), which uses it only to turn schemas into JSON
+    # Schema (zodToJsonSchema), never to validate incoming data. Scout's own Zod is 4.6.7.
+    - GHSA-mrhx-c7xc-m3w5
 
 allowBuilds:
   "@mongodb-js/zstd": false
