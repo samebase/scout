@@ -51,7 +51,7 @@
     "ai": "^7.0.148",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "convex": "^1.47.0",
+    "convex": "^1.48.0",
     "convex-helpers": "^0.1.128",
     "firecrawl": "^4.50.0",
     "hls.js": "^1.7.3",
