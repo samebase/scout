@@ -19,6 +19,7 @@ import {
 import { type FormEvent, useState } from "react";
 import { ConvexError } from "convex/values";
 import { api } from "../../convex/_generated/api";
+import { GoogleMark } from "./google-mark";
 import { Button } from "#components/ui/button";
 import { Input } from "#components/ui/input";
 import { LegalLinks } from "./legal-links";
@@ -134,6 +135,7 @@ export function AuthPanel() {
             })
           }
         >
+          <GoogleMark />
           Continue with Google
         </Button>
       ) : null}
