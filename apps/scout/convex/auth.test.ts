@@ -1,0 +1,165 @@
+/// <reference types="vite/client" />
+import { generateKeyPairSync, randomUUID } from "node:crypto";
+import { registerCore } from "@convex-dev/auth/test";
+import { registerEmail } from "@convex-dev/auth/components/email/test";
+import { registerPasswordProvider } from "@convex-dev/auth/components/password/test";
+import { convexTest } from "convex-test";
+import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
+import { api, internal } from "./_generated/api";
+import schema from "./schema";
+import { createEmailPasswordAccount, setNewPassword } from "./auth";
+import { ADMIN_EMAIL } from "./testing/accounts";
+
+// The sign-up and recovery links run in the email component, whose limits read the client address
+// through `ctx.meta.getRequestMetadata()`. convex-test 0.0.57 has no request metadata, so those
+// flows are checked against a deployment; these tests cover Scout's own functions.
+const modules = import.meta.glob("./**/*.ts");
+
+beforeEach(() => {
+  const pair = generateKeyPairSync("rsa", { modulusLength: 2048, publicExponent: 0x10001 });
+  const pem = pair.privateKey.export({ format: "pem", type: "pkcs8" }).toString();
+  vi.stubEnv("CONVEX_SITE_URL", "https://scout-test.convex.site");
+  vi.stubEnv("SITE_URL", "https://scout-test.convex.site");
+  vi.stubEnv("AUTH_PRIVATE_KEY", Buffer.from(pem).toString("base64"));
+  vi.stubEnv(
+    "AUTH_JWKS",
+    JSON.stringify({
+      keys: [
+        {
+          ...pair.publicKey.export({ format: "jwk" }),
+          kid: randomUUID(),
+          alg: "RS256",
+          use: "sig",
+        },
+      ],
+    }),
+  );
+  vi.stubEnv("DEV_SEED_AUTH_ENABLED", "true");
+  vi.stubEnv("DEV_SEED_AUTH_EMAIL", "Preview@Example.com");
+  vi.stubEnv("DEV_SEED_AUTH_PASSWORD", "preview-password-123");
+});
+afterEach(() => vi.unstubAllEnvs());
+
+function setup() {
+  const backend = convexTest(schema, modules);
+  registerCore(backend);
+  registerPasswordProvider(backend);
+  registerEmail(backend);
+  return backend;
+}
+
+function signIn(backend: ReturnType<typeof setup>, email: string, password: string) {
+  return backend.mutation(api.auth.signInWithEmailPassword, { email, password });
+}
+
+test("the seeded development account signs in without a link and follows its password", async () => {
+  const backend = setup();
+  expect(await backend.mutation(internal.devAuth.seedPasswordAccount, {})).toEqual({
+    created: true,
+    email: "preview@example.com",
+  });
+  const seed = await signIn(backend, " PREVIEW@example.com", "preview-password-123");
+  if (seed.status !== "complete") throw new Error("Expected the seed account to sign in");
+  const userId = seed.tokens.userId;
+  expect(await backend.run((ctx) => ctx.db.query("users").collect())).toEqual([
+    expect.objectContaining({
+      _id: userId,
+      email: "preview@example.com",
+      emailVerificationTime: expect.any(Number),
+      isApproved: true,
+    }),
+  ]);
+  // The first sign-in creates the credit wallet.
+  expect(await backend.run((ctx) => ctx.db.query("creditWallets").collect())).toEqual([
+    expect.objectContaining({ userId }),
+  ]);
+
+  vi.stubEnv("DEV_SEED_AUTH_PASSWORD", "replacement-password-456");
+  expect(await backend.mutation(internal.devAuth.seedPasswordAccount, {})).toEqual({
+    created: false,
+    email: "preview@example.com",
+  });
+  expect(await signIn(backend, "preview@example.com", "preview-password-123")).toEqual({
+    status: "error",
+    userError: { error: "INVALID_CREDENTIALS" },
+  });
+  expect(await signIn(backend, "preview@example.com", "replacement-password-456")).toMatchObject({
+    status: "complete",
+    tokens: { userId },
+  });
+
+  // Without the seed configuration, the address has no verified email and cannot sign in.
+  vi.stubEnv("DEV_SEED_AUTH_ENABLED", "false");
+  expect(await signIn(backend, "preview@example.com", "replacement-password-456")).toEqual({
+    status: "error",
+    userError: { error: "INVALID_CREDENTIALS" },
+  });
+  await expect(backend.mutation(internal.devAuth.seedPasswordAccount, {})).rejects.toThrow(
+    "disabled",
+  );
+});
+
+test("the seed refuses a production deployment", async () => {
+  const backend = setup();
+  vi.stubEnv("CONVEX_DEPLOYMENT", "prod:scout-test");
+  await expect(backend.mutation(internal.devAuth.seedPasswordAccount, {})).rejects.toThrow(
+    "disabled in production",
+  );
+});
+
+test("a password alone does not sign in to an address that no link has verified", async () => {
+  const backend = setup();
+  // An account from before Convex Auth 2, and the same account after a sign-up whose link waits:
+  // it has a password but no verified address yet.
+  const legacyId = await backend.run(async (ctx) => {
+    const userId = await ctx.db.insert("users", {
+      email: ADMIN_EMAIL,
+      emailVerificationTime: 1,
+      isApproved: true,
+      termsAcceptedAt: 1,
+    });
+    return userId;
+  });
+  expect(await signIn(backend, ADMIN_EMAIL, "admin-password-123")).toEqual({
+    status: "error",
+    userError: { error: "INVALID_CREDENTIALS" },
+  });
+  await backend.run(async (ctx) => {
+    await setNewPassword(ctx, legacyId, "admin-password-123");
+    await createEmailPasswordAccount(ctx, legacyId);
+  });
+  expect(await signIn(backend, ADMIN_EMAIL, "admin-password-123")).toEqual({
+    status: "error",
+    userError: { error: "INVALID_CREDENTIALS" },
+  });
+  expect(await signIn(backend, "nobody@example.test", "admin-password-123")).toEqual({
+    status: "error",
+    userError: { error: "INVALID_CREDENTIALS" },
+  });
+});
+
+test("the terms step after the sign-up link records the session recording choice", async () => {
+  const backend = setup();
+  const userId = await backend.run((ctx) =>
+    ctx.db.insert("users", {
+      state: "active",
+      isApproved: true,
+      email: "member@example.test",
+      emailVerificationTime: 1,
+    }),
+  );
+  const viewer = backend.withIdentity({ subject: userId });
+  expect(await viewer.query(api.accounts.currentViewerAccess, {})).toEqual({
+    kind: "terms_required",
+    userId,
+  });
+  await viewer.mutation(api.accounts.acceptTerms, { sessionRecordingConsent: true });
+  expect(await backend.run((ctx) => ctx.db.get(userId))).toMatchObject({
+    termsAcceptedAt: expect.any(Number),
+    sessionRecordingConsent: { enabled: true, source: "signup", lastGrant: { source: "signup" } },
+  });
+  expect(await viewer.query(api.accounts.currentViewerAccess, {})).toMatchObject({
+    kind: "account",
+    role: "role_member",
+  });
+});

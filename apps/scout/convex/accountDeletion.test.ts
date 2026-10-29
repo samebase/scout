@@ -1,5 +1,8 @@
 /// <reference types="vite/client" />
 import agentTest from "@convex-dev/agent/test";
+import { registerCore } from "@convex-dev/auth/test";
+import { registerEmail } from "@convex-dev/auth/components/email/test";
+import { registerPasswordProvider } from "@convex-dev/auth/components/password/test";
 import workflowTest from "@convex-dev/workflow/test";
 import { convexTest } from "convex-test";
 import { Firecrawl } from "firecrawl";
@@ -7,9 +10,8 @@ import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
 import { api, components, internal } from "./_generated/api";
 import schema from "./schema";
 import { finishStoppingTurn } from "./scout/turns";
-import { authEmailRateLimitKey } from "./authEmail";
+import { createEmailPasswordAccount, setNewPassword } from "./auth";
 import { ACCOUNT_DELETION_CONFIRMATION } from "../shared/accountDeletion";
-import { EMAIL_VERIFICATION_PROVIDER_ID, PASSWORD_RESET_PROVIDER_ID } from "../shared/auth";
 import { ADMIN_EMAIL } from "./testing/accounts";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -24,6 +26,9 @@ async function setup(email = "deletion@example.test", isApproved = false) {
   const backend = convexTest(schema, modules);
   workflowTest.register(backend);
   agentTest.register(backend);
+  registerCore(backend);
+  registerPasswordProvider(backend);
+  registerEmail(backend);
   await backend.run((ctx) =>
     ctx.db.insert("taskEngineSettings", { key: "global", agentsApiEnabled: true }),
   );
@@ -35,66 +40,15 @@ async function setup(email = "deletion@example.test", isApproved = false) {
       emailVerificationTime: Date.now(),
       isApproved,
     });
-    const sessionId = await ctx.db.insert("authSessions", {
-      userId,
-      expirationTime: Date.now() + 86_400_000,
-    });
-    const otherSessionId = await ctx.db.insert("authSessions", {
-      userId,
-      expirationTime: Date.now() + 86_400_000,
-    });
-    const accountId = await ctx.db.insert("authAccounts", {
-      userId,
-      provider: "password",
-      providerAccountId: email,
-      secret: "hashed-password",
-      emailVerified: email,
-    });
+    await setNewPassword(ctx, userId, "deletion-password-123");
+    await createEmailPasswordAccount(ctx, userId);
     const otherUserId = await ctx.db.insert("users", {
       email: "untouched@example.test",
       isApproved: true,
       emailVerificationTime: Date.now(),
     });
-    const otherAccountId = await ctx.db.insert("authAccounts", {
-      userId: otherUserId,
-      provider: "password",
-      providerAccountId: "untouched@example.test",
-      secret: "other-hash",
-    });
-    const otherUserSessionId = await ctx.db.insert("authSessions", {
-      userId: otherUserId,
-      expirationTime: Date.now() + 86_400_000,
-    });
-    for (const ownerSessionId of [sessionId, otherSessionId]) {
-      for (let index = 0; index < 70; index++) {
-        await ctx.db.insert("authRefreshTokens", {
-          sessionId: ownerSessionId,
-          expirationTime: Date.now() + 86_400_000,
-        });
-        await ctx.db.insert("authVerifiers", {
-          sessionId: ownerSessionId,
-          signature: `${ownerSessionId}-${index}`,
-        });
-      }
-    }
-    for (let index = 0; index < 70; index++)
-      await ctx.db.insert("authVerificationCodes", {
-        accountId,
-        provider: "password",
-        code: `code-${index}`,
-        expirationTime: Date.now() + 60_000,
-      });
-    for (const identifier of [email, accountId])
-      await ctx.db.insert("authRateLimits", {
-        identifier,
-        lastAttemptTime: Date.now(),
-        attemptsLeft: 2,
-      });
-    for (const provider of [EMAIL_VERIFICATION_PROVIDER_ID, PASSWORD_RESET_PROVIDER_ID])
-      await ctx.db.insert("authEmailRateLimits", {
-        key: await authEmailRateLimitKey(provider, email),
-        lastSentAt: Date.now(),
-      });
+    await setNewPassword(ctx, otherUserId, "untouched-password-123");
+    await createEmailPasswordAccount(ctx, otherUserId);
     const scoutId = await ctx.db.insert("scouts", {
       displayName: "Shared Scout",
       websiteIdentity: { firstName: "Shared", lastName: "Scout" },
@@ -148,12 +102,7 @@ async function setup(email = "deletion@example.test", isApproved = false) {
     });
     return {
       userId,
-      sessionId,
-      otherSessionId,
-      accountId,
       otherUserId,
-      otherAccountId,
-      otherUserSessionId,
       scoutId,
       chatId,
       threadId,
@@ -163,13 +112,13 @@ async function setup(email = "deletion@example.test", isApproved = false) {
       callId,
     };
   });
-  const viewer = backend.withIdentity({ subject: `${ids.userId}|${ids.sessionId}` });
+  const viewer = backend.withIdentity({ subject: ids.userId });
   return { backend, viewer, ...ids };
 }
 
 test("account deletion stops a managed Review before deleting the owner", async () => {
   const { backend, viewer, userId, scoutId } = await setup("review-deletion@example.test", true);
-  await viewer.mutation(api.accounts.acceptTerms, {});
+  await viewer.mutation(api.accounts.acceptTerms, { sessionRecordingConsent: false });
   const { threadId } = await viewer.mutation(api.scout.chats.startProductChat, {
     selection: { engine: "agents_api", model: "gpt-5.6-luna" },
     product: { kind: "review" },
@@ -281,8 +230,6 @@ test.each([
     backend,
     viewer,
     userId,
-    otherAccountId,
-    otherUserSessionId,
     otherUserId,
     scoutId,
     chatId,
@@ -307,15 +254,11 @@ test.each([
   await expect(
     viewer.mutation(api.accounts.setApproval, { userId, isApproved: true }),
   ).rejects.toThrow("Not authorized");
-  await expect(backend.query(internal.accounts.assertActiveForAuth, { userId })).rejects.toThrow(
-    "deleted",
-  );
-  await expect(
-    backend.mutation(internal.authEmailRateLimit.consume, {
-      email,
-      providerId: PASSWORD_RESET_PROVIDER_ID,
-    }),
-  ).rejects.toThrow("Account unavailable");
+  const signIn = {
+    provider: { name: "emailPassword" as const, accountId: userId, profile: {} },
+    userId,
+  };
+  await expect(backend.mutation(internal.auth.onSignIn, signIn)).rejects.toThrow("deleted");
   const requested = await backend.run((ctx) => ctx.db.get(userId));
   await viewer.mutation(api.accountDeletion.request, {
     confirmation: ACCOUNT_DELETION_CONFIRMATION,
@@ -323,12 +266,7 @@ test.each([
   expect(await backend.run((ctx) => ctx.db.get(userId))).toEqual(requested);
   await backend.finishAllScheduledFunctions(vi.runAllTimers);
   expect(await viewer.query(api.accountDeletion.status, {})).toEqual({ kind: "deleted" });
-  await expect(
-    backend.mutation(internal.authEmailRateLimit.consume, {
-      email,
-      providerId: PASSWORD_RESET_PROVIDER_ID,
-    }),
-  ).rejects.toThrow("Account unavailable");
+  await expect(backend.mutation(internal.auth.onSignIn, signIn)).rejects.toThrow("deleted");
   await expect(viewer.query(api.accounts.taskPreferences, {})).rejects.toThrow("Not authorized");
   await backend.run(async (ctx) => {
     const user = await ctx.db.get(userId);
@@ -338,17 +276,29 @@ test.each([
       state: "deleted",
       deletedAt: expect.any(Number),
     });
-    expect(await ctx.db.query("authAccounts").collect()).toEqual([
-      await ctx.db.get(otherAccountId),
-    ]);
-    expect(await ctx.db.query("authSessions").collect()).toEqual([
-      await ctx.db.get(otherUserSessionId),
-    ]);
-    expect(await ctx.db.query("authRefreshTokens").collect()).toEqual([]);
-    expect(await ctx.db.query("authVerifiers").collect()).toEqual([]);
-    expect(await ctx.db.query("authVerificationCodes").collect()).toEqual([]);
-    expect(await ctx.db.query("authRateLimits").collect()).toEqual([]);
-    expect(await ctx.db.query("authEmailRateLimits").collect()).toEqual([]);
+    // Convex Auth keeps nothing for the deleted user, and the other account keeps its sign-in.
+    for (const [owner, expected] of [
+      [userId, null],
+      [otherUserId, otherUserId],
+    ] as const)
+      expect(
+        await ctx.runQuery(components.auth.public.getUserIdByAccount, {
+          provider: "emailPassword",
+          providerAccountId: owner,
+        }),
+      ).toBe(expected);
+    await expect(
+      ctx.runMutation(components.authPassword.public.verifyPassword, {
+        userId,
+        password: "deletion-password-123",
+      }),
+    ).rejects.toThrow("No password stored");
+    expect(
+      await ctx.runMutation(components.authPassword.public.verifyPassword, {
+        userId: otherUserId,
+        password: "untouched-password-123",
+      }),
+    ).toEqual({ success: true });
     expect(await ctx.db.get(scoutId)).toEqual(before.scout);
     expect(await ctx.db.get(chatId)).toEqual(before.chat);
     expect(await ctx.db.get(turnId)).toEqual(before.turn);
@@ -364,20 +314,14 @@ test.each([
   });
 });
 
-test("deletion requires the exact confirmation and a valid own session", async () => {
-  const { backend, viewer, userId, otherUserSessionId } = await setup();
+test("deletion requires a signed-in account and the exact confirmation", async () => {
+  const { backend, viewer } = await setup();
   await expect(
     backend.mutation(api.accountDeletion.request, { confirmation: ACCOUNT_DELETION_CONFIRMATION }),
   ).rejects.toThrow("Not authorized");
   await expect(
     viewer.mutation(api.accountDeletion.request, { confirmation: "delete" }),
   ).rejects.toThrow("Type delete my account");
-  const mismatched = backend.withIdentity({ subject: `${userId}|${otherUserSessionId}` });
-  await expect(
-    mismatched.mutation(api.accountDeletion.request, {
-      confirmation: ACCOUNT_DELETION_CONFIRMATION,
-    }),
-  ).rejects.toThrow("Sign in again");
   await expect(backend.mutation(api.accountDeletion.retry, {})).rejects.toThrow("Not authorized");
   expect(await viewer.query(api.accountDeletion.status, {})).toEqual({ kind: "ready" });
 });

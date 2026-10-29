@@ -11,8 +11,8 @@ test("recording defaults off for existing users, and only the caller's preferenc
   const t = convexTest(schema, modules);
   const alice = await t.run((ctx) => insertTestAccount(ctx, { email: "alice@example.test" }));
   const bob = await t.run((ctx) => insertTestAccount(ctx, { email: "bob@example.test" }));
-  const asAlice = t.withIdentity({ subject: `${alice}|session` });
-  const asBob = t.withIdentity({ subject: `${bob}|session` });
+  const asAlice = t.withIdentity({ subject: alice });
+  const asBob = t.withIdentity({ subject: bob });
   expect(await asAlice.query(api.accounts.analyticsPreferences, {})).toEqual({
     userId: alice,
     recording: null,
@@ -49,7 +49,7 @@ test("pending and terms-required accounts can withdraw; deleted accounts cannot 
       isApproved: false,
     }),
   );
-  const user = t.withIdentity({ subject: `${userId}|session` });
+  const user = t.withIdentity({ subject: userId });
   await user.mutation(api.accounts.setSessionRecording, { enabled: false });
   expect(await user.query(api.accounts.analyticsPreferences, {})).toMatchObject({
     recording: { enabled: false },

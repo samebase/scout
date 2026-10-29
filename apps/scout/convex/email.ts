@@ -1,4 +1,6 @@
-import { env } from "./_generated/server";
+import { v } from "convex/values";
+import { internal } from "./_generated/api";
+import { env, internalAction, internalMutation } from "./_generated/server";
 import { omitNullish } from "../shared/omitNullish";
 
 const CLOUDFLARE_API_BASE_URL = "https://api.cloudflare.com/client/v4";
@@ -129,3 +131,42 @@ export async function sendEmail(
     );
   }
 }
+
+/** The From address of every Scout email, in the form that the Convex Auth email methods take. */
+export const EMAIL_FROM_HEADER = `${EMAIL_FROM.name} <${EMAIL_FROM.address}>`;
+
+/**
+The `emailSender.sendEmail` mutation of the Convex Auth email-password method, with the arguments of
+the Resend component's `lib.sendEmail`. The method calls it inside the transaction that starts a
+sign-up or a password recovery, and `deliver` sends the message through Cloudflare Email Service
+after that transaction commits. Scout sends from `EMAIL_FROM` with its own Cloudflare credentials,
+so the Resend-specific `from` and `options` are not read.
+*/
+export const sendAuthEmail = internalMutation({
+  args: {
+    options: v.object({
+      apiKey: v.string(),
+      testMode: v.boolean(),
+      initialBackoffMs: v.number(),
+      retryAttempts: v.number(),
+    }),
+    from: v.string(),
+    to: v.array(v.string()),
+    subject: v.string(),
+    text: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, { to, subject, text }) => {
+    await ctx.scheduler.runAfter(0, internal.email.deliver, { to, subject, text });
+    return null;
+  },
+});
+
+export const deliver = internalAction({
+  args: { to: v.array(v.string()), subject: v.string(), text: v.string() },
+  returns: v.null(),
+  handler: async (_ctx, args) => {
+    await sendEmail(args);
+    return null;
+  },
+});

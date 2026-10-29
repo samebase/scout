@@ -1,6 +1,9 @@
 import { defineApp } from "convex/server";
 import { v } from "convex/values";
 import agent from "@convex-dev/agent/convex.config";
+import auth from "@convex-dev/auth/convex.config";
+import email from "@convex-dev/auth/components/email/convex.config";
+import password from "@convex-dev/auth/components/password/convex.config";
 import r2 from "@convex-dev/r2/convex.config";
 import hosting from "@samebase/convex-hosting/convex.config";
 import workflow from "@convex-dev/workflow/convex.config.js";
@@ -9,6 +12,8 @@ import workflow from "@convex-dev/workflow/convex.config.js";
 const app = defineApp({
   env: {
     AGENTMAIL_API_KEY: v.optional(v.string()),
+    AUTH_JWKS: v.string(),
+    AUTH_PRIVATE_KEY: v.string(),
     CLOUDFLARE_EMAIL_ACCOUNT_ID: v.optional(v.string()),
     CLOUDFLARE_EMAIL_API_TOKEN: v.optional(v.string()),
     CREDITS_ENABLED: v.optional(v.string()),
@@ -35,10 +40,21 @@ const app = defineApp({
     PUBLIC_MEDIA_CACHE_PURGE_TOKEN: v.optional(v.string()),
     SCOUT_CREDENTIAL_MASTER_KEY_V1: v.optional(v.string()),
     SCOUT_COMPACTION_TOKENS: v.optional(v.string()),
-    SITE_URL: v.optional(v.string()),
+    SITE_URL: v.string(),
     SSR_FIXTURE_DEPLOYMENT_URL: v.optional(v.string()),
   },
 });
+// A push fails while AUTH_PRIVATE_KEY or AUTH_JWKS is missing: scripts/ensure-convex-auth.ts creates
+// the pair on each deployment before its first push. The core serves its key set under /auth.
+app.use(auth, {
+  httpPrefix: "/auth",
+  env: {
+    AUTH_PRIVATE_KEY: app.env.AUTH_PRIVATE_KEY,
+    AUTH_JWKS: app.env.AUTH_JWKS,
+  },
+});
+app.use(password);
+app.use(email);
 app.use(agent);
 app.use(r2);
 app.use(workflow);

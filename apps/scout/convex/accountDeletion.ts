@@ -1,4 +1,4 @@
-import { getAuthSessionId, getAuthUserId } from "@convex-dev/auth/server";
+import { getAuthUserId } from "@convex-dev/auth/server";
 import { WorkflowManager, vResultValidator, vWorkflowId } from "@convex-dev/workflow";
 import { ConvexError, v } from "convex/values";
 import type { FunctionReturnType } from "convex/server";
@@ -51,14 +51,10 @@ export const request = publicMutation({
     if (ctx.viewer.kind !== "account" && ctx.viewer.kind !== "terms_required")
       throw new ConvexError("Not authorized");
     const { userId } = ctx.viewer;
-    const sessionId = await getAuthSessionId(ctx);
-    const session = sessionId && (await ctx.db.get("authSessions", sessionId));
-    if (!session || session.userId !== userId || session.expirationTime <= Date.now())
-      throw new ConvexError("Sign in again before deleting your account");
     const workflowId = await deletionWorkflow.start(
       ctx,
       internal.accountDeletion.run,
-      { userId, sessionId: session._id },
+      { userId },
       { startAsync: true, onComplete: internal.accountDeletion.onComplete, context: null },
     );
     await ctx.db.patch("users", userId, { state: "deleting", workflowId });
@@ -83,20 +79,10 @@ export const retry = publicMutation({
 
 export const run = deletionWorkflow
   .define({
-    args: { userId: v.id("users"), sessionId: v.id("authSessions") },
+    args: { userId: v.id("users") },
     returns: v.null(),
   })
-  .handler(async (step, { userId, sessionId }): Promise<null> => {
-    while (
-      !(await step.runMutation(internal.accountDeletionCleanup.authBatch, {
-        userId,
-        sessionId,
-        phase: "other_sessions",
-      }))
-    ) {
-      /* Continue bounded cleanup. */
-    }
-
+  .handler(async (step, { userId }): Promise<null> => {
     let taskCursor: string | null = null;
     while (true) {
       const page: FunctionReturnType<typeof internal.accountDeletionCleanup.tasks> =
@@ -150,21 +136,7 @@ export const run = deletionWorkflow
       if (page.isDone) break;
       cursor = page.cursor;
     }
-    while (
-      !(await step.runMutation(internal.accountDeletionCleanup.authBatch, {
-        userId,
-        sessionId,
-        phase: "accounts",
-      }))
-    ) {
-      /* Continue bounded cleanup. */
-    }
-    while (
-      !(await step.runMutation(internal.accountDeletionCleanup.finish, {
-        userId,
-        sessionId,
-      }))
-    ) {
+    while (!(await step.runMutation(internal.accountDeletionCleanup.finish, { userId }))) {
       /* Continue bounded cleanup. */
     }
     return null;

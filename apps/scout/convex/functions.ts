@@ -34,7 +34,6 @@ export const query = customQuery<
   ProtectedContext,
   Empty,
   "public",
-  // @ts-expect-error Convex Auth optional fields include undefined; Convex helpers' GenericDocument excludes it under exactOptionalPropertyTypes. Persisted documents omit absent fields.
   DataModel,
   AccountPolicy
 >(
@@ -49,7 +48,6 @@ export const mutation = customMutation<
   ProtectedContext,
   Empty,
   "public",
-  // @ts-expect-error Convex Auth optional fields include undefined; Convex helpers' GenericDocument excludes it under exactOptionalPropertyTypes. Persisted documents omit absent fields.
   DataModel,
   AccountPolicy
 >(
@@ -67,15 +65,7 @@ export const action: CustomBuilder<
   ActionCtx,
   "public",
   AccountPolicy
-> = customAction<
-  Empty,
-  ProtectedContext,
-  Empty,
-  "public",
-  // @ts-expect-error Convex Auth optional fields include undefined; Convex helpers' GenericDocument excludes it under exactOptionalPropertyTypes. Persisted documents omit absent fields.
-  DataModel,
-  AccountPolicy
->(
+> = customAction<Empty, ProtectedContext, Empty, "public", DataModel, AccountPolicy>(
   baseAction,
   customCtx(async (ctx: ActionCtx, policy: AccountPolicy) => {
     const viewer: ViewerAccess = await ctx.runQuery(internal.accounts.viewerForAction, {});
@@ -88,7 +78,6 @@ export const publicQuery = customQuery<
   { viewer: ViewerAccess },
   Empty,
   "public",
-  // @ts-expect-error Convex Auth optional fields include undefined; Convex helpers' GenericDocument excludes it under exactOptionalPropertyTypes. Persisted documents omit absent fields.
   DataModel,
   PublicPolicy
 >(
@@ -104,7 +93,6 @@ export const publicMutation = customMutation<
   { viewer: ViewerAccess },
   Empty,
   "public",
-  // @ts-expect-error Convex Auth optional fields include undefined; Convex helpers' GenericDocument excludes it under exactOptionalPropertyTypes. Persisted documents omit absent fields.
   DataModel,
   PublicPolicy
 >(
@@ -120,7 +108,6 @@ export const publicAction = customAction<
   Record<never, never>,
   Empty,
   "public",
-  // @ts-expect-error Convex Auth optional fields include undefined; Convex helpers' GenericDocument excludes it under exactOptionalPropertyTypes. Persisted documents omit absent fields.
   DataModel,
   PublicPolicy
 >(

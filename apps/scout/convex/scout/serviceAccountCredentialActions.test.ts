@@ -42,7 +42,7 @@ async function context() {
       otherScoutId: await ctx.db.insert("scouts", { ...scout, slug: "conrad" }),
     };
   });
-  const admin = backend.withIdentity({ subject: `${userId}|test-session` });
+  const admin = backend.withIdentity({ subject: userId });
   const account = {
     kind: "create" as const,
     scoutId,
@@ -310,10 +310,7 @@ describe("Profile account login settings", () => {
     const otherUserId = await backend.run((ctx) =>
       insertTestAccount(ctx, { email: "member@example.test" }),
     );
-    for (const caller of [
-      backend,
-      backend.withIdentity({ subject: `${otherUserId}|test-session` }),
-    ]) {
+    for (const caller of [backend, backend.withIdentity({ subject: otherUserId })]) {
       for (const account of [
         args.account,
         {

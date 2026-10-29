@@ -1,8 +1,6 @@
 import { v } from "convex/values";
-import type { Id } from "./_generated/dataModel";
-import { internalMutation, internalQuery, type MutationCtx } from "./_generated/server";
-import { authEmailRateLimitKey } from "./authEmail";
-import { EMAIL_VERIFICATION_PROVIDER_ID, PASSWORD_RESET_PROVIDER_ID } from "../shared/auth";
+import { components } from "./_generated/api";
+import { internalMutation, internalQuery } from "./_generated/server";
 import { finalizeStoppingTurn, stopTurn } from "./scout/turns";
 import { omitNullish } from "../shared/omitNullish";
 
@@ -137,108 +135,27 @@ export const stopChat = internalMutation({
   },
 });
 
-async function deleteRateLimit(ctx: MutationCtx, identifier: string) {
-  const row = await ctx.db
-    .query("authRateLimits")
-    .withIndex("identifier", (q) => q.eq("identifier", identifier))
-    .unique();
-  if (row) await ctx.db.delete(row._id);
-}
-
-async function deleteSessionChildren(ctx: MutationCtx, sessionId: Id<"authSessions">) {
-  const verifiers = await ctx.db
-    .query("authVerifiers")
-    .withIndex("sessionId", (q) => q.eq("sessionId", sessionId))
-    .take(BATCH_SIZE);
-  for (const row of verifiers) await ctx.db.delete(row._id);
-  if (verifiers.length === BATCH_SIZE) return false;
-  const tokens = await ctx.db
-    .query("authRefreshTokens")
-    .withIndex("sessionId", (q) => q.eq("sessionId", sessionId))
-    .take(BATCH_SIZE);
-  for (const row of tokens) await ctx.db.delete(row._id);
-  return tokens.length < BATCH_SIZE;
-}
-
-export const authBatch = internalMutation({
-  args: {
-    userId: v.id("users"),
-    sessionId: v.id("authSessions"),
-    phase: v.union(v.literal("other_sessions"), v.literal("accounts")),
-  },
-  returns: v.boolean(),
-  handler: async (ctx, { userId, sessionId, phase }) => {
-    const user = await ctx.db.get("users", userId);
-    if (user?.state !== "deleting") throw new Error("Account is not deleting");
-    if (phase === "other_sessions") {
-      const sessions = await ctx.db
-        .query("authSessions")
-        .withIndex("userId", (q) => q.eq("userId", userId))
-        .take(2);
-      const session = sessions.find((row) => row._id !== sessionId);
-      if (!session) return true;
-      if (await deleteSessionChildren(ctx, session._id)) await ctx.db.delete(session._id);
-      return false;
-    }
-    const account = await ctx.db
-      .query("authAccounts")
-      .withIndex("userIdAndProvider", (q) => q.eq("userId", userId))
-      .first();
-    if (account) {
-      const codes = await ctx.db
-        .query("authVerificationCodes")
-        .withIndex("accountId", (q) => q.eq("accountId", account._id))
-        .take(BATCH_SIZE);
-      for (const code of codes) await ctx.db.delete(code._id);
-      if (codes.length === BATCH_SIZE) return false;
-      await deleteRateLimit(ctx, account._id);
-      if (account.emailVerified) await deleteRateLimit(ctx, account.emailVerified);
-      if (account.phoneVerified) await deleteRateLimit(ctx, account.phoneVerified);
-      await ctx.db.delete(account._id);
-      return false;
-    }
-    if (user.email) {
-      await deleteRateLimit(ctx, user.email);
-      for (const provider of [EMAIL_VERIFICATION_PROVIDER_ID, PASSWORD_RESET_PROVIDER_ID]) {
-        const key = await authEmailRateLimitKey(provider, user.email);
-        const row = await ctx.db
-          .query("authEmailRateLimits")
-          .withIndex("by_key", (q) => q.eq("key", key))
-          .unique();
-        if (row) await ctx.db.delete(row._id);
-      }
-    }
-    if (user.phone) await deleteRateLimit(ctx, user.phone);
-    return true;
-  },
-});
-
+/**
+Deletes the account's site listings in batches, then, in the transaction that marks the user
+deleted, everything that Convex Auth keeps for the user: the accounts, sessions, and refresh tokens
+of the core, the password, and the verified email. Every session ends, and the email address can
+sign up again as a new account.
+*/
 export const finish = internalMutation({
-  args: { userId: v.id("users"), sessionId: v.id("authSessions") },
+  args: { userId: v.id("users") },
   returns: v.boolean(),
-  handler: async (ctx, { userId, sessionId }) => {
+  handler: async (ctx, { userId }) => {
     const user = await ctx.db.get("users", userId);
     if (user?.state !== "deleting") throw new Error("Account is not deleting");
-    const account = await ctx.db
-      .query("authAccounts")
-      .withIndex("userIdAndProvider", (q) => q.eq("userId", userId))
-      .first();
-    const sessions = await ctx.db
-      .query("authSessions")
-      .withIndex("userId", (q) => q.eq("userId", userId))
-      .take(2);
-    if (account || sessions.some((row) => row._id !== sessionId))
-      throw new Error("Authentication cleanup is incomplete");
-    const session = await ctx.db.get("authSessions", sessionId);
-    if (session && session.userId !== userId) throw new Error("Invalid account cleanup session");
     const listings = await ctx.db
       .query("siteUserListings")
       .withIndex("by_user_id_and_hostname", (q) => q.eq("userId", userId))
       .take(BATCH_SIZE);
     for (const listing of listings) await ctx.db.delete(listing._id);
     if (listings.length === BATCH_SIZE) return false;
-    if (!(await deleteSessionChildren(ctx, sessionId))) return false;
-    if (session) await ctx.db.delete(session._id);
+    await ctx.runMutation(components.auth.public.deleteUser, { userId });
+    await ctx.runMutation(components.authPassword.public.deleteUser, { userId });
+    await ctx.runMutation(components.authEmail.verifiedEmails.deleteUser, { userId });
     await ctx.db.replace("users", userId, { state: "deleted", deletedAt: Date.now() });
     return true;
   },

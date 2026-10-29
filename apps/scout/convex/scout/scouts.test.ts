@@ -68,7 +68,7 @@ describe("Scout registry", () => {
       vi.stubEnv("AGENTMAIL_API_KEY", apiKey);
       const backend = testBackend();
       const adminId = await insertUser(backend, ADMIN_EMAIL);
-      const admin = backend.withIdentity({ subject: `${adminId}|test-session` });
+      const admin = backend.withIdentity({ subject: adminId });
       const registration = admin.action(scoutRegistrationApi["register"], scoutRegistrationFields);
       await expect(registration).rejects.toBeInstanceOf(ConvexError);
       await expect(registration).rejects.toMatchObject({
@@ -89,7 +89,7 @@ describe("Scout registry", () => {
     ).rejects.toThrow("Not authorized");
 
     const nonAdminId = await insertUser(backend, "person@example.com");
-    const nonAdmin = backend.withIdentity({ subject: `${nonAdminId}|test-session` });
+    const nonAdmin = backend.withIdentity({ subject: nonAdminId });
     await expect(
       nonAdmin.action(scoutRegistrationApi["register"], scoutRegistrationFields),
     ).rejects.toThrow("Not authorized");
@@ -98,7 +98,7 @@ describe("Scout registry", () => {
   it("registers a canonical Scout and exposes exact public and runtime projections", async () => {
     const backend = testBackend();
     const adminId = await insertUser(backend, ADMIN_EMAIL);
-    const admin = backend.withIdentity({ subject: `${adminId}|test-session` });
+    const admin = backend.withIdentity({ subject: adminId });
 
     const result = await admin.action(scoutRegistrationApi["register"], {
       ...scoutRegistrationFields,
@@ -158,8 +158,8 @@ describe("Scout registry", () => {
     const backend = testBackend();
     const adminId = await insertUser(backend, ADMIN_EMAIL);
     const memberId = await insertUser(backend, "member@example.test");
-    const admin = backend.withIdentity({ subject: `${adminId}|test-session` });
-    const member = backend.withIdentity({ subject: `${memberId}|test-session` });
+    const admin = backend.withIdentity({ subject: adminId });
+    const member = backend.withIdentity({ subject: memberId });
     const { scoutId } = await admin.action(
       api.scout.scoutRegistration.register,
       scoutRegistrationFields,
@@ -204,7 +204,7 @@ describe("Scout registry", () => {
   it("requires a complete website identity and keeps registration create-only", async () => {
     const backend = testBackend();
     const adminId = await insertUser(backend, ADMIN_EMAIL);
-    const admin = backend.withIdentity({ subject: `${adminId}|test-session` });
+    const admin = backend.withIdentity({ subject: adminId });
     const { websiteIdentity: _websiteIdentity, ...missingIdentity } = scoutRegistrationFields;
 
     await expect(admin.action(scoutRegistrationApi["register"], missingIdentity)).rejects.toThrow(
@@ -226,7 +226,7 @@ describe("Scout registry", () => {
   it("rejects invalid fields and duplicate provider identities", async () => {
     const backend = testBackend();
     const adminId = await insertUser(backend, ADMIN_EMAIL);
-    const admin = backend.withIdentity({ subject: `${adminId}|test-session` });
+    const admin = backend.withIdentity({ subject: adminId });
     await admin.action(scoutRegistrationApi["register"], scoutRegistrationFields);
 
     await expect(
@@ -290,7 +290,7 @@ describe("Scout registry", () => {
   it("rejects registration when AgentMail reports a different inbox address", async () => {
     const backend = testBackend();
     const adminId = await insertUser(backend, ADMIN_EMAIL);
-    const admin = backend.withIdentity({ subject: `${adminId}|test-session` });
+    const admin = backend.withIdentity({ subject: adminId });
     vi.stubGlobal(
       "fetch",
       vi.fn(

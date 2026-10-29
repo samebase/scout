@@ -37,8 +37,8 @@ async function setup() {
       browserProfileSummary: previousSummary,
     }),
   }));
-  const admin = backend.withIdentity({ subject: `${adminId}|test-session` });
-  const member = backend.withIdentity({ subject: `${memberId}|test-session` });
+  const admin = backend.withIdentity({ subject: adminId });
+  const member = backend.withIdentity({ subject: memberId });
   const create = vi.spyOn(Firecrawl.prototype, "browser").mockResolvedValue({
     success: true,
     id: "profile-check",

@@ -33,7 +33,7 @@ async function setup() {
     return { userId, purchaseId };
   });
   await backend.mutation(internal.credits.grantOnSignIn, { userId });
-  const owner = backend.withIdentity({ subject: `${userId}|session` });
+  const owner = backend.withIdentity({ subject: userId });
   const status = () => owner.query(api.creditPurchases.status, { purchaseId });
   const pay = (refundedProductAmount: number, refundedTaxAmount: number) =>
     backend.mutation(internal.creditPurchases.processOrder, {
@@ -94,7 +94,7 @@ test("does not expose another account's purchase or an invalid reference", async
   const otherId = await t.backend.run((ctx) =>
     insertTestAccount(ctx, { email: "other@example.test" }),
   );
-  const other = t.backend.withIdentity({ subject: `${otherId}|session` });
+  const other = t.backend.withIdentity({ subject: otherId });
   expect(await other.query(api.creditPurchases.status, { purchaseId: t.purchaseId })).toBeNull();
   expect(await t.owner.query(api.creditPurchases.status, { purchaseId: "invalid" })).toBeNull();
 });

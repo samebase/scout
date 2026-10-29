@@ -1,0 +1,202 @@
+diff --git a/dist/component/_generated/component.d.ts b/dist/component/_generated/component.d.ts
+index b4a0bd806593efdcef910e8a4a1a301ceadb2724..eac118d63e19da3462b2d2a66bbb0ac0b031846a 100644
+--- a/dist/component/_generated/component.d.ts
++++ b/dist/component/_generated/component.d.ts
+@@ -20,6 +20,10 @@ import type { FunctionReference } from "convex/server";
+  */
+ export type ComponentApi<Name extends string | undefined = string | undefined> = {
+     public: {
++        /** Samebase patch for 2.0.0-beta.0: see `deleteUser` in public.js. */
++        deleteUser: FunctionReference<"mutation", "internal", {
++            userId: string;
++        }, null, Name>;
+         getUserIdByAccount: FunctionReference<"query", "internal", {
+             provider: string;
+             providerAccountId: string;
+diff --git a/dist/component/public.js b/dist/component/public.js
+index bb4d4d914e48f77ca0ecff9b78c50aea4cc9d7b1..2e10ffcd416fa68f3b707ab21e617941e0acc588 100644
+--- a/dist/component/public.js
++++ b/dist/component/public.js
+@@ -524,4 +524,38 @@ export const signOut = mutation({
+         return null;
+     },
+ });
++/**
++ * Samebase patch for 2.0.0-beta.0, until upstream ships an equivalent.
++ * Gap: the core has no deletion by user id, so after an app deletes a user,
++ * the user's refresh tokens still refresh and the provider accounts still map
++ * to the deleted user id. Upstream issue text: "Add deleteUser({ userId }) to
++ * the core component. It deletes every account and session of the user and
++ * every refresh token of those sessions, like deleteUser in the email and
++ * passkey components."
++ *
++ * Delete every account and session of a user, with the refresh tokens of the
++ * sessions. A session has the user id of its account, so the sessions of the
++ * user are the sessions of the accounts. Idempotent.
++ */
++export const deleteUser = mutation({
++    args: { userId: v.string() },
++    returns: v.null(),
++    handler: async (ctx, { userId }) => {
++        const sessions = await ctx.db
++            .query("sessions")
++            .withIndex("by_user", (q) => q.eq("userId", userId))
++            .collect();
++        for (const session of sessions) {
++            await deleteSession(ctx, session._id);
++        }
++        const accounts = await ctx.db
++            .query("accounts")
++            .withIndex("by_user", (q) => q.eq("userId", userId))
++            .collect();
++        for (const account of accounts) {
++            await ctx.db.delete("accounts", account._id);
++        }
++        return null;
++    },
++});
+ //# sourceMappingURL=public.js.map
+\ No newline at end of file
+diff --git a/dist/components/password/_generated/component.d.ts b/dist/components/password/_generated/component.d.ts
+index d108582cbaa59568f46a03e7f45576bc1ec91ef4..cbfa3a5c8f7c9a3971ba853c137a83e75b3bc7df 100644
+--- a/dist/components/password/_generated/component.d.ts
++++ b/dist/components/password/_generated/component.d.ts
+@@ -20,6 +20,10 @@ import type { FunctionReference } from "convex/server";
+  */
+ export type ComponentApi<Name extends string | undefined = string | undefined> = {
+     public: {
++        /** Samebase patch for 2.0.0-beta.0: see `deleteUser` in components/password/public.js. */
++        deleteUser: FunctionReference<"mutation", "internal", {
++            userId: string;
++        }, null, Name>;
+         setPassword: FunctionReference<"mutation", "internal", {
+             password: string;
+             userId: string;
+diff --git a/dist/components/password/public.js b/dist/components/password/public.js
+index 8bb17ec6332607f176e0e9166d3a08056f918e75..753ac7fe09be7930f567795ee6547137bedab169 100644
+--- a/dist/components/password/public.js
++++ b/dist/components/password/public.js
+@@ -103,6 +103,28 @@ export const verifyPassword = mutation({
+         return { success: true };
+     },
+ });
++/**
++ * Samebase patch for 2.0.0-beta.0, until upstream ships an equivalent.
++ * Gap: the password component has no deletion by user id, so a deleted user's
++ * password hash stays. Upstream issue text: "Add deleteUser({ userId }) to the
++ * password component. It deletes the stored password and the verifyPassword
++ * rate limit of the user."
++ *
++ * Delete the stored password and the verifyPassword rate limit of a user.
++ * Idempotent.
++ */
++export const deleteUser = mutation({
++    args: { userId: v.string() },
++    returns: v.null(),
++    handler: async (ctx, { userId }) => {
++        const row = await passwordByUserId(ctx, userId);
++        if (row !== null) {
++            await ctx.db.delete("passwords", row._id);
++        }
++        await rateLimiter.reset(ctx, "verifyPassword", { key: userId });
++        return null;
++    },
++});
+ function passwordByUserId(ctx, userId) {
+     return ctx.db
+         .query("passwords")
+diff --git a/src/component/public.ts b/src/component/public.ts
+index 48a827aee542d5f8f22b3b5f34fbc752b5396977..03c8b16bd465f57a1dc04ba447c908ab21343bc0 100644
+--- a/src/component/public.ts
++++ b/src/component/public.ts
+@@ -727,3 +727,38 @@ export const signOut = mutation({
+     return null;
+   },
+ });
++
++/**
++ * Samebase patch for 2.0.0-beta.0, until upstream ships an equivalent.
++ * Gap: the core has no deletion by user id, so after an app deletes a user,
++ * the user's refresh tokens still refresh and the provider accounts still map
++ * to the deleted user id. Upstream issue text: "Add deleteUser({ userId }) to
++ * the core component. It deletes every account and session of the user and
++ * every refresh token of those sessions, like deleteUser in the email and
++ * passkey components."
++ *
++ * Delete every account and session of a user, with the refresh tokens of the
++ * sessions. A session has the user id of its account, so the sessions of the
++ * user are the sessions of the accounts. Idempotent.
++ */
++export const deleteUser = mutation({
++  args: { userId: v.string() },
++  returns: v.null(),
++  handler: async (ctx, { userId }) => {
++    const sessions = await ctx.db
++      .query("sessions")
++      .withIndex("by_user", (q) => q.eq("userId", userId))
++      .collect();
++    for (const session of sessions) {
++      await deleteSession(ctx, session._id);
++    }
++    const accounts = await ctx.db
++      .query("accounts")
++      .withIndex("by_user", (q) => q.eq("userId", userId))
++      .collect();
++    for (const account of accounts) {
++      await ctx.db.delete("accounts", account._id);
++    }
++    return null;
++  },
++});
+diff --git a/src/components/password/public.ts b/src/components/password/public.ts
+index 191b69059ccfb2b6a2eb40f8e9a6530cdcfe969c..f1e93231ed9c28a566df2d65e2169a8163530f0b 100644
+--- a/src/components/password/public.ts
++++ b/src/components/password/public.ts
+@@ -133,6 +133,29 @@ export const verifyPassword = mutation({
+   },
+ });
+ 
++/**
++ * Samebase patch for 2.0.0-beta.0, until upstream ships an equivalent.
++ * Gap: the password component has no deletion by user id, so a deleted user's
++ * password hash stays. Upstream issue text: "Add deleteUser({ userId }) to the
++ * password component. It deletes the stored password and the verifyPassword
++ * rate limit of the user."
++ *
++ * Delete the stored password and the verifyPassword rate limit of a user.
++ * Idempotent.
++ */
++export const deleteUser = mutation({
++  args: { userId: v.string() },
++  returns: v.null(),
++  handler: async (ctx, { userId }) => {
++    const row = await passwordByUserId(ctx, userId);
++    if (row !== null) {
++      await ctx.db.delete("passwords", row._id);
++    }
++    await rateLimiter.reset(ctx, "verifyPassword", { key: userId });
++    return null;
++  },
++});
++
+ function passwordByUserId(
+   ctx: QueryCtx,
+   userId: string,
+diff --git a/src/testing/resend.ts b/src/testing/resend.ts
+index 109de3e781189b9228844abb6d37bee90047e920..bfa219ca49547362942104330e24bc16ed039762 100644
+--- a/src/testing/resend.ts
++++ b/src/testing/resend.ts
+@@ -62,9 +62,10 @@ export async function stubEmailSender(
+ export type SentEmail = {
+   from: string;
+   to: string[];
+-  subject?: string;
+-  html?: string;
+-  text?: string;
++  // Samebase patch for 2.0.0-beta.0: `undefined` for apps that use exactOptionalPropertyTypes.
++  subject?: string | undefined;
++  html?: string | undefined;
++  text?: string | undefined;
+ };
+ 
+ /**

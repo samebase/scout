@@ -1,17 +1,13 @@
-export function normalizeAuthEmail(value: unknown) {
-  if (typeof value !== "string") {
-    throw new Error("Missing email");
-  }
+import { ConvexError } from "convex/values";
 
-  const email = value.trim().toLowerCase();
+/**
+The form in which `users.email` stores an address: trimmed, lowercase, and NFC, the normalization of
+the Convex Auth email component, so a lookup in either one finds the same address.
+*/
+export function normalizeAuthEmail(value: string) {
+  const email = value.trim().toLowerCase().normalize("NFC");
   if (!email || email.length > 320 || !email.includes("@")) {
-    throw new Error("Invalid email");
+    throw new ConvexError("Enter a valid email address.");
   }
   return email;
-}
-
-export async function authEmailRateLimitKey(providerId: string, email: string) {
-  const input = new TextEncoder().encode(`${providerId}:${email}`);
-  const digest = await crypto.subtle.digest("SHA-256", input);
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }

@@ -1,5 +1,8 @@
 /// <reference types="vite/client" />
 import agentTest from "@convex-dev/agent/test";
+import { registerCore } from "@convex-dev/auth/test";
+import { registerEmail } from "@convex-dev/auth/components/email/test";
+import { registerPasswordProvider } from "@convex-dev/auth/components/password/test";
 import workflowTest from "@convex-dev/workflow/test";
 import { convexTest } from "convex-test";
 import type { FunctionArgs } from "convex/server";
@@ -19,6 +22,9 @@ async function setup() {
   const backend = convexTest(schema, import.meta.glob("./**/*.ts"));
   agentTest.register(backend);
   workflowTest.register(backend);
+  registerCore(backend);
+  registerPasswordProvider(backend);
+  registerEmail(backend);
   const { userId, otherId, adminId, scoutId } = await backend.run(async (ctx) => ({
     userId: await insertTestAccount(ctx, { email: "owner@example.test" }),
     otherId: await insertTestAccount(ctx, { email: "other@example.test" }),
@@ -661,15 +667,12 @@ test("account deletion finishes owner-listing batches without removing public ta
     );
   }
   await t.review("shared.test", 100, { userId: t.otherId });
-  const sessionId = await t.backend.run((ctx) =>
-    ctx.db.insert("authSessions", { userId: t.userId, expirationTime: Date.now() + 60_000 }),
-  );
-  const deleting = t.backend.withIdentity({ subject: `${t.userId}|${sessionId}` });
+  const deleting = t.backend.withIdentity({ subject: t.userId });
   await deleting.mutation(api.accountDeletion.request, {
     confirmation: ACCOUNT_DELETION_CONFIRMATION,
   });
   await expect(t.list("mine")).rejects.toThrow("Not authorized");
-  const cleanup = { userId: t.userId, sessionId };
+  const cleanup = { userId: t.userId };
   expect(await t.backend.mutation(internal.accountDeletionCleanup.finish, cleanup)).toBe(false);
   expect(await t.backend.run((ctx) => ctx.db.get(t.userId))).toMatchObject({ state: "deleting" });
   expect(await t.backend.mutation(internal.accountDeletionCleanup.finish, cleanup)).toBe(true);

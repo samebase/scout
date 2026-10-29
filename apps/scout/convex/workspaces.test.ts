@@ -80,8 +80,8 @@ describe.each(["agents_api", "convex_agent"] satisfies Array<Doc<"agentsApiSessi
           firecrawl: { profileName: "workspace-profile" },
         }),
       );
-      const owner = backend.withIdentity({ subject: `${userId}|session` });
-      const other = backend.withIdentity({ subject: `${otherId}|session` });
+      const owner = backend.withIdentity({ subject: userId });
+      const other = backend.withIdentity({ subject: otherId });
       const makeSession = (
         ownerId: Id<"users">,
         scout: Id<"scouts">,
@@ -231,7 +231,7 @@ describe.each(["agents_api", "convex_agent"] satisfies Array<Doc<"agentsApiSessi
           const outsiderId = await t.backend.run((ctx) =>
             insertTestAccount(ctx, { email: "outsider@example.test" }),
           );
-          const outsider = t.backend.withIdentity({ subject: `${outsiderId}|session` });
+          const outsider = t.backend.withIdentity({ subject: outsiderId });
           await expect(outsider.query(api.scout.workspaces.list, { target })).rejects.toThrow(
             "Not authorized",
           );
@@ -699,7 +699,7 @@ js-exec report.ts`);
       it("browses and edits shared files without creating a chat", async () => {
         const t = await setup();
         const userId = await t.backend.run((ctx) => insertTestAccount(ctx, { email: ADMIN_EMAIL }));
-        const viewer = t.backend.withIdentity({ subject: `${userId}|session` });
+        const viewer = t.backend.withIdentity({ subject: userId });
         const result = await viewer.action(api.scout.workspaceTools.executeSiteCommand, {
           site: "Example.COM",
           command: "printf 'site notes' > guide.md",

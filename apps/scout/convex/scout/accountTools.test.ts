@@ -346,7 +346,7 @@ describe("Autonomous managed-password preparation", () => {
     const userId = await backend.run(
       async (ctx) => await insertTestAccount(ctx, { email: ADMIN_EMAIL }),
     );
-    const admin = backend.withIdentity({ subject: `${userId}|test-session` });
+    const admin = backend.withIdentity({ subject: userId });
     const result = await admin.action(api.scout.serviceAccountCredentialActions.savePassword, {
       account: {
         kind: "create",

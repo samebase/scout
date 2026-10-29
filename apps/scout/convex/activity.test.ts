@@ -37,8 +37,8 @@ async function setup() {
       firecrawl: { profileName: "private-profile" },
     }),
   }));
-  const member = backend.withIdentity({ subject: `${memberId}|session` });
-  const other = backend.withIdentity({ subject: `${otherId}|session` });
+  const member = backend.withIdentity({ subject: memberId });
+  const other = backend.withIdentity({ subject: otherId });
   async function chat(
     purpose: Doc<"scoutChats">["purpose"],
     visibility: Doc<"scoutChats">["visibility"],
@@ -229,7 +229,7 @@ test("shared site preparation uses the job's start time and keeps task access ru
   for (const reader of [t.backend, t.other]) {
     expect(await reader.query(api.scout.activity.get, { threadId: waiting.sessionId })).toBeNull();
   }
-  const admin = t.backend.withIdentity({ subject: `${t.adminId}|session` });
+  const admin = t.backend.withIdentity({ subject: t.adminId });
   for (const reader of [t.member, admin]) {
     expect(
       (await reader.query(api.scout.activity.get, { threadId: waiting.sessionId }))
@@ -1482,7 +1482,7 @@ test("Agents tools pair by session and call ID across pages, including actual er
   expect(JSON.stringify(second)).not.toMatch(
     /hidden reasoning|Not the persisted result|providerItemId/,
   );
-  const admin = t.backend.withIdentity({ subject: `${t.adminId}|session` });
+  const admin = t.backend.withIdentity({ subject: t.adminId });
   const adminFirst = await admin.query(api.tasks.sessions.listItems, {
     sessionId,
     paginationOpts: { cursor: null, numItems: 50 },

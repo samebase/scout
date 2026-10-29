@@ -18,6 +18,8 @@
     "jsx": "react-jsx",
     "skipLibCheck": true,
     "allowSyntheticDefaultImports": true,
+    /* The test helpers of Convex Auth ship as TypeScript that imports `.ts` paths. */
+    "allowImportingTsExtensions": true,
 
     /* These compiler options are required by Convex */
     "target": "ESNext",
