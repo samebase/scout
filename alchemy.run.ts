@@ -98,6 +98,22 @@ export default Alchemy.Stack(
         redirectUri: `${PRODUCTION_CONVEX_SITE_URL}${HUB_CALLBACK_PATH}`,
         deploymentType: "production",
       }).pipe(Alchemy.RemovalPolicy.retain());
+      // convex/email.ts sends authentication email with this account token, which can only send
+      // email. Minting it needs Account API Tokens Write on the CI token. Cloudflare returns the
+      // value only on creation: the resource keeps it in state, and an update, such as a new name
+      // or policy, keeps that value. A deploy mints a new token only when this one is gone.
+      // Retained with Site: a destroy of this stage must not revoke the token production sends with.
+      const { accountId } = yield* yield* Cloudflare.CloudflareEnvironment;
+      const emailToken = yield* Cloudflare.ApiToken.AccountApiToken("EmailToken", {
+        name: "scout production email sending",
+        policies: [
+          {
+            effect: "allow",
+            permissionGroups: ["Email Sending Write"],
+            resources: { [`com.cloudflare.api.account.${accountId}`]: "*" },
+          },
+        ],
+      }).pipe(Alchemy.RemovalPolicy.retain());
       yield* Convex.Deployment("Site", {
         project,
         type: "prod",
@@ -108,6 +124,8 @@ export default Alchemy.Stack(
           HUB_ISSUER: client.issuer,
           HUB_CLIENT_ID: client.clientId,
           HUB_CLIENT_SECRET: client.clientSecret,
+          CLOUDFLARE_EMAIL_ACCOUNT_ID: accountId,
+          CLOUDFLARE_EMAIL_API_TOKEN: emailToken.value,
         },
         source: { path: "./convex", command: ["node", "--run", "deploy"] },
       }).pipe(adopt(true), Alchemy.RemovalPolicy.retain());
