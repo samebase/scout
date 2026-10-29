@@ -6,23 +6,26 @@ REST API. Scout-originated task and human-help emails use the Scout's own AgentM
 ## Cloudflare
 
 1. In Cloudflare Email Service, onboard `samebase.com` for Email Sending.
-2. Create an API token with the `Email Sending: Edit` account permission.
-3. Keep `scout-notifications@samebase.com` as an allowed sender.
+2. Keep `scout-notifications@samebase.com` as an allowed sender.
 
-## Convex
+## Production
 
-Set both values on every Convex deployment that should send authentication email:
+The production deploy (stage `prod` of `alchemy.run.ts`) owns the account API token
+`scout production email sending`, with only the `Email Sending: Edit` permission. The first deploy
+mints it, and every deploy writes `CLOUDFLARE_EMAIL_ACCOUNT_ID` and `CLOUDFLARE_EMAIL_API_TOKEN` to
+the production deployment. Do not set them on production by hand: the next deploy overwrites them.
+
+After the first successful production deploy with this token, revoke the earlier hand-made
+production token in the Cloudflare dashboard.
+
+## Development
+
+Create an API token with the `Email Sending: Edit` account permission. Set both values on each
+development deployment that should send authentication email:
 
 ```text
 pnpm --filter samebase-scout exec convex env set CLOUDFLARE_EMAIL_ACCOUNT_ID "replace-with-account-id"
 pnpm --filter samebase-scout exec convex env set CLOUDFLARE_EMAIL_API_TOKEN "replace-with-email-token"
-```
-
-Set the production values separately:
-
-```text
-pnpm --filter samebase-scout exec convex env set --prod CLOUDFLARE_EMAIL_ACCOUNT_ID "replace-with-account-id"
-pnpm --filter samebase-scout exec convex env set --prod CLOUDFLARE_EMAIL_API_TOKEN "replace-with-email-token"
 ```
 
 The token is a Convex deployment secret. Do not add it to browser variables or the repository.

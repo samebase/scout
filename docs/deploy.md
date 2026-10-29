@@ -34,8 +34,13 @@ repository. Alchemy creates temporary deployment keys for its commands. The form
 workflow.
 
 The production job uses `CLOUDFLARE_ACCOUNT_ID` and the repository secret `CLOUDFLARE_API_TOKEN`
-to manage the buckets. Pull request jobs receive no Cloudflare token. Scout continues using its
-existing bucket-scoped S3 credentials in Convex.
+to manage the buckets and to mint production's email-sending token. That CI token,
+`scout-alchemy`, needs its R2 permission and Account API Tokens Write. Pull request jobs
+receive no Cloudflare token. Scout continues using its existing bucket-scoped S3 credentials in
+Convex.
+
+Stage `prod` mints the account API token `scout production email sending`, with only Email
+Sending Write, and retains it when the stack is destroyed. See `EMAIL_SETUP.md`.
 
 Google sign-in runs through the team's identity hub. Every run, a destroy too, reads the repository
 variable `HUB_ISSUER` (`https://auth.samebase.com`) and the repository secret
@@ -54,7 +59,8 @@ The team's `alchemy-state` Convex project stores the stack state. Its `samebase.
 records the repository, stack file, branch, commit, pull request, and workflow run for Samebase's
 repository overview. `SCOUT_COMMIT` is a deployment input so a change outside `apps/scout` also
 deploys. Alchemy manages `SCOUT_COMMIT` and the three `HUB_` variables on each deployment, plus
-`SITE_URL` in production. Other deployment environment variables remain unmanaged.
+`SITE_URL` and the two `CLOUDFLARE_EMAIL_` variables in production. Other deployment environment
+variables remain unmanaged.
 
 Stage `prod` also owns the existing R2 buckets `scout-workspaces-prod`, `scout-workspaces`, and
 `scout-public-media`, so Samebase can show them with Scout's other resources. All three have a

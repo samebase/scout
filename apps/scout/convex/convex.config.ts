@@ -15,6 +15,8 @@ const app = defineApp({
     AGENTMAIL_API_KEY: v.optional(v.string()),
     AUTH_JWKS: v.string(),
     AUTH_PRIVATE_KEY: v.string(),
+    // Optional because development and preview deployments may have none. The production deploy
+    // (alchemy.run.ts) sets both, and convex/email.ts fails a send without them.
     CLOUDFLARE_EMAIL_ACCOUNT_ID: v.optional(v.string()),
     CLOUDFLARE_EMAIL_API_TOKEN: v.optional(v.string()),
     CREDITS_ENABLED: v.optional(v.string()),
