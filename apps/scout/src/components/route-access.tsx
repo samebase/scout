@@ -1,4 +1,4 @@
-import { useAuthActions } from "@convex-dev/auth/react";
+import { useSignOutSession } from "@samebase/convex-auth-tanstack-start";
 import { ClientOnly, Link, Navigate, Outlet, useMatches } from "@tanstack/react-router";
 import { useState } from "react";
 import { accountAccessMessage, canAccess, useViewerAccess } from "../lib/access";
@@ -44,17 +44,14 @@ function ProtectedRouteOutlet({ policies }: { policies: AccessKey[] }) {
 
 function AccessUnavailable() {
   const message = accountAccessMessage(useViewerAccess());
-  const { signOut } = useAuthActions();
+  const signOut = useSignOutSession("/auth/signout", "/");
   const [failed, setFailed] = useState(false);
   const [pending, setPending] = useState(false);
   async function leave() {
     setPending(true);
     setFailed(false);
-    try {
-      await signOut();
-    } catch {
+    if (!(await signOut())) {
       setFailed(true);
-    } finally {
       setPending(false);
     }
   }

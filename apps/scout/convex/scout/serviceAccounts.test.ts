@@ -66,7 +66,7 @@ async function authenticatedBackend() {
   const userId = await insertUser(backend, ADMIN_EMAIL);
   return {
     backend,
-    admin: backend.withIdentity({ subject: `${userId}|test-session` }),
+    admin: backend.withIdentity({ subject: userId }),
     userId,
   };
 }
@@ -208,7 +208,7 @@ describe("Scout service-account inventory", () => {
     };
     await expect(
       backend
-        .withIdentity({ subject: `${memberId}|test-session` })
+        .withIdentity({ subject: memberId })
         .mutation(api.scout.serviceAccounts.savePasswordless, args),
     ).rejects.toThrow("Not authorized");
     // A manager closes the browser before changing its saved login method.
@@ -310,7 +310,7 @@ describe("Scout service-account inventory", () => {
     });
     const pendingId = await insertUser(backend, "person@example.com");
     await backend.run((ctx) => ctx.db.patch(pendingId, { isApproved: false }));
-    const pending = backend.withIdentity({ subject: `${pendingId}|test-session` });
+    const pending = backend.withIdentity({ subject: pendingId });
     for (const viewer of [backend, pending]) {
       for (const args of [{}, { scoutId }]) {
         await expect(viewer.query(api.scout.serviceAccounts.list, args)).resolves.toEqual([
@@ -331,7 +331,7 @@ describe("Scout service-account inventory", () => {
     async (email) => {
       const backend = testBackend();
       const userId = await insertUser(backend, email);
-      const viewer = backend.withIdentity({ subject: `${userId}|test-session` });
+      const viewer = backend.withIdentity({ subject: userId });
       const conradId = await insertScout(backend, "conrad");
       const adaId = await insertScout(backend, "ada");
       await insertManagedAccount(backend, {
@@ -620,7 +620,7 @@ describe("Scout service-account inventory", () => {
     });
     await backend.mutation(internal.scout.serviceAccounts.recordAuthenticated, evidence);
     const memberId = await insertUser(backend, "member@example.com");
-    const member = backend.withIdentity({ subject: `${memberId}|test-session` });
+    const member = backend.withIdentity({ subject: memberId });
     for (const viewer of [admin, member]) {
       for (const args of [{}, { scoutId }]) {
         const accounts = await viewer.query(api.scout.serviceAccounts.list, args);

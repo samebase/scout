@@ -15,8 +15,6 @@ import type * as accountDeletionCleanup from "../accountDeletionCleanup.js";
 import type * as accounts from "../accounts.js";
 import type * as auth from "../auth.js";
 import type * as authEmail from "../authEmail.js";
-import type * as authEmailRateLimit from "../authEmailRateLimit.js";
-import type * as authEmails from "../authEmails.js";
 import type * as browserModel from "../browserModel.js";
 import type * as browserReplay from "../browserReplay.js";
 import type * as creditLedger from "../creditLedger.js";
@@ -168,8 +166,6 @@ declare const fullApi: ApiFromModules<{
   accounts: typeof accounts;
   auth: typeof auth;
   authEmail: typeof authEmail;
-  authEmailRateLimit: typeof authEmailRateLimit;
-  authEmails: typeof authEmails;
   browserModel: typeof browserModel;
   browserReplay: typeof browserReplay;
   creditLedger: typeof creditLedger;
@@ -335,6 +331,9 @@ export declare const internal: FilterApi<
 >;
 
 export declare const components: {
+  auth: import("@convex-dev/auth/_generated/component.js").ComponentApi<"auth">;
+  authPassword: import("@convex-dev/auth/components/password/_generated/component.js").ComponentApi<"authPassword">;
+  authEmail: import("@convex-dev/auth/components/email/_generated/component.js").ComponentApi<"authEmail">;
   agent: import("@convex-dev/agent/_generated/component.js").ComponentApi<"agent">;
   r2: import("@convex-dev/r2/_generated/component.js").ComponentApi<"r2">;
   workflow: import("@convex-dev/workflow/_generated/component.js").ComponentApi<"workflow">;

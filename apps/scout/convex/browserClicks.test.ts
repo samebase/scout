@@ -26,8 +26,8 @@ async function setup() {
       firecrawl: { profileName: "click-profile" },
     }),
   );
-  const owner = backend.withIdentity({ subject: `${userId}|test-session` });
-  const other = backend.withIdentity({ subject: `${otherId}|test-session` });
+  const owner = backend.withIdentity({ subject: userId });
+  const other = backend.withIdentity({ subject: otherId });
   const thread = await backend.mutation(components.agent.threads.createThread, { userId });
   const threadId = thread._id;
   await backend.run((ctx) =>

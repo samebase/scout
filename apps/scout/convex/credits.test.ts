@@ -36,19 +36,15 @@ async function setup() {
     });
     return { userId, sessionId };
   });
-  const owner = backend.withIdentity({ subject: `${userId}|session` });
+  const owner = backend.withIdentity({ subject: userId });
   return { backend, owner, userId, sessionId };
 }
 
 describe("credit wallet", () => {
   test("grants 50 credits once on verified sign-in and serves only the owner's history", async () => {
     const { backend, owner, userId } = await setup();
-    await backend.mutation(internal.auth.store, {
-      args: { type: "signIn", userId, generateTokens: false },
-    });
-    await backend.mutation(internal.auth.store, {
-      args: { type: "signIn", userId, generateTokens: false },
-    });
+    await backend.mutation(internal.credits.grantOnSignIn, { userId });
+    await backend.mutation(internal.credits.grantOnSignIn, { userId });
     await owner.mutation(api.credits.ensureWallet, {});
     expect(await owner.query(api.credits.balance, {})).toEqual({
       balanceUnits: 500_000,
@@ -63,7 +59,7 @@ describe("credit wallet", () => {
     const otherId = await backend.run((ctx) =>
       insertTestAccount(ctx, { email: "other@example.test" }),
     );
-    const other = backend.withIdentity({ subject: `${otherId}|session` });
+    const other = backend.withIdentity({ subject: otherId });
     expect(await other.query(api.credits.balance, {})).toBeNull();
     expect(
       (await other.query(api.credits.history, { paginationOpts: { numItems: 10, cursor: null } }))

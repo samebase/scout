@@ -17,7 +17,8 @@ The deployment command runs in `apps/scout` through `Convex.Deployment.rootDir`.
   and retains it when the stack is destroyed.
 - A pull request from this repository deploys stage `pr-<number>`, with a Convex preview of the
   same name. The stack comments its URLs on the pull request. The preview command sets `SITE_URL`
-  and seeds the development password account after the hosting deployment.
+  to the preview's site before the hosting deployment and seeds the development password account
+  after it.
 - Closing the pull request destroys its stage and deletes its preview. The existing Convex
   project and the preview comment are retained. Forks receive no preview credentials.
 
@@ -53,9 +54,15 @@ unmanaged. Before changing these declarations, read the live settings: Alchemy's
 not refresh CORS, lifecycle, or domain settings, but adoption reconciles them. Omitting CORS or
 lifecycle rules clears them.
 
-New development and preview deployments take `JWT_PRIVATE_KEY`, `JWKS`, and the
-`DEV_SEED_AUTH_*` values from the project's environment defaults. Production keeps its own
-signing keys and `SITE_URL`.
+New development and preview deployments take the `DEV_SEED_AUTH_*` values from the project's
+environment defaults. Production keeps its own `SITE_URL`, the origin of the emailed sign-up and
+recovery links.
+
+Convex Auth signs sessions with `AUTH_PRIVATE_KEY` and serves `AUTH_JWKS` at
+`/auth/.well-known/jwks.json`. `scripts/ensure-convex-auth.ts` creates the pair on a deployment
+that has neither value, inside the build of `pnpm run deploy` and `pnpm run deploy:dev` and before
+`pnpm run dev` starts `convex dev`, and keeps an existing pair. The keys of Convex Auth 0.0.x,
+`JWT_PRIVATE_KEY` and `JWKS`, stay unused for a rollback.
 
 ## Local inspection
 

@@ -31,6 +31,8 @@ type Env = {
   readonly CONVEX_CLOUD_URL: string;
   readonly CONVEX_SITE_URL: string;
   readonly AGENTMAIL_API_KEY: string | undefined;
+  readonly AUTH_JWKS: string;
+  readonly AUTH_PRIVATE_KEY: string;
   readonly CLOUDFLARE_EMAIL_ACCOUNT_ID: string | undefined;
   readonly CLOUDFLARE_EMAIL_API_TOKEN: string | undefined;
   readonly CREDITS_ENABLED: string | undefined;
@@ -57,7 +59,7 @@ type Env = {
   readonly R2_SECRET_ACCESS_KEY: string | undefined;
   readonly SCOUT_COMPACTION_TOKENS: string | undefined;
   readonly SCOUT_CREDENTIAL_MASTER_KEY_V1: string | undefined;
-  readonly SITE_URL: string | undefined;
+  readonly SITE_URL: string;
   readonly SSR_FIXTURE_DEPLOYMENT_URL: string | undefined;
 };
 

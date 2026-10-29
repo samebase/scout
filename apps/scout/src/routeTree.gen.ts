@@ -17,10 +17,12 @@ import { Route as LabRouteImport } from './routes/lab'
 import { Route as MembersRouteImport } from './routes/members'
 import { Route as PlayRouteImport } from './routes/play'
 import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as ScoutsRouteImport } from './routes/scouts'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as TerrainRouteImport } from './routes/terrain'
+import { Route as VerifyEmailRouteImport } from './routes/verify-email'
 import { Route as HandoffSessionIdRouteImport } from './routes/handoff.$sessionId'
 import { Route as ScoutsIndexRouteImport } from './routes/scouts.index'
 import { Route as ScoutsSlugRouteImport } from './routes/scouts.$slug'
@@ -67,6 +69,11 @@ const PrivacyRoute = PrivacyRouteImport.update({
   path: '/privacy',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ScoutsRoute = ScoutsRouteImport.update({
   id: '/scouts',
   path: '/scouts',
@@ -85,6 +92,11 @@ const TermsRoute = TermsRouteImport.update({
 const TerrainRoute = TerrainRouteImport.update({
   id: '/terrain',
   path: '/terrain',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VerifyEmailRoute = VerifyEmailRouteImport.update({
+  id: '/verify-email',
+  path: '/verify-email',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HandoffSessionIdRoute = HandoffSessionIdRouteImport.update({
@@ -122,10 +134,12 @@ export interface FileRoutesByFullPath {
   '/members': typeof MembersRoute
   '/play': typeof PlayRoute
   '/privacy': typeof PrivacyRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/scouts': typeof ScoutsRouteWithChildren
   '/settings': typeof SettingsRoute
   '/terms': typeof TermsRoute
   '/terrain': typeof TerrainRoute
+  '/verify-email': typeof VerifyEmailRoute
   '/handoff/$sessionId': typeof HandoffSessionIdRoute
   '/scouts/$slug': typeof ScoutsSlugRoute
   '/sites/$site': typeof SitesSiteRoute
@@ -141,9 +155,11 @@ export interface FileRoutesByTo {
   '/members': typeof MembersRoute
   '/play': typeof PlayRoute
   '/privacy': typeof PrivacyRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
   '/terms': typeof TermsRoute
   '/terrain': typeof TerrainRoute
+  '/verify-email': typeof VerifyEmailRoute
   '/handoff/$sessionId': typeof HandoffSessionIdRoute
   '/scouts/$slug': typeof ScoutsSlugRoute
   '/sites/$site': typeof SitesSiteRoute
@@ -160,10 +176,12 @@ export interface FileRoutesById {
   '/members': typeof MembersRoute
   '/play': typeof PlayRoute
   '/privacy': typeof PrivacyRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/scouts': typeof ScoutsRouteWithChildren
   '/settings': typeof SettingsRoute
   '/terms': typeof TermsRoute
   '/terrain': typeof TerrainRoute
+  '/verify-email': typeof VerifyEmailRoute
   '/handoff/$sessionId': typeof HandoffSessionIdRoute
   '/scouts/$slug': typeof ScoutsSlugRoute
   '/sites/$site': typeof SitesSiteRoute
@@ -181,10 +199,12 @@ export interface FileRouteTypes {
     | '/members'
     | '/play'
     | '/privacy'
+    | '/reset-password'
     | '/scouts'
     | '/settings'
     | '/terms'
     | '/terrain'
+    | '/verify-email'
     | '/handoff/$sessionId'
     | '/scouts/$slug'
     | '/sites/$site'
@@ -200,9 +220,11 @@ export interface FileRouteTypes {
     | '/members'
     | '/play'
     | '/privacy'
+    | '/reset-password'
     | '/settings'
     | '/terms'
     | '/terrain'
+    | '/verify-email'
     | '/handoff/$sessionId'
     | '/scouts/$slug'
     | '/sites/$site'
@@ -218,10 +240,12 @@ export interface FileRouteTypes {
     | '/members'
     | '/play'
     | '/privacy'
+    | '/reset-password'
     | '/scouts'
     | '/settings'
     | '/terms'
     | '/terrain'
+    | '/verify-email'
     | '/handoff/$sessionId'
     | '/scouts/$slug'
     | '/sites/$site'
@@ -238,10 +262,12 @@ export interface RootRouteChildren {
   MembersRoute: typeof MembersRoute
   PlayRoute: typeof PlayRoute
   PrivacyRoute: typeof PrivacyRoute
+  ResetPasswordRoute: typeof ResetPasswordRoute
   ScoutsRoute: typeof ScoutsRouteWithChildren
   SettingsRoute: typeof SettingsRoute
   TermsRoute: typeof TermsRoute
   TerrainRoute: typeof TerrainRoute
+  VerifyEmailRoute: typeof VerifyEmailRoute
   HandoffSessionIdRoute: typeof HandoffSessionIdRoute
   SitesSiteRoute: typeof SitesSiteRoute
   TasksThreadRoute: typeof TasksThreadRoute
@@ -305,6 +331,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PrivacyRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/scouts': {
       id: '/scouts'
       path: '/scouts'
@@ -331,6 +364,13 @@ declare module '@tanstack/react-router' {
       path: '/terrain'
       fullPath: '/terrain'
       preLoaderRoute: typeof TerrainRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/verify-email': {
+      id: '/verify-email'
+      path: '/verify-email'
+      fullPath: '/verify-email'
+      preLoaderRoute: typeof VerifyEmailRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/handoff/$sessionId': {
@@ -393,10 +433,12 @@ const rootRouteChildren: RootRouteChildren = {
   MembersRoute: MembersRoute,
   PlayRoute: PlayRoute,
   PrivacyRoute: PrivacyRoute,
+  ResetPasswordRoute: ResetPasswordRoute,
   ScoutsRoute: ScoutsRouteWithChildren,
   SettingsRoute: SettingsRoute,
   TermsRoute: TermsRoute,
   TerrainRoute: TerrainRoute,
+  VerifyEmailRoute: VerifyEmailRoute,
   HandoffSessionIdRoute: HandoffSessionIdRoute,
   SitesSiteRoute: SitesSiteRoute,
   TasksThreadRoute: TasksThreadRoute,

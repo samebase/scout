@@ -2022,8 +2022,15 @@ Define Scout's deployments in Alchemy so Samebase can read their state from the 
 Keep the current Convex site and add isolated pull request stages with preview sign-in and cleanup
 (`alchemy.run.ts`, `.github/workflows/alchemy.yml`).
 
-### 2026-10-22 - working tree - v334
+### 2026-10-22 - 7f628ca - v334
 
 Declare Scout's existing private and public R2 buckets in Alchemy so Samebase can show the
 storage resources. Keep their settings and retain the shared buckets when a stage is removed
 (`alchemy.run.ts`).
+
+### 2026-10-29 - working tree - v337
+
+Move sign-in to Convex Auth 2 with email links for sign-up and password recovery, and keep the
+session in an httpOnly cookie so the server render sees it. Accounts from before keep their data:
+they set a new password through the recovery link (`apps/scout/convex/auth.ts`,
+`apps/scout/src/server.ts`).

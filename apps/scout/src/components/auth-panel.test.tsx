@@ -9,98 +9,104 @@ import {
 } from "@tanstack/react-router";
 import { ConvexError } from "convex/values";
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
-import { AUTH_EMAIL_COOLDOWN } from "../../shared/auth";
 import { AuthPanel } from "./auth-panel";
-import { TERMS_ACCEPTANCE_LABEL } from "../../shared/terms";
-import { SESSION_RECORDING_LABEL } from "../../shared/sessionRecording";
 
-const remote = vi.hoisted(() => ({ signIn: vi.fn() }));
+const remote = vi.hoisted(() => ({
+  signIn: vi.fn(),
+  signUp: vi.fn(),
+  startPasswordRecovery: vi.fn(),
+}));
 
-vi.mock("@convex-dev/auth/react", () => ({
-  useAuthActions: () => ({
-    signIn: remote.signIn,
+vi.mock("@convex-dev/auth/methods/email-password/react", () => ({
+  useSignInWithEmailPassword: () => ({ signIn: remote.signIn, pending: false }),
+  useSignUpWithEmailPassword: () => ({ signUp: remote.signUp, pending: false }),
+  useStartPasswordRecovery: () => ({
+    startPasswordRecovery: remote.startPasswordRecovery,
+    pending: false,
   }),
 }));
 afterEach(cleanup);
 beforeEach(() => {
-  remote.signIn.mockReset().mockRejectedValue(new ConvexError(AUTH_EMAIL_COOLDOWN));
+  remote.signIn.mockReset();
+  remote.signUp.mockReset();
+  remote.startPasswordRecovery.mockReset();
 });
 
-test("an email cooldown shows retry guidance instead of a credentials error", async () => {
-  const user = userEvent.setup();
+async function renderPanel() {
   const router = createRouter({
-    routeTree: createRootRoute({
-      staticData: { access: "access_public" },
-      component: AuthPanel,
-    }),
+    routeTree: createRootRoute({ staticData: { access: "access_public" }, component: AuthPanel }),
     history: createMemoryHistory(),
   });
   render(<RouterProvider router={router} />);
-  await user.type(await screen.findByRole("textbox", { name: "Email" }), "member@example.test");
+  return await screen.findByRole("textbox", { name: "Email" });
+}
+
+test("sign-in shows the method's error codes as guidance", async () => {
+  const user = userEvent.setup();
+  remote.signIn
+    .mockResolvedValueOnce({ status: "error", userError: { error: "INVALID_CREDENTIALS" } })
+    .mockResolvedValueOnce({
+      status: "error",
+      userError: { error: "RATE_LIMITED", retryAfterMs: 42_100 },
+    });
+  await user.type(await renderPanel(), "member@example.test");
   await user.type(screen.getByLabelText("Password", { exact: true }), "secure-password");
   await user.click(screen.getByRole("button", { name: "Sign in" }));
+  expect((await screen.findByRole("alert")).textContent).toBe("Email or password is incorrect.");
+  expect(remote.signIn).toHaveBeenCalledWith({
+    email: "member@example.test",
+    password: "secure-password",
+  });
+  await user.click(screen.getByRole("button", { name: "Sign in" }));
   expect((await screen.findByRole("alert")).textContent).toBe(
-    "Wait a minute before requesting another code.",
+    "Too many attempts. Try again in 43 seconds.",
   );
 });
 
-test("signup requires an unchecked terms box and sends acceptance", async () => {
-  remote.signIn.mockResolvedValue({ signingIn: false });
+test("sign-up sends only the email and password, then asks for the link in this browser", async () => {
   const user = userEvent.setup();
-  const router = createRouter({
-    routeTree: createRootRoute({ staticData: { access: "access_public" }, component: AuthPanel }),
-    history: createMemoryHistory(),
-  });
-  render(<RouterProvider router={router} />);
-  await user.click(await screen.findByRole("button", { name: "Create account" }));
-  const checkbox = screen.getByRole("checkbox", { name: TERMS_ACCEPTANCE_LABEL });
-  expect(checkbox).toHaveProperty("checked", false);
-  expect(checkbox).toHaveProperty("required", true);
-  expect(screen.getByRole("link", { name: "Terms and conditions" }).getAttribute("href")).toBe(
-    "/terms",
-  );
-  expect(screen.getByRole("link", { name: "Privacy policy" }).getAttribute("href")).toBe(
-    "/privacy",
-  );
-  const recording = screen.getByRole("checkbox", { name: SESSION_RECORDING_LABEL });
-  expect(recording).toHaveProperty("checked", false);
-  expect(recording).toHaveProperty("required", false);
-  expect(screen.getAllByRole("checkbox")).toHaveLength(2);
-  await user.type(screen.getByRole("textbox", { name: "Email" }), "member@example.test");
+  remote.signUp
+    .mockResolvedValueOnce({
+      success: false,
+      userError: {
+        error: "OTHER_ERROR",
+        cause: new ConvexError("This password is too common. Choose another one."),
+      },
+    })
+    .mockResolvedValueOnce({ success: true });
+  await renderPanel();
+  await user.click(screen.getByRole("button", { name: "Create account" }));
+  expect(screen.queryByRole("checkbox")).toBeNull();
+  expect(screen.getByLabelText("Password", { exact: true }).getAttribute("minlength")).toBe("10");
+  await user.type(screen.getByRole("textbox", { name: "Email" }), " member@example.test ");
   await user.type(screen.getByLabelText("Password", { exact: true }), "secure-password");
   await user.click(screen.getByRole("button", { name: "Create account" }));
-  expect(remote.signIn).not.toHaveBeenCalled();
-  await user.click(checkbox);
+  expect((await screen.findByRole("alert")).textContent).toBe(
+    "This password is too common. Choose another one.",
+  );
   await user.click(screen.getByRole("button", { name: "Create account" }));
-  expect(remote.signIn).toHaveBeenCalledOnce();
-  const data: unknown = remote.signIn.mock.calls[0]?.[1];
-  expect(data).toBeInstanceOf(FormData);
-  if (!(data instanceof FormData)) throw new Error("Expected signup form data");
-  expect(data.get("termsAccepted")).toBe("true");
-  expect(data.get("sessionRecordingConsent")).toBeNull();
-  expect(data.get("flow")).toBe("signUp");
-  expect(await screen.findByRole("button", { name: "Verify email" })).toBeTruthy();
+  expect(remote.signUp).toHaveBeenLastCalledWith({
+    email: "member@example.test",
+    password: "secure-password",
+  });
+  expect(await screen.findByRole("heading", { name: "Check your email" })).toBeTruthy();
+  expect(
+    screen.getByText("Open the link sent to member@example.test in this browser."),
+  ).toBeTruthy();
 });
 
-test("returning to signup clears acceptance, and sign-in has no acceptance checkbox", async () => {
+test("a recovery link is sent to the address that the server returns", async () => {
   const user = userEvent.setup();
-  const router = createRouter({
-    routeTree: createRootRoute({ staticData: { access: "access_public" }, component: AuthPanel }),
-    history: createMemoryHistory(),
-  });
-  render(<RouterProvider router={router} />);
-  await user.click(await screen.findByRole("button", { name: "Create account" }));
-  await user.click(screen.getByRole("checkbox", { name: TERMS_ACCEPTANCE_LABEL }));
-  await user.click(screen.getByRole("checkbox", { name: SESSION_RECORDING_LABEL }));
-  await user.click(screen.getByRole("button", { name: "Sign in instead" }));
-  expect(screen.queryByRole("checkbox")).toBeNull();
-  await user.click(screen.getByRole("button", { name: "Create account" }));
-  expect(screen.getByRole("checkbox", { name: TERMS_ACCEPTANCE_LABEL })).toHaveProperty(
-    "checked",
-    false,
-  );
-  expect(screen.getByRole("checkbox", { name: SESSION_RECORDING_LABEL })).toHaveProperty(
-    "checked",
-    false,
-  );
+  remote.startPasswordRecovery
+    .mockResolvedValueOnce({ success: false, userError: { error: "EMAIL_NOT_FOUND" } })
+    .mockResolvedValueOnce({ success: true, sentTo: "Member@example.test" });
+  await renderPanel();
+  await user.click(screen.getByRole("button", { name: "Forgot password?" }));
+  await user.type(screen.getByRole("textbox", { name: "Email" }), "member@example.test");
+  await user.click(screen.getByRole("button", { name: "Send reset link" }));
+  expect((await screen.findByRole("alert")).textContent).toBe("No account uses this email.");
+  await user.click(screen.getByRole("button", { name: "Send reset link" }));
+  expect(
+    await screen.findByText("Open the link sent to Member@example.test in this browser."),
+  ).toBeTruthy();
 });

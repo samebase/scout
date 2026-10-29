@@ -39,7 +39,7 @@ async function authenticatedBackend() {
   return {
     backend,
     scoutId,
-    admin: backend.withIdentity({ subject: `${userId}|test-session` }),
+    admin: backend.withIdentity({ subject: userId }),
   };
 }
 

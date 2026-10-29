@@ -17,7 +17,7 @@ test.each([ADMIN_EMAIL, "member@example.test"])(
         emailVerificationTime: Date.now(),
       }),
     );
-    const user = backend.withIdentity({ subject: `${userId}|session` });
+    const user = backend.withIdentity({ subject: userId });
     expect(await user.query(api.accounts.currentViewerAccess, {})).toEqual({
       kind: "terms_required",
       userId,
@@ -31,7 +31,7 @@ test.each([ADMIN_EMAIL, "member@example.test"])(
     await expect(user.action(api.polar.checkout, {})).rejects.toThrow(TERMS_ACCEPTANCE_REQUIRED);
     expect(await user.query(api.accountDeletion.status, {})).toEqual({ kind: "ready" });
 
-    await user.mutation(api.accounts.acceptTerms, {});
+    await user.mutation(api.accounts.acceptTerms, { sessionRecordingConsent: false });
     const accepted = await backend.run((ctx) => ctx.db.get(userId));
     expect(accepted).toMatchObject({ termsAcceptedAt: expect.any(Number) });
     expect(await user.query(api.accounts.currentViewerAccess, {})).toMatchObject({
@@ -39,21 +39,27 @@ test.each([ADMIN_EMAIL, "member@example.test"])(
       isApproved: false,
     });
     await expect(user.query(api.accounts.taskPreferences, {})).resolves.toEqual({});
-    await user.mutation(api.accounts.acceptTerms, {});
+    await user.mutation(api.accounts.acceptTerms, { sessionRecordingConsent: false });
     expect(await backend.run((ctx) => ctx.db.get(userId))).toEqual(accepted);
   },
 );
 
 test("anonymous, unverified, and deleted users cannot accept terms", async () => {
   const backend = convexTest(schema, modules);
-  await expect(backend.mutation(api.accounts.acceptTerms, {})).rejects.toThrow("Not authorized");
+  await expect(
+    backend.mutation(api.accounts.acceptTerms, { sessionRecordingConsent: false }),
+  ).rejects.toThrow("Not authorized");
   const userId = await backend.run((ctx) =>
     ctx.db.insert("users", { email: "member@example.test" }),
   );
-  const user = backend.withIdentity({ subject: `${userId}|session` });
-  await expect(user.mutation(api.accounts.acceptTerms, {})).rejects.toThrow("Not authorized");
+  const user = backend.withIdentity({ subject: userId });
+  await expect(
+    user.mutation(api.accounts.acceptTerms, { sessionRecordingConsent: false }),
+  ).rejects.toThrow("Not authorized");
   await backend.run((ctx) => ctx.db.replace(userId, { state: "deleted", deletedAt: Date.now() }));
-  await expect(user.mutation(api.accounts.acceptTerms, {})).rejects.toThrow("Not authorized");
+  await expect(
+    user.mutation(api.accounts.acceptTerms, { sessionRecordingConsent: false }),
+  ).rejects.toThrow("Not authorized");
 });
 
 async function setup() {
@@ -62,8 +68,8 @@ async function setup() {
   const memberId = await backend.run((ctx) =>
     insertTestAccount(ctx, { email: "member@example.test" }),
   );
-  const admin = backend.withIdentity({ subject: `${adminId}|session` });
-  const member = backend.withIdentity({ subject: `${memberId}|session` });
+  const admin = backend.withIdentity({ subject: adminId });
+  const member = backend.withIdentity({ subject: memberId });
   return { backend, adminId, memberId, admin, member };
 }
 
@@ -88,7 +94,7 @@ test.each(["nicu.dev@gmail.com", "nicu@samebase.com", "NICU.DEV@GMAIL.COM"])(
         termsAcceptedAt: Date.now(),
       }),
     );
-    const admin = backend.withIdentity({ subject: `${userId}|session` });
+    const admin = backend.withIdentity({ subject: userId });
     expect(await admin.query(api.accounts.currentViewerAccess, {})).toMatchObject({
       email,
       role: "role_staff",
@@ -114,7 +120,7 @@ test.each(["member@example.test", "nicuchiciuc@gmail.com", "NICUCHICIUC@GMAIL.CO
         termsAcceptedAt: Date.now(),
       }),
     );
-    const member = backend.withIdentity({ subject: `${userId}|session` });
+    const member = backend.withIdentity({ subject: userId });
     const pending = {
       email,
       role: "role_pending_access",

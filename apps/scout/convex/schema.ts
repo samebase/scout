@@ -1,4 +1,3 @@
-import { authTables } from "@convex-dev/auth/server";
 import { sessionRecordingConsent } from "./sessionRecordingModel";
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
@@ -84,7 +83,15 @@ export const taskPreferences = v.object({
   lastScoutId: v.optional(v.id("scouts")),
 });
 
-const userProfile = authTables.users.validator.extend({
+// The profile fields of the users table of Convex Auth 0.0.x stay, so its rows stay valid.
+const userProfile = v.object({
+  name: v.optional(v.string()),
+  image: v.optional(v.string()),
+  email: v.optional(v.string()),
+  emailVerificationTime: v.optional(v.number()),
+  phone: v.optional(v.string()),
+  phoneVerificationTime: v.optional(v.number()),
+  isAnonymous: v.optional(v.boolean()),
   ...taskPreferences.fields,
   termsAcceptedAt: v.optional(v.number()),
   sessionRecordingConsent: v.optional(sessionRecordingConsent),
@@ -104,7 +111,6 @@ const scoutTurnFields = {
 const siteTask = v.object({ chatId: v.id("scoutChats"), createdAt: v.number() });
 
 export default defineSchema({
-  ...authTables,
   creditWallets: defineTable(creditWalletValidator).index("by_user_id", ["userId"]),
   creditEntries: defineTable(creditEntryValidator)
     .index("by_user_id", ["userId"])
@@ -211,12 +217,6 @@ export default defineSchema({
   )
     .index("email", ["email"])
     .index("phone", ["phone"]),
-  authVerifiers: defineTable(authTables.authVerifiers.validator)
-    .index("signature", ["signature"])
-    .index("sessionId", ["sessionId"]),
-  authEmailRateLimits: defineTable({ key: v.string(), lastSentAt: v.number() }).index("by_key", [
-    "key",
-  ]),
   scouts: defineTable({
     displayName: v.string(),
     websiteIdentity: scoutWebsiteIdentityValidator,

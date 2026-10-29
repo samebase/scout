@@ -35,3 +35,8 @@ peerDependencyRules:
 minimumReleaseAgeExclude:
   # Published 2026-10-27. Remove on 2026-10-29, when it is older than the one-day release age.
   - "@samebase/alchemy-convex@0.11.0"
+patchedDependencies:
+  # Adds deleteUser to the Convex Auth 2 core and password components, which account deletion
+  # calls, and lets the Resend test stub type-check under exactOptionalPropertyTypes. Remove when
+  # upstream ships deletion by user id and that type.
+  "@convex-dev/auth@2.0.0-beta.0": patches/@convex-dev__auth@2.0.0-beta.0.patch

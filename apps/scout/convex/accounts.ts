@@ -60,14 +60,37 @@ export const setSessionRecording = publicMutation({
   },
 });
 
+/**
+The first step after a new account's sign-up link: the sign-up form of Convex Auth's email-password
+method takes only the email and the password, so the terms and the session recording choice are
+recorded here.
+*/
 export const acceptTerms = publicMutation({
   access: "access_public",
-  args: {},
+  args: { sessionRecordingConsent: v.boolean() },
   returns: v.null(),
-  handler: async (ctx) => {
+  handler: async (ctx, { sessionRecordingConsent: enabled }) => {
     if (ctx.viewer.kind === "account") return null;
     if (ctx.viewer.kind !== "terms_required") throw new ConvexError("Not authorized");
-    await ctx.db.patch(ctx.viewer.userId, { termsAcceptedAt: Date.now() });
+    const now = Date.now();
+    await ctx.db.patch(ctx.viewer.userId, {
+      termsAcceptedAt: now,
+      sessionRecordingConsent: {
+        enabled,
+        version: SESSION_RECORDING_CONSENT_VERSION,
+        updatedAt: now,
+        source: "signup" as const,
+        ...omitNullish({
+          lastGrant: enabled
+            ? {
+                version: SESSION_RECORDING_CONSENT_VERSION,
+                grantedAt: now,
+                source: "signup" as const,
+              }
+            : undefined,
+        }),
+      },
+    });
     return null;
   },
 });
@@ -111,17 +134,6 @@ export const viewerForAction = internalQuery({
   args: {},
   returns: viewerAccessValidator,
   handler: resolveViewer,
-});
-
-export const assertActiveForAuth = internalQuery({
-  args: { userId: v.id("users") },
-  returns: v.null(),
-  handler: async (ctx, { userId }) => {
-    const user = await ctx.db.get(userId);
-    if (!user || user.state === "deleting" || user.state === "deleted")
-      throw new ConvexError("This account is being deleted or has been deleted");
-    return null;
-  },
 });
 
 export const list = query({

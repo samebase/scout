@@ -40,7 +40,7 @@ async function setup() {
   const userId = await backend.run((ctx) =>
     insertTestAccount(ctx, { email: "buyer@example.test" }),
   );
-  const owner = backend.withIdentity({ subject: `${userId}|session` });
+  const owner = backend.withIdentity({ subject: userId });
   const purchase = await backend.mutation(internal.creditPurchases.begin, { userId });
   await backend.mutation(internal.creditPurchases.recordCheckout, {
     purchaseId: purchase._id,
@@ -379,7 +379,7 @@ describe("Polar credit settlement", () => {
     });
     await expect(backend.fetch("/polar/events", event)).rejects.toThrow("another checkout");
     expect(await owner.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 500_000 });
-    const other = backend.withIdentity({ subject: `${otherId}|session` });
+    const other = backend.withIdentity({ subject: otherId });
     expect(await other.query(api.credits.balance, {})).toMatchObject({ balanceUnits: 500_000 });
   });
 
@@ -426,7 +426,7 @@ describe("Polar credit settlement", () => {
       creditedUnits: 0,
       fulfillment: { kind: "manual_refund" },
     });
-    const replacement = backend.withIdentity({ subject: `${replacementId}|session` });
+    const replacement = backend.withIdentity({ subject: replacementId });
     expect(await replacement.query(api.credits.balance, {})).toBeNull();
     expect(
       await replacement.query(api.creditPurchases.status, { purchaseId: purchase._id }),
