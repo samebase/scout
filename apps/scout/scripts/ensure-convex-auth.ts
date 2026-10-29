@@ -19,6 +19,26 @@ function readVariable(name: string) {
   }).trim();
 }
 
+// Inside `convex deploy --cmd`, VITE_CONVEX_URL names the deployment of the push. A run that the
+// CLI would point at another deployment, such as a production deploy without a deploy key, stops
+// before it reads or writes anything.
+const target = process.env["VITE_CONVEX_URL"];
+if (target !== undefined) {
+  const selected: unknown = JSON.parse(
+    execFileSync(
+      process.execPath,
+      [convex, "run", "--inline-query", "process.env.CONVEX_CLOUD_URL"],
+      {
+        encoding: "utf8",
+      },
+    ),
+  );
+  if (selected !== target)
+    throw new Error(
+      `The Convex CLI selects ${String(selected)}, but the deploy pushes to ${target}. Deploy production through the Alchemy workflow.`,
+    );
+}
+
 const privateKey = readVariable("AUTH_PRIVATE_KEY");
 const jwks = readVariable("AUTH_JWKS");
 if (privateKey && jwks) {

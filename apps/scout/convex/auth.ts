@@ -1,4 +1,3 @@
-import { setupEmailPassword } from "@convex-dev/auth/methods/email-password/server";
 import { setupConvexAuth } from "@convex-dev/auth/server";
 import { createFunctionHandle } from "convex/server";
 import { ConvexError, type Infer, v } from "convex/values";
@@ -6,104 +5,56 @@ import { components, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { env, internalMutation, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { normalizeAuthEmail } from "./authEmail";
-import { readDevSeedPasswordAccountConfig } from "./devAuthConfig";
 import { EMAIL_FROM_HEADER } from "./email";
-import { publicMutation } from "./functions";
+import { publicMutation, publicQuery } from "./functions";
 
-/** The core account name of the email-password method. Every account is keyed by the users id. */
-const PROVIDER_NAME = "emailPassword";
-
-/** The landing pages of the emailed links. Each link adds its `code` query parameter. */
-const SIGN_UP_URL = `${env.SITE_URL}/verify-email`;
-const RECOVERY_URL = `${env.SITE_URL}/reset-password`;
-
-/**
-Scout sends the email-password method's mail through `email.sendAuthEmail`, with its own From address
-and Cloudflare credentials. The method requires the Resend options; Scout's sender reads none of
-them, so `apiKey` is empty.
-*/
-const emailSender = {
-  kind: "resend" as const,
-  sendEmail: internal.email.sendAuthEmail,
-  apiKey: "",
-  from: EMAIL_FROM_HEADER,
-};
+// Scout's email and password sign-in, on the components of Convex Auth's email-password method:
+// the email component sends and checks the links, the password component keeps the hashes, and the
+// core keeps the sessions. The method's React hooks call these functions, whose names, arguments,
+// and results are the method's. `users.email` decides which account owns an address, so an account
+// from Convex Auth 0.0.x keeps its row and data: it sets a password through the recovery link.
 
 const core = setupConvexAuth({ component: components.auth });
 export const { signOut, refreshSession, isAuthenticated } = core;
 
-// Scout signs up and signs in with its own functions below. The method keeps the link that
-// completes a sign-up and the password recovery. Scout exports no email change, so nothing links to
-// `urls.changeEmail`.
-// The annotation gives the exports their type without the call, whose arguments read the type of
-// `internal`, which contains this module.
-const emailPassword: ReturnType<
-  ReturnType<typeof setupEmailPassword<"users">>["attachUserCallbacks"]
-> = setupEmailPassword(core, {
-  component: components.authEmail,
-  passwordComponent: components.authPassword,
-  emailSender,
-  urls: { signUp: SIGN_UP_URL, changeEmail: SIGN_UP_URL, recovery: RECOVERY_URL },
-}).attachUserCallbacks({
-  createUser: internal.auth.createUser,
-  onSignIn: internal.auth.onSignIn,
-});
-export const {
-  completeSignUp,
-  startPasswordRecovery,
-  checkPasswordRecovery,
-  completePasswordRecovery,
-} = emailPassword;
-
-const emailPasswordProvider = v.object({
-  name: v.literal(PROVIDER_NAME),
-  accountId: v.string(),
-  profile: v.object({}),
-});
+/** The core account name. Every account is keyed by its users id. */
+const PROVIDER_NAME = "emailPassword";
+const RECOVERY_PURPOSE = "scout/passwordRecovery";
+/** OWASP ASVS v5 6.5.5: a password reset link works for at most 10 minutes. */
+const RECOVERY_TTL_MS = 10 * 60 * 1000;
 
 /**
-The core calls this when Scout creates an email-password account: `signUpWithEmailPassword` and the
-seeded development account have already chosen the users row, and the account id is its id.
+The sender of the links: `email.sendAuthEmail` sends from Scout's address with Scout's Cloudflare
+credentials, so the options that the email component passes on for Resend are not read.
+*/
+async function emailSender() {
+  return {
+    kind: "resend" as const,
+    sendEmailHandle: await createFunctionHandle(internal.email.sendAuthEmail),
+    from: EMAIL_FROM_HEADER,
+    apiKey: "",
+    initialBackoffMs: 0,
+    retryAttempts: 0,
+  };
+}
+
+/**
+The core calls this when Scout creates an email-password account: the sign-up and the seeded
+development account have already chosen the users row, and the account id is its id.
 */
 export const createUser = internalMutation({
-  args: { provider: emailPasswordProvider },
+  args: {
+    provider: v.object({
+      name: v.literal(PROVIDER_NAME),
+      accountId: v.string(),
+      profile: v.object({}),
+    }),
+  },
   returns: v.id("users"),
   handler: (ctx, { provider }) => {
     const userId = ctx.db.normalizeId("users", provider.accountId);
     if (userId === null) throw new Error("An email-password account id must be a users id.");
     return userId;
-  },
-});
-
-/**
-Runs on every sign-in: Scout's `signInWithEmailPassword`, the sign-up link, and a password recovery.
-A deleting or deleted user cannot sign in. The first sign-in after a sign-up link writes the address
-that the link verified to the users row.
-*/
-export const onSignIn = internalMutation({
-  args: { provider: emailPasswordProvider, userId: v.id("users") },
-  returns: v.null(),
-  handler: async (ctx, { userId }) => {
-    const user = await ctx.db.get(userId);
-    if (!user || user.state === "deleting" || user.state === "deleted")
-      throw new ConvexError("This account is being deleted or has been deleted.");
-    const verified = await ctx.runQuery(components.authEmail.verifiedEmails.getPrimaryEmail, {
-      userId,
-    });
-    if (verified !== null) {
-      const email = normalizeAuthEmail(verified);
-      if (user.email === undefined) {
-        if ((await readUserByEmail(ctx, email)) !== null)
-          throw new Error("Another account already has this email address.");
-        await ctx.db.patch(userId, { email, emailVerificationTime: Date.now() });
-      } else if (user.email !== email) {
-        throw new Error("The verified email address differs from the account email.");
-      } else if (user.emailVerificationTime === undefined) {
-        await ctx.db.patch(userId, { emailVerificationTime: Date.now() });
-      }
-    }
-    await ctx.runMutation(internal.credits.grantOnSignIn, { userId });
-    return null;
   },
 });
 
@@ -122,7 +73,7 @@ export async function readUserByEmail(ctx: Pick<QueryCtx, "db">, email: string) 
   return user;
 }
 
-/** Sets a new password, or rejects it with a message that the sign-up form shows. */
+/** Sets a new password, or rejects it with a message that the form shows. */
 export async function setNewPassword(ctx: MutationCtx, userId: Id<"users">, password: string) {
   const result = await ctx.runMutation(components.authPassword.public.setPassword, {
     userId,
@@ -161,7 +112,29 @@ export async function hasEmailPasswordAccount(ctx: MutationCtx, userId: Id<"user
   return accountUserId !== null;
 }
 
+/** Mints a session for an active user and grants the sign-in credits. */
+async function startSession(ctx: MutationCtx, user: Doc<"users">) {
+  if (user.state === "deleting" || user.state === "deleted")
+    throw new ConvexError("This account is being deleted or has been deleted.");
+  await ctx.runMutation(internal.credits.grantOnSignIn, { userId: user._id });
+  return await ctx.runMutation(components.auth.public.signIn, {
+    claims: { providerName: PROVIDER_NAME, providerAccountId: user._id, profile: {} },
+    issuer: env.CONVEX_SITE_URL,
+  });
+}
+
+const tokens = v.object({
+  accessToken: v.string(),
+  accessTokenExpiresAt: v.number(),
+  refreshToken: v.string(),
+  refreshTokenExpiresAt: v.number(),
+  userId: v.string(),
+});
 const rateLimited = v.object({ error: v.literal("RATE_LIMITED"), retryAfterMs: v.number() });
+const linkError = v.union(
+  v.object({ error: v.literal("INVALID_CHALLENGE") }),
+  v.object({ error: v.literal("INCORRECT_CODE") }),
+);
 
 const signUpResult = v.union(
   v.object({ success: v.literal(true), browserSecret: v.string() }),
@@ -175,34 +148,12 @@ const signUpResult = v.union(
   }),
 );
 
-const signInResult = v.union(
-  v.object({
-    status: v.literal("complete"),
-    tokens: v.object({
-      accessToken: v.string(),
-      accessTokenExpiresAt: v.number(),
-      refreshToken: v.string(),
-      refreshTokenExpiresAt: v.number(),
-      userId: v.string(),
-    }),
-  }),
-  v.object({
-    status: v.literal("error"),
-    userError: v.union(v.object({ error: v.literal("INVALID_CREDENTIALS") }), rateLimited),
-  }),
-);
-
 /**
-Starts a sign-up: it sets the password and emails a link that signs the user in for the first time
-through `completeSignUp`, in the same browser. An address that a link has verified already belongs to
-an account (`EMAIL_TAKEN`).
-
-An address that no row holds gets a new users row; repeated sign-ups make separate rows, and the
-first link opened wins. A row that already holds the address, an account from Convex Auth 0.0.x
-whose password did not carry over, is the account that the link signs in to, so the account keeps
-its data. While that link waits, a sign-up for the address must use the same password, or it gets
-`EMAIL_TAKEN`: otherwise a second sign-up could replace the password that the first link activates.
-The comparison returns instead of throwing, so the password component's limit counts the attempt.
+Starts a sign-up: a new users row with the password, and an emailed link that `completeSignUp`
+signs in with for the first time, in the same browser. Repeated sign-ups make separate rows, and the
+first link opened wins. An address that a users row holds gets `EMAIL_TAKEN`, so an account from
+before keeps its row and resets its password instead; no password reaches an existing row before
+its owner opens a link.
 */
 export const signUpWithEmailPassword = publicMutation({
   access: "access_public",
@@ -214,47 +165,29 @@ export const signUpWithEmailPassword = publicMutation({
       email,
     });
     if (emailError !== null) return { success: false as const, userError: emailError };
-
-    const owner = await readUserByEmail(ctx, email);
-    let userId: Id<"users">;
-    if (owner === null) {
-      userId = await ctx.db.insert("users", { state: "active", isApproved: true });
-      await setNewPassword(ctx, userId, args.password);
-      await createEmailPasswordAccount(ctx, userId);
-    } else {
-      if (owner.state === "deleting")
-        throw new ConvexError("This account is being deleted. Try again after the deletion.");
-      userId = owner._id;
-      if (await hasEmailPasswordAccount(ctx, userId)) {
-        const verified = await ctx.runMutation(components.authPassword.public.verifyPassword, {
-          userId,
-          password: args.password,
-        });
-        if (!verified.success) {
-          const { userError } = verified;
-          return {
-            success: false as const,
-            userError: userError.error === "RATE_LIMITED" ? userError : { error: "EMAIL_TAKEN" },
-          };
-        }
-      } else {
-        await setNewPassword(ctx, userId, args.password);
-        await createEmailPasswordAccount(ctx, userId);
-      }
+    if ((await readUserByEmail(ctx, email)) !== null) {
+      // The answer tells that the address has an account: count it, as the component counts its
+      // own EMAIL_TAKEN.
+      const lookup = await ctx.runMutation(components.authEmail.verifiedEmails.lookupEmail, {
+        email,
+      });
+      return {
+        success: false as const,
+        userError:
+          !lookup.success && lookup.userError.error === "RATE_LIMITED"
+            ? lookup.userError
+            : { error: "EMAIL_TAKEN" as const },
+      };
     }
 
+    const userId = await ctx.db.insert("users", { state: "active", isApproved: true });
+    await setNewPassword(ctx, userId, args.password);
+    await createEmailPasswordAccount(ctx, userId);
     const start = await ctx.runMutation(components.authEmail.challenge.signUp.start, {
       email,
       userId,
-      url: SIGN_UP_URL,
-      emailSender: {
-        kind: emailSender.kind,
-        sendEmailHandle: await createFunctionHandle(emailSender.sendEmail),
-        from: emailSender.from,
-        apiKey: emailSender.apiKey,
-        initialBackoffMs: 0,
-        retryAttempts: 0,
-      },
+      url: `${env.SITE_URL}/verify-email`,
+      emailSender: await emailSender(),
     });
     // `check` passed above in this transaction, so `start` has no user error to return.
     if (!start.success) throw new Error(`The sign-up link did not start: ${start.userError.error}`);
@@ -262,23 +195,52 @@ export const signUpWithEmailPassword = publicMutation({
   },
 });
 
-/** Whether the address of a users row may sign in with a password. */
-async function emailIsVerified(ctx: MutationCtx, user: Doc<"users">, email: string) {
-  const verified = await ctx.runQuery(components.authEmail.verifiedEmails.getPrimaryEmail, {
-    userId: user._id,
-  });
-  if (verified !== null) return normalizeAuthEmail(verified) === email;
-  // The seeded development account has no sign-up link: devAuth.ts creates its account.
-  const seed = readDevSeedPasswordAccountConfig();
-  return seed.kind === "enabled" && seed.email === email;
-}
+const completeSignUpResult = v.union(
+  v.object({ status: v.literal("complete"), tokens }),
+  v.object({
+    status: v.literal("error"),
+    userError: v.union(linkError, v.object({ error: v.literal("EMAIL_TAKEN") })),
+  }),
+);
+
+/** Opens the sign-up link: it writes the verified address to the new row and signs it in. */
+export const completeSignUp = publicMutation({
+  access: "access_public",
+  args: { emailCode: v.string(), browserSecret: v.string() },
+  returns: completeSignUpResult,
+  handler: async (ctx, args): Promise<Infer<typeof completeSignUpResult>> => {
+    const complete = await ctx.runMutation(components.authEmail.challenge.signUp.complete, {
+      emailCode: args.emailCode,
+      browserSecret: args.browserSecret,
+    });
+    if (!complete.success) return { status: "error" as const, userError: complete.userError };
+    const userId = ctx.db.normalizeId("users", complete.userId);
+    const user = userId && (await ctx.db.get(userId));
+    if (!user || user.state === "deleted" || user.email !== undefined)
+      throw new Error("A sign-up link must belong to a new users row.");
+    const email = normalizeAuthEmail(complete.email);
+    if ((await readUserByEmail(ctx, email)) !== null)
+      throw new Error("Another account already has this email address.");
+    await ctx.db.patch(user._id, { email, emailVerificationTime: Date.now() });
+    return { status: "complete" as const, tokens: await startSession(ctx, user) };
+  },
+});
+
+const signInResult = v.union(
+  v.object({ status: v.literal("complete"), tokens }),
+  v.object({
+    status: v.literal("error"),
+    userError: v.union(v.object({ error: v.literal("INVALID_CREDENTIALS") }), rateLimited),
+  }),
+);
 
 /**
-Signs in with an email address and a password. Scout finds the account through `users.email`
-rather than the method's own lookup, whose limit counts the client IP: behind the `/auth/signin`
-route every call comes from the server, so all visitors would share one limit. The password
-component limits the attempts on each account. An unknown address and a wrong password give the
-same error.
+Signs in with an email address and a password. The address must belong to a users row with an
+email-password account, which a sign-up link, a recovery link, or the development seed creates.
+The method's own sign-in limits address lookups per client IP, and the `/auth/signin` route calls
+Convex from the server without the client's address, so all visitors would share one limit; the
+password component limits the attempts on each account instead. An unknown address and a wrong
+password give the same error.
 */
 export const signInWithEmailPassword = publicMutation({
   access: "access_public",
@@ -289,9 +251,8 @@ export const signInWithEmailPassword = publicMutation({
       status: "error" as const,
       userError: { error: "INVALID_CREDENTIALS" as const },
     };
-    const email = normalizeAuthEmail(args.email);
-    const user = await readUserByEmail(ctx, email);
-    if (user === null || !(await emailIsVerified(ctx, user, email))) return invalid;
+    const user = await readUserByEmail(ctx, normalizeAuthEmail(args.email));
+    if (user === null || !(await hasEmailPasswordAccount(ctx, user._id))) return invalid;
     const verified = await ctx.runMutation(components.authPassword.public.verifyPassword, {
       userId: user._id,
       password: args.password,
@@ -300,11 +261,128 @@ export const signInWithEmailPassword = publicMutation({
       return verified.userError.error === "RATE_LIMITED"
         ? { status: "error" as const, userError: verified.userError }
         : invalid;
-    const tokens = await ctx.runMutation(components.auth.public.signIn, {
-      claims: { providerName: PROVIDER_NAME, providerAccountId: user._id, profile: {} },
-      onSignInHandle: await createFunctionHandle(internal.auth.onSignIn),
-      issuer: env.CONVEX_SITE_URL,
+    return { status: "complete" as const, tokens: await startSession(ctx, user) };
+  },
+});
+
+const startPasswordRecoveryResult = v.union(
+  v.object({ success: v.literal(true), browserSecret: v.string(), sentTo: v.string() }),
+  v.object({
+    success: v.literal(false),
+    userError: v.union(
+      v.object({ error: v.literal("INVALID_EMAIL") }),
+      rateLimited,
+      v.object({ error: v.literal("EMAIL_NOT_FOUND") }),
+    ),
+  }),
+);
+
+/**
+Emails a recovery link, valid for 10 minutes in the same browser, to the address of a users row.
+This is also how an account from Convex Auth 0.0.x, whose password did not carry over, sets one.
+*/
+export const startPasswordRecovery = publicMutation({
+  access: "access_public",
+  args: { email: v.string() },
+  returns: startPasswordRecoveryResult,
+  handler: async (ctx, args): Promise<Infer<typeof startPasswordRecoveryResult>> => {
+    const email = normalizeAuthEmail(args.email);
+    // The answer tells whether the address has an account: count it against the component's
+    // per-IP lookup limit, as the method's own recovery does.
+    const lookup = await ctx.runMutation(components.authEmail.verifiedEmails.lookupEmail, {
+      email,
     });
-    return { status: "complete" as const, tokens };
+    if (!lookup.success && lookup.userError.error === "RATE_LIMITED")
+      return { success: false as const, userError: lookup.userError };
+    const user = await readUserByEmail(ctx, email);
+    if (user === null || user.state === "deleting")
+      return { success: false as const, userError: { error: "EMAIL_NOT_FOUND" as const } };
+    const start = await ctx.runMutation(components.authEmail.challenge.custom.start, {
+      email,
+      purpose: RECOVERY_PURPOSE,
+      // The account is found again from the address when the link is opened.
+      expectedUserId: null,
+      url: `${env.SITE_URL}/reset-password`,
+      emailSender: await emailSender(),
+      ttlMs: RECOVERY_TTL_MS,
+      subject: "Reset your TrailScout password",
+      intro: "Open this link to choose a new TrailScout password:",
+    });
+    if (!start.success) return { success: false as const, userError: start.userError };
+    return { success: true as const, browserSecret: start.browserSecret, sentTo: email };
+  },
+});
+
+/** The active users row that a recovery link's address belongs to now, if any. */
+async function readRecoveryUser(ctx: Pick<QueryCtx, "db">, email: string) {
+  const user = await readUserByEmail(ctx, normalizeAuthEmail(email));
+  return user?.state === "deleting" ? null : user;
+}
+
+const checkPasswordRecoveryResult = v.union(
+  v.object({ success: v.literal(true) }),
+  v.object({ success: v.literal(false), userError: linkError }),
+);
+
+/** Tells the recovery page whether `completePasswordRecovery` would accept the link. */
+export const checkPasswordRecovery = publicQuery({
+  access: "access_public",
+  args: { emailCode: v.string(), browserSecret: v.string() },
+  returns: checkPasswordRecoveryResult,
+  handler: async (ctx, args): Promise<Infer<typeof checkPasswordRecoveryResult>> => {
+    const peek = await ctx.runQuery(components.authEmail.challenge.custom.peek, {
+      emailCode: args.emailCode,
+      browserSecret: args.browserSecret,
+      purpose: RECOVERY_PURPOSE,
+      currentUserId: null,
+    });
+    if (!peek.success) {
+      if (peek.userError.error === "WRONG_USER")
+        throw new Error("A recovery link expects no user, so WRONG_USER cannot happen.");
+      return { success: false as const, userError: peek.userError };
+    }
+    return (await readRecoveryUser(ctx, peek.email)) === null
+      ? { success: false as const, userError: { error: "INVALID_CHALLENGE" as const } }
+      : { success: true as const };
+  },
+});
+
+const completePasswordRecoveryResult = v.union(
+  v.object({ status: v.literal("complete"), tokens }),
+  v.object({ status: v.literal("error"), userError: linkError }),
+);
+
+/**
+Opens the recovery link: it sets the new password and signs in, and every other session of the
+account ends. A rejected password throws, so the link stays usable. The link proves the address, so
+an account from Convex Auth 0.0.x gets its email-password account here.
+*/
+export const completePasswordRecovery = publicMutation({
+  access: "access_public",
+  args: { emailCode: v.string(), browserSecret: v.string(), newPassword: v.string() },
+  returns: completePasswordRecoveryResult,
+  handler: async (ctx, args): Promise<Infer<typeof completePasswordRecoveryResult>> => {
+    const complete = await ctx.runMutation(components.authEmail.challenge.custom.complete, {
+      emailCode: args.emailCode,
+      browserSecret: args.browserSecret,
+      purpose: RECOVERY_PURPOSE,
+      currentUserId: null,
+    });
+    if (!complete.success) {
+      if (complete.userError.error === "WRONG_USER")
+        throw new Error("A recovery link expects no user, so WRONG_USER cannot happen.");
+      return { status: "error" as const, userError: complete.userError };
+    }
+    const user = await readRecoveryUser(ctx, complete.email);
+    if (user === null)
+      return { status: "error" as const, userError: { error: "INVALID_CHALLENGE" as const } };
+    await setNewPassword(ctx, user._id, args.newPassword);
+    // The core deletes sessions only together with the accounts; this method's account is the
+    // user's only one, and it is created again below.
+    await ctx.runMutation(components.auth.public.deleteUser, { userId: user._id });
+    await createEmailPasswordAccount(ctx, user._id);
+    if (user.emailVerificationTime === undefined)
+      await ctx.db.patch(user._id, { emailVerificationTime: Date.now() });
+    return { status: "complete" as const, tokens: await startSession(ctx, user) };
   },
 });

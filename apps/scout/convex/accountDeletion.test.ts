@@ -254,11 +254,10 @@ test.each([
   await expect(
     viewer.mutation(api.accounts.setApproval, { userId, isApproved: true }),
   ).rejects.toThrow("Not authorized");
-  const signIn = {
-    provider: { name: "emailPassword" as const, accountId: userId, profile: {} },
-    userId,
-  };
-  await expect(backend.mutation(internal.auth.onSignIn, signIn)).rejects.toThrow("deleted");
+  const signIn = { email, password: "deletion-password-123" };
+  await expect(backend.mutation(api.auth.signInWithEmailPassword, signIn)).rejects.toThrow(
+    "being deleted",
+  );
   const requested = await backend.run((ctx) => ctx.db.get(userId));
   await viewer.mutation(api.accountDeletion.request, {
     confirmation: ACCOUNT_DELETION_CONFIRMATION,
@@ -266,7 +265,10 @@ test.each([
   expect(await backend.run((ctx) => ctx.db.get(userId))).toEqual(requested);
   await backend.finishAllScheduledFunctions(vi.runAllTimers);
   expect(await viewer.query(api.accountDeletion.status, {})).toEqual({ kind: "deleted" });
-  await expect(backend.mutation(internal.auth.onSignIn, signIn)).rejects.toThrow("deleted");
+  expect(await backend.mutation(api.auth.signInWithEmailPassword, signIn)).toEqual({
+    status: "error",
+    userError: { error: "INVALID_CREDENTIALS" },
+  });
   await expect(viewer.query(api.accounts.taskPreferences, {})).rejects.toThrow("Not authorized");
   await backend.run(async (ctx) => {
     const user = await ctx.db.get(userId);

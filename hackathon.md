@@ -2031,5 +2031,6 @@ storage resources. Keep their settings and retain the shared buckets when a stag
 ### 2026-10-29 - working tree - v337
 
 Move sign-in to Convex Auth 2 with email links for sign-up and password recovery, and keep the
-session in an httpOnly cookie so the server render sees it. Accounts from before keep their data
-when they sign up again with the same email (`apps/scout/convex/auth.ts`, `apps/scout/src/server.ts`).
+session in an httpOnly cookie so the server render sees it. Accounts from before keep their data:
+they set a new password through the recovery link (`apps/scout/convex/auth.ts`,
+`apps/scout/src/server.ts`).

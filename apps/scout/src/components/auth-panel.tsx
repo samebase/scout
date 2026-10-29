@@ -244,9 +244,9 @@ export function authErrorMessage(userError: AuthUserError) {
     case "INVALID_EMAIL":
       return "Enter a valid email address.";
     case "EMAIL_TAKEN":
-      return "An account already uses this email. Sign in, reset its password, or open the newest sign-up link that we sent.";
+      return "An account already uses this email. Sign in, or reset its password.";
     case "EMAIL_NOT_FOUND":
-      return "No account has verified this email. An account from before the sign-in update creates its account again with the same email and keeps its data.";
+      return "No account uses this email.";
     case "PASSWORD_TOO_SHORT":
       return `Use at least ${userError.minimumLength} characters.`;
     case "PASSWORD_TOO_LONG":

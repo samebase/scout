@@ -88,12 +88,7 @@ test("the seeded development account signs in without a link and follows its pas
     tokens: { userId },
   });
 
-  // Without the seed configuration, the address has no verified email and cannot sign in.
   vi.stubEnv("DEV_SEED_AUTH_ENABLED", "false");
-  expect(await signIn(backend, "preview@example.com", "replacement-password-456")).toEqual({
-    status: "error",
-    userError: { error: "INVALID_CREDENTIALS" },
-  });
   await expect(backend.mutation(internal.devAuth.seedPasswordAccount, {})).rejects.toThrow(
     "disabled",
   );
@@ -107,31 +102,31 @@ test("the seed refuses a production deployment", async () => {
   );
 });
 
-test("a password alone does not sign in to an address that no link has verified", async () => {
+test("an account from before Convex Auth 2 signs in once a recovery link gave it an account", async () => {
   const backend = setup();
-  // An account from before Convex Auth 2, and the same account after a sign-up whose link waits:
-  // it has a password but no verified address yet.
-  const legacyId = await backend.run(async (ctx) => {
-    const userId = await ctx.db.insert("users", {
+  const legacyId = await backend.run((ctx) =>
+    ctx.db.insert("users", {
       email: ADMIN_EMAIL,
       emailVerificationTime: 1,
       isApproved: true,
       termsAcceptedAt: 1,
-    });
-    return userId;
-  });
+    }),
+  );
+  // Its old password did not carry over, so it has no email-password account yet.
   expect(await signIn(backend, ADMIN_EMAIL, "admin-password-123")).toEqual({
     status: "error",
     userError: { error: "INVALID_CREDENTIALS" },
   });
+  // What `completePasswordRecovery` writes after the link proves the address.
   await backend.run(async (ctx) => {
     await setNewPassword(ctx, legacyId, "admin-password-123");
     await createEmailPasswordAccount(ctx, legacyId);
   });
-  expect(await signIn(backend, ADMIN_EMAIL, "admin-password-123")).toEqual({
-    status: "error",
-    userError: { error: "INVALID_CREDENTIALS" },
+  expect(await signIn(backend, ADMIN_EMAIL, "admin-password-123")).toMatchObject({
+    status: "complete",
+    tokens: { userId: legacyId },
   });
+  expect(await backend.run((ctx) => ctx.db.query("users").collect())).toHaveLength(1);
   expect(await signIn(backend, "nobody@example.test", "admin-password-123")).toEqual({
     status: "error",
     userError: { error: "INVALID_CREDENTIALS" },

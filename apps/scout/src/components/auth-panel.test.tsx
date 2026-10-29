@@ -95,7 +95,7 @@ test("sign-up sends only the email and password, then asks for the link in this 
   ).toBeTruthy();
 });
 
-test("a recovery for an address without an account says how an older account comes back", async () => {
+test("a recovery link is sent to the address that the server returns", async () => {
   const user = userEvent.setup();
   remote.startPasswordRecovery
     .mockResolvedValueOnce({ success: false, userError: { error: "EMAIL_NOT_FOUND" } })
@@ -104,7 +104,7 @@ test("a recovery for an address without an account says how an older account com
   await user.click(screen.getByRole("button", { name: "Forgot password?" }));
   await user.type(screen.getByRole("textbox", { name: "Email" }), "member@example.test");
   await user.click(screen.getByRole("button", { name: "Send reset link" }));
-  expect((await screen.findByRole("alert")).textContent).toContain("with the same email");
+  expect((await screen.findByRole("alert")).textContent).toBe("No account uses this email.");
   await user.click(screen.getByRole("button", { name: "Send reset link" }));
   expect(
     await screen.findByText("Open the link sent to Member@example.test in this browser."),
