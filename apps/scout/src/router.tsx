@@ -2,11 +2,14 @@ import { createRouter as createTanStackRouter } from "@tanstack/react-router";
 import { QueryClient } from "@tanstack/react-query";
 import { setupRouterSsrQueryIntegration } from "@tanstack/react-router-ssr-query";
 import { ConvexQueryClient } from "@convex-dev/react-query";
-import { ConvexAuthProvider } from "@convex-dev/auth/react";
 import { routeTree } from "./routeTree.gen";
 
 export function getRouter() {
-  const convexQueryClient = new ConvexQueryClient(import.meta.env["VITE_CONVEX_URL"]);
+  // Holds queries until the session is known. SessionProvider releases the hold for a visitor
+  // without a session.
+  const convexQueryClient = new ConvexQueryClient(import.meta.env["VITE_CONVEX_URL"], {
+    expectAuth: true,
+  });
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -19,10 +22,7 @@ export function getRouter() {
   convexQueryClient.connect(queryClient);
   const router = createTanStackRouter({
     routeTree,
-    context: { queryClient },
-    Wrap: ({ children }) => (
-      <ConvexAuthProvider client={convexQueryClient.convexClient}>{children}</ConvexAuthProvider>
-    ),
+    context: { queryClient, convexQueryClient },
     defaultPreload: "intent",
     scrollRestoration: true,
     getScrollRestorationKey: (location) => {

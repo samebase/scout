@@ -1,5 +1,5 @@
-import { useAuthActions } from "@convex-dev/auth/react";
-import { Link, Navigate, createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useSignOutSession } from "@samebase/convex-auth-tanstack-start";
+import { Link, Navigate, createFileRoute } from "@tanstack/react-router";
 import { Authenticated, Unauthenticated } from "convex/react";
 import { useMutation, useQuery } from "convex/react";
 import { ConvexError } from "convex/values";
@@ -139,9 +139,8 @@ function AccountStatus() {
 }
 
 function SessionSettings() {
-  const { signOut } = useAuthActions();
+  const signOut = useSignOutSession("/auth/signout", "/");
   const viewer = useViewerAccess();
-  const navigate = useNavigate();
   const [state, setState] = useState<SignOutState>({ kind: "idle" });
   const isPending = state.kind === "pending";
 
@@ -152,12 +151,7 @@ function SessionSettings() {
 
     setState({ kind: "pending" });
     resetAnalytics();
-    try {
-      await signOut();
-      await navigate({ to: "/", replace: true });
-    } catch {
-      setState({ kind: "failed" });
-    }
+    if (!(await signOut())) setState({ kind: "failed" });
   };
 
   return (

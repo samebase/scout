@@ -1,28 +1,44 @@
-import { useAuthActions } from "@convex-dev/auth/react";
+import { DEFAULT_MIN_PASSWORD_LENGTH } from "@convex-dev/auth/methods/email-password";
+import {
+  type CompletePasswordRecoveryResult,
+  type CompletePasswordRecoveryState,
+  type CompleteSignUpState,
+  type SignInResult,
+  type SignUpResult,
+  type StartPasswordRecoveryResult,
+  useSignInWithEmailPassword,
+  useSignUpWithEmailPassword,
+  useStartPasswordRecovery,
+} from "@convex-dev/auth/methods/email-password/react";
 import { type FormEvent, useState } from "react";
 import { ConvexError } from "convex/values";
-import { AUTH_EMAIL_COOLDOWN } from "../../shared/auth";
+import { api } from "../../convex/_generated/api";
 import { Button } from "#components/ui/button";
 import { Input } from "#components/ui/input";
 import { LegalLinks } from "./legal-links";
-import { TermsCheckbox } from "./terms-checkbox";
-import { SessionRecordingCheckbox } from "./session-recording-checkbox";
-import { TERMS_ACCEPTANCE_REQUIRED } from "../../shared/terms";
-
-const PASSWORD_MIN_LENGTH = 8;
-const CODE_LENGTH = 8;
 
 type CredentialsFlow = "signIn" | "signUp";
 type AuthState =
   | { kind: "credentials"; flow: CredentialsFlow; email: string }
-  | { kind: "verifyEmail"; email: string }
   | { kind: "requestReset"; email: string }
-  | { kind: "resetPassword"; email: string };
+  | { kind: "checkEmail"; email: string };
 
-type AuthAction = CredentialsFlow | "verifyEmail" | "requestReset" | "resetPassword";
+type UserError =
+  | Extract<SignInResult, { status: "error" }>["userError"]
+  | Extract<SignUpResult, { success: false }>["userError"]
+  | Extract<StartPasswordRecoveryResult, { success: false }>["userError"];
+
+/** The errors of the email-password method that the sign-in panel and the link pages show. */
+export type AuthUserError =
+  | UserError
+  | Extract<CompleteSignUpState, { status: "error" }>["userError"]
+  | Extract<CompletePasswordRecoveryState, { status: "error" }>["userError"]
+  | Extract<CompletePasswordRecoveryResult, { status: "error" }>["userError"];
 
 export function AuthPanel() {
-  const { signIn } = useAuthActions();
+  const { signIn } = useSignInWithEmailPassword(api.auth);
+  const { signUp } = useSignUpWithEmailPassword(api.auth);
+  const { startPasswordRecovery } = useStartPasswordRecovery(api.auth);
   const [state, setState] = useState<AuthState>({
     kind: "credentials",
     flow: "signIn",
@@ -32,76 +48,38 @@ export function AuthPanel() {
   const [error, setError] = useState("");
   const [password, setPassword] = useState("");
 
-  const run = async (action: AuthAction, operation: () => Promise<void>) => {
+  const run = async (operation: () => Promise<UserError | null>) => {
     setError("");
     setIsPending(true);
-    try {
-      await operation();
-    } catch (caught: unknown) {
-      setError(authErrorMessage(caught, action));
-    } finally {
-      setIsPending(false);
-    }
+    const userError = await operation();
+    setIsPending(false);
+    if (userError) setError(authErrorMessage(userError));
   };
 
   const submitCredentials = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (state.kind !== "credentials") {
-      return;
-    }
-    const formData = new FormData(event.currentTarget);
-    const email = formValue(formData, "email").trim().toLowerCase();
-    formData.set("email", email);
-    formData.set("flow", state.flow);
-
-    void run(state.flow, async () => {
-      const result = await signIn("password", formData);
-      if (!result.signingIn) {
-        setState({ kind: "verifyEmail", email });
+    if (state.kind !== "credentials") return;
+    const email = state.email.trim();
+    void run(async () => {
+      if (state.flow === "signIn") {
+        const result = await signIn({ email, password });
+        return result.status === "error" ? result.userError : null;
       }
-    });
-  };
-
-  const submitVerification = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (state.kind !== "verifyEmail") {
-      return;
-    }
-    const formData = new FormData(event.currentTarget);
-    formData.set("email", state.email);
-    formData.set("flow", "email-verification");
-    void run("verifyEmail", async () => {
-      await signIn("password", formData);
+      const result = await signUp({ email, password });
+      if (!result.success) return result.userError;
+      setState({ kind: "checkEmail", email });
+      return null;
     });
   };
 
   const submitResetRequest = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const formData = new FormData(event.currentTarget);
-    const email = formValue(formData, "email").trim().toLowerCase();
-    formData.set("email", email);
-    formData.set("flow", "reset");
-    void run("requestReset", async () => {
-      await signIn("password", formData);
-      setState({ kind: "resetPassword", email });
-    });
-  };
-
-  const submitPasswordReset = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (state.kind !== "resetPassword") {
-      return;
-    }
-    const formData = new FormData(event.currentTarget);
-    const newPassword = formValue(formData, "newPassword");
-    if (newPassword !== formValue(formData, "confirmPassword")) {
-      setError("Passwords do not match.");
-      return;
-    }
-    formData.set("email", state.email);
-    formData.set("flow", "reset-verification");
-    void run("resetPassword", async () => {
-      await signIn("password", formData);
+    if (state.kind !== "requestReset") return;
+    void run(async () => {
+      const result = await startPasswordRecovery({ email: state.email.trim() });
+      if (!result.success) return result.userError;
+      setState({ kind: "checkEmail", email: result.sentTo });
+      return null;
     });
   };
 
@@ -142,18 +120,11 @@ export function AuthPanel() {
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               autoComplete={state.flow === "signUp" ? "new-password" : "current-password"}
-              minLength={PASSWORD_MIN_LENGTH}
+              minLength={state.flow === "signUp" ? DEFAULT_MIN_PASSWORD_LENGTH : undefined}
               required
             />
           </label>
-          {state.flow === "signUp" ? (
-            <>
-              <TermsCheckbox />
-              <SessionRecordingCheckbox />
-            </>
-          ) : (
-            <LegalLinks />
-          )}
+          <LegalLinks />
           <Button type="submit" size="lg" className="mt-1 w-full" disabled={isPending}>
             {pendingLabel(state.flow, isPending)}
           </Button>
@@ -188,18 +159,6 @@ export function AuthPanel() {
         </form>
       ) : null}
 
-      {state.kind === "verifyEmail" ? (
-        <form className="flex flex-col gap-4" onSubmit={submitVerification}>
-          <CodeField id="verification-code" />
-          <Button type="submit" disabled={isPending}>
-            {isPending ? "Verifying" : "Verify email"}
-          </Button>
-          <Button type="button" variant="link" disabled={isPending} onClick={() => showSignIn()}>
-            Back to sign in
-          </Button>
-        </form>
-      ) : null}
-
       {state.kind === "requestReset" ? (
         <form className="flex flex-col gap-4" onSubmit={submitResetRequest}>
           <label className="flex flex-col gap-2 text-sm font-medium" htmlFor="reset-email">
@@ -216,7 +175,7 @@ export function AuthPanel() {
             />
           </label>
           <Button type="submit" disabled={isPending}>
-            {isPending ? "Sending" : "Send reset code"}
+            {isPending ? "Sending" : "Send reset link"}
           </Button>
           <Button type="button" variant="link" disabled={isPending} onClick={() => showSignIn()}>
             Back to sign in
@@ -224,43 +183,10 @@ export function AuthPanel() {
         </form>
       ) : null}
 
-      {state.kind === "resetPassword" ? (
-        <form className="flex flex-col gap-4" onSubmit={submitPasswordReset}>
-          <CodeField id="reset-code" />
-          <label className="flex flex-col gap-2 text-sm font-medium" htmlFor="new-password">
-            New password
-            <Input
-              id="new-password"
-              name="newPassword"
-              type="password"
-              autoComplete="new-password"
-              minLength={PASSWORD_MIN_LENGTH}
-              required
-            />
-          </label>
-          <label className="flex flex-col gap-2 text-sm font-medium" htmlFor="confirm-password">
-            Confirm password
-            <Input
-              id="confirm-password"
-              name="confirmPassword"
-              type="password"
-              autoComplete="new-password"
-              minLength={PASSWORD_MIN_LENGTH}
-              required
-            />
-          </label>
-          <Button type="submit" disabled={isPending}>
-            {isPending ? "Updating" : "Update password"}
-          </Button>
-          <Button
-            type="button"
-            variant="link"
-            disabled={isPending}
-            onClick={() => setState({ kind: "requestReset", email: state.email })}
-          >
-            Request a new code
-          </Button>
-        </form>
+      {state.kind === "checkEmail" ? (
+        <Button type="button" variant="link" onClick={() => showSignIn()}>
+          Back to sign in
+        </Button>
       ) : null}
 
       {error ? (
@@ -288,44 +214,17 @@ function AuthHeading({ state }: { state: AuthState }) {
       </div>
     );
   }
-  if (state.kind === "verifyEmail") {
+  if (state.kind === "checkEmail") {
     return (
       <div className="flex flex-col gap-1">
         <h2 className="text-2xl font-semibold tracking-[-0.035em]">Check your email</h2>
-        <p className="text-muted-foreground text-sm">Enter the code sent to {state.email}.</p>
+        <p className="text-muted-foreground text-sm">
+          Open the link sent to {state.email} in this browser.
+        </p>
       </div>
     );
   }
-  if (state.kind === "requestReset") {
-    return <h2 className="text-2xl font-semibold tracking-[-0.035em]">Reset password</h2>;
-  }
-  return (
-    <div className="flex flex-col gap-1">
-      <h2 className="text-2xl font-semibold tracking-[-0.035em]">Choose a new password</h2>
-      <p className="text-muted-foreground text-sm">Enter the code sent to {state.email}.</p>
-    </div>
-  );
-}
-
-function CodeField({ id }: { id: string }) {
-  return (
-    <label className="flex flex-col gap-2 text-sm font-medium" htmlFor={id}>
-      Verification code
-      <Input
-        id={id}
-        name="code"
-        type="text"
-        inputMode="numeric"
-        autoComplete="one-time-code"
-        pattern={`[0-9]{${CODE_LENGTH}}`}
-        minLength={CODE_LENGTH}
-        maxLength={CODE_LENGTH}
-        className="text-center text-lg tracking-[0.35em]"
-        required
-        autoFocus
-      />
-    </label>
-  );
+  return <h2 className="text-2xl font-semibold tracking-[-0.035em]">Reset password</h2>;
 }
 
 function pendingLabel(flow: CredentialsFlow, isPending: boolean) {
@@ -335,31 +234,39 @@ function pendingLabel(flow: CredentialsFlow, isPending: boolean) {
   return flow === "signIn" ? "Signing in" : "Creating account";
 }
 
-function authErrorMessage(error: unknown, action: AuthAction) {
-  if (error instanceof ConvexError && error.data === TERMS_ACCEPTANCE_REQUIRED)
-    return TERMS_ACCEPTANCE_REQUIRED;
-  const message = error instanceof Error ? error.message : "";
-  if (error instanceof ConvexError && error.data === AUTH_EMAIL_COOLDOWN) {
-    return "Wait a minute before requesting another code.";
+export function authErrorMessage(userError: AuthUserError) {
+  switch (userError.error) {
+    case "INVALID_CREDENTIALS":
+    case "USER_NOT_FOUND":
+      return "Email or password is incorrect.";
+    case "RATE_LIMITED":
+      return `Too many attempts. Try again in ${Math.ceil(userError.retryAfterMs / 1000)} seconds.`;
+    case "INVALID_EMAIL":
+      return "Enter a valid email address.";
+    case "EMAIL_TAKEN":
+      return "An account already uses this email. Sign in, reset its password, or open the newest sign-up link that we sent.";
+    case "EMAIL_NOT_FOUND":
+      return "No account has verified this email. An account from before the sign-in update creates its account again with the same email and keeps its data.";
+    case "PASSWORD_TOO_SHORT":
+      return `Use at least ${userError.minimumLength} characters.`;
+    case "PASSWORD_TOO_LONG":
+      return `Use at most ${userError.maximumLength} characters.`;
+    case "PASSWORD_HAS_SURROUNDING_WHITESPACE":
+      return "The password cannot start or end with a space.";
+    case "PASSWORD_TOO_COMMON":
+      return "This password is too common. Choose another one.";
+    case "INVALID_CHALLENGE":
+      return "This link has expired or was already used. Start again from the sign-in page.";
+    case "INCORRECT_CODE":
+      return "This is not the newest link. Open the newest email.";
+    case "MISSING_SECRET":
+      return "Open the link in the browser where you started.";
+    case "OTHER_ERROR":
+      return userError.cause instanceof ConvexError && typeof userError.cause.data === "string"
+        ? userError.cause.data
+        : "Something went wrong. Try again.";
+    default:
+      userError satisfies never;
+      return "Something went wrong. Try again.";
   }
-  if (action === "signIn" && /(invalid credentials|invalidsecret)/i.test(message)) {
-    return "Email or password is incorrect.";
-  }
-  if (action === "signUp" && /invalid password/i.test(message)) {
-    return "Password must be at least 8 characters.";
-  }
-  if (action === "verifyEmail" || action === "resetPassword") {
-    return "The code is invalid or expired.";
-  }
-  if (action === "requestReset") {
-    return "Could not send a reset code. Check the email and try again.";
-  }
-  return action === "signIn"
-    ? "Could not sign in. Check your details and try again."
-    : "Could not create the account. Try signing in if it already exists.";
-}
-
-function formValue(formData: FormData, name: string) {
-  const value = formData.get(name);
-  return typeof value === "string" ? value : "";
 }

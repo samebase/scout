@@ -1,16 +1,17 @@
-import { useAuthActions } from "@convex-dev/auth/react";
+import { useSignOutSession } from "@samebase/convex-auth-tanstack-start";
 import { Link } from "@tanstack/react-router";
 import { useMutation } from "convex/react";
 import { ConvexError } from "convex/values";
 import { useState, type FormEvent } from "react";
 import { api } from "../../convex/_generated/api";
 import { TermsCheckbox } from "./terms-checkbox";
+import { SessionRecordingCheckbox } from "./session-recording-checkbox";
 import { Button } from "./ui/button";
 import { resetAnalytics } from "../lib/posthog";
 
 export function TermsAcceptance() {
   const accept = useMutation(api.accounts.acceptTerms);
-  const { signOut } = useAuthActions();
+  const signOut = useSignOutSession("/auth/signout", "/");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
 
@@ -35,7 +36,9 @@ export function TermsAcceptance() {
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!event.currentTarget.reportValidity()) return;
-    void run(() => accept({}));
+    const sessionRecordingConsent =
+      new FormData(event.currentTarget).get("sessionRecordingConsent") === "true";
+    void run(() => accept({ sessionRecordingConsent }));
   }
 
   return (
@@ -46,6 +49,7 @@ export function TermsAcceptance() {
       </p>
       <form className="mt-6 space-y-5" onSubmit={submit}>
         <TermsCheckbox />
+        <SessionRecordingCheckbox />
         <Button type="submit" disabled={pending}>
           {pending ? "Please wait…" : "Accept and continue"}
         </Button>
@@ -61,7 +65,9 @@ export function TermsAcceptance() {
           disabled={pending}
           onClick={() => {
             resetAnalytics();
-            void run(signOut);
+            void run(async () => {
+              if (!(await signOut())) throw new Error("Could not sign out. Try again.");
+            });
           }}
         >
           Sign out

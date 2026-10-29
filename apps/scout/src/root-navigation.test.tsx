@@ -10,6 +10,8 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import { QueryClient } from "@tanstack/react-query";
+import { ConvexQueryClient } from "@convex-dev/react-query";
+import type { ReactNode } from "react";
 import { afterEach, expect, test, vi } from "vite-plus/test";
 import { ProductShell } from "./products/shell";
 import { Route as RootRoute } from "./routes/__root";
@@ -18,12 +20,18 @@ import { omitNullish } from "../shared/omitNullish";
 
 vi.mock("./style.css?url", () => ({ default: "data:text/css," }));
 vi.mock("./components/posthog-runtime", () => ({ PostHogRuntime: () => null }));
+// The session provider needs a deployment; these tests render signed out without one.
+vi.mock("@samebase/convex-auth-tanstack-start", () => ({
+  SessionProvider: ({ children }: { children: ReactNode }) => children,
+  sessionBeforeLoad: () => ({ token: null }),
+}));
 vi.mock("convex/react", async (importOriginal) => ({
   ...(await importOriginal<typeof import("convex/react")>()),
   useConvexAuth: () => ({ isAuthenticated: false, isLoading: false }),
   useQuery: () => undefined,
 }));
 
+const convexQueryClient = new ConvexQueryClient("https://scout-test.convex.cloud");
 afterEach(cleanup);
 
 test.each([
@@ -64,7 +72,7 @@ test.each([
       loader: () => (to === "/about" ? routeReady : undefined),
     });
     const router = createRouter({
-      context: { queryClient: new QueryClient() },
+      context: { queryClient: new QueryClient(), convexQueryClient },
       routeTree: RootRoute.addChildren([home, about]),
       history: createMemoryHistory({ initialEntries: [from] }),
       defaultPreload: false,
@@ -101,7 +109,7 @@ test.each([
     component: () => <h1>Route fixture</h1>,
   });
   const router = createRouter({
-    context: { queryClient: new QueryClient() },
+    context: { queryClient: new QueryClient(), convexQueryClient },
     routeTree: RootRoute.addChildren([page]),
     history: createMemoryHistory({ initialEntries: [url] }),
   });

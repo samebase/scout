@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
   createMemoryHistory,
@@ -67,7 +67,12 @@ vi.mock("convex/react", () => ({
   usePaginatedQuery: () => ({ results: [], status: "Exhausted", loadMore: () => {} }),
 }));
 vi.mock("@convex-dev/auth/react", () => ({
-  useAuthActions: () => ({ signOut: async () => {}, signIn: async () => ({ signingIn: true }) }),
+  useAuthActions: () => ({ signOut: async () => {} }),
+}));
+vi.mock("@convex-dev/auth/methods/email-password/react", () => ({
+  useSignInWithEmailPassword: () => ({ signIn: async () => ({ status: "complete" }) }),
+  useSignUpWithEmailPassword: () => ({ signUp: async () => ({ success: true }) }),
+  useStartPasswordRecovery: () => ({ startPasswordRecovery: async () => ({ success: true }) }),
 }));
 beforeEach(() => {
   remote.authenticated = true;
@@ -445,15 +450,12 @@ test("guests can read policies from signup before submitting account information
   const user = userEvent.setup();
   await user.click(await screen.findByRole("button", { name: "Create account" }));
   expect(screen.getByRole("heading", { name: "Create account" })).toBeTruthy();
-  expect(screen.getByRole("checkbox", { name: TERMS_ACCEPTANCE_LABEL })).toHaveProperty(
-    "checked",
-    false,
-  );
-  expect(screen.getByRole("link", { name: "Terms and conditions" }).getAttribute("href")).toBe(
-    "/terms",
-  );
-  expect(screen.getByRole("link", { name: "Privacy policy" }).getAttribute("target")).toBe(
-    "_blank",
+  const legal = screen.getByRole("navigation", { name: "Legal" });
+  expect(
+    within(legal).getByRole("link", { name: "Terms and conditions" }).getAttribute("href"),
+  ).toBe("/terms");
+  expect(within(legal).getByRole("link", { name: "Privacy policy" }).getAttribute("href")).toBe(
+    "/privacy",
   );
 });
 
@@ -471,7 +473,7 @@ test("existing users explicitly accept before protected content mounts, and fail
   expect((await screen.findByRole("alert")).textContent).toBe("Acceptance could not be saved");
   expect(remote.lab).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "Accept and continue" }));
-  expect(remote.accept).toHaveBeenLastCalledWith({});
+  expect(remote.accept).toHaveBeenLastCalledWith({ sessionRecordingConsent: false });
   setViewer("role_staff");
   expect(await screen.findByRole("heading", { name: "Lab contents" })).toBeTruthy();
 });

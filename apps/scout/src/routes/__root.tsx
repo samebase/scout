@@ -7,6 +7,8 @@ import {
 } from "@tanstack/react-router";
 import { useEffect, useRef, type ReactNode } from "react";
 import type { QueryClient } from "@tanstack/react-query";
+import type { ConvexQueryClient } from "@convex-dev/react-query";
+import { SessionProvider, sessionBeforeLoad } from "@samebase/convex-auth-tanstack-start";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { ScoutSidebarProvider } from "../sidebars/ScoutSidebarProvider";
@@ -15,8 +17,12 @@ import { RouteAccessOutlet } from "../components/route-access";
 import { AppNavigation } from "#components/app-navigation";
 import { PostHogRuntime } from "../components/posthog-runtime";
 
-export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
+export const Route = createRootRouteWithContext<{
+  queryClient: QueryClient;
+  convexQueryClient: ConvexQueryClient;
+}>()({
   ssr: true,
+  beforeLoad: sessionBeforeLoad,
   staticData: { access: "access_public" },
   head: () => ({
     meta: [
@@ -68,20 +74,29 @@ function useReloadOnNewVersion() {
 }
 
 function RootComponent() {
+  const { convexQueryClient, token } = Route.useRouteContext();
+  return (
+    <RootDocument>
+      <SessionProvider client={convexQueryClient.convexClient} token={token}>
+        <RootContent />
+      </SessionProvider>
+    </RootDocument>
+  );
+}
+
+function RootContent() {
   useReloadOnNewVersion();
   const isHandoff = useMatches({
     select: (matches) => matches.some((match) => match.routeId === "/handoff/$sessionId"),
   });
   return (
-    <RootDocument>
-      <ScoutSidebarProvider>
-        <PostHogRuntime />
-        <ClientOnly fallback={<div className="h-16" aria-hidden="true" />}>
-          {!isHandoff && <AppNavigation />}
-        </ClientOnly>
-        <RouteAccessOutlet />
-      </ScoutSidebarProvider>
-    </RootDocument>
+    <ScoutSidebarProvider>
+      <PostHogRuntime />
+      <ClientOnly fallback={<div className="h-16" aria-hidden="true" />}>
+        {!isHandoff && <AppNavigation />}
+      </ClientOnly>
+      <RouteAccessOutlet />
+    </ScoutSidebarProvider>
   );
 }
 

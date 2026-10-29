@@ -159,8 +159,10 @@ vi.mock("convex/react", () => ({
   },
 }));
 
-vi.mock("@convex-dev/auth/react", () => ({
-  useAuthActions: () => ({ signIn: remote.signIn }),
+vi.mock("@convex-dev/auth/methods/email-password/react", () => ({
+  useSignInWithEmailPassword: () => ({ signIn: remote.signIn }),
+  useSignUpWithEmailPassword: () => ({ signUp: async () => ({ success: true }) }),
+  useStartPasswordRecovery: () => ({ startPasswordRecovery: async () => ({ success: true }) }),
 }));
 
 function session(overrides = {}) {
