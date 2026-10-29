@@ -31,6 +31,13 @@ The production job uses `CLOUDFLARE_ACCOUNT_ID` and the repository secret `CLOUD
 to manage the buckets. Pull request jobs receive no Cloudflare token. Scout continues using its
 existing bucket-scoped S3 credentials in Convex.
 
+Google sign-in runs through the team's identity hub. Every run, a destroy too, reads the repository
+variable `HUB_ISSUER` (`https://auth.samebase.com`) and the repository secret
+`HUB_REGISTRATION_TOKEN`, the hub's registration token for the app TrailScout, and stops before the
+stack when either is empty. The stack registers one hub client per deployment, on its site URL plus
+`/auth/hub/callback`, writes `HUB_ISSUER`, `HUB_CLIENT_ID`, and `HUB_CLIENT_SECRET` to the
+deployment before its push, and deletes a preview's client with the preview.
+
 Each stage has one queue shared by deployment and cleanup. Before deployment,
 `scripts/verify-deployment-head.ts` checks that the checkout is still the head of the branch.
 GitHub CI runs `pnpm run check` separately. Deployment does not repeat it.
@@ -38,7 +45,8 @@ GitHub CI runs `pnpm run check` separately. Deployment does not repeat it.
 The team's `alchemy-state` Convex project stores the stack state. Its `samebase.run` output
 records the repository, stack file, branch, commit, pull request, and workflow run for Samebase's
 repository overview. `SCOUT_COMMIT` is a deployment input so a change outside `apps/scout` also
-deploys. Deployment environment variables other than `SCOUT_COMMIT` remain unmanaged.
+deploys. Deployment environment variables other than `SCOUT_COMMIT` and the three `HUB_` variables
+remain unmanaged.
 
 Stage `prod` also owns the existing R2 buckets `scout-workspaces-prod`, `scout-workspaces`, and
 `scout-public-media`, so Samebase can show them with Scout's other resources. All three have a
@@ -84,9 +92,9 @@ the pull request number:
 pnpm exec alchemy destroy --stage pr-123 --dry-run --no-input
 ```
 
-The plan deletes `Site` and orphans `Project` and `PreviewComment`. Orphaned resources remain
-on their providers but leave the stage state during an actual destroy. The dry run changes
-neither resources nor stage state. Keep previews for open pull requests.
+The plan deletes `Preview`, `HubClient`, and `Site` and orphans `Project` and `PreviewComment`.
+Orphaned resources remain on their providers but leave the stage state during an actual destroy.
+The dry run changes neither resources nor stage state. Keep previews for open pull requests.
 
 Production deployment runs through GitHub Actions. Development keeps `pnpm run deploy:dev` and
 the worktree's own selected cloud development deployment.

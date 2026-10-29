@@ -164,6 +164,10 @@ vi.mock("@convex-dev/auth/methods/email-password/react", () => ({
   useSignUpWithEmailPassword: () => ({ signUp: async () => ({ success: true }) }),
   useStartPasswordRecovery: () => ({ startPasswordRecovery: async () => ({ success: true }) }),
 }));
+vi.mock("@convex-dev/auth/methods/oauth/react", () => ({
+  useOauthSignIn: () => ({ signIn: async () => ({ status: "redirect" }) }),
+  useOauth: () => ({ flowError: null }),
+}));
 
 function session(overrides = {}) {
   return {

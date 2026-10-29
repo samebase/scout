@@ -1,6 +1,9 @@
+import { setupOauth } from "@convex-dev/auth/methods/oauth/server";
 import { setupConvexAuth } from "@convex-dev/auth/server";
+import { validate } from "convex-helpers/validators";
 import { createFunctionHandle } from "convex/server";
 import { ConvexError, type Infer, v } from "convex/values";
+import { omitNullish } from "../shared/omitNullish";
 import { components, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { env, internalMutation, type MutationCtx, type QueryCtx } from "./_generated/server";
@@ -13,6 +16,8 @@ import { publicMutation, publicQuery } from "./functions";
 // core keeps the sessions. The method's React hooks call these functions, whose names, arguments,
 // and results are the method's. `users.email` decides which account owns an address, so an account
 // from Convex Auth 0.0.x keeps its row and data: it sets a password through the recovery link.
+// Google sign-in runs through the team's identity hub with Convex Auth's OAuth method, at the end
+// of this file.
 
 const core = setupConvexAuth({ component: components.auth });
 export const { signOut, refreshSession, isAuthenticated } = core;
@@ -112,11 +117,16 @@ export async function hasEmailPasswordAccount(ctx: MutationCtx, userId: Id<"user
   return accountUserId !== null;
 }
 
-/** Mints a session for an active user and grants the sign-in credits. */
-async function startSession(ctx: MutationCtx, user: Doc<"users">) {
+/** What every sign-in does before its session: it admits an active user and grants the credits. */
+async function admitSignIn(ctx: MutationCtx, user: Doc<"users">) {
   if (user.state === "deleting" || user.state === "deleted")
     throw new ConvexError("This account is being deleted or has been deleted.");
   await ctx.runMutation(internal.credits.grantOnSignIn, { userId: user._id });
+}
+
+/** Mints a session for an active user and grants the sign-in credits. */
+async function startSession(ctx: MutationCtx, user: Doc<"users">) {
+  await admitSignIn(ctx, user);
   return await ctx.runMutation(components.auth.public.signIn, {
     claims: { providerName: PROVIDER_NAME, providerAccountId: user._id, profile: {} },
     issuer: env.CONVEX_SITE_URL,
@@ -377,8 +387,9 @@ export const completePasswordRecovery = publicMutation({
     if (user === null)
       return { status: "error" as const, userError: { error: "INVALID_CHALLENGE" as const } };
     await setNewPassword(ctx, user._id, args.newPassword);
-    // The core deletes sessions only together with the accounts; this method's account is the
-    // user's only one, and it is created again below.
+    // The core deletes sessions only together with the accounts, so this ends the Google sessions
+    // too and removes the hub account. The email-password account is created again below; the
+    // next Google sign-in links the hub account again by the verified email.
     await ctx.runMutation(components.auth.public.deleteUser, { userId: user._id });
     await createEmailPasswordAccount(ctx, user._id);
     if (user.emailVerificationTime === undefined)
@@ -386,3 +397,117 @@ export const completePasswordRecovery = publicMutation({
     return { status: "complete" as const, tokens: await startSession(ctx, user) };
   },
 });
+
+/**
+The id_token claims of the identity hub that a Google sign-in reads. `sub` is pairwise: stable for
+TrailScout, different in every other app of the hub. A user can edit the authorize URL, so the
+`connector` claim, not the URL, keeps the method to Google. Convex Auth checks the issuer, audience,
+and expiry of the id_token, which it received over TLS from the hub's token endpoint, but not the
+types of its claims.
+*/
+const hubClaims = v.object({
+  sub: v.string(),
+  connector: v.literal("google"),
+  connector_account_id: v.string(),
+  email: v.optional(v.string()),
+  email_verified: v.optional(v.boolean()),
+  name: v.optional(v.string()),
+  picture: v.optional(v.string()),
+});
+
+/**
+The profile mapping of the hub method below, on every sign-in. It refuses claims of another shape
+or of another connector, and claims without an email that the hub verified, with a message for the
+sign-in page: `createHubUser` finds an existing user by that email.
+*/
+export function readHubProfile(claims: unknown) {
+  if (!validate(hubClaims, claims, { allowUnknownFields: true }))
+    throw new ConvexError("The identity hub did not complete the Google sign-in. Try again.");
+  if (claims.email_verified !== true || claims.email === undefined)
+    throw new ConvexError(
+      "Google did not share a verified email address. Sign in with email and password instead.",
+    );
+  return {
+    id: claims.sub,
+    connector: claims.connector,
+    connector_account_id: claims.connector_account_id,
+    email: claims.email,
+    ...omitNullish({ name: claims.name, picture: claims.picture }),
+  };
+}
+
+/** The sign-in that the hub method hands to its user callbacks, with the profile above. */
+const hubSignIn = v.object({
+  name: v.literal("hub"),
+  accountId: v.string(),
+  profile: hubClaims
+    .omit("sub", "email", "email_verified")
+    .extend({ id: v.string(), email: v.string() }),
+});
+
+/**
+The core calls this the first time it sees a hub subject. The user is the one whose email is the
+hub's verified email, when that row has verified its own email too, else a new user, set up like a
+password sign-up: approved, with a verified email, and with the terms step still ahead. The core
+keeps the subject for that user, so later sign-ins find it directly, and `onHubSignIn` runs next.
+*/
+export const createHubUser = internalMutation({
+  args: { provider: hubSignIn },
+  returns: v.id("users"),
+  handler: async (ctx, { provider }) => {
+    const email = normalizeAuthEmail(provider.profile.email);
+    const user = await readUserByEmail(ctx, email);
+    if (user !== null) {
+      if (user.emailVerificationTime === undefined)
+        throw new ConvexError(
+          "An account with this email has not verified it yet. Sign in with email and password, or use Forgot password? to verify it.",
+        );
+      return user._id;
+    }
+    return await ctx.db.insert("users", {
+      state: "active",
+      email,
+      emailVerificationTime: Date.now(),
+      isApproved: true,
+      ...omitNullish({ name: provider.profile.name, image: provider.profile.picture }),
+    });
+  },
+});
+
+/** The core calls this on every hub sign-in, the first one included, before it mints the session. */
+export const onHubSignIn = internalMutation({
+  args: { provider: hubSignIn, userId: v.id("users") },
+  returns: v.null(),
+  handler: async (ctx, { userId }) => {
+    const user = await ctx.db.get(userId);
+    if (user === null) throw new Error("A hub account must belong to a users row.");
+    await admitSignIn(ctx, user);
+    return null;
+  },
+});
+
+/**
+Google sign-in through the identity hub, an OpenID Provider at HUB_ISSUER. TrailScout is a
+first-party app of the hub, so the hub skips its chooser and sends the browser straight to Google.
+The flow returns to the page that started it, on SITE_URL or on CONVEX_SITE_URL, which serves the
+same build. The annotation gives the exports below their types without the call, which reads the
+type of `internal`, which contains this module.
+*/
+const hub: ReturnType<typeof setupOauth> = setupOauth(
+  core,
+  "hub",
+  {
+    authorizationEndpoint: `${env.HUB_ISSUER}/authorize?connector=google`,
+    tokenEndpoint: `${env.HUB_ISSUER}/token`,
+    issuer: env.HUB_ISSUER,
+    scopes: ["openid", "email", "profile"],
+    profile: readHubProfile,
+  },
+  { createUser: internal.auth.createHubUser, onSignIn: internal.auth.onHubSignIn },
+  {
+    component: components.authHub,
+    allowedRedirectOrigins: [new URL(env.SITE_URL).origin, new URL(env.CONVEX_SITE_URL).origin],
+  },
+);
+export const startSignInWithHub = hub.startSignIn;
+export const completeSignInWithHub = hub.completeSignIn;

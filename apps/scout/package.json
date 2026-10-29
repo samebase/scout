@@ -17,7 +17,7 @@
     "check": "vp check && vp run typecheck && vp test",
     "build": "vp build",
     "deploy": "convex-hosting deploy --build \"node ./scripts/ensure-convex-auth.ts && pnpm run build\" --dist dist/client --html-handling drop-trailing-slash",
-    "deploy:dev": "convex-hosting deploy --dev --build \"node ./scripts/ensure-convex-auth.ts && pnpm run build\" --dist dist/client --html-handling drop-trailing-slash",
+    "deploy:dev": "convex-hosting deploy --dev --build \"node ./scripts/ensure-convex-auth.ts && node ./scripts/register-hub-client.ts && pnpm run build\" --dist dist/client --html-handling drop-trailing-slash",
     "format": "vp fmt",
     "format:check": "vp fmt --check",
     "lint": "vp lint --report-unused-disable-directives",

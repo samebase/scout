@@ -36,6 +36,23 @@ jobs:
       name: ${{ github.event_name == 'pull_request' && 'preview' || 'production' }}
       url: ${{ steps.deploy.outputs.url }}
     steps:
+      # The stack registers every deployment with the identity hub. Without both values it touches
+      # nothing.
+      - name: Check the identity hub settings
+        env:
+          HUB_ISSUER: ${{ vars.HUB_ISSUER }}
+          HUB_REGISTRATION_TOKEN: ${{ secrets.HUB_REGISTRATION_TOKEN }}
+        run: |
+          missing=0
+          if [ -z "$HUB_ISSUER" ]; then
+            echo "::error::Set the repository variable HUB_ISSUER to the identity hub, https://auth.samebase.com. Nothing was deployed."
+            missing=1
+          fi
+          if [ -z "$HUB_REGISTRATION_TOKEN" ]; then
+            echo "::error::Set the repository secret HUB_REGISTRATION_TOKEN to the hub's registration token for the app TrailScout. Nothing was deployed."
+            missing=1
+          fi
+          exit "$missing"
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -57,6 +74,8 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: fe57d01d7ab41f60d00ba1aade20eb33
           CLOUDFLARE_API_TOKEN: ${{ github.event_name != 'pull_request' && secrets.CLOUDFLARE_API_TOKEN || '' }}
           GITHUB_TOKEN: ${{ github.event_name == 'pull_request' && github.token || '' }}
+          HUB_ISSUER: ${{ vars.HUB_ISSUER }}
+          HUB_REGISTRATION_TOKEN: ${{ secrets.HUB_REGISTRATION_TOKEN }}
 
   destroy:
     name: Destroy the preview
@@ -66,6 +85,23 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # The stack reads both values on a destroy too, and the destroy deletes the preview's hub
+      # client with the token in its state. Without them it touches nothing.
+      - name: Check the identity hub settings
+        env:
+          HUB_ISSUER: ${{ vars.HUB_ISSUER }}
+          HUB_REGISTRATION_TOKEN: ${{ secrets.HUB_REGISTRATION_TOKEN }}
+        run: |
+          missing=0
+          if [ -z "$HUB_ISSUER" ]; then
+            echo "::error::Set the repository variable HUB_ISSUER to the identity hub, https://auth.samebase.com. Nothing was destroyed."
+            missing=1
+          fi
+          if [ -z "$HUB_REGISTRATION_TOKEN" ]; then
+            echo "::error::Set the repository secret HUB_REGISTRATION_TOKEN to the hub's registration token for the app TrailScout. Nothing was destroyed."
+            missing=1
+          fi
+          exit "$missing"
       # Use the base branch so a broken dependency change in a PR cannot prevent its cleanup.
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -80,3 +116,5 @@ jobs:
         env:
           CONVEX_ACCESS_TOKEN: ${{ secrets.CONVEX_ACCESS_TOKEN }}
           GITHUB_TOKEN: ${{ github.token }}
+          HUB_ISSUER: ${{ vars.HUB_ISSUER }}
+          HUB_REGISTRATION_TOKEN: ${{ secrets.HUB_REGISTRATION_TOKEN }}

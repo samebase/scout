@@ -17,8 +17,9 @@ http.route({ path: "/polar/events", method: "POST", handler: httpAction(handlePo
 // Every method, every path, as a Cloudflare Worker with static assets: the uploaded file for a path
 // that has one (another method than GET or HEAD on it answers 405), else the server build
 // (src/server.ts), which renders the page with the session of the request's cookies. Convex answers
-// HEAD through GET. Convex picks an exact path, then the longest prefix, so the Polar webhook and
-// the Convex Auth component's /auth prefix, where it serves its key set, keep winning over "/".
+// HEAD through GET. Convex picks an exact path, then the longest prefix, so the Polar webhook, the
+// Convex Auth component's /auth prefix, where it serves its key set, and the identity hub
+// component's /auth/hub prefix, where the hub returns to /auth/hub/callback, keep winning over "/".
 const site = routeAll(http, components.hosting, versionId, server);
 // Exact routes for the three session routes of src/server.ts: the /auth prefix of the component
 // would otherwise take them.

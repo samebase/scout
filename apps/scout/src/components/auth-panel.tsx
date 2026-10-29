@@ -10,9 +10,16 @@ import {
   useSignUpWithEmailPassword,
   useStartPasswordRecovery,
 } from "@convex-dev/auth/methods/email-password/react";
+import {
+  type OauthFlowError,
+  type OauthStartResult,
+  useOauth,
+  useOauthSignIn,
+} from "@convex-dev/auth/methods/oauth/react";
 import { type FormEvent, useState } from "react";
 import { ConvexError } from "convex/values";
 import { api } from "../../convex/_generated/api";
+import { GoogleMark } from "./google-mark";
 import { Button } from "#components/ui/button";
 import { Input } from "#components/ui/input";
 import { LegalLinks } from "./legal-links";
@@ -26,11 +33,17 @@ type AuthState =
 type UserError =
   | Extract<SignInResult, { status: "error" }>["userError"]
   | Extract<SignUpResult, { success: false }>["userError"]
-  | Extract<StartPasswordRecoveryResult, { success: false }>["userError"];
+  | Extract<StartPasswordRecoveryResult, { success: false }>["userError"]
+  | Extract<OauthStartResult, { status: "error" }>["userError"];
 
-/** The errors of the email-password method that the sign-in panel and the link pages show. */
+/**
+The errors of the email-password method and of Google sign-in that the sign-in panel and the link
+pages show. A Google sign-in that fails after the identity hub returns reports its error as the OAuth
+method's `flowError`.
+*/
 export type AuthUserError =
   | UserError
+  | OauthFlowError
   | Extract<CompleteSignUpState, { status: "error" }>["userError"]
   | Extract<CompletePasswordRecoveryState, { status: "error" }>["userError"]
   | Extract<CompletePasswordRecoveryResult, { status: "error" }>["userError"];
@@ -39,6 +52,12 @@ export function AuthPanel() {
   const { signIn } = useSignInWithEmailPassword(api.auth);
   const { signUp } = useSignUpWithEmailPassword(api.auth);
   const { startPasswordRecovery } = useStartPasswordRecovery(api.auth);
+  const { signIn: signInWithGoogle } = useOauthSignIn({
+    providerName: "hub",
+    startSignIn: api.auth.startSignInWithHub,
+    completeSignIn: api.auth.completeSignInWithHub,
+  });
+  const { flowError } = useOauth();
   const [state, setState] = useState<AuthState>({
     kind: "credentials",
     flow: "signIn",
@@ -48,12 +67,17 @@ export function AuthPanel() {
   const [error, setError] = useState("");
   const [password, setPassword] = useState("");
 
-  const run = async (operation: () => Promise<UserError | null>) => {
+  // The error of a Google sign-in's return belongs to the view with its button.
+  const returnError = state.kind === "credentials" && flowError ? authErrorMessage(flowError) : "";
+
+  const run = async (operation: () => Promise<UserError | "leaving" | null>) => {
     setError("");
     setIsPending(true);
-    const userError = await operation();
+    const outcome = await operation();
+    // The page is leaving for the identity hub: the controls stay disabled until it has left.
+    if (outcome === "leaving") return;
     setIsPending(false);
-    if (userError) setError(authErrorMessage(userError));
+    if (outcome) setError(authErrorMessage(outcome));
   };
 
   const submitCredentials = (event: FormEvent<HTMLFormElement>) => {
@@ -95,6 +119,26 @@ export function AuthPanel() {
       aria-label="Account access"
     >
       <AuthHeading state={state} />
+
+      {state.kind === "credentials" ? (
+        // The identity hub returns to this page, where the session provider redeems the sign-in.
+        <Button
+          type="button"
+          variant="outline"
+          size="lg"
+          className="w-full"
+          disabled={isPending}
+          onClick={() =>
+            void run(async () => {
+              const result = await signInWithGoogle();
+              return result.status === "error" ? result.userError : "leaving";
+            })
+          }
+        >
+          <GoogleMark />
+          Continue with Google
+        </Button>
+      ) : null}
 
       {state.kind === "credentials" ? (
         <form className="flex flex-col gap-4" onSubmit={submitCredentials}>
@@ -189,9 +233,9 @@ export function AuthPanel() {
         </Button>
       ) : null}
 
-      {error ? (
+      {error || returnError ? (
         <p className="text-destructive text-sm" role="alert">
-          {error}
+          {error || returnError}
         </p>
       ) : null}
       {state.kind !== "credentials" && <LegalLinks />}
@@ -261,6 +305,16 @@ export function authErrorMessage(userError: AuthUserError) {
       return "This is not the newest link. Open the newest email.";
     case "MISSING_SECRET":
       return "Open the link in the browser where you started.";
+    case "ACCESS_DENIED":
+      return "Google sign-in was canceled.";
+    case "EXPIRED":
+      return "The Google sign-in expired. Try again.";
+    case "INVALID_FLOW":
+      return "Start the Google sign-in again in this browser.";
+    case "REJECTED":
+      return typeof userError.data === "string"
+        ? userError.data
+        : "Something went wrong. Try again.";
     case "OTHER_ERROR":
       return userError.cause instanceof ConvexError && typeof userError.cause.data === "string"
         ? userError.cause.data

@@ -4,11 +4,20 @@ import { registerCore } from "@convex-dev/auth/test";
 import { registerEmail } from "@convex-dev/auth/components/email/test";
 import { registerPasswordProvider } from "@convex-dev/auth/components/password/test";
 import { convexTest } from "convex-test";
+import { createFunctionHandle } from "convex/server";
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
-import { api, internal } from "./_generated/api";
+import { api, components, internal } from "./_generated/api";
 import schema from "./schema";
-import { createEmailPasswordAccount, setNewPassword } from "./auth";
+import { createEmailPasswordAccount, readHubProfile, setNewPassword } from "./auth";
 import { ADMIN_EMAIL } from "./testing/accounts";
+
+// convex/auth.ts sets up Google sign-in when it loads, with the hub's issuer and the deployment's
+// site URLs, so they come before the imports.
+vi.hoisted(() => {
+  vi.stubEnv("HUB_ISSUER", "https://hub.example.test");
+  vi.stubEnv("SITE_URL", "https://scout-test.convex.site");
+  vi.stubEnv("CONVEX_SITE_URL", "https://scout-test.convex.site");
+});
 
 // The sign-up and recovery links run in the email component, whose limits read the client address
 // through `ctx.meta.getRequestMetadata()`. convex-test 0.0.57 has no request metadata, so those
@@ -157,4 +166,98 @@ test("the terms step after the sign-up link records the session recording choice
     kind: "account",
     role: "role_member",
   });
+});
+
+/** Id token claims of the identity hub for a Google account, with a claim that the profile drops. */
+const googleClaims = {
+  iss: "https://hub.example.test",
+  sub: "hub-subject-1",
+  connector: "google",
+  connector_account_id: "google-account-1",
+  email: "Member@Example.test",
+  email_verified: true,
+  name: "Member",
+  picture: "https://images.example.test/member.png",
+};
+
+/** The first sign-in of a hub subject, as the hub method's `completeSignIn` hands it to the core. */
+async function signInWithHub(backend: ReturnType<typeof setup>, claims: Record<string, unknown>) {
+  const profile = readHubProfile(claims);
+  return await backend.run(async (ctx) =>
+    ctx.runMutation(components.auth.public.signUp, {
+      claims: { providerName: "hub", providerAccountId: profile.id, profile },
+      createUserHandle: await createFunctionHandle(internal.auth.createHubUser),
+      onSignInHandle: await createFunctionHandle(internal.auth.onHubSignIn),
+      issuer: "https://scout-test.convex.site",
+    }),
+  );
+}
+
+const readUsers = (backend: ReturnType<typeof setup>) =>
+  backend.run((ctx) => ctx.db.query("users").collect());
+
+test("a hub sign-in links to the user whose verified email is the hub's verified email", async () => {
+  const backend = setup();
+  const userId = await backend.run((ctx) =>
+    ctx.db.insert("users", {
+      state: "active",
+      email: "member@example.test",
+      emailVerificationTime: 1,
+      isApproved: true,
+      termsAcceptedAt: 1,
+    }),
+  );
+  expect(await signInWithHub(backend, googleClaims)).toMatchObject({ userId });
+  expect(await readUsers(backend)).toHaveLength(1);
+});
+
+test("a hub sign-in without a verified email is rejected", async () => {
+  const backend = setup();
+  const unverified = { ...googleClaims, email_verified: false };
+  expect(() => readHubProfile(unverified)).toThrow(
+    "Google did not share a verified email address.",
+  );
+  await expect(signInWithHub(backend, unverified)).rejects.toThrow(
+    "Google did not share a verified email address.",
+  );
+  expect(() => readHubProfile({ ...googleClaims, connector: "github" })).toThrow(
+    "The identity hub did not complete the Google sign-in.",
+  );
+  expect(await readUsers(backend)).toEqual([]);
+});
+
+test("a hub sign-in does not link to a user whose own email is unverified", async () => {
+  const backend = setup();
+  await backend.run((ctx) =>
+    ctx.db.insert("users", { state: "active", email: "member@example.test", isApproved: true }),
+  );
+  await expect(signInWithHub(backend, googleClaims)).rejects.toThrow(
+    "Sign in with email and password",
+  );
+  expect(await readUsers(backend)).toEqual([
+    expect.not.objectContaining({ emailVerificationTime: expect.anything() }),
+  ]);
+});
+
+test("a first hub sign-in without a match creates a user like a password sign-up", async () => {
+  const backend = setup();
+  const { userId } = await signInWithHub(backend, googleClaims);
+  expect(await readUsers(backend)).toEqual([
+    expect.objectContaining({
+      _id: userId,
+      state: "active",
+      email: "member@example.test",
+      emailVerificationTime: expect.any(Number),
+      isApproved: true,
+      name: "Member",
+      image: "https://images.example.test/member.png",
+    }),
+  ]);
+  // The first sign-in creates the credit wallet, and the terms step comes next.
+  expect(await backend.run((ctx) => ctx.db.query("creditWallets").collect())).toEqual([
+    expect.objectContaining({ userId }),
+  ]);
+  expect(
+    await backend.withIdentity({ subject: userId }).query(api.accounts.currentViewerAccess, {}),
+  ).toEqual({ kind: "terms_required", userId });
 });

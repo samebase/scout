@@ -7,15 +7,21 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
+import type { OauthFlowError } from "@convex-dev/auth/methods/oauth/react";
 import { ConvexError } from "convex/values";
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
 import { AuthPanel } from "./auth-panel";
 
-const remote = vi.hoisted(() => ({
-  signIn: vi.fn(),
-  signUp: vi.fn(),
-  startPasswordRecovery: vi.fn(),
-}));
+const remote = vi.hoisted(() => {
+  const oauth: { flowError: OauthFlowError | null } = { flowError: null };
+  return {
+    signIn: vi.fn(),
+    signUp: vi.fn(),
+    startPasswordRecovery: vi.fn(),
+    signInWithGoogle: vi.fn(),
+    oauth,
+  };
+});
 
 vi.mock("@convex-dev/auth/methods/email-password/react", () => ({
   useSignInWithEmailPassword: () => ({ signIn: remote.signIn, pending: false }),
@@ -25,11 +31,17 @@ vi.mock("@convex-dev/auth/methods/email-password/react", () => ({
     pending: false,
   }),
 }));
+vi.mock("@convex-dev/auth/methods/oauth/react", () => ({
+  useOauthSignIn: () => ({ signIn: remote.signInWithGoogle }),
+  useOauth: () => ({ flowError: remote.oauth.flowError }),
+}));
 afterEach(cleanup);
 beforeEach(() => {
   remote.signIn.mockReset();
   remote.signUp.mockReset();
   remote.startPasswordRecovery.mockReset();
+  remote.signInWithGoogle.mockReset();
+  remote.oauth.flowError = null;
 });
 
 async function renderPanel() {
@@ -109,4 +121,19 @@ test("a recovery link is sent to the address that the server returns", async () 
   expect(
     await screen.findByText("Open the link sent to Member@example.test in this browser."),
   ).toBeTruthy();
+});
+
+test("Google sign-in starts the hub flow, and a rejected return shows the reason", async () => {
+  const user = userEvent.setup();
+  const reason = "Google did not share a verified email address.";
+  remote.oauth.flowError = { error: "REJECTED", data: reason };
+  remote.signInWithGoogle.mockResolvedValueOnce({
+    status: "error",
+    userError: { error: "OTHER_ERROR", cause: new Error("offline") },
+  });
+  await renderPanel();
+  expect(screen.getByRole("alert").textContent).toBe(reason);
+  await user.click(screen.getByRole("button", { name: "Continue with Google" }));
+  expect(remote.signInWithGoogle).toHaveBeenCalledWith();
+  expect((await screen.findByRole("alert")).textContent).toBe("Something went wrong. Try again.");
 });
