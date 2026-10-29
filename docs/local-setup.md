@@ -48,6 +48,18 @@ root. This writes the Convex URL needed by the build to the app's env file:
 pnpm --filter samebase-scout exec convex deployment select <development-deployment>
 ```
 
+Google sign-in needs a client of the team's identity hub on the development deployment. Add these
+two lines to `apps/scout/.env.local` once, with the hub's registration token for the app TrailScout:
+
+```sh
+HUB_ISSUER=https://auth.samebase.com
+HUB_REGISTRATION_TOKEN=<registration token>
+```
+
+`pnpm run deploy:dev` and `pnpm run dev` run `scripts/register-hub-client.ts` before their push. It
+registers the deployment's site URL plus `/auth/hub/callback` once, and writes `HUB_ISSUER`,
+`HUB_CLIENT_ID`, and `HUB_CLIENT_SECRET` to the deployment. A push fails without them.
+
 Then deploy the site to it once and start the app:
 
 ```sh
