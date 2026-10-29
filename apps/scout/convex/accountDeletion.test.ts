@@ -14,6 +14,13 @@ import { createEmailPasswordAccount, setNewPassword } from "./auth";
 import { ACCOUNT_DELETION_CONFIRMATION } from "../shared/accountDeletion";
 import { ADMIN_EMAIL } from "./testing/accounts";
 
+// convex/auth.ts sets up Google sign-in when it loads, with the hub's issuer and the deployment's
+// site URLs, so they come before the imports.
+vi.hoisted(() => {
+  vi.stubEnv("HUB_ISSUER", "https://hub.example.test");
+  vi.stubEnv("SITE_URL", "https://scout-test.convex.site");
+  vi.stubEnv("CONVEX_SITE_URL", "https://scout-test.convex.site");
+});
 const modules = import.meta.glob("./**/*.ts");
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => {

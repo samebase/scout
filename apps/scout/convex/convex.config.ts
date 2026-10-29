@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import agent from "@convex-dev/agent/convex.config";
 import auth from "@convex-dev/auth/convex.config";
 import email from "@convex-dev/auth/components/email/convex.config";
+import oauth from "@convex-dev/auth/components/oauth/convex.config";
 import password from "@convex-dev/auth/components/password/convex.config";
 import r2 from "@convex-dev/r2/convex.config";
 import hosting from "@samebase/convex-hosting/convex.config";
@@ -21,6 +22,9 @@ const app = defineApp({
     DEV_SEED_AUTH_ENABLED: v.optional(v.string()),
     DEV_SEED_AUTH_PASSWORD: v.optional(v.string()),
     FIRECRAWL_API_KEY: v.optional(v.string()),
+    HUB_CLIENT_ID: v.string(),
+    HUB_CLIENT_SECRET: v.string(),
+    HUB_ISSUER: v.string(),
     OPENAI_API_KEY: v.optional(v.string()),
     POLAR_ACCESS_TOKEN: v.optional(v.string()),
     POLAR_CHECKOUT_ENABLED: v.optional(v.string()),
@@ -51,6 +55,18 @@ app.use(auth, {
   env: {
     AUTH_PRIVATE_KEY: app.env.AUTH_PRIVATE_KEY,
     AUTH_JWKS: app.env.AUTH_JWKS,
+  },
+});
+// Google sign-in runs through the team's identity hub, an OpenID Provider at HUB_ISSUER, with one
+// client per deployment: the root alchemy.run.ts registers production and every preview, and
+// scripts/register-hub-client.ts the development deployment. The hub sends the browser back to
+// <site>/auth/hub/callback, the callback URL of that registration.
+app.use(oauth, {
+  name: "authHub",
+  httpPrefix: "/auth/hub",
+  env: {
+    CLIENT_ID: app.env.HUB_CLIENT_ID,
+    CLIENT_SECRET: app.env.HUB_CLIENT_SECRET,
   },
 });
 app.use(password);
