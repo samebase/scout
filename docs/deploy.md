@@ -35,7 +35,7 @@ workflow.
 
 The production job uses `CLOUDFLARE_ACCOUNT_ID` and the repository secret `CLOUDFLARE_API_TOKEN`
 to manage the buckets and to mint production's email-sending token. That CI token,
-`scout-alchemy-r2`, needs its R2 permission and Account API Tokens Write. Pull request jobs
+`scout-alchemy`, needs its R2 permission and Account API Tokens Write. Pull request jobs
 receive no Cloudflare token. Scout continues using its existing bucket-scoped S3 credentials in
 Convex.
 
