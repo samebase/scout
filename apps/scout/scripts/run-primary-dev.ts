@@ -5,10 +5,12 @@ import { fileURLToPath } from "node:url";
 
 const vitePlusEntrypoint = fileURLToPath(import.meta.resolve("vite-plus/bin"));
 const ensureConvexAuth = fileURLToPath(new URL("./ensure-convex-auth.ts", import.meta.url));
+const registerHubClient = fileURLToPath(new URL("./register-hub-client.ts", import.meta.url));
 
 export function runPrimaryDev() {
-  // `convex dev` pushes at once, and a push needs the Convex Auth keys.
+  // `convex dev` pushes at once, and a push needs the Convex Auth keys and the hub client.
   execFileSync(process.execPath, [ensureConvexAuth], { stdio: "inherit" });
+  execFileSync(process.execPath, [registerHubClient], { stdio: "inherit" });
   const child = spawn(
     process.execPath,
     [
