@@ -3,7 +3,7 @@
 - **Project:** TrailScout
 - **Event:** Convex All Gas Hackathon
 - **What it does:** Sends persistent AI Scouts to try web products and record walkthroughs, screenshots, and browser replays, with public reviews by default.
-- **Live app:** https://doting-crab-687.convex.site
+- **Live app:** https://scout.samebase.com
 - **Repo:** https://github.com/samebase/scout
 - **Demo video:** https://youtu.be/FHzS5r6Qb_U
 - **Build announcement:** https://x.com/nicu_tsx/status/2102449379307086013
@@ -15,7 +15,7 @@
 - **Auth:** Convex Auth
 - **AI models:** qwen/qwen3.7-flash, openai/gpt-5.6-luna, deepseek/deepseek-v4-flash-0731 (Convex AI Gateway); gpt-5.6-luna (OpenAI Agents API)
 - **Started:** 2026-08-26T16:12:42Z
-- **Last updated:** 2026-10-22T16:48:25Z
+- **Last updated:** 2026-10-29T18:40:06Z
 
 ## Log
 
@@ -2028,9 +2028,15 @@ Declare Scout's existing private and public R2 buckets in Alchemy so Samebase ca
 storage resources. Keep their settings and retain the shared buckets when a stage is removed
 (`alchemy.run.ts`).
 
-### 2026-10-29 - working tree - v337
+### 2026-10-29 - c9cc490 - v337
 
 Move sign-in to Convex Auth 2 with email links for sign-up and password recovery, and keep the
 session in an httpOnly cookie so the server render sees it. Accounts from before keep their data:
 they set a new password through the recovery link (`apps/scout/convex/auth.ts`,
 `apps/scout/src/server.ts`).
+
+### 2026-10-29 - working tree - v339
+
+Use `scout.samebase.com` for the public app, sign-in return links, and handoff emails.
+Keep the existing Convex deployment and identity-hub callback, and publish the new address in
+the deployment output and maintained submission links (`alchemy.run.ts`, `docs/hackathon-submission.md`).

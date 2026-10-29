@@ -10,7 +10,7 @@ rendering or generation between the two files.
 
 - **Project name:** TrailScout
 - **Tagline:** Check if a product does what you need.
-- **Live app:** https://doting-crab-687.convex.site
+- **Live app:** https://scout.samebase.com
 - **Repository:** https://github.com/samebase/scout
 - **Build log:** [hackathon.md](../hackathon.md)
 - **Demo video:** https://youtu.be/FHzS5r6Qb_U
@@ -45,7 +45,7 @@ Each Scout has a name, its own email inbox, and a browser profile that stays wit
 across tasks. It can sign up for services, read verification emails, and return using
 the accounts it has already created.
 
-You can [meet the Scouts](https://doting-crab-687.convex.site/scouts) and see their
+You can [meet the Scouts](https://scout.samebase.com/scouts) and see their
 public work and the sites where they have accounts.
 
 ### Files for each conversation and each site.
@@ -227,7 +227,7 @@ I built TrailScout for the [Convex All Gas Hackathon](https://www.convex.dev/hac
 [Announcement on X](https://x.com/nicu_tsx/status/2102449379307086013) ·
 [Hackathon entry](https://vibeapps.dev/s/trailscout)
 
-[Send a Scout to a website](https://doting-crab-687.convex.site)
+[Send a Scout to a website](https://scout.samebase.com)
 
 ## Working notes, not public copy
 
