@@ -3,7 +3,7 @@
 Explore TrailScout Play for browser games, TrailScout Review for testing products, and Agents
 for inspecting tasks and comparing execution engines.
 
-Live app: [doting-crab-687.convex.site](https://doting-crab-687.convex.site)
+Live app: [scout.samebase.com](https://scout.samebase.com)
 
 This pnpm workspace follows the Samebase monorepo layout. `apps/scout/` contains the current
 frontend, Convex backend, and app scripts. New services go under `apps/`; shared libraries
@@ -23,7 +23,7 @@ operational responsibilities.
 
 - React 19 and TanStack Start, with public-page SSR on Convex
 - Convex for the real-time backend, database, and password authentication
-- `@samebase/convex-hosting` for the site on `convex.site`: uploaded browser files, and pages that
+- `@samebase/convex-hosting` for the site on `scout.samebase.com`: uploaded browser files, and pages that
   the TanStack Start server build renders in a Convex HTTP action
 - GitHub Actions for production and pull request preview deploys
 - shadcn/ui primitives for the user interface

@@ -1,15 +1,21 @@
 # Deploy
 
 Convex serves TrailScout next to its backend with
-[`@samebase/convex-hosting`](https://github.com/samebase/convex-hosting), at
-`https://<deployment>.convex.site`. `pnpm run deploy` in `apps/scout/` builds the app, uploads
-`dist/client` to the hosting component, and pushes the Convex functions. The push switches the
-site. `convex/http.ts` answers a path without an uploaded file with the TanStack Start server
-build.
+[`@samebase/convex-hosting`](https://github.com/samebase/convex-hosting). Production uses
+`https://scout.samebase.com`; its original `https://doting-crab-687.convex.site` URL remains
+available. Previews use `https://<deployment>.convex.site`. `pnpm run deploy` in `apps/scout/`
+builds the app, uploads `dist/client` to the hosting component, and pushes the Convex functions.
+The push switches the site. `convex/http.ts` answers a path without an uploaded file with the
+TanStack Start server build.
 
 The root `alchemy.run.ts` defines the `samebase/scout` stack. It selects the existing `scout`
-project in the Convex team `nicu`. Production keeps its deployment, data, signing keys, and URL.
+project in the Convex team `nicu`. Production keeps its deployment, data, and signing keys.
 The deployment command runs in `apps/scout` through `Convex.Deployment.rootDir`.
+
+The production custom domain is attached to HTTP Actions in the Convex dashboard, with DNS in
+Cloudflare. Those settings are managed outside the stack. Alchemy sets production `SITE_URL`
+and the stack's public URL to `https://scout.samebase.com`. `CONVEX_SITE_URL` stays at
+`https://doting-crab-687.convex.site`, and `CONVEX_CLOUD_URL` keeps its default backend URL.
 
 `.github/workflows/alchemy.yml` runs the stack from the repository root:
 
@@ -34,9 +40,11 @@ existing bucket-scoped S3 credentials in Convex.
 Google sign-in runs through the team's identity hub. Every run, a destroy too, reads the repository
 variable `HUB_ISSUER` (`https://auth.samebase.com`) and the repository secret
 `HUB_REGISTRATION_TOKEN`, the hub's registration token for the app TrailScout, and stops before the
-stack when either is empty. The stack registers one hub client per deployment, on its site URL plus
-`/auth/hub/callback`, writes `HUB_ISSUER`, `HUB_CLIENT_ID`, and `HUB_CLIENT_SECRET` to the
-deployment before its push, and deletes a preview's client with the preview.
+stack when either is empty. The stack registers one hub client per deployment, on its Convex
+site URL plus `/auth/hub/callback`, writes `HUB_ISSUER`, `HUB_CLIENT_ID`, and `HUB_CLIENT_SECRET` to the
+deployment before its push, and deletes a preview's client with the preview. Production keeps
+`https://doting-crab-687.convex.site/auth/hub/callback` as the hub callback. Convex Auth accepts
+the new public origin through `SITE_URL` and returns the browser there after sign-in.
 
 Each stage has one queue shared by deployment and cleanup. Before deployment,
 `scripts/verify-deployment-head.ts` checks that the checkout is still the head of the branch.
@@ -45,8 +53,8 @@ GitHub CI runs `pnpm run check` separately. Deployment does not repeat it.
 The team's `alchemy-state` Convex project stores the stack state. Its `samebase.run` output
 records the repository, stack file, branch, commit, pull request, and workflow run for Samebase's
 repository overview. `SCOUT_COMMIT` is a deployment input so a change outside `apps/scout` also
-deploys. Deployment environment variables other than `SCOUT_COMMIT` and the three `HUB_` variables
-remain unmanaged.
+deploys. Alchemy manages `SCOUT_COMMIT` and the three `HUB_` variables on each deployment, plus
+`SITE_URL` in production. Other deployment environment variables remain unmanaged.
 
 Stage `prod` also owns the existing R2 buckets `scout-workspaces-prod`, `scout-workspaces`, and
 `scout-public-media`, so Samebase can show them with Scout's other resources. All three have a
@@ -63,8 +71,8 @@ not refresh CORS, lifecycle, or domain settings, but adoption reconciles them. O
 lifecycle rules clears them.
 
 New development and preview deployments take the `DEV_SEED_AUTH_*` values from the project's
-environment defaults. Production keeps its own `SITE_URL`, the origin of the emailed sign-up and
-recovery links.
+environment defaults. Production uses its managed `SITE_URL` for emailed sign-up and recovery links,
+human handoff links, and payment return links.
 
 Convex Auth signs sessions with `AUTH_PRIVATE_KEY` and serves `AUTH_JWKS` at
 `/auth/.well-known/jwks.json`. `scripts/ensure-convex-auth.ts` creates the pair on a deployment

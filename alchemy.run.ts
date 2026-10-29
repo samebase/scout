@@ -15,11 +15,9 @@ import * as Redacted from "effect/Redacted";
 // and packages outside that directory also deploy.
 const commit = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
 
-/**
-The site of production. TrailScout has no custom domain: production serves on its deployment's own
-`.convex.site` URL, its CONVEX_SITE_URL and SITE_URL, where Convex Auth builds the hub callback.
-*/
-const PRODUCTION_SITE_URL = "https://doting-crab-687.convex.site";
+const PRODUCTION_SITE_URL = "https://scout.samebase.com";
+/** Convex Auth keeps its issuer and hub callback on the deployment's CONVEX_SITE_URL. */
+const PRODUCTION_CONVEX_SITE_URL = "https://doting-crab-687.convex.site";
 /** The identity hub's callback into Convex Auth, after CONVEX_SITE_URL (convex/convex.config.ts). */
 const HUB_CALLBACK_PATH = "/auth/hub/callback";
 
@@ -97,22 +95,23 @@ export default Alchemy.Stack(
       // unregister the client that production signs in with.
       const client = yield* IdentityHub.Client("HubClient", {
         ...hub,
-        redirectUri: `${PRODUCTION_SITE_URL}${HUB_CALLBACK_PATH}`,
+        redirectUri: `${PRODUCTION_CONVEX_SITE_URL}${HUB_CALLBACK_PATH}`,
         deploymentType: "production",
       }).pipe(Alchemy.RemovalPolicy.retain());
-      const site = yield* Convex.Deployment("Site", {
+      yield* Convex.Deployment("Site", {
         project,
         type: "prod",
         rootDir: "apps/scout",
         env: {
           SCOUT_COMMIT: commit,
+          SITE_URL: PRODUCTION_SITE_URL,
           HUB_ISSUER: client.issuer,
           HUB_CLIENT_ID: client.clientId,
           HUB_CLIENT_SECRET: client.clientSecret,
         },
         source: { path: "./convex", command: ["node", "--run", "deploy"] },
       }).pipe(adopt(true), Alchemy.RemovalPolicy.retain());
-      return { url: site.siteUrl };
+      return { url: PRODUCTION_SITE_URL };
     }
 
     // A preview's hub callback is on its own `.convex.site` URL, which exists only after Convex

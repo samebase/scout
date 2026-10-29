@@ -133,8 +133,10 @@ pnpm --filter samebase-scout exec convex env set FIRECRAWL_API_KEY
 ```
 
 These commands target development. Add `--prod` to configure production after confirming the
-target deployment. Production also needs its own managed-credential key, described below, and
-`SITE_URL` must point to the production frontend for sign-in and handoff emails.
+target deployment. Production also needs its own managed-credential key, described below.
+Alchemy sets production `SITE_URL` to `https://scout.samebase.com` for sign-in, handoff emails,
+and payment return links. Production `CONVEX_SITE_URL` stays on its `.convex.site` origin for
+the auth issuer and identity-hub callback.
 
 ## Configure managed credentials
 

@@ -54,7 +54,7 @@ the video already contains captions. This was observed in Chrome and is separate
 
 ## Published links
 
-- Live app: https://doting-crab-687.convex.site
+- Live app: https://scout.samebase.com
 - Public repository: https://github.com/samebase/scout
 - Demo video: https://youtu.be/FHzS5r6Qb_U
 - Build announcement: https://x.com/nicu_tsx/status/2102449379307086013
