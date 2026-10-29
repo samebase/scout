@@ -93,12 +93,13 @@ export default Alchemy.Stack(
 
     if (stage === "prod") {
       // IdentityHub.Client registers the callback once, and `env` writes the client before the
-      // push, which fails without it.
+      // push, which fails without it. Retained with Site: a destroy of this stage must not
+      // unregister the client that production signs in with.
       const client = yield* IdentityHub.Client("HubClient", {
         ...hub,
         redirectUri: `${PRODUCTION_SITE_URL}${HUB_CALLBACK_PATH}`,
         deploymentType: "production",
-      });
+      }).pipe(Alchemy.RemovalPolicy.retain());
       const site = yield* Convex.Deployment("Site", {
         project,
         type: "prod",

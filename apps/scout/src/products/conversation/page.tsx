@@ -61,7 +61,8 @@ import {
   MessageScrollerItem,
   MessageScrollerButton,
 } from "../../components/ui/message-scroller";
-import { AuthPanel } from "../../components/auth-panel";
+import { AuthPanel, authErrorMessage } from "../../components/auth-panel";
+import { useOauth } from "@convex-dev/auth/methods/oauth/react";
 import { BrowserReplay } from "../../components/browser-replay";
 import { TaskWalkthrough } from "#components/task-walkthrough";
 import { ScoutBadge } from "#components/scout-badge";
@@ -73,6 +74,25 @@ import { ProductShell } from "../shell";
 import { ScoutMark } from "../../components/scout-mark";
 import { cn } from "#lib/utils";
 import { playError, playNotice, playRouteMessage, playTextLink } from "./ui";
+
+/** The lobby's unsent message, kept in this tab: the Google sign-in's redirect reloads the page. */
+const LOBBY_DRAFT_KEY = "scout.lobbyDraft";
+function readLobbyDraft() {
+  try {
+    return sessionStorage.getItem(LOBBY_DRAFT_KEY) ?? "";
+  } catch {
+    // Private browsing can refuse storage; the draft then lives in memory only.
+    return "";
+  }
+}
+function storeLobbyDraft(draft: string) {
+  try {
+    if (draft === "") sessionStorage.removeItem(LOBBY_DRAFT_KEY);
+    else sessionStorage.setItem(LOBBY_DRAFT_KEY, draft);
+  } catch {
+    // Private browsing can refuse storage; the draft then lives in memory only.
+  }
+}
 
 type ChatThread = NonNullable<FunctionReturnType<typeof api.scout.activity.get>>;
 const visibilitySchema = z.enum(["public", "private"]);
@@ -170,6 +190,12 @@ export function ConversationLobby({
   const startChat = useMutation(api.scout.chats.startProductChat);
   const navigate = useNavigate();
   const [draft, setDraft] = useState("");
+  // Restored after hydration: the server render has no draft, and the Google sign-in's redirect
+  // reloads this page with the message still unsent.
+  useEffect(() => {
+    const stored = readLobbyDraft();
+    if (stored !== "") setDraft(stored);
+  }, []);
   const draftRef = useRef<HTMLTextAreaElement>(null);
   const [guestPreferences, setGuestPreferences] = useState<
     FunctionReturnType<typeof api.accounts.taskPreferences>
@@ -182,6 +208,7 @@ export function ConversationLobby({
         ? { engine: "convex_agent", model: preferences.lastConvexModel ?? "gpt-5.6-luna" }
         : defaultTaskSelection;
   const [signingIn, setSigningIn] = useState(false);
+  const { flowError } = useOauth();
   const [request, setRequest] = useState<RequestState>({ kind: "idle" });
   const [visibility, setVisibility] = useState<ChatThread["visibility"]>(
     isPlay ? "private" : "public",
@@ -236,6 +263,7 @@ export function ConversationLobby({
         visibility,
         selection,
       });
+      storeLobbyDraft("");
       await navigate(conversationDestination(kind, threadId, {}));
     } catch (error) {
       setRequest({
@@ -281,6 +309,11 @@ export function ConversationLobby({
           </div>
         ) : (
           <>
+            {flowError !== null && (
+              <p className={playError} role="alert">
+                {authErrorMessage(flowError)}
+              </p>
+            )}
             {request.kind === "failed" && (
               <p className={playError} role="alert">
                 {request.message}
@@ -320,7 +353,10 @@ export function ConversationLobby({
                 )
               }
               value={draft}
-              onChange={setDraft}
+              onChange={(value) => {
+                setDraft(value);
+                storeLobbyDraft(value);
+              }}
               onSubmit={(event) => {
                 void inviteScout(event);
               }}

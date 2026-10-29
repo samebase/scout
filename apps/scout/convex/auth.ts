@@ -416,22 +416,23 @@ const hubClaims = v.object({
 });
 
 /**
-The profile mapping of the hub method below. It refuses claims of another shape or of another
-connector with a message for the sign-in page, and keeps the email only when the hub verified it:
-`createHubUser` finds an existing user by the email.
+The profile mapping of the hub method below, on every sign-in. It refuses claims of another shape
+or of another connector, and claims without an email that the hub verified, with a message for the
+sign-in page: `createHubUser` finds an existing user by that email.
 */
 export function readHubProfile(claims: unknown) {
   if (!validate(hubClaims, claims, { allowUnknownFields: true }))
     throw new ConvexError("The identity hub did not complete the Google sign-in. Try again.");
+  if (claims.email_verified !== true || claims.email === undefined)
+    throw new ConvexError(
+      "Google did not share a verified email address. Sign in with email and password instead.",
+    );
   return {
     id: claims.sub,
     connector: claims.connector,
     connector_account_id: claims.connector_account_id,
-    ...omitNullish({
-      name: claims.name,
-      picture: claims.picture,
-      email: claims.email_verified === true ? claims.email : undefined,
-    }),
+    email: claims.email,
+    ...omitNullish({ name: claims.name, picture: claims.picture }),
   };
 }
 
@@ -439,7 +440,9 @@ export function readHubProfile(claims: unknown) {
 const hubSignIn = v.object({
   name: v.literal("hub"),
   accountId: v.string(),
-  profile: hubClaims.omit("sub", "email_verified").extend({ id: v.string() }),
+  profile: hubClaims
+    .omit("sub", "email", "email_verified")
+    .extend({ id: v.string(), email: v.string() }),
 });
 
 /**
@@ -452,10 +455,6 @@ export const createHubUser = internalMutation({
   args: { provider: hubSignIn },
   returns: v.id("users"),
   handler: async (ctx, { provider }) => {
-    if (provider.profile.email === undefined)
-      throw new ConvexError(
-        "Google did not share a verified email address. Sign in with email and password instead.",
-      );
     const email = normalizeAuthEmail(provider.profile.email);
     const user = await readUserByEmail(ctx, email);
     if (user !== null) {

@@ -42,11 +42,18 @@ function readVariable(name: string) {
 const local = existsSync(envFile) ? parse(readFileSync(envFile, "utf8")) : {};
 const issuer = local["HUB_ISSUER"]?.replace(/\/$/, "") || undefined;
 const token = local["HUB_REGISTRATION_TOKEN"] || undefined;
+// A header cannot carry a control character or a space, and the error that fetch would throw
+// prints the whole header.
+if (token !== undefined && !/^[!-~]+$/.test(token))
+  throw new Error(
+    "HUB_REGISTRATION_TOKEN in apps/scout/.env.local has a character that a header cannot carry. Paste the token again.",
+  );
 
 const storedIssuer = readVariable("HUB_ISSUER");
 const storedClientId = readVariable("HUB_CLIENT_ID");
 const storedClientSecret = readVariable("HUB_CLIENT_SECRET");
 if (
+  storedIssuer !== "" &&
   storedClientId !== "" &&
   storedClientSecret !== "" &&
   (issuer === undefined || storedIssuer === issuer)

@@ -66,12 +66,17 @@ export function AuthPanel() {
   const [error, setError] = useState("");
   const [password, setPassword] = useState("");
 
-  const run = async (operation: () => Promise<UserError | null>) => {
+  // The error of a Google sign-in's return belongs to the view with its button.
+  const returnError = state.kind === "credentials" && flowError ? authErrorMessage(flowError) : "";
+
+  const run = async (operation: () => Promise<UserError | "leaving" | null>) => {
     setError("");
     setIsPending(true);
-    const userError = await operation();
+    const outcome = await operation();
+    // The page is leaving for the identity hub: the controls stay disabled until it has left.
+    if (outcome === "leaving") return;
     setIsPending(false);
-    if (userError) setError(authErrorMessage(userError));
+    if (outcome) setError(authErrorMessage(outcome));
   };
 
   const submitCredentials = (event: FormEvent<HTMLFormElement>) => {
@@ -125,7 +130,7 @@ export function AuthPanel() {
           onClick={() =>
             void run(async () => {
               const result = await signInWithGoogle();
-              return result.status === "error" ? result.userError : null;
+              return result.status === "error" ? result.userError : "leaving";
             })
           }
         >
@@ -226,9 +231,9 @@ export function AuthPanel() {
         </Button>
       ) : null}
 
-      {error || flowError ? (
+      {error || returnError ? (
         <p className="text-destructive text-sm" role="alert">
-          {error || (flowError && authErrorMessage(flowError))}
+          {error || returnError}
         </p>
       ) : null}
       {state.kind !== "credentials" && <LegalLinks />}

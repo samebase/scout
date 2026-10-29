@@ -214,7 +214,9 @@ test("a hub sign-in links to the user whose verified email is the hub's verified
 test("a hub sign-in without a verified email is rejected", async () => {
   const backend = setup();
   const unverified = { ...googleClaims, email_verified: false };
-  expect(readHubProfile(unverified)).not.toHaveProperty("email");
+  expect(() => readHubProfile(unverified)).toThrow(
+    "Google did not share a verified email address.",
+  );
   await expect(signInWithHub(backend, unverified)).rejects.toThrow(
     "Google did not share a verified email address.",
   );

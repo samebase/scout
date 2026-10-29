@@ -60,6 +60,11 @@ HUB_REGISTRATION_TOKEN=<registration token>
 registers the deployment's site URL plus `/auth/hub/callback` once, and writes `HUB_ISSUER`,
 `HUB_CLIENT_ID`, and `HUB_CLIENT_SECRET` to the deployment. A push fails without them.
 
+The Google sign-in returns to the page that started it, and the deployment accepts a return to
+`SITE_URL` and to its own `.convex.site` origin only. Set `SITE_URL` on the deployment to the
+origin Vite prints for this checkout: `http://localhost:5173` for the primary checkout, port
+`5174` or higher for a linked worktree.
+
 Then deploy the site to it once and start the app:
 
 ```sh
