@@ -12,13 +12,31 @@ import { Input } from "#components/ui/input";
 export const Route = createFileRoute("/reset-password")({
   ssr: false,
   staticData: { access: "access_public" },
-  validateSearch: (search) => z.object({ code: z.string() }).parse(search),
+  // The search is validated on the server too, so a missing code is a page, not a 500.
+  validateSearch: (search) => z.object({ code: z.string().optional() }).parse(search),
   head: () => ({ meta: [{ title: "Reset password | TrailScout" }] }),
   component: ResetPasswordPage,
 });
 
 function ResetPasswordPage() {
   const { code } = Route.useSearch();
+  if (code === undefined) {
+    return (
+      <main className="route-page max-w-md">
+        <h1 className="route-heading">Choose a new password</h1>
+        <p role="alert" className="mt-3 text-destructive">
+          Open the link from your email.
+        </p>
+        <Link to="/" className="mt-6 inline-block text-sm underline">
+          Back to TrailScout
+        </Link>
+      </main>
+    );
+  }
+  return <CompletePasswordRecovery code={code} />;
+}
+
+function CompletePasswordRecovery({ code }: { code: string }) {
   const state = useCompletePasswordRecovery(api.auth, { emailCode: code });
   const [error, setError] = useState("");
 
