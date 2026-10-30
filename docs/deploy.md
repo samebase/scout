@@ -42,7 +42,7 @@ Convex.
 Stage `prod` mints the account API token `scout production email sending`, with only Email
 Sending Write, and retains it when the stack is destroyed. See `EMAIL_SETUP.md`.
 
-Google sign-in runs through the team's identity hub, which is in the `samebase` project of the
+Google sign-in runs through the team's identity hub, which is in the `identity-hub` project of the
 Convex team. The stack reaches it with `CONVEX_ACCESS_TOKEN`, so sign-in needs no secret of its own.
 The stack registers one hub client per deployment, on its Convex site URL plus `/auth/hub/callback`, writes `HUB_ISSUER`, `HUB_CLIENT_ID`, and `HUB_CLIENT_SECRET` to the
 deployment before its push, and deletes a preview's client with the preview. Production keeps
