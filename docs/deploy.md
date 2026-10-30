@@ -53,7 +53,7 @@ Each stage has one queue shared by deployment and cleanup. Before deployment,
 `scripts/verify-deployment-head.ts` checks that the checkout is still the head of the branch.
 GitHub CI runs `pnpm run check` separately. Deployment does not repeat it.
 
-The team's `samebase` Convex project stores the stack state. Its `samebase.run` output
+The team's `alchemy-state-store` Convex project stores the stack state. Its `samebase.run` output
 records the repository, stack file, branch, commit, pull request, and workflow run for Samebase's
 repository overview. `SCOUT_COMMIT` is a deployment input so a change outside `apps/scout` also
 deploys. Alchemy manages `SCOUT_COMMIT` and the three `HUB_` variables on each deployment, plus
