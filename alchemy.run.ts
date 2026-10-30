@@ -2,14 +2,11 @@ import { execFileSync } from "node:child_process";
 import * as Cloudflare from "@alchemy.run/cloudflare";
 import * as GitHub from "@alchemy.run/github";
 import * as Convex from "@samebase/alchemy-convex";
-import * as IdentityHub from "@samebase/alchemy-identity-hub";
 import * as Alchemy from "alchemy";
 import { adopt } from "alchemy/AdoptPolicy";
 import * as Output from "alchemy/Output";
-import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Redacted from "effect/Redacted";
 
 // Deployment hashing covers apps/scout. Include the commit so changes to workspace configuration
 // and packages outside that directory also deploy.
@@ -24,22 +21,16 @@ const HUB_CALLBACK_PATH = "/auth/hub/callback";
 export default Alchemy.Stack(
   "samebase/scout",
   {
-    providers: Layer.mergeAll(
-      Convex.providers(),
-      Cloudflare.providers(),
-      GitHub.providers(),
-      IdentityHub.providers(),
-    ),
+    providers: Layer.mergeAll(Convex.providers(), Cloudflare.providers(), GitHub.providers()),
     state: Convex.state({ team: "nicu" }),
   },
   Effect.gen(function* () {
     const { stage } = yield* Alchemy.Stack;
-    // Each deployment is a client of the team's identity hub, for Google sign-in. Read before any
-    // resource, a destroy too: alchemy.yml passes the repository variable HUB_ISSUER and the
-    // repository secret HUB_REGISTRATION_TOKEN, and an empty value fails like a missing one.
+    // Each deployment is a client of the team's identity hub, for Google sign-in. The hub is in the
+    // base of the team, which the Convex credential of this run reaches.
     const hub = {
-      issuer: yield* Config.NonEmptyString("HUB_ISSUER"),
-      registrationToken: Redacted.make(yield* Config.NonEmptyString("HUB_REGISTRATION_TOKEN")),
+      team: "nicu",
+      app: "trailscout-1fuyl",
       clientName: stage,
       softwareVersion: commit,
     };
@@ -90,10 +81,10 @@ export default Alchemy.Stack(
     );
 
     if (stage === "prod") {
-      // IdentityHub.Client registers the callback once, and `env` writes the client before the
+      // Convex.HubClient registers the callback once, and `env` writes the client before the
       // push, which fails without it. Retained with Site: a destroy of this stage must not
       // unregister the client that production signs in with.
-      const client = yield* IdentityHub.Client("HubClient", {
+      const client = yield* Convex.HubClient("HubClient", {
         ...hub,
         redirectUri: `${PRODUCTION_CONVEX_SITE_URL}${HUB_CALLBACK_PATH}`,
         deploymentType: "production",
@@ -143,7 +134,7 @@ export default Alchemy.Stack(
       type: "preview",
       name: stage,
     }).pipe(adopt(true), Alchemy.RemovalPolicy.destroy());
-    const client = yield* IdentityHub.Client("HubClient", {
+    const client = yield* Convex.HubClient("HubClient", {
       ...hub,
       redirectUri: Output.map(preview.siteUrl, (siteUrl) => `${siteUrl}${HUB_CALLBACK_PATH}`),
       deploymentType: "preview",

@@ -42,11 +42,9 @@ Convex.
 Stage `prod` mints the account API token `scout production email sending`, with only Email
 Sending Write, and retains it when the stack is destroyed. See `EMAIL_SETUP.md`.
 
-Google sign-in runs through the team's identity hub. Every run, a destroy too, reads the repository
-variable `HUB_ISSUER` (`https://auth.samebase.com`) and the repository secret
-`HUB_REGISTRATION_TOKEN`, the hub's registration token for the app TrailScout, and stops before the
-stack when either is empty. The stack registers one hub client per deployment, on its Convex
-site URL plus `/auth/hub/callback`, writes `HUB_ISSUER`, `HUB_CLIENT_ID`, and `HUB_CLIENT_SECRET` to the
+Google sign-in runs through the team's identity hub, which is in the `samebase` project of the
+Convex team. The stack reaches it with `CONVEX_ACCESS_TOKEN`, so sign-in needs no secret of its own.
+The stack registers one hub client per deployment, on its Convex site URL plus `/auth/hub/callback`, writes `HUB_ISSUER`, `HUB_CLIENT_ID`, and `HUB_CLIENT_SECRET` to the
 deployment before its push, and deletes a preview's client with the preview. Production keeps
 `https://doting-crab-687.convex.site/auth/hub/callback` as the hub callback. Convex Auth accepts
 the new public origin through `SITE_URL` and returns the browser there after sign-in.
@@ -55,7 +53,7 @@ Each stage has one queue shared by deployment and cleanup. Before deployment,
 `scripts/verify-deployment-head.ts` checks that the checkout is still the head of the branch.
 GitHub CI runs `pnpm run check` separately. Deployment does not repeat it.
 
-The team's `alchemy-state` Convex project stores the stack state. Its `samebase.run` output
+The team's `samebase` Convex project stores the stack state. Its `samebase.run` output
 records the repository, stack file, branch, commit, pull request, and workflow run for Samebase's
 repository overview. `SCOUT_COMMIT` is a deployment input so a change outside `apps/scout` also
 deploys. Alchemy manages `SCOUT_COMMIT` and the three `HUB_` variables on each deployment, plus

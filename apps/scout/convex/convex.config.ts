@@ -61,7 +61,7 @@ app.use(auth, {
 });
 // Google sign-in runs through the team's identity hub, an OpenID Provider at HUB_ISSUER, with one
 // client per deployment: the root alchemy.run.ts registers production and every preview, and
-// scripts/register-hub-client.ts the development deployment. The hub sends the browser back to
+// the package script hub:client the development deployment. The hub sends the browser back to
 // <site>/auth/hub/callback, the callback URL of that registration.
 app.use(oauth, {
   name: "authHub",
