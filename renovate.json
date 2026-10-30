@@ -5,6 +5,12 @@
     {
       "matchDatasources": ["npm"],
       "minimumReleaseAge": "1 day"
+    },
+    {
+      "description": "One pull request for every update type, so that the updates merge together.",
+      "groupName": "Routine updates",
+      "matchUpdateTypes": ["major", "minor", "patch", "pin", "pinDigest", "digest"]
     }
-  ]
+  ],
+  "separateMajorMinor": false
 }
