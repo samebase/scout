@@ -42,8 +42,8 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with: { node-version: 24.x, cache: pnpm }
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with: { node-version: 26.x, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - name: Check the current branch head
         run: node ./scripts/verify-deployment-head.ts
@@ -71,8 +71,8 @@ jobs:
           ref: ${{ github.event.pull_request.base.ref }}
           persist-credentials: false
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with: { node-version: 24.x, cache: pnpm }
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with: { node-version: 26.x, cache: pnpm }
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Destroy the stack
         run: pnpm exec alchemy destroy --stage ${{ env.STAGE }} --yes --no-input
