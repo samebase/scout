@@ -217,8 +217,8 @@ importers:
         specifier: 4.0.5
         version: 4.0.5(effect@4.0.5)(redis@6.3.0)
       '@samebase/alchemy-convex':
-        specifier: 0.17.0
-        version: 0.17.0(@effect/platform-node@4.0.5(effect@4.0.5)(redis@6.3.0))(alchemy@2.0.0-beta.84(@effect/platform-node@4.0.5(effect@4.0.5)(redis@6.3.0))(@types/react@19.3.0)(@voidzero-dev/vite-plus-core@1.3.0(@types/node@24.19.2)(esbuild@0.27.0)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(effect@4.0.5)(ws@8.22.0))(convex@1.48.0(react@19.3.1))(effect@4.0.5)
+        specifier: 0.19.0
+        version: 0.19.0(@effect/platform-node@4.0.5(effect@4.0.5)(redis@6.3.0))(alchemy@2.0.0-beta.84(@effect/platform-node@4.0.5(effect@4.0.5)(redis@6.3.0))(@types/react@19.3.0)(@voidzero-dev/vite-plus-core@1.3.0(@types/node@24.19.2)(esbuild@0.27.0)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(effect@4.0.5)(ws@8.22.0))(convex@1.48.0(react@19.3.1))(effect@4.0.5)
       '@types/node':
         specifier: ^24.19.2
         version: 24.19.2
@@ -2684,8 +2684,8 @@ packages:
   '@rolldown/pluginutils@1.0.1':
     resolution: {integrity: sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw==}
 
-  '@samebase/alchemy-convex@0.17.0':
-    resolution: {integrity: sha512-6GmQre2VFJ7r82G6/1UbhxRe3thdCSi1DurqEnWcxG+CVOW7roF3IFPKTprpD/vlwZt3Z942Icqsvwtr9Rl/qg==}
+  '@samebase/alchemy-convex@0.19.0':
+    resolution: {integrity: sha512-FRLxw/oQt7XDRRNdRtdt25PuxGXjfSN958hbIlGeJkR6Jpad0r0WEH/5kL29NZ6FHK4csfrVHj3VMpRF+uxbFA==}
     engines: {node: '>=22'}
     hasBin: true
     peerDependencies:
@@ -4218,8 +4218,8 @@ packages:
   flatted@3.4.4:
     resolution: {integrity: sha512-5+ybhBZANEJxaH3X5evAFatUxLfEHSr7n6kYJ+1Qd0mUqr4eu9gIf6GDbWHf8RJijHrjjO8G+la14SlL2SeS1Q==}
 
-  follow-redirects@1.16.1:
-    resolution: {integrity: sha512-FNvFGzoMLWmE6Yj9spb/zjd7yiNCHiAW9/Tg9CXrQ8wuu32HtlJOwWO11OJafl5FfY3DxTdQ0vj42zU1kvv5jg==}
+  follow-redirects@1.16.2:
+    resolution: {integrity: sha512-/kVP2U8z596Ia0gwFrwyIeo74ta5aVmSeU1FfAUMAmcEP5EP7zydmag3SLiN64NaRKef3lxsq7i/g7ltJQDGow==}
     engines: {node: '>=4.0'}
     peerDependencies:
       debug: '*'
@@ -8350,7 +8350,7 @@ snapshots:
 
   '@rolldown/pluginutils@1.0.1': {}
 
-  '@samebase/alchemy-convex@0.17.0(@effect/platform-node@4.0.5(effect@4.0.5)(redis@6.3.0))(alchemy@2.0.0-beta.84(@effect/platform-node@4.0.5(effect@4.0.5)(redis@6.3.0))(@types/react@19.3.0)(@voidzero-dev/vite-plus-core@1.3.0(@types/node@24.19.2)(esbuild@0.27.0)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(effect@4.0.5)(ws@8.22.0))(convex@1.48.0(react@19.3.1))(effect@4.0.5)':
+  '@samebase/alchemy-convex@0.19.0(@effect/platform-node@4.0.5(effect@4.0.5)(redis@6.3.0))(alchemy@2.0.0-beta.84(@effect/platform-node@4.0.5(effect@4.0.5)(redis@6.3.0))(@types/react@19.3.0)(@voidzero-dev/vite-plus-core@1.3.0(@types/node@24.19.2)(esbuild@0.27.0)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(effect@4.0.5)(ws@8.22.0))(convex@1.48.0(react@19.3.1))(effect@4.0.5)':
     dependencies:
       '@convex-dev/platform': 0.1.11
       '@effect/platform-node': 4.0.5(effect@4.0.5)(redis@6.3.0)
@@ -9220,7 +9220,7 @@ snapshots:
 
   axios@1.20.0(debug@4.4.3):
     dependencies:
-      follow-redirects: 1.16.1(debug@4.4.3)
+      follow-redirects: 1.16.2(debug@4.4.3)
       form-data: 4.0.6
       https-proxy-agent: 5.0.1
       proxy-from-env: 2.1.0
@@ -9784,7 +9784,7 @@ snapshots:
 
   flatted@3.4.4: {}
 
-  follow-redirects@1.16.1(debug@4.4.3):
+  follow-redirects@1.16.2(debug@4.4.3):
     optionalDependencies:
       debug: 4.4.3
 
