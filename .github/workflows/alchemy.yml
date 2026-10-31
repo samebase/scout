@@ -18,7 +18,6 @@ concurrency:
 
 env:
   STAGE: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.number) || 'prod' }}
-  PULL_REQUEST: ${{ github.event.pull_request.number }}
 
 jobs:
   deploy:
@@ -57,6 +56,12 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: fe57d01d7ab41f60d00ba1aade20eb33
           CLOUDFLARE_API_TOKEN: ${{ github.event_name != 'pull_request' && secrets.CLOUDFLARE_API_TOKEN || '' }}
           GITHUB_TOKEN: ${{ github.event_name == 'pull_request' && github.token || '' }}
+      - name: Update the stack comment
+        if: github.event_name == 'pull_request'
+        run: pnpm exec alchemy-convex stack-comment
+        env:
+          CONVEX_ACCESS_TOKEN: ${{ secrets.CONVEX_ACCESS_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
 
   destroy:
     name: Destroy the preview
