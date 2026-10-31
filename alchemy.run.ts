@@ -21,6 +21,7 @@ const HUB_CALLBACK_PATH = "/auth/hub/callback";
 export default Alchemy.Stack(
   "samebase/scout",
   {
+    // The GitHub provider has no resource here: it forgets the PreviewComment rows of older previews.
     providers: Layer.mergeAll(Convex.providers(), Cloudflare.providers(), GitHub.providers()),
     state: Convex.state({ team: "nicu" }),
   },
@@ -152,18 +153,6 @@ export default Alchemy.Stack(
       },
       source: { path: "./convex", command: ["node", "./scripts/deploy-preview.ts"] },
     }).pipe(adopt(true), Alchemy.RemovalPolicy.destroy());
-
-    const github = yield* GitHub.GitHubEnv;
-    if (github?.pr) {
-      yield* GitHub.Comment("PreviewComment", {
-        owner: github.owner,
-        repository: github.repository,
-        issueNumber: github.pr,
-        body: Output.interpolate`Preview \`${stage}\`: ${site.siteUrl}
-Deployment: ${site.url}
-Dashboard: https://dashboard.convex.dev/d/${site.name}`,
-      }).pipe(Alchemy.RemovalPolicy.retain());
-    }
 
     return { url: site.siteUrl };
   }),
