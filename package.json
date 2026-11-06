@@ -11,6 +11,7 @@
     "dev:worktree": "vp run samebase-scout#dev:worktree",
     "build": "vp run samebase-scout#build",
     "deploy:dev": "vp run samebase-scout#deploy:dev",
+    "hub": "alchemy deploy",
     "preview": "vp run samebase-scout#preview",
     "check": "vp check && vp run typecheck && vp test",
     "typecheck": "tsc --project tsconfig.node.json && vp run --filter \"!scout-workspace\" typecheck",
@@ -21,13 +22,13 @@
     "prepare": "vp config"
   },
   "devDependencies": {
-    "@alchemy.run/cloudflare": "2.0.0-beta.84",
-    "@alchemy.run/github": "2.0.0-beta.84",
-    "@effect/platform-node": "4.0.5",
-    "@samebase/alchemy-convex": "0.19.0",
+    "@alchemy.run/cloudflare": "2.0.0-beta.85",
+    "@alchemy.run/github": "2.0.0-beta.85",
+    "@effect/platform-node": "4.1.2",
+    "@samebase/alchemy-convex": "0.30.0",
     "@types/node": "^24.19.2",
-    "alchemy": "2.0.0-beta.84",
-    "effect": "4.0.5",
+    "alchemy": "2.0.0-beta.85",
+    "effect": "4.1.2",
     "typescript": "~7.0.2",
     "vite": "catalog:",
     "vite-plus": "catalog:"

@@ -171,9 +171,8 @@ test("the terms step after the sign-up link records the session recording choice
 /** Id token claims of the identity hub for a Google account, with a claim that the profile drops. */
 const googleClaims = {
   iss: "https://hub.example.test",
-  sub: "hub-subject-1",
+  sub: "google:109876543210",
   connector: "google",
-  connector_account_id: "google-account-1",
   email: "Member@Example.test",
   email_verified: true,
   name: "Member",
@@ -209,6 +208,17 @@ test("a hub sign-in links to the user whose verified email is the hub's verified
   );
   expect(await signInWithHub(backend, googleClaims)).toMatchObject({ userId });
   expect(await readUsers(backend)).toHaveLength(1);
+});
+
+test("a hub profile takes the Google account id from the public subject", () => {
+  expect(readHubProfile(googleClaims)).toMatchObject({
+    id: "google:109876543210",
+    connector_account_id: "109876543210",
+  });
+  for (const sub of ["109876543210", "github:109876543210", "google:"])
+    expect(() => readHubProfile({ ...googleClaims, sub })).toThrow(
+      "The identity hub did not complete the Google sign-in.",
+    );
 });
 
 test("a hub sign-in without a verified email is rejected", async () => {

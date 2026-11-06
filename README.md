@@ -99,6 +99,7 @@ serve your current frontend; local Vite development keeps its usual hot reload. 
 `.convex-hosting/` is deleted, `convex dev` fails with `Could not resolve`, and
 `pnpm run deploy:dev` fixes it. Development starts Convex and TanStack Start together, using port
 5173 for the primary checkout and ports starting at 5174 for linked worktrees.
+For Google sign-in, run `pnpm run hub --stage dev-<name>` once after the development deployment has the code.
 Worktrees must select their own cloud dev deployment. Convex writes its selected deployment and
 `VITE_CONVEX_URL` to `apps/scout/.env.local`. Move an existing root `.env.local` there when
 updating an older checkout.

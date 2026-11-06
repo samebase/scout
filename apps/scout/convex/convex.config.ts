@@ -59,9 +59,9 @@ app.use(auth, {
     AUTH_JWKS: app.env.AUTH_JWKS,
   },
 });
-// Google sign-in runs through the team's identity hub, an OpenID Provider at HUB_ISSUER, with one
-// client per deployment: the root alchemy.run.ts registers production and every preview, and
-// the package script hub:client the development deployment. The hub sends the browser back to
+// Google sign-in runs through the identity hub, an OpenID Provider at HUB_ISSUER, with one client
+// per deployment: the root alchemy.run.ts gets the client of production and of every preview, and
+// its stage `dev-<name>` the client of a development deployment. The hub sends the browser back to
 // <site>/auth/hub/callback, the callback URL of that registration.
 app.use(oauth, {
   name: "authHub",

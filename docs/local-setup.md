@@ -48,10 +48,12 @@ root. This writes the Convex URL needed by the build to the app's env file:
 pnpm --filter samebase-scout exec convex deployment select <development-deployment>
 ```
 
-Google sign-in needs a client of the team's identity hub on the development deployment.
-`pnpm run deploy:dev` and `pnpm run dev` run the package script `hub:client` before their push. With
-your Convex login, it registers the deployment's site URL plus `/auth/hub/callback` once, and writes
-`HUB_ISSUER`, `HUB_CLIENT_ID`, and `HUB_CLIENT_SECRET` to the deployment. A push fails without them.
+A push fails without `HUB_ISSUER`, `HUB_CLIENT_ID`, and `HUB_CLIENT_SECRET`. A new development
+deployment takes their off values from the project's dev defaults, so it has no Google sign-in.
+For Google sign-in, run `pnpm run hub --stage dev-<name>` from the repository root once, after the
+deployment has the code. That stage of `alchemy.run.ts` asks the identity hub for a client on the
+deployment's site URL plus `/auth/hub/callback`, with the initial access token that the production
+deploy saved, and writes the three variables.
 
 The Google sign-in returns to the page that started it, and the deployment accepts a return to
 `SITE_URL` and to its own `.convex.site` origin only. Set `SITE_URL` on the deployment to the

@@ -14,6 +14,18 @@ const http = httpRouter();
 
 http.route({ path: "/polar/events", method: "POST", handler: httpAction(handlePolarEvent) });
 
+// The identity hub reads this file on a site before it registers a client there (RFC 134): it names
+// this repository, samebase/scout, by its numeric GitHub id, which a rename does not change. Every
+// deployment serves the same answer, previews included, and no answer is cached. An exact path, so
+// it wins over the site's "/" prefix below.
+http.route({
+  path: "/samebase-verification.json",
+  method: "GET",
+  handler: httpAction(async () =>
+    Response.json({ repository: "1347540564" }, { headers: { "Cache-Control": "no-store" } }),
+  ),
+});
+
 // Every method, every path, as a Cloudflare Worker with static assets: the uploaded file for a path
 // that has one (another method than GET or HEAD on it answers 405), else the server build
 // (src/server.ts), which renders the page with the session of the request's cookies. Convex answers
