@@ -131,6 +131,9 @@ export default Alchemy.Stack(
           deploymentType: "development",
           initialAccessToken: production.initialAccessToken,
           softwareVersion: commit,
+          // A run that gets no working client fails and keeps the variables the deployment has, in
+          // place of writing the off values over a working client.
+          required: true,
         }),
       );
       const site = yield* Convex.Deployment("Site", {
