@@ -9,7 +9,7 @@ The push switches the site. `convex/http.ts` answers a path without an uploaded 
 TanStack Start server build.
 
 The root `alchemy.run.ts` defines the `samebase/scout` stack. It selects the existing `scout`
-project in the Convex team `nicu`. Production keeps its deployment, data, and signing keys.
+project in the Convex team of the credential. Production keeps its deployment, data, and signing keys.
 The deployment command runs in `apps/scout` through `Convex.Deployment.rootDir`.
 
 The production custom domain is attached to HTTP Actions in the Convex dashboard, with DNS in
@@ -42,10 +42,13 @@ Convex.
 Stage `prod` mints the account API token `scout production email sending`, with only Email
 Sending Write, and retains it when the stack is destroyed. See `EMAIL_SETUP.md`.
 
-Google sign-in runs through the team's identity hub, which is in the `identity-hub` project of the
-Convex team. The stack reaches it with `CONVEX_ACCESS_TOKEN`, so sign-in needs no secret of its own.
-The stack registers one hub client per deployment, on its Convex site URL plus `/auth/hub/callback`, writes `HUB_ISSUER`, `HUB_CLIENT_ID`, and `HUB_CLIENT_SECRET` to the
-deployment before its push, and deletes a preview's client with the preview. Production keeps
+Google sign-in runs through the identity hub at `https://auth.samebase.com`. Each deployment asks
+`POST /hub-clients` for its client with the GitHub OIDC token of the run (`id-token: write`), so
+sign-in needs no secret of its own. The hub first reads `/samebase-verification.json` on the
+callback's site (`convex/http.ts`). So the stack pushes first (`Push` in production, `Preview` on a
+pull request), then registers the client on the Convex site URL plus `/auth/hub/callback`, then
+`Site` writes `HUB_ISSUER`, `HUB_CLIENT_ID`, and `HUB_CLIENT_SECRET` with no push. A deploy fails
+when the hub does not confirm the client. A preview's client goes with the preview. Production keeps
 `https://doting-crab-687.convex.site/auth/hub/callback` as the hub callback. Convex Auth accepts
 the new public origin through `SITE_URL` and returns the browser there after sign-in.
 
@@ -104,7 +107,7 @@ the pull request number:
 pnpm exec alchemy destroy --stage pr-123 --dry-run --no-input
 ```
 
-The plan deletes `Preview`, `HubClient`, and `Site` and orphans `Project` and `PreviewComment`.
+The plan deletes `Preview`, `SignInClient`, and `Site` and orphans `Project` and `PreviewComment`.
 Orphaned resources remain on their providers but leave the stage state during an actual destroy.
 The dry run changes neither resources nor stage state. Keep previews for open pull requests.
 

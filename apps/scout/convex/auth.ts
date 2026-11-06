@@ -16,7 +16,7 @@ import { publicMutation, publicQuery } from "./functions";
 // core keeps the sessions. The method's React hooks call these functions, whose names, arguments,
 // and results are the method's. `users.email` decides which account owns an address, so an account
 // from Convex Auth 0.0.x keeps its row and data: it sets a password through the recovery link.
-// Google sign-in runs through the team's identity hub with Convex Auth's OAuth method, at the end
+// Google sign-in runs through the identity hub with Convex Auth's OAuth method, at the end
 // of this file.
 
 const core = setupConvexAuth({ component: components.auth });
@@ -399,16 +399,16 @@ export const completePasswordRecovery = publicMutation({
 });
 
 /**
-The id_token claims of the identity hub that a Google sign-in reads. `sub` is pairwise: stable for
-TrailScout, different in every other app of the hub. A user can edit the authorize URL, so the
-`connector` claim, not the URL, keeps the method to Google. Convex Auth checks the issuer, audience,
-and expiry of the id_token, which it received over TLS from the hub's token endpoint, but not the
-types of its claims.
+The id_token claims of the identity hub that a Google sign-in reads. `sub` is public:
+`google:<Google's own account id>`, the same in every app of the hub. A user can edit the authorize
+URL, so the `connector` claim and the `google:` prefix of `sub`, not the URL, keep the method to
+Google. Convex Auth checks the issuer, audience, and expiry of the id_token, which it received over
+TLS from the hub's token endpoint, but not the types of its claims.
 */
+const GOOGLE_SUBJECT_PREFIX = "google:";
 const hubClaims = v.object({
   sub: v.string(),
   connector: v.literal("google"),
-  connector_account_id: v.string(),
   email: v.optional(v.string()),
   email_verified: v.optional(v.boolean()),
   name: v.optional(v.string()),
@@ -416,12 +416,15 @@ const hubClaims = v.object({
 });
 
 /**
-The profile mapping of the hub method below, on every sign-in. It refuses claims of another shape
-or of another connector, and claims without an email that the hub verified, with a message for the
-sign-in page: `createHubUser` finds an existing user by that email.
+The profile mapping of the hub method below, on every sign-in. It refuses claims of another shape,
+of another connector, or with a `sub` that names no Google account, and claims without an email
+that the hub verified, with a message for the sign-in page: `createHubUser` finds an existing user
+by that email.
 */
 export function readHubProfile(claims: unknown) {
   if (!validate(hubClaims, claims, { allowUnknownFields: true }))
+    throw new ConvexError("The identity hub did not complete the Google sign-in. Try again.");
+  if (!claims.sub.startsWith(GOOGLE_SUBJECT_PREFIX) || claims.sub === GOOGLE_SUBJECT_PREFIX)
     throw new ConvexError("The identity hub did not complete the Google sign-in. Try again.");
   if (claims.email_verified !== true || claims.email === undefined)
     throw new ConvexError(
@@ -430,7 +433,7 @@ export function readHubProfile(claims: unknown) {
   return {
     id: claims.sub,
     connector: claims.connector,
-    connector_account_id: claims.connector_account_id,
+    connector_account_id: claims.sub.slice(GOOGLE_SUBJECT_PREFIX.length),
     email: claims.email,
     ...omitNullish({ name: claims.name, picture: claims.picture }),
   };
@@ -442,7 +445,7 @@ const hubSignIn = v.object({
   accountId: v.string(),
   profile: hubClaims
     .omit("sub", "email", "email_verified")
-    .extend({ id: v.string(), email: v.string() }),
+    .extend({ id: v.string(), connector_account_id: v.string(), email: v.string() }),
 });
 
 /**

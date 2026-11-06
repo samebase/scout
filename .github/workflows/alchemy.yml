@@ -28,9 +28,12 @@ jobs:
       'pull_request' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # id-token: write gives the run its GitHub OIDC token, which asks the identity hub for the
+    # deployment's sign-in client.
     permissions:
       contents: read
       pull-requests: write
+      id-token: write
     environment:
       name: ${{ github.event_name == 'pull_request' && 'preview' || 'production' }}
       url: ${{ steps.deploy.outputs.url }}
