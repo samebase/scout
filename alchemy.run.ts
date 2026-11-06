@@ -27,7 +27,8 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 // The commit of this checkout: SCOUT_COMMIT on each deployment, and the software version of each hub
-// client. A push runs when apps/scout or the lockfile changes, the hash of "Push" and "Preview".
+// client. It is in the env of "Push" and "Preview", so it is part of each push's hash: every commit
+// deploys, also one that changes only files outside apps/scout.
 const commit = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
 
 const PRODUCTION_SITE_URL = "https://scout.samebase.com";
@@ -147,12 +148,15 @@ export default Alchemy.Stack(
 
     if (stage === "prod") {
       // "Push" pushes the code first, with the hub variables that production has, so the callback's
-      // site serves the verification file before the client registers. It sets no variables.
-      // adopt(true) takes over the production deployment, which has code. Retained with Site.
+      // site serves the verification file before the client registers. Its one variable is
+      // SCOUT_COMMIT, which "Site" also sets with the same value: it is in the push's hash, so every
+      // commit pushes. adopt(true) takes over the production deployment, which has code. Retained
+      // with Site.
       const push = yield* Convex.Deployment("Push", {
         project,
         type: "prod",
         rootDir: "apps/scout",
+        env: { SCOUT_COMMIT: commit },
         source: { path: "./convex", command: ["node", "--run", "deploy"] },
       }).pipe(adopt(true), Alchemy.RemovalPolicy.retain());
       // The production client, on the fixed callback. The map on the push's output makes the client
@@ -217,6 +221,8 @@ export default Alchemy.Stack(
       type: "preview",
       name: stage,
       rootDir: "apps/scout",
+      // In the push's hash, so every commit pushes; "Site" sets the same value.
+      env: { SCOUT_COMMIT: commit },
       source: { path: "./convex", command: ["node", "./scripts/deploy-preview.ts"] },
     }).pipe(adopt(true), Alchemy.RemovalPolicy.destroy());
     const signIn = Convex.SharedHubClient.variables(

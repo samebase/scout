@@ -58,8 +58,8 @@ GitHub CI runs `pnpm run check` separately. Deployment does not repeat it.
 
 The team's `alchemy-state-store` Convex project stores the stack state. Its `samebase.run` output
 records the repository, stack file, branch, commit, pull request, and workflow run for Samebase's
-repository overview. `SCOUT_COMMIT` records the commit on each deployment; a push runs when
-`apps/scout` or the lockfile changes. Alchemy manages `SCOUT_COMMIT` and the three `HUB_` variables on each deployment, plus
+repository overview. `SCOUT_COMMIT` is a deployment input so a change outside `apps/scout` also
+deploys. Alchemy manages `SCOUT_COMMIT` and the three `HUB_` variables on each deployment, plus
 `SITE_URL` and the two `CLOUDFLARE_EMAIL_` variables in production. Other deployment environment
 variables remain unmanaged.
 
