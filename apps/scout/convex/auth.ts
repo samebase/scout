@@ -490,8 +490,8 @@ export const onHubSignIn = internalMutation({
 });
 
 /**
-Google sign-in through the identity hub, an OpenID Provider at HUB_ISSUER. TrailScout is a
-first-party app of the hub, so the hub skips its chooser and sends the browser straight to Google.
+Google sign-in through the identity hub, an OpenID Provider at HUB_ISSUER. The authorize URL names
+the Google connector, the one TrailScout enrolls in, so the hub's page offers only Google.
 The flow returns to the page that started it, on SITE_URL or on CONVEX_SITE_URL, which serves the
 same build. The annotation gives the exports below their types without the call, which reads the
 type of `internal`, which contains this module.
