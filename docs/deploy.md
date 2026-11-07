@@ -13,9 +13,9 @@ project in the Convex team of the credential. Production keeps its deployment, d
 The deployment command runs in `apps/scout` through `Convex.Deployment.rootDir`.
 
 The production custom domain is attached to HTTP Actions in the Convex dashboard, with DNS in
-Cloudflare. Those settings are managed outside the stack. Alchemy sets production `SITE_URL`
-and the stack's public URL to `https://scout.samebase.com`. `CONVEX_SITE_URL` stays at
-`https://doting-crab-687.convex.site`, and `CONVEX_CLOUD_URL` keeps its default backend URL.
+Cloudflare, and the dashboard overrides `CONVEX_SITE_URL` to it. Those settings are managed
+outside the stack. Alchemy sets production `SITE_URL` and the stack's public URL to
+`https://scout.samebase.com`. `CONVEX_CLOUD_URL` keeps its default backend URL.
 
 `.github/workflows/alchemy.yml` runs the stack from the repository root:
 
@@ -48,9 +48,9 @@ sign-in needs no secret of its own. The hub first reads `/samebase-verification.
 callback's site (`convex/http.ts`). So the stack pushes first (`Push` in production, `Preview` on a
 pull request), then registers the client on the Convex site URL plus `/auth/hub/callback`, then
 `Site` writes `HUB_ISSUER`, `HUB_CLIENT_ID`, and `HUB_CLIENT_SECRET` with no push. A deploy fails
-when the hub does not confirm the client. A preview's client goes with the preview. Production keeps
-`https://doting-crab-687.convex.site/auth/hub/callback` as the hub callback. Convex Auth accepts
-the new public origin through `SITE_URL` and returns the browser there after sign-in.
+when the hub does not confirm the client. A preview's client goes with the preview. Production's
+hub callback is `https://scout.samebase.com/auth/hub/callback`, on the `CONVEX_SITE_URL` that the
+dashboard sets, so the hub's sign-in page names scout.samebase.com.
 
 Each stage has one queue shared by deployment and cleanup. Before deployment,
 `scripts/verify-deployment-head.ts` checks that the checkout is still the head of the branch.
