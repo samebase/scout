@@ -18,7 +18,7 @@ const remote = vi.hoisted(() => {
     signIn: vi.fn(),
     signUp: vi.fn(),
     startPasswordRecovery: vi.fn(),
-    signInWithGoogle: vi.fn(),
+    signInWithHub: vi.fn(),
     oauth,
   };
 });
@@ -32,7 +32,7 @@ vi.mock("@convex-dev/auth/methods/email-password/react", () => ({
   }),
 }));
 vi.mock("@convex-dev/auth/methods/oauth/react", () => ({
-  useOauthSignIn: () => ({ signIn: remote.signInWithGoogle }),
+  useOauthSignIn: () => ({ signIn: remote.signInWithHub }),
   useOauth: () => ({ flowError: remote.oauth.flowError }),
 }));
 afterEach(cleanup);
@@ -40,7 +40,7 @@ beforeEach(() => {
   remote.signIn.mockReset();
   remote.signUp.mockReset();
   remote.startPasswordRecovery.mockReset();
-  remote.signInWithGoogle.mockReset();
+  remote.signInWithHub.mockReset();
   remote.oauth.flowError = null;
 });
 
@@ -123,17 +123,17 @@ test("a recovery link is sent to the address that the server returns", async () 
   ).toBeTruthy();
 });
 
-test("Google sign-in starts the hub flow, and a rejected return shows the reason", async () => {
+test("The hub button starts the hub flow, and a rejected return shows the reason", async () => {
   const user = userEvent.setup();
   const reason = "Google did not share a verified email address.";
   remote.oauth.flowError = { error: "REJECTED", data: reason };
-  remote.signInWithGoogle.mockResolvedValueOnce({
+  remote.signInWithHub.mockResolvedValueOnce({
     status: "error",
     userError: { error: "OTHER_ERROR", cause: new Error("offline") },
   });
   await renderPanel();
   expect(screen.getByRole("alert").textContent).toBe(reason);
-  await user.click(screen.getByRole("button", { name: "Continue with Google" }));
-  expect(remote.signInWithGoogle).toHaveBeenCalledWith();
+  await user.click(screen.getByRole("button", { name: "Continue with Samebase" }));
+  expect(remote.signInWithHub).toHaveBeenCalledWith();
   expect((await screen.findByRole("alert")).textContent).toBe("Something went wrong. Try again.");
 });

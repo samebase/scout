@@ -19,7 +19,6 @@ import {
 import { type FormEvent, useState } from "react";
 import { ConvexError } from "convex/values";
 import { api } from "../../convex/_generated/api";
-import { GoogleMark } from "./google-mark";
 import { Button } from "#components/ui/button";
 import { Input } from "#components/ui/input";
 import { LegalLinks } from "./legal-links";
@@ -52,7 +51,7 @@ export function AuthPanel() {
   const { signIn } = useSignInWithEmailPassword(api.auth);
   const { signUp } = useSignUpWithEmailPassword(api.auth);
   const { startPasswordRecovery } = useStartPasswordRecovery(api.auth);
-  const { signIn: signInWithGoogle } = useOauthSignIn({
+  const { signIn: signInWithHub } = useOauthSignIn({
     providerName: "hub",
     startSignIn: api.auth.startSignInWithHub,
     completeSignIn: api.auth.completeSignInWithHub,
@@ -121,7 +120,9 @@ export function AuthPanel() {
       <AuthHeading state={state} />
 
       {state.kind === "credentials" ? (
-        // The identity hub returns to this page, where the session provider redeems the sign-in.
+        // The first stop is the identity hub's page, Samebase's, which names TrailScout and offers
+        // Google, so the button names the hub and not Google. The hub returns to this page, where
+        // the session provider redeems the sign-in.
         <Button
           type="button"
           variant="outline"
@@ -130,13 +131,12 @@ export function AuthPanel() {
           disabled={isPending}
           onClick={() =>
             void run(async () => {
-              const result = await signInWithGoogle();
+              const result = await signInWithHub();
               return result.status === "error" ? result.userError : "leaving";
             })
           }
         >
-          <GoogleMark />
-          Continue with Google
+          Continue with Samebase
         </Button>
       ) : null}
 
