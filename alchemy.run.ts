@@ -31,9 +31,11 @@ import * as Layer from "effect/Layer";
 // deploys, also one that changes only files outside apps/scout.
 const commit = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
 
+/**
+The custom domain of production. The Convex dashboard overrides CONVEX_SITE_URL to it, so Convex
+Auth keeps its issuer and builds the hub callback on it, and the hub's page names it.
+*/
 const PRODUCTION_SITE_URL = "https://scout.samebase.com";
-/** Convex Auth keeps its issuer and hub callback on the deployment's CONVEX_SITE_URL. */
-const PRODUCTION_CONVEX_SITE_URL = "https://doting-crab-687.convex.site";
 /** The identity hub's callback into Convex Auth, after CONVEX_SITE_URL (convex/convex.config.ts). */
 const HUB_CALLBACK_PATH = "/auth/hub/callback";
 /**
@@ -170,10 +172,7 @@ export default Alchemy.Stack(
         yield* Convex.SharedHubClient("SignInClient", {
           app: HUB_APP,
           connectors: ["google"],
-          redirectUri: Output.map(
-            push.siteUrl,
-            () => `${PRODUCTION_CONVEX_SITE_URL}${HUB_CALLBACK_PATH}`,
-          ),
+          redirectUri: Output.map(push.siteUrl, () => `${PRODUCTION_SITE_URL}${HUB_CALLBACK_PATH}`),
           deploymentType: "production",
           softwareVersion: commit,
           required: true,
