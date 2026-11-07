@@ -127,6 +127,7 @@ export default Alchemy.Stack(
       const signIn = Convex.SharedHubClient.variables(
         yield* Convex.SharedHubClient("SignInClient", {
           app: HUB_APP,
+          connectors: ["google"],
           redirectUri: Output.interpolate`${development.siteUrl}${HUB_CALLBACK_PATH}`,
           deploymentType: "development",
           initialAccessToken: production.initialAccessToken,
@@ -168,6 +169,7 @@ export default Alchemy.Stack(
       const signIn = Convex.SharedHubClient.variables(
         yield* Convex.SharedHubClient("SignInClient", {
           app: HUB_APP,
+          connectors: ["google"],
           redirectUri: Output.map(
             push.siteUrl,
             () => `${PRODUCTION_CONVEX_SITE_URL}${HUB_CALLBACK_PATH}`,
@@ -231,6 +233,7 @@ export default Alchemy.Stack(
     const signIn = Convex.SharedHubClient.variables(
       yield* Convex.SharedHubClient("SignInClient", {
         app: HUB_APP,
+        connectors: ["google"],
         redirectUri: Output.interpolate`${preview.siteUrl}${HUB_CALLBACK_PATH}`,
         deploymentType: "preview",
         softwareVersion: commit,
