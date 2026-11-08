@@ -60,7 +60,7 @@ export default Alchemy.Stack(
   {
     // The GitHub provider has no resource here: it forgets the PreviewComment rows of older previews.
     providers: Layer.mergeAll(Convex.providers(), Cloudflare.providers(), GitHub.providers()),
-    state: Convex.state(),
+    state: Convex.withRunRecord(Convex.state()),
   },
   Effect.gen(function* () {
     const { stage } = yield* Alchemy.Stack;
