@@ -53,8 +53,8 @@ export function AuthPanel() {
   const { startPasswordRecovery } = useStartPasswordRecovery(api.auth);
   const { signIn: signInWithHub } = useOauthSignIn({
     providerName: "hub",
-    startSignIn: api.auth.startSignInWithHub,
-    completeSignIn: api.auth.completeSignInWithHub,
+    startSignIn: api.auth.startSignInWithIdentityHub,
+    completeSignIn: api.auth.completeSignInWithIdentityHub,
   });
   const { flowError } = useOauth();
   const [state, setState] = useState<AuthState>({

@@ -24,9 +24,9 @@ const app = defineApp({
     DEV_SEED_AUTH_ENABLED: v.optional(v.string()),
     DEV_SEED_AUTH_PASSWORD: v.optional(v.string()),
     FIRECRAWL_API_KEY: v.optional(v.string()),
-    HUB_CLIENT_ID: v.string(),
-    HUB_CLIENT_SECRET: v.string(),
-    HUB_ISSUER: v.string(),
+    IDENTITY_HUB_CLIENT_ID: v.string(),
+    IDENTITY_HUB_CLIENT_SECRET: v.string(),
+    IDENTITY_HUB_ISSUER: v.string(),
     OPENAI_API_KEY: v.optional(v.string()),
     POLAR_ACCESS_TOKEN: v.optional(v.string()),
     POLAR_CHECKOUT_ENABLED: v.optional(v.string()),
@@ -59,16 +59,16 @@ app.use(auth, {
     AUTH_JWKS: app.env.AUTH_JWKS,
   },
 });
-// Google sign-in runs through the identity hub, an OpenID Provider at HUB_ISSUER, with one client
-// per deployment: the root alchemy.run.ts gets the client of production and of every preview, and
+// Google sign-in runs through the identity hub, an OpenID Provider at IDENTITY_HUB_ISSUER, with one
+// client per deployment: the root alchemy.run.ts gets the client of production and of every preview, and
 // its stage `dev-<name>` the client of a development deployment. The hub sends the browser back to
 // <site>/auth/hub/callback, the callback URL of that registration.
 app.use(oauth, {
   name: "authHub",
   httpPrefix: "/auth/hub",
   env: {
-    CLIENT_ID: app.env.HUB_CLIENT_ID,
-    CLIENT_SECRET: app.env.HUB_CLIENT_SECRET,
+    CLIENT_ID: app.env.IDENTITY_HUB_CLIENT_ID,
+    CLIENT_SECRET: app.env.IDENTITY_HUB_CLIENT_SECRET,
   },
 });
 app.use(password);

@@ -47,7 +47,9 @@ Google sign-in runs through the identity hub at `https://auth.samebase.com`. Eac
 sign-in needs no secret of its own. The hub first reads `/samebase-verification.json` on the
 callback's site (`convex/http.ts`). So the stack pushes first (`Push` in production, `Preview` on a
 pull request), then registers the client on the Convex site URL plus `/auth/hub/callback`, then
-`Site` writes `HUB_ISSUER`, `HUB_CLIENT_ID`, and `HUB_CLIENT_SECRET` with no push. A deploy fails
+`Site` writes `IDENTITY_HUB_ISSUER`, `IDENTITY_HUB_CLIENT_ID`, and `IDENTITY_HUB_CLIENT_SECRET` with
+no push. Before each push, `apps/scout/scripts/ensure-convex-auth.ts` sets the off value of each of
+the three that is missing, so the code loads before `Site` writes the client. A deploy fails
 when the hub does not confirm the client. A preview's client goes with the preview. Production's
 hub callback is `https://scout.samebase.com/auth/hub/callback`, on the `CONVEX_SITE_URL` that the
 dashboard sets, so the hub's sign-in page names scout.samebase.com.

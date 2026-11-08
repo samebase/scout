@@ -490,7 +490,7 @@ export const onHubSignIn = internalMutation({
 });
 
 /**
-Google sign-in through the identity hub, an OpenID Provider at HUB_ISSUER. The authorize URL names
+Google sign-in through the identity hub, an OpenID Provider at IDENTITY_HUB_ISSUER. The authorize URL names
 the Google connector, the one TrailScout enrolls in, so the hub's page offers only Google.
 The flow returns to the page that started it, on SITE_URL or on CONVEX_SITE_URL, which serves the
 same build. The annotation gives the exports below their types without the call, which reads the
@@ -500,9 +500,9 @@ const hub: ReturnType<typeof setupOauth> = setupOauth(
   core,
   "hub",
   {
-    authorizationEndpoint: `${env.HUB_ISSUER}/authorize?connector=google`,
-    tokenEndpoint: `${env.HUB_ISSUER}/token`,
-    issuer: env.HUB_ISSUER,
+    authorizationEndpoint: `${env.IDENTITY_HUB_ISSUER}/authorize?connector=google`,
+    tokenEndpoint: `${env.IDENTITY_HUB_ISSUER}/token`,
+    issuer: env.IDENTITY_HUB_ISSUER,
     scopes: ["openid", "email", "profile"],
     profile: readHubProfile,
   },
@@ -512,5 +512,5 @@ const hub: ReturnType<typeof setupOauth> = setupOauth(
     allowedRedirectOrigins: [new URL(env.SITE_URL).origin, new URL(env.CONVEX_SITE_URL).origin],
   },
 );
-export const startSignInWithHub = hub.startSignIn;
-export const completeSignInWithHub = hub.completeSignIn;
+export const startSignInWithIdentityHub = hub.startSignIn;
+export const completeSignInWithIdentityHub = hub.completeSignIn;

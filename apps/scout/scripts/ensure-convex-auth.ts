@@ -39,6 +39,25 @@ if (target !== undefined) {
     );
 }
 
+// The variables of a deployment without a hub client, which convex/convex.config.ts requires.
+// IdentityHub.Client of @samebase/alchemy-convex gives the same values when it has no client. Each
+// missing one gets its off value before the push, and a value that exists stays: a deployment of
+// an earlier commit has the HUB_ names in their place, and "Site" in alchemy.run.ts writes the
+// client and removes those after this push.
+const IDENTITY_HUB_OFF_VALUES = {
+  IDENTITY_HUB_ISSUER: "http://127.0.0.1:1",
+  IDENTITY_HUB_CLIENT_ID: "no-hub",
+  IDENTITY_HUB_CLIENT_SECRET: "no-hub",
+};
+for (const [name, value] of Object.entries(IDENTITY_HUB_OFF_VALUES)) {
+  if (!readVariable(name)) {
+    execFileSync(process.execPath, [convex, "env", "set", "--", name, value], {
+      stdio: ["ignore", "ignore", "inherit"],
+    });
+    console.log(`${name} set to its off value.`);
+  }
+}
+
 const privateKey = readVariable("AUTH_PRIVATE_KEY");
 const jwks = readVariable("AUTH_JWKS");
 if (privateKey && jwks) {
