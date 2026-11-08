@@ -26,7 +26,7 @@ const server = {
           api.auth.signInWithEmailPassword,
           api.auth.completeSignUp,
           api.auth.completePasswordRecovery,
-          api.auth.completeSignInWithHub,
+          api.auth.completeSignInWithIdentityHub,
         ],
         cookieOptions,
       });

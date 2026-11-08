@@ -4,22 +4,26 @@
 //   API token that production sends email with.
 // - Stage `pr-<number>`, on each pull request: a Convex preview deployment with the name of the
 //   stage, which `alchemy destroy` deletes when the pull request closes.
-// - Stage `dev-<name>`, on a laptop, run on purpose with `pnpm run hub --stage dev-<name>`: the
-//   hub client of the development deployment that apps/scout/.env.local selects.
+// - Stage `dev-<name>`, on a laptop, run on purpose with
+//   `pnpm run identity-hub:dev-client --stage dev-<name>`: the hub client of the development
+//   deployment that apps/scout/.env.local selects.
 //
 // Each deployment has a client of the identity hub at https://auth.samebase.com, for Google
-// sign-in (RFC 134). Convex.SharedHubClient asks `POST /hub-clients` with the GitHub OIDC token of
+// sign-in (RFC 134). IdentityHub.Client asks `POST /hub-clients` with the GitHub OIDC token of
 // the run (`id-token: write` in alchemy.yml), or on a laptop with the app's initial access token
 // that the production registration saved. The hub first reads /samebase-verification.json on the
 // callback's site (convex/http.ts), so the code with that route is pushed before the client
 // registers, and the client's variables are written after it. Each variable stays on the row that
-// owned it before: a Convex.Deployment removes a name that leaves its own `env` before it pushes.
+// owned it before: a Convex.Deployment removes a name that leaves its own `env`, after its push
+// when it has one. The push runs apps/scout/scripts/ensure-convex-auth.ts, which sets the off values
+// of the client's variables when they are missing, so the code loads before "Site" writes them.
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { parseEnv } from "node:util";
 import * as Cloudflare from "@alchemy.run/cloudflare";
 import * as GitHub from "@alchemy.run/github";
 import * as Convex from "@samebase/alchemy-convex";
+import * as IdentityHub from "@samebase/alchemy-convex/identity-hub";
 import * as Alchemy from "alchemy";
 import { adopt } from "alchemy/AdoptPolicy";
 import * as Output from "alchemy/Output";
@@ -42,7 +46,7 @@ const HUB_CALLBACK_PATH = "/auth/hub/callback";
 The name of TrailScout at the identity hub. The hub keeps one initial access token for each
 repository and name, which a laptop's stage reads from `prod`.
 */
-const HUB_APP = "trailscout";
+const IDENTITY_HUB_APP = "trailscout";
 /** Samebase's identity hub, where every client of TrailScout registers. */
 const HUB = { issuer: "https://auth.samebase.com", terms: "https://samebase.com/terms" };
 
@@ -122,15 +126,15 @@ export default Alchemy.Stack(
         );
       }
       // The initial access token that the production registration saved.
-      const production = Convex.SharedHubClient.read("SignInClient", { stage: "prod" });
+      const production = IdentityHub.Client.read("SignInClient", { stage: "prod" });
       const development = yield* Convex.Deployment("Development", {
         project,
         type: "dev",
         name: selected,
       }).pipe(adopt(true));
-      const signIn = Convex.SharedHubClient.variables(
-        yield* Convex.SharedHubClient("SignInClient", {
-          app: HUB_APP,
+      const signIn = IdentityHub.Client.variables(
+        yield* IdentityHub.Client("SignInClient", {
+          app: IDENTITY_HUB_APP,
           hub: HUB,
           connectors: ["google"],
           redirectUri: Output.interpolate`${development.siteUrl}${HUB_CALLBACK_PATH}`,
@@ -147,9 +151,9 @@ export default Alchemy.Stack(
         type: "dev",
         name: selected,
         env: {
-          HUB_ISSUER: signIn.issuer,
-          HUB_CLIENT_ID: signIn.clientId,
-          HUB_CLIENT_SECRET: signIn.clientSecret,
+          IDENTITY_HUB_ISSUER: signIn.issuer,
+          IDENTITY_HUB_CLIENT_ID: signIn.clientId,
+          IDENTITY_HUB_CLIENT_SECRET: signIn.clientSecret,
         },
       }).pipe(adopt(true));
       return { url: site.siteUrl };
@@ -171,9 +175,9 @@ export default Alchemy.Stack(
       // The production client, on the fixed callback. The map on the push's output makes the client
       // wait for the push and does not change the address. A destroy leaves a production client on
       // the hub.
-      const signIn = Convex.SharedHubClient.variables(
-        yield* Convex.SharedHubClient("SignInClient", {
-          app: HUB_APP,
+      const signIn = IdentityHub.Client.variables(
+        yield* IdentityHub.Client("SignInClient", {
+          app: IDENTITY_HUB_APP,
           hub: HUB,
           connectors: ["google"],
           redirectUri: Output.map(push.siteUrl, () => `${PRODUCTION_SITE_URL}${HUB_CALLBACK_PATH}`),
@@ -206,9 +210,9 @@ export default Alchemy.Stack(
         env: {
           SCOUT_COMMIT: commit,
           SITE_URL: PRODUCTION_SITE_URL,
-          HUB_ISSUER: signIn.issuer,
-          HUB_CLIENT_ID: signIn.clientId,
-          HUB_CLIENT_SECRET: signIn.clientSecret,
+          IDENTITY_HUB_ISSUER: signIn.issuer,
+          IDENTITY_HUB_CLIENT_ID: signIn.clientId,
+          IDENTITY_HUB_CLIENT_SECRET: signIn.clientSecret,
           CLOUDFLARE_EMAIL_ACCOUNT_ID: accountId,
           CLOUDFLARE_EMAIL_API_TOKEN: emailToken.value,
         },
@@ -218,8 +222,8 @@ export default Alchemy.Stack(
 
     // A preview's hub callback is on its own `.convex.site` URL, which exists only after Convex
     // creates the deployment. "Preview" creates the deployment and pushes: the push command also
-    // sets SITE_URL to the preview's site and seeds the password account. Its first push takes the
-    // off values of the three hub variables from the project's default variables for previews.
+    // sets SITE_URL to the preview's site and seeds the password account. Its first push has the
+    // off values of the three hub variables, which ensure-convex-auth.ts sets when they are missing.
     // Then the client registers, and "Site" takes the same deployment over with adopt(true) and
     // writes the variables, with no push. Both delete it on destroy; the second delete finds it
     // gone. adopt(true) also takes over a preview with the name of this stage that an earlier run
@@ -233,9 +237,9 @@ export default Alchemy.Stack(
       env: { SCOUT_COMMIT: commit },
       source: { path: "./convex", command: ["node", "./scripts/deploy-preview.ts"] },
     }).pipe(adopt(true), Alchemy.RemovalPolicy.destroy());
-    const signIn = Convex.SharedHubClient.variables(
-      yield* Convex.SharedHubClient("SignInClient", {
-        app: HUB_APP,
+    const signIn = IdentityHub.Client.variables(
+      yield* IdentityHub.Client("SignInClient", {
+        app: IDENTITY_HUB_APP,
         hub: HUB,
         connectors: ["google"],
         redirectUri: Output.interpolate`${preview.siteUrl}${HUB_CALLBACK_PATH}`,
@@ -251,9 +255,9 @@ export default Alchemy.Stack(
       rootDir: "apps/scout",
       env: {
         SCOUT_COMMIT: commit,
-        HUB_ISSUER: signIn.issuer,
-        HUB_CLIENT_ID: signIn.clientId,
-        HUB_CLIENT_SECRET: signIn.clientSecret,
+        IDENTITY_HUB_ISSUER: signIn.issuer,
+        IDENTITY_HUB_CLIENT_ID: signIn.clientId,
+        IDENTITY_HUB_CLIENT_SECRET: signIn.clientSecret,
       },
     }).pipe(adopt(true), Alchemy.RemovalPolicy.destroy());
 
