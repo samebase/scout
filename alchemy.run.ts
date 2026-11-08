@@ -43,6 +43,8 @@ The name of TrailScout at the identity hub. The hub keeps one initial access tok
 repository and name, which a laptop's stage reads from `prod`.
 */
 const HUB_APP = "trailscout";
+/** Samebase's identity hub, where every client of TrailScout registers. */
+const HUB = { issuer: "https://auth.samebase.com", terms: "https://samebase.com/terms" };
 
 /** The file of `npx convex dev`, which selects the development deployment. CI has none. */
 const APP_ENV_LOCAL = "apps/scout/.env.local";
@@ -58,7 +60,7 @@ export default Alchemy.Stack(
   {
     // The GitHub provider has no resource here: it forgets the PreviewComment rows of older previews.
     providers: Layer.mergeAll(Convex.providers(), Cloudflare.providers(), GitHub.providers()),
-    state: Convex.state(),
+    state: Convex.withRunRecord(Convex.state()),
   },
   Effect.gen(function* () {
     const { stage } = yield* Alchemy.Stack;
@@ -129,6 +131,7 @@ export default Alchemy.Stack(
       const signIn = Convex.SharedHubClient.variables(
         yield* Convex.SharedHubClient("SignInClient", {
           app: HUB_APP,
+          hub: HUB,
           connectors: ["google"],
           redirectUri: Output.interpolate`${development.siteUrl}${HUB_CALLBACK_PATH}`,
           deploymentType: "development",
@@ -171,6 +174,7 @@ export default Alchemy.Stack(
       const signIn = Convex.SharedHubClient.variables(
         yield* Convex.SharedHubClient("SignInClient", {
           app: HUB_APP,
+          hub: HUB,
           connectors: ["google"],
           redirectUri: Output.map(push.siteUrl, () => `${PRODUCTION_SITE_URL}${HUB_CALLBACK_PATH}`),
           deploymentType: "production",
@@ -232,6 +236,7 @@ export default Alchemy.Stack(
     const signIn = Convex.SharedHubClient.variables(
       yield* Convex.SharedHubClient("SignInClient", {
         app: HUB_APP,
+        hub: HUB,
         connectors: ["google"],
         redirectUri: Output.interpolate`${preview.siteUrl}${HUB_CALLBACK_PATH}`,
         deploymentType: "preview",
