@@ -25,7 +25,7 @@
     "@alchemy.run/cloudflare": "2.0.0-beta.85",
     "@alchemy.run/github": "2.0.0-beta.85",
     "@effect/platform-node": "4.1.2",
-    "@samebase/alchemy-convex": "0.37.0",
+    "@samebase/alchemy-convex": "0.38.0",
     "@types/node": "^24.19.2",
     "alchemy": "2.0.0-beta.85",
     "effect": "4.1.2",
