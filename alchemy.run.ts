@@ -126,18 +126,18 @@ export default Alchemy.Stack(
         );
       }
       // The initial access token that the production registration saved.
-      const production = IdentityHub.Client.read("SignInClient", { stage: "prod" });
+      const production = IdentityHub.Client.read("HubClient", { stage: "prod" });
       const development = yield* Convex.Deployment("Development", {
         project,
         type: "dev",
         name: selected,
       }).pipe(adopt(true));
       const signIn = IdentityHub.Client.variables(
-        yield* IdentityHub.Client("SignInClient", {
+        yield* IdentityHub.Client("HubClient", {
           app: IDENTITY_HUB_APP,
           hub: HUB,
           connectors: ["google"],
-          redirectUri: Output.interpolate`${development.siteUrl}${HUB_CALLBACK_PATH}`,
+          redirectUris: [Output.interpolate`${development.siteUrl}${HUB_CALLBACK_PATH}`],
           deploymentType: "development",
           initialAccessToken: production.initialAccessToken,
           softwareVersion: commit,
@@ -176,11 +176,13 @@ export default Alchemy.Stack(
       // wait for the push and does not change the address. A destroy leaves a production client on
       // the hub.
       const signIn = IdentityHub.Client.variables(
-        yield* IdentityHub.Client("SignInClient", {
+        yield* IdentityHub.Client("HubClient", {
           app: IDENTITY_HUB_APP,
           hub: HUB,
           connectors: ["google"],
-          redirectUri: Output.map(push.siteUrl, () => `${PRODUCTION_SITE_URL}${HUB_CALLBACK_PATH}`),
+          redirectUris: Output.map(push.siteUrl, () => [
+            `${PRODUCTION_SITE_URL}${HUB_CALLBACK_PATH}`,
+          ]),
           deploymentType: "production",
           softwareVersion: commit,
           required: true,
@@ -238,11 +240,11 @@ export default Alchemy.Stack(
       source: { path: "./convex", command: ["node", "./scripts/deploy-preview.ts"] },
     }).pipe(adopt(true), Alchemy.RemovalPolicy.destroy());
     const signIn = IdentityHub.Client.variables(
-      yield* IdentityHub.Client("SignInClient", {
+      yield* IdentityHub.Client("HubClient", {
         app: IDENTITY_HUB_APP,
         hub: HUB,
         connectors: ["google"],
-        redirectUri: Output.interpolate`${preview.siteUrl}${HUB_CALLBACK_PATH}`,
+        redirectUris: [Output.interpolate`${preview.siteUrl}${HUB_CALLBACK_PATH}`],
         deploymentType: "preview",
         softwareVersion: commit,
         required: true,

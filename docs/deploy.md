@@ -109,7 +109,7 @@ the pull request number:
 pnpm exec alchemy destroy --stage pr-123 --dry-run --no-input
 ```
 
-The plan deletes `Preview`, `SignInClient`, and `Site` and orphans `Project` and `PreviewComment`.
+The plan deletes `Preview`, `HubClient`, and `Site` and orphans `Project` and `PreviewComment`.
 Orphaned resources remain on their providers but leave the stage state during an actual destroy.
 The dry run changes neither resources nor stage state. Keep previews for open pull requests.
 
