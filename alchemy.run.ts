@@ -48,7 +48,7 @@ repository and name, which a laptop's stage reads from `prod`.
 */
 const IDENTITY_HUB_APP = "trailscout";
 /** Samebase's identity hub, where every client of TrailScout registers. */
-const HUB = { issuer: "https://auth.samebase.com", terms: "https://samebase.com/terms" };
+const HUB = { issuer: "https://auth.samebase.com" };
 
 /** The file of `npx convex dev`, which selects the development deployment. CI has none. */
 const APP_ENV_LOCAL = "apps/scout/.env.local";
