@@ -42,11 +42,12 @@ Convex.
 Stage `prod` mints the account API token `scout production email sending`, with only Email
 Sending Write, and retains it when the stack is destroyed. See `EMAIL_SETUP.md`.
 
-Google sign-in runs through the identity hub at `https://auth.samebase.com`. Each deployment asks
-`POST /hub-clients` for its client with the GitHub OIDC token of the run (`id-token: write`), so
-sign-in needs no secret of its own. The hub first reads `/samebase-verification.json` on the
-callback's site (`convex/http.ts`). So the stack pushes first (`Push` in production, `Preview` on a
-pull request), then registers the client on the Convex site URL plus `/auth/hub/callback`, then
+Google sign-in runs through the identity hub at `https://auth.samebase.com`. Each deployment
+registers its client with `POST /register`, the client registration request of RFC 7591. It
+sends the GitHub OIDC token of the run (`id-token: write`), so sign-in needs no secret of its
+own. The hub first reads `/samebase-verification.json` on the callback's site
+(`convex/http.ts`). So the stack pushes first (`Push` in production, `Preview` on a pull
+request), then registers the client on the Convex site URL plus `/auth/hub/callback`, then
 `Site` writes `IDENTITY_HUB_ISSUER`, `IDENTITY_HUB_CLIENT_ID`, and `IDENTITY_HUB_CLIENT_SECRET` with
 no push. Before each push, `apps/scout/scripts/ensure-convex-auth.ts` sets the off value of each of
 the three that is missing, so the code loads before `Site` writes the client. A deploy fails

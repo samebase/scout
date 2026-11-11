@@ -9,14 +9,15 @@
 //   deployment that apps/scout/.env.local selects.
 //
 // Each deployment has a client of the identity hub at https://auth.samebase.com, for Google
-// sign-in (RFC 134). IdentityHub.Client asks `POST /hub-clients` with the GitHub OIDC token of
-// the run (`id-token: write` in alchemy.yml), or on a laptop with the app's initial access token
-// that the production registration saved. The hub first reads /samebase-verification.json on the
-// callback's site (convex/http.ts), so the code with that route is pushed before the client
-// registers, and the client's variables are written after it. Each variable stays on the row that
-// owned it before: a Convex.Deployment removes a name that leaves its own `env`, after its push
-// when it has one. The push runs apps/scout/scripts/ensure-convex-auth.ts, which sets the off values
-// of the client's variables when they are missing, so the code loads before "Site" writes them.
+// sign-in (RFC 134). IdentityHub.Client registers with `POST /register` (RFC 7591), sending
+// the GitHub OIDC token of the run (`id-token: write` in alchemy.yml), or on a laptop the app's
+// initial access token that the production registration saved. The hub first reads
+// /samebase-verification.json on the callback's site (convex/http.ts), so the code with that
+// route is pushed before the client registers, and the client's variables are written after it.
+// Each variable stays on the row that owned it before: a Convex.Deployment removes a name that
+// leaves its own `env`, after its push when it has one. The push runs
+// apps/scout/scripts/ensure-convex-auth.ts, which sets the off values of the client's variables
+// when they are missing, so the code loads before "Site" writes them.
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { parseEnv } from "node:util";
