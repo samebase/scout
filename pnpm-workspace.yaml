@@ -23,6 +23,10 @@ allowBuilds:
 overrides:
   # guarded-fetch pins an older Undici release with patched request-validation flaws.
   "guarded-fetch>undici": 7.30.1
+  # convex-helpers resolves hono 4.13.13; 4.13.16 fixes GHSA-4m76-xfj5-7975, GHSA-h7mg-cq63-vhpq
+  # and the other advisories that `pnpm audit --prod` reports. Remove when convex-helpers resolves
+  # 4.13.16 or later.
+  hono: 4.13.16
   vite@*: "catalog:"
 catalog:
   vite: npm:@voidzero-dev/vite-plus-core@1.3.0
