@@ -8,7 +8,7 @@
 //   `pnpm run identity-hub:dev-client --stage dev-<name>`: the hub client of the development
 //   deployment that apps/scout/.env.local selects.
 //
-// Each deployment has a client of the identity hub at https://auth.samebase.com, for Google
+// Each deployment has a client of the identity hub at https://id.samebase.com, for Google
 // sign-in (RFC 134). IdentityHub.Client registers with `POST /register` (RFC 7591), sending
 // the GitHub OIDC token of the run (`id-token: write` in alchemy.yml), or on a laptop the app's
 // initial access token that the production registration saved. The hub first reads
@@ -49,7 +49,7 @@ repository and name, which a laptop's stage reads from `prod`.
 */
 const IDENTITY_HUB_APP = "trailscout";
 /** Samebase's identity hub, where every client of TrailScout registers. */
-const HUB = { issuer: "https://auth.samebase.com" };
+const HUB = { issuer: "https://id.samebase.com" };
 
 /** The file of `npx convex dev`, which selects the development deployment. CI has none. */
 const APP_ENV_LOCAL = "apps/scout/.env.local";
