@@ -39,7 +39,7 @@
     "@convex-dev/workpool": "^0.4.14",
     "@polar-sh/sdk": "1.0.2",
     "@samebase/convex-auth-tanstack-start": "^0.1.1",
-    "@samebase/convex-hosting": "^0.14.0",
+    "@samebase/convex-hosting": "^0.15.0",
     "@samebase/convex-hosting-tanstack-start": "^0.11.0",
     "@samebase/sidebars": "^0.1.2",
     "@shadcn/react": "^0.3.1",
