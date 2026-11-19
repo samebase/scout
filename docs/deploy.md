@@ -42,7 +42,7 @@ Convex.
 Stage `prod` mints the account API token `scout production email sending`, with only Email
 Sending Write, and retains it when the stack is destroyed. See `EMAIL_SETUP.md`.
 
-Google sign-in runs through the identity hub at `https://auth.samebase.com`. Each deployment
+Google sign-in runs through the identity hub at `https://id.samebase.com`. Each deployment
 registers its client with `POST /register`, the client registration request of RFC 7591. It
 sends the GitHub OIDC token of the run (`id-token: write`), so sign-in needs no secret of its
 own. The hub first reads `/samebase-verification.json` on the callback's site
