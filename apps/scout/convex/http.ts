@@ -14,7 +14,7 @@ const http = httpRouter();
 
 http.route({ path: "/polar/events", method: "POST", handler: httpAction(handlePolarEvent) });
 
-// The identity hub reads this file on a site before it registers a client there (RFC 134): it names
+// The identity broker reads this file on a site before it registers a client there (RFC 134): it names
 // this repository, samebase/scout, by its numeric GitHub id, which a rename does not change. Every
 // deployment serves the same answer, previews included, and no answer is cached. An exact path, so
 // it wins over the site's "/" prefix below.
@@ -30,8 +30,8 @@ http.route({
 // that has one (another method than GET or HEAD on it answers 405), else the server build
 // (src/server.ts), which renders the page with the session of the request's cookies. Convex answers
 // HEAD through GET. Convex picks an exact path, then the longest prefix, so the Polar webhook, the
-// Convex Auth component's /auth prefix, where it serves its key set, and the identity hub
-// component's /auth/hub prefix, where the hub returns to /auth/hub/callback, keep winning over "/".
+// Convex Auth component's /auth prefix, where it serves its key set, and the identity broker
+// component's /auth/hub prefix, where the broker returns to /auth/hub/callback, keep winning over "/".
 const site = routeAll({ http, component: components.hosting, assets, worker: server });
 // Exact routes for the three session routes of src/server.ts: the /auth prefix of the component
 // would otherwise take them.

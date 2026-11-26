@@ -218,8 +218,11 @@ importers:
         specifier: 4.1.4
         version: 4.1.4(effect@4.1.4)(redis@6.3.0)
       '@samebase/alchemy-convex':
+        specifier: 0.47.0
+        version: 0.47.0(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.0))(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.0))(@types/react@19.3.0)(@voidzero-dev/vite-plus-core@1.3.0(@types/node@24.19.2)(esbuild@0.27.0)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(effect@4.1.4)(ws@8.22.0))(convex@1.48.0(react@19.3.1))(effect@4.1.4)
+      '@samebase/identity-broker':
         specifier: 0.44.0
-        version: 0.44.0(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.0))(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.0))(@types/react@19.3.0)(@voidzero-dev/vite-plus-core@1.3.0(@types/node@24.19.2)(esbuild@0.27.0)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(effect@4.1.4)(ws@8.22.0))(convex@1.48.0(react@19.3.1))(effect@4.1.4)
+        version: 0.44.0(@alchemy.run/cloudflare@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.0))(@types/node@24.19.2)(@voidzero-dev/vite-plus-core@1.3.0(@types/node@24.19.2)(esbuild@0.27.0)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.0))(@types/react@19.3.0)(@voidzero-dev/vite-plus-core@1.3.0(@types/node@24.19.2)(esbuild@0.27.0)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(effect@4.1.4)(ws@8.22.0))(effect@4.1.4)(typescript@7.0.2))(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.0))(@types/react@19.3.0)(@voidzero-dev/vite-plus-core@1.3.0(@types/node@24.19.2)(esbuild@0.27.0)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(effect@4.1.4)(ws@8.22.0))(convex@1.48.0(react@19.3.1))(effect@4.1.4)
       '@types/node':
         specifier: ^24.19.2
         version: 24.19.2
@@ -380,6 +383,9 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
     devDependencies:
+      '@samebase/identity-broker':
+        specifier: 0.44.0
+        version: 0.44.0(@alchemy.run/cloudflare@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.0))(@types/node@24.19.2)(@voidzero-dev/vite-plus-core@1.3.0(@types/node@24.19.2)(esbuild@0.27.0)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.0))(@types/react@19.3.0)(@voidzero-dev/vite-plus-core@1.3.0(@types/node@24.19.2)(esbuild@0.27.0)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(effect@4.1.4)(ws@8.22.0))(effect@4.1.4)(typescript@7.0.2))(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.0))(@types/react@19.3.0)(@voidzero-dev/vite-plus-core@1.3.0(@types/node@24.19.2)(esbuild@0.27.0)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(effect@4.1.4)(ws@8.22.0))(convex@1.48.0(react@19.3.1))(effect@4.1.4)
       '@tanstack/router-plugin':
         specifier: ^1.168.47
         version: 1.168.47(@tanstack/react-router@1.170.45(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(@voidzero-dev/vite-plus-core@1.3.0(@types/node@24.19.2)(esbuild@0.27.0)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(esbuild@0.27.0)(rolldown@1.2.16)
@@ -2628,8 +2634,8 @@ packages:
   '@rolldown/pluginutils@1.0.1':
     resolution: {integrity: sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw==}
 
-  '@samebase/alchemy-convex@0.44.0':
-    resolution: {integrity: sha512-jXcStGYGEhf0WTb5ZRjiWAIPT4mdEhTPuXsEAk9LJhYfae7bkncivt119/DTWLKJrHOxlOYKMCak0kUqqcRjhg==}
+  '@samebase/alchemy-convex@0.47.0':
+    resolution: {integrity: sha512-pEoA3mlqYatMgjPrnT3OFTr9WUP7vN6tTCfB068s4s4gih3qmGCTBs1Ycs2c/zC/dxj0/Tpij9lcn7ucKW3+3Q==}
     engines: {node: '>=22'}
     hasBin: true
     peerDependencies:
@@ -2638,8 +2644,8 @@ packages:
       convex: ^1.48.0
       effect: ^4.1.4
 
-  '@samebase/alchemy-kit@0.6.0':
-    resolution: {integrity: sha512-gwuUxqUEo4l7/wdNxw3yifG/JUVxe0Aev9qg2ZQIbR7lQ5KZsgBiAwq1gbUg5EWNKa5/SakbZb3r4AZ0hbmefA==}
+  '@samebase/alchemy-kit@0.7.0':
+    resolution: {integrity: sha512-8PIU7GUDlfvdgeSs0gVd0043qzLDrt/4HAE6hODlNZGDB5kznMYem8mG5O3l+o042D2pGOARr5GHklzsj5W8yA==}
     engines: {node: '>=22'}
     peerDependencies:
       alchemy: 2.0.0-beta.87
@@ -2680,6 +2686,25 @@ packages:
     hasBin: true
     peerDependencies:
       convex: ^1.46.0
+
+  '@samebase/identity-broker@0.44.0':
+    resolution: {integrity: sha512-RRyTsC4WTtKlownborx6GowIpNPNpWF4QRsTZz2Fy2R5FnJpR4eBMXIAAkLhYDijwYhG8hU+9jXbVPsHSmQg7Q==}
+    engines: {node: '>=24.11.0'}
+    peerDependencies:
+      '@alchemy.run/cloudflare': 2.0.0-beta.87
+      alchemy: 2.0.0-beta.87
+      convex: ^1.48.0
+      effect: ^4.1.4
+      fast-check: ^4.10.2
+    peerDependenciesMeta:
+      '@alchemy.run/cloudflare':
+        optional: true
+      alchemy:
+        optional: true
+      convex:
+        optional: true
+      fast-check:
+        optional: true
 
   '@samebase/sidebars@0.1.2':
     resolution: {integrity: sha512-xTD7xz7WljYCWTTqdYK1EN5x1Lx1yCIQ23KrZ+zM39k4aPBWtEMRDMalslUrylhzs3WDx62QTyQ8xvMbu3svEA==}
@@ -4965,6 +4990,9 @@ packages:
   npm-run-path@6.0.0:
     resolution: {integrity: sha512-9qny7Z9DsQU8Ou39ERsPU4OZQlSTP47ShQzuKZ6PRXpYLtIFgl/DEBYEXKlvcEa+9tHVcK8CF81Y2V72qaZhWA==}
     engines: {node: '>=18'}
+
+  oauth4webapi@3.8.8:
+    resolution: {integrity: sha512-8N28E+a/oxfXWBgOMt+ZP/JUf/XR+IFbvkAEPP3gznXOMv9BpAAwiIj0TFNz3tGTPc0ZQ8zmWBNgN1nAys0gng==}
 
   object-assign@4.1.1:
     resolution: {integrity: sha512-rJgTQnkUnH1sFw8yT6VSU3zD3sWmu6sZhIseY8VX+GRu3P6F7Fu+JNDoXfklElbLJSnc3FUQHVe4cU5hj+BcUg==}
@@ -8241,16 +8269,16 @@ snapshots:
 
   '@rolldown/pluginutils@1.0.1': {}
 
-  '@samebase/alchemy-convex@0.44.0(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.0))(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.0))(@types/react@19.3.0)(@voidzero-dev/vite-plus-core@1.3.0(@types/node@24.19.2)(esbuild@0.27.0)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(effect@4.1.4)(ws@8.22.0))(convex@1.48.0(react@19.3.1))(effect@4.1.4)':
+  '@samebase/alchemy-convex@0.47.0(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.0))(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.0))(@types/react@19.3.0)(@voidzero-dev/vite-plus-core@1.3.0(@types/node@24.19.2)(esbuild@0.27.0)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(effect@4.1.4)(ws@8.22.0))(convex@1.48.0(react@19.3.1))(effect@4.1.4)':
     dependencies:
       '@convex-dev/platform': 0.1.11
       '@effect/platform-node': 4.1.4(effect@4.1.4)(redis@6.3.0)
-      '@samebase/alchemy-kit': 0.6.0(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.0))(@types/react@19.3.0)(@voidzero-dev/vite-plus-core@1.3.0(@types/node@24.19.2)(esbuild@0.27.0)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(effect@4.1.4)(ws@8.22.0))(effect@4.1.4)
+      '@samebase/alchemy-kit': 0.7.0(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.0))(@types/react@19.3.0)(@voidzero-dev/vite-plus-core@1.3.0(@types/node@24.19.2)(esbuild@0.27.0)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(effect@4.1.4)(ws@8.22.0))(effect@4.1.4)
       alchemy: 2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.0))(@types/react@19.3.0)(@voidzero-dev/vite-plus-core@1.3.0(@types/node@24.19.2)(esbuild@0.27.0)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(effect@4.1.4)(ws@8.22.0)
       convex: 1.48.0(react@19.3.1)
       effect: 4.1.4
 
-  '@samebase/alchemy-kit@0.6.0(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.0))(@types/react@19.3.0)(@voidzero-dev/vite-plus-core@1.3.0(@types/node@24.19.2)(esbuild@0.27.0)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(effect@4.1.4)(ws@8.22.0))(effect@4.1.4)':
+  '@samebase/alchemy-kit@0.7.0(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.0))(@types/react@19.3.0)(@voidzero-dev/vite-plus-core@1.3.0(@types/node@24.19.2)(esbuild@0.27.0)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(effect@4.1.4)(ws@8.22.0))(effect@4.1.4)':
     dependencies:
       alchemy: 2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.0))(@types/react@19.3.0)(@voidzero-dev/vite-plus-core@1.3.0(@types/node@24.19.2)(esbuild@0.27.0)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(effect@4.1.4)(ws@8.22.0)
       effect: 4.1.4
@@ -8282,6 +8310,16 @@ snapshots:
       ignore: 7.0.12
       mime: 4.1.1
       zod: 4.6.6
+
+  '@samebase/identity-broker@0.44.0(@alchemy.run/cloudflare@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.0))(@types/node@24.19.2)(@voidzero-dev/vite-plus-core@1.3.0(@types/node@24.19.2)(esbuild@0.27.0)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.0))(@types/react@19.3.0)(@voidzero-dev/vite-plus-core@1.3.0(@types/node@24.19.2)(esbuild@0.27.0)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(effect@4.1.4)(ws@8.22.0))(effect@4.1.4)(typescript@7.0.2))(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.0))(@types/react@19.3.0)(@voidzero-dev/vite-plus-core@1.3.0(@types/node@24.19.2)(esbuild@0.27.0)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(effect@4.1.4)(ws@8.22.0))(convex@1.48.0(react@19.3.1))(effect@4.1.4)':
+    dependencies:
+      effect: 4.1.4
+      jose: 6.2.13
+      oauth4webapi: 3.8.8
+    optionalDependencies:
+      '@alchemy.run/cloudflare': 2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.0))(@types/node@24.19.2)(@voidzero-dev/vite-plus-core@1.3.0(@types/node@24.19.2)(esbuild@0.27.0)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.0))(@types/react@19.3.0)(@voidzero-dev/vite-plus-core@1.3.0(@types/node@24.19.2)(esbuild@0.27.0)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(effect@4.1.4)(ws@8.22.0))(effect@4.1.4)(typescript@7.0.2)
+      alchemy: 2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.0))(@types/react@19.3.0)(@voidzero-dev/vite-plus-core@1.3.0(@types/node@24.19.2)(esbuild@0.27.0)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(effect@4.1.4)(ws@8.22.0)
+      convex: 1.48.0(react@19.3.1)
 
   '@samebase/sidebars@0.1.2(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
     dependencies:
@@ -10581,6 +10619,8 @@ snapshots:
     dependencies:
       path-key: 4.0.0
       unicorn-magic: 0.3.0
+
+  oauth4webapi@3.8.8: {}
 
   object-assign@4.1.1: {}
 

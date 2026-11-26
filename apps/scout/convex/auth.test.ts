@@ -8,13 +8,13 @@ import { createFunctionHandle } from "convex/server";
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
 import { api, components, internal } from "./_generated/api";
 import schema from "./schema";
-import { createEmailPasswordAccount, readHubProfile, setNewPassword } from "./auth";
+import { createEmailPasswordAccount, readBrokerProfile, setNewPassword } from "./auth";
 import { ADMIN_EMAIL } from "./testing/accounts";
 
-// convex/auth.ts sets up Google sign-in when it loads, with the hub's issuer and the deployment's
+// convex/auth.ts sets up Google sign-in when it loads, with the broker's issuer and the deployment's
 // site URLs, so they come before the imports.
 vi.hoisted(() => {
-  vi.stubEnv("IDENTITY_HUB_ISSUER", "https://hub.example.test");
+  vi.stubEnv("IDENTITY_BROKER_ISSUER", "https://broker.example.test");
   vi.stubEnv("SITE_URL", "https://scout-test.convex.site");
   vi.stubEnv("CONVEX_SITE_URL", "https://scout-test.convex.site");
 });
@@ -168,9 +168,9 @@ test("the terms step after the sign-up link records the session recording choice
   });
 });
 
-/** Id token claims of the identity hub for a Google account, with a claim that the profile drops. */
+/** Id token claims of the identity broker for a Google account, with a claim that the profile drops. */
 const googleClaims = {
-  iss: "https://hub.example.test",
+  iss: "https://broker.example.test",
   sub: "google:109876543210",
   connector: "google",
   email: "Member@Example.test",
@@ -179,14 +179,17 @@ const googleClaims = {
   picture: "https://images.example.test/member.png",
 };
 
-/** The first sign-in of a hub subject, as the hub method's `completeSignIn` hands it to the core. */
-async function signInWithHub(backend: ReturnType<typeof setup>, claims: Record<string, unknown>) {
-  const profile = readHubProfile(claims);
+/** The first sign-in of a broker subject, as the broker method's `completeSignIn` hands it to the core. */
+async function signInWithBroker(
+  backend: ReturnType<typeof setup>,
+  claims: Record<string, unknown>,
+) {
+  const profile = readBrokerProfile(claims);
   return await backend.run(async (ctx) =>
     ctx.runMutation(components.auth.public.signUp, {
       claims: { providerName: "hub", providerAccountId: profile.id, profile },
-      createUserHandle: await createFunctionHandle(internal.auth.createHubUser),
-      onSignInHandle: await createFunctionHandle(internal.auth.onHubSignIn),
+      createUserHandle: await createFunctionHandle(internal.auth.createBrokerUser),
+      onSignInHandle: await createFunctionHandle(internal.auth.onBrokerSignIn),
       issuer: "https://scout-test.convex.site",
     }),
   );
@@ -195,7 +198,7 @@ async function signInWithHub(backend: ReturnType<typeof setup>, claims: Record<s
 const readUsers = (backend: ReturnType<typeof setup>) =>
   backend.run((ctx) => ctx.db.query("users").collect());
 
-test("a hub sign-in links to the user whose verified email is the hub's verified email", async () => {
+test("a broker sign-in links to the user whose verified email is the broker's verified email", async () => {
   const backend = setup();
   const userId = await backend.run((ctx) =>
     ctx.db.insert("users", {
@@ -206,42 +209,42 @@ test("a hub sign-in links to the user whose verified email is the hub's verified
       termsAcceptedAt: 1,
     }),
   );
-  expect(await signInWithHub(backend, googleClaims)).toMatchObject({ userId });
+  expect(await signInWithBroker(backend, googleClaims)).toMatchObject({ userId });
   expect(await readUsers(backend)).toHaveLength(1);
 });
 
-test("a hub profile takes the Google account id from the public subject", () => {
-  expect(readHubProfile(googleClaims)).toMatchObject({
+test("a broker profile takes the Google account id from the public subject", () => {
+  expect(readBrokerProfile(googleClaims)).toMatchObject({
     id: "google:109876543210",
     connector_account_id: "109876543210",
   });
   for (const sub of ["109876543210", "github:109876543210", "google:"])
-    expect(() => readHubProfile({ ...googleClaims, sub })).toThrow(
-      "The identity hub did not complete the Google sign-in.",
+    expect(() => readBrokerProfile({ ...googleClaims, sub })).toThrow(
+      "The identity broker did not complete the Google sign-in.",
     );
 });
 
-test("a hub sign-in without a verified email is rejected", async () => {
+test("a broker sign-in without a verified email is rejected", async () => {
   const backend = setup();
   const unverified = { ...googleClaims, email_verified: false };
-  expect(() => readHubProfile(unverified)).toThrow(
+  expect(() => readBrokerProfile(unverified)).toThrow(
     "Google did not share a verified email address.",
   );
-  await expect(signInWithHub(backend, unverified)).rejects.toThrow(
+  await expect(signInWithBroker(backend, unverified)).rejects.toThrow(
     "Google did not share a verified email address.",
   );
-  expect(() => readHubProfile({ ...googleClaims, connector: "github" })).toThrow(
-    "The identity hub did not complete the Google sign-in.",
+  expect(() => readBrokerProfile({ ...googleClaims, connector: "github" })).toThrow(
+    "The identity broker did not complete the Google sign-in.",
   );
   expect(await readUsers(backend)).toEqual([]);
 });
 
-test("a hub sign-in does not link to a user whose own email is unverified", async () => {
+test("a broker sign-in does not link to a user whose own email is unverified", async () => {
   const backend = setup();
   await backend.run((ctx) =>
     ctx.db.insert("users", { state: "active", email: "member@example.test", isApproved: true }),
   );
-  await expect(signInWithHub(backend, googleClaims)).rejects.toThrow(
+  await expect(signInWithBroker(backend, googleClaims)).rejects.toThrow(
     "Sign in with email and password",
   );
   expect(await readUsers(backend)).toEqual([
@@ -249,9 +252,9 @@ test("a hub sign-in does not link to a user whose own email is unverified", asyn
   ]);
 });
 
-test("a first hub sign-in without a match creates a user like a password sign-up", async () => {
+test("a first broker sign-in without a match creates a user like a password sign-up", async () => {
   const backend = setup();
-  const { userId } = await signInWithHub(backend, googleClaims);
+  const { userId } = await signInWithBroker(backend, googleClaims);
   expect(await readUsers(backend)).toEqual([
     expect.objectContaining({
       _id: userId,

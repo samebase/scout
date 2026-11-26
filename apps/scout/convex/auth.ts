@@ -16,7 +16,7 @@ import { publicMutation, publicQuery } from "./functions";
 // core keeps the sessions. The method's React hooks call these functions, whose names, arguments,
 // and results are the method's. `users.email` decides which account owns an address, so an account
 // from Convex Auth 0.0.x keeps its row and data: it sets a password through the recovery link.
-// Google sign-in runs through the identity hub with Convex Auth's OAuth method, at the end
+// Google sign-in runs through the identity broker with Convex Auth's OAuth method, at the end
 // of this file.
 
 const core = setupConvexAuth({ component: components.auth });
@@ -388,8 +388,8 @@ export const completePasswordRecovery = publicMutation({
       return { status: "error" as const, userError: { error: "INVALID_CHALLENGE" as const } };
     await setNewPassword(ctx, user._id, args.newPassword);
     // The core deletes sessions only together with the accounts, so this ends the Google sessions
-    // too and removes the hub account. The email-password account is created again below; the
-    // next Google sign-in links the hub account again by the verified email.
+    // too and removes the broker account. The email-password account is created again below; the
+    // next Google sign-in links the broker account again by the verified email.
     await ctx.runMutation(components.auth.public.deleteUser, { userId: user._id });
     await createEmailPasswordAccount(ctx, user._id);
     if (user.emailVerificationTime === undefined)
@@ -399,14 +399,14 @@ export const completePasswordRecovery = publicMutation({
 });
 
 /**
-The id_token claims of the identity hub that a Google sign-in reads. `sub` is public:
-`google:<Google's own account id>`, the same in every app of the hub. A user can edit the authorize
-URL, so the `connector` claim and the `google:` prefix of `sub`, not the URL, keep the method to
-Google. Convex Auth checks the issuer, audience, and expiry of the id_token, which it received over
-TLS from the hub's token endpoint, but not the types of its claims.
+The id_token claims of the identity broker that a Google sign-in reads. `sub` is public:
+`google:<Google's own account id>`, the same in every app of the broker. A user can edit the
+authorize URL, so the `connector` claim and the `google:` prefix of `sub`, not the URL, keep the
+method to Google. Convex Auth checks the issuer, audience, and expiry of the id_token, which it
+received over TLS from the broker's token endpoint, but not the types of its claims.
 */
 const GOOGLE_SUBJECT_PREFIX = "google:";
-const hubClaims = v.object({
+const brokerClaims = v.object({
   sub: v.string(),
   connector: v.literal("google"),
   email: v.optional(v.string()),
@@ -416,16 +416,16 @@ const hubClaims = v.object({
 });
 
 /**
-The profile mapping of the hub method below, on every sign-in. It refuses claims of another shape,
-of another connector, or with a `sub` that names no Google account, and claims without an email
-that the hub verified, with a message for the sign-in page: `createHubUser` finds an existing user
-by that email.
+The profile mapping of the broker method below, on every sign-in. It refuses claims of another
+shape, of another connector, or with a `sub` that names no Google account, and claims without an
+email that the broker verified, with a message for the sign-in page: `createBrokerUser` finds an
+existing user by that email.
 */
-export function readHubProfile(claims: unknown) {
-  if (!validate(hubClaims, claims, { allowUnknownFields: true }))
-    throw new ConvexError("The identity hub did not complete the Google sign-in. Try again.");
+export function readBrokerProfile(claims: unknown) {
+  if (!validate(brokerClaims, claims, { allowUnknownFields: true }))
+    throw new ConvexError("The identity broker did not complete the Google sign-in. Try again.");
   if (!claims.sub.startsWith(GOOGLE_SUBJECT_PREFIX) || claims.sub === GOOGLE_SUBJECT_PREFIX)
-    throw new ConvexError("The identity hub did not complete the Google sign-in. Try again.");
+    throw new ConvexError("The identity broker did not complete the Google sign-in. Try again.");
   if (claims.email_verified !== true || claims.email === undefined)
     throw new ConvexError(
       "Google did not share a verified email address. Sign in with email and password instead.",
@@ -439,23 +439,26 @@ export function readHubProfile(claims: unknown) {
   };
 }
 
-/** The sign-in that the hub method hands to its user callbacks, with the profile above. */
-const hubSignIn = v.object({
+/**
+The sign-in that the broker method hands to its user callbacks, with the profile above. Its
+provider name stays "hub": users' account rows hold it.
+*/
+const brokerSignIn = v.object({
   name: v.literal("hub"),
   accountId: v.string(),
-  profile: hubClaims
+  profile: brokerClaims
     .omit("sub", "email", "email_verified")
     .extend({ id: v.string(), connector_account_id: v.string(), email: v.string() }),
 });
 
 /**
-The core calls this the first time it sees a hub subject. The user is the one whose email is the
-hub's verified email, when that row has verified its own email too, else a new user, set up like a
-password sign-up: approved, with a verified email, and with the terms step still ahead. The core
-keeps the subject for that user, so later sign-ins find it directly, and `onHubSignIn` runs next.
+The core calls this the first time it sees a broker subject. The user is the one whose email is the
+broker's verified email, when that row has verified its own email too, else a new user, set up like
+a password sign-up: approved, with a verified email, and with the terms step still ahead. The core
+keeps the subject for that user, so later sign-ins find it directly, and `onBrokerSignIn` runs next.
 */
-export const createHubUser = internalMutation({
-  args: { provider: hubSignIn },
+export const createBrokerUser = internalMutation({
+  args: { provider: brokerSignIn },
   returns: v.id("users"),
   handler: async (ctx, { provider }) => {
     const email = normalizeAuthEmail(provider.profile.email);
@@ -477,40 +480,40 @@ export const createHubUser = internalMutation({
   },
 });
 
-/** The core calls this on every hub sign-in, the first one included, before it mints the session. */
-export const onHubSignIn = internalMutation({
-  args: { provider: hubSignIn, userId: v.id("users") },
+/** The core calls this on every broker sign-in, the first one included, before it mints the session. */
+export const onBrokerSignIn = internalMutation({
+  args: { provider: brokerSignIn, userId: v.id("users") },
   returns: v.null(),
   handler: async (ctx, { userId }) => {
     const user = await ctx.db.get(userId);
-    if (user === null) throw new Error("A hub account must belong to a users row.");
+    if (user === null) throw new Error("A broker account must belong to a users row.");
     await admitSignIn(ctx, user);
     return null;
   },
 });
 
 /**
-Google sign-in through the identity hub, an OpenID Provider at IDENTITY_HUB_ISSUER. The authorize URL names
-the Google connector, the one TrailScout enrolls in, so the hub's page offers only Google.
-The flow returns to the page that started it, on SITE_URL or on CONVEX_SITE_URL, which serves the
-same build. The annotation gives the exports below their types without the call, which reads the
-type of `internal`, which contains this module.
+Google sign-in through the identity broker, an OpenID Provider at IDENTITY_BROKER_ISSUER. The
+authorize URL names the Google connector, the one TrailScout enrolls in, so the broker's page offers
+only Google. The flow returns to the page that started it, on SITE_URL or on CONVEX_SITE_URL, which
+serves the same build. The annotation gives the exports below their types without the call, which
+reads the type of `internal`, which contains this module.
 */
-const hub: ReturnType<typeof setupOauth> = setupOauth(
+const broker: ReturnType<typeof setupOauth> = setupOauth(
   core,
   "hub",
   {
-    authorizationEndpoint: `${env.IDENTITY_HUB_ISSUER}/authorize?connector=google`,
-    tokenEndpoint: `${env.IDENTITY_HUB_ISSUER}/token`,
-    issuer: env.IDENTITY_HUB_ISSUER,
+    authorizationEndpoint: `${env.IDENTITY_BROKER_ISSUER}/authorize?connector=google`,
+    tokenEndpoint: `${env.IDENTITY_BROKER_ISSUER}/token`,
+    issuer: env.IDENTITY_BROKER_ISSUER,
     scopes: ["openid", "email", "profile"],
-    profile: readHubProfile,
+    profile: readBrokerProfile,
   },
-  { createUser: internal.auth.createHubUser, onSignIn: internal.auth.onHubSignIn },
+  { createUser: internal.auth.createBrokerUser, onSignIn: internal.auth.onBrokerSignIn },
   {
     component: components.authHub,
     allowedRedirectOrigins: [new URL(env.SITE_URL).origin, new URL(env.CONVEX_SITE_URL).origin],
   },
 );
-export const startSignInWithIdentityHub = hub.startSignIn;
-export const completeSignInWithIdentityHub = hub.completeSignIn;
+export const startSignInWithIdentityBroker = broker.startSignIn;
+export const completeSignInWithIdentityBroker = broker.completeSignIn;
