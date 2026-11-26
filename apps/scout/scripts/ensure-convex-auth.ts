@@ -2,6 +2,7 @@
 import { execFileSync } from "node:child_process";
 import { generateKeyPairSync, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { BROKER_DISABLED } from "@samebase/identity-broker/client";
 
 // Creates the Convex Auth signing keys of the selected deployment once, before its push:
 // `pnpm run deploy` and `pnpm run deploy:dev` run this in their build, and `pnpm run dev` runs it
@@ -39,17 +40,17 @@ if (target !== undefined) {
     );
 }
 
-// The variables of a deployment without a hub client, which convex/convex.config.ts requires.
-// IdentityHub.Client of @samebase/alchemy-convex gives the same values when it has no client. Each
-// missing one gets its off value before the push, and a value that exists stays: a deployment of
-// an earlier commit has the HUB_ names in their place, and "Site" in alchemy.run.ts writes the
-// client and removes those after this push.
-const IDENTITY_HUB_OFF_VALUES = {
-  IDENTITY_HUB_ISSUER: "http://127.0.0.1:1",
-  IDENTITY_HUB_CLIENT_ID: "no-hub",
-  IDENTITY_HUB_CLIENT_SECRET: "no-hub",
+// The variables of a deployment without a broker client, which convex/convex.config.ts requires.
+// IdentityBroker.Client of @samebase/identity-broker gives the same values when it has no client.
+// Each missing one gets its off value before the push, and a value that exists stays: a deployment
+// of an earlier commit has the IDENTITY_HUB_ names in their place, and "Site" in alchemy.run.ts
+// writes the client and removes those after this push.
+const IDENTITY_BROKER_OFF_VALUES = {
+  IDENTITY_BROKER_ISSUER: "http://127.0.0.1:1",
+  IDENTITY_BROKER_CLIENT_ID: BROKER_DISABLED,
+  IDENTITY_BROKER_CLIENT_SECRET: BROKER_DISABLED,
 };
-for (const [name, value] of Object.entries(IDENTITY_HUB_OFF_VALUES)) {
+for (const [name, value] of Object.entries(IDENTITY_BROKER_OFF_VALUES)) {
   if (!readVariable(name)) {
     execFileSync(process.execPath, [convex, "env", "set", "--", name, value], {
       stdio: ["ignore", "ignore", "inherit"],

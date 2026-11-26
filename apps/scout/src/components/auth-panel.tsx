@@ -37,7 +37,7 @@ type UserError =
 
 /**
 The errors of the email-password method and of Google sign-in that the sign-in panel and the link
-pages show. A Google sign-in that fails after the identity hub returns reports its error as the OAuth
+pages show. A Google sign-in that fails after the identity broker returns reports its error as the OAuth
 method's `flowError`.
 */
 export type AuthUserError =
@@ -51,10 +51,10 @@ export function AuthPanel() {
   const { signIn } = useSignInWithEmailPassword(api.auth);
   const { signUp } = useSignUpWithEmailPassword(api.auth);
   const { startPasswordRecovery } = useStartPasswordRecovery(api.auth);
-  const { signIn: signInWithHub } = useOauthSignIn({
+  const { signIn: signInWithBroker } = useOauthSignIn({
     providerName: "hub",
-    startSignIn: api.auth.startSignInWithIdentityHub,
-    completeSignIn: api.auth.completeSignInWithIdentityHub,
+    startSignIn: api.auth.startSignInWithIdentityBroker,
+    completeSignIn: api.auth.completeSignInWithIdentityBroker,
   });
   const { flowError } = useOauth();
   const [state, setState] = useState<AuthState>({
@@ -73,7 +73,7 @@ export function AuthPanel() {
     setError("");
     setIsPending(true);
     const outcome = await operation();
-    // The page is leaving for the identity hub: the controls stay disabled until it has left.
+    // The page is leaving for the identity broker: the controls stay disabled until it has left.
     if (outcome === "leaving") return;
     setIsPending(false);
     if (outcome) setError(authErrorMessage(outcome));
@@ -120,9 +120,9 @@ export function AuthPanel() {
       <AuthHeading state={state} />
 
       {state.kind === "credentials" ? (
-        // The first stop is the identity hub's page, Samebase's, which names TrailScout and offers
-        // Google, so the button names the hub and not Google. The hub returns to this page, where
-        // the session provider redeems the sign-in.
+        // The first stop is the identity broker's page, Samebase's, which names TrailScout and offers
+        // Google, so the button names the broker and not Google. The broker returns to this page,
+        // where the session provider redeems the sign-in.
         <Button
           type="button"
           variant="outline"
@@ -131,7 +131,7 @@ export function AuthPanel() {
           disabled={isPending}
           onClick={() =>
             void run(async () => {
-              const result = await signInWithHub();
+              const result = await signInWithBroker();
               return result.status === "error" ? result.userError : "leaving";
             })
           }

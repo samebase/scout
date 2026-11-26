@@ -48,11 +48,11 @@ root. This writes the Convex URL needed by the build to the app's env file:
 pnpm --filter samebase-scout exec convex deployment select <development-deployment>
 ```
 
-A push fails without `IDENTITY_HUB_ISSUER`, `IDENTITY_HUB_CLIENT_ID`, and
-`IDENTITY_HUB_CLIENT_SECRET`. `pnpm run dev` and `pnpm run deploy:dev` set the off value of each
+A push fails without `IDENTITY_BROKER_ISSUER`, `IDENTITY_BROKER_CLIENT_ID`, and
+`IDENTITY_BROKER_CLIENT_SECRET`. `pnpm run dev` and `pnpm run deploy:dev` set the off value of each
 one that is missing before the push, so a new development deployment has no Google sign-in. For
-Google sign-in, run `pnpm run identity-hub:dev-client --stage dev-<name>` from the repository root once, after the
-deployment has the code. That stage of `alchemy.run.ts` asks the identity hub for a client on the
+Google sign-in, run `pnpm run identity-broker:dev-client --stage dev-<name>` from the repository root once, after the
+deployment has the code. That stage of `alchemy.run.ts` asks the identity broker for a client on the
 deployment's site URL plus `/auth/hub/callback`, with the initial access token that the production
 deploy saved, and writes the three variables.
 
@@ -132,7 +132,7 @@ These commands target development. Add `--prod` to configure production after co
 target deployment. Production also needs its own managed-credential key, described below.
 Alchemy sets production `SITE_URL` to `https://scout.samebase.com` for sign-in, handoff emails,
 and payment return links. Production `CONVEX_SITE_URL` stays on its `.convex.site` origin for
-the auth issuer and identity-hub callback.
+the auth issuer and identity broker callback.
 
 ## Configure managed credentials
 
