@@ -40,9 +40,7 @@ type Env = {
   readonly DEV_SEED_AUTH_ENABLED: string | undefined;
   readonly DEV_SEED_AUTH_PASSWORD: string | undefined;
   readonly FIRECRAWL_API_KEY: string | undefined;
-  readonly IDENTITY_BROKER_CLIENT_ID: string;
-  readonly IDENTITY_BROKER_CLIENT_SECRET: string;
-  readonly IDENTITY_BROKER_ISSUER: string;
+  readonly OAUTH_CLIENT_ID: string;
   readonly OPENAI_API_KEY: string | undefined;
   readonly POLAR_ACCESS_TOKEN: string | undefined;
   readonly POLAR_CHECKOUT_ENABLED: string | undefined;

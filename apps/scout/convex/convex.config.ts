@@ -24,9 +24,8 @@ const app = defineApp({
     DEV_SEED_AUTH_ENABLED: v.optional(v.string()),
     DEV_SEED_AUTH_PASSWORD: v.optional(v.string()),
     FIRECRAWL_API_KEY: v.optional(v.string()),
-    IDENTITY_BROKER_CLIENT_ID: v.string(),
-    IDENTITY_BROKER_CLIENT_SECRET: v.string(),
-    IDENTITY_BROKER_ISSUER: v.string(),
+    // <CONVEX_SITE_URL>/oauth-client.json, the document that convex/http.ts serves.
+    OAUTH_CLIENT_ID: v.string(),
     OPENAI_API_KEY: v.optional(v.string()),
     POLAR_ACCESS_TOKEN: v.optional(v.string()),
     POLAR_CHECKOUT_ENABLED: v.optional(v.string()),
@@ -50,8 +49,8 @@ const app = defineApp({
     SSR_FIXTURE_DEPLOYMENT_URL: v.optional(v.string()),
   },
 });
-// A push fails while AUTH_PRIVATE_KEY or AUTH_JWKS is missing: scripts/ensure-convex-auth.ts creates
-// the pair on each deployment before its first push. The core serves its key set under /auth.
+// A push fails while AUTH_PRIVATE_KEY, AUTH_JWKS or OAUTH_CLIENT_ID is missing:
+// scripts/ensure-convex-auth.ts sets them before each push. The core serves its key set under /auth.
 app.use(auth, {
   httpPrefix: "/auth",
   env: {
@@ -59,18 +58,13 @@ app.use(auth, {
     AUTH_JWKS: app.env.AUTH_JWKS,
   },
 });
-// Google sign-in runs through the identity broker, an OpenID Provider at IDENTITY_BROKER_ISSUER, with
-// one client per deployment: the root alchemy.run.ts gets the client of production and of every
-// preview, and its stage `dev-<name>` the client of a development deployment. The broker sends the
-// browser back to <site>/auth/hub/callback, the callback URL of that registration. The name and the
-// prefix keep "hub": each registered client and the component's stored data hold them.
+// Google sign-in at login.samebase.com as a public client: the empty secret counts as none at its
+// token endpoint. The broker sends the browser back to <CONVEX_SITE_URL>/auth/hub/callback. The name
+// keeps "hub": the component's stored data holds it.
 app.use(oauth, {
   name: "authHub",
   httpPrefix: "/auth/hub",
-  env: {
-    CLIENT_ID: app.env.IDENTITY_BROKER_CLIENT_ID,
-    CLIENT_SECRET: app.env.IDENTITY_BROKER_CLIENT_SECRET,
-  },
+  env: { CLIENT_ID: app.env.OAUTH_CLIENT_ID, CLIENT_SECRET: "" },
 });
 app.use(password);
 app.use(email);

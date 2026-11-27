@@ -11,7 +11,6 @@
     "dev:worktree": "vp run samebase-scout#dev:worktree",
     "build": "vp run samebase-scout#build",
     "deploy:dev": "vp run samebase-scout#deploy:dev",
-    "identity-broker:dev-client": "alchemy deploy",
     "preview": "vp run samebase-scout#preview",
     "check": "vp check && vp run typecheck && vp test",
     "typecheck": "tsc --project tsconfig.node.json && vp run --filter \"!scout-workspace\" typecheck",

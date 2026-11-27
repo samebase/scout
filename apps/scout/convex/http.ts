@@ -8,21 +8,26 @@ import { assets } from "../.convex-hosting/version.js";
 import type {} from "@samebase/convex-hosting-tanstack-start/server-build";
 import server from "../dist/server/server.js";
 // oxlint-disable-next-line no-restricted-imports -- Protocol boundaries for the site and the signed Polar webhook.
-import { httpAction } from "./_generated/server";
+import { env, httpAction } from "./_generated/server";
 
 const http = httpRouter();
 
 http.route({ path: "/polar/events", method: "POST", handler: httpAction(handlePolarEvent) });
 
-// The identity broker reads this file on a site before it registers a client there (RFC 134): it names
-// this repository, samebase/scout, by its numeric GitHub id, which a rename does not change. Every
-// deployment serves the same answer, previews included, and no answer is cached. An exact path, so
-// it wins over the site's "/" prefix below.
+// The Client ID Metadata Document of this deployment: its address is the client id at
+// login.samebase.com. An exact path, so it wins over the site's "/" prefix below.
 http.route({
-  path: "/samebase-verification.json",
+  path: "/oauth-client.json",
   method: "GET",
   handler: httpAction(async () =>
-    Response.json({ repository: "1347540564" }, { headers: { "Cache-Control": "no-store" } }),
+    Response.json({
+      client_id: env.OAUTH_CLIENT_ID,
+      client_name: "TrailScout",
+      redirect_uris: [`${env.CONVEX_SITE_URL}/auth/hub/callback`],
+      token_endpoint_auth_method: "none",
+      grant_types: ["authorization_code"],
+      response_types: ["code"],
+    }),
   ),
 });
 

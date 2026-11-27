@@ -11,10 +11,9 @@ import schema from "./schema";
 import { createEmailPasswordAccount, readBrokerProfile, setNewPassword } from "./auth";
 import { ADMIN_EMAIL } from "./testing/accounts";
 
-// convex/auth.ts sets up Google sign-in when it loads, with the broker's issuer and the deployment's
-// site URLs, so they come before the imports.
+// convex/auth.ts sets up Google sign-in when it loads, with the deployment's site URLs, so they come
+// before the imports.
 vi.hoisted(() => {
-  vi.stubEnv("IDENTITY_BROKER_ISSUER", "https://broker.example.test");
   vi.stubEnv("SITE_URL", "https://scout-test.convex.site");
   vi.stubEnv("CONVEX_SITE_URL", "https://scout-test.convex.site");
 });
