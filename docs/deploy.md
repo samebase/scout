@@ -42,19 +42,13 @@ Convex.
 Stage `prod` mints the account API token `scout production email sending`, with only Email
 Sending Write, and retains it when the stack is destroyed. See `EMAIL_SETUP.md`.
 
-Google sign-in runs through the identity broker at `https://id.samebase.com`. Each deployment
-registers its client with `POST /register`, the client registration request of RFC 7591. It
-sends the GitHub OIDC token of the run (`id-token: write`), so sign-in needs no secret of its
-own. The broker first reads `/samebase-verification.json` on the callback's site
-(`convex/http.ts`). So the stack pushes first (`Push` in production, `Preview` on a pull
-request), then registers the client on the Convex site URL plus `/auth/hub/callback`, then
-`Site` writes `IDENTITY_BROKER_ISSUER`, `IDENTITY_BROKER_CLIENT_ID`, and
-`IDENTITY_BROKER_CLIENT_SECRET` with no push. Before each push,
-`apps/scout/scripts/ensure-convex-auth.ts` sets the off value of each of the three that is
-missing, so the code loads before `Site` writes the client. A deploy fails when the broker does
-not confirm the client. A preview's client goes with the preview. Production's broker callback is
-`https://scout.samebase.com/auth/hub/callback`, on the `CONVEX_SITE_URL` that the dashboard sets,
-so the broker's sign-in page names scout.samebase.com.
+Google sign-in runs through the identity broker at `https://login.samebase.com`, with no
+registration and no client secret. Each deployment serves its Client ID Metadata Document at
+`/oauth-client.json` (`convex/http.ts`), and the address of that file is its client id. Before
+each push, `apps/scout/scripts/ensure-convex-auth.ts` sets `OAUTH_CLIENT_ID` to the Convex site
+URL plus `/oauth-client.json`. The file names one return address, the site URL plus
+`/auth/hub/callback`. In production both are on `https://scout.samebase.com`, the
+`CONVEX_SITE_URL` that the dashboard sets, so the broker's sign-in page names scout.samebase.com.
 
 Each stage has one queue shared by deployment and cleanup. Before deployment,
 `scripts/verify-deployment-head.ts` checks that the checkout is still the head of the branch.
@@ -63,7 +57,7 @@ GitHub CI runs `pnpm run check` separately. Deployment does not repeat it.
 The team's `alchemy-state-store` Convex project stores the stack state. Its `samebase.run` output
 records the repository, stack file, branch, commit, pull request, and workflow run for Samebase's
 repository overview. `SCOUT_COMMIT` is a deployment input so a change outside `apps/scout` also
-deploys. Alchemy manages `SCOUT_COMMIT` and the three `IDENTITY_BROKER_` variables on each deployment, plus
+deploys. Alchemy manages `SCOUT_COMMIT` on each deployment, plus
 `SITE_URL` and the two `CLOUDFLARE_EMAIL_` variables in production. Other deployment environment
 variables remain unmanaged.
 

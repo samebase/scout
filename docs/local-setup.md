@@ -48,13 +48,9 @@ root. This writes the Convex URL needed by the build to the app's env file:
 pnpm --filter samebase-scout exec convex deployment select <development-deployment>
 ```
 
-A push fails without `IDENTITY_BROKER_ISSUER`, `IDENTITY_BROKER_CLIENT_ID`, and
-`IDENTITY_BROKER_CLIENT_SECRET`. `pnpm run dev` and `pnpm run deploy:dev` set the off value of each
-one that is missing before the push, so a new development deployment has no Google sign-in. For
-Google sign-in, run `pnpm run identity-broker:dev-client --stage dev-<name>` from the repository root once, after the
-deployment has the code. That stage of `alchemy.run.ts` asks the identity broker for a client on the
-deployment's site URL plus `/auth/hub/callback`, with the initial access token that the production
-deploy saved, and writes the three variables.
+Google sign-in goes through `https://login.samebase.com` and needs no setup. Before each push,
+`pnpm run dev` and `pnpm run deploy:dev` set `OAUTH_CLIENT_ID` to the deployment's site URL plus
+`/oauth-client.json`, the file that `convex/http.ts` serves.
 
 The Google sign-in returns to the page that started it, and the deployment accepts a return to
 `SITE_URL` and to its own `.convex.site` origin only. Set `SITE_URL` on the deployment to the

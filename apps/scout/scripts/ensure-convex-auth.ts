@@ -2,12 +2,12 @@
 import { execFileSync } from "node:child_process";
 import { generateKeyPairSync, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { BROKER_DISABLED } from "@samebase/identity-broker/client";
 
-// Creates the Convex Auth signing keys of the selected deployment once, before its push:
-// `pnpm run deploy` and `pnpm run deploy:dev` run this in their build, and `pnpm run dev` runs it
-// before `convex dev`. Alchemy's CONVEX_DEPLOY_KEY selects the production or preview deployment;
-// without one, CONVEX_DEPLOYMENT in .env.local selects the development deployment.
+// Sets OAUTH_CLIENT_ID of the selected deployment and creates its Convex Auth signing keys once,
+// before its push: `pnpm run deploy` and `pnpm run deploy:dev` run this in their build, and
+// `pnpm run dev` runs it before `convex dev`. Alchemy's CONVEX_DEPLOY_KEY selects the production or
+// preview deployment; without one, CONVEX_DEPLOYMENT in .env.local selects the development
+// deployment.
 //
 // An existing pair stays, so the deployment's sessions stay valid; one value without the other is
 // an error. The keys of Convex Auth 0.0.x, JWT_PRIVATE_KEY and JWKS, are not touched.
@@ -40,23 +40,21 @@ if (target !== undefined) {
     );
 }
 
-// The variables of a deployment without a broker client, which convex/convex.config.ts requires.
-// IdentityBroker.Client of @samebase/identity-broker gives the same values when it has no client.
-// Each missing one gets its off value before the push, and a value that exists stays: a deployment
-// of an earlier commit has the IDENTITY_HUB_ names in their place, and "Site" in alchemy.run.ts
-// writes the client and removes those after this push.
-const IDENTITY_BROKER_OFF_VALUES = {
-  IDENTITY_BROKER_ISSUER: "http://127.0.0.1:1",
-  IDENTITY_BROKER_CLIENT_ID: BROKER_DISABLED,
-  IDENTITY_BROKER_CLIENT_SECRET: BROKER_DISABLED,
-};
-for (const [name, value] of Object.entries(IDENTITY_BROKER_OFF_VALUES)) {
-  if (!readVariable(name)) {
-    execFileSync(process.execPath, [convex, "env", "set", "--", name, value], {
-      stdio: ["ignore", "ignore", "inherit"],
-    });
-    console.log(`${name} set to its off value.`);
-  }
+// The client id at login.samebase.com is the address of convex/http.ts's metadata document. On
+// production CONVEX_SITE_URL is the custom domain, https://scout.samebase.com.
+const siteUrl: unknown = JSON.parse(
+  execFileSync(process.execPath, [convex, "run", "--inline-query", "process.env.CONVEX_SITE_URL"], {
+    encoding: "utf8",
+  }),
+);
+if (typeof siteUrl !== "string")
+  throw new Error("Could not read CONVEX_SITE_URL of the deployment.");
+const clientId = `${siteUrl}/oauth-client.json`;
+if (readVariable("OAUTH_CLIENT_ID") !== clientId) {
+  execFileSync(process.execPath, [convex, "env", "set", "--", "OAUTH_CLIENT_ID", clientId], {
+    stdio: ["ignore", "ignore", "inherit"],
+  });
+  console.log(`OAUTH_CLIENT_ID set to ${clientId}.`);
 }
 
 const privateKey = readVariable("AUTH_PRIVATE_KEY");

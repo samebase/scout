@@ -4,20 +4,17 @@
 //   API token that production sends email with.
 // - Stage `pr-<number>`, on each pull request: a Convex preview deployment with the name of the
 //   stage, which `alchemy destroy` deletes when the pull request closes.
-// - Stage `dev-<name>`, on a laptop, run on purpose with
-//   `pnpm run identity-broker:dev-client --stage dev-<name>`: the broker client of the development
-//   deployment that apps/scout/.env.local selects.
 //
-// Each deployment has a client of the identity broker at https://id.samebase.com, for Google
-// sign-in (RFC 134). IdentityBroker.Client registers with `POST /register` (RFC 7591), sending
-// the GitHub OIDC token of the run (`id-token: write` in alchemy.yml), or on a laptop the app's
-// initial access token that the production registration saved. The broker first reads
-// /samebase-verification.json on the callback's site (convex/http.ts), so the code with that
-// route is pushed before the client registers, and the client's variables are written after it.
-// Each variable stays on the row that owned it before: a Convex.Deployment removes a name that
-// leaves its own `env`, after its push when it has one. The push runs
-// apps/scout/scripts/ensure-convex-auth.ts, which sets the off values of the client's variables
-// when they are missing, so the code loads before "Site" writes them.
+// Google sign-in is at https://login.samebase.com, with no registration: each push runs
+// apps/scout/scripts/ensure-convex-auth.ts, which sets OAUTH_CLIENT_ID to the address of the
+// site's metadata document.
+//
+// A stage deployed before the sign-in at login.samebase.com holds the client "HubClient" at
+// id.samebase.com, and its "Site" row wrote the three IDENTITY_BROKER_ variables. "HubClient" is
+// gone from the stack, so this deploy deletes it with the provider of IdentityBroker.providers():
+// a preview's client at the broker too, and production's only in state, because the broker refuses
+// that delete. "Site" no longer lists the three variables, so it removes them after the push. Once
+// every stage ran this version, a later version drops the provider and the preview's "Site" row.
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { parseEnv } from "node:util";
@@ -31,28 +28,16 @@ import * as Output from "alchemy/Output";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-// The commit of this checkout: SCOUT_COMMIT on each deployment, and the software version of each
-// broker client. It is in the env of "Push" and "Preview", so it is part of each push's hash: every commit
-// deploys, also one that changes only files outside apps/scout.
+// The commit of this checkout: SCOUT_COMMIT on each deployment. It is in the env of "Push" and
+// "Preview", so it is part of each push's hash: every commit deploys, also one that changes only
+// files outside apps/scout.
 const commit = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
 
 /**
 The custom domain of production. The Convex dashboard overrides CONVEX_SITE_URL to it, so Convex
-Auth keeps its issuer and builds the broker callback on it, and the broker's page names it.
+Auth keeps its issuer, and the sign-in's metadata document and callback are on it.
 */
 const PRODUCTION_SITE_URL = "https://scout.samebase.com";
-/**
-The identity broker's callback into Convex Auth, after CONVEX_SITE_URL (convex/convex.config.ts).
-Each registered client holds this path, so it keeps its old name.
-*/
-const BROKER_CALLBACK_PATH = "/auth/hub/callback";
-/**
-The name of TrailScout at the identity broker. The broker keeps one initial access token for each
-repository and name, which a laptop's stage reads from `prod`.
-*/
-const IDENTITY_BROKER_APP = "trailscout";
-/** Samebase's identity broker, where every client of TrailScout registers. */
-const BROKER = { issuer: "https://id.samebase.com" };
 
 /** The file of `npx convex dev`, which selects the development deployment. CI has none. */
 const APP_ENV_LOCAL = "apps/scout/.env.local";
@@ -123,57 +108,10 @@ export default Alchemy.Stack(
       Alchemy.RemovalPolicy.retain(),
     );
 
-    if (stage.startsWith("dev-")) {
-      // A laptop, after one deploy to main and after `pnpm run dev` selected a cloud development
-      // deployment and pushed the code. This stage gives that deployment its broker client and
-      // nothing else: no new deployment, no push. Both deployment rows keep the default removal
-      // policy `retain`: `alchemy destroy --stage dev-<name>` deletes only the broker client.
-      const selected = /^dev:(.+)$/.exec(selectedDeployment ?? "")?.[1];
-      if (selected === undefined) {
-        throw new Error(
-          `Run \`pnpm run dev\` once first: ${APP_ENV_LOCAL} selects no cloud development deployment.`,
-        );
-      }
-      // The initial access token that the production registration saved.
-      const production = IdentityBroker.Client.read("HubClient", { stage: "prod" });
-      const development = yield* Convex.Deployment("Development", {
-        project,
-        type: "dev",
-        name: selected,
-      }).pipe(adopt(true));
-      const signIn = IdentityBroker.Client.variables(
-        yield* IdentityBroker.Client("HubClient", {
-          app: IDENTITY_BROKER_APP,
-          broker: BROKER,
-          connectors: ["google"],
-          redirectUris: [Output.interpolate`${development.siteUrl}${BROKER_CALLBACK_PATH}`],
-          deploymentType: "development",
-          initialAccessToken: production.initialAccessToken,
-          softwareVersion: commit,
-          // A run that gets no working client fails and keeps the variables the deployment has, in
-          // place of writing the off values over a working client.
-          required: true,
-        }),
-      );
-      const site = yield* Convex.Deployment("Site", {
-        project,
-        type: "dev",
-        name: selected,
-        env: {
-          IDENTITY_BROKER_ISSUER: signIn.issuer,
-          IDENTITY_BROKER_CLIENT_ID: signIn.clientId,
-          IDENTITY_BROKER_CLIENT_SECRET: signIn.clientSecret,
-        },
-      }).pipe(adopt(true));
-      return { url: site.siteUrl };
-    }
-
     if (stage === "prod") {
-      // "Push" pushes the code first, with the broker variables that production has, so the callback's
-      // site serves the verification file before the client registers. Its one variable is
-      // SCOUT_COMMIT, which "Site" also sets with the same value: it is in the push's hash, so every
-      // commit pushes. adopt(true) takes over the production deployment, which has code. Retained
-      // with Site.
+      // "Push" pushes the code. Its one variable is SCOUT_COMMIT, which "Site" also sets with the
+      // same value: it is in the push's hash, so every commit pushes. adopt(true) takes over the
+      // production deployment, which has code. Retained with Site.
       const push = yield* Convex.Deployment("Push", {
         project,
         type: "prod",
@@ -181,22 +119,6 @@ export default Alchemy.Stack(
         env: { SCOUT_COMMIT: commit },
         source: { path: "./convex", command: ["node", "--run", "deploy"] },
       }).pipe(adopt(true), Alchemy.RemovalPolicy.retain());
-      // The production client, on the fixed callback. The map on the push's output makes the client
-      // wait for the push and does not change the address. A destroy leaves a production client on
-      // the broker.
-      const signIn = IdentityBroker.Client.variables(
-        yield* IdentityBroker.Client("HubClient", {
-          app: IDENTITY_BROKER_APP,
-          broker: BROKER,
-          connectors: ["google"],
-          redirectUris: Output.map(push.siteUrl, () => [
-            `${PRODUCTION_SITE_URL}${BROKER_CALLBACK_PATH}`,
-          ]),
-          deploymentType: "production",
-          softwareVersion: commit,
-          required: true,
-        }),
-      );
       // convex/email.ts sends authentication email with this account token, which can only send
       // email. Minting it needs Account API Tokens Write on the CI token. Cloudflare returns the
       // value only on creation: the resource keeps it in state, and an update, such as a new name
@@ -213,17 +135,17 @@ export default Alchemy.Stack(
           },
         ],
       }).pipe(Alchemy.RemovalPolicy.retain());
-      // "Site" writes the variables, with no push.
+      // "Site" writes the variables, with no push. The hash of the push orders it after the push:
+      // Convex refuses to remove a variable that the old code requires.
       yield* Convex.Deployment("Site", {
-        project,
+        project: {
+          projectId: Output.map(Output.all(push.projectId, push.hash), ([projectId]) => projectId),
+        },
         type: "prod",
         rootDir: "apps/scout",
         env: {
           SCOUT_COMMIT: commit,
           SITE_URL: PRODUCTION_SITE_URL,
-          IDENTITY_BROKER_ISSUER: signIn.issuer,
-          IDENTITY_BROKER_CLIENT_ID: signIn.clientId,
-          IDENTITY_BROKER_CLIENT_SECRET: signIn.clientSecret,
           CLOUDFLARE_EMAIL_ACCOUNT_ID: accountId,
           CLOUDFLARE_EMAIL_API_TOKEN: emailToken.value,
         },
@@ -231,47 +153,32 @@ export default Alchemy.Stack(
       return { url: PRODUCTION_SITE_URL };
     }
 
-    // A preview's broker callback is on its own `.convex.site` URL, which exists only after Convex
-    // creates the deployment. "Preview" creates the deployment and pushes: the push command also
-    // sets SITE_URL to the preview's site and seeds the password account. Its first push has the
-    // off values of the three broker variables, which ensure-convex-auth.ts sets when they are missing.
-    // Then the client registers, and "Site" takes the same deployment over with adopt(true) and
-    // writes the variables, with no push. Both delete it on destroy; the second delete finds it
-    // gone. adopt(true) also takes over a preview with the name of this stage that an earlier run
-    // created.
+    // "Preview" creates the deployment and pushes: the push command also sets SITE_URL to the
+    // preview's site and seeds the password account. adopt(true) also takes over a preview with the
+    // name of this stage that an earlier run created.
     const preview = yield* Convex.Deployment("Preview", {
       project,
       type: "preview",
       name: stage,
       rootDir: "apps/scout",
-      // In the push's hash, so every commit pushes; "Site" sets the same value.
       env: { SCOUT_COMMIT: commit },
       source: { path: "./convex", command: ["node", "./scripts/deploy-preview.ts"] },
     }).pipe(adopt(true), Alchemy.RemovalPolicy.destroy());
-    const signIn = IdentityBroker.Client.variables(
-      yield* IdentityBroker.Client("HubClient", {
-        app: IDENTITY_BROKER_APP,
-        broker: BROKER,
-        connectors: ["google"],
-        redirectUris: [Output.interpolate`${preview.siteUrl}${BROKER_CALLBACK_PATH}`],
-        deploymentType: "preview",
-        softwareVersion: commit,
-        required: true,
-      }),
-    );
-    const site = yield* Convex.Deployment("Site", {
-      project,
+    // Only for the cleanup above, after the push, and retained, so a later version can drop it
+    // without deleting the deployment. It keeps SCOUT_COMMIT, which it set before.
+    yield* Convex.Deployment("Site", {
+      project: {
+        projectId: Output.map(
+          Output.all(preview.projectId, preview.hash),
+          ([projectId]) => projectId,
+        ),
+      },
       type: "preview",
       name: stage,
       rootDir: "apps/scout",
-      env: {
-        SCOUT_COMMIT: commit,
-        IDENTITY_BROKER_ISSUER: signIn.issuer,
-        IDENTITY_BROKER_CLIENT_ID: signIn.clientId,
-        IDENTITY_BROKER_CLIENT_SECRET: signIn.clientSecret,
-      },
-    }).pipe(adopt(true), Alchemy.RemovalPolicy.destroy());
+      env: { SCOUT_COMMIT: commit },
+    }).pipe(adopt(true), Alchemy.RemovalPolicy.retain());
 
-    return { url: site.siteUrl };
+    return { url: preview.siteUrl };
   }),
 );

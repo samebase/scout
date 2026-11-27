@@ -400,7 +400,7 @@ export const completePasswordRecovery = publicMutation({
 
 /**
 The id_token claims of the identity broker that a Google sign-in reads. `sub` is public:
-`google:<Google's own account id>`, the same in every app of the broker. A user can edit the
+`google:<Google's own account id>`, the same at every broker of its package. A user can edit the
 authorize URL, so the `connector` claim and the `google:` prefix of `sub`, not the URL, keep the
 method to Google. Convex Auth checks the issuer, audience, and expiry of the id_token, which it
 received over TLS from the broker's token endpoint, but not the types of its claims.
@@ -492,20 +492,23 @@ export const onBrokerSignIn = internalMutation({
   },
 });
 
+/** Samebase's public identity broker; the client id is the site's metadata document. */
+const BROKER = "https://login.samebase.com";
+
 /**
-Google sign-in through the identity broker, an OpenID Provider at IDENTITY_BROKER_ISSUER. The
-authorize URL names the Google connector, the one TrailScout enrolls in, so the broker's page offers
-only Google. The flow returns to the page that started it, on SITE_URL or on CONVEX_SITE_URL, which
-serves the same build. The annotation gives the exports below their types without the call, which
-reads the type of `internal`, which contains this module.
+Google sign-in through the identity broker at BROKER, an OpenID Provider. The authorize URL names
+the Google connector, so the broker's page offers only Google. The flow returns to the page that
+started it, on SITE_URL or on CONVEX_SITE_URL, which serves the same build. The annotation gives the
+exports below their types without the call, which reads the type of `internal`, which contains this
+module.
 */
 const broker: ReturnType<typeof setupOauth> = setupOauth(
   core,
   "hub",
   {
-    authorizationEndpoint: `${env.IDENTITY_BROKER_ISSUER}/authorize?connector=google`,
-    tokenEndpoint: `${env.IDENTITY_BROKER_ISSUER}/token`,
-    issuer: env.IDENTITY_BROKER_ISSUER,
+    authorizationEndpoint: `${BROKER}/authorize?connector=google`,
+    tokenEndpoint: `${BROKER}/token`,
+    issuer: BROKER,
     scopes: ["openid", "email", "profile"],
     profile: readBrokerProfile,
   },
