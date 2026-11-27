@@ -120,8 +120,8 @@ export function AuthPanel() {
       <AuthHeading state={state} />
 
       {state.kind === "credentials" ? (
-        // The first stop is the identity broker's page, Samebase's, which names TrailScout and offers
-        // Google, so the button names the broker and not Google. The broker returns to this page,
+        // The first stop is the identity broker's page, Samebase's, which names the site's host and
+        // offers Google, so the button names the broker and not Google. The broker returns to this page,
         // where the session provider redeems the sign-in.
         <Button
           type="button"
